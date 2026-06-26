@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Codey</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --bg-2: #12151c;
+    --panel: #161a22;
+    --panel-2: #1d222c;
+    --hover: #232936;
+    --border: #262d3b;
+    --border-2: #1e2330;
+    --text: #e6e8ec;
+    --text-dim: #aab1c0;
+    --muted: #6f7689;
+    --accent: #7c9cff;
+    --accent-2: #4f7cff;
+    --ok: #66d29a;
+    --warn: #f0b95b;
+    --err: #ef6f6c;
+    --user-bubble: #243046;
+    --asst-bubble: #1a1f2b;
+    --tool-bubble: #15202c;
+    --mono: 'SF Mono','JetBrains Mono','Consolas',monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 13.5px;
+    line-height: 1.55;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    overflow: hidden;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2a3142; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a4257; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ============================== sidebar ============================== */
+  aside {
+    width: 260px;
+    background: var(--bg-2);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    transition: width .2s ease, min-width .2s ease;
+    min-width: 260px;
+  }
+  body.sidebar-collapsed aside { width: 0; min-width: 0; overflow: hidden; }
+  .sidebar-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 14px; border-bottom: 1px solid var(--border-2);
+  }
+  .brand-row { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+  .logo {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, #4f7cff, #b78cff);
+    display: grid; place-items: center; color: white; font-weight: 700; font-size: 13px;
+    flex-shrink: 0;
+  }
+  .brand-name { font-weight: 600; letter-spacing: 0.2px; }
+  .btn-icon {
+    background: transparent; border: 0; color: var(--text-dim); cursor: pointer;
+    width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center;
+    transition: background .15s, color .15s;
+  }
+  .btn-icon:hover { background: var(--hover); color: var(--text); }
+  .btn-icon svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+
+  .new-chat-btn {
+    margin: 10px 12px; padding: 8px 12px;
+    display: flex; align-items: center; gap: 8px; justify-content: center;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); cursor: pointer; font-size: 13px;
+    transition: background .15s, border-color .15s;
+  }
+  .new-chat-btn:hover { background: var(--hover); border-color: #354060; }
+  .new-chat-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.2; }
+
+  .project-box {
+    margin: 0 12px 10px;
+    padding: 10px 12px;
+    background: var(--panel); border: 1px solid var(--border-2);
+    border-radius: 9px;
+  }
+  .project-box .label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.9px;
+    color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+  }
+  .project-box .label .hint { color: var(--muted); font-size: 10.5px; text-transform: none; letter-spacing: 0; }
+  .project-box input {
+    width: 100%; background: var(--bg-2); border: 1px solid var(--border-2);
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    padding: 6px 8px; border-radius: 6px; outline: none;
+    transition: border-color .15s;
+  }
+  .project-box input:focus { border-color: var(--accent); }
+  .project-box .mode-tag {
+    display: inline-block; margin-top: 6px;
+    font-size: 10.5px; color: var(--muted);
+  }
+  .project-box .mode-tag b { color: var(--accent); }
+
+  .session-list {
+    flex: 1; overflow-y: auto; padding: 4px 8px 16px;
+  }
+  .session-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--muted); padding: 12px 8px 6px;
+  }
+  .session-item {
+    padding: 7px 10px; border-radius: 7px; cursor: pointer;
+    color: var(--text-dim); font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: flex; align-items: center; gap: 6px;
+    transition: background .12s, color .12s;
+    position: relative;
+  }
+  .session-item:hover { background: var(--hover); color: var(--text); }
+  .session-item.active { background: #1f2840; color: var(--text); }
+  .session-item .session-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  .session-item .del {
+    visibility: hidden; opacity: 0;
+    background: transparent; border: 0; color: var(--muted);
+    cursor: pointer; padding: 2px 4px; border-radius: 4px;
+    transition: opacity .12s, color .12s;
+  }
+  .session-item:hover .del { visibility: visible; opacity: 1; }
+  .session-item .del:hover { color: var(--err); background: rgba(239,111,108,.12); }
+
+  /* ============================== main ============================== */
+  main {
+    display: grid;
+    grid-template-rows: 48px 1fr auto;
+    min-height: 0; overflow: hidden;
+  }
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .topbar .sess-title { flex: 1; font-weight: 500; font-size: 14px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    font-size: 12px; color: var(--text-dim);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background .2s; }
+  .dot.ok   { background: var(--ok); box-shadow: 0 0 6px rgba(102,210,154,.45); }
+  .dot.warn { background: var(--warn); }
+  .dot.err  { background: var(--err); }
+  .dot.run  { background: var(--accent); animation: pulse 1.4s infinite; }
+  @keyframes pulse {
+    0%{box-shadow:0 0 0 0 rgba(124,156,255,.55);}
+    70%{box-shadow:0 0 0 8px rgba(124,156,255,0);}
+    100%{box-shadow:0 0 0 0 rgba(124,156,255,0);}
+  }
+
+  .chat-area {
+    overflow-y: auto;
+    padding: 24px 0 40px;
+    min-height: 0;
+  }
+  .chat-inner {
+    max-width: 780px; margin: 0 auto; padding: 0 24px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .welcome {
+    text-align: center; padding: 80px 20px;
+    color: var(--text-dim);
+  }
+  .welcome h1 {
+    font-size: 22px; font-weight: 600; margin: 0 0 8px; color: var(--text);
+  }
+  .welcome p { margin: 4px 0; font-size: 13.5px; }
+  .welcome .examples {
+    margin-top: 28px; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 10px; max-width: 720px; margin-left: auto; margin-right: auto;
+  }
+  .welcome .ex {
+    text-align: left; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; cursor: pointer;
+    color: var(--text-dim); font-size: 13px;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .welcome .ex:hover { background: var(--hover); border-color: #354060; color: var(--text); }
+  .welcome .ex strong { display: block; color: var(--text); margin-bottom: 4px; font-weight: 600; font-size: 13.5px; }
+
+  .msg { display: flex; max-width: 100%; }
+  .msg.user { justify-content: flex-end; }
+  .msg.asst, .msg.tool, .msg.done, .msg.err { justify-content: flex-start; }
+
+  .bubble {
+    max-width: 88%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    font-size: 13.5px;
+    line-height: 1.55;
+  }
+  .msg.user .bubble {
+    background: var(--user-bubble);
+    border: 1px solid #2c3a55;
+    border-top-right-radius: 4px;
+  }
+  .msg.asst .bubble {
+    background: var(--asst-bubble);
+    border: 1px solid var(--border);
+    border-top-left-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .msg.asst .bubble.collapsed {
+    max-height: 160px; overflow: hidden; position: relative;
+  }
+  .msg.asst .bubble.collapsed::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 60px;
+    background: linear-gradient(180deg, transparent, var(--asst-bubble));
+    pointer-events: none;
+  }
+  .msg.asst .toggle {
+    margin-top: 4px; font-size: 11px; color: var(--accent); cursor: pointer;
+    align-self: flex-start;
+  }
+  .msg.asst {
+    flex-direction: column; align-items: flex-start; gap: 2px;
+  }
+
+  .tool-row {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 999px;
+    background: var(--tool-bubble); border: 1px solid #233351;
+    font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+  }
+  .tool-row .tag {
+    color: var(--accent); font-weight: 600;
+  }
+  .tool-row .arrow { color: var(--muted); }
+  .tool-row .result { color: var(--text-dim); }
+  .tool-row .result.err { color: var(--err); }
+
+  .done-row {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 10px;
+    background: linear-gradient(180deg, #143025, #0e2419);
+    border: 1px solid #245a3c; color: var(--ok);
+    font-size: 13px;
+  }
+  .err-row {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 10px;
+    background: #2a1518; border: 1px solid #5a2c30; color: var(--err);
+    font-family: var(--mono); font-size: 12.5px;
+  }
+
+  .turn-divider {
+    color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+    padding: 18px 0 2px;
+  }
+
+  /* ============================== composer ============================== */
+  .composer-wrap {
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+    padding: 12px 24px 16px;
+  }
+  .composer {
+    max-width: 780px; margin: 0 auto;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 10px 12px 12px;
+    transition: border-color .15s;
+  }
+  .composer:focus-within { border-color: #3b4a72; }
+  .composer textarea {
+    width: 100%; min-height: 44px; max-height: 220px;
+    background: transparent; border: 0; color: var(--text);
+    font-family: inherit; font-size: 14px; line-height: 1.55;
+    resize: none; outline: none; padding: 6px 4px;
+  }
+  .composer textarea::placeholder { color: var(--muted); }
+
+  .composer-bar {
+    display: flex; align-items: center; gap: 8px; margin-top: 4px;
+  }
+  .composer-bar .hint {
+    font-size: 11px; color: var(--muted);
+  }
+  .send-btn {
+    margin-left: auto;
+    background: var(--accent-2); color: white; border: 0;
+    padding: 7px 16px; border-radius: 999px; cursor: pointer;
+    font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;
+    transition: background .15s, opacity .15s;
+  }
+  .send-btn:hover:not(:disabled) { background: var(--accent); }
+  .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .send-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.4; }
+  .stop-btn {
+    background: #3a1f23; color: var(--err); border: 1px solid #5a2c30;
+    padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 12px;
+  }
+  .stop-btn:hover { background: #4a2228; }
+
+  /* hide collapse toggle on mobile, simpler */
+  @media (max-width: 720px) {
+    aside { position: absolute; z-index: 10; height: 100%; }
+    body.sidebar-collapsed aside { display: none; }
+  }
+</style>
+</head>
+<body>
+<aside id="aside">
+  <div class="sidebar-head">
+    <button class="btn-icon" id="toggle-sidebar" title="折叠侧边栏">
+      <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <div class="brand-row">
+      <div class="logo">C</div>
+      <div class="brand-name">Codey</div>
+    </div>
+  </div>
+  <button class="new-chat-btn" id="btn-new">
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+    新对话
+  </button>
+  <div class="project-box">
+    <div class="label">
+      当前项目
+      <span class="hint" id="project-hint">（留空＝纯聊天）</span>
+    </div>
+    <input type="text" id="project" placeholder="E:\my-project" spellcheck="false" />
+    <div class="mode-tag" id="mode-tag">模式：<b>纯聊天</b> — 只跟 DeepSeek 对话，不动文件</div>
+  </div>
+  <div class="session-list" id="session-list">
+    <div class="session-label">最近对话</div>
+  </div>
+</aside>
+
+<main>
+  <div class="topbar">
+    <button class="btn-icon" id="show-sidebar" title="展开侧边栏" style="display:none">
+      <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+    <div class="sess-title" id="sess-title">新对话</div>
+    <div class="status-pill" title="DeepSeek 连接状态">
+      <span class="dot" id="dot"></span>
+      <span id="status">未连接</span>
+    </div>
+  </div>
+
+  <div class="chat-area" id="chat-area">
+    <div class="chat-inner" id="chat"></div>
+  </div>
+
+  <div class="composer-wrap">
+    <div class="composer">
+      <textarea id="task" placeholder="给 Codey 发消息…  (Ctrl+回车 发送)" rows="1"></textarea>
+      <div class="composer-bar">
+        <span class="hint" id="composer-hint">纯聊天模式</span>
+        <button class="stop-btn" id="stop" style="display:none; margin-left:auto">停止</button>
+        <button class="send-btn" id="send" disabled>
+          发送
+          <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="currentColor"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ============================ state & storage ============================
+const $ = (id) => document.getElementById(id);
+const LS_SESSIONS = 'codey:sessions';
+const LS_ACTIVE   = 'codey:active';
+const LS_PROJECT  = 'codey:project';
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
+function loadSessions() {
+  try { return JSON.parse(localStorage.getItem(LS_SESSIONS) || '[]'); } catch { return []; }
+}
+function saveSessions(arr) { localStorage.setItem(LS_SESSIONS, JSON.stringify(arr)); }
+
+let sessions = loadSessions();
+let activeId = localStorage.getItem(LS_ACTIVE) || '';
+if (!sessions.length) {
+  const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now() };
+  sessions = [s]; activeId = s.id; saveSessions(sessions);
+  localStorage.setItem(LS_ACTIVE, activeId);
+}
+if (!sessions.find(s => s.id === activeId)) {
+  activeId = sessions[0].id; localStorage.setItem(LS_ACTIVE, activeId);
+}
+
+$('project').value = localStorage.getItem(LS_PROJECT) || '';
+function refreshMode() {
+  const has = $('project').value.trim();
+  $('mode-tag').innerHTML = has
+    ? '模式：<b>编程代理</b> — Codey 会在该目录读写文件'
+    : '模式：<b>纯聊天</b> — 只跟 DeepSeek 对话，不动文件';
+  $('composer-hint').textContent = has ? '编程代理模式（在 ' + has.replace(/\\/g, '/').split('/').slice(-1)[0] + '）' : '纯聊天模式';
+}
+$('project').addEventListener('input', () => {
+  localStorage.setItem(LS_PROJECT, $('project').value);
+  refreshMode();
+});
+
+// ============================ rendering ============================
+function activeSession() { return sessions.find(s => s.id === activeId); }
+function persistActive() {
+  saveSessions(sessions);
+  localStorage.setItem(LS_ACTIVE, activeId);
+}
+
+function renderSidebar() {
+  const list = $('session-list');
+  list.innerHTML = '<div class="session-label">最近对话</div>';
+  for (const s of sessions) {
+    const item = document.createElement('div');
+    item.className = 'session-item' + (s.id === activeId ? ' active' : '');
+    item.onclick = (e) => { if (e.target.tagName !== 'BUTTON') switchSession(s.id); };
+    const title = document.createElement('span');
+    title.className = 'session-title';
+    title.textContent = s.title || '未命名';
+    item.appendChild(title);
+    if (sessions.length > 1) {
+      const del = document.createElement('button');
+      del.className = 'del'; del.textContent = '×'; del.title = '删除';
+      del.onclick = (e) => { e.stopPropagation(); deleteSession(s.id); };
+      item.appendChild(del);
+    }
+    list.appendChild(item);
+  }
+}
+
+function renderChat() {
+  const s = activeSession();
+  const chat = $('chat');
+  $('sess-title').textContent = s.title || '新对话';
+
+  if (!s.messages.length) {
+    chat.innerHTML = `
+      <div class="welcome">
+        <h1>嗨，今天想做点什么？</h1>
+        <p class="muted">直接发消息和 DeepSeek 聊；在左侧填了「当前项目」之后，Codey 会自动帮你读写文件。</p>
+        <div class="examples">
+          <div class="ex" data-prompt="你好，简单介绍一下你自己。">
+            <strong>💬 打个招呼</strong>纯聊天，看看连接是否正常
+          </div>
+          <div class="ex" data-prompt="写一个完整的贪吃蛇游戏，pygame 实现，单文件 snake.py，能用 python snake.py 直接运行。">
+            <strong>🐍 生成贪吃蛇</strong>需要先填项目目录
+          </div>
+          <div class="ex" data-prompt="为这个项目写一份简洁的 README.md，介绍它是干什么的、怎么用。">
+            <strong>📝 写 README</strong>读项目内容，自动生成 README.md
+          </div>
+          <div class="ex" data-prompt="检查我的代码有没有明显 bug 或可以改进的地方，必要时直接修改。">
+            <strong>🐛 找 bug</strong>读代码、发现问题就直接改
+          </div>
+        </div>
+      </div>`;
+    chat.querySelectorAll('.ex').forEach(el => {
+      el.onclick = () => { $('task').value = el.dataset.prompt; resizeTask(); $('task').focus(); updateSend(); };
+    });
+    return;
+  }
+
+  chat.innerHTML = '';
+  for (const m of s.messages) appendMessageNode(chat, m);
+  scrollChat();
+}
+
+function appendMessageNode(chat, m) {
+  if (m.type === 'user') {
+    const div = document.createElement('div');
+    div.className = 'msg user';
+    div.innerHTML = `<div class="bubble"></div>`;
+    div.querySelector('.bubble').textContent = m.text;
+    chat.appendChild(div);
+  } else if (m.type === 'turn') {
+    const div = document.createElement('div');
+    div.className = 'turn-divider';
+    div.textContent = `— 第 ${m.n} 轮 —`;
+    chat.appendChild(div);
+  } else if (m.type === 'asst') {
+    const div = document.createElement('div');
+    div.className = 'msg asst';
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble collapsed';
+    bubble.textContent = m.text;
+    div.appendChild(bubble);
+    if (m.text.split('\n').length > 6 || m.text.length > 400) {
+      const toggle = document.createElement('div');
+      toggle.className = 'toggle'; toggle.textContent = '展开 ▾';
+      toggle.onclick = () => {
+        const collapsed = bubble.classList.toggle('collapsed');
+        toggle.textContent = collapsed ? '展开 ▾' : '收起 ▴';
+      };
+      div.appendChild(toggle);
+    } else {
+      bubble.classList.remove('collapsed');
+    }
+    chat.appendChild(div);
+  } else if (m.type === 'tool') {
+    const div = document.createElement('div');
+    div.className = 'msg tool';
+    div.innerHTML = `<div class="tool-row"><span class="tag">${m.kind}</span><span>${m.path || ''}</span><span class="arrow">→</span><span class="result ${m.error ? 'err' : ''}">${m.result}</span></div>`;
+    chat.appendChild(div);
+  } else if (m.type === 'done') {
+    const div = document.createElement('div');
+    div.className = 'msg done';
+    div.innerHTML = `<div class="done-row">✓ ${m.text || '完成'}</div>`;
+    chat.appendChild(div);
+  } else if (m.type === 'err') {
+    const div = document.createElement('div');
+    div.className = 'msg err';
+    div.innerHTML = `<div class="err-row"></div>`;
+    div.querySelector('.err-row').textContent = m.text;
+    chat.appendChild(div);
+  } else if (m.type === 'info') {
+    const div = document.createElement('div');
+    div.className = 'turn-divider';
+    div.textContent = m.text;
+    chat.appendChild(div);
+  }
+}
+
+function scrollChat() {
+  const area = $('chat-area');
+  area.scrollTop = area.scrollHeight;
+}
+
+// ============================ session ops ============================
+function switchSession(id) {
+  activeId = id; persistActive(); renderSidebar(); renderChat();
+}
+function newSession() {
+  const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now() };
+  sessions.unshift(s); activeId = s.id; persistActive(); renderSidebar(); renderChat();
+  // Also ask the backend to reset the DeepSeek tab to a fresh chat.
+  fetch('/api/new_chat', { method: 'POST' }).catch(() => {});
+}
+function deleteSession(id) {
+  if (!confirm('删除这个会话？')) return;
+  sessions = sessions.filter(s => s.id !== id);
+  if (!sessions.length) {
+    const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now() };
+    sessions = [s];
+  }
+  if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
+  persistActive(); renderSidebar(); renderChat();
+}
+
+function pushMsg(m) {
+  const s = activeSession();
+  s.messages.push(m);
+  // Update title from first user message
+  if (s.title === '新对话' && m.type === 'user' && m.text) {
+    s.title = m.text.slice(0, 28) + (m.text.length > 28 ? '…' : '');
+    renderSidebar();
+    $('sess-title').textContent = s.title;
+  }
+  persistActive();
+  appendMessageNode($('chat'), m);
+  scrollChat();
+}
+
+// ============================ SSE event ingestion ============================
+let runningSessionId = null;
+let turnCounter = 0;
+
+function setStatus(text, kind) {
+  $('status').textContent = text;
+  $('dot').className = 'dot ' + (kind || '');
+}
+
+const evtSrc = new EventSource('/api/events');
+evtSrc.onmessage = (e) => {
+  let data; try { data = JSON.parse(e.data); } catch { return; }
+  if (data.type === 'hello') {
+    setStatus(data.status === 'running' ? '运行中' : '空闲', data.status === 'running' ? 'run' : 'ok');
+    return;
+  }
+  if (data.type === 'status') {
+    setStatus(data.status === 'connecting' ? '连接 Edge…' : data.status, 'warn');
+    return;
+  }
+  // Only ingest task events that belong to the *running* session
+  // (which may differ from the currently-displayed session if the user
+  // switches around mid-run).
+  const sid = data.session_id;
+  if (data.type === 'task_start') {
+    runningSessionId = sid;
+    turnCounter = 0;
+    setStatus('运行中', 'run');
+    $('send').disabled = true;
+    $('stop').style.display = '';
+    return;
+  }
+  if (data.type === 'task_done') {
+    runningSessionId = null;
+    setStatus('已连接', 'ok');
+    $('stop').style.display = 'none';
+    updateSend();
+    const summary = (data.summary || '').toString();
+    if (summary.startsWith('ERROR:')) {
+      addToSession(sid, { type: 'err', text: summary });
+    } else if (summary) {
+      addToSession(sid, { type: 'done', text: summary });
+    }
+    return;
+  }
+  if (data.type === 'reply') {
+    // Pure-chat mode: a single assistant message (not wrapped in an agent turn).
+    if (data.text) addToSession(sid, { type: 'asst', text: data.text });
+    return;
+  }
+  if (data.type === 'log') {
+    handleLog(sid, data.text || '');
+    return;
+  }
+};
+evtSrc.onerror = () => setStatus('连接断开', 'err');
+
+function addToSession(sid, m) {
+  const s = sessions.find(x => x.id === sid);
+  if (!s) return;
+  s.messages.push(m);
+  persistActive();
+  if (sid === activeId) { appendMessageNode($('chat'), m); scrollChat(); }
+}
+
+function handleLog(sid, line) {
+  if (!line) return;
+  // "--- turn N reply ---" → turn divider, then capture the body
+  const turnMatch = line.match(/^\s*--- turn (\d+) reply.*?---\s*\n([\s\S]*)$/);
+  if (turnMatch) {
+    const n = parseInt(turnMatch[1], 10);
+    addToSession(sid, { type: 'turn', n });
+    const body = turnMatch[2].trim();
+    if (body) addToSession(sid, { type: 'asst', text: body });
+    return;
+  }
+  // "  · write hello.py -> wrote hello.py (24 chars)"
+  const toolMatch = line.match(/^\s*·\s+(\w+)\s+(\S*)\s*->\s*(.*)$/);
+  if (toolMatch) {
+    const [, kind, path, result] = toolMatch;
+    addToSession(sid, { type: 'tool', kind, path, result: result.slice(0, 200), error: /^ERROR/.test(result) });
+    return;
+  }
+  if (line.startsWith('[agent] DONE')) return; // task_done covers this
+  if (line.startsWith('ERROR') || line.includes('Traceback')) {
+    addToSession(sid, { type: 'err', text: line }); return;
+  }
+  // Silent agent housekeeping lines (opening chat, etc.) are shown faintly.
+  if (line.startsWith('[agent]') || line.startsWith('[codey]')) {
+    addToSession(sid, { type: 'info', text: line }); return;
+  }
+}
+
+// ============================ composer ============================
+function resizeTask() {
+  const t = $('task');
+  t.style.height = 'auto';
+  t.style.height = Math.min(220, Math.max(44, t.scrollHeight)) + 'px';
+}
+function updateSend() {
+  const has = $('task').value.trim();
+  $('send').disabled = !has || runningSessionId;
+}
+$('task').addEventListener('input', () => { resizeTask(); updateSend(); });
+$('project').addEventListener('input', updateSend);
+$('task').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    if (!$('send').disabled) $('send').click();
+  }
+});
+
+$('send').onclick = async () => {
+  const project = $('project').value.trim();
+  const task = $('task').value.trim();
+  if (!task) return;
+  pushMsg({ type: 'user', text: task });
+  $('task').value = ''; resizeTask(); updateSend();
+  const r = await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: activeId, project, task }),
+  });
+  if (r.status === 409) { alert('已经有任务在运行了'); return; }
+  if (!r.ok) { alert('启动失败: HTTP ' + r.status); return; }
+};
+$('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
+$('btn-new').onclick = newSession;
+$('toggle-sidebar').onclick = () => {
+  document.body.classList.add('sidebar-collapsed');
+  $('show-sidebar').style.display = '';
+};
+$('show-sidebar').onclick = () => {
+  document.body.classList.remove('sidebar-collapsed');
+  $('show-sidebar').style.display = 'none';
+};
+
+// ============================ boot ============================
+renderSidebar();
+renderChat();
+resizeTask();
+updateSend();
+refreshMode();
+</script>
+</body>
+</html>
