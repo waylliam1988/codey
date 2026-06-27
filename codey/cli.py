@@ -1,7 +1,7 @@
 """Codey entry point.
 
-    python -m codey            launch the web UI (default)
-    python -m codey ui         same as above, but with --port/--no-browser
+    python -m codey            launch the native UI (default)
+    python -m codey ui         same as above, with --port
     python -m codey chat ...   single-shot prompt, prints reply
     python -m codey agent ...  agent loop without UI (CLI mode)
 """
@@ -23,7 +23,7 @@ def _safe_print(value, *, file=sys.stdout) -> None:
 def cmd_ui(args: argparse.Namespace) -> int:
     from codey.server import serve
 
-    serve(host="127.0.0.1", port=args.port, open_in_browser=not args.no_browser)
+    serve(host="127.0.0.1", port=args.port)
     return 0
 
 
@@ -77,9 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="codey")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    sp_ui = sub.add_parser("ui", help="launch the web UI (default)")
+    sp_ui = sub.add_parser("ui", help="launch the native UI (default)")
     sp_ui.add_argument("--port", type=int, default=5173)
-    sp_ui.add_argument("--no-browser", action="store_true")
     sp_ui.set_defaults(func=cmd_ui)
 
     sp_chat = sub.add_parser("chat", help="single-shot prompt")

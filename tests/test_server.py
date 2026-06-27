@@ -150,5 +150,29 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.provider_id, "qwen")
 
 
+class UiLaunchTests(unittest.TestCase):
+    def test_serve_launches_pywebview_window(self) -> None:
+        fake_webview = mock.Mock()
+
+        with (
+            mock.patch.dict("sys.modules", {"webview": fake_webview}),
+            mock.patch.object(server, "ThreadingHTTPServer") as httpd_cls,
+        ):
+            httpd = mock.Mock()
+            httpd.server_address = ("127.0.0.1", 43210)
+            httpd_cls.return_value = httpd
+
+            def stop_server() -> None:
+                raise KeyboardInterrupt
+
+            httpd.serve_forever.side_effect = stop_server
+
+            server.serve(port=0)
+
+        fake_webview.create_window.assert_called_once()
+        fake_webview.start.assert_called_once()
+        httpd.shutdown.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()

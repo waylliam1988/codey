@@ -1,6 +1,7 @@
-"""Tiny HTTP + SSE server that drives the agent from a browser UI.
+"""Tiny HTTP + SSE server that drives the agent from a native UI.
 
-No external deps — just the standard library plus Playwright (already used).
+Requires pywebview in addition to the standard library plus Playwright
+(already used).
 
 Endpoints
     GET  /                serves codey/web/index.html
@@ -26,7 +27,6 @@ import subprocess
 import threading
 import time
 import uuid
-import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -651,14 +651,29 @@ class Handler(BaseHTTPRequestHandler):
             STATE.unsubscribe(q)
 
 
-def serve(host: str = "127.0.0.1", port: int = 5173, open_in_browser: bool = True) -> None:
+def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
     httpd = ThreadingHTTPServer((host, port), Handler)
-    url = f"http://{host}:{port}/"
+    actual_port = httpd.server_address[1]
+    url = f"http://{host}:{actual_port}/"
     print(f"[codey] UI ready: {url}")
-    if open_in_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+
+    def _run_httpd() -> None:
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+
+    threading.Thread(target=_run_httpd, daemon=True).start()
+
+    def _run_webview() -> None:
+        import webview
+
+        webview.create_window("Codey", url, width=1380, height=900)
+        webview.start()
+
     try:
-        httpd.serve_forever()
+        _run_webview()
     except KeyboardInterrupt:
         print("\n[codey] shutting down")
+    finally:
         httpd.shutdown()
