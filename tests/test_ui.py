@@ -19,10 +19,22 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".dot.ok", HTML)
         self.assertIn(".provider-item.active .check", HTML)
 
+    def test_provider_selector_orders_deepseek_mimo_qwen(self) -> None:
+        deepseek = HTML.index('data-provider="deepseek"')
+        mimo = HTML.index('data-provider="mimo"')
+        qwen = HTML.index('data-provider="qwen"')
+
+        self.assertLess(deepseek, mimo)
+        self.assertLess(mimo, qwen)
+
     def test_run_and_continue_requests_keep_session_provider(self) -> None:
         self.assertIn("provider: currentProviderId()", HTML)
         self.assertIn("provider: s.provider || DEFAULT_PROVIDER", HTML)
         self.assertIn("provider: PROVIDERS.includes(s.provider)", HTML)
+
+    def test_provider_selector_is_enabled_when_idle(self) -> None:
+        self.assertIn("$('provider-button').disabled = running", HTML)
+        self.assertIn("$('provider-button').disabled = false", HTML)
 
     def test_deleting_last_session_preserves_selected_provider(self) -> None:
         self.assertIn("const fallbackProvider = currentProviderId()", HTML)

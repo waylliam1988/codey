@@ -106,6 +106,9 @@ class MimoWebProviderTests(unittest.TestCase):
 
 
 class ProviderRegistryTests(unittest.TestCase):
+    def test_provider_ids_are_ordered_for_ui(self) -> None:
+        self.assertEqual(registry.provider_ids(), ("deepseek", "mimo", "qwen"))
+
     def test_connect_provider_dispatches_supported_ids(self) -> None:
         deepseek = object()
         qwen = object()

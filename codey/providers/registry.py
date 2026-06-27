@@ -11,8 +11,8 @@ from codey.providers.qwen_web import QwenWebProvider
 DEFAULT_PROVIDER_ID = "deepseek"
 PROVIDER_LABELS = {
     "deepseek": "DeepSeek",
-    "qwen": "Qwen",
     "mimo": "MiMo",
+    "qwen": "Qwen",
 }
 
 

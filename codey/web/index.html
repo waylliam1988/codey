@@ -710,14 +710,14 @@
               <span class="label">DeepSeek</span>
               <span class="check">✓</span>
             </button>
-            <button class="provider-item" data-provider="qwen">
-              <span class="dot ok" aria-hidden="true"></span>
-              <span class="label">Qwen</span>
-              <span class="check">✓</span>
-            </button>
             <button class="provider-item" data-provider="mimo">
               <span class="dot ok" aria-hidden="true"></span>
               <span class="label">MiMo</span>
+              <span class="check">✓</span>
+            </button>
+            <button class="provider-item" data-provider="qwen">
+              <span class="dot ok" aria-hidden="true"></span>
+              <span class="label">Qwen</span>
               <span class="check">✓</span>
             </button>
           </div>
@@ -771,7 +771,7 @@ const LS_ACTIVE   = 'codey:active';
 const LS_PROJECTS = 'codey:projects';
 const LS_LEGACY_PROJECT = 'codey:project';
 const DEFAULT_PROVIDER = 'deepseek';
-const PROVIDERS = ['deepseek', 'qwen', 'mimo'];
+const PROVIDERS = ['deepseek', 'mimo', 'qwen'];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function loadJson(key, fallback) {
@@ -1401,7 +1401,10 @@ const evtSrc = new EventSource('/api/events');
 evtSrc.onmessage = (e) => {
   let data; try { data = JSON.parse(e.data); } catch { return; }
   if (data.type === 'hello') {
-    setStatus(data.status === 'running' ? 'Running' : '', data.status === 'running' ? 'run' : 'ok');
+    const running = data.status === 'running';
+    setStatus(running ? 'Running' : '', running ? 'run' : 'ok');
+    $('provider-button').disabled = running;
+    updateSend();
     return;
   }
   if (data.type === 'status') {
@@ -1843,6 +1846,7 @@ renderChat();
 resizeTask();
 updateSend();
 syncProviderUI(currentProviderId());
+$('provider-button').disabled = false;
 setStatus('', 'ok');
 </script>
 </body>
