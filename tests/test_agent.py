@@ -89,6 +89,24 @@ updated
         self.assertIsNotNone(control)
         self.assertEqual(control.kind, "done")
 
+    def test_parse_run_action(self) -> None:
+        text = """```text
+# === codey: run path=. ===
+python -m unittest
+```
+
+```text
+# === codey: continue ===
+need test output
+```"""
+        actions, control = agent.parse_reply(text)
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].kind, "run")
+        self.assertEqual(actions[0].body, "python -m unittest")
+        self.assertIsNotNone(control)
+        self.assertEqual(control.kind, "continue")
+
 
 class ToolTests(unittest.TestCase):
     def test_safe_join_blocks_parent_escape(self) -> None:
@@ -189,6 +207,27 @@ replacement
                 agent.tool_edit(root, "app.py", body),
                 "ERROR: SEARCH text not found in app.py",
             )
+
+    def test_run_allows_py_compile(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "ok.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            output = agent.tool_run(root, ".", "python -m py_compile ok.py")
+
+            self.assertIn("exit 0: python -m py_compile ok.py", output)
+
+    def test_run_rejects_dangerous_shell_syntax(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            output = agent.tool_run(Path(td), ".", "python -m unittest && rm -rf .")
+
+            self.assertEqual(output, "ERROR: command not allowed: python -m unittest && rm -rf .")
+
+    def test_run_rejects_non_allowlisted_command(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            output = agent.tool_run(Path(td), ".", "git status")
+
+            self.assertEqual(output, "ERROR: command not allowed: git status")
 
 
 class ProjectInstructionTests(unittest.TestCase):

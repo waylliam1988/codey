@@ -30,6 +30,9 @@ Protocol (we instruct the model up front):
     # === codey: search path=. ===
     login handler
 
+    # === codey: run path=. ===
+    python -m unittest
+
     # === codey: done ===
     <one-line summary>
 
@@ -43,6 +46,8 @@ anything (python, text, js, …); only the marker matters.
 from __future__ import annotations
 
 import re
+import shlex
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -70,6 +75,10 @@ SEARCH_EXCLUDED_DIRS = {
 }
 SEARCH_MAX_RESULTS = 80
 SEARCH_MAX_FILE_BYTES = 512 * 1024
+RUN_TIMEOUT_SECONDS = 90
+RUN_OUTPUT_LIMIT = 24_000
+RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
+RUN_ALLOWED_NPM_SCRIPTS = {"test", "build", "lint", "check", "typecheck"}
 EDIT_BLOCK_RE = re.compile(
     r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
     re.DOTALL,
@@ -82,7 +91,8 @@ MARKER_RE = re.compile(
 
 SYSTEM_PROMPT = """\
 You are Codey, a careful local coding agent.  You can read, list, search,
-edit and write files in the user's project.  You CANNOT run shell commands.
+edit and write files in the user's project.  You can run a small allowlist of
+test/build commands, but you CANNOT run arbitrary shell commands.
 
 OUTPUT PROTOCOL — every reply MUST follow this exactly.
 
@@ -95,7 +105,7 @@ The remaining lines of the block are the action's payload.  The fence
 language (after the opening ```) is ignored — use whatever makes the code
 look nice (python, text, js, etc.).
 
-You may emit ZERO OR MORE action blocks (write/edit/read/ls/search) then
+You may emit ZERO OR MORE action blocks (write/edit/read/ls/search/run) then
 EXACTLY ONE control block (done OR continue) at the end.
 
 Actions:
@@ -127,6 +137,11 @@ Actions:
   login handler
   ```
 
+  ```text
+  # === codey: run path=. ===
+  python -m unittest
+  ```
+
 Control (exactly one, last):
 
   ```text
@@ -147,6 +162,9 @@ Rules:
   - Prefer `edit` over `write` for small changes to existing files.  Use
     `write` for new files or when replacing a whole file is genuinely clearer.
   - Every `edit` SEARCH section must be copied exactly from content you read.
+  - Use `run` only for tests/builds/checks such as `python -m unittest`,
+    `python -m pytest`, `npm test`, `npm run build`, `go test ./...`,
+    `cargo test`, or similar allowed verification commands.
   - Never invent file contents you have not been shown.  Use `read` first.
   - Keep replies focused.  Plain commentary outside fenced blocks is fine
     for short explanations but the agent only acts on the marker blocks.
@@ -155,8 +173,8 @@ CRITICAL — when to use `done` vs `continue`:
   - `done` ends the entire task.  Only use it when the user's request is
     FULLY satisfied (all needed files written / verified).
   - `continue` means "I need another turn".  Use it whenever your reply
-    contains a `read`, `ls` or `search` action — the results arrive in the
-    next turn and you will likely need to act on them.
+    contains a `read`, `ls`, `search` or `run` action — the results arrive in
+    the next turn and you will likely need to act on them.
   - A typical fix-a-bug flow takes TWO turns:
       turn 1:  read + continue            (asks to see the file)
       turn 2:  write + done               (writes the fixed file)
@@ -167,7 +185,7 @@ CRITICAL — when to use `done` vs `continue`:
 
 @dataclass
 class Action:
-    kind: str          # "write" | "edit" | "read" | "ls" | "search"
+    kind: str          # "write" | "edit" | "read" | "ls" | "search" | "run"
     path: str | None
     body: str
 
@@ -207,7 +225,7 @@ def parse_reply(text: str) -> tuple[list[Action], Control | None]:
             continue
         kind = mm.group(1).lower()
         path = mm.group(2)
-        if kind in ("write", "edit", "read", "ls", "search"):
+        if kind in ("write", "edit", "read", "ls", "search", "run"):
             actions.append(Action(kind=kind, path=path, body=rest))
         elif kind in ("done", "continue"):
             control = Control(kind=kind, body=rest.strip())
@@ -389,6 +407,83 @@ def tool_search(
     return "\n".join(matches)
 
 
+def _command_has_forbidden_tokens(argv: list[str]) -> bool:
+    return any(token in arg for arg in argv for token in RUN_FORBIDDEN_TOKENS)
+
+
+def _is_allowed_run_command(argv: list[str]) -> bool:
+    if not argv:
+        return False
+    exe = Path(argv[0]).name.lower()
+    if exe in {"python", "python.exe", "py", "py.exe"}:
+        if len(argv) >= 3 and argv[1] == "-m" and argv[2] in {"unittest", "pytest", "py_compile"}:
+            return True
+        if len(argv) >= 2 and argv[1].endswith(".py"):
+            return True
+        return False
+    if exe in {"pytest", "pytest.exe"}:
+        return True
+    if exe in {"npm", "npm.cmd", "npm.exe"}:
+        return len(argv) >= 2 and (
+            argv[1] in RUN_ALLOWED_NPM_SCRIPTS
+            or (len(argv) >= 3 and argv[1] == "run" and argv[2] in RUN_ALLOWED_NPM_SCRIPTS)
+        )
+    if exe in {"pnpm", "pnpm.cmd", "pnpm.exe", "yarn", "yarn.cmd", "yarn.exe"}:
+        return len(argv) >= 2 and (
+            argv[1] in RUN_ALLOWED_NPM_SCRIPTS
+            or (len(argv) >= 3 and argv[1] == "run" and argv[2] in RUN_ALLOWED_NPM_SCRIPTS)
+        )
+    if exe in {"go", "go.exe"}:
+        return len(argv) >= 2 and argv[1] in {"test", "build", "vet"}
+    if exe in {"cargo", "cargo.exe"}:
+        return len(argv) >= 2 and argv[1] in {"test", "build", "check"}
+    if exe in {"dotnet", "dotnet.exe"}:
+        return len(argv) >= 2 and argv[1] in {"test", "build"}
+    return False
+
+
+def tool_run(root: Path, rel: str, command: str) -> str:
+    command = command.strip()
+    if not command:
+        return "ERROR: command required"
+    try:
+        argv = shlex.split(command)
+    except ValueError as exc:
+        return f"ERROR: invalid command: {exc}"
+    if _command_has_forbidden_tokens(argv) or not _is_allowed_run_command(argv):
+        return f"ERROR: command not allowed: {command}"
+    cwd = _safe_join(root, rel or ".")
+    if not cwd.is_dir():
+        return f"ERROR: not a directory: {rel}"
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=RUN_TIMEOUT_SECONDS,
+            shell=False,
+            check=False,
+        )
+    except FileNotFoundError:
+        return f"ERROR: command not found: {argv[0]}"
+    except subprocess.TimeoutExpired:
+        return f"ERROR: command timed out after {RUN_TIMEOUT_SECONDS}s: {command}"
+
+    output_parts = []
+    if proc.stdout:
+        output_parts.append(proc.stdout.rstrip())
+    if proc.stderr:
+        output_parts.append("[stderr]\n" + proc.stderr.rstrip())
+    output = "\n\n".join(output_parts) or "(no output)"
+    truncated = len(output) > RUN_OUTPUT_LIMIT
+    if truncated:
+        output = output[:RUN_OUTPUT_LIMIT].rstrip() + "\n\n... output truncated by Codey"
+    return f"exit {proc.returncode}: {command}\n{output}"
+
+
 def load_project_instructions(
     root: Path,
     *,
@@ -509,13 +604,15 @@ def run(
                     out = tool_ls(project, a.path or ".")
                 elif a.kind == "search":
                     out = tool_search(project, a.path or ".", a.body)
+                elif a.kind == "run":
+                    out = tool_run(project, a.path or ".", a.body)
                 else:
                     out = f"ERROR: malformed action {a.kind} (path={a.path})"
             except Exception as exc:
                 out = f"ERROR: {exc}"
             on_event(f"  · {a.kind} {a.path or ''} -> {out.splitlines()[0][:80]}")
             results.append((a, out))
-            if a.kind in ("read", "ls", "search") and not out.startswith("ERROR:"):
+            if a.kind in ("read", "ls", "search", "run") and not out.startswith("ERROR:"):
                 sig = (a.kind, a.path or ".", out)
                 if sig not in seen_info:
                     seen_info.add(sig)
@@ -544,9 +641,9 @@ def run(
         if control.kind == "done":
             # Safety net: if the model said `done` but also asked for info,
             # treat it as `continue` — it almost certainly needs the result.
-            needs_followup = any(a.kind in ("read", "ls", "search") for a in actions)
+            needs_followup = any(a.kind in ("read", "ls", "search", "run") for a in actions)
             if needs_followup:
-                on_event("[agent] `done` came with read/ls — treating as continue.")
+                on_event("[agent] `done` came with info action — treating as continue.")
             else:
                 on_event(f"[agent] DONE: {control.body}")
                 return RunResult(control.body, "done", turn)
