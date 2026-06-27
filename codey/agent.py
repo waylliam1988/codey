@@ -42,6 +42,8 @@ from codey.deepseek import chat, new_chat
 
 DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
+PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
+MAX_PROJECT_INSTRUCTION_CHARS = 12000
 
 MARKER_RE = re.compile(
     r"^[#/\-\s]*===\s*codey\s*:\s*(\w+)(?:\s+path\s*=\s*([^\s=]+))?\s*===\s*$",
@@ -127,6 +129,13 @@ class Control:
     body: str
 
 
+@dataclass(frozen=True)
+class ProjectInstruction:
+    name: str
+    content: str
+    truncated: bool = False
+
+
 BLOCK_RE = re.compile(r"^```[^\n]*\n(.*?)\n?```", re.MULTILINE | re.DOTALL)
 
 
@@ -197,6 +206,37 @@ def tool_ls(root: Path, rel: str) -> str:
     return "\n".join(lines) if lines else "(empty)"
 
 
+def load_project_instructions(
+    root: Path,
+    *,
+    max_chars: int = MAX_PROJECT_INSTRUCTION_CHARS,
+) -> list[ProjectInstruction]:
+    docs: list[ProjectInstruction] = []
+    for name in PROJECT_INSTRUCTION_FILES:
+        path = _safe_join(root, name)
+        if not path.is_file():
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        truncated = len(content) > max_chars
+        if truncated:
+            content = content[:max_chars].rstrip() + "\n\n[truncated by Codey]"
+        docs.append(ProjectInstruction(name=name, content=content, truncated=truncated))
+    return docs
+
+
+def format_project_instructions(docs: list[ProjectInstruction]) -> str:
+    if not docs:
+        return "(no AGENTS.md or CLAUDE.md found)"
+    chunks = []
+    for doc in docs:
+        label = f"{doc.name} (truncated)" if doc.truncated else doc.name
+        chunks.append(f"--- {label} ---\n{doc.content}")
+    return "\n\n".join(chunks)
+
+
 # ----------------------------------------------------------------- loop ---
 
 @dataclass
@@ -247,9 +287,15 @@ def run(
         except Exception as exc:
             on_event(f"[agent] could not open new chat: {exc}; reusing current tab")
 
+    project_instructions = load_project_instructions(project)
+    if project_instructions:
+        names = ", ".join(doc.name for doc in project_instructions)
+        on_event(f"[agent] loaded project instructions: {names}")
+
     intro = (
         f"{SYSTEM_PROMPT}\n\n"
         f"Project root: {project}\n"
+        f"Project instructions:\n{format_project_instructions(project_instructions)}\n\n"
         f"Initial listing:\n{tool_ls(project, '.')}\n\n"
         f"User task:\n{user_task}"
     )

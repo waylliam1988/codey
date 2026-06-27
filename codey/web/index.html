@@ -998,6 +998,11 @@ function handleLog(sid, line) {
     return;
   }
   if (line.startsWith('[agent] DONE')) return; // task_done covers this
+  if (line.startsWith('[agent] loaded project instructions:')) {
+    const names = line.replace('[agent] loaded project instructions:', '').trim();
+    addToSession(sid, { type: 'info', text: names ? `已读取项目说明：${names}` : '已读取项目说明' });
+    return;
+  }
   if (line.startsWith('ERROR') || line.includes('Traceback')) {
     addToSession(sid, { type: 'err', text: line }); return;
   }
