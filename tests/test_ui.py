@@ -22,6 +22,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("const fallbackProvider = currentProviderId()", HTML)
         self.assertIn("provider: fallbackProvider", HTML)
 
+    def test_task_strip_renders_status_and_actions(self) -> None:
+        self.assertIn("function renderTaskStrip(", HTML)
+        self.assertIn('id="task-strip"', HTML)
+        self.assertIn('class="status-card"', HTML)
+        self.assertIn("重试上一任务", HTML)
+        self.assertIn("继续此任务", HTML)
+        self.assertIn("task-strip", HTML)
+
 
 if __name__ == "__main__":
     unittest.main()

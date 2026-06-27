@@ -323,6 +323,27 @@
     border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 12px;
   }
   .changes-btn:hover { background: #25314a; border-color: #40537f; color: var(--text); }
+  .task-strip {
+    padding: 10px 18px 0;
+    min-height: 40px;
+  }
+  .status-card {
+    display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 12px; border-radius: 10px;
+    background: #171d28; border: 1px solid var(--border); color: var(--text-dim);
+    font-size: 13px;
+  }
+  .status-card strong { color: var(--text); font-weight: 500; }
+  .status-chip {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
+    color: var(--muted); background: #11161f;
+  }
+  .status-chip.run { color: #95c7ff; border-color: #314462; background: #132033; }
+  .status-chip.pause { color: #d9d5ff; border-color: #3e3f66; background: #161829; }
+  .status-chip.limit { color: #ffd48a; border-color: #665027; background: #241d10; }
+  .status-chip.err { color: #ff9da1; border-color: #5a2c30; background: #2a1518; }
+  .status-chip.ok { color: #9ce7bc; border-color: #245a3c; background: #12231a; }
   .shell-card {
     max-width: 88%;
     padding: 10px 12px; border-radius: 10px;
@@ -367,6 +388,12 @@
   }
   .continue-btn:hover:not(:disabled) { background: #3a2d18; border-color: #846731; }
   .continue-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .retry-btn {
+    border: 1px solid #5a4a71; background: #211c2d; color: #d8c8ff;
+    border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 12px;
+  }
+  .retry-btn:hover:not(:disabled) { background: #2b2440; border-color: #7660a2; }
+  .retry-btn:disabled { opacity: .45; cursor: not-allowed; }
   .err-row {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 8px 14px; border-radius: 10px;
@@ -543,6 +570,8 @@
     </div>
   </div>
 
+  <div class="task-strip" id="task-strip"></div>
+
   <div class="chat-area" id="chat-area">
     <div class="chat-inner" id="chat"></div>
   </div>
@@ -666,6 +695,23 @@ function persistActive() {
 function updateContextText() {
   const p = activeProject();
   $('composer-hint').textContent = p ? `项目：${p.name}` : '纯聊天模式';
+}
+
+function renderTaskStrip({ project = '', provider = '', status = '', note = '', actionText = '', actionId = '', actionKind = '' }) {
+  const parts = [];
+  if (project) parts.push(`<span class="status-chip ok">${escapeHtml(project)}</span>`);
+  if (provider) parts.push(`<span class="status-chip">${escapeHtml(provider)}</span>`);
+  if (status) parts.push(`<span class="status-chip ${escapeHtml(status)}">${escapeHtml(status)}</span>`);
+  if (note) parts.push(`<span>${escapeHtml(note)}</span>`);
+  if (actionText && actionId) {
+    const cls = actionKind === 'retry' ? 'retry-btn' : 'continue-btn';
+    parts.push(`<button class="${cls}" data-action-id="${escapeHtml(actionId)}">${escapeHtml(actionText)}</button>`);
+  }
+  $('task-strip').innerHTML = parts.length ? `<div class="status-card">${parts.join('')}</div>` : '';
+}
+
+function clearTaskStrip() {
+  $('task-strip').innerHTML = '';
 }
 
 function renderSidebar() {
@@ -959,14 +1005,30 @@ function appendMessageNode(chat, m) {
     div.className = 'msg pause';
     const row = document.createElement('div');
     row.className = 'pause-row';
-    row.textContent = m.text || '连续几轮没有新进展，已暂停';
+    const text = document.createElement('span');
+    text.textContent = m.text || '连续几轮没有新进展，已暂停';
+    const btn = document.createElement('button');
+    btn.className = 'continue-btn';
+    btn.textContent = '继续此任务';
+    btn.disabled = !!runningSessionId;
+    btn.onclick = () => continueTask(m.sessionId || activeId);
+    row.append(text, btn);
     div.appendChild(row);
     chat.appendChild(div);
   } else if (m.type === 'err') {
     const div = document.createElement('div');
     div.className = 'msg err';
-    div.innerHTML = `<div class="err-row"></div>`;
-    div.querySelector('.err-row').textContent = m.text;
+    const row = document.createElement('div');
+    row.className = 'err-row';
+    const text = document.createElement('span');
+    text.textContent = m.text;
+    const btn = document.createElement('button');
+    btn.className = 'retry-btn';
+    btn.textContent = '重试上一任务';
+    btn.disabled = !!runningSessionId;
+    btn.onclick = () => retryTask(m.sessionId || activeId);
+    row.append(text, btn);
+    div.appendChild(row);
     chat.appendChild(div);
   } else if (m.type === 'info') {
     const div = document.createElement('div');
@@ -1125,6 +1187,12 @@ evtSrc.onmessage = (e) => {
     $('send').disabled = true;
     $('provider-select').disabled = true;
     $('stop').style.display = '';
+    renderTaskStrip({
+      project: data.project ? pathName(data.project) : '',
+      provider: data.provider || currentProviderId(),
+      status: 'run',
+      note: data.mode === 'agent' ? '正在执行项目任务' : '正在对话',
+    });
     return;
   }
   if (data.type === 'task_done') {
@@ -1150,6 +1218,56 @@ evtSrc.onmessage = (e) => {
       // The shell approval card is emitted separately.
     } else if (summary) {
       addToSession(sid, { type: 'done', text: summary });
+    }
+    const projectName = activeProject() ? activeProject().name : '';
+    const provider = data.provider || currentProviderId();
+    if (reason === 'approval') {
+      renderTaskStrip({
+        project: projectName,
+        provider,
+        status: 'pause',
+        note: '需要命令审批',
+        actionText: '继续此任务',
+        actionId: sid,
+      });
+    } else if (reason === 'max_turns') {
+      renderTaskStrip({
+        project: projectName,
+        provider,
+        status: 'limit',
+        note: summary || '已到步数上限',
+        actionText: '继续此任务',
+        actionId: sid,
+      });
+    } else if (reason === 'no_progress') {
+      renderTaskStrip({
+        project: projectName,
+        provider,
+        status: 'pause',
+        note: '连续几轮没有新进展',
+        actionText: '继续此任务',
+        actionId: sid,
+      });
+    } else if (reason === 'error') {
+      renderTaskStrip({
+        project: projectName,
+        provider,
+        status: 'err',
+        note: summary || '启动失败',
+        actionText: '重试上一任务',
+        actionId: sid,
+        actionKind: 'retry',
+      });
+      if (summary.startsWith('ERROR:')) {
+        addToSession(sid, { type: 'err', text: summary, sessionId: sid });
+      }
+    } else {
+      renderTaskStrip({
+        project: projectName,
+        provider,
+        status: 'ok',
+        note: summary || '已完成',
+      });
     }
     if (reason !== 'error' && reason !== 'approval') maybeAddChangesSummary(sid);
     return;
@@ -1179,6 +1297,12 @@ evtSrc.onmessage = (e) => {
   if (data.type === 'reply') {
     // Pure-chat mode: a single assistant message (not wrapped in an agent turn).
     if (data.text) addToSession(sid, { type: 'asst', text: data.text });
+    renderTaskStrip({
+      project: activeProject() ? activeProject().name : '',
+      provider: data.provider || currentProviderId(),
+      status: 'ok',
+      note: '纯聊天回复已到达',
+    });
     return;
   }
   if (data.type === 'log') {
@@ -1229,6 +1353,26 @@ function handleLog(sid, line) {
     addToSession(sid, { type: 'info', text: line }); return;
   }
 }
+
+function retryTask(sessionId) {
+  const s = sessions.find(x => x.id === sessionId);
+  if (!s) return;
+  const lastUser = [...s.messages].reverse().find(m => m.type === 'user' && m.text);
+  if (!lastUser) return;
+  $('provider-select').value = s.provider || DEFAULT_PROVIDER;
+  $('task').value = lastUser.text;
+  resizeTask();
+  updateSend();
+  $('send').click();
+}
+
+$('task-strip').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-action-id]');
+  if (!btn) return;
+  const sid = btn.getAttribute('data-action-id');
+  if (btn.className.includes('continue-btn')) continueTask(sid);
+  if (btn.className.includes('retry-btn')) retryTask(sid);
+});
 
 function sessionProjectPath(sid) {
   const s = sessions.find(x => x.id === sid);
