@@ -29,6 +29,7 @@ from codey.agent import run as agent_run
 from codey.browser import open_deepseek
 
 WEB_DIR = Path(__file__).parent / "web"
+FOLDER_DIALOG_LOCK = threading.Lock()
 
 
 class State:
@@ -73,6 +74,48 @@ class State:
 
 
 STATE = State()
+
+
+def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
+    """Open a native folder picker and return the selected absolute path.
+
+    Browsers cannot expose an arbitrary local folder path to JavaScript, so the
+    local server owns this action.  Tkinter ships with Python and gives us the
+    standard Windows folder dialog without adding dependencies.
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+
+    title = "Select Existing Project Folder"
+    mustexist = True
+    if mode == "new":
+        title = "Create or Select Project Folder"
+        mustexist = False
+
+    initial_path = Path(initial).expanduser() if initial else Path.home()
+    if not initial_path.exists():
+        initial_path = Path.home()
+    initialdir = str(initial_path)
+    with FOLDER_DIALOG_LOCK:
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+            selected = filedialog.askdirectory(
+                parent=root,
+                title=title,
+                initialdir=initialdir,
+                mustexist=mustexist,
+            )
+        finally:
+            root.destroy()
+
+    if not selected:
+        return None
+    path = Path(selected).resolve()
+    if mode == "new":
+        path.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
 # ----------------------------------------------------------- task runner ---
@@ -193,6 +236,19 @@ class Handler(BaseHTTPRequestHandler):
                 target=_run_task, args=(session_id, project, task), daemon=True
             ).start()
             self._send_json(200, {"ok": True})
+            return
+        if url.path == "/api/pick_folder":
+            mode = str(body.get("mode") or "open").strip().lower()
+            if mode not in {"open", "new"}:
+                self._send_json(400, {"error": "invalid mode"}); return
+            initial = str(body.get("initial") or "").strip() or None
+            try:
+                path = pick_folder(mode=mode, initial=initial)
+            except Exception as exc:
+                self._send_json(500, {"error": str(exc)}); return
+            if not path:
+                self._send_json(200, {"ok": False, "cancelled": True}); return
+            self._send_json(200, {"ok": True, "path": path, "name": Path(path).name or path})
             return
         if url.path == "/api/new_chat":
             try:

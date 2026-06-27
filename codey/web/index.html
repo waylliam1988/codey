@@ -73,46 +73,89 @@
   .btn-icon:hover { background: var(--hover); color: var(--text); }
   .btn-icon svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
 
-  .new-chat-btn {
-    margin: 10px 12px; padding: 8px 12px;
+  .sidebar-actions {
+    padding: 10px 12px 8px;
+    display: grid;
+    gap: 8px;
+    position: relative;
+  }
+  .sidebar-primary, .sidebar-secondary {
+    padding: 8px 12px;
     display: flex; align-items: center; gap: 8px; justify-content: center;
     background: var(--panel-2); border: 1px solid var(--border);
     border-radius: 8px; color: var(--text); cursor: pointer; font-size: 13px;
     transition: background .15s, border-color .15s;
   }
-  .new-chat-btn:hover { background: var(--hover); border-color: #354060; }
-  .new-chat-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.2; }
-
-  .project-box {
-    margin: 0 12px 10px;
-    padding: 10px 12px;
-    background: var(--panel); border: 1px solid var(--border-2);
-    border-radius: 9px;
+  .sidebar-secondary {
+    background: transparent;
+    color: var(--text-dim);
   }
-  .project-box .label {
-    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.9px;
-    color: var(--muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+  .sidebar-primary:hover, .sidebar-secondary:hover { background: var(--hover); border-color: #354060; color: var(--text); }
+  .sidebar-primary svg, .sidebar-secondary svg {
+    width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.2;
   }
-  .project-box .label .hint { color: var(--muted); font-size: 10.5px; text-transform: none; letter-spacing: 0; }
-  .project-box input {
-    width: 100%; background: var(--bg-2); border: 1px solid var(--border-2);
-    color: var(--text); font-family: var(--mono); font-size: 12px;
-    padding: 6px 8px; border-radius: 6px; outline: none;
-    transition: border-color .15s;
+  .project-menu {
+    position: absolute;
+    left: 12px; right: 12px; top: 48px;
+    background: #191e28;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 18px 48px rgba(0,0,0,.35);
+    padding: 6px;
+    z-index: 20;
+    display: none;
   }
-  .project-box input:focus { border-color: var(--accent); }
-  .project-box .mode-tag {
-    display: inline-block; margin-top: 6px;
-    font-size: 10.5px; color: var(--muted);
+  .project-menu.open { display: grid; gap: 4px; }
+  .menu-item {
+    display: flex; align-items: center; gap: 9px;
+    width: 100%; border: 0; background: transparent;
+    color: var(--text-dim); cursor: pointer;
+    border-radius: 6px; padding: 8px 9px; text-align: left; font-size: 13px;
   }
-  .project-box .mode-tag b { color: var(--accent); }
+  .menu-item:hover { background: var(--hover); color: var(--text); }
+  .menu-item svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
 
   .session-list {
-    flex: 1; overflow-y: auto; padding: 4px 8px 16px;
+    flex: 1; overflow-y: auto; padding: 2px 8px 16px;
   }
   .session-label {
     font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
     color: var(--muted); padding: 12px 8px 6px;
+  }
+  .project-node { margin-bottom: 2px; }
+  .project-row {
+    display: flex; align-items: center; gap: 6px;
+    color: var(--text-dim); border-radius: 7px;
+    padding: 6px 6px; min-height: 32px;
+  }
+  .project-row:hover { background: rgba(255,255,255,.03); color: var(--text); }
+  .project-toggle, .project-add, .project-remove {
+    width: 22px; height: 22px; border: 0; background: transparent;
+    color: var(--muted); display: grid; place-items: center;
+    border-radius: 5px; cursor: pointer; flex-shrink: 0;
+  }
+  .project-toggle:hover, .project-add:hover, .project-remove:hover { background: var(--hover); color: var(--text); }
+  .project-remove:hover { color: var(--err); background: rgba(239,111,108,.12); }
+  .project-toggle svg, .project-add svg, .project-remove svg {
+    width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.1;
+  }
+  .project-main {
+    min-width: 0; flex: 1; cursor: pointer;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .project-main svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
+  .project-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .project-path {
+    margin: -2px 32px 5px 51px;
+    font-family: var(--mono);
+    color: var(--muted);
+    font-size: 10.5px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .project-children { padding-left: 22px; }
+  .empty-project {
+    margin: 2px 8px 8px 29px;
+    color: var(--muted); font-size: 12px;
   }
   .session-item {
     padding: 7px 10px; border-radius: 7px; cursor: pointer;
@@ -331,20 +374,28 @@
       <div class="brand-name">Codey</div>
     </div>
   </div>
-  <button class="new-chat-btn" id="btn-new">
-    <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-    新对话
-  </button>
-  <div class="project-box">
-    <div class="label">
-      当前项目
-      <span class="hint" id="project-hint">（留空＝纯聊天）</span>
+  <div class="sidebar-actions">
+    <button class="sidebar-primary" id="btn-project">
+      <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      New project
+    </button>
+    <div class="project-menu" id="project-menu">
+      <button class="menu-item" id="pick-existing">
+        <svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7v11"/></svg>
+        使用已有文件夹
+      </button>
+      <button class="menu-item" id="pick-new">
+        <svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 12v5M9.5 14.5h5"/></svg>
+        新建文件夹
+      </button>
     </div>
-    <input type="text" id="project" placeholder="E:\my-project" spellcheck="false" />
-    <div class="mode-tag" id="mode-tag">模式：<b>纯聊天</b> — 只跟 DeepSeek 对话，不动文件</div>
+    <button class="sidebar-secondary" id="btn-new-chat">
+      <svg viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/></svg>
+      新建纯聊天
+    </button>
   </div>
   <div class="session-list" id="session-list">
-    <div class="session-label">最近对话</div>
+    <div class="session-label">项目</div>
   </div>
 </aside>
 
@@ -384,18 +435,58 @@
 const $ = (id) => document.getElementById(id);
 const LS_SESSIONS = 'codey:sessions';
 const LS_ACTIVE   = 'codey:active';
-const LS_PROJECT  = 'codey:project';
+const LS_PROJECTS = 'codey:projects';
+const LS_LEGACY_PROJECT = 'codey:project';
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
-function loadSessions() {
-  try { return JSON.parse(localStorage.getItem(LS_SESSIONS) || '[]'); } catch { return []; }
+function loadJson(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); } catch { return fallback; }
 }
 function saveSessions(arr) { localStorage.setItem(LS_SESSIONS, JSON.stringify(arr)); }
+function saveProjects(arr) { localStorage.setItem(LS_PROJECTS, JSON.stringify(arr)); }
+function pathName(path) {
+  const trimmed = (path || '').replace(/[\\\/]+$/, '');
+  return trimmed.split(/[\\\/]/).pop() || trimmed || '项目';
+}
+function pathKey(path) { return (path || '').replace(/[\\\/]+$/, '').toLowerCase(); }
+function escapeHtml(text) {
+  return (text || '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
 
-let sessions = loadSessions();
+let sessions = loadJson(LS_SESSIONS, []).map(s => ({
+  id: s.id || uid(),
+  title: s.title || '新对话',
+  messages: Array.isArray(s.messages) ? s.messages : [],
+  createdAt: s.createdAt || Date.now(),
+  projectId: s.projectId || null,
+}));
+let projects = loadJson(LS_PROJECTS, []).map(p => ({
+  id: p.id || uid(),
+  name: p.name || pathName(p.path),
+  path: p.path || '',
+  expanded: p.expanded !== false,
+  createdAt: p.createdAt || Date.now(),
+})).filter(p => p.path);
+
 let activeId = localStorage.getItem(LS_ACTIVE) || '';
+
+const legacyProject = (localStorage.getItem(LS_LEGACY_PROJECT) || '').trim();
+if (legacyProject && !projects.some(p => pathKey(p.path) === pathKey(legacyProject))) {
+  projects.unshift({
+    id: uid(),
+    name: pathName(legacyProject),
+    path: legacyProject,
+    expanded: true,
+    createdAt: Date.now(),
+  });
+  saveProjects(projects);
+}
+localStorage.removeItem(LS_LEGACY_PROJECT);
+
 if (!sessions.length) {
-  const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now() };
+  const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null };
   sessions = [s]; activeId = s.id; saveSessions(sessions);
   localStorage.setItem(LS_ACTIVE, activeId);
 }
@@ -403,69 +494,171 @@ if (!sessions.find(s => s.id === activeId)) {
   activeId = sessions[0].id; localStorage.setItem(LS_ACTIVE, activeId);
 }
 
-$('project').value = localStorage.getItem(LS_PROJECT) || '';
-function refreshMode() {
-  const has = $('project').value.trim();
-  $('mode-tag').innerHTML = has
-    ? '模式：<b>编程代理</b> — Codey 会在该目录读写文件'
-    : '模式：<b>纯聊天</b> — 只跟 DeepSeek 对话，不动文件';
-  $('composer-hint').textContent = has ? '编程代理模式（在 ' + has.replace(/\\/g, '/').split('/').slice(-1)[0] + '）' : '纯聊天模式';
-}
-$('project').addEventListener('input', () => {
-  localStorage.setItem(LS_PROJECT, $('project').value);
-  refreshMode();
-});
-
 // ============================ rendering ============================
 function activeSession() { return sessions.find(s => s.id === activeId); }
+function projectById(id) { return projects.find(p => p.id === id) || null; }
+function activeProject() {
+  const s = activeSession();
+  return s && s.projectId ? projectById(s.projectId) : null;
+}
+function currentProjectPath() {
+  const p = activeProject();
+  return p ? p.path : '';
+}
 function persistActive() {
   saveSessions(sessions);
+  saveProjects(projects);
   localStorage.setItem(LS_ACTIVE, activeId);
+}
+function updateContextText() {
+  const p = activeProject();
+  $('composer-hint').textContent = p ? `项目：${p.name}` : '纯聊天模式';
 }
 
 function renderSidebar() {
   const list = $('session-list');
-  list.innerHTML = '<div class="session-label">最近对话</div>';
-  for (const s of sessions) {
-    const item = document.createElement('div');
-    item.className = 'session-item' + (s.id === activeId ? ' active' : '');
-    item.onclick = (e) => { if (e.target.tagName !== 'BUTTON') switchSession(s.id); };
-    const title = document.createElement('span');
-    title.className = 'session-title';
-    title.textContent = s.title || '未命名';
-    item.appendChild(title);
-    if (sessions.length > 1) {
-      const del = document.createElement('button');
-      del.className = 'del'; del.textContent = '×'; del.title = '删除';
-      del.onclick = (e) => { e.stopPropagation(); deleteSession(s.id); };
-      item.appendChild(del);
-    }
-    list.appendChild(item);
+  list.innerHTML = '';
+
+  const projectLabel = document.createElement('div');
+  projectLabel.className = 'session-label';
+  projectLabel.textContent = '项目';
+  list.appendChild(projectLabel);
+
+  if (!projects.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-project';
+    empty.textContent = '还没有项目';
+    list.appendChild(empty);
   }
+
+  for (const p of projects) {
+    const node = document.createElement('div');
+    node.className = 'project-node';
+
+    const row = document.createElement('div');
+    row.className = 'project-row';
+
+    const toggle = document.createElement('button');
+    toggle.className = 'project-toggle';
+    toggle.title = p.expanded ? '折叠项目' : '展开项目';
+    toggle.innerHTML = p.expanded
+      ? '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>'
+      : '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
+    toggle.onclick = (e) => {
+      e.stopPropagation();
+      p.expanded = !p.expanded;
+      persistActive();
+      renderSidebar();
+    };
+    row.appendChild(toggle);
+
+    const main = document.createElement('div');
+    main.className = 'project-main';
+    main.title = p.path;
+    main.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
+    const title = document.createElement('span');
+    title.className = 'project-title';
+    title.textContent = p.name;
+    main.appendChild(title);
+    main.onclick = () => openProject(p.id);
+    row.appendChild(main);
+
+    const add = document.createElement('button');
+    add.className = 'project-add';
+    add.title = '在此项目中新建对话';
+    add.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
+    add.onclick = (e) => {
+      e.stopPropagation();
+      newSession(p.id);
+    };
+    row.appendChild(add);
+
+    const remove = document.createElement('button');
+    remove.className = 'project-remove';
+    remove.title = '从侧边栏移除此项目';
+    remove.innerHTML = '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
+    remove.onclick = (e) => {
+      e.stopPropagation();
+      deleteProject(p.id);
+    };
+    row.appendChild(remove);
+    node.appendChild(row);
+
+    const path = document.createElement('div');
+    path.className = 'project-path';
+    path.textContent = p.path;
+    node.appendChild(path);
+
+    if (p.expanded) {
+      const children = document.createElement('div');
+      children.className = 'project-children';
+      const projectSessions = sessions.filter(s => s.projectId === p.id);
+      if (!projectSessions.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-project';
+        empty.textContent = '没有对话';
+        children.appendChild(empty);
+      } else {
+        for (const s of projectSessions) children.appendChild(sessionNode(s));
+      }
+      node.appendChild(children);
+    }
+    list.appendChild(node);
+  }
+
+  const loose = sessions.filter(s => !s.projectId);
+  const looseLabel = document.createElement('div');
+  looseLabel.className = 'session-label';
+  looseLabel.textContent = '无项目对话';
+  list.appendChild(looseLabel);
+  for (const s of loose) list.appendChild(sessionNode(s));
+}
+
+function sessionNode(s) {
+  const item = document.createElement('div');
+  item.className = 'session-item' + (s.id === activeId ? ' active' : '');
+  item.onclick = (e) => { if (e.target.tagName !== 'BUTTON') switchSession(s.id); };
+  const title = document.createElement('span');
+  title.className = 'session-title';
+  title.textContent = s.title || '未命名';
+  item.appendChild(title);
+  if (sessions.length > 1) {
+    const del = document.createElement('button');
+    del.className = 'del'; del.textContent = '×'; del.title = '删除对话';
+    del.onclick = (e) => { e.stopPropagation(); deleteSession(s.id); };
+    item.appendChild(del);
+  }
+  return item;
 }
 
 function renderChat() {
   const s = activeSession();
   const chat = $('chat');
-  $('sess-title').textContent = s.title || '新对话';
+  if (!s) return;
+  const p = activeProject();
+  $('sess-title').textContent = p ? `${p.name} / ${s.title || '新对话'}` : (s.title || '新对话');
+  updateContextText();
 
   if (!s.messages.length) {
+    const context = p
+      ? `当前项目：${escapeHtml(p.path)}。Codey 会在这个目录里读写文件。`
+      : '当前是纯聊天。选择或新建项目后，在项目下面新建对话即可让 Codey 读写文件。';
     chat.innerHTML = `
       <div class="welcome">
         <h1>嗨，今天想做点什么？</h1>
-        <p class="muted">直接发消息和 DeepSeek 聊；在左侧填了「当前项目」之后，Codey 会自动帮你读写文件。</p>
+        <p class="muted">${context}</p>
         <div class="examples">
           <div class="ex" data-prompt="你好，简单介绍一下你自己。">
-            <strong>💬 打个招呼</strong>纯聊天，看看连接是否正常
+            <strong>打个招呼</strong>看看连接是否正常
           </div>
           <div class="ex" data-prompt="写一个完整的贪吃蛇游戏，pygame 实现，单文件 snake.py，能用 python snake.py 直接运行。">
-            <strong>🐍 生成贪吃蛇</strong>需要先填项目目录
+            <strong>生成 snake.py</strong>在当前项目中创建文件
           </div>
           <div class="ex" data-prompt="为这个项目写一份简洁的 README.md，介绍它是干什么的、怎么用。">
-            <strong>📝 写 README</strong>读项目内容，自动生成 README.md
+            <strong>写 README</strong>读取项目内容并生成 README.md
           </div>
           <div class="ex" data-prompt="检查我的代码有没有明显 bug 或可以改进的地方，必要时直接修改。">
-            <strong>🐛 找 bug</strong>读代码、发现问题就直接改
+            <strong>找 bug</strong>读代码，发现问题就直接改
           </div>
         </div>
       </div>`;
@@ -514,7 +707,21 @@ function appendMessageNode(chat, m) {
   } else if (m.type === 'tool') {
     const div = document.createElement('div');
     div.className = 'msg tool';
-    div.innerHTML = `<div class="tool-row"><span class="tag">${m.kind}</span><span>${m.path || ''}</span><span class="arrow">→</span><span class="result ${m.error ? 'err' : ''}">${m.result}</span></div>`;
+    const row = document.createElement('div');
+    row.className = 'tool-row';
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = m.kind;
+    const path = document.createElement('span');
+    path.textContent = m.path || '';
+    const arrow = document.createElement('span');
+    arrow.className = 'arrow';
+    arrow.textContent = '→';
+    const result = document.createElement('span');
+    result.className = 'result' + (m.error ? ' err' : '');
+    result.textContent = m.result;
+    row.append(tag, path, arrow, result);
+    div.appendChild(row);
     chat.appendChild(div);
   } else if (m.type === 'done') {
     const div = document.createElement('div');
@@ -544,8 +751,16 @@ function scrollChat() {
 function switchSession(id) {
   activeId = id; persistActive(); renderSidebar(); renderChat();
 }
-function newSession() {
-  const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now() };
+function openProject(projectId) {
+  const p = projectById(projectId);
+  if (!p) return;
+  p.expanded = true;
+  const first = sessions.find(s => s.projectId === projectId);
+  if (first) switchSession(first.id);
+  else newSession(projectId);
+}
+function newSession(projectId = null) {
+  const s = { id: uid(), projectId, title: '新对话', messages: [], createdAt: Date.now() };
   sessions.unshift(s); activeId = s.id; persistActive(); renderSidebar(); renderChat();
   // Also ask the backend to reset the DeepSeek tab to a fresh chat.
   fetch('/api/new_chat', { method: 'POST' }).catch(() => {});
@@ -554,15 +769,66 @@ function deleteSession(id) {
   if (!confirm('删除这个会话？')) return;
   sessions = sessions.filter(s => s.id !== id);
   if (!sessions.length) {
-    const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now() };
+    const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null };
     sessions = [s];
   }
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
   persistActive(); renderSidebar(); renderChat();
 }
+function deleteProject(id) {
+  const p = projectById(id);
+  if (!p) return;
+  if (!confirm(`从侧边栏移除项目「${p.name}」？这不会删除磁盘上的文件夹，但会删除这个项目下的本地对话记录。`)) return;
+  projects = projects.filter(x => x.id !== id);
+  sessions = sessions.filter(s => s.projectId !== id);
+  if (!sessions.length) sessions = [{ id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null }];
+  if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
+  persistActive(); renderSidebar(); renderChat();
+}
+function ensureProject(path, name) {
+  const existing = projects.find(p => pathKey(p.path) === pathKey(path));
+  if (existing) {
+    existing.expanded = true;
+    return existing;
+  }
+  const p = {
+    id: uid(),
+    name: name || pathName(path),
+    path,
+    expanded: true,
+    createdAt: Date.now(),
+  };
+  projects.unshift(p);
+  saveProjects(projects);
+  return p;
+}
+async function pickProject(mode) {
+  closeProjectMenu();
+  $('btn-project').disabled = true;
+  try {
+    const r = await fetch('/api/pick_folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, initial: currentProjectPath() }),
+    });
+    let data = {};
+    try { data = await r.json(); } catch {}
+    if (!r.ok) {
+      alert('选择文件夹失败: ' + (data.error || ('HTTP ' + r.status)));
+      return;
+    }
+    if (!data.ok || !data.path) return;
+    const p = ensureProject(data.path, data.name);
+    newSession(p.id);
+  } finally {
+    $('btn-project').disabled = false;
+  }
+}
 
 function pushMsg(m) {
   const s = activeSession();
+  if (!s) return;
+  const wasEmpty = s.messages.length === 0;
   s.messages.push(m);
   // Update title from first user message
   if (s.title === '新对话' && m.type === 'user' && m.text) {
@@ -571,8 +837,11 @@ function pushMsg(m) {
     $('sess-title').textContent = s.title;
   }
   persistActive();
-  appendMessageNode($('chat'), m);
-  scrollChat();
+  if (wasEmpty) renderChat();
+  else {
+    appendMessageNode($('chat'), m);
+    scrollChat();
+  }
 }
 
 // ============================ SSE event ingestion ============================
@@ -679,7 +948,6 @@ function updateSend() {
   $('send').disabled = !has || runningSessionId;
 }
 $('task').addEventListener('input', () => { resizeTask(); updateSend(); });
-$('project').addEventListener('input', updateSend);
 $('task').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
@@ -688,7 +956,7 @@ $('task').addEventListener('keydown', (e) => {
 });
 
 $('send').onclick = async () => {
-  const project = $('project').value.trim();
+  const project = currentProjectPath();
   const task = $('task').value.trim();
   if (!task) return;
   pushMsg({ type: 'user', text: task });
@@ -699,10 +967,25 @@ $('send').onclick = async () => {
     body: JSON.stringify({ session_id: activeId, project, task }),
   });
   if (r.status === 409) { alert('已经有任务在运行了'); return; }
-  if (!r.ok) { alert('启动失败: HTTP ' + r.status); return; }
+  if (!r.ok) {
+    let detail = '';
+    try { detail = (await r.json()).error || ''; } catch {}
+    alert('启动失败: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
+    return;
+  }
 };
 $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
-$('btn-new').onclick = newSession;
+$('btn-new-chat').onclick = () => newSession(null);
+$('btn-project').onclick = (e) => {
+  e.stopPropagation();
+  $('project-menu').classList.toggle('open');
+};
+$('pick-existing').onclick = () => pickProject('open');
+$('pick-new').onclick = () => pickProject('new');
+function closeProjectMenu() { $('project-menu').classList.remove('open'); }
+document.addEventListener('click', (e) => {
+  if (!$('project-menu').contains(e.target) && e.target !== $('btn-project')) closeProjectMenu();
+});
 $('toggle-sidebar').onclick = () => {
   document.body.classList.add('sidebar-collapsed');
   $('show-sidebar').style.display = '';
@@ -717,7 +1000,6 @@ renderSidebar();
 renderChat();
 resizeTask();
 updateSend();
-refreshMode();
 </script>
 </body>
 </html>
