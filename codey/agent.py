@@ -40,6 +40,9 @@ from playwright.sync_api import Page
 
 from codey.deepseek import chat, new_chat
 
+DEFAULT_MAX_TURNS = 50
+DEFAULT_STAGNANT_TURNS = 4
+
 MARKER_RE = re.compile(
     r"^[#/\-\s]*===\s*codey\s*:\s*(\w+)(?:\s+path\s*=\s*([^\s=]+))?\s*===\s*$",
     re.MULTILINE,
@@ -204,6 +207,13 @@ class StepResult:
     raw_reply: str = ""
 
 
+@dataclass
+class RunResult:
+    summary: str
+    stop_reason: str = "done"  # done | stopped | max_turns | no_progress | protocol
+    turns: int = 0
+
+
 def _format_tool_results(results: list[tuple[Action, str]]) -> str:
     chunks = []
     for action, output in results:
@@ -217,13 +227,18 @@ def run(
     project: Path,
     user_task: str,
     *,
-    max_turns: int = 12,
+    max_turns: int = DEFAULT_MAX_TURNS,
+    stagnant_turns: int = DEFAULT_STAGNANT_TURNS,
     on_event=print,
     stop_flag=None,
     fresh_chat: bool = True,
-) -> str:
+) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
+    max_turns = max(1, int(max_turns or DEFAULT_MAX_TURNS))
+    stagnant_turns = max(1, int(stagnant_turns or DEFAULT_STAGNANT_TURNS))
+    seen_info: set[tuple[str, str, str]] = set()
+    stagnant_count = 0
 
     if fresh_chat:
         on_event("[agent] opening a fresh DeepSeek conversation")
@@ -244,14 +259,17 @@ def run(
     for turn in range(1, max_turns + 1):
         if stop_flag is not None and stop_flag.is_set():
             on_event("[agent] stopped by user.")
-            return "stopped"
+            return RunResult("stopped", "stopped", turn)
         actions, control = parse_reply(reply)
 
         results: list[tuple[Action, str]] = []
+        made_progress = False
         for a in actions:
             try:
                 if a.kind == "write" and a.path:
                     out = tool_write(project, a.path, a.body)
+                    if not out.startswith("ERROR:"):
+                        made_progress = True
                 elif a.kind == "read" and a.path:
                     out = tool_read(project, a.path)
                 elif a.kind == "ls":
@@ -262,11 +280,21 @@ def run(
                 out = f"ERROR: {exc}"
             on_event(f"  · {a.kind} {a.path or ''} -> {out.splitlines()[0][:80]}")
             results.append((a, out))
+            if a.kind in ("read", "ls") and not out.startswith("ERROR:"):
+                sig = (a.kind, a.path or ".", out)
+                if sig not in seen_info:
+                    seen_info.add(sig)
+                    made_progress = True
 
         if control is None:
             if results:
                 on_event("[agent] reply had actions but no control block — assuming done.")
-                return f"applied {len(results)} action(s) (no done marker)"
+                return RunResult(f"applied {len(results)} action(s) (no done marker)", "protocol", turn)
+            stagnant_count += 1
+            if stagnant_count >= stagnant_turns:
+                msg = f"stopped after {stagnant_turns} turns without valid tool progress"
+                on_event(f"[agent] {msg}.")
+                return RunResult(msg, "no_progress", turn)
             on_event("[agent] reply contained no valid marker blocks; nudging the model.")
             reply = chat(
                 page,
@@ -286,11 +314,20 @@ def run(
                 on_event("[agent] `done` came with read/ls — treating as continue.")
             else:
                 on_event(f"[agent] DONE: {control.body}")
-                return control.body
+                return RunResult(control.body, "done", turn)
+
+        if made_progress:
+            stagnant_count = 0
+        else:
+            stagnant_count += 1
+            if stagnant_count >= stagnant_turns:
+                msg = control.body or f"stopped after {stagnant_turns} turns without file writes or new tool information"
+                on_event(f"[agent] no progress for {stagnant_turns} turns, stopping.")
+                return RunResult(msg, "no_progress", turn)
 
         if turn >= max_turns:
             on_event(f"[agent] hit max_turns={max_turns}, stopping.")
-            return control.body
+            return RunResult(control.body or f"hit max_turns={max_turns}", "max_turns", turn)
 
         next_prompt = (
             "Tool results from your previous actions:\n\n"
@@ -302,4 +339,4 @@ def run(
         reply = chat(page, next_prompt)
         on_event(f"\n--- turn {turn+1} reply ---\n{reply}\n")
 
-    return "(max turns reached)"
+    return RunResult("(max turns reached)", "max_turns", max_turns)

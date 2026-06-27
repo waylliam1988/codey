@@ -55,7 +55,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         )
     finally:
         session.pw.stop()
-    print(result)
+    print(result.summary)
     return 0
 
 
@@ -82,7 +82,8 @@ def main(argv: list[str] | None = None) -> int:
 
     sp_agent = sub.add_parser("agent", help="CLI agent loop")
     sp_agent.add_argument("--project", required=True)
-    sp_agent.add_argument("--max-turns", type=int, default=12)
+    from codey.agent import DEFAULT_MAX_TURNS
+    sp_agent.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     sp_agent.add_argument("--port", type=int, default=9222)
     sp_agent.add_argument("task", nargs="+")
     sp_agent.set_defaults(func=cmd_agent)

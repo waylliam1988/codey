@@ -168,13 +168,15 @@
   .session-item:hover { background: var(--hover); color: var(--text); }
   .session-item.active { background: #1f2840; color: var(--text); }
   .session-item .session-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-  .session-item .del {
+  .session-item .rename, .session-item .del {
     visibility: hidden; opacity: 0;
     background: transparent; border: 0; color: var(--muted);
     cursor: pointer; padding: 2px 4px; border-radius: 4px;
     transition: opacity .12s, color .12s;
+    flex-shrink: 0;
   }
-  .session-item:hover .del { visibility: visible; opacity: 1; }
+  .session-item:hover .rename, .session-item:hover .del { visibility: visible; opacity: 1; }
+  .session-item .rename:hover { color: var(--text); background: var(--hover); }
   .session-item .del:hover { color: var(--err); background: rgba(239,111,108,.12); }
 
   /* ============================== main ============================== */
@@ -241,7 +243,7 @@
 
   .msg { display: flex; max-width: 100%; }
   .msg.user { justify-content: flex-end; }
-  .msg.asst, .msg.tool, .msg.done, .msg.err { justify-content: flex-start; }
+  .msg.asst, .msg.tool, .msg.done, .msg.limit, .msg.pause, .msg.err { justify-content: flex-start; }
 
   .bubble {
     max-width: 88%;
@@ -301,6 +303,21 @@
     border: 1px solid #245a3c; color: var(--ok);
     font-size: 13px;
   }
+  .limit-row, .pause-row {
+    display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 12px; border-radius: 10px;
+    background: #201d16; border: 1px solid #4e3d1f; color: var(--warn);
+    font-size: 13px;
+  }
+  .pause-row {
+    background: #1a1f2b; border-color: var(--border); color: var(--text-dim);
+  }
+  .continue-btn {
+    border: 1px solid #665027; background: #2b2418; color: #ffd48a;
+    border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 12px;
+  }
+  .continue-btn:hover:not(:disabled) { background: #3a2d18; border-color: #846731; }
+  .continue-btn:disabled { opacity: .45; cursor: not-allowed; }
   .err-row {
     display: inline-flex; align-items: center; gap: 8px;
     padding: 8px 14px; border-radius: 10px;
@@ -622,6 +639,10 @@ function sessionNode(s) {
   title.className = 'session-title';
   title.textContent = s.title || '未命名';
   item.appendChild(title);
+  const rename = document.createElement('button');
+  rename.className = 'rename'; rename.textContent = '✎'; rename.title = '重命名对话';
+  rename.onclick = (e) => { e.stopPropagation(); renameSession(s.id); };
+  item.appendChild(rename);
   if (sessions.length > 1) {
     const del = document.createElement('button');
     del.className = 'del'; del.textContent = '×'; del.title = '删除对话';
@@ -726,7 +747,33 @@ function appendMessageNode(chat, m) {
   } else if (m.type === 'done') {
     const div = document.createElement('div');
     div.className = 'msg done';
-    div.innerHTML = `<div class="done-row">✓ ${m.text || '完成'}</div>`;
+    const row = document.createElement('div');
+    row.className = 'done-row';
+    row.textContent = '✓ ' + (m.text || '完成');
+    div.appendChild(row);
+    chat.appendChild(div);
+  } else if (m.type === 'limit') {
+    const div = document.createElement('div');
+    div.className = 'msg limit';
+    const row = document.createElement('div');
+    row.className = 'limit-row';
+    const text = document.createElement('span');
+    text.textContent = m.text || '已到步数上限';
+    const btn = document.createElement('button');
+    btn.className = 'continue-btn';
+    btn.textContent = '继续此任务';
+    btn.disabled = !!runningSessionId;
+    btn.onclick = () => continueTask(m.sessionId || activeId);
+    row.append(text, btn);
+    div.appendChild(row);
+    chat.appendChild(div);
+  } else if (m.type === 'pause') {
+    const div = document.createElement('div');
+    div.className = 'msg pause';
+    const row = document.createElement('div');
+    row.className = 'pause-row';
+    row.textContent = m.text || '连续几轮没有新进展，已暂停';
+    div.appendChild(row);
     chat.appendChild(div);
   } else if (m.type === 'err') {
     const div = document.createElement('div');
@@ -774,6 +821,18 @@ function deleteSession(id) {
   }
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
   persistActive(); renderSidebar(); renderChat();
+}
+function renameSession(id) {
+  const s = sessions.find(x => x.id === id);
+  if (!s) return;
+  const next = prompt('重命名对话', s.title || '新对话');
+  if (next === null) return;
+  const title = next.trim();
+  if (!title) return;
+  s.title = title.slice(0, 80);
+  persistActive();
+  renderSidebar();
+  if (id === activeId) renderChat();
 }
 function deleteProject(id) {
   const p = projectById(id);
@@ -882,8 +941,18 @@ evtSrc.onmessage = (e) => {
     $('stop').style.display = 'none';
     updateSend();
     const summary = (data.summary || '').toString();
+    const reason = (data.stop_reason || 'done').toString();
     if (summary.startsWith('ERROR:')) {
       addToSession(sid, { type: 'err', text: summary });
+    } else if (reason === 'max_turns') {
+      const turns = data.turns || data.max_turns || 0;
+      const label = turns ? `已到步数上限（${turns} 轮）` : '已到步数上限';
+      addToSession(sid, { type: 'limit', text: label, summary });
+    } else if (reason === 'no_progress') {
+      addToSession(sid, {
+        type: 'pause',
+        text: '连续几轮没有写文件或获得新信息，已自动暂停',
+      });
     } else if (summary) {
       addToSession(sid, { type: 'done', text: summary });
     }
@@ -904,6 +973,7 @@ evtSrc.onerror = () => setStatus('连接断开', 'err');
 function addToSession(sid, m) {
   const s = sessions.find(x => x.id === sid);
   if (!s) return;
+  if ((m.type === 'limit' || m.type === 'pause') && !m.sessionId) m.sessionId = sid;
   s.messages.push(m);
   persistActive();
   if (sid === activeId) { appendMessageNode($('chat'), m); scrollChat(); }
@@ -974,6 +1044,38 @@ $('send').onclick = async () => {
     return;
   }
 };
+async function continueTask(sessionId) {
+  if (runningSessionId) return;
+  const s = sessions.find(x => x.id === sessionId);
+  if (!s) return;
+  const p = s.projectId ? projectById(s.projectId) : null;
+  if (!p) {
+    addToSession(sessionId, { type: 'err', text: '只有项目任务可以继续；纯聊天没有自动工具循环。' });
+    return;
+  }
+  addToSession(sessionId, { type: 'info', text: '继续此任务' });
+  const task = [
+    'Continue the unfinished Codey task in this same conversation.',
+    'Use the existing project context and finish the original user request.',
+    'If the work is complete, emit the codey done block.'
+  ].join(' ');
+  const r = await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: sessionId,
+      project: p.path,
+      task,
+      continue_task: true,
+    }),
+  });
+  if (r.status === 409) { alert('已经有任务在运行了'); return; }
+  if (!r.ok) {
+    let detail = '';
+    try { detail = (await r.json()).error || ''; } catch {}
+    alert('继续失败: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
+  }
+}
 $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
 $('btn-new-chat').onclick = () => newSession(null);
 $('btn-project').onclick = (e) => {

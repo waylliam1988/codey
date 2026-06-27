@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from codey.agent import run as agent_run
+from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
 from codey.browser import open_deepseek
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -42,6 +42,7 @@ class State:
         self.task: str | None = None
         self.status: str = "idle"
         self.last_summary: str | None = None
+        self.last_stop_reason: str | None = None
         self.stop_flag = threading.Event()
         self._session = None
 
@@ -120,10 +121,13 @@ def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
 
 # ----------------------------------------------------------- task runner ---
 
-DEFAULT_MAX_TURNS = 30
-
-
-def _run_task(session_id: str, project: str | None, task: str) -> None:
+def _run_task(
+    session_id: str,
+    project: str | None,
+    task: str,
+    max_turns: int,
+    continue_task: bool,
+) -> None:
     STATE.busy = True
     STATE.project = project
     STATE.task = task
@@ -135,6 +139,8 @@ def _run_task(session_id: str, project: str | None, task: str) -> None:
         "project": project,
         "task": task,
         "mode": "agent" if project else "chat",
+        "max_turns": max_turns,
+        "continue_task": continue_task,
     })
 
     def on_event(msg: str) -> None:
@@ -143,11 +149,11 @@ def _run_task(session_id: str, project: str | None, task: str) -> None:
     try:
         sess = STATE.get_session()
         if project:
-            summary = agent_run(
+            result = agent_run(
                 sess.page,
                 Path(project),
                 task,
-                max_turns=DEFAULT_MAX_TURNS,
+                max_turns=max_turns,
                 on_event=on_event,
                 stop_flag=STATE.stop_flag,
                 fresh_chat=False,
@@ -157,14 +163,30 @@ def _run_task(session_id: str, project: str | None, task: str) -> None:
             from codey.deepseek import chat as ds_chat
             reply = ds_chat(sess.page, task)
             STATE.emit({"type": "reply", "session_id": session_id, "text": reply})
-            summary = ""
-        STATE.last_summary = summary
+            result = RunResult("", "done", 1)
+        STATE.last_summary = result.summary
+        STATE.last_stop_reason = result.stop_reason
         STATE.status = "done"
-        STATE.emit({"type": "task_done", "session_id": session_id, "summary": summary})
+        STATE.emit({
+            "type": "task_done",
+            "session_id": session_id,
+            "summary": result.summary,
+            "stop_reason": result.stop_reason,
+            "turns": result.turns,
+            "max_turns": max_turns,
+        })
     except Exception as exc:
         STATE.status = "error"
+        STATE.last_stop_reason = "error"
         STATE.emit({"type": "log", "session_id": session_id, "level": "error", "text": f"ERROR: {exc!r}"})
-        STATE.emit({"type": "task_done", "session_id": session_id, "summary": f"ERROR: {exc}"})
+        STATE.emit({
+            "type": "task_done",
+            "session_id": session_id,
+            "summary": f"ERROR: {exc}",
+            "stop_reason": "error",
+            "turns": 0,
+            "max_turns": max_turns,
+        })
     finally:
         STATE.busy = False
 
@@ -206,6 +228,7 @@ class Handler(BaseHTTPRequestHandler):
                 "project": STATE.project,
                 "task": STATE.task,
                 "summary": STATE.last_summary,
+                "stop_reason": STATE.last_stop_reason,
             })
             return
         if url.path == "/api/events":
@@ -228,12 +251,20 @@ class Handler(BaseHTTPRequestHandler):
             session_id = str(body.get("session_id") or "").strip() or "default"
             project = (body.get("project") or "").strip() or None
             task = (body.get("task") or "").strip()
+            continue_task = bool(body.get("continue_task"))
+            try:
+                max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)
+            except (TypeError, ValueError):
+                self._send_json(400, {"error": "invalid max_turns"}); return
+            max_turns = max(1, min(max_turns, 500))
             if not task:
                 self._send_json(400, {"error": "task required"}); return
             if project:
                 Path(project).mkdir(parents=True, exist_ok=True)
             threading.Thread(
-                target=_run_task, args=(session_id, project, task), daemon=True
+                target=_run_task,
+                args=(session_id, project, task, max_turns, continue_task),
+                daemon=True,
             ).start()
             self._send_json(200, {"ok": True})
             return
