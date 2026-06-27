@@ -41,6 +41,16 @@ MAX_DIFF_CHARS = 240_000
 MAX_UNTRACKED_DIFF_BYTES = 120_000
 SHELL_TIMEOUT = 120
 SHELL_OUTPUT_LIMIT = 24_000
+CHANGE_EXCLUDED_PATH_PARTS = {
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "node_modules",
+    ".next",
+    "dist",
+    "build",
+}
 
 
 def _run_git(project: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -64,6 +74,12 @@ def parse_git_status(short_status: str) -> list[dict]:
         path = line[3:].strip() if len(line) > 3 else line[2:].strip()
         files.append({"path": path, "status": status, "additions": 0, "deletions": 0})
     return files
+
+
+def is_displayable_change_path(path: str) -> bool:
+    normalized = (path or "").replace("\\", "/").strip("/")
+    parts = [part for part in normalized.split("/") if part and part != "->"]
+    return not any(part in CHANGE_EXCLUDED_PATH_PARTS for part in parts)
 
 
 def _merge_numstat(stats: dict[str, dict[str, int]], text: str) -> None:
@@ -123,7 +139,7 @@ def collect_git_changes(project: str | Path | None) -> dict:
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": "git command timed out", "files": [], "diff": ""}
 
-    files = parse_git_status(status_proc.stdout)
+    files = [file for file in parse_git_status(status_proc.stdout) if is_displayable_change_path(file["path"])]
     stats: dict[str, dict[str, int]] = {}
     _merge_numstat(stats, unstaged_num.stdout)
     _merge_numstat(stats, staged_num.stdout)
@@ -228,8 +244,8 @@ class State:
         self.last_summary: str | None = None
         self.last_stop_reason: str | None = None
         self.stop_flag = threading.Event()
-        self._session = None
         self.pending_shell: dict[str, dict] = {}
+        self.reset_next_chat = False
 
     def emit(self, event: dict) -> None:
         with self.lock:
@@ -251,12 +267,11 @@ class State:
                 self.subscribers.remove(q)
 
     def get_session(self):
-        if self._session is None:
-            self.status = "connecting"
-            self.emit({"type": "status", "status": "connecting"})
-            self._session = open_deepseek()
-            self.emit({"type": "log", "level": "info", "text": f"Edge connected: {self._session.page.url}"})
-        return self._session
+        self.status = "connecting"
+        self.emit({"type": "status", "status": "connecting"})
+        session = open_deepseek()
+        self.emit({"type": "log", "level": "info", "text": f"Edge connected: {session.page.url}"})
+        return session
 
 
 STATE = State()
@@ -357,6 +372,10 @@ def _run_task(
 
     try:
         sess = STATE.get_session()
+        with STATE.lock:
+            reset_requested = STATE.reset_next_chat
+            STATE.reset_next_chat = False
+        fresh_chat = (not continue_task) or reset_requested
         if project:
             result = agent_run(
                 sess.page,
@@ -366,11 +385,13 @@ def _run_task(
                 on_event=on_event,
                 on_shell_request=on_shell_request,
                 stop_flag=STATE.stop_flag,
-                fresh_chat=False,
+                fresh_chat=fresh_chat,
             )
         else:
             # Plain chat: just send + capture the reply, no tools executed.
-            from codey.deepseek import chat as ds_chat
+            from codey.deepseek import chat as ds_chat, new_chat
+            if fresh_chat:
+                new_chat(sess.page)
             reply = ds_chat(sess.page, task)
             STATE.emit({"type": "reply", "session_id": session_id, "text": reply})
             result = RunResult("", "done", 1)
@@ -398,6 +419,11 @@ def _run_task(
             "max_turns": max_turns,
         })
     finally:
+        try:
+            if "sess" in locals():
+                sess.pw.stop()
+        except Exception:
+            pass
         STATE.busy = False
 
 
@@ -558,13 +584,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True, "approved": True, "continued": continued, "result": result})
             return
         if url.path == "/api/new_chat":
-            try:
-                from codey.deepseek import new_chat
-                sess = STATE.get_session()
-                new_chat(sess.page)
-                self._send_json(200, {"ok": True})
-            except Exception as exc:
-                self._send_json(500, {"error": str(exc)})
+            STATE.reset_next_chat = True
+            STATE.emit({"type": "log", "level": "info", "text": "[codey] next task will start in a fresh DeepSeek chat"})
+            self._send_json(200, {"ok": True})
             return
         if url.path == "/api/stop":
             STATE.stop_flag.set()

@@ -48,6 +48,7 @@ anything (python, text, js, …); only the marker matters.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import subprocess
@@ -88,8 +89,7 @@ EDIT_BLOCK_RE = re.compile(
 )
 
 MARKER_RE = re.compile(
-    r"^[#/\-\s]*===\s*codey\s*:\s*(\w+)(?:\s+path\s*=\s*([^\s=]+))?\s*===\s*$",
-    re.MULTILINE,
+    r"^[#/\-\s]*===\s*codey\s*:\s*(\w+)(?:\s+path\s*=\s*([^\s=]+))?\s*===\s*(.*)$",
 )
 
 SYSTEM_PROMPT = """\
@@ -236,6 +236,9 @@ def parse_reply(text: str) -> tuple[list[Action], Control | None]:
             continue
         kind = mm.group(1).lower()
         path = mm.group(2)
+        inline_body = mm.group(3).strip()
+        if inline_body:
+            rest = inline_body + (("\n" + rest) if rest else "")
         if kind in ("write", "edit", "read", "ls", "search", "run", "shell"):
             actions.append(Action(kind=kind, path=path, body=rest))
         elif kind in ("done", "continue"):
@@ -466,10 +469,13 @@ def tool_run(root: Path, rel: str, command: str) -> str:
     cwd = _safe_join(root, rel or ".")
     if not cwd.is_dir():
         return f"ERROR: not a directory: {rel}"
+    env = os.environ.copy()
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
         proc = subprocess.run(
             argv,
             cwd=cwd,
+            env=env,
             capture_output=True,
             text=True,
             encoding="utf-8",

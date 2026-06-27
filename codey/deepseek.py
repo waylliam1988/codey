@@ -23,6 +23,8 @@ SEND_READY = 'div[role="button"].ds-button--primary:not(.ds-button--disabled)'
 RESPONSE = ".ds-markdown"
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
+READY_TIMEOUT = 90.0
+TIMEOUT_GRACE = 90.0
 
 
 def new_chat(page) -> None:
@@ -31,7 +33,7 @@ def new_chat(page) -> None:
     wait_ready(page)
 
 
-def wait_ready(page: Page, timeout: float = 30) -> None:
+def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -113,6 +115,33 @@ def _response_count(page: Page) -> int:
     return page.locator(RESPONSE).count()
 
 
+def _wait_late_response(
+    page: Page,
+    baseline: int,
+    baseline_text: str = "",
+    grace: float = TIMEOUT_GRACE,
+    tick: float = 0.8,
+) -> str:
+    """Give DeepSeek a short final grace window after the main timeout.
+
+    The site can create the assistant message right around our timeout
+    boundary.  Without this last read, Codey may report a timeout even though
+    a usable response has already appeared in the page.
+    """
+    deadline = time.time() + max(0.0, grace)
+    last = ""
+    while time.time() < deadline:
+        try:
+            current = _last_text(page) if _response_count(page) else ""
+            if current and (_response_count(page) > baseline or current != baseline_text):
+                last = current
+                return current
+        except Exception:
+            pass
+        time.sleep(tick)
+    return last
+
+
 def chat(
     page: Page,
     text: str,
@@ -125,6 +154,7 @@ def chat(
     wait_ready(page)
 
     baseline = _response_count(page)
+    baseline_text = _last_text(page) if baseline else ""
 
     ta = page.locator(INPUT).first
     ta.click()
@@ -151,10 +181,10 @@ def chat(
     appeared = False
     while time.time() < start_deadline:
         time.sleep(tick)
-        if _response_count(page) <= baseline:
+        current = _last_text(page)
+        if _response_count(page) <= baseline and current == baseline_text:
             continue
         appeared = True
-        current = _last_text(page)
         if not current:
             stable = 0
             continue
@@ -165,6 +195,9 @@ def chat(
         else:
             stable = 0
             last = current
+    late = _wait_late_response(page, baseline, baseline_text=baseline_text, grace=TIMEOUT_GRACE, tick=tick)
+    if late:
+        return late
     if appeared and last:
         return last
     raise TimeoutError(f"DeepSeek response timed out after {response_timeout:.0f}s")

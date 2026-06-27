@@ -67,6 +67,24 @@ need the matching files
         self.assertIsNotNone(control)
         self.assertEqual(control.kind, "continue")
 
+    def test_parse_inline_marker_payload_from_deepseek(self) -> None:
+        text = """```text
+=== codey: search path=. ===LEGACY_BUG
+```
+
+```text
+# === codey: continue ===Need search results
+```"""
+        actions, control = agent.parse_reply(text)
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].kind, "search")
+        self.assertEqual(actions[0].path, ".")
+        self.assertEqual(actions[0].body, "LEGACY_BUG")
+        self.assertIsNotNone(control)
+        self.assertEqual(control.kind, "continue")
+        self.assertEqual(control.body, "Need search results")
+
     def test_parse_edit_action(self) -> None:
         text = """```text
 # === codey: edit path=app.py ===
@@ -247,6 +265,22 @@ replacement
             output = agent.tool_run(Path(td), ".", "git status")
 
             self.assertEqual(output, "ERROR: command not allowed: git status")
+
+    def test_run_does_not_leave_python_bytecode_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "test_sample.py").write_text(
+                "import unittest\n\n"
+                "class SampleTests(unittest.TestCase):\n"
+                "    def test_ok(self):\n"
+                "        self.assertTrue(True)\n",
+                encoding="utf-8",
+            )
+
+            output = agent.tool_run(root, ".", "python -m unittest")
+
+            self.assertIn("exit 0: python -m unittest", output)
+            self.assertFalse((root / "__pycache__").exists())
 
 
 class ProjectInstructionTests(unittest.TestCase):
