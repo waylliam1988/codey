@@ -349,6 +349,34 @@ class RunLoopTests(unittest.TestCase):
             self.assertEqual(result.stop_reason, "done")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def value():\n    return 'new'\n")
 
+    def test_edit_tool_call_captures_change_baseline(self) -> None:
+        reply = '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
+        done = '{"tool":"done","args":{"summary":"updated"}}'
+
+        class Tracker:
+            def __init__(self) -> None:
+                self.paths: list[str] = []
+
+            def capture_before(self, rel: str) -> None:
+                self.paths.append(rel)
+
+        tracker = Tracker()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(reply, done),
+                root,
+                "update app",
+                on_event=lambda _m: None,
+                fresh_chat=False,
+                change_tracker=tracker,
+            )
+
+            self.assertEqual(result.stop_reason, "done")
+            self.assertEqual(tracker.paths, ["app.py"])
+
     def test_edit_content_tool_call_writes_file(self) -> None:
         reply = '{"tool":"edit","args":{"path":"app.py","content":"VALUE = 1\\n"}}'
         done = '{"tool":"done","args":{"summary":"created"}}'
@@ -365,6 +393,34 @@ class RunLoopTests(unittest.TestCase):
 
             self.assertEqual(result.stop_reason, "done")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "VALUE = 1\n")
+
+    def test_read_tool_call_does_not_capture_change_baseline(self) -> None:
+        reply = '{"tool":"read_file","args":{"path":"app.py"}}'
+        done = '{"tool":"done","args":{"summary":"read"}}'
+
+        class Tracker:
+            def __init__(self) -> None:
+                self.paths: list[str] = []
+
+            def capture_before(self, rel: str) -> None:
+                self.paths.append(rel)
+
+        tracker = Tracker()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(reply, done),
+                root,
+                "read app",
+                on_event=lambda _m: None,
+                fresh_chat=False,
+                change_tracker=tracker,
+            )
+
+            self.assertEqual(result.stop_reason, "done")
+            self.assertEqual(tracker.paths, [])
 
     def test_shell_action_requests_approval_and_stops(self) -> None:
         reply = '{"tool":"shell","args":{"path":".","command":"git status --short"}}'

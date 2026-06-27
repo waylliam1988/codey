@@ -608,7 +608,8 @@
     border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px;
     font-family: inherit;
   }
-  .drawer-btn:hover { background: var(--hover); color: var(--text); }
+  .drawer-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+  .drawer-btn:disabled { color: var(--faint); cursor: not-allowed; }
   .changes-body { overflow-y: auto; padding: 8px 12px 18px; }
   .changes-empty, .changes-error {
     color: var(--muted); padding: 20px 4px; font-size: 13px;
@@ -635,11 +636,24 @@
     font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
   }
   .diff-pre {
-    margin: 0 0 12px; padding: 8px 0;
+    margin: 0 0 12px; padding: 0;
     background: var(--bg); border: 1px solid var(--border-2); border-radius: 6px;
     overflow-x: auto; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55;
   }
-  .diff-line { display: block; padding: 0 12px; white-space: pre; color: var(--text-dim); }
+  .diff-line { display: block; padding: 1px 12px; white-space: pre; color: var(--text-dim); }
+  .diff-line .ln {
+    display: inline-block;
+    width: 4ch;
+    padding-right: 10px;
+    color: var(--faint);
+    text-align: right;
+    user-select: none;
+  }
+  .diff-line .mark {
+    display: inline-block;
+    width: 2ch;
+    color: var(--text-dim);
+  }
   .diff-line.add { background: rgba(78, 201, 176, .07); color: var(--text); }
   .diff-line.del { background: rgba(210, 138, 138, .07); color: var(--text); }
   .diff-line.hunk { color: var(--muted); }
@@ -755,6 +769,7 @@
       <span id="changes-subtitle">Not loaded</span>
     </div>
     <button class="drawer-btn" id="changes-copy">Copy diff</button>
+    <button class="drawer-btn" id="changes-restore">Restore</button>
     <button class="drawer-btn" id="changes-refresh">Refresh</button>
     <button class="drawer-btn" id="changes-close">Close</button>
   </div>
@@ -1547,6 +1562,18 @@ async function fetchChanges(project) {
   return data;
 }
 
+async function restoreChanges(project) {
+  const r = await fetch('/api/changes/restore', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ project }),
+  });
+  let data = {};
+  try { data = await r.json(); } catch {}
+  if (!r.ok) data.ok = false;
+  return data;
+}
+
 async function maybeAddChangesSummary(sid) {
   const project = sessionProjectPath(sid);
   if (!project) return;
@@ -1568,7 +1595,8 @@ async function openChangesDrawer(project) {
 
 async function loadChangesDrawer(project) {
   $('changes-subtitle').textContent = 'Loading…';
-  $('changes-body').innerHTML = '<div class="changes-empty">Reading git diff…</div>';
+  $('changes-restore').disabled = true;
+  $('changes-body').innerHTML = '<div class="changes-empty">Reading changes…</div>';
   try {
     const data = await fetchChanges(project);
     lastChangesData = data;
@@ -1593,7 +1621,9 @@ function renderChangesDrawer(data) {
     return;
   }
   const files = Array.isArray(data.files) ? data.files : [];
-  $('changes-subtitle').textContent = `${files.length} file${files.length === 1 ? '' : 's'} changed`;
+  const mode = data.mode === 'git' ? 'Git' : 'Snapshot';
+  $('changes-subtitle').textContent = `${files.length} file${files.length === 1 ? '' : 's'} changed · ${mode}`;
+  $('changes-restore').disabled = data.mode === 'git' || !files.length;
   if (!files.length) {
     body.innerHTML = '<div class="changes-empty">No changes</div>';
     return;
@@ -1663,14 +1693,37 @@ function changeFileNode(file, chunks) {
 }
 
 function renderDiffLines(lines) {
-  return (lines || []).map(line => {
-    let cls = 'diff-line';
-    if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) cls += ' meta';
-    else if (line.startsWith('@@')) cls += ' hunk';
-    else if (line.startsWith('+')) cls += ' add';
-    else if (line.startsWith('-')) cls += ' del';
-    return `<span class="${cls}">${escapeHtml(line || ' ')}</span>`;
-  }).join('');
+  let oldLine = 0;
+  let newLine = 0;
+  const out = [];
+  for (const line of (lines || [])) {
+    if (line.startsWith('@@')) {
+      const m = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (m) {
+        oldLine = Number(m[1]);
+        newLine = Number(m[2]);
+      }
+      continue;
+    }
+    if (line.startsWith('diff --git') || line.startsWith('index ') || line.startsWith('---') || line.startsWith('+++')) {
+      continue;
+    }
+    if (line.startsWith('+')) {
+      out.push(`<span class="diff-line add"><span class="ln">${newLine || ''}</span><span class="mark">+</span>${escapeHtml(line.slice(1) || ' ')}</span>`);
+      newLine += 1;
+      continue;
+    }
+    if (line.startsWith('-')) {
+      out.push(`<span class="diff-line del"><span class="ln">${oldLine || ''}</span><span class="mark">-</span>${escapeHtml(line.slice(1) || ' ')}</span>`);
+      oldLine += 1;
+      continue;
+    }
+    if (line) {
+      oldLine += 1;
+      newLine += 1;
+    }
+  }
+  return out.join('');
 }
 
 async function approveShell(id, approved, approveBtn, denyBtn) {
@@ -1800,6 +1853,29 @@ $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
 $('changes-close').onclick = closeChangesDrawer;
 $('changes-refresh').onclick = () => {
   if (activeChangesProject) loadChangesDrawer(activeChangesProject);
+};
+$('changes-restore').onclick = async () => {
+  if (!activeChangesProject || !lastChangesData || lastChangesData.mode === 'git') return;
+  $('changes-restore').disabled = true;
+  $('changes-restore').textContent = 'Restoring';
+  try {
+    const data = await restoreChanges(activeChangesProject);
+    if (!data.ok) {
+      const detail = data.conflicts && data.conflicts.length
+        ? `Conflict: ${data.conflicts.join(', ')}`
+        : (data.error || 'Restore failed');
+      $('changes-subtitle').textContent = detail;
+      $('changes-restore').disabled = false;
+      return;
+    }
+    $('changes-restore').textContent = 'Restored';
+    await loadChangesDrawer(activeChangesProject);
+    setTimeout(() => { $('changes-restore').textContent = 'Restore'; }, 1200);
+  } catch (err) {
+    $('changes-subtitle').textContent = String(err);
+  } finally {
+    if ($('changes-restore').textContent !== 'Restored') $('changes-restore').textContent = 'Restore';
+  }
 };
 $('changes-copy').onclick = async () => {
   const diff = lastChangesData && lastChangesData.diff ? lastChangesData.diff : '';

@@ -14,6 +14,7 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Protocol
 
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.providers import ChatProvider
@@ -48,6 +49,11 @@ EDIT_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 DEFAULT_CODEC = JsonToolCodec()
+
+
+class ChangeTracker(Protocol):
+    def capture_before(self, rel: str) -> None:
+        """Record a file's pre-write content if it has not been captured."""
 
 
 @dataclass(frozen=True)
@@ -407,6 +413,7 @@ def run(
     on_shell_request=None,
     stop_flag=None,
     fresh_chat: bool = True,
+    change_tracker: ChangeTracker | None = None,
 ) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
@@ -451,13 +458,19 @@ def run(
             path = _call_arg(call, "path", ".")
             try:
                 if call.name == "write":
+                    if change_tracker is not None:
+                        change_tracker.capture_before(path)
                     out = tool_write(project, path, _call_arg(call, "content"))
                     if not out.startswith("ERROR:"):
                         made_progress = True
                 elif call.name == "edit":
                     if _edit_has_content(call):
+                        if change_tracker is not None:
+                            change_tracker.capture_before(path)
                         out = tool_write(project, path, _call_arg(call, "content"))
                     else:
+                        if change_tracker is not None:
+                            change_tracker.capture_before(path)
                         out = tool_edit(project, path, _edit_body_from_call(call))
                     if not out.startswith("ERROR:"):
                         made_progress = True

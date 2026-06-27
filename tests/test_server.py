@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey import server
+from codey.changes import ChangeTracker
 
 
 class GitChangesTests(unittest.TestCase):
@@ -27,12 +28,27 @@ class GitChangesTests(unittest.TestCase):
         self.assertFalse(server.is_displayable_change_path(".pytest_cache/v/cache/nodeids"))
         self.assertTrue(server.is_displayable_change_path("app.py"))
 
-    def test_collect_git_changes_rejects_non_git_directory(self) -> None:
+    def test_collect_changes_uses_empty_snapshot_for_non_git_directory(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            data = server.collect_git_changes(td)
+            data = server.collect_changes(td)
 
-            self.assertFalse(data["ok"])
-            self.assertEqual(data["error"], "not a git repository")
+            self.assertTrue(data["ok"], data)
+            self.assertEqual(data["mode"], "snapshot")
+            self.assertEqual(data["changed_count"], 0)
+
+    def test_collect_changes_uses_snapshot_tracker_for_non_git_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracker = ChangeTracker(root)
+            tracker.capture_before("app.py")
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            data = server.collect_changes(root, tracker)
+
+            self.assertTrue(data["ok"], data)
+            self.assertEqual(data["mode"], "snapshot")
+            self.assertEqual(data["changed_count"], 1)
+            self.assertEqual(data["files"][0]["status"], "A")
 
     @unittest.skipIf(shutil.which("git") is None, "git is not installed")
     def test_collect_git_changes_includes_untracked_text_diff(self) -> None:
@@ -44,6 +60,7 @@ class GitChangesTests(unittest.TestCase):
             data = server.collect_git_changes(root)
 
             self.assertTrue(data["ok"], data)
+            self.assertEqual(data["mode"], "git")
             self.assertEqual(data["changed_count"], 1)
             self.assertEqual(data["files"][0]["path"], "note.txt")
             self.assertEqual(data["files"][0]["status"], "??")
@@ -82,6 +99,21 @@ class GitChangesTests(unittest.TestCase):
 
             self.assertTrue(data["ok"], data)
             self.assertEqual([file["path"] for file in data["files"]], ["app.py"])
+
+    @unittest.skipIf(shutil.which("git") is None, "git is not installed")
+    def test_collect_changes_prefers_git_for_git_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
+            tracker = ChangeTracker(root)
+            tracker.capture_before("tracked.txt")
+            (root / "tracked.txt").write_text("snapshot\n", encoding="utf-8")
+
+            data = server.collect_changes(root, tracker)
+
+            self.assertTrue(data["ok"], data)
+            self.assertEqual(data["mode"], "git")
+            self.assertEqual(data["files"][0]["path"], "tracked.txt")
 
 
 class ApprovedShellTests(unittest.TestCase):
@@ -148,6 +180,31 @@ class SessionThreadingTests(unittest.TestCase):
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["provider"], "qwen")
         self.assertEqual(state.provider_id, "qwen")
+        self.assertIn(str(Path(td).resolve()), state.change_trackers)
+        self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
+
+    def test_restore_snapshot_changes_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+            tracker = ChangeTracker(root)
+            tracker.capture_before("app.py")
+            path.write_text("new\n", encoding="utf-8")
+            tracker.collect()
+
+            status, payload = server.restore_snapshot_changes(root, tracker, ["app.py"])
+
+            self.assertEqual(status, 200)
+            self.assertTrue(payload["ok"], payload)
+            self.assertEqual(payload["restored"], ["app.py"])
+            self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
+
+    def test_restore_snapshot_changes_reports_missing_tracker(self) -> None:
+        status, payload = server.restore_snapshot_changes("E:/missing", None)
+
+        self.assertEqual(status, 404)
+        self.assertFalse(payload["ok"])
 
 
 class UiLaunchTests(unittest.TestCase):

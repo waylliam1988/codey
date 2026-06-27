@@ -33,6 +33,7 @@ from urllib.parse import parse_qs, urlparse
 
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
+from codey.changes import ChangeTracker
 from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, connect_provider
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -170,12 +171,65 @@ def collect_git_changes(project: str | Path | None) -> dict:
         diff = diff[:MAX_DIFF_CHARS].rstrip() + "\n\n... diff truncated by Codey"
     return {
         "ok": True,
+        "mode": "git",
+        "vcs": {"git_available": True, "is_repo": True},
         "root": str(git_root),
         "files": files,
         "changed_count": len(files),
         "diff": diff,
         "truncated": truncated,
     }
+
+
+def _empty_snapshot_changes(project: str | Path | None, error: str | None = None) -> dict:
+    root = str(Path(project).expanduser().resolve()) if project else ""
+    return {
+        "ok": True,
+        "mode": "snapshot",
+        "vcs": {"git_available": error != "git unavailable", "is_repo": False},
+        "root": root,
+        "files": [],
+        "changed_count": 0,
+        "diff": "",
+        "truncated": False,
+    }
+
+
+def collect_changes(project: str | Path | None, tracker: ChangeTracker | None = None) -> dict:
+    if not project:
+        return {"ok": False, "error": "project required", "files": [], "diff": ""}
+    git_data = collect_git_changes(project)
+    if git_data.get("ok"):
+        return git_data
+    if tracker is not None:
+        data = tracker.collect()
+        data["vcs"] = {
+            "git_available": not str(git_data.get("error", "")).startswith("git unavailable"),
+            "is_repo": False,
+        }
+        return data
+    if git_data.get("error") in {"not a git repository"} or str(git_data.get("error", "")).startswith("git unavailable"):
+        return _empty_snapshot_changes(project, "git unavailable" if str(git_data.get("error", "")).startswith("git unavailable") else None)
+    return git_data
+
+
+def restore_snapshot_changes(
+    project: str | Path | None,
+    tracker: ChangeTracker | None,
+    paths: list[str] | None = None,
+) -> tuple[int, dict]:
+    if not project:
+        return 400, {"ok": False, "error": "project required"}
+    if tracker is None:
+        return 404, {"ok": False, "error": "no snapshot changes to restore"}
+    result = tracker.restore(paths)
+    payload = {
+        "ok": result.ok,
+        "restored": result.restored,
+        "conflicts": result.conflicts,
+        "error": result.error,
+    }
+    return (200 if result.ok else 409), payload
 
 
 def _safe_project_cwd(project: str | Path, rel: str) -> Path:
@@ -247,6 +301,7 @@ class State:
         self.last_stop_reason: str | None = None
         self.stop_flag = threading.Event()
         self.pending_shell: dict[str, dict] = {}
+        self.change_trackers: dict[str, ChangeTracker] = {}
         self.reset_next_chat = False
 
     def emit(self, event: dict) -> None:
@@ -383,6 +438,12 @@ def _run_task(
             STATE.reset_next_chat = False
         fresh_chat = (not continue_task) or reset_requested
         if project:
+            key = str(Path(project).expanduser().resolve())
+            with STATE.lock:
+                tracker = STATE.change_trackers.get(key)
+                if tracker is None:
+                    tracker = ChangeTracker(project)
+                    STATE.change_trackers[key] = tracker
             result = agent_run(
                 provider,
                 Path(project),
@@ -392,6 +453,7 @@ def _run_task(
                 on_shell_request=on_shell_request,
                 stop_flag=STATE.stop_flag,
                 fresh_chat=fresh_chat,
+                change_tracker=tracker,
             )
         else:
             # Plain chat: just send + capture the reply, no tools executed.
@@ -494,7 +556,10 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/changes":
             query = parse_qs(url.query)
             project = (query.get("project") or [""])[0].strip()
-            payload = collect_git_changes(project)
+            key = str(Path(project).expanduser().resolve()) if project else ""
+            with STATE.lock:
+                tracker = STATE.change_trackers.get(key)
+            payload = collect_changes(project, tracker)
             self._send_json(200 if payload.get("ok") else 400, payload)
             return
         if url.path == "/api/events":
@@ -556,8 +621,27 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/changes":
             project = (body.get("project") or "").strip()
-            payload = collect_git_changes(project)
+            key = str(Path(project).expanduser().resolve()) if project else ""
+            with STATE.lock:
+                tracker = STATE.change_trackers.get(key)
+            payload = collect_changes(project, tracker)
             self._send_json(200 if payload.get("ok") else 400, payload)
+            return
+        if url.path == "/api/changes/restore":
+            project = (body.get("project") or "").strip()
+            if not project:
+                self._send_json(400, {"ok": False, "error": "project required"})
+                return
+            paths = body.get("paths")
+            if paths is not None and not isinstance(paths, list):
+                self._send_json(400, {"ok": False, "error": "paths must be a list"})
+                return
+            clean_paths = [str(path) for path in paths] if paths is not None else None
+            key = str(Path(project).expanduser().resolve())
+            with STATE.lock:
+                tracker = STATE.change_trackers.get(key)
+            status, payload = restore_snapshot_changes(project, tracker, clean_paths)
+            self._send_json(status, payload)
             return
         if url.path == "/api/shell_approval":
             approval_id = str(body.get("id") or "").strip()

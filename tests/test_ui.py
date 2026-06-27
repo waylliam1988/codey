@@ -50,6 +50,19 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("Continue", HTML)
         self.assertIn("Retry", HTML)
 
+    def test_changes_drawer_supports_snapshot_mode_and_restore(self) -> None:
+        self.assertIn('id="changes-restore"', HTML)
+        self.assertIn("Reading changes", HTML)
+        self.assertIn("data.mode === 'git' ? 'Git' : 'Snapshot'", HTML)
+        self.assertIn("/api/changes/restore", HTML)
+        self.assertNotIn("Reading git diff", HTML)
+
+    def test_changes_drawer_hides_diff_metadata_lines(self) -> None:
+        self.assertIn('class="diff-line add"><span class="ln"', HTML)
+        self.assertIn('class="diff-line del"><span class="ln"', HTML)
+        self.assertIn("line.startsWith('diff --git')", HTML)
+        self.assertNotIn("line.startsWith('@@')) cls += ' hunk'", HTML)
+
     def test_composer_holds_model_picker_with_green_dot(self) -> None:
         self.assertIn('class="provider-chooser"', HTML)
         self.assertIn('class="provider-button"', HTML)
