@@ -18,7 +18,8 @@ from pathlib import Path
 from playwright.sync_api import Page
 
 from codey.deepseek import chat, new_chat
-from codey.protocols import Action, Control, ProtocolCodec, XmlToolCodec
+from codey.models import Control, ToolCall, ToolPlan, ToolResult
+from codey.protocols import ProtocolCodec, XmlToolCodec
 
 DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
@@ -64,7 +65,7 @@ class EditBlock:
     replace: str
 
 
-def parse_reply(text: str, codec: ProtocolCodec = DEFAULT_CODEC) -> tuple[list[Action], Control | None]:
+def parse_reply(text: str, codec: ProtocolCodec = DEFAULT_CODEC) -> ToolPlan:
     return codec.parse(text)
 
 
@@ -354,11 +355,32 @@ def format_project_instructions(docs: list[ProjectInstruction]) -> str:
     return "\n\n".join(chunks)
 
 
+def _call_arg(call: ToolCall, name: str, default: str = "") -> str:
+    value = call.args.get(name, default)
+    if value is None:
+        return default
+    return str(value)
+
+
+def _edit_body_from_call(call: ToolCall) -> str:
+    replacements = call.args.get("replacements")
+    if not isinstance(replacements, list):
+        return ""
+    blocks: list[str] = []
+    for item in replacements:
+        if not isinstance(item, dict):
+            continue
+        search = str(item.get("search") or "")
+        replace = str(item.get("replace") or "")
+        blocks.append(f"<<<<<<< SEARCH\n{search}\n=======\n{replace}\n>>>>>>> REPLACE")
+    return "\n".join(blocks)
+
+
 # ----------------------------------------------------------------- loop ---
 
 @dataclass
 class StepResult:
-    actions: list[Action]
+    calls: list[ToolCall]
     control: Control | None
     tool_outputs: list[str] = field(default_factory=list)
     raw_reply: str = ""
@@ -417,42 +439,45 @@ def run(
         if stop_flag is not None and stop_flag.is_set():
             on_event("[agent] stopped by user.")
             return RunResult("stopped", "stopped", turn)
-        actions, control = parse_reply(reply, codec)
+        plan = parse_reply(reply, codec)
+        calls = plan.calls
+        control = plan.control
 
-        results: list[tuple[Action, str]] = []
+        results: list[ToolResult] = []
         made_progress = False
-        for a in actions:
+        for call in calls:
+            path = _call_arg(call, "path", ".")
             try:
-                if a.kind == "write" and a.path:
-                    out = tool_write(project, a.path, a.body)
+                if call.name == "write":
+                    out = tool_write(project, path, _call_arg(call, "content"))
                     if not out.startswith("ERROR:"):
                         made_progress = True
-                elif a.kind == "edit" and a.path:
-                    out = tool_edit(project, a.path, a.body)
+                elif call.name == "edit":
+                    out = tool_edit(project, path, _edit_body_from_call(call))
                     if not out.startswith("ERROR:"):
                         made_progress = True
-                elif a.kind == "read" and a.path:
-                    out = tool_read(project, a.path)
-                elif a.kind == "ls":
-                    out = tool_ls(project, a.path or ".")
-                elif a.kind == "search":
-                    out = tool_search(project, a.path or ".", a.body)
-                elif a.kind == "run":
-                    out = tool_run(project, a.path or ".", a.body)
-                elif a.kind == "shell":
-                    command = a.body.strip()
+                elif call.name == "read":
+                    out = tool_read(project, path)
+                elif call.name == "ls":
+                    out = tool_ls(project, path)
+                elif call.name == "search":
+                    out = tool_search(project, path, _call_arg(call, "query"))
+                elif call.name == "run":
+                    out = tool_run(project, path, _call_arg(call, "command"))
+                elif call.name == "shell":
+                    command = _call_arg(call, "command").strip()
                     if on_shell_request:
-                        on_shell_request(a.path or ".", command)
+                        on_shell_request(path, command)
                     on_event(f"[agent] shell approval requested: {command}")
                     return RunResult("shell command requires approval", "approval", turn)
                 else:
-                    out = f"ERROR: malformed action {a.kind} (path={a.path})"
+                    out = f"ERROR: malformed tool call {call.name} (path={path})"
             except Exception as exc:
                 out = f"ERROR: {exc}"
-            on_event(f"  · {a.kind} {a.path or ''} -> {out.splitlines()[0][:80]}")
-            results.append((a, out))
-            if a.kind in ("read", "ls", "search", "run", "shell") and not out.startswith("ERROR:"):
-                sig = (a.kind, a.path or ".", out)
+            on_event(f"  · {call.name} {path if path != '.' else ''} -> {out.splitlines()[0][:80]}")
+            results.append(ToolResult(call=call, output=out))
+            if call.name in ("read", "ls", "search", "run", "shell") and not out.startswith("ERROR:"):
+                sig = (call.name, path, out)
                 if sig not in seen_info:
                     seen_info.add(sig)
                     made_progress = True
@@ -477,7 +502,7 @@ def run(
         if control.kind == "done":
             # Safety net: if the model said `done` but also asked for info,
             # treat it as `continue` — it almost certainly needs the result.
-            needs_followup = any(a.kind in ("read", "ls", "search", "run", "shell") for a in actions)
+            needs_followup = any(call.name in ("read", "ls", "search", "run", "shell") for call in calls)
             if needs_followup:
                 on_event("[agent] `done` came with info action — treating as continue.")
             else:

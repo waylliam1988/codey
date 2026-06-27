@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 
-from codey.protocols.base import Action, Control
+from codey.models import Control, ToolCall, ToolPlan, ToolResult
 
 
 SYSTEM_PROMPT = """\
@@ -140,8 +140,8 @@ class XmlToolCodec:
     def system_prompt(self) -> str:
         return SYSTEM_PROMPT
 
-    def parse(self, text: str) -> tuple[list[Action], Control | None]:
-        actions: list[Action] = []
+    def parse(self, text: str) -> ToolPlan:
+        calls: list[ToolCall] = []
         control: Control | None = None
 
         for match in CODEY_XML_RE.finditer(text):
@@ -155,9 +155,9 @@ class XmlToolCodec:
             for child in root:
                 tag = _xml_tag_name(child)
                 if tag == "tool":
-                    action = self._tool_action(child)
-                    if action is not None:
-                        actions.append(action)
+                    call = self._tool_call(child)
+                    if call is not None:
+                        calls.append(call)
                 elif tag == "control":
                     kind = (child.attrib.get("type") or "").strip().lower()
                     if kind in ("continue", "done"):
@@ -165,13 +165,14 @@ class XmlToolCodec:
                 elif tag in ("continue", "done"):
                     control = Control(kind=tag, body="".join(child.itertext()).strip())
 
-        return actions, control
+        return ToolPlan(calls=calls, control=control)
 
-    def format_results(self, results: list[tuple[Action, str]]) -> str:
+    def format_results(self, results: list[ToolResult]) -> str:
         chunks = []
-        for action, output in results:
-            head = f"[{action.kind} {action.path or ''}]".rstrip()
-            chunks.append(f"{head}\n{output}")
+        for result in results:
+            path = str(result.call.args.get("path") or "")
+            head = f"[{result.call.name} {path}]".rstrip()
+            chunks.append(f"{head}\n{result.output}")
         formatted = "\n\n".join(chunks) if chunks else "(no actions executed)"
         return (
             "Tool results from your previous actions:\n\n"
@@ -191,28 +192,28 @@ class XmlToolCodec:
             " <control type=\"done\">...</control> element."
         )
 
-    def _tool_action(self, element: ET.Element) -> Action | None:
+    def _tool_call(self, element: ET.Element) -> ToolCall | None:
         kind = (element.attrib.get("name") or element.attrib.get("tool") or "").strip().lower()
         if kind not in ("write", "edit", "read", "ls", "search", "run", "shell"):
             return None
 
         path = (_xml_child_text(element, "path", "cwd") or element.attrib.get("path") or "").strip()
-        body = ""
+        args: dict[str, object] = {"path": path or "."}
 
         if kind == "write":
-            body = _xml_payload(_xml_child_text(element, "content", "body", "text"))
+            args["content"] = _xml_payload(_xml_child_text(element, "content", "body", "text"))
         elif kind == "edit":
-            blocks: list[str] = []
+            replacements: list[dict[str, str]] = []
             for child in element:
                 if _xml_tag_name(child) != "replace":
                     continue
                 search = _xml_payload(_xml_child_text(child, "search"))
                 replacement = _xml_payload(_xml_child_text(child, "with", "replacement", "replace"))
-                blocks.append(f"<<<<<<< SEARCH\n{search}\n=======\n{replacement}\n>>>>>>> REPLACE")
-            body = "\n".join(blocks)
+                replacements.append({"search": search, "replace": replacement})
+            args["replacements"] = replacements
         elif kind == "search":
-            body = (_xml_child_text(element, "query", "body", "text") or "").strip()
+            args["query"] = (_xml_child_text(element, "query", "body", "text") or "").strip()
         elif kind in ("run", "shell"):
-            body = (_xml_child_text(element, "command", "cmd", "body", "text") or "").strip()
+            args["command"] = (_xml_child_text(element, "command", "cmd", "body", "text") or "").strip()
 
-        return Action(kind=kind, path=path or None, body=body)
+        return ToolCall(name=kind, args=args)

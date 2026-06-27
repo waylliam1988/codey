@@ -1,20 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Protocol
 
-
-@dataclass
-class Action:
-    kind: str
-    path: str | None
-    body: str
-
-
-@dataclass
-class Control:
-    kind: str
-    body: str
+from codey.models import ToolPlan, ToolResult
 
 
 class ProtocolCodec(Protocol):
@@ -23,10 +11,10 @@ class ProtocolCodec(Protocol):
     def system_prompt(self) -> str:
         """Return the model-facing protocol instructions."""
 
-    def parse(self, text: str) -> tuple[list[Action], Control | None]:
+    def parse(self, text: str) -> ToolPlan:
         """Parse an assistant reply into local actions plus a control signal."""
 
-    def format_results(self, results: list[tuple[Action, str]]) -> str:
+    def format_results(self, results: list[ToolResult]) -> str:
         """Format tool results for the next model turn."""
 
     def repair_prompt(self) -> str:
