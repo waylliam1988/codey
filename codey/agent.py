@@ -16,6 +16,13 @@ Protocol (we instruct the model up front):
     # === codey: write path=relative/path.ext ===
     <full file contents — verbatim>
 
+    # === codey: edit path=relative/path.ext ===
+    <<<<<<< SEARCH
+    old exact text
+    =======
+    new exact text
+    >>>>>>> REPLACE
+
     # === codey: read path=relative/path.ext ===
 
     # === codey: ls path=. ===
@@ -63,6 +70,10 @@ SEARCH_EXCLUDED_DIRS = {
 }
 SEARCH_MAX_RESULTS = 80
 SEARCH_MAX_FILE_BYTES = 512 * 1024
+EDIT_BLOCK_RE = re.compile(
+    r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
+    re.DOTALL,
+)
 
 MARKER_RE = re.compile(
     r"^[#/\-\s]*===\s*codey\s*:\s*(\w+)(?:\s+path\s*=\s*([^\s=]+))?\s*===\s*$",
@@ -70,8 +81,8 @@ MARKER_RE = re.compile(
 )
 
 SYSTEM_PROMPT = """\
-You are Codey, a careful local coding agent.  You can read, list, search and
-write files in the user's project.  You CANNOT run shell commands.
+You are Codey, a careful local coding agent.  You can read, list, search,
+edit and write files in the user's project.  You CANNOT run shell commands.
 
 OUTPUT PROTOCOL — every reply MUST follow this exactly.
 
@@ -84,14 +95,23 @@ The remaining lines of the block are the action's payload.  The fence
 language (after the opening ```) is ignored — use whatever makes the code
 look nice (python, text, js, etc.).
 
-You may emit ZERO OR MORE action blocks (write/read/ls/search) then EXACTLY ONE
-control block (done OR continue) at the end.
+You may emit ZERO OR MORE action blocks (write/edit/read/ls/search) then
+EXACTLY ONE control block (done OR continue) at the end.
 
 Actions:
 
   ```python
   # === codey: write path=relative/path.ext ===
   <full file contents go here, byte-perfect>
+  ```
+
+  ```text
+  # === codey: edit path=relative/path.ext ===
+  <<<<<<< SEARCH
+  old exact text copied from `read`
+  =======
+  new replacement text
+  >>>>>>> REPLACE
   ```
 
   ```text
@@ -124,6 +144,9 @@ Rules:
   - The marker line MUST be exactly on line 1 of the code block.
   - Use `search` before `read` when you do not know which file contains the
     relevant code.
+  - Prefer `edit` over `write` for small changes to existing files.  Use
+    `write` for new files or when replacing a whole file is genuinely clearer.
+  - Every `edit` SEARCH section must be copied exactly from content you read.
   - Never invent file contents you have not been shown.  Use `read` first.
   - Keep replies focused.  Plain commentary outside fenced blocks is fine
     for short explanations but the agent only acts on the marker blocks.
@@ -144,7 +167,7 @@ CRITICAL — when to use `done` vs `continue`:
 
 @dataclass
 class Action:
-    kind: str          # "write" | "read" | "ls" | "search"
+    kind: str          # "write" | "edit" | "read" | "ls" | "search"
     path: str | None
     body: str
 
@@ -160,6 +183,12 @@ class ProjectInstruction:
     name: str
     content: str
     truncated: bool = False
+
+
+@dataclass(frozen=True)
+class EditBlock:
+    search: str
+    replace: str
 
 
 BLOCK_RE = re.compile(r"^```[^\n]*\n(.*?)\n?```", re.MULTILINE | re.DOTALL)
@@ -178,7 +207,7 @@ def parse_reply(text: str) -> tuple[list[Action], Control | None]:
             continue
         kind = mm.group(1).lower()
         path = mm.group(2)
-        if kind in ("write", "read", "ls", "search"):
+        if kind in ("write", "edit", "read", "ls", "search"):
             actions.append(Action(kind=kind, path=path, body=rest))
         elif kind in ("done", "continue"):
             control = Control(kind=kind, body=rest.strip())
@@ -200,6 +229,69 @@ def tool_write(root: Path, rel: str, content: str) -> str:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
     return f"wrote {rel} ({len(content)} chars)"
+
+
+def parse_edit_body(body: str) -> list[EditBlock]:
+    matches = list(EDIT_BLOCK_RE.finditer(body.strip()))
+    if not matches:
+        raise ValueError("edit body must contain SEARCH/REPLACE block")
+    leftover = EDIT_BLOCK_RE.sub("", body.strip()).strip()
+    if leftover:
+        raise ValueError("edit body contains text outside SEARCH/REPLACE blocks")
+    blocks: list[EditBlock] = []
+    for m in matches:
+        search = m.group(1)
+        replace = m.group(2)
+        if not search:
+            raise ValueError("SEARCH section cannot be empty")
+        blocks.append(EditBlock(search=search, replace=replace))
+    return blocks
+
+
+def _replace_unique(content: str, search: str, replace: str) -> tuple[str, bool]:
+    count = content.count(search)
+    if count == 1:
+        return content.replace(search, replace, 1), True
+    if count == 0 and "\r\n" in content and "\r\n" not in search:
+        crlf_search = search.replace("\n", "\r\n")
+        crlf_replace = replace.replace("\n", "\r\n")
+        crlf_count = content.count(crlf_search)
+        if crlf_count == 1:
+            return content.replace(crlf_search, crlf_replace, 1), True
+    return content, False
+
+
+def tool_edit(root: Path, rel: str, body: str) -> str:
+    p = _safe_join(root, rel)
+    if not p.is_file():
+        return f"ERROR: not a file: {rel}"
+    try:
+        blocks = parse_edit_body(body)
+        content = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return f"ERROR: not utf-8 text: {rel}"
+    except ValueError as exc:
+        return f"ERROR: {exc}"
+
+    updated = content
+    for block in blocks:
+        exact_count = updated.count(block.search)
+        crlf_count = 0
+        if exact_count == 0 and "\r\n" in updated and "\r\n" not in block.search:
+            crlf_count = updated.count(block.search.replace("\n", "\r\n"))
+        total = exact_count or crlf_count
+        if total == 0:
+            return f"ERROR: SEARCH text not found in {rel}"
+        if total > 1:
+            return f"ERROR: SEARCH text matched {total} times in {rel}; make it unique"
+        updated, ok = _replace_unique(updated, block.search, block.replace)
+        if not ok:
+            return f"ERROR: SEARCH text not found in {rel}"
+
+    if updated == content:
+        return f"edited {rel} (no changes)"
+    p.write_text(updated, encoding="utf-8")
+    return f"edited {rel} ({len(blocks)} replacement{'s' if len(blocks) != 1 else ''})"
 
 
 def tool_read(root: Path, rel: str) -> str:
@@ -407,6 +499,10 @@ def run(
                     out = tool_write(project, a.path, a.body)
                     if not out.startswith("ERROR:"):
                         made_progress = True
+                elif a.kind == "edit" and a.path:
+                    out = tool_edit(project, a.path, a.body)
+                    if not out.startswith("ERROR:"):
+                        made_progress = True
                 elif a.kind == "read" and a.path:
                     out = tool_read(project, a.path)
                 elif a.kind == "ls":
@@ -446,7 +542,7 @@ def run(
             continue
 
         if control.kind == "done":
-            # Safety net: if the model said `done` but also asked to read/ls,
+            # Safety net: if the model said `done` but also asked for info,
             # treat it as `continue` — it almost certainly needs the result.
             needs_followup = any(a.kind in ("read", "ls", "search") for a in actions)
             if needs_followup:

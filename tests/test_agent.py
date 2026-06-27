@@ -66,6 +66,29 @@ need the matching files
         self.assertIsNotNone(control)
         self.assertEqual(control.kind, "continue")
 
+    def test_parse_edit_action(self) -> None:
+        text = """```text
+# === codey: edit path=app.py ===
+<<<<<<< SEARCH
+old()
+=======
+new()
+>>>>>>> REPLACE
+```
+
+```text
+# === codey: done ===
+updated
+```"""
+        actions, control = agent.parse_reply(text)
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].kind, "edit")
+        self.assertEqual(actions[0].path, "app.py")
+        self.assertIn("<<<<<<< SEARCH", actions[0].body)
+        self.assertIsNotNone(control)
+        self.assertEqual(control.kind, "done")
+
 
 class ToolTests(unittest.TestCase):
     def test_safe_join_blocks_parent_escape(self) -> None:
@@ -120,6 +143,51 @@ class ToolTests(unittest.TestCase):
             self.assertEqual(
                 agent.tool_search(Path(td), ".", "   "),
                 "ERROR: search query required",
+            )
+
+    def test_edit_replaces_unique_search_text(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("def old():\n    return 1\n", encoding="utf-8")
+            body = """<<<<<<< SEARCH
+def old():
+=======
+def new():
+>>>>>>> REPLACE"""
+
+            result = agent.tool_edit(root, "app.py", body)
+
+            self.assertEqual(result, "edited app.py (1 replacement)")
+            self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def new():\n    return 1\n")
+
+    def test_edit_rejects_non_unique_search_text(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("same\nsame\n", encoding="utf-8")
+            body = """<<<<<<< SEARCH
+same
+=======
+other
+>>>>>>> REPLACE"""
+
+            result = agent.tool_edit(root, "app.py", body)
+
+            self.assertEqual(result, "ERROR: SEARCH text matched 2 times in app.py; make it unique")
+            self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "same\nsame\n")
+
+    def test_edit_rejects_missing_search_text(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("current\n", encoding="utf-8")
+            body = """<<<<<<< SEARCH
+missing
+=======
+replacement
+>>>>>>> REPLACE"""
+
+            self.assertEqual(
+                agent.tool_edit(root, "app.py", body),
+                "ERROR: SEARCH text not found in app.py",
             )
 
 
