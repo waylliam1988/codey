@@ -37,4 +37,4 @@ class DeepSeekWebProvider:
         return deepseek.chat(self.session.page, text, **kwargs)
 
     def close(self) -> None:
-        self.session.pw.stop()
+        self.session.close()

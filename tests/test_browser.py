@@ -37,5 +37,38 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         )
 
 
+class PlaywrightStartupTests(unittest.TestCase):
+    def test_start_playwright_retries_internal_missing_playwright_error(self) -> None:
+        manager = mock.Mock()
+        started = object()
+        manager.start.side_effect = [
+            AttributeError("'PlaywrightContextManager' object has no attribute '_playwright'"),
+            started,
+        ]
+
+        with (
+            mock.patch.object(browser, "sync_playwright", return_value=manager) as sync_playwright,
+            mock.patch.object(browser.time, "sleep") as sleep,
+        ):
+            result = browser._start_playwright_with_retry()
+
+        self.assertIs(result, started)
+        self.assertEqual(sync_playwright.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_start_playwright_reports_clear_error_after_retry_exhausted(self) -> None:
+        manager = mock.Mock()
+        manager.start.side_effect = AttributeError(
+            "'PlaywrightContextManager' object has no attribute '_playwright'"
+        )
+
+        with (
+            mock.patch.object(browser, "sync_playwright", return_value=manager),
+            mock.patch.object(browser.time, "sleep"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Playwright failed to initialize"):
+                browser._start_playwright_with_retry()
+
+
 if __name__ == "__main__":
     unittest.main()

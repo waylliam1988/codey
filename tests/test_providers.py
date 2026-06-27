@@ -21,8 +21,8 @@ class DeepSeekWebProviderTests(unittest.TestCase):
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
         page = SimpleNamespace(url="https://chat.deepseek.com/")
-        pw = mock.Mock()
-        provider = DeepSeekWebProvider(SimpleNamespace(page=page, pw=pw))
+        session = SimpleNamespace(page=page, close=mock.Mock())
+        provider = DeepSeekWebProvider(session)
 
         with (
             mock.patch.object(deepseek_web.deepseek, "new_chat") as new_chat,
@@ -38,7 +38,7 @@ class DeepSeekWebProviderTests(unittest.TestCase):
         chat.assert_called_once_with(page, "hello", response_timeout=12.5)
 
         provider.close()
-        pw.stop.assert_called_once_with()
+        session.close.assert_called_once_with()
 
 
 class QwenWebProviderTests(unittest.TestCase):
@@ -53,8 +53,8 @@ class QwenWebProviderTests(unittest.TestCase):
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
         page = SimpleNamespace(url="https://chat.qwen.ai/c/test")
-        pw = mock.Mock()
-        provider = QwenWebProvider(SimpleNamespace(page=page, pw=pw))
+        session = SimpleNamespace(page=page, close=mock.Mock())
+        provider = QwenWebProvider(session)
 
         with (
             mock.patch.object(qwen_web.qwen, "new_chat") as new_chat,
@@ -70,7 +70,7 @@ class QwenWebProviderTests(unittest.TestCase):
         chat.assert_called_once_with(page, "hello", response_timeout=15.0)
 
         provider.close()
-        pw.stop.assert_called_once_with()
+        session.close.assert_called_once_with()
 
 
 class ProviderRegistryTests(unittest.TestCase):

@@ -80,10 +80,23 @@ class Session:
     page: Page
 
     def close(self) -> None:
+        self.pw.stop()
+
+
+def _start_playwright_with_retry() -> Playwright:
+    last_error: Exception | None = None
+    for attempt in range(2):
         try:
-            self.browser.close()
-        finally:
-            self.pw.stop()
+            return sync_playwright().start()
+        except AttributeError as exc:
+            if "_playwright" not in str(exc):
+                raise
+            last_error = exc
+            time.sleep(0.25 * (attempt + 1))
+    raise RuntimeError(
+        "Playwright failed to initialize. Close stale Codey/Edge automation "
+        "sessions and try again."
+    ) from last_error
 
 
 def open_chat_page(
@@ -98,7 +111,7 @@ def open_chat_page(
         _launch_edge(port, profile, start_url)
         _wait_port(port)
 
-    pw = sync_playwright().start()
+    pw = _start_playwright_with_retry()
     browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
 
     page: Page | None = None
