@@ -45,5 +45,22 @@ class GitChangesTests(unittest.TestCase):
             self.assertIn("+hello", data["diff"])
 
 
+class ApprovedShellTests(unittest.TestCase):
+    def test_execute_approved_shell_runs_in_project(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data = server.execute_approved_shell(td, ".", 'python -c "print(\'approved\')"')
+
+            self.assertTrue(data["ok"], data)
+            self.assertEqual(data["exit_code"], 0)
+            self.assertIn("approved", data["output"])
+
+    def test_execute_approved_shell_rejects_escaped_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            data = server.execute_approved_shell(td, "..", 'python -c "print(\'approved\')"')
+
+            self.assertFalse(data["ok"])
+            self.assertIn("escapes project root", data["error"])
+
+
 if __name__ == "__main__":
     unittest.main()

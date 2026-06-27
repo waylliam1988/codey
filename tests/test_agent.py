@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from codey import agent
 
@@ -104,6 +105,24 @@ need test output
         self.assertEqual(len(actions), 1)
         self.assertEqual(actions[0].kind, "run")
         self.assertEqual(actions[0].body, "python -m unittest")
+        self.assertIsNotNone(control)
+        self.assertEqual(control.kind, "continue")
+
+    def test_parse_shell_action(self) -> None:
+        text = """```text
+# === codey: shell path=. ===
+git status --short
+```
+
+```text
+# === codey: continue ===
+waiting for approval
+```"""
+        actions, control = agent.parse_reply(text)
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].kind, "shell")
+        self.assertEqual(actions[0].body, "git status --short")
         self.assertIsNotNone(control)
         self.assertEqual(control.kind, "continue")
 
@@ -268,6 +287,35 @@ class DefaultsTests(unittest.TestCase):
 
         self.assertEqual(agent.DEFAULT_MAX_TURNS, 50)
         self.assertIs(server.DEFAULT_MAX_TURNS, agent.DEFAULT_MAX_TURNS)
+
+
+class RunLoopTests(unittest.TestCase):
+    def test_shell_action_requests_approval_and_stops(self) -> None:
+        reply = """```text
+# === codey: shell path=. ===
+git status --short
+```
+
+```text
+# === codey: continue ===
+waiting
+```"""
+        requests: list[tuple[str, str]] = []
+        events: list[str] = []
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.object(agent, "chat", return_value=reply):
+                result = agent.run(
+                    object(),
+                    Path(td),
+                    "check git",
+                    on_event=events.append,
+                    on_shell_request=lambda cwd, command: requests.append((cwd, command)),
+                    fresh_chat=False,
+                )
+
+        self.assertEqual(result.stop_reason, "approval")
+        self.assertEqual(requests, [(".", "git status --short")])
+        self.assertTrue(any("shell approval requested" in event for event in events))
 
 
 if __name__ == "__main__":

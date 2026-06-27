@@ -9,6 +9,7 @@ Endpoints
                           a background thread, returns {ok:true}
     GET  /api/changes     query {project} → returns git status + diff
     POST /api/changes     body {project} → returns git status + diff
+    POST /api/shell_approval body {id, approved} → approve/reject shell request
     POST /api/stop        request cooperative stop of the current task
     GET  /api/events      Server-Sent Events stream of log lines
 
@@ -24,6 +25,7 @@ import difflib
 import subprocess
 import threading
 import time
+import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -37,6 +39,8 @@ FOLDER_DIALOG_LOCK = threading.Lock()
 GIT_TIMEOUT = 10
 MAX_DIFF_CHARS = 240_000
 MAX_UNTRACKED_DIFF_BYTES = 120_000
+SHELL_TIMEOUT = 120
+SHELL_OUTPUT_LIMIT = 24_000
 
 
 def _run_git(project: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -157,6 +161,61 @@ def collect_git_changes(project: str | Path | None) -> dict:
     }
 
 
+def _safe_project_cwd(project: str | Path, rel: str) -> Path:
+    root = Path(project).expanduser().resolve()
+    cwd = (root / (rel or ".")).resolve()
+    if root not in cwd.parents and cwd != root:
+        raise ValueError("cwd escapes project root")
+    if not cwd.is_dir():
+        raise ValueError("cwd is not a directory")
+    return cwd
+
+
+def execute_approved_shell(project: str | Path, rel: str, command: str) -> dict:
+    command = (command or "").strip()
+    if not command:
+        return {"ok": False, "error": "command required", "exit_code": None, "output": ""}
+    try:
+        cwd = _safe_project_cwd(project, rel)
+        proc = subprocess.run(
+            command,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=SHELL_TIMEOUT,
+            shell=True,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "ok": False,
+            "error": f"command timed out after {SHELL_TIMEOUT}s",
+            "exit_code": None,
+            "output": "",
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "exit_code": None, "output": ""}
+
+    output_parts = []
+    if proc.stdout:
+        output_parts.append(proc.stdout.rstrip())
+    if proc.stderr:
+        output_parts.append("[stderr]\n" + proc.stderr.rstrip())
+    output = "\n\n".join(output_parts) or "(no output)"
+    truncated = len(output) > SHELL_OUTPUT_LIMIT
+    if truncated:
+        output = output[:SHELL_OUTPUT_LIMIT].rstrip() + "\n\n... output truncated by Codey"
+    return {
+        "ok": True,
+        "error": None,
+        "exit_code": proc.returncode,
+        "output": output,
+        "truncated": truncated,
+    }
+
+
 class State:
     def __init__(self) -> None:
         self.lock = threading.Lock()
@@ -170,6 +229,7 @@ class State:
         self.last_stop_reason: str | None = None
         self.stop_flag = threading.Event()
         self._session = None
+        self.pending_shell: dict[str, dict] = {}
 
     def emit(self, event: dict) -> None:
         with self.lock:
@@ -271,6 +331,30 @@ def _run_task(
     def on_event(msg: str) -> None:
         STATE.emit({"type": "log", "session_id": session_id, "level": "info", "text": msg})
 
+    def on_shell_request(cwd_rel: str, command: str) -> None:
+        if not project:
+            return
+        approval_id = "shell_" + uuid.uuid4().hex[:12]
+        pending = {
+            "id": approval_id,
+            "session_id": session_id,
+            "project": project,
+            "cwd": cwd_rel or ".",
+            "command": command,
+            "max_turns": max_turns,
+            "continue_after": True,
+        }
+        with STATE.lock:
+            STATE.pending_shell[approval_id] = pending
+        STATE.emit({
+            "type": "shell_request",
+            "session_id": session_id,
+            "id": approval_id,
+            "project": project,
+            "cwd": pending["cwd"],
+            "command": command,
+        })
+
     try:
         sess = STATE.get_session()
         if project:
@@ -280,6 +364,7 @@ def _run_task(
                 task,
                 max_turns=max_turns,
                 on_event=on_event,
+                on_shell_request=on_shell_request,
                 stop_flag=STATE.stop_flag,
                 fresh_chat=False,
             )
@@ -416,6 +501,61 @@ class Handler(BaseHTTPRequestHandler):
             project = (body.get("project") or "").strip()
             payload = collect_git_changes(project)
             self._send_json(200 if payload.get("ok") else 400, payload)
+            return
+        if url.path == "/api/shell_approval":
+            approval_id = str(body.get("id") or "").strip()
+            approved = body.get("approved") is True
+            with STATE.lock:
+                pending = STATE.pending_shell.pop(approval_id, None)
+            if not pending:
+                self._send_json(404, {"error": "approval not found"}); return
+            session_id = pending["session_id"]
+            command = pending["command"]
+            if not approved:
+                STATE.emit({
+                    "type": "shell_result",
+                    "session_id": session_id,
+                    "id": approval_id,
+                    "approved": False,
+                    "command": command,
+                    "cwd": pending["cwd"],
+                    "output": "用户已拒绝执行该命令。",
+                    "exit_code": None,
+                })
+                self._send_json(200, {"ok": True, "approved": False})
+                return
+
+            result = execute_approved_shell(pending["project"], pending["cwd"], command)
+            STATE.emit({
+                "type": "shell_result",
+                "session_id": session_id,
+                "id": approval_id,
+                "approved": True,
+                "command": command,
+                "cwd": pending["cwd"],
+                "output": result.get("output") or result.get("error") or "",
+                "exit_code": result.get("exit_code"),
+                "ok": result.get("ok"),
+            })
+            continued = False
+            if pending.get("continue_after") and not STATE.busy:
+                continuation = (
+                    "Continue the interrupted Codey task in this same conversation.\n"
+                    "The user approved and ran this shell command:\n"
+                    f"{command}\n\n"
+                    f"Exit code: {result.get('exit_code')}\n"
+                    "Output:\n"
+                    f"{result.get('output') or result.get('error') or '(no output)'}\n\n"
+                    "Use this result to continue the original task. If the task is complete,"
+                    " emit the codey done block."
+                )
+                threading.Thread(
+                    target=_run_task,
+                    args=(session_id, pending["project"], continuation, int(pending["max_turns"]), True),
+                    daemon=True,
+                ).start()
+                continued = True
+            self._send_json(200, {"ok": True, "approved": True, "continued": continued, "result": result})
             return
         if url.path == "/api/new_chat":
             try:

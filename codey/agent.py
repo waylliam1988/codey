@@ -33,6 +33,9 @@ Protocol (we instruct the model up front):
     # === codey: run path=. ===
     python -m unittest
 
+    # === codey: shell path=. ===
+    git status --short
+
     # === codey: done ===
     <one-line summary>
 
@@ -105,7 +108,7 @@ The remaining lines of the block are the action's payload.  The fence
 language (after the opening ```) is ignored — use whatever makes the code
 look nice (python, text, js, etc.).
 
-You may emit ZERO OR MORE action blocks (write/edit/read/ls/search/run) then
+You may emit ZERO OR MORE action blocks (write/edit/read/ls/search/run/shell) then
 EXACTLY ONE control block (done OR continue) at the end.
 
 Actions:
@@ -142,6 +145,11 @@ Actions:
   python -m unittest
   ```
 
+  ```text
+  # === codey: shell path=. ===
+  git status --short
+  ```
+
 Control (exactly one, last):
 
   ```text
@@ -165,6 +173,9 @@ Rules:
   - Use `run` only for tests/builds/checks such as `python -m unittest`,
     `python -m pytest`, `npm test`, `npm run build`, `go test ./...`,
     `cargo test`, or similar allowed verification commands.
+  - Use `shell` only when a necessary command is not allowed by `run`.
+    `shell` pauses the task and asks the user to approve the exact command.
+    It is never executed automatically.
   - Never invent file contents you have not been shown.  Use `read` first.
   - Keep replies focused.  Plain commentary outside fenced blocks is fine
     for short explanations but the agent only acts on the marker blocks.
@@ -173,8 +184,8 @@ CRITICAL — when to use `done` vs `continue`:
   - `done` ends the entire task.  Only use it when the user's request is
     FULLY satisfied (all needed files written / verified).
   - `continue` means "I need another turn".  Use it whenever your reply
-    contains a `read`, `ls`, `search` or `run` action — the results arrive in
-    the next turn and you will likely need to act on them.
+    contains a `read`, `ls`, `search`, `run` or `shell` action — the results
+    arrive in the next turn and you will likely need to act on them.
   - A typical fix-a-bug flow takes TWO turns:
       turn 1:  read + continue            (asks to see the file)
       turn 2:  write + done               (writes the fixed file)
@@ -185,7 +196,7 @@ CRITICAL — when to use `done` vs `continue`:
 
 @dataclass
 class Action:
-    kind: str          # "write" | "edit" | "read" | "ls" | "search" | "run"
+    kind: str          # "write" | "edit" | "read" | "ls" | "search" | "run" | "shell"
     path: str | None
     body: str
 
@@ -225,7 +236,7 @@ def parse_reply(text: str) -> tuple[list[Action], Control | None]:
             continue
         kind = mm.group(1).lower()
         path = mm.group(2)
-        if kind in ("write", "edit", "read", "ls", "search", "run"):
+        if kind in ("write", "edit", "read", "ls", "search", "run", "shell"):
             actions.append(Action(kind=kind, path=path, body=rest))
         elif kind in ("done", "continue"):
             control = Control(kind=kind, body=rest.strip())
@@ -548,6 +559,7 @@ def run(
     max_turns: int = DEFAULT_MAX_TURNS,
     stagnant_turns: int = DEFAULT_STAGNANT_TURNS,
     on_event=print,
+    on_shell_request=None,
     stop_flag=None,
     fresh_chat: bool = True,
 ) -> RunResult:
@@ -606,13 +618,19 @@ def run(
                     out = tool_search(project, a.path or ".", a.body)
                 elif a.kind == "run":
                     out = tool_run(project, a.path or ".", a.body)
+                elif a.kind == "shell":
+                    command = a.body.strip()
+                    if on_shell_request:
+                        on_shell_request(a.path or ".", command)
+                    on_event(f"[agent] shell approval requested: {command}")
+                    return RunResult("shell command requires approval", "approval", turn)
                 else:
                     out = f"ERROR: malformed action {a.kind} (path={a.path})"
             except Exception as exc:
                 out = f"ERROR: {exc}"
             on_event(f"  · {a.kind} {a.path or ''} -> {out.splitlines()[0][:80]}")
             results.append((a, out))
-            if a.kind in ("read", "ls", "search", "run") and not out.startswith("ERROR:"):
+            if a.kind in ("read", "ls", "search", "run", "shell") and not out.startswith("ERROR:"):
                 sig = (a.kind, a.path or ".", out)
                 if sig not in seen_info:
                     seen_info.add(sig)
@@ -641,7 +659,7 @@ def run(
         if control.kind == "done":
             # Safety net: if the model said `done` but also asked for info,
             # treat it as `continue` — it almost certainly needs the result.
-            needs_followup = any(a.kind in ("read", "ls", "search", "run") for a in actions)
+            needs_followup = any(a.kind in ("read", "ls", "search", "run", "shell") for a in actions)
             if needs_followup:
                 on_event("[agent] `done` came with info action — treating as continue.")
             else:

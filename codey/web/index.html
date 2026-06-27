@@ -243,7 +243,7 @@
 
   .msg { display: flex; max-width: 100%; }
   .msg.user { justify-content: flex-end; }
-  .msg.asst, .msg.tool, .msg.done, .msg.limit, .msg.pause, .msg.changes, .msg.err { justify-content: flex-start; }
+  .msg.asst, .msg.tool, .msg.done, .msg.limit, .msg.pause, .msg.changes, .msg.shell, .msg.err { justify-content: flex-start; }
 
   .bubble {
     max-width: 88%;
@@ -315,6 +315,35 @@
     border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 12px;
   }
   .changes-btn:hover { background: #25314a; border-color: #40537f; color: var(--text); }
+  .shell-card {
+    max-width: 88%;
+    padding: 10px 12px; border-radius: 10px;
+    background: #201d16; border: 1px solid #4e3d1f; color: var(--text-dim);
+    display: grid; gap: 8px;
+  }
+  .shell-card strong { color: var(--warn); font-weight: 600; }
+  .shell-command {
+    font-family: var(--mono); font-size: 12px; line-height: 1.5;
+    color: var(--text); background: #12151c; border: 1px solid var(--border);
+    border-radius: 7px; padding: 8px; overflow-x: auto; white-space: pre;
+  }
+  .shell-meta { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .shell-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .shell-approve, .shell-deny {
+    border-radius: 999px; padding: 5px 11px; cursor: pointer; font-size: 12px;
+  }
+  .shell-approve { border: 1px solid #665027; background: #2b2418; color: #ffd48a; }
+  .shell-approve:hover:not(:disabled) { background: #3a2d18; border-color: #846731; }
+  .shell-deny { border: 1px solid var(--border); background: transparent; color: var(--text-dim); }
+  .shell-deny:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+  .shell-approve:disabled, .shell-deny:disabled { opacity: .45; cursor: not-allowed; }
+  .shell-output {
+    max-width: 88%;
+    background: var(--asst-bubble); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 12px;
+    color: var(--text-dim); font-family: var(--mono); font-size: 12px;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+  }
   .limit-row, .pause-row {
     display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
     padding: 8px 12px; border-radius: 10px;
@@ -855,6 +884,42 @@ function appendMessageNode(chat, m) {
     row.append(text, btn);
     div.appendChild(row);
     chat.appendChild(div);
+  } else if (m.type === 'shell_request') {
+    const div = document.createElement('div');
+    div.className = 'msg shell';
+    const card = document.createElement('div');
+    card.className = 'shell-card';
+    const title = document.createElement('strong');
+    title.textContent = '需要批准命令';
+    const meta = document.createElement('div');
+    meta.className = 'shell-meta';
+    meta.textContent = m.cwd ? `cwd: ${m.cwd}` : 'cwd: .';
+    const cmd = document.createElement('div');
+    cmd.className = 'shell-command';
+    cmd.textContent = m.command || '';
+    const actions = document.createElement('div');
+    actions.className = 'shell-actions';
+    const approve = document.createElement('button');
+    approve.className = 'shell-approve';
+    approve.textContent = '允许并继续';
+    const deny = document.createElement('button');
+    deny.className = 'shell-deny';
+    deny.textContent = '拒绝';
+    approve.onclick = () => approveShell(m.id, true, approve, deny);
+    deny.onclick = () => approveShell(m.id, false, approve, deny);
+    actions.append(approve, deny);
+    card.append(title, meta, cmd, actions);
+    div.appendChild(card);
+    chat.appendChild(div);
+  } else if (m.type === 'shell_result') {
+    const div = document.createElement('div');
+    div.className = 'msg shell';
+    const out = document.createElement('div');
+    out.className = 'shell-output';
+    const exit = m.exitCode === null || m.exitCode === undefined ? '' : `exit ${m.exitCode}\n`;
+    out.textContent = `${m.approved ? '命令已执行' : '命令未执行'}\n${m.command || ''}\n${exit}${m.output || ''}`;
+    div.appendChild(out);
+    chat.appendChild(div);
   } else if (m.type === 'limit') {
     const div = document.createElement('div');
     div.className = 'msg limit';
@@ -1058,10 +1123,34 @@ evtSrc.onmessage = (e) => {
         type: 'pause',
         text: '连续几轮没有写文件或获得新信息，已自动暂停',
       });
+    } else if (reason === 'approval') {
+      // The shell approval card is emitted separately.
     } else if (summary) {
       addToSession(sid, { type: 'done', text: summary });
     }
-    if (reason !== 'error') maybeAddChangesSummary(sid);
+    if (reason !== 'error' && reason !== 'approval') maybeAddChangesSummary(sid);
+    return;
+  }
+  if (data.type === 'shell_request') {
+    addToSession(sid, {
+      type: 'shell_request',
+      id: data.id,
+      command: data.command,
+      cwd: data.cwd,
+      project: data.project,
+    });
+    return;
+  }
+  if (data.type === 'shell_result') {
+    addToSession(sid, {
+      type: 'shell_result',
+      id: data.id,
+      approved: !!data.approved,
+      command: data.command,
+      cwd: data.cwd,
+      output: data.output,
+      exitCode: data.exit_code,
+    });
     return;
   }
   if (data.type === 'reply') {
@@ -1261,6 +1350,30 @@ function renderDiffLines(lines) {
     else if (line.startsWith('-')) cls += ' del';
     return `<span class="${cls}">${escapeHtml(line || ' ')}</span>`;
   }).join('');
+}
+
+async function approveShell(id, approved, approveBtn, denyBtn) {
+  if (!id) return;
+  approveBtn.disabled = true;
+  denyBtn.disabled = true;
+  try {
+    const r = await fetch('/api/shell_approval', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, approved }),
+    });
+    if (!r.ok) {
+      let detail = '';
+      try { detail = (await r.json()).error || ''; } catch {}
+      alert('命令审批失败: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
+      approveBtn.disabled = false;
+      denyBtn.disabled = false;
+    }
+  } catch (err) {
+    alert('命令审批失败: ' + err);
+    approveBtn.disabled = false;
+    denyBtn.disabled = false;
+  }
 }
 
 // ============================ composer ============================
