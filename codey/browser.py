@@ -23,6 +23,7 @@ from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"
+MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 DEFAULT_PORT = 9222
 DEFAULT_PROFILE = Path.home() / ".codey" / "edge-profile"
 
@@ -147,6 +148,16 @@ def open_qwen(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> Sess
     return open_chat_page(
         QWEN_URL,
         "chat.qwen.ai",
+        port=port,
+        profile=profile,
+    )
+
+
+def open_mimo(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> Session:
+    """Return a session attached to a Xiaomi MiMo Chat tab."""
+    return open_chat_page(
+        MIMO_URL,
+        "aistudio.xiaomimimo.com/#/c",
         port=port,
         profile=profile,
     )

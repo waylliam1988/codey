@@ -5,12 +5,14 @@ from pathlib import Path
 from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE
 from codey.providers.base import ChatProvider
 from codey.providers.deepseek_web import DeepSeekWebProvider
+from codey.providers.mimo_web import MimoWebProvider
 from codey.providers.qwen_web import QwenWebProvider
 
 DEFAULT_PROVIDER_ID = "deepseek"
 PROVIDER_LABELS = {
     "deepseek": "DeepSeek",
     "qwen": "Qwen",
+    "mimo": "MiMo",
 }
 
 
@@ -29,4 +31,6 @@ def connect_provider(
         return DeepSeekWebProvider.connect(port=port, profile=profile)
     if normalized == "qwen":
         return QwenWebProvider.connect(port=port, profile=profile)
+    if normalized == "mimo":
+        return MimoWebProvider.connect(port=port, profile=profile)
     raise ValueError(f"unsupported provider: {provider_id}")

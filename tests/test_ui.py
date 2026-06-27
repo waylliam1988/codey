@@ -8,11 +8,12 @@ HTML = (Path(__file__).resolve().parents[1] / "codey" / "web" / "index.html").re
 
 
 class ProviderSelectorUiTests(unittest.TestCase):
-    def test_provider_selector_lists_deepseek_and_qwen(self) -> None:
+    def test_provider_selector_lists_supported_providers(self) -> None:
         self.assertIn('id="provider-button"', HTML)
         self.assertIn('id="provider-menu"', HTML)
         self.assertIn('data-provider="deepseek"', HTML)
         self.assertIn('data-provider="qwen"', HTML)
+        self.assertIn('data-provider="mimo"', HTML)
         self.assertIn('id="provider-dot"', HTML)
         self.assertIn("--ok-dot:", HTML)
         self.assertIn(".dot.ok", HTML)
@@ -21,7 +22,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_run_and_continue_requests_keep_session_provider(self) -> None:
         self.assertIn("provider: currentProviderId()", HTML)
         self.assertIn("provider: s.provider || DEFAULT_PROVIDER", HTML)
-        self.assertIn("provider: ['deepseek', 'qwen'].includes(s.provider)", HTML)
+        self.assertIn("provider: PROVIDERS.includes(s.provider)", HTML)
 
     def test_deleting_last_session_preserves_selected_provider(self) -> None:
         self.assertIn("const fallbackProvider = currentProviderId()", HTML)

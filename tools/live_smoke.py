@@ -84,7 +84,7 @@ def run_smoke(provider_id: str, case: str, port: int, max_turns: int) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", choices=("deepseek", "qwen"), default="deepseek")
+    ap.add_argument("--provider", choices=("deepseek", "qwen", "mimo"), default="deepseek")
     ap.add_argument("--case", choices=("create", "edit"), default="create")
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--max-turns", type=int, default=8)

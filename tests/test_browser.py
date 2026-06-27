@@ -36,6 +36,20 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             profile=profile,
         )
 
+    def test_mimo_wrapper_uses_generic_chat_page(self) -> None:
+        session = object()
+        profile = Path("mimo-profile")
+        with mock.patch.object(browser, "open_chat_page", return_value=session) as opened:
+            result = browser.open_mimo(port=9555, profile=profile)
+
+        self.assertIs(result, session)
+        opened.assert_called_once_with(
+            browser.MIMO_URL,
+            "aistudio.xiaomimimo.com/#/c",
+            port=9555,
+            profile=profile,
+        )
+
 
 class PlaywrightStartupTests(unittest.TestCase):
     def test_start_playwright_retries_internal_missing_playwright_error(self) -> None:

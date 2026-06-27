@@ -2,6 +2,7 @@
 
 from codey.providers.base import ChatProvider
 from codey.providers.deepseek_web import DeepSeekWebProvider
+from codey.providers.mimo_web import MimoWebProvider
 from codey.providers.qwen_web import QwenWebProvider
 from codey.providers.registry import (
     DEFAULT_PROVIDER_ID,
@@ -14,6 +15,7 @@ __all__ = [
     "ChatProvider",
     "DEFAULT_PROVIDER_ID",
     "DeepSeekWebProvider",
+    "MimoWebProvider",
     "PROVIDER_LABELS",
     "QwenWebProvider",
     "connect_provider",

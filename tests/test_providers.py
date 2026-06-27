@@ -5,8 +5,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.providers import DeepSeekWebProvider, QwenWebProvider
-from codey.providers import deepseek_web, qwen_web, registry
+from codey.providers import DeepSeekWebProvider, MimoWebProvider, QwenWebProvider
+from codey.providers import deepseek_web, mimo_web, qwen_web, registry
 
 
 class DeepSeekWebProviderTests(unittest.TestCase):
@@ -73,16 +73,51 @@ class QwenWebProviderTests(unittest.TestCase):
         session.close.assert_called_once_with()
 
 
+class MimoWebProviderTests(unittest.TestCase):
+    def test_connect_wraps_browser_session(self) -> None:
+        session = SimpleNamespace()
+        profile = Path("mimo-profile")
+        with mock.patch.object(mimo_web, "open_mimo", return_value=session) as opened:
+            provider = MimoWebProvider.connect(port=9555, profile=profile)
+
+        self.assertIs(provider.session, session)
+        opened.assert_called_once_with(port=9555, profile=profile)
+
+    def test_delegates_chat_operations_and_closes_playwright(self) -> None:
+        page = SimpleNamespace(url="https://aistudio.xiaomimimo.com/#/c")
+        session = SimpleNamespace(page=page, close=mock.Mock())
+        provider = MimoWebProvider(session)
+
+        with (
+            mock.patch.object(mimo_web.mimo, "new_chat") as new_chat,
+            mock.patch.object(mimo_web.mimo, "chat", return_value="mimo reply") as chat,
+        ):
+            provider.new_chat()
+            reply = provider.send("hello", timeout=20.0)
+
+        self.assertEqual(provider.name, "Xiaomi MiMo Chat")
+        self.assertEqual(provider.location, "https://aistudio.xiaomimimo.com/#/c")
+        self.assertEqual(reply, "mimo reply")
+        new_chat.assert_called_once_with(page)
+        chat.assert_called_once_with(page, "hello", response_timeout=20.0)
+
+        provider.close()
+        session.close.assert_called_once_with()
+
+
 class ProviderRegistryTests(unittest.TestCase):
     def test_connect_provider_dispatches_supported_ids(self) -> None:
         deepseek = object()
         qwen = object()
+        mimo = object()
         with (
             mock.patch.object(registry.DeepSeekWebProvider, "connect", return_value=deepseek),
             mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen),
+            mock.patch.object(registry.MimoWebProvider, "connect", return_value=mimo),
         ):
             self.assertIs(registry.connect_provider("deepseek", port=9222), deepseek)
             self.assertIs(registry.connect_provider("qwen", port=9222), qwen)
+            self.assertIs(registry.connect_provider("mimo", port=9222), mimo)
 
     def test_connect_provider_rejects_unknown_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported provider"):

@@ -715,6 +715,11 @@
               <span class="label">Qwen</span>
               <span class="check">✓</span>
             </button>
+            <button class="provider-item" data-provider="mimo">
+              <span class="dot ok" aria-hidden="true"></span>
+              <span class="label">MiMo</span>
+              <span class="check">✓</span>
+            </button>
           </div>
         </div>
         <span class="send-hint" id="send-hint">Ctrl ↵</span>
@@ -766,6 +771,7 @@ const LS_ACTIVE   = 'codey:active';
 const LS_PROJECTS = 'codey:projects';
 const LS_LEGACY_PROJECT = 'codey:project';
 const DEFAULT_PROVIDER = 'deepseek';
+const PROVIDERS = ['deepseek', 'qwen', 'mimo'];
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function loadJson(key, fallback) {
@@ -790,7 +796,7 @@ let sessions = loadJson(LS_SESSIONS, []).map(s => ({
   messages: Array.isArray(s.messages) ? s.messages : [],
   createdAt: s.createdAt || Date.now(),
   projectId: s.projectId || null,
-  provider: ['deepseek', 'qwen'].includes(s.provider) ? s.provider : DEFAULT_PROVIDER,
+  provider: PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER,
 }));
 let projects = loadJson(LS_PROJECTS, []).map(p => ({
   id: p.id || uid(),
@@ -837,12 +843,16 @@ function currentProjectPath() {
 }
 function currentProviderId() {
   const s = activeSession();
-  return s && ['deepseek', 'qwen'].includes(s.provider) ? s.provider : DEFAULT_PROVIDER;
+  return s && PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER;
 }
-function providerLabel(id) { return id === 'qwen' ? 'Qwen' : 'DeepSeek'; }
+function providerLabel(id) {
+  if (id === 'qwen') return 'Qwen';
+  if (id === 'mimo') return 'MiMo';
+  return 'DeepSeek';
+}
 function providerAvailability(_id) { return 'ok'; } // future health check hook
 function syncProviderUI(providerId) {
-  const id = ['deepseek', 'qwen'].includes(providerId) ? providerId : DEFAULT_PROVIDER;
+  const id = PROVIDERS.includes(providerId) ? providerId : DEFAULT_PROVIDER;
   $('provider-name').textContent = providerLabel(id);
   $('provider-dot').className = 'dot ' + providerAvailability(id);
   document.querySelectorAll('.provider-item').forEach((btn) => {
@@ -1702,7 +1712,7 @@ $('task').addEventListener('keydown', (e) => {
   }
 });
 function setActiveProvider(id) {
-  const provider = ['deepseek', 'qwen'].includes(id) ? id : DEFAULT_PROVIDER;
+  const provider = PROVIDERS.includes(id) ? id : DEFAULT_PROVIDER;
   const s = activeSession();
   if (!s) return;
   s.provider = provider;
