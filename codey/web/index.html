@@ -3,44 +3,46 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" href="/icon.ico" type="image/x-icon" />
 <title>Codey</title>
 <style>
   :root {
-    --bg: #0f1115;
-    --bg-2: #12151c;
-    --panel: #161a22;
-    --panel-2: #1d222c;
-    --hover: #232936;
-    --border: #262d3b;
-    --border-2: #1e2330;
-    --text: #e6e8ec;
-    --text-dim: #aab1c0;
-    --muted: #6f7689;
-    --accent: #7c9cff;
-    --accent-2: #4f7cff;
-    --ok: #66d29a;
-    --warn: #f0b95b;
-    --err: #ef6f6c;
-    --user-bubble: #243046;
-    --asst-bubble: #1a1f2b;
-    --tool-bubble: #15202c;
-    --mono: 'SF Mono','JetBrains Mono','Consolas',monospace;
+    --bg:        #181818;
+    --bg-2:      #1c1c1c;
+    --panel:     #202020;
+    --panel-2:   #262626;
+    --hover:     #2a2a2a;
+    --active:    #2f2f2f;
+    --border:    #2a2a2a;
+    --border-2:  #232323;
+    --text:      #e6e6e6;
+    --text-dim:  #a0a0a0;
+    --muted:     #6b6b6b;
+    --faint:     #4a4a4a;
+    --ok-dot:    #4ec9b0;
+    --err-text:  #d28a8a;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-mono: 'Cascadia Code', 'SF Mono', 'JetBrains Mono', Consolas, monospace;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', Roboto, sans-serif;
+    font-family: var(--font-sans);
     background: var(--bg);
     color: var(--text);
-    font-size: 13.5px;
-    line-height: 1.55;
+    font-size: 13px;
+    line-height: 1.6;
     display: grid;
     grid-template-columns: auto 1fr;
     overflow: hidden;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
+  button { font-family: inherit; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-thumb { background: #2a3142; border-radius: 5px; }
-  ::-webkit-scrollbar-thumb:hover { background: #3a4257; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: #444; }
   ::-webkit-scrollbar-track { background: transparent; }
 
   /* ============================== sidebar ============================== */
@@ -49,486 +51,543 @@
     background: var(--bg-2);
     border-right: 1px solid var(--border);
     display: flex; flex-direction: column;
-    transition: width .2s ease, min-width .2s ease;
+    transition: width .18s ease, min-width .18s ease;
     min-width: 260px;
   }
   body.sidebar-collapsed aside { width: 0; min-width: 0; overflow: hidden; }
   .sidebar-head {
     display: flex; align-items: center; gap: 8px;
-    padding: 12px 14px; border-bottom: 1px solid var(--border-2);
+    padding: 10px 10px;
   }
   .sidebar-spacer { flex: 1; min-width: 0; }
   .btn-icon {
     background: transparent; border: 0; color: var(--text-dim); cursor: pointer;
-    width: 30px; height: 30px; border-radius: 7px; display: grid; place-items: center;
-    transition: background .15s, color .15s;
+    width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center;
+    transition: background .12s, color .12s;
   }
   .btn-icon:hover { background: var(--hover); color: var(--text); }
-  .btn-icon svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .btn-icon svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8; }
 
   .sidebar-actions {
-    padding: 10px 12px 8px;
+    padding: 0 6px 8px;
     display: grid;
-    gap: 8px;
-    position: relative;
+    gap: 1px;
   }
-  .sidebar-primary, .sidebar-secondary {
-    padding: 8px 12px;
-    display: flex; align-items: center; gap: 8px; justify-content: center;
-    background: var(--panel-2); border: 1px solid var(--border);
-    border-radius: 8px; color: var(--text); cursor: pointer; font-size: 13px;
-    transition: background .15s, border-color .15s;
-  }
-  .sidebar-secondary {
-    background: transparent;
-    color: var(--text-dim);
-  }
-  .sidebar-primary:hover, .sidebar-secondary:hover { background: var(--hover); border-color: #354060; color: var(--text); }
-  .sidebar-primary svg, .sidebar-secondary svg {
-    width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.2;
-  }
-  .project-menu {
-    position: absolute;
-    left: 12px; right: 12px; top: 48px;
-    background: #191e28;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 18px 48px rgba(0,0,0,.35);
-    padding: 6px;
-    z-index: 20;
-    display: none;
-  }
-  .project-menu.open { display: grid; gap: 4px; }
-  .menu-item {
+  .sidebar-row {
     display: flex; align-items: center; gap: 9px;
-    width: 100%; border: 0; background: transparent;
-    color: var(--text-dim); cursor: pointer;
-    border-radius: 6px; padding: 8px 9px; text-align: left; font-size: 13px;
+    padding: 7px 10px;
+    border: 0; background: transparent; color: var(--text-dim);
+    border-radius: 6px; cursor: pointer; font-size: 13px;
+    text-align: left;
+    transition: background .12s, color .12s;
   }
-  .menu-item:hover { background: var(--hover); color: var(--text); }
-  .menu-item svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
+  .sidebar-row:hover { background: var(--hover); color: var(--text); }
+  .sidebar-row svg {
+    width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.8;
+    flex-shrink: 0;
+  }
+  .sidebar-row .label { flex: 1; min-width: 0; }
+  .sidebar-row .kbd {
+    color: var(--muted); font-size: 11px; font-family: var(--font-mono);
+  }
 
   .session-list {
-    flex: 1; overflow-y: auto; padding: 2px 8px 16px;
+    flex: 1; overflow-y: auto; padding: 4px 6px 16px;
   }
-  .session-label {
-    font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px;
-    color: var(--muted); padding: 12px 8px 6px;
+  .group-label {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--muted); padding: 14px 10px 6px;
   }
-  .project-node { margin-bottom: 2px; }
+  .project-node { margin-bottom: 1px; position: relative; }
   .project-row {
-    display: flex; align-items: center; gap: 6px;
-    color: var(--text-dim); border-radius: 7px;
-    padding: 6px 6px; min-height: 32px;
+    display: flex; align-items: center; gap: 4px;
+    color: var(--text-dim); border-radius: 6px;
+    padding: 6px 6px 6px 4px; min-height: 30px;
+    cursor: pointer;
+    position: relative;
   }
-  .project-row:hover { background: rgba(255,255,255,.03); color: var(--text); }
-  .project-toggle, .project-add, .project-remove {
-    width: 22px; height: 22px; border: 0; background: transparent;
+  .project-row:hover { background: var(--hover); color: var(--text); }
+  .project-row.has-active::before {
+    content: ''; position: absolute; left: -6px; top: 6px; bottom: 6px;
+    width: 2px; background: var(--text); border-radius: 1px;
+  }
+  .project-toggle {
+    width: 18px; height: 18px; border: 0; background: transparent;
     color: var(--muted); display: grid; place-items: center;
-    border-radius: 5px; cursor: pointer; flex-shrink: 0;
+    border-radius: 4px; cursor: pointer; flex-shrink: 0;
+    padding: 0;
   }
-  .project-toggle:hover, .project-add:hover, .project-remove:hover { background: var(--hover); color: var(--text); }
-  .project-remove:hover { color: var(--err); background: rgba(239,111,108,.12); }
-  .project-toggle svg, .project-add svg, .project-remove svg {
-    width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.1;
-  }
+  .project-row:hover .project-toggle { color: var(--text-dim); }
+  .project-toggle svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; }
   .project-main {
-    min-width: 0; flex: 1; cursor: pointer;
-    display: flex; align-items: center; gap: 7px;
-  }
-  .project-main svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; flex-shrink: 0; }
-  .project-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-  .project-path {
-    margin: -2px 32px 5px 51px;
-    font-family: var(--mono);
-    color: var(--muted);
-    font-size: 10.5px;
+    min-width: 0; flex: 1;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 13px;
   }
-  .project-children { padding-left: 22px; }
-  .empty-project {
-    margin: 2px 8px 8px 29px;
-    color: var(--muted); font-size: 12px;
+  .project-more {
+    width: 22px; height: 22px; border: 0; background: transparent;
+    color: var(--muted); display: none; place-items: center;
+    border-radius: 4px; cursor: pointer; flex-shrink: 0;
+    font-size: 14px; line-height: 1;
   }
+  .project-row:hover .project-more { display: grid; }
+  .project-more:hover { background: var(--panel-2); color: var(--text); }
+  .project-children { padding-left: 14px; }
+  .project-empty {
+    margin: 1px 0 4px 22px;
+    color: var(--faint); font-size: 12px;
+    padding: 4px 8px;
+  }
+
   .session-item {
-    padding: 7px 10px; border-radius: 7px; cursor: pointer;
+    padding: 6px 10px; border-radius: 6px; cursor: pointer;
     color: var(--text-dim); font-size: 13px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     display: flex; align-items: center; gap: 6px;
-    transition: background .12s, color .12s;
-    position: relative;
+    transition: background .1s, color .1s;
+    margin-bottom: 1px;
   }
   .session-item:hover { background: var(--hover); color: var(--text); }
-  .session-item.active { background: #1f2840; color: var(--text); }
+  .session-item.active { background: var(--active); color: var(--text); }
   .session-item .session-title { flex: 1; overflow: hidden; text-overflow: ellipsis; }
-  .session-item .rename, .session-item .del {
-    visibility: hidden; opacity: 0;
+  .session-item .session-more {
+    visibility: hidden;
     background: transparent; border: 0; color: var(--muted);
-    cursor: pointer; padding: 2px 4px; border-radius: 4px;
-    transition: opacity .12s, color .12s;
-    flex-shrink: 0;
+    cursor: pointer; padding: 0; width: 18px; height: 18px;
+    border-radius: 3px; flex-shrink: 0;
+    font-size: 13px; line-height: 1;
   }
-  .session-item:hover .rename, .session-item:hover .del { visibility: visible; opacity: 1; }
-  .session-item .rename:hover { color: var(--text); background: var(--hover); }
-  .session-item .del:hover { color: var(--err); background: rgba(239,111,108,.12); }
+  .session-item:hover .session-more { visibility: visible; }
+  .session-item .session-more:hover { color: var(--text); background: var(--panel-2); }
+
+  /* ============================== generic context menu ============================== */
+  .ctx-menu {
+    position: fixed;
+    min-width: 168px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 14px 36px rgba(0,0,0,.45);
+    padding: 4px;
+    z-index: 80;
+    display: none;
+  }
+  .ctx-menu.open { display: grid; gap: 1px; }
+  .ctx-menu button {
+    width: 100%; border: 0; background: transparent;
+    color: var(--text-dim); cursor: pointer;
+    border-radius: 5px; padding: 7px 10px; text-align: left; font-size: 13px;
+  }
+  .ctx-menu button:hover { background: var(--hover); color: var(--text); }
+  .ctx-menu button.danger:hover { color: var(--err-text); }
 
   /* ============================== main ============================== */
   main {
     display: grid;
-    grid-template-rows: 48px 1fr auto;
+    grid-template-rows: 44px 1fr auto;
     min-height: 0; overflow: hidden;
   }
   .topbar {
     display: flex; align-items: center; gap: 10px;
-    padding: 0 18px;
+    padding: 0 14px;
     border-bottom: 1px solid var(--border);
-    background: var(--panel);
+    background: var(--bg);
   }
-  .topbar .sess-title { flex: 1; font-weight: 500; font-size: 14px; min-width: 0;
+  .topbar .sess-title {
+    flex: 1; font-size: 13px; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text);
   }
+  .topbar .sess-title .crumb-proj { color: var(--muted); }
+  .topbar .sess-title .crumb-sep  { color: var(--faint); margin: 0 6px; }
+  .topbar .sess-title .crumb-chat { color: var(--text); }
+
   .topbar-actions {
-    display: inline-flex; align-items: center; gap: 8px;
+    display: inline-flex; align-items: center; gap: 6px;
     min-width: 0;
   }
-  .status-text {
-    max-width: 180px;
+  .status {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--text-dim); font-size: 11.5px;
+    max-width: 220px;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--text-dim);
-    font-size: 12px;
   }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: background .2s; }
-  .dot.ok   { background: var(--ok); box-shadow: 0 0 6px rgba(102,210,154,.45); }
-  .dot.warn { background: var(--warn); }
-  .dot.err  { background: var(--err); }
-  .dot.run  { background: var(--accent); animation: pulse 1.4s infinite; }
-  @keyframes pulse {
-    0%{box-shadow:0 0 0 0 rgba(124,156,255,.55);}
-    70%{box-shadow:0 0 0 8px rgba(124,156,255,0);}
-    100%{box-shadow:0 0 0 0 rgba(124,156,255,0);}
+  .status .status-text {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  .status.err { color: var(--err-text); }
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
+  }
+  .status-dot.err { background: var(--err-text); }
+  .spinner {
+    width: 11px; height: 11px;
+    border: 1.4px solid var(--border);
+    border-top-color: var(--text-dim);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   .chat-area {
     overflow-y: auto;
-    padding: 24px 0 40px;
+    padding: 24px 0 28px;
     min-height: 0;
   }
   .chat-inner {
-    max-width: 780px; margin: 0 auto; padding: 0 24px;
-    display: flex; flex-direction: column; gap: 14px;
+    max-width: 760px; margin: 0 auto; padding: 0 24px;
+    display: flex; flex-direction: column;
   }
   .welcome {
-    text-align: center; padding: 80px 20px;
+    padding: 96px 4px 0;
     color: var(--text-dim);
   }
   .welcome h1 {
-    font-size: 22px; font-weight: 600; margin: 0 0 8px; color: var(--text);
+    font-size: 18px; font-weight: 500; margin: 0 0 4px; color: var(--text);
+    letter-spacing: 0;
   }
-  .welcome p { margin: 4px 0; font-size: 13.5px; }
+  .welcome p { margin: 0; font-size: 13px; color: var(--muted); }
 
-  .msg { display: flex; max-width: 100%; }
-  .msg.user { justify-content: flex-end; }
-  .msg.asst, .msg.tool, .msg.done, .msg.limit, .msg.pause, .msg.changes, .msg.shell, .msg.err { justify-content: flex-start; }
-
-  .bubble {
-    max-width: 88%;
-    padding: 10px 14px;
-    border-radius: 14px;
-    word-wrap: break-word;
+  /* ---------- messages: de-bubbled ---------- */
+  .msg {
+    display: flex; flex-direction: column;
+    margin: 0 0 18px;
+  }
+  .msg-label {
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    color: var(--muted);
+    font-weight: 500;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+  .msg-label.err { color: var(--err-text); }
+  .msg .body {
+    color: var(--text);
     white-space: pre-wrap;
-    font-size: 13.5px;
-    line-height: 1.55;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    font-size: 13px;
+    line-height: 1.65;
   }
-  .msg.user .bubble {
-    background: var(--user-bubble);
-    border: 1px solid #2c3a55;
-    border-top-right-radius: 4px;
+  .msg.asst .body.collapsed {
+    max-height: 168px; overflow: hidden; position: relative;
   }
-  .msg.asst .bubble {
-    background: var(--asst-bubble);
-    border: 1px solid var(--border);
-    border-top-left-radius: 4px;
-    font-family: var(--mono);
-    font-size: 12.5px;
-    color: var(--text-dim);
-  }
-  .msg.asst .bubble.collapsed {
-    max-height: 160px; overflow: hidden; position: relative;
-  }
-  .msg.asst .bubble.collapsed::after {
-    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 60px;
-    background: linear-gradient(180deg, transparent, var(--asst-bubble));
+  .msg.asst .body.collapsed::after {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 56px;
+    background: linear-gradient(180deg, transparent, var(--bg));
     pointer-events: none;
   }
   .msg.asst .toggle {
-    margin-top: 4px; font-size: 11px; color: var(--accent); cursor: pointer;
+    margin-top: 4px; font-size: 11px; color: var(--text-dim); cursor: pointer;
     align-self: flex-start;
+    user-select: none;
   }
-  .msg.asst {
-    flex-direction: column; align-items: flex-start; gap: 2px;
+  .msg.asst .toggle:hover { color: var(--text); }
+
+  /* ---------- tool line ---------- */
+  .tool-line {
+    display: grid;
+    grid-template-columns: 12px 7ch 1fr auto auto;
+    align-items: baseline;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text-dim);
+  }
+  .tool-line .tl-dot { color: var(--faint); }
+  .tool-line .tl-kind { color: var(--text-dim); }
+  .tool-line .tl-path {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-dim);
+  }
+  .tool-line .tl-arrow { color: var(--faint); }
+  .tool-line .tl-result { color: var(--text-dim); }
+  .tool-line .tl-result.err { color: var(--err-text); }
+  .msg.tool { margin: 0; }
+  .msg.tool + .msg.tool { margin-top: 0; }
+
+  /* ---------- turn divider ---------- */
+  .turn-divider {
+    display: flex; align-items: center; gap: 10px;
+    color: var(--muted);
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 18px 0 8px;
+  }
+  .turn-divider .line {
+    flex: 1; height: 1px; background: var(--border);
   }
 
-  .tool-row {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 12px; border-radius: 999px;
-    background: var(--tool-bubble); border: 1px solid #233351;
-    font-family: var(--mono); font-size: 12px; color: var(--text-dim);
+  /* ---------- inline note (formerly turn-divider used for info) ---------- */
+  .info-line {
+    color: var(--muted);
+    font-size: 11.5px;
+    padding: 4px 0;
+    font-family: var(--font-mono);
   }
-  .tool-row .tag {
-    color: var(--accent); font-weight: 600;
-  }
-  .tool-row .arrow { color: var(--muted); }
-  .tool-row .result { color: var(--text-dim); }
-  .tool-row .result.err { color: var(--err); }
 
-  .done-row {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 8px 14px; border-radius: 10px;
-    background: linear-gradient(180deg, #143025, #0e2419);
-    border: 1px solid #245a3c; color: var(--ok);
+  /* ---------- status rows (done / pause / limit / error / changes) ---------- */
+  .status-row {
+    display: flex; align-items: baseline; gap: 10px;
     font-size: 13px;
+    margin: 4px 0 0;
   }
-  .changes-row {
-    display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 8px 12px; border-radius: 10px;
-    background: #171d28; border: 1px solid var(--border); color: var(--text-dim);
-    font-size: 13px;
+  .status-row .sr-prefix {
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    flex-shrink: 0;
   }
-  .changes-row strong { color: var(--text); font-weight: 500; }
-  .changes-btn {
-    border: 1px solid #34405e; background: #1d2637; color: var(--accent);
-    border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 12px;
+  .status-row.err .sr-prefix { color: var(--err-text); }
+  .status-row .sr-text {
+    color: var(--text-dim);
+    flex: 1; min-width: 0;
+    overflow-wrap: anywhere;
   }
-  .changes-btn:hover { background: #25314a; border-color: #40537f; color: var(--text); }
-  .task-strip {
-    padding: 8px 18px 0;
-    min-height: 24px;
+  .status-row.err .sr-text { color: var(--err-text); }
+  .link-btn {
+    background: transparent; border: 0; padding: 0;
+    color: var(--text-dim); cursor: pointer;
+    font-size: 12px; font-family: inherit;
+    flex-shrink: 0;
   }
-  .status-card {
-    display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 6px 10px; border-radius: 8px;
-    background: #171d28; border: 1px solid var(--border); color: var(--text-dim);
-    font-size: 12.5px;
+  .link-btn:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
+  .link-btn:disabled { color: var(--faint); cursor: not-allowed; }
+
+  /* ---------- changes card ---------- */
+  .changes-head-row {
+    display: flex; align-items: baseline; gap: 12px;
   }
-  .status-card strong { color: var(--text); font-weight: 500; }
-  .status-chip {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0;
-    padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
-    color: var(--muted); background: #11161f;
+  .changes-head-row .changes-count {
+    font-size: 13px; color: var(--text-dim); flex: 1;
   }
-  .status-chip.run { color: #95c7ff; border-color: #314462; background: #132033; }
-  .status-chip.pause { color: #d9d5ff; border-color: #3e3f66; background: #161829; }
-  .status-chip.limit { color: #ffd48a; border-color: #665027; background: #241d10; }
-  .status-chip.err { color: #ff9da1; border-color: #5a2c30; background: #2a1518; }
-  .status-chip.ok { color: #9ce7bc; border-color: #245a3c; background: #12231a; }
+  .changes-files {
+    margin-top: 6px;
+    display: grid;
+    gap: 2px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .changes-file {
+    display: grid;
+    grid-template-columns: 2ch 1fr auto;
+    gap: 12px;
+    align-items: baseline;
+    color: var(--text-dim);
+  }
+  .changes-file .cf-status { color: var(--muted); }
+  .changes-file .cf-path {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .changes-file .cf-stat { color: var(--text-dim); }
+
+  /* ---------- shell card ---------- */
   .shell-card {
-    max-width: 88%;
-    padding: 10px 12px; border-radius: 10px;
-    background: #201d16; border: 1px solid #4e3d1f; color: var(--text-dim);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
     display: grid; gap: 8px;
   }
-  .shell-card strong { color: var(--warn); font-weight: 600; }
+  .shell-card .sc-title {
+    font-size: 13px; font-weight: 600; color: var(--text);
+  }
+  .shell-card .sc-meta {
+    color: var(--muted); font-family: var(--font-mono); font-size: 11.5px;
+  }
   .shell-command {
-    font-family: var(--mono); font-size: 12px; line-height: 1.5;
-    color: var(--text); background: #12151c; border: 1px solid var(--border);
-    border-radius: 7px; padding: 8px; overflow-x: auto; white-space: pre;
+    font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
+    color: var(--text); background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; overflow-x: auto; white-space: pre;
   }
-  .shell-meta { color: var(--muted); font-family: var(--mono); font-size: 11px; }
-  .shell-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-  .shell-approve, .shell-deny {
-    border-radius: 999px; padding: 5px 11px; cursor: pointer; font-size: 12px;
+  .shell-actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 2px; }
+  .text-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 6px;
+    padding: 5px 14px;
+    cursor: pointer;
+    font-size: 12.5px;
+    font-family: inherit;
+    transition: background .12s, color .12s, border-color .12s;
   }
-  .shell-approve { border: 1px solid #665027; background: #2b2418; color: #ffd48a; }
-  .shell-approve:hover:not(:disabled) { background: #3a2d18; border-color: #846731; }
-  .shell-deny { border: 1px solid var(--border); background: transparent; color: var(--text-dim); }
-  .shell-deny:hover:not(:disabled) { background: var(--hover); color: var(--text); }
-  .shell-approve:disabled, .shell-deny:disabled { opacity: .45; cursor: not-allowed; }
-  .shell-output {
-    max-width: 88%;
-    background: var(--asst-bubble); border: 1px solid var(--border);
-    border-radius: 10px; padding: 9px 12px;
-    color: var(--text-dim); font-family: var(--mono); font-size: 12px;
-    white-space: pre-wrap; overflow-wrap: anywhere;
+  .text-btn:hover:not(:disabled) {
+    background: var(--hover); color: var(--text); border-color: var(--border);
   }
-  .limit-row, .pause-row {
-    display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    padding: 8px 12px; border-radius: 10px;
-    background: #201d16; border: 1px solid #4e3d1f; color: var(--warn);
-    font-size: 13px;
+  .text-btn.primary {
+    color: var(--text);
+    font-weight: 500;
   }
-  .pause-row {
-    background: #1a1f2b; border-color: var(--border); color: var(--text-dim);
+  .text-btn.primary:hover:not(:disabled) {
+    background: var(--panel-2);
   }
-  .continue-btn {
-    border: 1px solid #665027; background: #2b2418; color: #ffd48a;
-    border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 12px;
-  }
-  .continue-btn:hover:not(:disabled) { background: #3a2d18; border-color: #846731; }
-  .continue-btn:disabled { opacity: .45; cursor: not-allowed; }
-  .retry-btn {
-    border: 1px solid #5a4a71; background: #211c2d; color: #d8c8ff;
-    border-radius: 999px; padding: 4px 10px; cursor: pointer; font-size: 12px;
-  }
-  .retry-btn:hover:not(:disabled) { background: #2b2440; border-color: #7660a2; }
-  .retry-btn:disabled { opacity: .45; cursor: not-allowed; }
-  .err-row {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 8px 14px; border-radius: 10px;
-    background: #2a1518; border: 1px solid #5a2c30; color: var(--err);
-    font-family: var(--mono); font-size: 12.5px;
-  }
+  .text-btn:disabled { opacity: .4; cursor: not-allowed; }
 
-  .turn-divider {
-    color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
-    padding: 18px 0 2px;
+  .shell-output {
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 9px 12px;
+    color: var(--text-dim); font-family: var(--font-mono); font-size: 12px;
+    white-space: pre-wrap; overflow-wrap: anywhere;
   }
 
   /* ============================== composer ============================== */
   .composer-wrap {
     border-top: 1px solid var(--border);
     background: var(--bg);
-    padding: 12px 24px 16px;
+    padding: 10px 24px 16px;
   }
   .composer {
-    max-width: 780px; margin: 0 auto;
-    background: var(--panel); border: 1px solid var(--border);
-    border-radius: 14px; padding: 10px 12px 12px;
-    transition: border-color .15s;
+    max-width: 760px; margin: 0 auto;
   }
-  .composer:focus-within { border-color: #3b4a72; }
-  .composer textarea {
-    width: 100%; min-height: 44px; max-height: 220px;
+  .composer-context {
+    color: var(--muted);
+    font-size: 11.5px;
+    padding: 0 4px 6px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .composer-context .ctx-sep { color: var(--faint); }
+  .composer-box {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 10px 8px;
+    transition: border-color .12s;
+  }
+  .composer-box:focus-within { border-color: var(--text-dim); }
+  .composer-box textarea {
+    width: 100%; min-height: 40px; max-height: 220px;
     background: transparent; border: 0; color: var(--text);
-    font-family: inherit; font-size: 14px; line-height: 1.55;
+    font-family: inherit; font-size: 13.5px; line-height: 1.55;
     resize: none; outline: none; padding: 6px 4px;
   }
-  .composer textarea::placeholder { color: var(--muted); }
+  .composer-box textarea::placeholder { color: var(--muted); }
 
   .composer-bar {
-    display: flex; align-items: center; gap: 8px; margin-top: 4px;
+    display: flex; align-items: center; gap: 6px; margin-top: 2px;
   }
-  .composer-bar .hint {
-    font-size: 11px; color: var(--muted);
-  }
-  .provider-chooser {
-    margin-left: 0;
-    position: relative;
-    display: inline-flex;
-  }
+
+  /* provider picker — keeps the green dot */
+  .provider-chooser { position: relative; display: inline-flex; }
   .provider-button {
-    min-width: 118px;
-    height: 32px;
-    border: 1px solid var(--border);
-    background: var(--panel-2);
+    border: 0;
+    background: transparent;
     color: var(--text-dim);
-    border-radius: 8px;
-    padding: 0 10px;
+    border-radius: 6px;
+    padding: 4px 8px;
+    height: 28px;
     display: inline-flex;
     align-items: center;
     gap: 8px;
     cursor: pointer;
     font-size: 12.5px;
+    font-family: inherit;
   }
   .provider-button:hover:not(:disabled),
   .provider-button.open {
     background: var(--hover);
-    border-color: #354060;
     color: var(--text);
   }
-  .provider-button:disabled {
-    opacity: .55;
-    cursor: default;
-  }
-  .provider-button .name {
-    max-width: 78px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  .provider-button:disabled { opacity: .55; cursor: default; }
   .provider-button .chev {
-    width: 12px;
-    height: 12px;
-    margin-left: auto;
-    stroke: currentColor;
-    fill: none;
-    stroke-width: 2;
+    width: 11px; height: 11px;
+    stroke: currentColor; fill: none; stroke-width: 2;
+    color: var(--faint);
     flex-shrink: 0;
   }
   .provider-menu {
     position: absolute;
-    right: 0;
-    bottom: calc(100% + 8px);
+    left: 0;
+    bottom: calc(100% + 6px);
     min-width: 180px;
-    background: #161b25;
+    background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: 0 20px 48px rgba(0,0,0,.38);
-    padding: 6px;
+    border-radius: 8px;
+    box-shadow: 0 16px 40px rgba(0,0,0,.45);
+    padding: 4px;
     display: none;
     z-index: 30;
   }
-  .provider-menu.open { display: grid; gap: 4px; }
+  .provider-menu.open { display: grid; gap: 1px; }
   .provider-item {
     width: 100%;
     border: 0;
     background: transparent;
     color: var(--text-dim);
-    border-radius: 7px;
-    padding: 8px 9px;
+    border-radius: 6px;
+    padding: 7px 10px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 9px;
     font-size: 13px;
     text-align: left;
+    font-family: inherit;
   }
   .provider-item:hover { background: var(--hover); color: var(--text); }
-  .provider-item .label {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+  .provider-item .label { flex: 1; min-width: 0; }
   .provider-item .check {
-    width: 14px;
-    color: var(--ok);
+    width: 12px;
+    color: var(--text-dim);
     opacity: 0;
     flex-shrink: 0;
+    font-size: 11px;
   }
   .provider-item.active .check { opacity: 1; }
-  .provider-item .dot {
-    background: var(--ok);
+  .provider-item.active { color: var(--text); }
+
+  /* the green dot (the only color in the UI) */
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+    flex-shrink: 0;
   }
-  .provider-item.active .dot {
-    background: var(--ok);
-    box-shadow: 0 0 6px rgba(102,210,154,.35);
+  .dot.ok {
+    background: var(--ok-dot);
+    box-shadow: 0 0 0 3px rgba(78, 201, 176, .14);
   }
-  .send-btn {
+  .dot.off {
+    background: transparent;
+    border: 1.5px solid var(--muted);
+  }
+
+  /* send / stop — square icon buttons, no color */
+  .icon-btn {
     margin-left: auto;
-    background: var(--accent-2); color: white; border: 0;
-    padding: 7px 16px; border-radius: 999px; cursor: pointer;
-    font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;
-    transition: background .15s, opacity .15s;
+    background: transparent; color: var(--text-dim); border: 0;
+    width: 30px; height: 28px; border-radius: 6px;
+    cursor: pointer; display: inline-grid; place-items: center;
+    transition: background .12s, color .12s;
   }
-  .send-btn:hover:not(:disabled) { background: var(--accent); }
-  .send-btn:disabled { opacity: .4; cursor: not-allowed; }
-  .send-btn svg { width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 2.4; }
-  .stop-btn {
-    background: #3a1f23; color: var(--err); border: 1px solid #5a2c30;
-    padding: 6px 14px; border-radius: 999px; cursor: pointer; font-size: 12px;
+  .icon-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); }
+  .icon-btn:disabled { color: var(--faint); cursor: not-allowed; }
+  .icon-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; }
+  .icon-btn.send svg { fill: currentColor; stroke: none; }
+  .send-hint {
+    color: var(--faint); font-size: 10.5px;
+    font-family: var(--font-mono);
+    margin-left: auto;
+    opacity: 0;
+    transition: opacity .12s;
   }
-  .stop-btn:hover { background: #4a2228; }
+  .composer-box:focus-within ~ .composer-bar .send-hint,
+  .composer-bar:hover .send-hint { opacity: 1; }
 
   /* ============================== changes drawer ============================== */
   .changes-drawer {
     position: fixed; top: 0; right: 0; bottom: 0;
     width: min(560px, 92vw);
-    background: #111722;
+    background: var(--bg-2);
     border-left: 1px solid var(--border);
-    box-shadow: -24px 0 60px rgba(0,0,0,.38);
+    box-shadow: -18px 0 48px rgba(0,0,0,.42);
     transform: translateX(102%);
     transition: transform .18s ease;
     z-index: 40;
@@ -538,53 +597,54 @@
   .changes-drawer.open { transform: translateX(0); }
   .changes-head {
     display: flex; align-items: center; gap: 8px;
-    padding: 12px 14px; border-bottom: 1px solid var(--border);
-    background: #151b27;
+    padding: 11px 14px; border-bottom: 1px solid var(--border);
+    background: var(--bg-2);
   }
   .changes-title { flex: 1; min-width: 0; }
-  .changes-title strong { display: block; font-size: 14px; font-weight: 600; }
-  .changes-title span { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }
+  .changes-title strong { display: block; font-size: 13.5px; font-weight: 500; color: var(--text); }
+  .changes-title span { display: block; color: var(--muted); font-size: 11.5px; margin-top: 1px; }
   .drawer-btn {
-    border: 1px solid var(--border); background: transparent; color: var(--text-dim);
-    border-radius: 7px; padding: 5px 9px; cursor: pointer; font-size: 12px;
+    border: 0; background: transparent; color: var(--text-dim);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px;
+    font-family: inherit;
   }
   .drawer-btn:hover { background: var(--hover); color: var(--text); }
-  .changes-body { overflow-y: auto; padding: 10px 12px 18px; }
+  .changes-body { overflow-y: auto; padding: 8px 12px 18px; }
   .changes-empty, .changes-error {
     color: var(--muted); padding: 20px 4px; font-size: 13px;
   }
-  .changes-error { color: var(--err); }
+  .changes-error { color: var(--err-text); }
   .change-file {
     border-bottom: 1px solid var(--border-2);
   }
   .change-file button {
     width: 100%; border: 0; background: transparent; color: var(--text);
-    display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px;
+    display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px;
     align-items: center; text-align: left; cursor: pointer;
-    padding: 10px 3px; font-size: 13px;
+    padding: 10px 4px; font-size: 13px; font-family: inherit;
   }
-  .change-file button:hover { background: rgba(255,255,255,.025); }
+  .change-file button:hover { background: rgba(255,255,255,.02); }
   .change-status {
-    min-width: 26px; color: var(--accent); font-family: var(--mono); font-size: 12px;
+    min-width: 22px; color: var(--muted); font-family: var(--font-mono); font-size: 12px;
   }
   .change-path {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-family: var(--mono); color: var(--text-dim); font-size: 12px;
+    font-family: var(--font-mono); color: var(--text-dim); font-size: 12px;
   }
-  .change-stat.add { color: var(--ok); font-family: var(--mono); font-size: 12px; }
-  .change-stat.del { color: var(--err); font-family: var(--mono); font-size: 12px; }
+  .change-stat {
+    font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+  }
   .diff-pre {
     margin: 0 0 12px; padding: 8px 0;
-    background: #0d121b; border: 1px solid var(--border-2); border-radius: 8px;
-    overflow-x: auto; font-family: var(--mono); font-size: 11.5px; line-height: 1.5;
+    background: var(--bg); border: 1px solid var(--border-2); border-radius: 6px;
+    overflow-x: auto; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55;
   }
-  .diff-line { display: block; padding: 0 10px; white-space: pre; color: var(--text-dim); }
-  .diff-line.add { background: rgba(102,210,154,.12); color: #9ce7bc; }
-  .diff-line.del { background: rgba(239,111,108,.12); color: #ffaaa7; }
-  .diff-line.hunk { color: #a9bcff; }
-  .diff-line.meta { color: var(--muted); }
+  .diff-line { display: block; padding: 0 12px; white-space: pre; color: var(--text-dim); }
+  .diff-line.add { background: rgba(78, 201, 176, .07); color: var(--text); }
+  .diff-line.del { background: rgba(210, 138, 138, .07); color: var(--text); }
+  .diff-line.hunk { color: var(--muted); }
+  .diff-line.meta { color: var(--faint); }
 
-  /* hide collapse toggle on mobile, simpler */
   @media (max-width: 720px) {
     aside { position: absolute; z-index: 10; height: 100%; }
     body.sidebar-collapsed aside { display: none; }
@@ -594,49 +654,38 @@
 <body>
 <aside id="aside">
   <div class="sidebar-head">
-    <button class="btn-icon" id="toggle-sidebar" title="折叠侧边栏">
+    <button class="btn-icon" id="toggle-sidebar" title="Collapse sidebar">
       <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     </button>
     <div class="sidebar-spacer"></div>
   </div>
   <div class="sidebar-actions">
-    <button class="sidebar-primary" id="btn-project">
+    <button class="sidebar-row" id="btn-new-chat">
       <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-      New project
+      <span class="label">New chat</span>
+      <span class="kbd">Ctrl+N</span>
     </button>
-    <div class="project-menu" id="project-menu">
-      <button class="menu-item" id="pick-existing">
-        <svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7v11"/></svg>
-        使用已有文件夹
-      </button>
-      <button class="menu-item" id="pick-new">
-        <svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M12 12v5M9.5 14.5h5"/></svg>
-        新建文件夹
-      </button>
-    </div>
-    <button class="sidebar-secondary" id="btn-new-chat">
-      <svg viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/></svg>
-      新建纯聊天
+    <button class="sidebar-row" id="btn-add-project">
+      <svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+      <span class="label">Add project</span>
     </button>
   </div>
-  <div class="session-list" id="session-list">
-    <div class="session-label">项目</div>
-  </div>
+  <div class="session-list" id="session-list"></div>
 </aside>
 
 <main>
   <div class="topbar">
-    <button class="btn-icon" id="show-sidebar" title="展开侧边栏" style="display:none">
+    <button class="btn-icon" id="show-sidebar" title="Show sidebar" style="display:none">
       <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     </button>
-    <div class="sess-title" id="sess-title">新对话</div>
+    <div class="sess-title" id="sess-title">New chat</div>
     <div class="topbar-actions">
-      <span class="dot" id="dot"></span>
-      <span class="status-text" id="status">未连接</span>
+      <div class="status" id="status"></div>
+      <button class="btn-icon" id="topbar-more" title="More">
+        <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
+      </button>
     </div>
   </div>
-
-  <div class="task-strip" id="task-strip"></div>
 
   <div class="chat-area" id="chat-area">
     <div class="chat-inner" id="chat"></div>
@@ -644,50 +693,68 @@
 
   <div class="composer-wrap">
     <div class="composer">
-      <textarea id="task" placeholder="给 Codey 发消息…  (Ctrl+回车 发送)" rows="1"></textarea>
+      <div class="composer-context" id="composer-context"></div>
+      <div class="composer-box">
+        <textarea id="task" placeholder="Send a message to Codey…" rows="1"></textarea>
+      </div>
       <div class="composer-bar">
         <div class="provider-chooser">
-          <button class="provider-button" id="provider-button" title="AI Provider" disabled>
-            <span class="dot" id="provider-dot"></span>
+          <button class="provider-button" id="provider-button" title="Provider" disabled>
+            <span class="dot ok" id="provider-dot"></span>
             <span class="name" id="provider-name">DeepSeek</span>
             <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           <div class="provider-menu" id="provider-menu" aria-hidden="true">
             <button class="provider-item" data-provider="deepseek">
-              <span class="dot" aria-hidden="true"></span>
+              <span class="dot ok" aria-hidden="true"></span>
               <span class="label">DeepSeek</span>
               <span class="check">✓</span>
             </button>
             <button class="provider-item" data-provider="qwen">
-              <span class="dot" aria-hidden="true"></span>
+              <span class="dot ok" aria-hidden="true"></span>
               <span class="label">Qwen</span>
               <span class="check">✓</span>
             </button>
           </div>
         </div>
-        <span class="hint" id="composer-hint">纯聊天模式</span>
-        <button class="stop-btn" id="stop" style="display:none; margin-left:auto">停止</button>
-        <button class="send-btn" id="send" disabled>
-          发送
-          <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2" fill="currentColor"/></svg>
+        <span class="send-hint" id="send-hint">Ctrl ↵</span>
+        <button class="icon-btn" id="stop" style="display:none" title="Stop">
+          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button class="icon-btn send" id="send" disabled title="Send">
+          <svg viewBox="0 0 24 24"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg>
         </button>
       </div>
     </div>
   </div>
 </main>
 
+<div class="ctx-menu" id="proj-menu">
+  <button data-act="newchat">New chat here</button>
+  <button data-act="rename">Rename</button>
+  <button data-act="remove" class="danger">Remove from sidebar</button>
+</div>
+<div class="ctx-menu" id="sess-menu">
+  <button data-act="rename">Rename</button>
+  <button data-act="delete" class="danger">Delete chat</button>
+</div>
+<div class="ctx-menu" id="top-menu">
+  <button data-act="rename">Rename chat</button>
+  <button data-act="clear" class="danger">Clear messages</button>
+</div>
+
 <section class="changes-drawer" id="changes-drawer" aria-hidden="true">
   <div class="changes-head">
     <div class="changes-title">
-      <strong>改动</strong>
-      <span id="changes-subtitle">未加载</span>
+      <strong>Changes</strong>
+      <span id="changes-subtitle">Not loaded</span>
     </div>
-    <button class="drawer-btn" id="changes-copy">复制 diff</button>
-    <button class="drawer-btn" id="changes-refresh">刷新</button>
-    <button class="drawer-btn" id="changes-close">关闭</button>
+    <button class="drawer-btn" id="changes-copy">Copy diff</button>
+    <button class="drawer-btn" id="changes-refresh">Refresh</button>
+    <button class="drawer-btn" id="changes-close">Close</button>
   </div>
   <div class="changes-body" id="changes-body">
-    <div class="changes-empty">没有可展示的改动</div>
+    <div class="changes-empty">No changes</div>
   </div>
 </section>
 
@@ -708,7 +775,7 @@ function saveSessions(arr) { localStorage.setItem(LS_SESSIONS, JSON.stringify(ar
 function saveProjects(arr) { localStorage.setItem(LS_PROJECTS, JSON.stringify(arr)); }
 function pathName(path) {
   const trimmed = (path || '').replace(/[\\\/]+$/, '');
-  return trimmed.split(/[\\\/]/).pop() || trimmed || '项目';
+  return trimmed.split(/[\\\/]/).pop() || trimmed || 'project';
 }
 function pathKey(path) { return (path || '').replace(/[\\\/]+$/, '').toLowerCase(); }
 function escapeHtml(text) {
@@ -719,7 +786,7 @@ function escapeHtml(text) {
 
 let sessions = loadJson(LS_SESSIONS, []).map(s => ({
   id: s.id || uid(),
-  title: s.title || '新对话',
+  title: s.title || 'New chat',
   messages: Array.isArray(s.messages) ? s.messages : [],
   createdAt: s.createdAt || Date.now(),
   projectId: s.projectId || null,
@@ -749,7 +816,7 @@ if (legacyProject && !projects.some(p => pathKey(p.path) === pathKey(legacyProje
 localStorage.removeItem(LS_LEGACY_PROJECT);
 
 if (!sessions.length) {
-  const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER };
+  const s = { id: uid(), title: 'New chat', messages: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER };
   sessions = [s]; activeId = s.id; saveSessions(sessions);
   localStorage.setItem(LS_ACTIVE, activeId);
 }
@@ -757,7 +824,7 @@ if (!sessions.find(s => s.id === activeId)) {
   activeId = sessions[0].id; localStorage.setItem(LS_ACTIVE, activeId);
 }
 
-// ============================ rendering ============================
+// ============================ helpers ============================
 function activeSession() { return sessions.find(s => s.id === activeId); }
 function projectById(id) { return projects.find(p => p.id === id) || null; }
 function activeProject() {
@@ -772,12 +839,8 @@ function currentProviderId() {
   const s = activeSession();
   return s && ['deepseek', 'qwen'].includes(s.provider) ? s.provider : DEFAULT_PROVIDER;
 }
-function providerLabel(id) {
-  return id === 'qwen' ? 'Qwen' : 'DeepSeek';
-}
-function providerAvailability(id) {
-  return id === 'qwen' ? 'ok' : 'ok';
-}
+function providerLabel(id) { return id === 'qwen' ? 'Qwen' : 'DeepSeek'; }
+function providerAvailability(_id) { return 'ok'; } // future health check hook
 function syncProviderUI(providerId) {
   const id = ['deepseek', 'qwen'].includes(providerId) ? providerId : DEFAULT_PROVIDER;
   $('provider-name').textContent = providerLabel(id);
@@ -791,41 +854,28 @@ function persistActive() {
   saveProjects(projects);
   localStorage.setItem(LS_ACTIVE, activeId);
 }
-function updateContextText() {
+function updateComposerContext() {
+  const el = $('composer-context');
   const p = activeProject();
-  $('composer-hint').textContent = p ? `项目：${p.name}` : '纯聊天模式';
+  const proj = p ? p.name : 'No project';
+  const prov = providerLabel(currentProviderId());
+  el.innerHTML = `<span>${escapeHtml(proj)}</span><span class="ctx-sep">·</span><span>${escapeHtml(prov)}</span>`;
 }
 
-function renderTaskStrip({ project = '', provider = '', status = '', note = '', actionText = '', actionId = '', actionKind = '' }) {
-  const parts = [];
-  if (project) parts.push(`<span class="status-chip ok">${escapeHtml(project)}</span>`);
-  if (provider) parts.push(`<span class="status-chip">${escapeHtml(provider)}</span>`);
-  if (status) parts.push(`<span class="status-chip ${escapeHtml(status)}">${escapeHtml(status)}</span>`);
-  if (note) parts.push(`<span>${escapeHtml(note)}</span>`);
-  if (actionText && actionId) {
-    const cls = actionKind === 'retry' ? 'retry-btn' : 'continue-btn';
-    parts.push(`<button class="${cls}" data-action-id="${escapeHtml(actionId)}">${escapeHtml(actionText)}</button>`);
-  }
-  $('task-strip').innerHTML = parts.length ? `<div class="status-card">${parts.join('')}</div>` : '';
-}
-
-function clearTaskStrip() {
-  $('task-strip').innerHTML = '';
-}
-
+// ============================ sidebar rendering ============================
 function renderSidebar() {
   const list = $('session-list');
   list.innerHTML = '';
 
-  const projectLabel = document.createElement('div');
-  projectLabel.className = 'session-label';
-  projectLabel.textContent = '项目';
-  list.appendChild(projectLabel);
+  const projLabel = document.createElement('div');
+  projLabel.className = 'group-label';
+  projLabel.textContent = 'PROJECTS';
+  list.appendChild(projLabel);
 
   if (!projects.length) {
     const empty = document.createElement('div');
-    empty.className = 'empty-project';
-    empty.textContent = '还没有项目';
+    empty.className = 'project-empty';
+    empty.textContent = 'No projects';
     list.appendChild(empty);
   }
 
@@ -835,10 +885,12 @@ function renderSidebar() {
 
     const row = document.createElement('div');
     row.className = 'project-row';
+    const activeS = activeSession();
+    if (activeS && activeS.projectId === p.id) row.classList.add('has-active');
+    row.title = p.path;
 
     const toggle = document.createElement('button');
     toggle.className = 'project-toggle';
-    toggle.title = p.expanded ? '折叠项目' : '展开项目';
     toggle.innerHTML = p.expanded
       ? '<svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>'
       : '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
@@ -852,40 +904,22 @@ function renderSidebar() {
 
     const main = document.createElement('div');
     main.className = 'project-main';
-    main.title = p.path;
-    main.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 7h5l2 2h11v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>';
-    const title = document.createElement('span');
-    title.className = 'project-title';
-    title.textContent = p.name;
-    main.appendChild(title);
-    main.onclick = () => openProject(p.id);
+    main.textContent = p.name;
     row.appendChild(main);
 
-    const add = document.createElement('button');
-    add.className = 'project-add';
-    add.title = '在此项目中新建对话';
-    add.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
-    add.onclick = (e) => {
-      e.stopPropagation();
-      newSession(p.id);
-    };
-    row.appendChild(add);
+    row.onclick = () => openProject(p.id);
 
-    const remove = document.createElement('button');
-    remove.className = 'project-remove';
-    remove.title = '从侧边栏移除此项目';
-    remove.innerHTML = '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>';
-    remove.onclick = (e) => {
+    const more = document.createElement('button');
+    more.className = 'project-more';
+    more.title = 'More';
+    more.textContent = '⋯';
+    more.onclick = (e) => {
       e.stopPropagation();
-      deleteProject(p.id);
+      openProjectMenu(e.currentTarget, p.id);
     };
-    row.appendChild(remove);
+    row.appendChild(more);
+
     node.appendChild(row);
-
-    const path = document.createElement('div');
-    path.className = 'project-path';
-    path.textContent = p.path;
-    node.appendChild(path);
 
     if (p.expanded) {
       const children = document.createElement('div');
@@ -893,8 +927,8 @@ function renderSidebar() {
       const projectSessions = sessions.filter(s => s.projectId === p.id);
       if (!projectSessions.length) {
         const empty = document.createElement('div');
-        empty.className = 'empty-project';
-        empty.textContent = '没有对话';
+        empty.className = 'project-empty';
+        empty.textContent = 'No chats';
         children.appendChild(empty);
       } else {
         for (const s of projectSessions) children.appendChild(sessionNode(s));
@@ -904,52 +938,56 @@ function renderSidebar() {
     list.appendChild(node);
   }
 
-  const loose = sessions.filter(s => !s.projectId);
   const looseLabel = document.createElement('div');
-  looseLabel.className = 'session-label';
-  looseLabel.textContent = '无项目对话';
+  looseLabel.className = 'group-label';
+  looseLabel.textContent = 'CHATS';
   list.appendChild(looseLabel);
+  const loose = sessions.filter(s => !s.projectId);
+  if (!loose.length) {
+    const empty = document.createElement('div');
+    empty.className = 'project-empty';
+    empty.style.marginLeft = '10px';
+    empty.textContent = 'No chats';
+    list.appendChild(empty);
+  }
   for (const s of loose) list.appendChild(sessionNode(s));
 }
 
 function sessionNode(s) {
   const item = document.createElement('div');
   item.className = 'session-item' + (s.id === activeId ? ' active' : '');
-  item.onclick = (e) => { if (e.target.tagName !== 'BUTTON') switchSession(s.id); };
+  item.onclick = (e) => { if (!e.target.closest('button')) switchSession(s.id); };
   const title = document.createElement('span');
   title.className = 'session-title';
-  title.textContent = s.title || '未命名';
+  title.textContent = s.title || 'Untitled';
   item.appendChild(title);
-  const rename = document.createElement('button');
-  rename.className = 'rename'; rename.textContent = '✎'; rename.title = '重命名对话';
-  rename.onclick = (e) => { e.stopPropagation(); renameSession(s.id); };
-  item.appendChild(rename);
-  if (sessions.length > 1) {
-    const del = document.createElement('button');
-    del.className = 'del'; del.textContent = '×'; del.title = '删除对话';
-    del.onclick = (e) => { e.stopPropagation(); deleteSession(s.id); };
-    item.appendChild(del);
-  }
+  const more = document.createElement('button');
+  more.className = 'session-more'; more.textContent = '⋯'; more.title = 'More';
+  more.onclick = (e) => { e.stopPropagation(); openSessionMenu(e.currentTarget, s.id); };
+  item.appendChild(more);
   return item;
 }
 
+// ============================ chat rendering ============================
 function renderChat() {
   const s = activeSession();
   const chat = $('chat');
   if (!s) return;
   const p = activeProject();
-  $('sess-title').textContent = p ? `${p.name} / ${s.title || '新对话'}` : (s.title || '新对话');
+  const titleEl = $('sess-title');
+  if (p) {
+    titleEl.innerHTML = `<span class="crumb-proj">${escapeHtml(p.name)}</span><span class="crumb-sep">/</span><span class="crumb-chat">${escapeHtml(s.title || 'New chat')}</span>`;
+  } else {
+    titleEl.innerHTML = `<span class="crumb-chat">${escapeHtml(s.title || 'New chat')}</span>`;
+  }
   syncProviderUI(currentProviderId());
-  updateContextText();
+  updateComposerContext();
 
   if (!s.messages.length) {
-    const context = p
-      ? `当前项目：${escapeHtml(p.path)}。Codey 会在这个目录里读写文件。`
-      : '当前是纯聊天。选择或新建项目后，在项目下面新建对话即可让 Codey 读写文件。';
     chat.innerHTML = `
       <div class="welcome">
-        <h1>嗨，今天想做点什么？</h1>
-        <p class="muted">${context}</p>
+        <h1>Codey</h1>
+        <p>Send a message to start.</p>
       </div>`;
     return;
   }
@@ -959,102 +997,138 @@ function renderChat() {
   scrollChat();
 }
 
+function statusRow(prefix, text, opts = {}) {
+  const div = document.createElement('div');
+  div.className = 'msg ' + (opts.kind || '');
+  const row = document.createElement('div');
+  row.className = 'status-row' + (opts.err ? ' err' : '');
+  const pre = document.createElement('span');
+  pre.className = 'sr-prefix';
+  pre.textContent = prefix;
+  const txt = document.createElement('span');
+  txt.className = 'sr-text';
+  let body = text || '';
+  if (opts.err) body = body.replace(/^ERROR:\s*/i, '');
+  txt.textContent = body;
+  row.append(pre, txt);
+  if (opts.action) {
+    const btn = document.createElement('button');
+    btn.className = 'link-btn';
+    btn.textContent = opts.action.label;
+    btn.disabled = !!opts.action.disabled;
+    btn.onclick = opts.action.onclick;
+    row.appendChild(btn);
+  }
+  div.appendChild(row);
+  return div;
+}
+
 function appendMessageNode(chat, m) {
   if (m.type === 'user') {
     const div = document.createElement('div');
     div.className = 'msg user';
-    div.innerHTML = `<div class="bubble"></div>`;
-    div.querySelector('.bubble').textContent = m.text;
+    div.innerHTML = `<div class="msg-label">You</div><div class="body"></div>`;
+    div.querySelector('.body').textContent = m.text;
     chat.appendChild(div);
   } else if (m.type === 'turn') {
     const div = document.createElement('div');
     div.className = 'turn-divider';
-    div.textContent = `— 第 ${m.n} 轮 —`;
+    div.innerHTML = `<span>Turn ${m.n}</span><span class="line"></span>`;
     chat.appendChild(div);
   } else if (m.type === 'asst') {
     const div = document.createElement('div');
     div.className = 'msg asst';
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble collapsed';
-    bubble.textContent = m.text;
-    div.appendChild(bubble);
+    const label = document.createElement('div');
+    label.className = 'msg-label';
+    label.textContent = 'Codey';
+    div.appendChild(label);
+    const body = document.createElement('div');
+    body.className = 'body collapsed';
+    body.textContent = m.text;
+    div.appendChild(body);
     if (m.text.split('\n').length > 6 || m.text.length > 400) {
       const toggle = document.createElement('div');
-      toggle.className = 'toggle'; toggle.textContent = '展开 ▾';
+      toggle.className = 'toggle'; toggle.textContent = 'Expand';
       toggle.onclick = () => {
-        const collapsed = bubble.classList.toggle('collapsed');
-        toggle.textContent = collapsed ? '展开 ▾' : '收起 ▴';
+        const collapsed = body.classList.toggle('collapsed');
+        toggle.textContent = collapsed ? 'Expand' : 'Collapse';
       };
       div.appendChild(toggle);
     } else {
-      bubble.classList.remove('collapsed');
+      body.classList.remove('collapsed');
     }
     chat.appendChild(div);
   } else if (m.type === 'tool') {
     const div = document.createElement('div');
     div.className = 'msg tool';
     const row = document.createElement('div');
-    row.className = 'tool-row';
-    const tag = document.createElement('span');
-    tag.className = 'tag';
-    tag.textContent = m.kind;
-    const path = document.createElement('span');
-    path.textContent = m.path || '';
-    const arrow = document.createElement('span');
-    arrow.className = 'arrow';
-    arrow.textContent = '→';
-    const result = document.createElement('span');
-    result.className = 'result' + (m.error ? ' err' : '');
-    result.textContent = m.result;
-    row.append(tag, path, arrow, result);
+    row.className = 'tool-line';
+    const dot = document.createElement('span'); dot.className = 'tl-dot'; dot.textContent = '·';
+    const kind = document.createElement('span'); kind.className = 'tl-kind'; kind.textContent = m.kind || '';
+    const path = document.createElement('span'); path.className = 'tl-path'; path.textContent = m.path || '';
+    const arrow = document.createElement('span'); arrow.className = 'tl-arrow'; arrow.textContent = '→';
+    const result = document.createElement('span'); result.className = 'tl-result' + (m.error ? ' err' : ''); result.textContent = m.result || '';
+    row.append(dot, kind, path, arrow, result);
     div.appendChild(row);
     chat.appendChild(div);
   } else if (m.type === 'done') {
-    const div = document.createElement('div');
-    div.className = 'msg done';
-    const row = document.createElement('div');
-    row.className = 'done-row';
-    row.textContent = '✓ ' + (m.text || '完成');
-    div.appendChild(row);
-    chat.appendChild(div);
+    chat.appendChild(statusRow('Done', m.text || 'Task complete', { kind: 'done' }));
   } else if (m.type === 'changes') {
     const div = document.createElement('div');
     div.className = 'msg changes';
-    const row = document.createElement('div');
-    row.className = 'changes-row';
-    const text = document.createElement('span');
-    text.innerHTML = `已修改 <strong>${m.count || 0}</strong> 个文件`;
-    const btn = document.createElement('button');
-    btn.className = 'changes-btn';
-    btn.textContent = '查看改动';
-    btn.onclick = () => openChangesDrawer(m.project || currentProjectPath());
-    row.append(text, btn);
-    div.appendChild(row);
+    const head = document.createElement('div');
+    head.className = 'changes-head-row';
+    const label = document.createElement('span');
+    label.className = 'msg-label';
+    label.textContent = 'Changes';
+    const count = document.createElement('span');
+    count.className = 'changes-count';
+    const n = m.count || 0;
+    count.textContent = `${n} file${n === 1 ? '' : 's'}`;
+    const view = document.createElement('button');
+    view.className = 'link-btn';
+    view.textContent = 'View diff';
+    view.onclick = () => openChangesDrawer(m.project || currentProjectPath());
+    head.append(label, count, view);
+    div.appendChild(head);
+    const files = Array.isArray(m.files) ? m.files : [];
+    if (files.length) {
+      const list = document.createElement('div');
+      list.className = 'changes-files';
+      for (const f of files) {
+        const row = document.createElement('div');
+        row.className = 'changes-file';
+        row.innerHTML = `<span class="cf-status">${escapeHtml(f.status || 'M')}</span><span class="cf-path">${escapeHtml(f.path || '')}</span><span class="cf-stat">+${f.additions || 0} -${f.deletions || 0}</span>`;
+        list.appendChild(row);
+      }
+      div.appendChild(list);
+    }
     chat.appendChild(div);
   } else if (m.type === 'shell_request') {
     const div = document.createElement('div');
     div.className = 'msg shell';
     const card = document.createElement('div');
     card.className = 'shell-card';
-    const title = document.createElement('strong');
-    title.textContent = '需要批准命令';
+    const title = document.createElement('div');
+    title.className = 'sc-title';
+    title.textContent = 'Approval required';
     const meta = document.createElement('div');
-    meta.className = 'shell-meta';
-    meta.textContent = m.cwd ? `cwd: ${m.cwd}` : 'cwd: .';
+    meta.className = 'sc-meta';
+    meta.textContent = m.cwd ? `Runs in ${m.cwd}` : 'Runs in .';
     const cmd = document.createElement('div');
     cmd.className = 'shell-command';
-    cmd.textContent = m.command || '';
+    cmd.textContent = '$ ' + (m.command || '');
     const actions = document.createElement('div');
     actions.className = 'shell-actions';
-    const approve = document.createElement('button');
-    approve.className = 'shell-approve';
-    approve.textContent = '允许并继续';
     const deny = document.createElement('button');
-    deny.className = 'shell-deny';
-    deny.textContent = '拒绝';
+    deny.className = 'text-btn';
+    deny.textContent = 'Deny';
+    const approve = document.createElement('button');
+    approve.className = 'text-btn primary';
+    approve.textContent = 'Allow';
     approve.onclick = () => approveShell(m.id, true, approve, deny);
     deny.onclick = () => approveShell(m.id, false, approve, deny);
-    actions.append(approve, deny);
+    actions.append(deny, approve);
     card.append(title, meta, cmd, actions);
     div.appendChild(card);
     chat.appendChild(div);
@@ -1064,57 +1138,25 @@ function appendMessageNode(chat, m) {
     const out = document.createElement('div');
     out.className = 'shell-output';
     const exit = m.exitCode === null || m.exitCode === undefined ? '' : `exit ${m.exitCode}\n`;
-    out.textContent = `${m.approved ? '命令已执行' : '命令未执行'}\n${m.command || ''}\n${exit}${m.output || ''}`;
+    out.textContent = `${m.approved ? 'Executed' : 'Denied'}\n$ ${m.command || ''}\n${exit}${m.output || ''}`;
     div.appendChild(out);
     chat.appendChild(div);
   } else if (m.type === 'limit') {
-    const div = document.createElement('div');
-    div.className = 'msg limit';
-    const row = document.createElement('div');
-    row.className = 'limit-row';
-    const text = document.createElement('span');
-    text.textContent = m.text || '已到步数上限';
-    const btn = document.createElement('button');
-    btn.className = 'continue-btn';
-    btn.textContent = '继续此任务';
-    btn.disabled = !!runningSessionId;
-    btn.onclick = () => continueTask(m.sessionId || activeId);
-    row.append(text, btn);
-    div.appendChild(row);
-    chat.appendChild(div);
+    chat.appendChild(statusRow('Limit', m.text || 'Turn limit reached', {
+      action: { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
+    }));
   } else if (m.type === 'pause') {
-    const div = document.createElement('div');
-    div.className = 'msg pause';
-    const row = document.createElement('div');
-    row.className = 'pause-row';
-    const text = document.createElement('span');
-    text.textContent = m.text || '连续几轮没有新进展，已暂停';
-    const btn = document.createElement('button');
-    btn.className = 'continue-btn';
-    btn.textContent = '继续此任务';
-    btn.disabled = !!runningSessionId;
-    btn.onclick = () => continueTask(m.sessionId || activeId);
-    row.append(text, btn);
-    div.appendChild(row);
-    chat.appendChild(div);
+    chat.appendChild(statusRow('Paused', m.text || 'No progress for several turns', {
+      action: { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
+    }));
   } else if (m.type === 'err') {
-    const div = document.createElement('div');
-    div.className = 'msg err';
-    const row = document.createElement('div');
-    row.className = 'err-row';
-    const text = document.createElement('span');
-    text.textContent = m.text;
-    const btn = document.createElement('button');
-    btn.className = 'retry-btn';
-    btn.textContent = '重试上一任务';
-    btn.disabled = !!runningSessionId;
-    btn.onclick = () => retryTask(m.sessionId || activeId);
-    row.append(text, btn);
-    div.appendChild(row);
-    chat.appendChild(div);
+    chat.appendChild(statusRow('Error', m.text || '', {
+      err: true,
+      action: { label: 'Retry', disabled: !!runningSessionId, onclick: () => retryTask(m.sessionId || activeId) },
+    }));
   } else if (m.type === 'info') {
     const div = document.createElement('div');
-    div.className = 'turn-divider';
+    div.className = 'info-line';
     div.textContent = m.text;
     chat.appendChild(div);
   }
@@ -1139,17 +1181,16 @@ function openProject(projectId) {
 }
 function newSession(projectId = null) {
   const provider = currentProviderId();
-  const s = { id: uid(), projectId, title: '新对话', messages: [], createdAt: Date.now(), provider };
+  const s = { id: uid(), projectId, title: 'New chat', messages: [], createdAt: Date.now(), provider };
   sessions.unshift(s); activeId = s.id; persistActive(); renderSidebar(); renderChat();
-  // Also ask the backend to reset the selected provider on the next task.
   fetch('/api/new_chat', { method: 'POST' }).catch(() => {});
 }
 function deleteSession(id) {
-  if (!confirm('删除这个会话？')) return;
+  if (!confirm('Delete this chat?')) return;
   const fallbackProvider = currentProviderId();
   sessions = sessions.filter(s => s.id !== id);
   if (!sessions.length) {
-    const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null, provider: fallbackProvider };
+    const s = { id: uid(), title: 'New chat', messages: [], createdAt: Date.now(), projectId: null, provider: fallbackProvider };
     sessions = [s];
   }
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
@@ -1158,7 +1199,7 @@ function deleteSession(id) {
 function renameSession(id) {
   const s = sessions.find(x => x.id === id);
   if (!s) return;
-  const next = prompt('重命名对话', s.title || '新对话');
+  const next = prompt('Rename chat', s.title || 'New chat');
   if (next === null) return;
   const title = next.trim();
   if (!title) return;
@@ -1167,13 +1208,33 @@ function renameSession(id) {
   renderSidebar();
   if (id === activeId) renderChat();
 }
+function clearMessages(id) {
+  const s = sessions.find(x => x.id === id);
+  if (!s) return;
+  if (!confirm('Clear all messages in this chat?')) return;
+  s.messages = [];
+  persistActive();
+  if (id === activeId) renderChat();
+}
+function renameProject(id) {
+  const p = projectById(id);
+  if (!p) return;
+  const next = prompt('Rename project', p.name);
+  if (next === null) return;
+  const name = next.trim();
+  if (!name) return;
+  p.name = name.slice(0, 80);
+  persistActive();
+  renderSidebar();
+  if (activeProject() && activeProject().id === id) renderChat();
+}
 function deleteProject(id) {
   const p = projectById(id);
   if (!p) return;
-  if (!confirm(`从侧边栏移除项目「${p.name}」？这不会删除磁盘上的文件夹，但会删除这个项目下的本地对话记录。`)) return;
+  if (!confirm(`Remove project "${p.name}" from the sidebar? Files on disk will not be deleted, but local chats under this project will be.`)) return;
   projects = projects.filter(x => x.id !== id);
   sessions = sessions.filter(s => s.projectId !== id);
-  if (!sessions.length) sessions = [{ id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null }];
+  if (!sessions.length) sessions = [{ id: uid(), title: 'New chat', messages: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER }];
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
   persistActive(); renderSidebar(); renderChat();
 }
@@ -1194,26 +1255,25 @@ function ensureProject(path, name) {
   saveProjects(projects);
   return p;
 }
-async function pickProject(mode) {
-  closeProjectMenu();
-  $('btn-project').disabled = true;
+async function pickProject() {
+  $('btn-add-project').disabled = true;
   try {
     const r = await fetch('/api/pick_folder', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode, initial: currentProjectPath() }),
+      body: JSON.stringify({ mode: 'open', initial: currentProjectPath() }),
     });
     let data = {};
     try { data = await r.json(); } catch {}
     if (!r.ok) {
-      alert('选择文件夹失败: ' + (data.error || ('HTTP ' + r.status)));
+      alert('Failed to pick folder: ' + (data.error || ('HTTP ' + r.status)));
       return;
     }
     if (!data.ok || !data.path) return;
     const p = ensureProject(data.path, data.name);
     newSession(p.id);
   } finally {
-    $('btn-project').disabled = false;
+    $('btn-add-project').disabled = false;
   }
 }
 
@@ -1222,11 +1282,12 @@ function pushMsg(m) {
   if (!s) return;
   const wasEmpty = s.messages.length === 0;
   s.messages.push(m);
-  // Update title from first user message
-  if (s.title === '新对话' && m.type === 'user' && m.text) {
+  if (s.title === 'New chat' && m.type === 'user' && m.text) {
     s.title = m.text.slice(0, 28) + (m.text.length > 28 ? '…' : '');
+    persistActive();
     renderSidebar();
-    $('sess-title').textContent = s.title;
+    renderChat();
+    return;
   }
   persistActive();
   if (wasEmpty) renderChat();
@@ -1236,6 +1297,69 @@ function pushMsg(m) {
   }
 }
 
+// ============================ context menus ============================
+function openMenuAt(menu, anchor) {
+  const rect = anchor.getBoundingClientRect();
+  menu.classList.add('open');
+  const mr = menu.getBoundingClientRect();
+  let left = rect.right - mr.width;
+  if (left < 8) left = rect.left;
+  let top = rect.bottom + 4;
+  if (top + mr.height > window.innerHeight - 8) top = rect.top - mr.height - 4;
+  menu.style.left = Math.max(8, left) + 'px';
+  menu.style.top = Math.max(8, top) + 'px';
+}
+function closeAllMenus() {
+  document.querySelectorAll('.ctx-menu.open').forEach(m => m.classList.remove('open'));
+}
+function openProjectMenu(anchor, projectId) {
+  closeAllMenus();
+  const menu = $('proj-menu');
+  menu.dataset.projectId = projectId;
+  openMenuAt(menu, anchor);
+}
+function openSessionMenu(anchor, sessionId) {
+  closeAllMenus();
+  const menu = $('sess-menu');
+  menu.dataset.sessionId = sessionId;
+  openMenuAt(menu, anchor);
+}
+function openTopMenu(anchor) {
+  closeAllMenus();
+  openMenuAt($('top-menu'), anchor);
+}
+$('proj-menu').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]'); if (!btn) return;
+  const id = $('proj-menu').dataset.projectId;
+  closeAllMenus();
+  if (!id) return;
+  const act = btn.dataset.act;
+  if (act === 'newchat') newSession(id);
+  else if (act === 'rename') renameProject(id);
+  else if (act === 'remove') deleteProject(id);
+});
+$('sess-menu').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]'); if (!btn) return;
+  const id = $('sess-menu').dataset.sessionId;
+  closeAllMenus();
+  if (!id) return;
+  const act = btn.dataset.act;
+  if (act === 'rename') renameSession(id);
+  else if (act === 'delete') deleteSession(id);
+});
+$('top-menu').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]'); if (!btn) return;
+  closeAllMenus();
+  const act = btn.dataset.act;
+  if (act === 'rename') renameSession(activeId);
+  else if (act === 'clear') clearMessages(activeId);
+});
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.ctx-menu')) return;
+  if (e.target.closest('.project-more, .session-more, #topbar-more')) return;
+  closeAllMenus();
+});
+
 // ============================ SSE event ingestion ============================
 let runningSessionId = null;
 let turnCounter = 0;
@@ -1243,113 +1367,67 @@ let activeChangesProject = '';
 let lastChangesData = null;
 
 function setStatus(text, kind) {
-  $('status').textContent = text;
-  $('dot').className = 'dot ' + (kind || '');
+  const el = $('status');
+  el.className = 'status ' + (kind || '');
+  el.innerHTML = '';
+  if (kind === 'run' || kind === 'warn') {
+    const sp = document.createElement('span');
+    sp.className = 'spinner';
+    el.appendChild(sp);
+  } else if (kind === 'err') {
+    const d = document.createElement('span');
+    d.className = 'status-dot err';
+    el.appendChild(d);
+  }
+  if (text && (kind === 'run' || kind === 'warn' || kind === 'err')) {
+    const t = document.createElement('span');
+    t.className = 'status-text';
+    t.textContent = text;
+    el.appendChild(t);
+  }
 }
 
 const evtSrc = new EventSource('/api/events');
 evtSrc.onmessage = (e) => {
   let data; try { data = JSON.parse(e.data); } catch { return; }
   if (data.type === 'hello') {
-    setStatus(data.status === 'running' ? '运行中' : '空闲', data.status === 'running' ? 'run' : 'ok');
+    setStatus(data.status === 'running' ? 'Running' : '', data.status === 'running' ? 'run' : 'ok');
     return;
   }
   if (data.type === 'status') {
-    setStatus(data.status === 'connecting' ? '连接 Edge…' : data.status, 'warn');
+    setStatus(data.status === 'connecting' ? 'Connecting to Edge…' : data.status, 'warn');
     return;
   }
-  // Only ingest task events that belong to the *running* session
-  // (which may differ from the currently-displayed session if the user
-  // switches around mid-run).
   const sid = data.session_id;
   if (data.type === 'task_start') {
     runningSessionId = sid;
     turnCounter = 0;
-    setStatus('运行中', 'run');
+    setStatus('Running', 'run');
     $('send').disabled = true;
     $('provider-button').disabled = true;
     $('stop').style.display = '';
-    renderTaskStrip({
-      project: data.project ? pathName(data.project) : '',
-      provider: data.provider || currentProviderId(),
-      status: 'run',
-      note: data.mode === 'agent' ? '正在执行项目任务' : '正在对话',
-    });
     return;
   }
   if (data.type === 'task_done') {
     runningSessionId = null;
-    setStatus('已连接', 'ok');
+    setStatus('', 'ok');
     $('stop').style.display = 'none';
     $('provider-button').disabled = false;
     updateSend();
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
     if (summary.startsWith('ERROR:')) {
-      addToSession(sid, { type: 'err', text: summary });
+      addToSession(sid, { type: 'err', text: summary.replace(/^ERROR:\s*/i, ''), sessionId: sid });
     } else if (reason === 'max_turns') {
       const turns = data.turns || data.max_turns || 0;
-      const label = turns ? `已到步数上限（${turns} 轮）` : '已到步数上限';
-      addToSession(sid, { type: 'limit', text: label, summary });
+      const label = turns ? `Reached turn limit (${turns})` : 'Reached turn limit';
+      addToSession(sid, { type: 'limit', text: label, sessionId: sid });
     } else if (reason === 'no_progress') {
-      addToSession(sid, {
-        type: 'pause',
-        text: '连续几轮没有写文件或获得新信息，已自动暂停',
-      });
+      addToSession(sid, { type: 'pause', text: 'Paused after several turns without new file writes', sessionId: sid });
     } else if (reason === 'approval') {
-      // The shell approval card is emitted separately.
+      // shell approval card is emitted separately
     } else if (summary) {
       addToSession(sid, { type: 'done', text: summary });
-    }
-    const projectName = activeProject() ? activeProject().name : '';
-    const provider = data.provider || currentProviderId();
-    if (reason === 'approval') {
-      renderTaskStrip({
-        project: projectName,
-        provider,
-        status: 'pause',
-        note: '需要命令审批',
-        actionText: '继续此任务',
-        actionId: sid,
-      });
-    } else if (reason === 'max_turns') {
-      renderTaskStrip({
-        project: projectName,
-        provider,
-        status: 'limit',
-        note: summary || '已到步数上限',
-        actionText: '继续此任务',
-        actionId: sid,
-      });
-    } else if (reason === 'no_progress') {
-      renderTaskStrip({
-        project: projectName,
-        provider,
-        status: 'pause',
-        note: '连续几轮没有新进展',
-        actionText: '继续此任务',
-        actionId: sid,
-      });
-    } else if (reason === 'error') {
-      renderTaskStrip({
-        project: projectName,
-        provider,
-        status: 'err',
-        note: summary || '启动失败',
-        actionText: '重试上一任务',
-        actionId: sid,
-        actionKind: 'retry',
-      });
-      if (summary.startsWith('ERROR:')) {
-        addToSession(sid, { type: 'err', text: summary, sessionId: sid });
-      }
-    } else {
-      renderTaskStrip({
-        project: projectName,
-        provider,
-        status: 'ok',
-        note: summary || '已完成',
-      });
     }
     if (reason !== 'error' && reason !== 'approval') maybeAddChangesSummary(sid);
     return;
@@ -1377,14 +1455,7 @@ evtSrc.onmessage = (e) => {
     return;
   }
   if (data.type === 'reply') {
-    // Pure-chat mode: a single assistant message (not wrapped in an agent turn).
     if (data.text) addToSession(sid, { type: 'asst', text: data.text });
-    renderTaskStrip({
-      project: activeProject() ? activeProject().name : '',
-      provider: data.provider || currentProviderId(),
-      status: 'ok',
-      note: '纯聊天回复已到达',
-    });
     return;
   }
   if (data.type === 'log') {
@@ -1392,12 +1463,12 @@ evtSrc.onmessage = (e) => {
     return;
   }
 };
-evtSrc.onerror = () => setStatus('连接断开', 'err');
+evtSrc.onerror = () => setStatus('Disconnected', 'err');
 
 function addToSession(sid, m) {
   const s = sessions.find(x => x.id === sid);
   if (!s) return;
-  if ((m.type === 'limit' || m.type === 'pause') && !m.sessionId) m.sessionId = sid;
+  if ((m.type === 'limit' || m.type === 'pause' || m.type === 'err') && !m.sessionId) m.sessionId = sid;
   s.messages.push(m);
   persistActive();
   if (sid === activeId) { appendMessageNode($('chat'), m); scrollChat(); }
@@ -1405,7 +1476,6 @@ function addToSession(sid, m) {
 
 function handleLog(sid, line) {
   if (!line) return;
-  // "--- turn N reply ---" → turn divider, then capture the body
   const turnMatch = line.match(/^\s*--- turn (\d+) reply.*?---\s*\n([\s\S]*)$/);
   if (turnMatch) {
     const n = parseInt(turnMatch[1], 10);
@@ -1414,23 +1484,21 @@ function handleLog(sid, line) {
     if (body) addToSession(sid, { type: 'asst', text: body });
     return;
   }
-  // "  · write hello.py -> wrote hello.py (24 chars)"
   const toolMatch = line.match(/^\s*·\s+(\w+)\s+(\S*)\s*->\s*(.*)$/);
   if (toolMatch) {
     const [, kind, path, result] = toolMatch;
     addToSession(sid, { type: 'tool', kind, path, result: result.slice(0, 200), error: /^ERROR/.test(result) });
     return;
   }
-  if (line.startsWith('[agent] DONE')) return; // task_done covers this
+  if (line.startsWith('[agent] DONE')) return;
   if (line.startsWith('[agent] loaded project instructions:')) {
     const names = line.replace('[agent] loaded project instructions:', '').trim();
-    addToSession(sid, { type: 'info', text: names ? `已读取项目说明：${names}` : '已读取项目说明' });
+    addToSession(sid, { type: 'info', text: names ? `loaded project instructions: ${names}` : 'loaded project instructions' });
     return;
   }
   if (line.startsWith('ERROR') || line.includes('Traceback')) {
-    addToSession(sid, { type: 'err', text: line }); return;
+    addToSession(sid, { type: 'err', text: line.replace(/^ERROR:\s*/i, ''), sessionId: sid }); return;
   }
-  // Silent agent housekeeping lines (opening chat, etc.) are shown faintly.
   if (line.startsWith('[agent]') || line.startsWith('[codey]')) {
     addToSession(sid, { type: 'info', text: line }); return;
   }
@@ -1447,14 +1515,6 @@ function retryTask(sessionId) {
   updateSend();
   $('send').click();
 }
-
-$('task-strip').addEventListener('click', (e) => {
-  const btn = e.target.closest('button[data-action-id]');
-  if (!btn) return;
-  const sid = btn.getAttribute('data-action-id');
-  if (btn.className.includes('continue-btn')) continueTask(sid);
-  if (btn.className.includes('retry-btn')) retryTask(sid);
-});
 
 function sessionProjectPath(sid) {
   const s = sessions.find(x => x.id === sid);
@@ -1480,7 +1540,8 @@ async function maybeAddChangesSummary(sid) {
   try {
     const data = await fetchChanges(project);
     if (!data.ok || !data.changed_count) return;
-    addToSession(sid, { type: 'changes', count: data.changed_count, project });
+    const files = Array.isArray(data.files) ? data.files.slice(0, 3) : [];
+    addToSession(sid, { type: 'changes', count: data.changed_count, files, project });
   } catch {}
 }
 
@@ -1493,15 +1554,15 @@ async function openChangesDrawer(project) {
 }
 
 async function loadChangesDrawer(project) {
-  $('changes-subtitle').textContent = '加载中...';
-  $('changes-body').innerHTML = '<div class="changes-empty">正在读取 git diff...</div>';
+  $('changes-subtitle').textContent = 'Loading…';
+  $('changes-body').innerHTML = '<div class="changes-empty">Reading git diff…</div>';
   try {
     const data = await fetchChanges(project);
     lastChangesData = data;
     renderChangesDrawer(data);
   } catch (err) {
     lastChangesData = null;
-    $('changes-subtitle').textContent = '加载失败';
+    $('changes-subtitle').textContent = 'Failed';
     $('changes-body').innerHTML = `<div class="changes-error">${escapeHtml(String(err))}</div>`;
   }
 }
@@ -1514,14 +1575,14 @@ function closeChangesDrawer() {
 function renderChangesDrawer(data) {
   const body = $('changes-body');
   if (!data || !data.ok) {
-    $('changes-subtitle').textContent = data && data.error ? data.error : '没有可展示的改动';
-    body.innerHTML = `<div class="changes-empty">${escapeHtml(data && data.error ? data.error : '没有可展示的改动')}</div>`;
+    $('changes-subtitle').textContent = data && data.error ? data.error : 'No changes';
+    body.innerHTML = `<div class="changes-empty">${escapeHtml(data && data.error ? data.error : 'No changes')}</div>`;
     return;
   }
   const files = Array.isArray(data.files) ? data.files : [];
-  $('changes-subtitle').textContent = `${files.length} files changed`;
+  $('changes-subtitle').textContent = `${files.length} file${files.length === 1 ? '' : 's'} changed`;
   if (!files.length) {
-    body.innerHTML = '<div class="changes-empty">没有可展示的改动</div>';
+    body.innerHTML = '<div class="changes-empty">No changes</div>';
     return;
   }
   const chunks = parseDiffChunks(data.diff || '');
@@ -1533,9 +1594,7 @@ function parseDiffChunks(diff) {
   const lines = (diff || '').split('\n');
   const chunks = [];
   let current = null;
-  function push() {
-    if (current) chunks.push(current);
-  }
+  function push() { if (current) chunks.push(current); }
   function start(path) {
     push();
     current = { path: (path || '').replace(/^b\//, ''), lines: [] };
@@ -1574,17 +1633,17 @@ function changeFileNode(file, chunks) {
   path.title = file.path || '';
   path.textContent = file.path || '';
   const add = document.createElement('span');
-  add.className = 'change-stat add';
+  add.className = 'change-stat';
   add.textContent = `+${file.additions || 0}`;
   const del = document.createElement('span');
-  del.className = 'change-stat del';
+  del.className = 'change-stat';
   del.textContent = `-${file.deletions || 0}`;
   btn.append(status, path, add, del);
   const pre = document.createElement('pre');
   pre.className = 'diff-pre';
   pre.hidden = true;
   const chunk = chunkForPath(chunks, file.path || '');
-  pre.innerHTML = chunk ? renderDiffLines(chunk.lines) : '<span class="diff-line meta">(没有可展示的文本 diff)</span>';
+  pre.innerHTML = chunk ? renderDiffLines(chunk.lines) : '<span class="diff-line meta">(no text diff available)</span>';
   btn.onclick = () => { pre.hidden = !pre.hidden; };
   wrap.append(btn, pre);
   return wrap;
@@ -1614,12 +1673,12 @@ async function approveShell(id, approved, approveBtn, denyBtn) {
     if (!r.ok) {
       let detail = '';
       try { detail = (await r.json()).error || ''; } catch {}
-      alert('命令审批失败: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
+      alert('Shell approval failed: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
       approveBtn.disabled = false;
       denyBtn.disabled = false;
     }
   } catch (err) {
-    alert('命令审批失败: ' + err);
+    alert('Shell approval failed: ' + err);
     approveBtn.disabled = false;
     denyBtn.disabled = false;
   }
@@ -1629,7 +1688,7 @@ async function approveShell(id, approved, approveBtn, denyBtn) {
 function resizeTask() {
   const t = $('task');
   t.style.height = 'auto';
-  t.style.height = Math.min(220, Math.max(44, t.scrollHeight)) + 'px';
+  t.style.height = Math.min(220, Math.max(40, t.scrollHeight)) + 'px';
 }
 function updateSend() {
   const has = $('task').value.trim();
@@ -1649,9 +1708,11 @@ function setActiveProvider(id) {
   s.provider = provider;
   persistActive();
   syncProviderUI(provider);
+  updateComposerContext();
 }
-$('provider-button').onclick = () => {
+$('provider-button').onclick = (e) => {
   if ($('provider-button').disabled) return;
+  e.stopPropagation();
   const menu = $('provider-menu');
   menu.classList.toggle('open');
   $('provider-button').classList.toggle('open', menu.classList.contains('open'));
@@ -1681,11 +1742,11 @@ $('send').onclick = async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: activeId, project, task, provider: currentProviderId() }),
   });
-  if (r.status === 409) { alert('已经有任务在运行了'); return; }
+  if (r.status === 409) { alert('A task is already running'); return; }
   if (!r.ok) {
     let detail = '';
     try { detail = (await r.json()).error || ''; } catch {}
-    alert('启动失败: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
+    alert('Failed to start: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
     return;
   }
 };
@@ -1695,10 +1756,10 @@ async function continueTask(sessionId) {
   if (!s) return;
   const p = s.projectId ? projectById(s.projectId) : null;
   if (!p) {
-    addToSession(sessionId, { type: 'err', text: '只有项目任务可以继续；纯聊天没有自动工具循环。' });
+    addToSession(sessionId, { type: 'err', text: 'Only project tasks can be continued; plain chats have no tool loop.', sessionId });
     return;
   }
-  addToSession(sessionId, { type: 'info', text: '继续此任务' });
+  addToSession(sessionId, { type: 'info', text: 'continue task' });
   const task = [
     'Continue the unfinished Codey task in this same conversation.',
     'Use the existing project context and finish the original user request.',
@@ -1715,11 +1776,11 @@ async function continueTask(sessionId) {
       provider: s.provider || DEFAULT_PROVIDER,
     }),
   });
-  if (r.status === 409) { alert('已经有任务在运行了'); return; }
+  if (r.status === 409) { alert('A task is already running'); return; }
   if (!r.ok) {
     let detail = '';
     try { detail = (await r.json()).error || ''; } catch {}
-    alert('继续失败: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
+    alert('Failed to continue: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
   }
 }
 $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
@@ -1732,24 +1793,18 @@ $('changes-copy').onclick = async () => {
   if (!diff) return;
   try {
     await navigator.clipboard.writeText(diff);
-    $('changes-copy').textContent = '已复制';
-    setTimeout(() => { $('changes-copy').textContent = '复制 diff'; }, 1200);
+    $('changes-copy').textContent = 'Copied';
+    setTimeout(() => { $('changes-copy').textContent = 'Copy diff'; }, 1200);
   } catch {
-    $('changes-copy').textContent = '复制失败';
-    setTimeout(() => { $('changes-copy').textContent = '复制 diff'; }, 1200);
+    $('changes-copy').textContent = 'Failed';
+    setTimeout(() => { $('changes-copy').textContent = 'Copy diff'; }, 1200);
   }
 };
-$('btn-new-chat').onclick = () => newSession(null);
-$('btn-project').onclick = (e) => {
-  e.stopPropagation();
-  $('project-menu').classList.toggle('open');
+$('btn-new-chat').onclick = () => {
+  const p = activeProject();
+  newSession(p ? p.id : null);
 };
-$('pick-existing').onclick = () => pickProject('open');
-$('pick-new').onclick = () => pickProject('new');
-function closeProjectMenu() { $('project-menu').classList.remove('open'); }
-document.addEventListener('click', (e) => {
-  if (!$('project-menu').contains(e.target) && !$('btn-project').contains(e.target)) closeProjectMenu();
-});
+$('btn-add-project').onclick = pickProject;
 $('toggle-sidebar').onclick = () => {
   document.body.classList.add('sidebar-collapsed');
   $('show-sidebar').style.display = '';
@@ -1758,6 +1813,19 @@ $('show-sidebar').onclick = () => {
   document.body.classList.remove('sidebar-collapsed');
   $('show-sidebar').style.display = 'none';
 };
+$('topbar-more').onclick = (e) => {
+  e.stopPropagation();
+  openTopMenu(e.currentTarget);
+};
+
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'n' || e.key === 'N')) {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    e.preventDefault();
+    const p = activeProject();
+    newSession(p ? p.id : null);
+  }
+});
 
 // ============================ boot ============================
 renderSidebar();
@@ -1765,6 +1833,7 @@ renderChat();
 resizeTask();
 updateSend();
 syncProviderUI(currentProviderId());
+setStatus('', 'ok');
 </script>
 </body>
 </html>

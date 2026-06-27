@@ -14,8 +14,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('data-provider="deepseek"', HTML)
         self.assertIn('data-provider="qwen"', HTML)
         self.assertIn('id="provider-dot"', HTML)
-        self.assertIn('background: var(--ok);', HTML)
-        self.assertIn(".provider-item.active .dot", HTML)
+        self.assertIn("--ok-dot:", HTML)
+        self.assertIn(".dot.ok", HTML)
+        self.assertIn(".provider-item.active .check", HTML)
 
     def test_run_and_continue_requests_keep_session_provider(self) -> None:
         self.assertIn("provider: currentProviderId()", HTML)
@@ -26,13 +27,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("const fallbackProvider = currentProviderId()", HTML)
         self.assertIn("provider: fallbackProvider", HTML)
 
-    def test_task_strip_renders_status_and_actions(self) -> None:
-        self.assertIn("function renderTaskStrip(", HTML)
-        self.assertIn('id="task-strip"', HTML)
-        self.assertIn('class="status-card"', HTML)
-        self.assertIn("重试上一任务", HTML)
-        self.assertIn("继续此任务", HTML)
-        self.assertIn("task-strip", HTML)
+    def test_topbar_shows_running_spinner(self) -> None:
+        self.assertIn(".spinner", HTML)
+        self.assertIn('id="status"', HTML)
+        self.assertIn("setStatus('Running', 'run')", HTML)
+
+    def test_status_rows_use_continue_and_retry_links(self) -> None:
+        self.assertIn(".link-btn", HTML)
+        self.assertIn("Continue", HTML)
+        self.assertIn("Retry", HTML)
 
     def test_composer_holds_model_picker_with_green_dot(self) -> None:
         self.assertIn('class="provider-chooser"', HTML)
@@ -41,9 +44,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('class="provider-item"', HTML)
 
     def test_welcome_keeps_status_copy_without_example_cards(self) -> None:
-        self.assertIn("嗨，今天想做点什么？", HTML)
-        self.assertIn("当前是纯聊天。选择或新建项目后", HTML)
-        self.assertIn("Codey 会在这个目录里读写文件", HTML)
+        self.assertIn("Send a message to start.", HTML)
+        self.assertIn("<h1>Codey</h1>", HTML)
         self.assertNotIn("打个招呼", HTML)
         self.assertNotIn("生成 snake.py", HTML)
         self.assertNotIn("写 README", HTML)

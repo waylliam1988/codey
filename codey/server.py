@@ -32,6 +32,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
+from codey.browser_worker import submit as submit_browser_task
 from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, connect_provider
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -414,7 +415,6 @@ def _run_task(
     except Exception as exc:
         STATE.status = "error"
         STATE.last_stop_reason = "error"
-        STATE.emit({"type": "log", "session_id": session_id, "level": "error", "text": f"ERROR: {exc!r}"})
         STATE.emit({
             "type": "task_done",
             "session_id": session_id,
@@ -462,6 +462,14 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path in ("/", "/index.html"):
             self._send_file(WEB_DIR / "index.html", "text/html; charset=utf-8")
+            return
+        if url.path == "/icon.ico":
+            icon = WEB_DIR / "icon.ico"
+            if icon.is_file():
+                self._send_file(icon, "image/x-icon")
+            else:
+                self.send_response(404)
+                self.end_headers()
             return
         if url.path == "/api/state":
             self._send_json(200, {
@@ -522,11 +530,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": f"unsupported provider: {provider_id}"}); return
             if project:
                 Path(project).mkdir(parents=True, exist_ok=True)
-            threading.Thread(
-                target=_run_task,
-                args=(session_id, project, task, max_turns, continue_task, provider_id),
-                daemon=True,
-            ).start()
+            submit_browser_task(
+                _run_task,
+                session_id,
+                project,
+                task,
+                max_turns,
+                continue_task,
+                provider_id,
+            )
             self._send_json(200, {"ok": True})
             return
         if url.path == "/api/pick_folder":
@@ -594,18 +606,15 @@ class Handler(BaseHTTPRequestHandler):
                     "Use this result to continue the original task. If the task is complete,"
                     " emit the codey done block."
                 )
-                threading.Thread(
-                    target=_run_task,
-                    args=(
-                        session_id,
-                        pending["project"],
-                        continuation,
-                        int(pending["max_turns"]),
-                        True,
-                        pending.get("provider") or DEFAULT_PROVIDER_ID,
-                    ),
-                    daemon=True,
-                ).start()
+                submit_browser_task(
+                    _run_task,
+                    session_id,
+                    pending["project"],
+                    continuation,
+                    int(pending["max_turns"]),
+                    True,
+                    pending.get("provider") or DEFAULT_PROVIDER_ID,
+                )
                 continued = True
             self._send_json(200, {"ok": True, "approved": True, "continued": continued, "result": result})
             return
@@ -668,8 +677,12 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
     def _run_webview() -> None:
         import webview
 
+        icon = WEB_DIR / "icon.ico"
         webview.create_window("Codey", url, width=1380, height=900)
-        webview.start()
+        if icon.is_file():
+            webview.start(icon=str(icon))
+        else:
+            webview.start()
 
     try:
         _run_webview()

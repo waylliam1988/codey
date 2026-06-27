@@ -177,6 +177,7 @@ E:\codey\
     ├── __main__.py        程序入口：python -m codey
     ├── cli.py             命令行调度
     ├── browser.py         通用 Edge/CDP 页面连接器
+    ├── browser_worker.py  Playwright 专用线程调度
     ├── deepseek.py        DeepSeek 的输入框、发送按钮、回复提取
     ├── qwen.py            Qwen 的发送、偏好选择、回复提取
     ├── web_clipboard.py   原始回复复制与剪贴板恢复
@@ -192,6 +193,8 @@ E:\codey\
     │   └── qwen_web.py    Qwen 网页适配器
     ├── server.py          本地 HTTP + SSE 服务（控制面板的后端）
     └── web\
+        ├── DESIGN.md      UI 设计语言与后续开发规范
+        ├── icon.ico       窗口/标签页图标（深灰底 + 绿点）
         └── index.html     控制面板前端（单文件，无构建步骤）
 ```
 
