@@ -7,6 +7,8 @@ Endpoints
     GET  /api/state       returns current run state as JSON
     POST /api/run         body {project, task, max_turns} → starts agent in
                           a background thread, returns {ok:true}
+    GET  /api/changes     query {project} → returns git status + diff
+    POST /api/changes     body {project} → returns git status + diff
     POST /api/stop        request cooperative stop of the current task
     GET  /api/events      Server-Sent Events stream of log lines
 
@@ -18,18 +20,141 @@ from __future__ import annotations
 
 import json
 import queue
+import difflib
+import subprocess
 import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
 from codey.browser import open_deepseek
 
 WEB_DIR = Path(__file__).parent / "web"
 FOLDER_DIALOG_LOCK = threading.Lock()
+GIT_TIMEOUT = 10
+MAX_DIFF_CHARS = 240_000
+MAX_UNTRACKED_DIFF_BYTES = 120_000
+
+
+def _run_git(project: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(project), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=GIT_TIMEOUT,
+        check=False,
+    )
+
+
+def parse_git_status(short_status: str) -> list[dict]:
+    files: list[dict] = []
+    for line in short_status.splitlines():
+        if not line.strip():
+            continue
+        status = line[:2].strip() or "M"
+        path = line[3:].strip() if len(line) > 3 else line[2:].strip()
+        files.append({"path": path, "status": status, "additions": 0, "deletions": 0})
+    return files
+
+
+def _merge_numstat(stats: dict[str, dict[str, int]], text: str) -> None:
+    for line in text.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 3:
+            continue
+        added, deleted, path = parts[0], parts[1], parts[2]
+        item = stats.setdefault(path, {"additions": 0, "deletions": 0})
+        if added.isdigit():
+            item["additions"] += int(added)
+        if deleted.isdigit():
+            item["deletions"] += int(deleted)
+
+
+def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
+    path = (root / rel).resolve()
+    try:
+        if not path.is_file() or path.stat().st_size > MAX_UNTRACKED_DIFF_BYTES:
+            return None
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+    lines = text.splitlines(keepends=True)
+    rel_posix = rel.replace("\\", "/")
+    diff = difflib.unified_diff(
+        [],
+        lines,
+        fromfile="/dev/null",
+        tofile=f"b/{rel_posix}",
+        lineterm="",
+    )
+    return "\n".join(diff), len(text.splitlines())
+
+
+def collect_git_changes(project: str | Path | None) -> dict:
+    if not project:
+        return {"ok": False, "error": "project required", "files": [], "diff": ""}
+    root = Path(project).expanduser().resolve()
+    if not root.exists():
+        return {"ok": False, "error": "project not found", "files": [], "diff": ""}
+
+    try:
+        top = _run_git(root, ["rev-parse", "--show-toplevel"])
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "error": f"git unavailable: {exc}", "files": [], "diff": ""}
+    if top.returncode != 0:
+        return {"ok": False, "error": "not a git repository", "files": [], "diff": ""}
+    git_root = Path(top.stdout.strip()).resolve()
+
+    try:
+        status_proc = _run_git(git_root, ["status", "--short"])
+        unstaged_num = _run_git(git_root, ["diff", "--numstat"])
+        staged_num = _run_git(git_root, ["diff", "--cached", "--numstat"])
+        unstaged_diff = _run_git(git_root, ["diff", "--no-ext-diff", "--"])
+        staged_diff = _run_git(git_root, ["diff", "--cached", "--no-ext-diff", "--"])
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": "git command timed out", "files": [], "diff": ""}
+
+    files = parse_git_status(status_proc.stdout)
+    stats: dict[str, dict[str, int]] = {}
+    _merge_numstat(stats, unstaged_num.stdout)
+    _merge_numstat(stats, staged_num.stdout)
+
+    diff_parts: list[str] = []
+    if staged_diff.stdout:
+        diff_parts.append(staged_diff.stdout.rstrip())
+    if unstaged_diff.stdout:
+        diff_parts.append(unstaged_diff.stdout.rstrip())
+
+    for file in files:
+        path = file["path"]
+        stat = stats.get(path)
+        if stat:
+            file.update(stat)
+        if file["status"] == "??":
+            untracked = _untracked_file_diff(git_root, path)
+            if untracked:
+                diff_text, additions = untracked
+                file["additions"] = additions
+                file["deletions"] = 0
+                diff_parts.append(diff_text)
+
+    diff = "\n\n".join(part for part in diff_parts if part)
+    truncated = len(diff) > MAX_DIFF_CHARS
+    if truncated:
+        diff = diff[:MAX_DIFF_CHARS].rstrip() + "\n\n... diff truncated by Codey"
+    return {
+        "ok": True,
+        "root": str(git_root),
+        "files": files,
+        "changed_count": len(files),
+        "diff": diff,
+        "truncated": truncated,
+    }
 
 
 class State:
@@ -231,6 +356,12 @@ class Handler(BaseHTTPRequestHandler):
                 "stop_reason": STATE.last_stop_reason,
             })
             return
+        if url.path == "/api/changes":
+            query = parse_qs(url.query)
+            project = (query.get("project") or [""])[0].strip()
+            payload = collect_git_changes(project)
+            self._send_json(200 if payload.get("ok") else 400, payload)
+            return
         if url.path == "/api/events":
             self._sse()
             return
@@ -280,6 +411,11 @@ class Handler(BaseHTTPRequestHandler):
             if not path:
                 self._send_json(200, {"ok": False, "cancelled": True}); return
             self._send_json(200, {"ok": True, "path": path, "name": Path(path).name or path})
+            return
+        if url.path == "/api/changes":
+            project = (body.get("project") or "").strip()
+            payload = collect_git_changes(project)
+            self._send_json(200 if payload.get("ok") else 400, payload)
             return
         if url.path == "/api/new_chat":
             try:
