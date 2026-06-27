@@ -1,6 +1,6 @@
 """Provider-agnostic tool-using agent runtime.
 
-Codey asks a chat provider for XML-like tool tags and converts those tags into
+Codey asks a chat provider for JSON tool calls and converts those calls into
 local ToolCall objects. The runtime only depends on ChatProvider and
 ProtocolCodec interfaces; browser automation and provider-specific selectors
 stay outside this module.
@@ -17,7 +17,7 @@ from pathlib import Path
 
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.providers import ChatProvider
-from codey.protocols import ProtocolCodec, XmlToolCodec
+from codey.protocols import JsonToolCodec, ProtocolCodec
 
 DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
@@ -47,7 +47,7 @@ EDIT_BLOCK_RE = re.compile(
     r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
     re.DOTALL,
 )
-DEFAULT_CODEC = XmlToolCodec()
+DEFAULT_CODEC = JsonToolCodec()
 
 
 @dataclass(frozen=True)
@@ -374,6 +374,10 @@ def _edit_body_from_call(call: ToolCall) -> str:
     return "\n".join(blocks)
 
 
+def _edit_has_content(call: ToolCall) -> bool:
+    return "content" in call.args
+
+
 # ----------------------------------------------------------------- loop ---
 
 @dataclass
@@ -451,7 +455,10 @@ def run(
                     if not out.startswith("ERROR:"):
                         made_progress = True
                 elif call.name == "edit":
-                    out = tool_edit(project, path, _edit_body_from_call(call))
+                    if _edit_has_content(call):
+                        out = tool_write(project, path, _call_arg(call, "content"))
+                    else:
+                        out = tool_edit(project, path, _edit_body_from_call(call))
                     if not out.startswith("ERROR:"):
                         made_progress = True
                 elif call.name == "read":
@@ -489,7 +496,7 @@ def run(
                 msg = f"stopped after {stagnant_turns} turns without valid tool progress"
                 on_event(f"[agent] {msg}.")
                 return RunResult(msg, "no_progress", turn)
-            on_event("[agent] reply contained no valid <codey> block; nudging the model.")
+            on_event("[agent] reply contained no valid JSON tool call; nudging the model.")
             reply = provider.send(codec.repair_prompt())
             on_event(f"\n--- turn {turn+1} reply (after nudge) ---\n{reply}\n")
             continue

@@ -604,7 +604,7 @@ class Handler(BaseHTTPRequestHandler):
                     "Output:\n"
                     f"{result.get('output') or result.get('error') or '(no output)'}\n\n"
                     "Use this result to continue the original task. If the task is complete,"
-                    " emit the codey done block."
+                    " reply with a JSON done tool call."
                 )
                 submit_browser_task(
                     _run_task,

@@ -154,7 +154,7 @@ UI / CLI
    ↓
 Server / Orchestrator
    ↓
-Agent Runtime ── XmlToolCodec
+Agent Runtime ── JsonToolCodec
    ↓
 ChatProvider ─┬─ DeepSeekWebProvider
               └─ QwenWebProvider
@@ -162,7 +162,7 @@ ChatProvider ─┬─ DeepSeekWebProvider
 Browser Session + provider DOM driver
 ```
 
-`agent.py` 只认识 `ChatProvider`、`ProtocolCodec` 和 `ToolCall`，不知道 Playwright 页面和站点选择器。`browser.py` 负责通用 Edge/CDP 连接；DeepSeek 和 Qwen 驱动分别处理各自 DOM。两者共用剪贴板保护事务，从网页的“复制回复”动作获取未被 Markdown 渲染破坏的原始 XML。
+`agent.py` 只认识 `ChatProvider`、`ProtocolCodec` 和 `ToolCall`，不知道 Playwright 页面和站点选择器。`browser.py` 负责通用 Edge/CDP 连接；DeepSeek 和 Qwen 驱动分别处理各自 DOM。两者共用剪贴板保护事务，从网页的“复制回复”动作获取未被 Markdown 渲染破坏的原始 JSON 工具调用。
 
 ---
 
@@ -185,7 +185,7 @@ E:\codey\
     ├── models.py          ToolCall / ToolPlan / ToolResult
     ├── protocols\
     │   ├── base.py        ProtocolCodec 接口
-    │   └── xml_codec.py   XML-only 工具协议
+    │   └── json_codec.py  JSON-only 工具协议
     ├── providers\
     │   ├── base.py        ChatProvider 接口
     │   ├── registry.py    Provider 注册与创建

@@ -3,17 +3,14 @@ from __future__ import annotations
 import unittest
 
 from codey.models import ToolCall, ToolResult
-from codey.protocols import XmlToolCodec
+from codey.protocols import JsonToolCodec
 
 
-class XmlToolCodecTests(unittest.TestCase):
-    def test_parse_xml_tool_plan(self) -> None:
-        codec = XmlToolCodec()
+class JsonToolCodecTests(unittest.TestCase):
+    def test_parse_json_tool_call(self) -> None:
+        codec = JsonToolCodec()
         plan = codec.parse(
-            """<codey>
-  <tool name="search"><path>.</path><query>LOGIN_BUG</query></tool>
-  <control type="continue">need results</control>
-</codey>"""
+            '{"tool":"grep","args":{"path":".","pattern":"LOGIN_BUG"}}'
         )
 
         self.assertEqual(len(plan.calls), 1)
@@ -23,25 +20,63 @@ class XmlToolCodecTests(unittest.TestCase):
         self.assertIsNotNone(plan.control)
         self.assertEqual(plan.control.kind, "continue")
 
-    def test_old_marker_protocol_is_not_parsed(self) -> None:
-        codec = XmlToolCodec()
+    def test_parse_done_control(self) -> None:
+        codec = JsonToolCodec()
+        plan = codec.parse('{"tool":"done","args":{"summary":"finished"}}')
+
+        self.assertEqual(plan.calls, [])
+        self.assertIsNotNone(plan.control)
+        self.assertEqual(plan.control.kind, "done")
+        self.assertEqual(plan.control.body, "finished")
+
+    def test_parse_read_files_as_multiple_reads(self) -> None:
+        codec = JsonToolCodec()
+        plan = codec.parse('{"tool":"read_files","args":{"paths":["a.py","b.py"]}}')
+
+        self.assertEqual([call.name for call in plan.calls], ["read", "read"])
+        self.assertEqual([call.args["path"] for call in plan.calls], ["a.py", "b.py"])
+        self.assertIsNotNone(plan.control)
+        self.assertEqual(plan.control.kind, "continue")
+
+    def test_parse_parallel_tool_calls(self) -> None:
+        codec = JsonToolCodec()
         plan = codec.parse(
-            """```text
-# === codey: read path=app.py ===
-```"""
+            '{"tool":"parallel","args":{"calls":['
+            '{"tool":"grep","args":{"pattern":"login","path":"."}},'
+            '{"tool":"list_dir","args":{"path":"src"}}'
+            ']}}'
         )
+
+        self.assertEqual([call.name for call in plan.calls], ["search", "ls"])
+        self.assertEqual(plan.calls[0].args["query"], "login")
+        self.assertEqual(plan.calls[1].args["path"], "src")
+
+    def test_extracts_json_from_web_reply_noise(self) -> None:
+        codec = JsonToolCodec()
+        plan = codec.parse(
+            '已深度思考（用时 1 秒）\n'
+            '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
+        )
+
+        self.assertEqual(len(plan.calls), 1)
+        self.assertEqual(plan.calls[0].name, "edit")
+        self.assertEqual(plan.calls[0].args["replacements"], [{"search": "old", "replace": "new"}])
+
+    def test_non_json_protocol_is_not_parsed(self) -> None:
+        codec = JsonToolCodec()
+        plan = codec.parse("tool: read_file path=app.py")
 
         self.assertEqual(plan.calls, [])
         self.assertIsNone(plan.control)
 
-    def test_format_results_and_repair_prompt_remind_xml_only(self) -> None:
-        codec = XmlToolCodec()
+    def test_format_results_and_repair_prompt_remind_json_only(self) -> None:
+        codec = JsonToolCodec()
         call = ToolCall("read", {"path": "app.py"})
         prompt = codec.format_results([ToolResult(call, "content")])
 
-        self.assertIn("<codey>...</codey>", prompt)
-        self.assertIn("[read app.py]\ncontent", prompt)
-        self.assertIn("<codey>...</codey>", codec.repair_prompt())
+        self.assertIn("[tool_result tool=read_file path=app.py]\n---\ncontent\n---", prompt)
+        self.assertIn("exactly one JSON object", prompt)
+        self.assertIn("valid JSON tool call", codec.repair_prompt())
 
 
 if __name__ == "__main__":

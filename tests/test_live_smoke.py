@@ -9,13 +9,12 @@ from tools import live_smoke
 
 
 class LiveSmokeTests(unittest.TestCase):
-    def test_create_fixture_writes_basic_project_files(self) -> None:
+    def test_create_fixture_starts_empty_project(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             live_smoke._make_fixture(root, "create")
 
-            self.assertTrue((root / "math_utils.py").exists())
-            self.assertTrue((root / "test_math_utils.py").exists())
+            self.assertEqual(list(root.iterdir()), [])
 
     def test_edit_fixture_writes_buggy_project_files(self) -> None:
         with tempfile.TemporaryDirectory() as td:

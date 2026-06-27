@@ -1763,7 +1763,7 @@ async function continueTask(sessionId) {
   const task = [
     'Continue the unfinished Codey task in this same conversation.',
     'Use the existing project context and finish the original user request.',
-    'If the work is complete, emit the codey done block.'
+    'If the work is complete, reply with a JSON done tool call.'
   ].join(' ');
   const r = await fetch('/api/run', {
     method: 'POST',

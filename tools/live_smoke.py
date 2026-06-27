@@ -16,19 +16,6 @@ from codey.providers.registry import connect_provider
 
 def _make_fixture(root: Path, name: str) -> None:
     if name == "create":
-        (root / "math_utils.py").write_text(
-            "def add(a, b):\n"
-            "    return a + b\n",
-            encoding="utf-8",
-        )
-        (root / "test_math_utils.py").write_text(
-            "import unittest\n\n"
-            "from math_utils import add\n\n\n"
-            "class TestAdd(unittest.TestCase):\n"
-            "    def test_add(self):\n"
-            "        self.assertEqual(add(2, 3), 5)\n",
-            encoding="utf-8",
-        )
         return
     if name == "edit":
         (root / "pricing.py").write_text(
@@ -63,8 +50,10 @@ def run_smoke(provider_id: str, case: str, port: int, max_turns: int) -> dict:
         try:
             if case == "create":
                 task = (
-                    "Create math_utils.py with add(a, b), create test_math_utils.py, "
-                    "then run python -m unittest and finish."
+                    "Create math_utils.py with add(a, b) returning a + b. "
+                    "Create test_math_utils.py with a unittest for add(2, 3) == 5. "
+                    "Use edit with content to create the files, then run python -m unittest "
+                    "and finish with done."
                 )
             else:
                 task = (

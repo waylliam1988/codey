@@ -123,11 +123,11 @@ class QwenDriverTests(unittest.TestCase):
         with mock.patch.object(
             qwen,
             "copy_action_text",
-            return_value="<codey>\nraw\n</codey>",
+            return_value='{"tool":"done","args":{"summary":"raw"}}',
         ) as copy_action:
             raw = qwen._copy_last_text(page)
 
-        self.assertEqual(raw, "<codey>\nraw\n</codey>")
+        self.assertEqual(raw, '{"tool":"done","args":{"summary":"raw"}}')
         copy_action.assert_called_once_with(page, copy_button, origin=qwen.QWEN_URL)
 
     def test_resolve_preference_selects_first_visible_reply(self) -> None:

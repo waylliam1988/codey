@@ -2,6 +2,6 @@
 
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.protocols.base import ProtocolCodec
-from codey.protocols.xml_codec import XmlToolCodec
+from codey.protocols.json_codec import JsonToolCodec
 
-__all__ = ["Control", "ProtocolCodec", "ToolCall", "ToolPlan", "ToolResult", "XmlToolCodec"]
+__all__ = ["Control", "JsonToolCodec", "ProtocolCodec", "ToolCall", "ToolPlan", "ToolResult"]

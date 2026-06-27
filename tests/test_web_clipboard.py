@@ -13,13 +13,13 @@ class WebClipboardTests(unittest.TestCase):
         page.evaluate.side_effect = [
             "user clipboard",
             None,
-            "<codey>\r\nreply\r\n</codey>",
+            '{"tool":"done","args":{"summary":"reply"}}',
             None,
         ]
 
         result = copy_action_text(page, action, origin="https://example.test/")
 
-        self.assertEqual(result, "<codey>\nreply\n</codey>")
+        self.assertEqual(result, '{"tool":"done","args":{"summary":"reply"}}')
         action.click.assert_called_once_with()
         page.context.grant_permissions.assert_called_once_with(
             ["clipboard-read", "clipboard-write"],

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 from codey import agent
@@ -28,18 +29,7 @@ class FakeProvider:
 
 class ParseReplyTests(unittest.TestCase):
     def test_parse_multiple_actions_and_control(self) -> None:
-        text = """Some context.
-
-<codey>
-  <tool name="read">
-    <path>app.py</path>
-  </tool>
-  <tool name="ls">
-    <path>.</path>
-  </tool>
-  <control type="done">finished</control>
-</codey>
-"""
+        text = '{"tool":"parallel","args":{"calls":[{"tool":"read_file","args":{"path":"app.py"}},{"tool":"list_dir","args":{"path":"."}}]}}'
         plan = agent.parse_reply(text)
         calls = plan.calls
         control = plan.control
@@ -47,10 +37,9 @@ class ParseReplyTests(unittest.TestCase):
         self.assertEqual([call.name for call in calls], ["read", "ls"])
         self.assertEqual([call.args["path"] for call in calls], ["app.py", "."])
         self.assertIsNotNone(control)
-        self.assertEqual(control.kind, "done")
-        self.assertEqual(control.body, "finished")
+        self.assertEqual(control.kind, "continue")
 
-    def test_ignores_non_codey_blocks(self) -> None:
+    def test_ignores_non_json_blocks(self) -> None:
         text = """```python
 print("hello")
 ```
@@ -78,13 +67,7 @@ need files
         self.assertIsNone(plan.control)
 
     def test_parse_search_action_uses_body_as_query(self) -> None:
-        text = """<codey>
-  <tool name="search">
-    <path>src</path>
-    <query>login handler</query>
-  </tool>
-  <control type="continue">need the matching files</control>
-</codey>"""
+        text = '{"tool":"grep","args":{"path":"src","pattern":"login handler"}}'
         plan = agent.parse_reply(text)
         calls = plan.calls
         control = plan.control
@@ -96,15 +79,10 @@ need files
         self.assertIsNotNone(control)
         self.assertEqual(control.kind, "continue")
 
-    def test_parse_xml_with_natural_language_around_block(self) -> None:
-        text = """I'll search first.
-
-<codey>
-  <tool name="search"><path>.</path><query>LEGACY_BUG</query></tool>
-  <control type="continue">Need search results</control>
-</codey>
-
-Then I will inspect the result."""
+    def test_parse_json_with_web_noise_around_object(self) -> None:
+        text = """已深度思考（用时 1 秒）
+{"tool":"grep","args":{"path":".","pattern":"LEGACY_BUG"}}
+"""
         plan = agent.parse_reply(text)
         calls = plan.calls
         control = plan.control
@@ -115,45 +93,29 @@ Then I will inspect the result."""
         self.assertEqual(calls[0].args["query"], "LEGACY_BUG")
         self.assertIsNotNone(control)
         self.assertEqual(control.kind, "continue")
-        self.assertEqual(control.body, "Need search results")
+        self.assertEqual(control.body, "Need tool result")
 
-    def test_parse_write_action_with_cdata(self) -> None:
-        text = """<codey>
-  <tool name="write">
-    <path>app.py</path>
-    <content><![CDATA[
-if value < 3 and name == "x":
-    print("ok")
-]]></content>
-  </tool>
-  <control type="done">created file</control>
-</codey>"""
+    def test_parse_edit_content_action(self) -> None:
+        text = json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "content": 'if value < 3 and name == "x":\n    print("ok")',
+            },
+        })
         plan = agent.parse_reply(text)
         calls = plan.calls
         control = plan.control
 
         self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0].name, "write")
+        self.assertEqual(calls[0].name, "edit")
         self.assertEqual(calls[0].args["path"], "app.py")
         self.assertEqual(calls[0].args["content"], 'if value < 3 and name == "x":\n    print("ok")')
         self.assertIsNotNone(control)
-        self.assertEqual(control.kind, "done")
+        self.assertEqual(control.kind, "continue")
 
     def test_parse_edit_action(self) -> None:
-        text = """<codey>
-  <tool name="edit">
-    <path>app.py</path>
-    <replace>
-      <search><![CDATA[
-old()
-]]></search>
-      <with><![CDATA[
-new()
-]]></with>
-    </replace>
-  </tool>
-  <control type="done">updated</control>
-</codey>"""
+        text = '{"tool":"edit","args":{"path":"app.py","old_string":"old()","new_string":"new()"}}'
         plan = agent.parse_reply(text)
         calls = plan.calls
         control = plan.control
@@ -163,16 +125,10 @@ new()
         self.assertEqual(calls[0].args["path"], "app.py")
         self.assertEqual(calls[0].args["replacements"], [{"search": "old()", "replace": "new()"}])
         self.assertIsNotNone(control)
-        self.assertEqual(control.kind, "done")
+        self.assertEqual(control.kind, "continue")
 
     def test_parse_run_action(self) -> None:
-        text = """<codey>
-  <tool name="run">
-    <path>.</path>
-    <command>python -m unittest</command>
-  </tool>
-  <control type="continue">need test output</control>
-</codey>"""
+        text = '{"tool":"run","args":{"path":".","command":"python -m unittest"}}'
         plan = agent.parse_reply(text)
         calls = plan.calls
         control = plan.control
@@ -184,13 +140,7 @@ new()
         self.assertEqual(control.kind, "continue")
 
     def test_parse_shell_action(self) -> None:
-        text = """<codey>
-  <tool name="shell">
-    <path>.</path>
-    <command>git status --short</command>
-  </tool>
-  <control type="continue">waiting for approval</control>
-</codey>"""
+        text = '{"tool":"shell","args":{"path":".","command":"git status --short"}}'
         plan = agent.parse_reply(text)
         calls = plan.calls
         control = plan.control
@@ -382,26 +332,14 @@ class DefaultsTests(unittest.TestCase):
 
 class RunLoopTests(unittest.TestCase):
     def test_edit_tool_call_updates_file(self) -> None:
-        reply = """<codey>
-  <tool name="edit">
-    <path>app.py</path>
-    <replace>
-      <search><![CDATA[
-return 'old'
-]]></search>
-      <with><![CDATA[
-return 'new'
-]]></with>
-    </replace>
-  </tool>
-  <control type="done">updated</control>
-</codey>"""
+        reply = '{"tool":"edit","args":{"path":"app.py","old_string":"return \'old\'","new_string":"return \'new\'"}}'
+        done = '{"tool":"done","args":{"summary":"updated"}}'
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("def value():\n    return 'old'\n", encoding="utf-8")
 
             result = agent.run(
-                FakeProvider(reply),
+                FakeProvider(reply, done),
                 root,
                 "update app",
                 on_event=lambda _m: None,
@@ -411,14 +349,25 @@ return 'new'
             self.assertEqual(result.stop_reason, "done")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def value():\n    return 'new'\n")
 
+    def test_edit_content_tool_call_writes_file(self) -> None:
+        reply = '{"tool":"edit","args":{"path":"app.py","content":"VALUE = 1\\n"}}'
+        done = '{"tool":"done","args":{"summary":"created"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            result = agent.run(
+                FakeProvider(reply, done),
+                root,
+                "create app",
+                on_event=lambda _m: None,
+                fresh_chat=False,
+            )
+
+            self.assertEqual(result.stop_reason, "done")
+            self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "VALUE = 1\n")
+
     def test_shell_action_requests_approval_and_stops(self) -> None:
-        reply = """<codey>
-  <tool name="shell">
-    <path>.</path>
-    <command>git status --short</command>
-  </tool>
-  <control type="continue">waiting</control>
-</codey>"""
+        reply = '{"tool":"shell","args":{"path":".","command":"git status --short"}}'
         requests: list[tuple[str, str]] = []
         events: list[str] = []
         with tempfile.TemporaryDirectory() as td:

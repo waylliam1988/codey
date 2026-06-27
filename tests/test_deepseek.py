@@ -73,11 +73,11 @@ class DeepSeekTimeoutTests(unittest.TestCase):
         with mock.patch.object(
             deepseek,
             "copy_action_text",
-            return_value="<codey>raw</codey>",
+            return_value='{"tool":"done","args":{"summary":"raw"}}',
         ) as copy_action:
             raw = deepseek._copy_last_text(page)
 
-        self.assertEqual(raw, "<codey>raw</codey>")
+        self.assertEqual(raw, '{"tool":"done","args":{"summary":"raw"}}')
         response.locator.assert_called_once_with("xpath=../..")
         copy_action.assert_called_once_with(page, copy_button, origin=deepseek.DEEPSEEK_URL)
 
