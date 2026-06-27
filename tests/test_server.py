@@ -102,20 +102,22 @@ class ApprovedShellTests(unittest.TestCase):
 
 
 class SessionThreadingTests(unittest.TestCase):
-    def test_state_opens_a_fresh_playwright_connection_each_time(self) -> None:
-        class FakePage:
-            url = "https://chat.deepseek.com/"
-
-        class FakeSession:
-            page = FakePage()
+    def test_state_opens_a_fresh_provider_connection_each_time(self) -> None:
+        class FakeProvider:
+            name = "DeepSeek Web"
+            location = "https://chat.deepseek.com/"
 
         state = server.State()
-        with mock.patch.object(server, "open_deepseek", side_effect=[FakeSession(), FakeSession()]) as opened:
-            first = state.get_session()
-            second = state.get_session()
+        with mock.patch.object(
+            server.DeepSeekWebProvider,
+            "connect",
+            side_effect=[FakeProvider(), FakeProvider()],
+        ) as connected:
+            first = state.get_provider()
+            second = state.get_provider()
 
         self.assertIsNot(first, second)
-        self.assertEqual(opened.call_count, 2)
+        self.assertEqual(connected.call_count, 2)
 
 
 if __name__ == "__main__":

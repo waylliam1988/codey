@@ -32,7 +32,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
-from codey.browser import open_deepseek
+from codey.providers import DeepSeekWebProvider
 
 WEB_DIR = Path(__file__).parent / "web"
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -266,12 +266,12 @@ class State:
             if q in self.subscribers:
                 self.subscribers.remove(q)
 
-    def get_session(self):
+    def get_provider(self):
         self.status = "connecting"
         self.emit({"type": "status", "status": "connecting"})
-        session = open_deepseek()
-        self.emit({"type": "log", "level": "info", "text": f"Edge connected: {session.page.url}"})
-        return session
+        provider = DeepSeekWebProvider.connect()
+        self.emit({"type": "log", "level": "info", "text": f"{provider.name} connected: {provider.location}"})
+        return provider
 
 
 STATE = State()
@@ -371,14 +371,14 @@ def _run_task(
         })
 
     try:
-        sess = STATE.get_session()
+        provider = STATE.get_provider()
         with STATE.lock:
             reset_requested = STATE.reset_next_chat
             STATE.reset_next_chat = False
         fresh_chat = (not continue_task) or reset_requested
         if project:
             result = agent_run(
-                sess.page,
+                provider,
                 Path(project),
                 task,
                 max_turns=max_turns,
@@ -389,10 +389,9 @@ def _run_task(
             )
         else:
             # Plain chat: just send + capture the reply, no tools executed.
-            from codey.deepseek import chat as ds_chat, new_chat
             if fresh_chat:
-                new_chat(sess.page)
-            reply = ds_chat(sess.page, task)
+                provider.new_chat()
+            reply = provider.send(task)
             STATE.emit({"type": "reply", "session_id": session_id, "text": reply})
             result = RunResult("", "done", 1)
         STATE.last_summary = result.summary
@@ -420,8 +419,8 @@ def _run_task(
         })
     finally:
         try:
-            if "sess" in locals():
-                sess.pw.stop()
+            if "provider" in locals():
+                provider.close()
         except Exception:
             pass
         STATE.busy = False

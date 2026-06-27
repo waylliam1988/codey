@@ -21,40 +21,39 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
 
 def cmd_chat(args: argparse.Namespace) -> int:
-    from codey.browser import open_deepseek
-    from codey.deepseek import chat as ds_chat
+    from codey.providers import DeepSeekWebProvider
 
     prompt = " ".join(args.prompt)
     print("[codey] attaching Edge ...", file=sys.stderr)
-    session = open_deepseek(port=args.port)
+    provider = DeepSeekWebProvider.connect(port=args.port)
     try:
-        reply = ds_chat(session.page, prompt, response_timeout=args.timeout)
+        reply = provider.send(prompt, timeout=args.timeout)
     finally:
-        session.pw.stop()
+        provider.close()
     print(reply)
     return 0
 
 
 def cmd_agent(args: argparse.Namespace) -> int:
     from codey.agent import run
-    from codey.browser import open_deepseek
+    from codey.providers import DeepSeekWebProvider
 
     task = " ".join(args.task)
     project = Path(args.project).resolve()
     project.mkdir(parents=True, exist_ok=True)
 
     print(f"[codey] project: {project}", file=sys.stderr)
-    session = open_deepseek(port=args.port)
+    provider = DeepSeekWebProvider.connect(port=args.port)
     try:
         result = run(
-            session.page,
+            provider,
             project,
             task,
             max_turns=args.max_turns,
             on_event=lambda m: print(m, file=sys.stderr),
         )
     finally:
-        session.pw.stop()
+        provider.close()
     print(result.summary)
     return 0
 

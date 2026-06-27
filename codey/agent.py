@@ -1,9 +1,9 @@
-"""Tool-using agent on top of the DeepSeek web chat.
+"""Provider-agnostic tool-using agent runtime.
 
-Codey asks the web model for XML-like tool tags and converts those tags into
-local actions. XML is the protocol boundary because code/edit payloads can be
-placed in CDATA without JSON escaping, while Codey's execution layer only sees
-structured actions.
+Codey asks a chat provider for XML-like tool tags and converts those tags into
+local ToolCall objects. The runtime only depends on ChatProvider and
+ProtocolCodec interfaces; browser automation and provider-specific selectors
+stay outside this module.
 """
 
 from __future__ import annotations
@@ -15,10 +15,8 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from playwright.sync_api import Page
-
-from codey.deepseek import chat, new_chat
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
+from codey.providers import ChatProvider
 from codey.protocols import ProtocolCodec, XmlToolCodec
 
 DEFAULT_MAX_TURNS = 50
@@ -394,7 +392,7 @@ class RunResult:
 
 
 def run(
-    page: Page,
+    provider: ChatProvider,
     project: Path,
     user_task: str,
     *,
@@ -414,9 +412,9 @@ def run(
     stagnant_count = 0
 
     if fresh_chat:
-        on_event("[agent] opening a fresh DeepSeek conversation")
+        on_event(f"[agent] opening a fresh {provider.name} conversation")
         try:
-            new_chat(page)
+            provider.new_chat()
         except Exception as exc:
             on_event(f"[agent] could not open new chat: {exc}; reusing current tab")
 
@@ -432,7 +430,7 @@ def run(
         f"Initial listing:\n{tool_ls(project, '.')}\n\n"
         f"User task:\n{user_task}"
     )
-    reply = chat(page, intro)
+    reply = provider.send(intro)
     on_event(f"\n--- turn 1 reply ---\n{reply}\n")
 
     for turn in range(1, max_turns + 1):
@@ -492,10 +490,7 @@ def run(
                 on_event(f"[agent] {msg}.")
                 return RunResult(msg, "no_progress", turn)
             on_event("[agent] reply contained no valid <codey> block; nudging the model.")
-            reply = chat(
-                page,
-                codec.repair_prompt(),
-            )
+            reply = provider.send(codec.repair_prompt())
             on_event(f"\n--- turn {turn+1} reply (after nudge) ---\n{reply}\n")
             continue
 
@@ -523,7 +518,7 @@ def run(
             return RunResult(control.body or f"hit max_turns={max_turns}", "max_turns", turn)
 
         next_prompt = codec.format_results(results)
-        reply = chat(page, next_prompt)
+        reply = provider.send(next_prompt)
         on_event(f"\n--- turn {turn+1} reply ---\n{reply}\n")
 
     return RunResult("(max turns reached)", "max_turns", max_turns)

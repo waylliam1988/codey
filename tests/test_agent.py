@@ -3,9 +3,27 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from codey import agent
+
+
+class FakeProvider:
+    name = "Fake Provider"
+    location = "fake://provider"
+
+    def __init__(self, *replies: str) -> None:
+        self.replies = list(replies)
+        self.new_chat_calls = 0
+
+    def new_chat(self) -> None:
+        self.new_chat_calls += 1
+
+    def send(self, _text: str, timeout: float | None = None) -> str:
+        del timeout
+        return self.replies.pop(0)
+
+    def close(self) -> None:
+        pass
 
 
 class ParseReplyTests(unittest.TestCase):
@@ -382,14 +400,13 @@ return 'new'
             root = Path(td)
             (root / "app.py").write_text("def value():\n    return 'old'\n", encoding="utf-8")
 
-            with mock.patch.object(agent, "chat", return_value=reply):
-                result = agent.run(
-                    object(),
-                    root,
-                    "update app",
-                    on_event=lambda _m: None,
-                    fresh_chat=False,
-                )
+            result = agent.run(
+                FakeProvider(reply),
+                root,
+                "update app",
+                on_event=lambda _m: None,
+                fresh_chat=False,
+            )
 
             self.assertEqual(result.stop_reason, "done")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def value():\n    return 'new'\n")
@@ -405,15 +422,14 @@ return 'new'
         requests: list[tuple[str, str]] = []
         events: list[str] = []
         with tempfile.TemporaryDirectory() as td:
-            with mock.patch.object(agent, "chat", return_value=reply):
-                result = agent.run(
-                    object(),
-                    Path(td),
-                    "check git",
-                    on_event=events.append,
-                    on_shell_request=lambda cwd, command: requests.append((cwd, command)),
-                    fresh_chat=False,
-                )
+            result = agent.run(
+                FakeProvider(reply),
+                Path(td),
+                "check git",
+                on_event=events.append,
+                on_shell_request=lambda cwd, command: requests.append((cwd, command)),
+                fresh_chat=False,
+            )
 
         self.assertEqual(result.stop_reason, "approval")
         self.assertEqual(requests, [(".", "git status --short")])
