@@ -109,15 +109,45 @@ class SessionThreadingTests(unittest.TestCase):
 
         state = server.State()
         with mock.patch.object(
-            server.DeepSeekWebProvider,
-            "connect",
+            server,
+            "connect_provider",
             side_effect=[FakeProvider(), FakeProvider()],
         ) as connected:
-            first = state.get_provider()
-            second = state.get_provider()
+            first = state.get_provider("qwen")
+            second = state.get_provider("qwen")
 
         self.assertIsNot(first, second)
         self.assertEqual(connected.call_count, 2)
+        self.assertEqual(connected.call_args_list, [mock.call("qwen"), mock.call("qwen")])
+
+    def test_run_task_keeps_selected_provider_through_agent_completion(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "Qwen Studio"
+        provider.location = "https://chat.qwen.ai/"
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=server.RunResult("complete", "done", 3),
+            ) as agent_run,
+        ):
+            server._run_task("session-1", td, "task", 8, False, "qwen")
+
+        get_provider.assert_called_once_with("qwen")
+        self.assertIs(agent_run.call_args.args[0], provider)
+        provider.close.assert_called_once_with()
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["provider"], "qwen")
+        self.assertEqual(state.provider_id, "qwen")
 
 
 if __name__ == "__main__":

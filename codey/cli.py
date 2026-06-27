@@ -13,6 +13,13 @@ import sys
 from pathlib import Path
 
 
+def _safe_print(value, *, file=sys.stdout) -> None:
+    text = str(value)
+    encoding = getattr(file, "encoding", None) or "utf-8"
+    safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
+    file.write(safe + "\n")
+
+
 def cmd_ui(args: argparse.Namespace) -> int:
     from codey.server import serve
 
@@ -21,44 +28,46 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
 
 def cmd_chat(args: argparse.Namespace) -> int:
-    from codey.providers import DeepSeekWebProvider
+    from codey.providers import connect_provider
 
     prompt = " ".join(args.prompt)
-    print("[codey] attaching Edge ...", file=sys.stderr)
-    provider = DeepSeekWebProvider.connect(port=args.port)
+    _safe_print("[codey] attaching Edge ...", file=sys.stderr)
+    provider = connect_provider(args.provider, port=args.port)
     try:
         reply = provider.send(prompt, timeout=args.timeout)
     finally:
         provider.close()
-    print(reply)
+    _safe_print(reply)
     return 0
 
 
 def cmd_agent(args: argparse.Namespace) -> int:
     from codey.agent import run
-    from codey.providers import DeepSeekWebProvider
+    from codey.providers import connect_provider
 
     task = " ".join(args.task)
     project = Path(args.project).resolve()
     project.mkdir(parents=True, exist_ok=True)
 
-    print(f"[codey] project: {project}", file=sys.stderr)
-    provider = DeepSeekWebProvider.connect(port=args.port)
+    _safe_print(f"[codey] project: {project}", file=sys.stderr)
+    provider = connect_provider(args.provider, port=args.port)
     try:
         result = run(
             provider,
             project,
             task,
             max_turns=args.max_turns,
-            on_event=lambda m: print(m, file=sys.stderr),
+            on_event=lambda m: _safe_print(m, file=sys.stderr),
         )
     finally:
         provider.close()
-    print(result.summary)
+    _safe_print(result.summary)
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
+    from codey.providers import DEFAULT_PROVIDER_ID, provider_ids
+
     argv = sys.argv[1:] if argv is None else argv
 
     # Default: if no subcommand given, launch the UI.
@@ -76,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
     sp_chat = sub.add_parser("chat", help="single-shot prompt")
     sp_chat.add_argument("prompt", nargs="+")
     sp_chat.add_argument("--port", type=int, default=9222)
+    sp_chat.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
     sp_chat.add_argument("--timeout", type=float, default=300.0)
     sp_chat.set_defaults(func=cmd_chat)
 
@@ -84,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     from codey.agent import DEFAULT_MAX_TURNS
     sp_agent.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     sp_agent.add_argument("--port", type=int, default=9222)
+    sp_agent.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
     sp_agent.add_argument("task", nargs="+")
     sp_agent.set_defaults(func=cmd_agent)
 

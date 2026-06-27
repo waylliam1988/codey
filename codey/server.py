@@ -5,7 +5,7 @@ No external deps — just the standard library plus Playwright (already used).
 Endpoints
     GET  /                serves codey/web/index.html
     GET  /api/state       returns current run state as JSON
-    POST /api/run         body {project, task, max_turns} → starts agent in
+    POST /api/run         body {project, task, provider, max_turns} → starts agent in
                           a background thread, returns {ok:true}
     GET  /api/changes     query {project} → returns git status + diff
     POST /api/changes     body {project} → returns git status + diff
@@ -32,7 +32,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
-from codey.providers import DeepSeekWebProvider
+from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, connect_provider
 
 WEB_DIR = Path(__file__).parent / "web"
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -240,6 +240,7 @@ class State:
         self.busy = False
         self.project: str | None = None
         self.task: str | None = None
+        self.provider_id = DEFAULT_PROVIDER_ID
         self.status: str = "idle"
         self.last_summary: str | None = None
         self.last_stop_reason: str | None = None
@@ -266,10 +267,10 @@ class State:
             if q in self.subscribers:
                 self.subscribers.remove(q)
 
-    def get_provider(self):
+    def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID):
         self.status = "connecting"
         self.emit({"type": "status", "status": "connecting"})
-        provider = DeepSeekWebProvider.connect()
+        provider = connect_provider(provider_id)
         self.emit({"type": "log", "level": "info", "text": f"{provider.name} connected: {provider.location}"})
         return provider
 
@@ -327,10 +328,12 @@ def _run_task(
     task: str,
     max_turns: int,
     continue_task: bool,
+    provider_id: str,
 ) -> None:
     STATE.busy = True
     STATE.project = project
     STATE.task = task
+    STATE.provider_id = provider_id
     STATE.status = "running"
     STATE.stop_flag.clear()
     STATE.emit({
@@ -341,6 +344,7 @@ def _run_task(
         "mode": "agent" if project else "chat",
         "max_turns": max_turns,
         "continue_task": continue_task,
+        "provider": provider_id,
     })
 
     def on_event(msg: str) -> None:
@@ -357,6 +361,7 @@ def _run_task(
             "cwd": cwd_rel or ".",
             "command": command,
             "max_turns": max_turns,
+            "provider": provider_id,
             "continue_after": True,
         }
         with STATE.lock:
@@ -371,7 +376,7 @@ def _run_task(
         })
 
     try:
-        provider = STATE.get_provider()
+        provider = STATE.get_provider(provider_id)
         with STATE.lock:
             reset_requested = STATE.reset_next_chat
             STATE.reset_next_chat = False
@@ -404,6 +409,7 @@ def _run_task(
             "stop_reason": result.stop_reason,
             "turns": result.turns,
             "max_turns": max_turns,
+            "provider": provider_id,
         })
     except Exception as exc:
         STATE.status = "error"
@@ -416,6 +422,7 @@ def _run_task(
             "stop_reason": "error",
             "turns": 0,
             "max_turns": max_turns,
+            "provider": provider_id,
         })
     finally:
         try:
@@ -464,6 +471,16 @@ class Handler(BaseHTTPRequestHandler):
                 "task": STATE.task,
                 "summary": STATE.last_summary,
                 "stop_reason": STATE.last_stop_reason,
+                "provider": STATE.provider_id,
+            })
+            return
+        if url.path == "/api/providers":
+            self._send_json(200, {
+                "default": DEFAULT_PROVIDER_ID,
+                "providers": [
+                    {"id": provider_id, "label": label}
+                    for provider_id, label in PROVIDER_LABELS.items()
+                ],
             })
             return
         if url.path == "/api/changes":
@@ -493,6 +510,7 @@ class Handler(BaseHTTPRequestHandler):
             project = (body.get("project") or "").strip() or None
             task = (body.get("task") or "").strip()
             continue_task = bool(body.get("continue_task"))
+            provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
             try:
                 max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)
             except (TypeError, ValueError):
@@ -500,11 +518,13 @@ class Handler(BaseHTTPRequestHandler):
             max_turns = max(1, min(max_turns, 500))
             if not task:
                 self._send_json(400, {"error": "task required"}); return
+            if provider_id not in PROVIDER_LABELS:
+                self._send_json(400, {"error": f"unsupported provider: {provider_id}"}); return
             if project:
                 Path(project).mkdir(parents=True, exist_ok=True)
             threading.Thread(
                 target=_run_task,
-                args=(session_id, project, task, max_turns, continue_task),
+                args=(session_id, project, task, max_turns, continue_task, provider_id),
                 daemon=True,
             ).start()
             self._send_json(200, {"ok": True})
@@ -576,7 +596,14 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 threading.Thread(
                     target=_run_task,
-                    args=(session_id, pending["project"], continuation, int(pending["max_turns"]), True),
+                    args=(
+                        session_id,
+                        pending["project"],
+                        continuation,
+                        int(pending["max_turns"]),
+                        True,
+                        pending.get("provider") or DEFAULT_PROVIDER_ID,
+                    ),
                     daemon=True,
                 ).start()
                 continued = True
@@ -584,7 +611,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/new_chat":
             STATE.reset_next_chat = True
-            STATE.emit({"type": "log", "level": "info", "text": "[codey] next task will start in a fresh DeepSeek chat"})
+            STATE.emit({"type": "log", "level": "info", "text": "[codey] next task will start in a fresh provider chat"})
             self._send_json(200, {"ok": True})
             return
         if url.path == "/api/stop":

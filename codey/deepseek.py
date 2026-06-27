@@ -18,13 +18,17 @@ import time
 
 from playwright.sync_api import Page
 
+from codey.web_clipboard import copy_action_text
+
 INPUT = "textarea.ds-scroll-area"
 SEND_READY = 'div[role="button"].ds-button--primary:not(.ds-button--disabled)'
 RESPONSE = ".ds-markdown"
+RESPONSE_ACTION = '[role="button"]'
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 90.0
+COPY_READY_TIMEOUT = 10.0
 
 
 def new_chat(page) -> None:
@@ -115,6 +119,32 @@ def _response_count(page: Page) -> int:
     return page.locator(RESPONSE).count()
 
 
+def _copy_last_text(page: Page) -> str:
+    """Read the source response through DeepSeek's first answer action."""
+    responses = page.locator(RESPONSE)
+    if not responses.count():
+        return ""
+    actions = responses.last.locator("xpath=../..").locator(RESPONSE_ACTION)
+    deadline = time.time() + COPY_READY_TIMEOUT
+    while time.time() < deadline:
+        if actions.count():
+            copy_button = actions.first
+            try:
+                if copy_button.is_visible():
+                    return copy_action_text(page, copy_button, origin=DEEPSEEK_URL)
+            except Exception:
+                pass
+        time.sleep(0.2)
+    return ""
+
+
+def _final_text(page: Page) -> str:
+    raw = _copy_last_text(page)
+    if not raw:
+        raise RuntimeError("Could not read the raw DeepSeek response")
+    return raw
+
+
 def _wait_late_response(
     page: Page,
     baseline: int,
@@ -135,11 +165,14 @@ def _wait_late_response(
             current = _last_text(page) if _response_count(page) else ""
             if current and (_response_count(page) > baseline or current != baseline_text):
                 last = current
-                return current
+                try:
+                    return _final_text(page)
+                except RuntimeError:
+                    pass
         except Exception:
             pass
         time.sleep(tick)
-    return last
+    return ""
 
 
 def chat(
@@ -191,7 +224,7 @@ def chat(
         if current == last and (time.time() - sent_at) >= min_wait:
             stable += 1
             if stable >= stable_ticks:
-                return current
+                return _final_text(page)
         else:
             stable = 0
             last = current
@@ -199,5 +232,5 @@ def chat(
     if late:
         return late
     if appeared and last:
-        return last
+        return _final_text(page)
     raise TimeoutError(f"DeepSeek response timed out after {response_timeout:.0f}s")

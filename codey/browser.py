@@ -1,10 +1,10 @@
-"""Launch / attach to Edge with CDP and return a Playwright page on DeepSeek.
+"""Launch or attach to Edge with CDP for supported web chat providers.
 
 The approach (lifted in spirit, not in code, from codeywhere):
     1. Spawn msedge.exe with --remote-debugging-port and a dedicated --user-data-dir
        so the launch never collides with the user's normal Edge windows.
     2. Wait for the CDP port to open, then connect with Playwright over CDP.
-    3. Find (or open) a tab on chat.deepseek.com and return its Page.
+    3. Find (or open) a matching provider tab and return its Page.
 
 The dedicated profile lives at  ~/.codey/edge-profile  .  First time you run it
 you log into DeepSeek once; cookies persist there forever.
@@ -22,6 +22,7 @@ from pathlib import Path
 from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
+QWEN_URL = "https://chat.qwen.ai/"
 DEFAULT_PORT = 9222
 DEFAULT_PROFILE = Path.home() / ".codey" / "edge-profile"
 
@@ -85,10 +86,16 @@ class Session:
             self.pw.stop()
 
 
-def open_deepseek(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> Session:
-    """Return a Playwright Session attached to a DeepSeek tab in our Edge profile."""
+def open_chat_page(
+    start_url: str,
+    url_contains: str,
+    *,
+    port: int = DEFAULT_PORT,
+    profile: Path = DEFAULT_PROFILE,
+) -> Session:
+    """Return a Playwright session attached to a matching provider tab."""
     if not _port_open(port):
-        _launch_edge(port, profile, DEEPSEEK_URL)
+        _launch_edge(port, profile, start_url)
         _wait_port(port)
 
     pw = sync_playwright().start()
@@ -97,7 +104,7 @@ def open_deepseek(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> 
     page: Page | None = None
     for ctx in browser.contexts:
         for p in ctx.pages:
-            if "chat.deepseek.com" in (p.url or ""):
+            if url_contains in (p.url or ""):
                 page = p
                 break
         if page:
@@ -106,7 +113,27 @@ def open_deepseek(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> 
     if page is None:
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         page = ctx.new_page()
-        page.goto(DEEPSEEK_URL, wait_until="domcontentloaded", timeout=60000)
+        page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
 
     page.bring_to_front()
     return Session(pw=pw, browser=browser, page=page)
+
+
+def open_deepseek(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> Session:
+    """Return a session attached to a DeepSeek tab."""
+    return open_chat_page(
+        DEEPSEEK_URL,
+        "chat.deepseek.com",
+        port=port,
+        profile=profile,
+    )
+
+
+def open_qwen(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> Session:
+    """Return a session attached to a Qwen Studio tab."""
+    return open_chat_page(
+        QWEN_URL,
+        "chat.qwen.ai",
+        port=port,
+        profile=profile,
+    )

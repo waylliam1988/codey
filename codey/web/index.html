@@ -194,6 +194,14 @@
   .topbar .sess-title { flex: 1; font-weight: 500; font-size: 14px; min-width: 0;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  .provider-select {
+    height: 28px; min-width: 96px; padding: 0 26px 0 9px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel-2); color: var(--text-dim);
+    font: inherit; font-size: 12px; outline: none; cursor: pointer;
+  }
+  .provider-select:focus { border-color: var(--accent); color: var(--text); }
+  .provider-select:disabled { cursor: default; opacity: .55; }
   .status-pill {
     display: inline-flex; align-items: center; gap: 6px;
     padding: 4px 10px; border-radius: 999px;
@@ -525,7 +533,11 @@
       <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     </button>
     <div class="sess-title" id="sess-title">新对话</div>
-    <div class="status-pill" title="DeepSeek 连接状态">
+    <select class="provider-select" id="provider-select" title="AI Provider">
+      <option value="deepseek">DeepSeek</option>
+      <option value="qwen">Qwen</option>
+    </select>
+    <div class="status-pill" title="AI 连接状态">
       <span class="dot" id="dot"></span>
       <span id="status">未连接</span>
     </div>
@@ -572,6 +584,7 @@ const LS_SESSIONS = 'codey:sessions';
 const LS_ACTIVE   = 'codey:active';
 const LS_PROJECTS = 'codey:projects';
 const LS_LEGACY_PROJECT = 'codey:project';
+const DEFAULT_PROVIDER = 'deepseek';
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function loadJson(key, fallback) {
@@ -596,6 +609,7 @@ let sessions = loadJson(LS_SESSIONS, []).map(s => ({
   messages: Array.isArray(s.messages) ? s.messages : [],
   createdAt: s.createdAt || Date.now(),
   projectId: s.projectId || null,
+  provider: ['deepseek', 'qwen'].includes(s.provider) ? s.provider : DEFAULT_PROVIDER,
 }));
 let projects = loadJson(LS_PROJECTS, []).map(p => ({
   id: p.id || uid(),
@@ -621,7 +635,7 @@ if (legacyProject && !projects.some(p => pathKey(p.path) === pathKey(legacyProje
 localStorage.removeItem(LS_LEGACY_PROJECT);
 
 if (!sessions.length) {
-  const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null };
+  const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER };
   sessions = [s]; activeId = s.id; saveSessions(sessions);
   localStorage.setItem(LS_ACTIVE, activeId);
 }
@@ -639,6 +653,10 @@ function activeProject() {
 function currentProjectPath() {
   const p = activeProject();
   return p ? p.path : '';
+}
+function currentProviderId() {
+  const s = activeSession();
+  return s && ['deepseek', 'qwen'].includes(s.provider) ? s.provider : DEFAULT_PROVIDER;
 }
 function persistActive() {
   saveSessions(sessions);
@@ -776,6 +794,7 @@ function renderChat() {
   if (!s) return;
   const p = activeProject();
   $('sess-title').textContent = p ? `${p.name} / ${s.title || '新对话'}` : (s.title || '新对话');
+  $('provider-select').value = currentProviderId();
   updateContextText();
 
   if (!s.messages.length) {
@@ -975,16 +994,18 @@ function openProject(projectId) {
   else newSession(projectId);
 }
 function newSession(projectId = null) {
-  const s = { id: uid(), projectId, title: '新对话', messages: [], createdAt: Date.now() };
+  const provider = $('provider-select').value || currentProviderId();
+  const s = { id: uid(), projectId, title: '新对话', messages: [], createdAt: Date.now(), provider };
   sessions.unshift(s); activeId = s.id; persistActive(); renderSidebar(); renderChat();
-  // Also ask the backend to reset the DeepSeek tab to a fresh chat.
+  // Also ask the backend to reset the selected provider on the next task.
   fetch('/api/new_chat', { method: 'POST' }).catch(() => {});
 }
 function deleteSession(id) {
   if (!confirm('删除这个会话？')) return;
+  const fallbackProvider = currentProviderId();
   sessions = sessions.filter(s => s.id !== id);
   if (!sessions.length) {
-    const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null };
+    const s = { id: uid(), title: '新对话', messages: [], createdAt: Date.now(), projectId: null, provider: fallbackProvider };
     sessions = [s];
   }
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
@@ -1102,6 +1123,7 @@ evtSrc.onmessage = (e) => {
     turnCounter = 0;
     setStatus('运行中', 'run');
     $('send').disabled = true;
+    $('provider-select').disabled = true;
     $('stop').style.display = '';
     return;
   }
@@ -1109,6 +1131,7 @@ evtSrc.onmessage = (e) => {
     runningSessionId = null;
     setStatus('已连接', 'ok');
     $('stop').style.display = 'none';
+    $('provider-select').disabled = false;
     updateSend();
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
@@ -1393,6 +1416,12 @@ $('task').addEventListener('keydown', (e) => {
     if (!$('send').disabled) $('send').click();
   }
 });
+$('provider-select').addEventListener('change', () => {
+  const s = activeSession();
+  if (!s) return;
+  s.provider = $('provider-select').value;
+  persistActive();
+});
 
 $('send').onclick = async () => {
   const project = currentProjectPath();
@@ -1403,7 +1432,7 @@ $('send').onclick = async () => {
   const r = await fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: activeId, project, task }),
+    body: JSON.stringify({ session_id: activeId, project, task, provider: currentProviderId() }),
   });
   if (r.status === 409) { alert('已经有任务在运行了'); return; }
   if (!r.ok) {
@@ -1436,6 +1465,7 @@ async function continueTask(sessionId) {
       project: p.path,
       task,
       continue_task: true,
+      provider: s.provider || DEFAULT_PROVIDER,
     }),
   });
   if (r.status === 409) { alert('已经有任务在运行了'); return; }

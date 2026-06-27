@@ -26,6 +26,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("playwright.sync_api", imports)
         self.assertNotIn("codey.browser", imports)
         self.assertNotIn("codey.deepseek", imports)
+        self.assertNotIn("codey.qwen", imports)
         self.assertIn("codey.providers", imports)
         self.assertIn("codey.protocols", imports)
 
@@ -35,6 +36,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 imports = imported_modules(ROOT / "codey" / name)
                 self.assertNotIn("codey.browser", imports)
                 self.assertNotIn("codey.deepseek", imports)
+                self.assertNotIn("codey.qwen", imports)
 
 
 if __name__ == "__main__":

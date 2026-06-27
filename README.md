@@ -1,6 +1,6 @@
-# Codey · 让网页版 DeepSeek 帮你在本地写代码
+# Codey · 让网页版 AI 帮你在本地写代码
 
-不需要 API key，不需要充值。只要你能在浏览器里登录 DeepSeek，Codey 就能把它当成一个能读你硬盘、改你代码的本地编程助手。
+不需要 API key，不需要充值。只要你能在浏览器里登录 DeepSeek 或 Qwen，Codey 就能把它当成一个能读你硬盘、改你代码的本地编程助手。
 
 ---
 
@@ -8,9 +8,9 @@
 
 Codey 启动后会做三件事：
 
-1. 开一个**专属的 Edge 浏览器窗口**（跟你日常用的 Edge 完全分开，互不干扰），自动打开 `chat.deepseek.com`。
+1. 按你选择的模型打开**专属的 Edge 浏览器窗口**（跟你日常用的 Edge 完全分开，互不干扰）。
 2. 开一个本地网页 `http://127.0.0.1:5173/`，是 Codey 的控制面板。
-3. 你在 Codey 控制面板里用大白话描述要做什么，它会把指令发给 Edge 里的 DeepSeek，DeepSeek 回什么代码、Codey 就在你的项目目录里**真的把文件写出来**。
+3. 你在 Codey 控制面板里选择 DeepSeek 或 Qwen，再用大白话描述要做什么。模型返回的受控工具调用会在你的项目目录里**真的执行**。
 
 整个过程不联任何 API，全是浏览器自动化。
 
@@ -53,13 +53,13 @@ python -m codey
 
 点 **运行**。
 
-### 4. 第一次：在弹出的 Edge 窗口里登录 DeepSeek
+### 4. 第一次：在弹出的 Edge 窗口里登录所选模型
 
-第一次点「运行」时，会弹一个**新的** Edge 窗口，里面是 `chat.deepseek.com`。
+第一次点「运行」时，会弹一个**新的** Edge 窗口，打开所选的 `chat.deepseek.com` 或 `chat.qwen.ai`。
 
 ⚠️ 这个 Edge 跟你平常用的 Edge 不是同一个 profile —— 它用的是 `C:\Users\<你>\.codey\edge-profile`，登录信息只存这里，跟你的日用 Edge 互不污染。
 
-**手动在那个新 Edge 窗口里登录一次 DeepSeek**（手机号也好、微信也好），然后**不用关掉**，回到 Codey 控制面板。
+**手动在那个新 Edge 窗口里登录一次所选模型**，然后**不用关掉**，回到 Codey 控制面板。
 
 > 以后再用都不用登录了 —— 这个 profile 会一直记住登录态。
 
@@ -67,7 +67,7 @@ python -m codey
 
 回到控制面板，下方会**实时**显示：
 
-- DeepSeek 每一轮回复的原文（灰色方块）
+- 模型每一轮回复的原文（灰色方块）
 - Codey 实际执行的工具调用（`search` / `read` / `edit` / `write` / `run` 等）
 - 最终的 `done` 完成信号（绿色方块）
 
@@ -111,7 +111,7 @@ Codey 自动走两轮：
 
 ## Codey 的"工具"
 
-Codey 会把 DeepSeek 的回复解析成一组受控工具调用。**你不用记协议**，正常描述需求即可：
+Codey 会把模型回复解析成一组受控工具调用。**你不用记协议**，正常描述需求即可：
 
 | 工具 | 作用 |
 |------|------|
@@ -136,11 +136,11 @@ A：Codey 进程还在跑的时候不要关，关了就断连了。任务结束�
 **Q：可以同时开自己的 Edge 吗？**
 A：可以。Codey 用的是独立 profile，跟你日用 Edge 是两个进程，谁也不影响谁。
 
-**Q：DeepSeek 网页改版了，Codey 报错找不到输入框？**
-A：选择器写在 `codey/deepseek.py` 顶部三行：`INPUT` / `SEND_READY` / `RESPONSE`。F12 看一下页面 DOM 改一改就行。
+**Q：模型网页改版了，Codey 报错找不到输入框？**
+A：站点选择器分别放在 `codey/deepseek.py` 和 `codey/qwen.py`。网页 DOM 变化后需要更新对应驱动并重新跑实机闭环。
 
-**Q：能换成 ChatGPT / Qwen / Gemini 吗？**
-A：核心 agent 已经不依赖 DeepSeek 或 Playwright。接入新网页模型需要新增一个 provider adapter，负责登录页面、发送消息和提取回复；目前只实现并跑通了 DeepSeek Web。
+**Q：支持哪些网页模型？**
+A：目前已实机跑通 DeepSeek Web 和 Qwen Studio。核心 agent 不依赖具体网站；接入 ChatGPT 或 Gemini 时只需新增 provider adapter 和站点驱动。
 
 **Q：我想让 DeepSeek 写更复杂的项目，比如一个完整的 Flask 后端？**
 A：可以。建议在「任务」栏说清楚要哪些文件。如果它要看现有代码，会自己 `read` —— Codey 已经处理好多轮循环了。默认最多 50 轮；到上限时 UI 会显示「继续此任务」。
@@ -156,12 +156,13 @@ Server / Orchestrator
    ↓
 Agent Runtime ── XmlToolCodec
    ↓
-ChatProvider ── DeepSeekWebProvider
+ChatProvider ─┬─ DeepSeekWebProvider
+              └─ QwenWebProvider
    ↓
-Browser Session + DeepSeek DOM driver
+Browser Session + provider DOM driver
 ```
 
-`agent.py` 只认识 `ChatProvider`、`ProtocolCodec` 和 `ToolCall`，不知道 Playwright 页面和 DeepSeek 选择器。`browser.py` 目前仍是经过实机验证的 DeepSeek 专用连接器；等第二个网页 provider 真正接入时，再根据共同需求抽通用 launcher，避免提前设计无用抽象。
+`agent.py` 只认识 `ChatProvider`、`ProtocolCodec` 和 `ToolCall`，不知道 Playwright 页面和站点选择器。`browser.py` 负责通用 Edge/CDP 连接；DeepSeek 和 Qwen 驱动分别处理各自 DOM。两者共用剪贴板保护事务，从网页的“复制回复”动作获取未被 Markdown 渲染破坏的原始 XML。
 
 ---
 
@@ -175,8 +176,10 @@ E:\codey\
     ├── __init__.py
     ├── __main__.py        程序入口：python -m codey
     ├── cli.py             命令行调度
-    ├── browser.py         DeepSeek 专用 Edge/CDP 连接器
+    ├── browser.py         通用 Edge/CDP 页面连接器
     ├── deepseek.py        DeepSeek 的输入框、发送按钮、回复提取
+    ├── qwen.py            Qwen 的发送、偏好选择、回复提取
+    ├── web_clipboard.py   原始回复复制与剪贴板恢复
     ├── agent.py           Provider 无关的 agent runtime 和本地工具
     ├── models.py          ToolCall / ToolPlan / ToolResult
     ├── protocols\
@@ -184,7 +187,9 @@ E:\codey\
     │   └── xml_codec.py   XML-only 工具协议
     ├── providers\
     │   ├── base.py        ChatProvider 接口
-    │   └── deepseek_web.py DeepSeek 网页适配器
+    │   ├── registry.py    Provider 注册与创建
+    │   ├── deepseek_web.py DeepSeek 网页适配器
+    │   └── qwen_web.py    Qwen 网页适配器
     ├── server.py          本地 HTTP + SSE 服务（控制面板的后端）
     └── web\
         └── index.html     控制面板前端（单文件，无构建步骤）
@@ -198,8 +203,11 @@ E:\codey\
 # 单次问一句（不写文件）
 python -m codey chat "用一句话介绍 Python 的 GIL"
 
+# 指定 Qwen Studio
+python -m codey chat --provider qwen "用一句话介绍 Python 的 GIL"
+
 # 不开 UI，直接跑 agent
-python -m codey agent --project E:\my-project --max-turns 10 "你想干的事"
+python -m codey agent --provider qwen --project E:\my-project --max-turns 10 "你想干的事"
 ```
 
 输出全部打到终端，方便接 PowerShell 脚本或调试。
