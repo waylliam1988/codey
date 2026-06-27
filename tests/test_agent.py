@@ -47,6 +47,25 @@ need files
         self.assertIsNotNone(control)
         self.assertEqual(control.kind, "continue")
 
+    def test_parse_search_action_uses_body_as_query(self) -> None:
+        text = """```text
+# === codey: search path=src ===
+login handler
+```
+
+```text
+# === codey: continue ===
+need the matching files
+```"""
+        actions, control = agent.parse_reply(text)
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].kind, "search")
+        self.assertEqual(actions[0].path, "src")
+        self.assertEqual(actions[0].body, "login handler")
+        self.assertIsNotNone(control)
+        self.assertEqual(control.kind, "continue")
+
 
 class ToolTests(unittest.TestCase):
     def test_safe_join_blocks_parent_escape(self) -> None:
@@ -73,6 +92,34 @@ class ToolTests(unittest.TestCase):
             self.assertEqual(
                 agent.tool_read(Path(td), "missing.py"),
                 "ERROR: not a file: missing.py",
+            )
+
+    def test_search_finds_matches_with_file_and_line(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "src").mkdir()
+            (root / "src" / "app.py").write_text(
+                "def login_handler():\n    return True\n",
+                encoding="utf-8",
+            )
+
+            output = agent.tool_search(root, ".", "LOGIN_HANDLER")
+
+            self.assertIn("src/app.py:1: def login_handler():", output)
+
+    def test_search_skips_excluded_directories(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "node_modules").mkdir()
+            (root / "node_modules" / "lib.js").write_text("login_handler\n", encoding="utf-8")
+
+            self.assertEqual(agent.tool_search(root, ".", "login_handler"), "(no matches)")
+
+    def test_search_requires_query(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(
+                agent.tool_search(Path(td), ".", "   "),
+                "ERROR: search query required",
             )
 
 

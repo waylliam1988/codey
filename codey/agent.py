@@ -20,6 +20,9 @@ Protocol (we instruct the model up front):
 
     # === codey: ls path=. ===
 
+    # === codey: search path=. ===
+    login handler
+
     # === codey: done ===
     <one-line summary>
 
@@ -44,6 +47,22 @@ DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
+SEARCH_EXCLUDED_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    "dist",
+    "build",
+    ".next",
+    ".turbo",
+    "target",
+}
+SEARCH_MAX_RESULTS = 80
+SEARCH_MAX_FILE_BYTES = 512 * 1024
 
 MARKER_RE = re.compile(
     r"^[#/\-\s]*===\s*codey\s*:\s*(\w+)(?:\s+path\s*=\s*([^\s=]+))?\s*===\s*$",
@@ -51,8 +70,8 @@ MARKER_RE = re.compile(
 )
 
 SYSTEM_PROMPT = """\
-You are Codey, a careful local coding agent.  You can read, list and write
-files in the user's project.  You CANNOT run shell commands.
+You are Codey, a careful local coding agent.  You can read, list, search and
+write files in the user's project.  You CANNOT run shell commands.
 
 OUTPUT PROTOCOL — every reply MUST follow this exactly.
 
@@ -65,7 +84,7 @@ The remaining lines of the block are the action's payload.  The fence
 language (after the opening ```) is ignored — use whatever makes the code
 look nice (python, text, js, etc.).
 
-You may emit ZERO OR MORE action blocks (write/read/ls) then EXACTLY ONE
+You may emit ZERO OR MORE action blocks (write/read/ls/search) then EXACTLY ONE
 control block (done OR continue) at the end.
 
 Actions:
@@ -83,6 +102,11 @@ Actions:
   # === codey: ls path=. ===
   ```
 
+  ```text
+  # === codey: search path=. ===
+  login handler
+  ```
+
 Control (exactly one, last):
 
   ```text
@@ -98,6 +122,8 @@ Control (exactly one, last):
 Rules:
   - Paths are ALWAYS relative to the project root.  No absolute paths, no `..`.
   - The marker line MUST be exactly on line 1 of the code block.
+  - Use `search` before `read` when you do not know which file contains the
+    relevant code.
   - Never invent file contents you have not been shown.  Use `read` first.
   - Keep replies focused.  Plain commentary outside fenced blocks is fine
     for short explanations but the agent only acts on the marker blocks.
@@ -106,7 +132,7 @@ CRITICAL — when to use `done` vs `continue`:
   - `done` ends the entire task.  Only use it when the user's request is
     FULLY satisfied (all needed files written / verified).
   - `continue` means "I need another turn".  Use it whenever your reply
-    contains a `read` or `ls` action — the file contents arrive in the
+    contains a `read`, `ls` or `search` action — the results arrive in the
     next turn and you will likely need to act on them.
   - A typical fix-a-bug flow takes TWO turns:
       turn 1:  read + continue            (asks to see the file)
@@ -118,7 +144,7 @@ CRITICAL — when to use `done` vs `continue`:
 
 @dataclass
 class Action:
-    kind: str          # "write" | "read" | "ls"
+    kind: str          # "write" | "read" | "ls" | "search"
     path: str | None
     body: str
 
@@ -152,7 +178,7 @@ def parse_reply(text: str) -> tuple[list[Action], Control | None]:
             continue
         kind = mm.group(1).lower()
         path = mm.group(2)
-        if kind in ("write", "read", "ls"):
+        if kind in ("write", "read", "ls", "search"):
             actions.append(Action(kind=kind, path=path, body=rest))
         elif kind in ("done", "continue"):
             control = Control(kind=kind, body=rest.strip())
@@ -204,6 +230,71 @@ def tool_ls(root: Path, rel: str) -> str:
         else:
             lines.append(entry.name)
     return "\n".join(lines) if lines else "(empty)"
+
+
+def _searchable_files(start: Path) -> list[Path]:
+    if start.is_file():
+        return [start]
+    files: list[Path] = []
+    stack = [start]
+    while stack:
+        current = stack.pop()
+        try:
+            entries = sorted(current.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.is_dir():
+                if entry.name in SEARCH_EXCLUDED_DIRS:
+                    continue
+                stack.append(entry)
+            elif entry.is_file():
+                files.append(entry)
+    return files
+
+
+def tool_search(
+    root: Path,
+    rel: str,
+    query: str,
+    *,
+    max_results: int = SEARCH_MAX_RESULTS,
+) -> str:
+    query = query.strip()
+    if not query:
+        return "ERROR: search query required"
+    start = _safe_join(root, rel or ".")
+    if not start.exists():
+        return f"ERROR: path not found: {rel}"
+    needle = query.lower()
+    matches: list[str] = []
+    truncated = False
+    root_resolved = root.resolve()
+    for path in _searchable_files(start):
+        try:
+            if path.stat().st_size > SEARCH_MAX_FILE_BYTES:
+                continue
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if needle not in line.lower():
+                continue
+            rel_path = path.relative_to(root_resolved).as_posix()
+            clean = line.strip()
+            if len(clean) > 240:
+                clean = clean[:237] + "..."
+            matches.append(f"{rel_path}:{line_no}: {clean}")
+            if len(matches) >= max_results:
+                truncated = True
+                break
+        if truncated:
+            break
+    if not matches:
+        return "(no matches)"
+    if truncated:
+        matches.append(f"... truncated after {max_results} matches")
+    return "\n".join(matches)
 
 
 def load_project_instructions(
@@ -320,13 +411,15 @@ def run(
                     out = tool_read(project, a.path)
                 elif a.kind == "ls":
                     out = tool_ls(project, a.path or ".")
+                elif a.kind == "search":
+                    out = tool_search(project, a.path or ".", a.body)
                 else:
                     out = f"ERROR: malformed action {a.kind} (path={a.path})"
             except Exception as exc:
                 out = f"ERROR: {exc}"
             on_event(f"  · {a.kind} {a.path or ''} -> {out.splitlines()[0][:80]}")
             results.append((a, out))
-            if a.kind in ("read", "ls") and not out.startswith("ERROR:"):
+            if a.kind in ("read", "ls", "search") and not out.startswith("ERROR:"):
                 sig = (a.kind, a.path or ".", out)
                 if sig not in seen_info:
                     seen_info.add(sig)
@@ -355,7 +448,7 @@ def run(
         if control.kind == "done":
             # Safety net: if the model said `done` but also asked to read/ls,
             # treat it as `continue` — it almost certainly needs the result.
-            needs_followup = any(a.kind in ("read", "ls") for a in actions)
+            needs_followup = any(a.kind in ("read", "ls", "search") for a in actions)
             if needs_followup:
                 on_event("[agent] `done` came with read/ls — treating as continue.")
             else:
