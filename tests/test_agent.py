@@ -12,18 +12,15 @@ class ParseReplyTests(unittest.TestCase):
     def test_parse_multiple_actions_and_control(self) -> None:
         text = """Some context.
 
-```python
-# === codey: read path=app.py ===
-```
-
-```text
-# === codey: ls path=. ===
-```
-
-```text
-# === codey: done ===
-finished
-```
+<codey>
+  <tool name="read">
+    <path>app.py</path>
+  </tool>
+  <tool name="ls">
+    <path>.</path>
+  </tool>
+  <control type="done">finished</control>
+</codey>
 """
         actions, control = agent.parse_reply(text)
 
@@ -33,9 +30,22 @@ finished
         self.assertEqual(control.kind, "done")
         self.assertEqual(control.body, "finished")
 
-    def test_ignores_non_marker_code_blocks(self) -> None:
+    def test_ignores_non_codey_blocks(self) -> None:
         text = """```python
 print("hello")
+```
+
+```text
+<control type="continue">need files</control>
+```"""
+        actions, control = agent.parse_reply(text)
+
+        self.assertEqual(actions, [])
+        self.assertIsNone(control)
+
+    def test_old_marker_protocol_is_not_parsed(self) -> None:
+        text = """```text
+# === codey: read path=app.py ===
 ```
 
 ```text
@@ -45,19 +55,16 @@ need files
         actions, control = agent.parse_reply(text)
 
         self.assertEqual(actions, [])
-        self.assertIsNotNone(control)
-        self.assertEqual(control.kind, "continue")
+        self.assertIsNone(control)
 
     def test_parse_search_action_uses_body_as_query(self) -> None:
-        text = """```text
-# === codey: search path=src ===
-login handler
-```
-
-```text
-# === codey: continue ===
-need the matching files
-```"""
+        text = """<codey>
+  <tool name="search">
+    <path>src</path>
+    <query>login handler</query>
+  </tool>
+  <control type="continue">need the matching files</control>
+</codey>"""
         actions, control = agent.parse_reply(text)
 
         self.assertEqual(len(actions), 1)
@@ -67,14 +74,15 @@ need the matching files
         self.assertIsNotNone(control)
         self.assertEqual(control.kind, "continue")
 
-    def test_parse_inline_marker_payload_from_deepseek(self) -> None:
-        text = """```text
-=== codey: search path=. ===LEGACY_BUG
-```
+    def test_parse_xml_with_natural_language_around_block(self) -> None:
+        text = """I'll search first.
 
-```text
-# === codey: continue ===Need search results
-```"""
+<codey>
+  <tool name="search"><path>.</path><query>LEGACY_BUG</query></tool>
+  <control type="continue">Need search results</control>
+</codey>
+
+Then I will inspect the result."""
         actions, control = agent.parse_reply(text)
 
         self.assertEqual(len(actions), 1)
@@ -85,20 +93,41 @@ need the matching files
         self.assertEqual(control.kind, "continue")
         self.assertEqual(control.body, "Need search results")
 
-    def test_parse_edit_action(self) -> None:
-        text = """```text
-# === codey: edit path=app.py ===
-<<<<<<< SEARCH
-old()
-=======
-new()
->>>>>>> REPLACE
-```
+    def test_parse_write_action_with_cdata(self) -> None:
+        text = """<codey>
+  <tool name="write">
+    <path>app.py</path>
+    <content><![CDATA[
+if value < 3 and name == "x":
+    print("ok")
+]]></content>
+  </tool>
+  <control type="done">created file</control>
+</codey>"""
+        actions, control = agent.parse_reply(text)
 
-```text
-# === codey: done ===
-updated
-```"""
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].kind, "write")
+        self.assertEqual(actions[0].path, "app.py")
+        self.assertEqual(actions[0].body, 'if value < 3 and name == "x":\n    print("ok")')
+        self.assertIsNotNone(control)
+        self.assertEqual(control.kind, "done")
+
+    def test_parse_edit_action(self) -> None:
+        text = """<codey>
+  <tool name="edit">
+    <path>app.py</path>
+    <replace>
+      <search><![CDATA[
+old()
+]]></search>
+      <with><![CDATA[
+new()
+]]></with>
+    </replace>
+  </tool>
+  <control type="done">updated</control>
+</codey>"""
         actions, control = agent.parse_reply(text)
 
         self.assertEqual(len(actions), 1)
@@ -109,15 +138,13 @@ updated
         self.assertEqual(control.kind, "done")
 
     def test_parse_run_action(self) -> None:
-        text = """```text
-# === codey: run path=. ===
-python -m unittest
-```
-
-```text
-# === codey: continue ===
-need test output
-```"""
+        text = """<codey>
+  <tool name="run">
+    <path>.</path>
+    <command>python -m unittest</command>
+  </tool>
+  <control type="continue">need test output</control>
+</codey>"""
         actions, control = agent.parse_reply(text)
 
         self.assertEqual(len(actions), 1)
@@ -127,15 +154,13 @@ need test output
         self.assertEqual(control.kind, "continue")
 
     def test_parse_shell_action(self) -> None:
-        text = """```text
-# === codey: shell path=. ===
-git status --short
-```
-
-```text
-# === codey: continue ===
-waiting for approval
-```"""
+        text = """<codey>
+  <tool name="shell">
+    <path>.</path>
+    <command>git status --short</command>
+  </tool>
+  <control type="continue">waiting for approval</control>
+</codey>"""
         actions, control = agent.parse_reply(text)
 
         self.assertEqual(len(actions), 1)
@@ -325,15 +350,13 @@ class DefaultsTests(unittest.TestCase):
 
 class RunLoopTests(unittest.TestCase):
     def test_shell_action_requests_approval_and_stops(self) -> None:
-        reply = """```text
-# === codey: shell path=. ===
-git status --short
-```
-
-```text
-# === codey: continue ===
-waiting
-```"""
+        reply = """<codey>
+  <tool name="shell">
+    <path>.</path>
+    <command>git status --short</command>
+  </tool>
+  <control type="continue">waiting</control>
+</codey>"""
         requests: list[tuple[str, str]] = []
         events: list[str] = []
         with tempfile.TemporaryDirectory() as td:

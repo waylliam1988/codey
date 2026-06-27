@@ -1,49 +1,9 @@
 """Tool-using agent on top of the DeepSeek web chat.
 
-Why this protocol looks the way it does
----------------------------------------
-DeepSeek's web UI renders ``` fenced blocks but only keeps the FIRST WORD of
-the fence language line.  So if the model writes ``` ```write path=snake.py
-``` `` DeepSeek's DOM only remembers "write" — the `path=snake.py` is gone.
-The code body itself, however, is preserved byte-for-byte inside <pre>.
-
-So Codey's protocol puts everything actionable INSIDE the code body as a
-single magic marker comment on the first line.  Each fenced block is exactly
-one action.  The language of the fence is ignored.
-
-Protocol (we instruct the model up front):
-
-    # === codey: write path=relative/path.ext ===
-    <full file contents — verbatim>
-
-    # === codey: edit path=relative/path.ext ===
-    <<<<<<< SEARCH
-    old exact text
-    =======
-    new exact text
-    >>>>>>> REPLACE
-
-    # === codey: read path=relative/path.ext ===
-
-    # === codey: ls path=. ===
-
-    # === codey: search path=. ===
-    login handler
-
-    # === codey: run path=. ===
-    python -m unittest
-
-    # === codey: shell path=. ===
-    git status --short
-
-    # === codey: done ===
-    <one-line summary>
-
-    # === codey: continue ===
-    <short reason you need another turn>
-
-Each action goes in its own fenced ``` block.  The fence language can be
-anything (python, text, js, …); only the marker matters.
+Codey asks the web model for XML-like tool tags and converts those tags into
+local actions. XML is the protocol boundary because code/edit payloads can be
+placed in CDATA without JSON escaping, while Codey's execution layer only sees
+structured actions.
 """
 
 from __future__ import annotations
@@ -52,6 +12,7 @@ import os
 import re
 import shlex
 import subprocess
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -88,86 +49,82 @@ EDIT_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
-MARKER_RE = re.compile(
-    r"^[#/\-\s]*===\s*codey\s*:\s*(\w+)(?:\s+path\s*=\s*([^\s=]+))?\s*===\s*(.*)$",
-)
-
 SYSTEM_PROMPT = """\
-You are Codey, a careful local coding agent.  You can read, list, search,
-edit and write files in the user's project.  You can run a small allowlist of
+You are Codey, a careful local coding agent. You can read, list, search,
+edit and write files in the user's project. You can run a small allowlist of
 test/build commands, but you CANNOT run arbitrary shell commands.
 
-OUTPUT PROTOCOL — every reply MUST follow this exactly.
+OUTPUT PROTOCOL - every reply MUST contain exactly one well-formed
+<codey>...</codey> block. Do not wrap the <codey> block in markdown fences.
+Plain commentary outside the block is allowed, but Codey only acts on the XML.
 
-Each action is one fenced ``` code block.  The FIRST LINE of every block is
-a magic marker of the form
+Inside <codey>, emit ZERO OR MORE tool calls, then EXACTLY ONE control element
+at the end:
 
-    # === codey: <action>[ path=<relative-path>] ===
+  <codey>
+    <tool name="search">
+      <path>.</path>
+      <query>login handler</query>
+    </tool>
+    <control type="continue">Need search results</control>
+  </codey>
 
-The remaining lines of the block are the action's payload.  The fence
-language (after the opening ```) is ignored — use whatever makes the code
-look nice (python, text, js, etc.).
+Tools:
 
-You may emit ZERO OR MORE action blocks (write/edit/read/ls/search/run/shell) then
-EXACTLY ONE control block (done OR continue) at the end.
+  <tool name="read">
+    <path>relative/path.ext</path>
+  </tool>
 
-Actions:
+  <tool name="ls">
+    <path>.</path>
+  </tool>
 
-  ```python
-  # === codey: write path=relative/path.ext ===
-  <full file contents go here, byte-perfect>
-  ```
+  <tool name="search">
+    <path>.</path>
+    <query>login handler</query>
+  </tool>
 
-  ```text
-  # === codey: edit path=relative/path.ext ===
-  <<<<<<< SEARCH
-  old exact text copied from `read`
-  =======
-  new replacement text
-  >>>>>>> REPLACE
-  ```
+  <tool name="write">
+    <path>relative/path.ext</path>
+    <content><![CDATA[
+full file contents go here, byte-perfect
+]]></content>
+  </tool>
 
-  ```text
-  # === codey: read path=relative/path.ext ===
-  ```
+  <tool name="edit">
+    <path>relative/path.ext</path>
+    <replace>
+      <search><![CDATA[
+old exact text copied from read
+]]></search>
+      <with><![CDATA[
+new replacement text
+]]></with>
+    </replace>
+  </tool>
 
-  ```text
-  # === codey: ls path=. ===
-  ```
+  <tool name="run">
+    <path>.</path>
+    <command>python -m unittest</command>
+  </tool>
 
-  ```text
-  # === codey: search path=. ===
-  login handler
-  ```
-
-  ```text
-  # === codey: run path=. ===
-  python -m unittest
-  ```
-
-  ```text
-  # === codey: shell path=. ===
-  git status --short
-  ```
+  <tool name="shell">
+    <path>.</path>
+    <command>git status --short</command>
+  </tool>
 
 Control (exactly one, last):
 
-  ```text
-  # === codey: done ===
-  <one-line summary of what you accomplished>
-  ```
-
-  ```text
-  # === codey: continue ===
-  <short reason you need another turn>
-  ```
+  <control type="done">One-line summary of what you accomplished</control>
+  <control type="continue">Short reason you need another turn</control>
 
 Rules:
-  - Paths are ALWAYS relative to the project root.  No absolute paths, no `..`.
-  - The marker line MUST be exactly on line 1 of the code block.
+  - XML must be well-formed. For code, diffs, and any text containing <, >, or
+    &, use CDATA exactly as shown above.
+  - Paths are ALWAYS relative to the project root. No absolute paths, no `..`.
   - Use `search` before `read` when you do not know which file contains the
     relevant code.
-  - Prefer `edit` over `write` for small changes to existing files.  Use
+  - Prefer `edit` over `write` for small changes to existing files. Use
     `write` for new files or when replacing a whole file is genuinely clearer.
   - Every `edit` SEARCH section must be copied exactly from content you read.
   - Use `run` only for tests/builds/checks such as `python -m unittest`,
@@ -177,18 +134,17 @@ Rules:
     `shell` pauses the task and asks the user to approve the exact command.
     It is never executed automatically.
   - Never invent file contents you have not been shown.  Use `read` first.
-  - Keep replies focused.  Plain commentary outside fenced blocks is fine
-    for short explanations but the agent only acts on the marker blocks.
+  - Keep replies focused. The <codey> block is the only actionable part.
 
 CRITICAL — when to use `done` vs `continue`:
-  - `done` ends the entire task.  Only use it when the user's request is
+  - `done` ends the entire task. Only use it when the user's request is
     FULLY satisfied (all needed files written / verified).
-  - `continue` means "I need another turn".  Use it whenever your reply
+  - `continue` means "I need another turn". Use it whenever your reply
     contains a `read`, `ls`, `search`, `run` or `shell` action — the results
     arrive in the next turn and you will likely need to act on them.
   - A typical fix-a-bug flow takes TWO turns:
-      turn 1:  read + continue            (asks to see the file)
-      turn 2:  write + done               (writes the fixed file)
+      turn 1: read + continue             (asks to see the file)
+      turn 2: edit/write + done           (writes the fixed file)
 """
 
 
@@ -220,30 +176,92 @@ class EditBlock:
     replace: str
 
 
-BLOCK_RE = re.compile(r"^```[^\n]*\n(.*?)\n?```", re.MULTILINE | re.DOTALL)
+CODEY_XML_RE = re.compile(r"<codey\b[^>]*>.*?</codey>", re.IGNORECASE | re.DOTALL)
+
+
+def _xml_tag_name(element: ET.Element) -> str:
+    tag = element.tag
+    if not isinstance(tag, str):
+        return ""
+    if "}" in tag:
+        tag = tag.rsplit("}", 1)[1]
+    return tag.lower()
+
+
+def _xml_child_text(element: ET.Element, *names: str) -> str:
+    wanted = {name.lower() for name in names}
+    for child in element:
+        if _xml_tag_name(child) in wanted:
+            return "".join(child.itertext())
+    return ""
+
+
+def _xml_payload(text: str) -> str:
+    """Remove the wrapper newline models usually add inside CDATA blocks."""
+    if text.startswith("\n"):
+        text = text[1:]
+    if text.endswith("\n"):
+        text = text[:-1]
+    return text
+
+
+def _xml_tool_action(element: ET.Element) -> Action | None:
+    kind = (element.attrib.get("name") or element.attrib.get("tool") or "").strip().lower()
+    if kind not in ("write", "edit", "read", "ls", "search", "run", "shell"):
+        return None
+
+    path = (_xml_child_text(element, "path", "cwd") or element.attrib.get("path") or "").strip()
+    body = ""
+
+    if kind == "write":
+        body = _xml_payload(_xml_child_text(element, "content", "body", "text"))
+    elif kind == "edit":
+        blocks: list[str] = []
+        for child in element:
+            if _xml_tag_name(child) != "replace":
+                continue
+            search = _xml_payload(_xml_child_text(child, "search"))
+            replacement = _xml_payload(_xml_child_text(child, "with", "replacement", "replace"))
+            blocks.append(f"<<<<<<< SEARCH\n{search}\n=======\n{replacement}\n>>>>>>> REPLACE")
+        body = "\n".join(blocks)
+    elif kind == "search":
+        body = (_xml_child_text(element, "query", "body", "text") or "").strip()
+    elif kind in ("run", "shell"):
+        body = (_xml_child_text(element, "command", "cmd", "body", "text") or "").strip()
+
+    return Action(kind=kind, path=path or None, body=body)
+
+
+def _parse_xml_reply(text: str) -> tuple[list[Action], Control | None]:
+    actions: list[Action] = []
+    control: Control | None = None
+
+    for match in CODEY_XML_RE.finditer(text):
+        try:
+            root = ET.fromstring(match.group(0))
+        except ET.ParseError:
+            continue
+        if _xml_tag_name(root) != "codey":
+            continue
+
+        for child in root:
+            tag = _xml_tag_name(child)
+            if tag == "tool":
+                action = _xml_tool_action(child)
+                if action is not None:
+                    actions.append(action)
+            elif tag == "control":
+                kind = (child.attrib.get("type") or "").strip().lower()
+                if kind in ("continue", "done"):
+                    control = Control(kind=kind, body="".join(child.itertext()).strip())
+            elif tag in ("continue", "done"):
+                control = Control(kind=tag, body="".join(child.itertext()).strip())
+
+    return actions, control
 
 
 def parse_reply(text: str) -> tuple[list[Action], Control | None]:
-    actions: list[Action] = []
-    control: Control | None = None
-    for m in BLOCK_RE.finditer(text):
-        body = m.group(1)
-        lines = body.split("\n", 1)
-        head = lines[0] if lines else ""
-        rest = lines[1] if len(lines) > 1 else ""
-        mm = MARKER_RE.match(head)
-        if not mm:
-            continue
-        kind = mm.group(1).lower()
-        path = mm.group(2)
-        inline_body = mm.group(3).strip()
-        if inline_body:
-            rest = inline_body + (("\n" + rest) if rest else "")
-        if kind in ("write", "edit", "read", "ls", "search", "run", "shell"):
-            actions.append(Action(kind=kind, path=path, body=rest))
-        elif kind in ("done", "continue"):
-            control = Control(kind=kind, body=rest.strip())
-    return actions, control
+    return _parse_xml_reply(text)
 
 
 # ----------------------------------------------------------------- tools ---
@@ -644,20 +662,21 @@ def run(
 
         if control is None:
             if results:
-                on_event("[agent] reply had actions but no control block — assuming done.")
-                return RunResult(f"applied {len(results)} action(s) (no done marker)", "protocol", turn)
+                on_event("[agent] reply had actions but no control element — assuming done.")
+                return RunResult(f"applied {len(results)} action(s) (no control element)", "protocol", turn)
             stagnant_count += 1
             if stagnant_count >= stagnant_turns:
                 msg = f"stopped after {stagnant_turns} turns without valid tool progress"
                 on_event(f"[agent] {msg}.")
                 return RunResult(msg, "no_progress", turn)
-            on_event("[agent] reply contained no valid marker blocks; nudging the model.")
+            on_event("[agent] reply contained no valid <codey> block; nudging the model.")
             reply = chat(
                 page,
-                "Your previous reply did not contain any valid `# === codey: ... ===`"
-                " marker blocks.  Please re-emit your work using the exact protocol."
-                "  Remember: marker must be on line 1 inside ``` … ``` and the path"
-                " goes there, NOT in the fence language.",
+                "Your previous reply did not contain a valid well-formed <codey>...</codey>"
+                " block. Please re-emit your work using exactly one <codey> block."
+                " Do not wrap it in markdown fences. End with exactly one"
+                " <control type=\"continue\">...</control> or"
+                " <control type=\"done\">...</control> element.",
             )
             on_event(f"\n--- turn {turn+1} reply (after nudge) ---\n{reply}\n")
             continue
@@ -688,9 +707,10 @@ def run(
         next_prompt = (
             "Tool results from your previous actions:\n\n"
             + (_format_tool_results(results) if results else "(no actions executed)")
-            + "\n\nContinue.  Remember: every block must start with"
-              " `# === codey: <action>[ path=...] ===` on line 1, and end with a"
-              " `done` or `continue` block."
+            + "\n\nContinue. Remember: reply with exactly one well-formed"
+              " <codey>...</codey> block, do not wrap it in markdown fences,"
+              " and end with one <control type=\"done\">...</control> or"
+              " <control type=\"continue\">...</control> element."
         )
         reply = chat(page, next_prompt)
         on_event(f"\n--- turn {turn+1} reply ---\n{reply}\n")
