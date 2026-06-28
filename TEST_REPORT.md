@@ -1,7 +1,7 @@
-# Codey 0.1.2 Test Report
+# Codey 0.1.3 Test Report
 
 Date: 2026-06-28  
-Environment: Windows / Edge CDP `127.0.0.1:9222` / DeepSeek, MiMo, Qwen tabs open
+Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
 
 ## Scope
 
@@ -44,7 +44,7 @@ Fixes:
 
 ```text
 python -B -m unittest
-Ran 160 tests
+Ran 176 tests
 OK
 ```
 
@@ -106,7 +106,16 @@ So the two-model feature is useful, but it should stay quiet and automatic. It i
 
 ## Release Notes
 
-Version `0.1.2` is a usability and provider-status release:
+Version `0.1.3` is a durable model-browser release:
+
+- model Edge/CDP browser is treated as long-lived user state
+- Codey UI restarts do not intentionally close the model browser
+- provider connections first reuse existing CDP browsers and model tabs
+- if no usable CDP browser exists, Codey opens a new one automatically
+- the last working CDP port is saved for quiet reuse after process restart
+- no extra UI notification is shown for this recovery path
+
+Version `0.1.2` was a usability and provider-status release:
 
 - live green/gray model availability dots
 - UI sends can still auto-open missing model pages

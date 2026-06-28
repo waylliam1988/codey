@@ -1,13 +1,9 @@
-"""Launch or attach to Edge with CDP for supported web chat providers.
+"""Attach to long-lived Edge CDP tabs for supported web chat providers.
 
-The approach (lifted in spirit, not in code, from codeywhere):
-    1. Spawn msedge.exe with --remote-debugging-port and a dedicated --user-data-dir
-       so the launch never collides with the user's normal Edge windows.
-    2. Wait for the CDP port to open, then connect with Playwright over CDP.
-    3. Find (or open) a matching provider tab and return its Page.
-
-The dedicated profile lives at  ~/.codey/edge-profile  .  First time you run it
-you log into DeepSeek once; cookies persist there forever.
+Codey treats the model browser as durable user state: closing or restarting the
+local UI must not close Edge. Provider connections first reuse an existing CDP
+browser and tab, then open a missing tab, and only launch Edge when no usable
+CDP browser is available.
 """
 
 from __future__ import annotations
@@ -28,6 +24,8 @@ QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 DEFAULT_PORT = 9222
 DEFAULT_PROFILE = Path.home() / ".codey" / "edge-profile"
+CDP_PORT_CANDIDATES = tuple(range(DEFAULT_PORT, DEFAULT_PORT + 17))
+CDP_STATE_FILE = Path.home() / ".codey" / "cdp-port.json"
 PROVIDER_URL_CONTAINS = {
     "deepseek": "chat.deepseek.com",
     "qwen": "chat.qwen.ai",
@@ -38,6 +36,8 @@ EDGE_PATHS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
 ]
+
+_active_cdp_port: int | None = None
 
 
 def _find_edge() -> Path:
@@ -81,15 +81,53 @@ def _wait_port(port: int, timeout: float = 20.0) -> None:
     raise TimeoutError(f"CDP port {port} did not open within {timeout:.0f}s")
 
 
+def _load_saved_cdp_port() -> int | None:
+    try:
+        data = json.loads(CDP_STATE_FILE.read_text(encoding="utf-8"))
+        port = int(data.get("port"))
+    except Exception:
+        return None
+    if 1 <= port <= 65535:
+        return port
+    return None
+
+
+def _save_cdp_port(port: int) -> None:
+    try:
+        CDP_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CDP_STATE_FILE.write_text(json.dumps({"port": port}), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _candidate_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
+    ports: list[int] = []
+    near_preferred = range(preferred, min(preferred + 9, 65536))
+    for item in (preferred, _active_cdp_port, _load_saved_cdp_port(), *near_preferred, *CDP_PORT_CANDIDATES):
+        if item is None or item in ports:
+            continue
+        ports.append(int(item))
+    return tuple(ports)
+
+
+def _read_cdp_json(port: int, path: str, timeout: float = 1.0):
+    if not _port_open(port):
+        return None
+    try:
+        with urlopen(f"http://127.0.0.1:{port}{path}", timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8", errors="replace"))
+    except Exception:
+        return None
+
+
+def _cdp_available(port: int = DEFAULT_PORT) -> bool:
+    data = _read_cdp_json(port, "/json/version", timeout=0.8)
+    return isinstance(data, dict) and bool(data.get("webSocketDebuggerUrl") or data.get("Browser"))
+
+
 def list_cdp_targets(port: int = DEFAULT_PORT, timeout: float = 1.0) -> list[dict]:
     """Read Edge CDP targets without starting Playwright or opening pages."""
-    if not _port_open(port):
-        return []
-    try:
-        with urlopen(f"http://127.0.0.1:{port}/json/list", timeout=timeout) as response:
-            data = json.loads(response.read().decode("utf-8", errors="replace"))
-    except Exception:
-        return []
+    data = _read_cdp_json(port, "/json/list", timeout=timeout)
     if not isinstance(data, list):
         return []
     return [item for item in data if isinstance(item, dict)]
@@ -97,14 +135,73 @@ def list_cdp_targets(port: int = DEFAULT_PORT, timeout: float = 1.0) -> list[dic
 
 def detect_open_provider_tabs(port: int = DEFAULT_PORT) -> dict[str, bool]:
     statuses = {provider_id: False for provider_id in PROVIDER_URL_CONTAINS}
-    for target in list_cdp_targets(port):
-        if str(target.get("type") or "") != "page":
+    for cdp_port in _candidate_ports(port):
+        if not _cdp_available(cdp_port):
             continue
-        url = str(target.get("url") or "")
-        for provider_id, marker in PROVIDER_URL_CONTAINS.items():
-            if marker in url:
-                statuses[provider_id] = True
+        for target in list_cdp_targets(cdp_port):
+            if str(target.get("type") or "") != "page":
+                continue
+            url = str(target.get("url") or "")
+            for provider_id, marker in PROVIDER_URL_CONTAINS.items():
+                if marker in url:
+                    statuses[provider_id] = True
     return statuses
+
+
+def _remember_cdp_port(port: int) -> int:
+    global _active_cdp_port
+    _active_cdp_port = port
+    _save_cdp_port(port)
+    return port
+
+
+def _find_cdp_port_with_target(url_contains: str, preferred: int = DEFAULT_PORT) -> int | None:
+    for cdp_port in _candidate_ports(preferred):
+        if not _cdp_available(cdp_port):
+            continue
+        for target in list_cdp_targets(cdp_port):
+            if str(target.get("type") or "") == "page" and url_contains in str(target.get("url") or ""):
+                return _remember_cdp_port(cdp_port)
+    return None
+
+
+def _find_existing_cdp_port(preferred: int = DEFAULT_PORT) -> int | None:
+    for cdp_port in _candidate_ports(preferred):
+        if _cdp_available(cdp_port):
+            return _remember_cdp_port(cdp_port)
+    return None
+
+
+def _find_free_cdp_port(preferred: int = DEFAULT_PORT) -> int:
+    for cdp_port in _candidate_ports(preferred):
+        if not _port_open(cdp_port):
+            return cdp_port
+    raise RuntimeError("no free CDP port available")
+
+
+def _ensure_cdp_port(
+    *,
+    preferred: int,
+    profile: Path,
+    start_url: str,
+    url_contains: str,
+    open_if_missing: bool,
+) -> int:
+    existing = _find_cdp_port_with_target(url_contains, preferred)
+    if existing is not None:
+        return existing
+
+    existing = _find_existing_cdp_port(preferred)
+    if existing is not None:
+        return existing
+
+    if not open_if_missing:
+        raise RuntimeError(f"CDP port {preferred} is not open")
+
+    cdp_port = _find_free_cdp_port(preferred)
+    _launch_edge(cdp_port, profile, start_url)
+    _wait_port(cdp_port)
+    return _remember_cdp_port(cdp_port)
 
 
 @dataclass
@@ -148,14 +245,16 @@ def open_chat_page(
     bring_to_front: bool = True,
 ) -> Session:
     """Return a Playwright session attached to a matching provider tab."""
-    if not _port_open(port):
-        if not open_if_missing:
-            raise RuntimeError(f"CDP port {port} is not open")
-        _launch_edge(port, profile, start_url)
-        _wait_port(port)
+    cdp_port = _ensure_cdp_port(
+        preferred=port,
+        profile=profile,
+        start_url=start_url,
+        url_contains=url_contains,
+        open_if_missing=open_if_missing,
+    )
 
     pw = _start_playwright_with_retry()
-    browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
+    browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
 
     page: Page | None = None
     for ctx in browser.contexts:

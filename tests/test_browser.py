@@ -83,16 +83,130 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             {"type": "service_worker", "url": "https://chat.qwen.ai/sw.js"},
         ]
 
-        with mock.patch.object(browser, "list_cdp_targets", return_value=targets):
+        with (
+            mock.patch.object(browser, "_candidate_ports", return_value=(9222,)),
+            mock.patch.object(browser, "_cdp_available", return_value=True),
+            mock.patch.object(browser, "list_cdp_targets", return_value=targets),
+        ):
             statuses = browser.detect_open_provider_tabs()
 
         self.assertEqual(statuses, {"deepseek": True, "qwen": False, "mimo": True})
 
     def test_detect_open_provider_tabs_returns_all_false_when_cdp_is_closed(self) -> None:
-        with mock.patch.object(browser, "list_cdp_targets", return_value=[]):
+        with (
+            mock.patch.object(browser, "_candidate_ports", return_value=(9222,)),
+            mock.patch.object(browser, "_cdp_available", return_value=False),
+            mock.patch.object(browser, "list_cdp_targets") as targets,
+        ):
             statuses = browser.detect_open_provider_tabs()
 
         self.assertEqual(statuses, {"deepseek": False, "qwen": False, "mimo": False})
+        targets.assert_not_called()
+
+    def test_candidate_ports_prefers_saved_cdp_port_after_restart(self) -> None:
+        with (
+            mock.patch.object(browser, "_active_cdp_port", None),
+            mock.patch.object(browser, "_load_saved_cdp_port", return_value=9333),
+        ):
+            ports = browser._candidate_ports(9222)
+
+        self.assertEqual(ports[:2], (9222, 9333))
+
+    def test_remember_cdp_port_persists_for_next_process(self) -> None:
+        with (
+            mock.patch.object(browser, "_active_cdp_port", None),
+            mock.patch.object(browser, "_save_cdp_port") as save,
+        ):
+            result = browser._remember_cdp_port(9333)
+
+            self.assertEqual(result, 9333)
+            self.assertEqual(browser._active_cdp_port, 9333)
+        save.assert_called_once_with(9333)
+
+    def test_find_cdp_port_with_target_scans_saved_port(self) -> None:
+        def available(port: int) -> bool:
+            return port == 9333
+
+        def targets(port: int):
+            if port == 9333:
+                return [{"type": "page", "url": "https://chat.deepseek.com/a/chat/s/1"}]
+            return []
+
+        with (
+            mock.patch.object(browser, "_active_cdp_port", None),
+            mock.patch.object(browser, "_load_saved_cdp_port", return_value=9333),
+            mock.patch.object(browser, "_cdp_available", side_effect=available),
+            mock.patch.object(browser, "list_cdp_targets", side_effect=targets),
+            mock.patch.object(browser, "_save_cdp_port"),
+        ):
+            port = browser._find_cdp_port_with_target("chat.deepseek.com", 9222)
+
+        self.assertEqual(port, 9333)
+
+    def test_open_chat_page_reuses_existing_cdp_with_missing_provider_tab(self) -> None:
+        ctx = mock.Mock(pages=[])
+        new_page = mock.Mock()
+        ctx.new_page.return_value = new_page
+        browser_obj = mock.Mock(contexts=[ctx])
+        pw = mock.Mock()
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+
+        with (
+            mock.patch.object(browser, "_ensure_cdp_port", return_value=9333) as ensure,
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            session = browser.open_chat_page("https://chat.qwen.ai/", "chat.qwen.ai")
+
+        ensure.assert_called_once()
+        pw.chromium.connect_over_cdp.assert_called_once_with("http://127.0.0.1:9333")
+        new_page.goto.assert_called_once_with(
+            "https://chat.qwen.ai/",
+            wait_until="domcontentloaded",
+            timeout=60000,
+        )
+        self.assertIs(session.page, new_page)
+
+    def test_ensure_cdp_port_launches_on_free_fallback_when_default_is_busy(self) -> None:
+        def port_open(port: int) -> bool:
+            return port == 9222
+
+        with (
+            mock.patch.object(browser, "_find_cdp_port_with_target", return_value=None),
+            mock.patch.object(browser, "_find_existing_cdp_port", return_value=None),
+            mock.patch.object(browser, "_load_saved_cdp_port", return_value=None),
+            mock.patch.object(browser, "_port_open", side_effect=port_open),
+            mock.patch.object(browser, "_launch_edge") as launch,
+            mock.patch.object(browser, "_wait_port") as wait_port,
+            mock.patch.object(browser, "_save_cdp_port"),
+        ):
+            port = browser._ensure_cdp_port(
+                preferred=9222,
+                profile=Path("profile"),
+                start_url="https://chat.deepseek.com/",
+                url_contains="chat.deepseek.com",
+                open_if_missing=True,
+            )
+
+        self.assertEqual(port, 9223)
+        launch.assert_called_once_with(9223, Path("profile"), "https://chat.deepseek.com/")
+        wait_port.assert_called_once_with(9223)
+
+    def test_ensure_cdp_port_reuses_existing_browser_before_launching(self) -> None:
+        with (
+            mock.patch.object(browser, "_find_cdp_port_with_target", return_value=None),
+            mock.patch.object(browser, "_find_existing_cdp_port", return_value=9333),
+            mock.patch.object(browser, "_launch_edge") as launch,
+        ):
+            port = browser._ensure_cdp_port(
+                preferred=9222,
+                profile=Path("profile"),
+                start_url="https://chat.deepseek.com/",
+                url_contains="chat.deepseek.com",
+                open_if_missing=True,
+            )
+
+        self.assertEqual(port, 9333)
+        launch.assert_not_called()
 
 
 class PlaywrightStartupTests(unittest.TestCase):
