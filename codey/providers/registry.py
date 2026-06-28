@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE
+from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE, detect_open_provider_tabs
 from codey.providers.base import ChatProvider
 from codey.providers.deepseek_web import DeepSeekWebProvider
 from codey.providers.mimo_web import MimoWebProvider
@@ -18,6 +18,11 @@ PROVIDER_LABELS = {
 
 def provider_ids() -> tuple[str, ...]:
     return tuple(PROVIDER_LABELS)
+
+
+def provider_tab_availability() -> dict[str, bool]:
+    statuses = detect_open_provider_tabs()
+    return {provider_id: bool(statuses.get(provider_id)) for provider_id in PROVIDER_LABELS}
 
 
 def connect_provider(

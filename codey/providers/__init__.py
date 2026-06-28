@@ -9,6 +9,7 @@ from codey.providers.registry import (
     PROVIDER_LABELS,
     connect_existing_provider,
     connect_provider,
+    provider_tab_availability,
     provider_ids,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "QwenWebProvider",
     "connect_existing_provider",
     "connect_provider",
+    "provider_tab_availability",
     "provider_ids",
 ]

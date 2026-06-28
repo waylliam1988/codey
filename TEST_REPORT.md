@@ -1,4 +1,4 @@
-# Codey 0.1.1 Test Report
+# Codey 0.1.2 Test Report
 
 Date: 2026-06-28  
 Environment: Windows / Edge CDP `127.0.0.1:9222` / DeepSeek, MiMo, Qwen tabs open
@@ -106,9 +106,10 @@ So the two-model feature is useful, but it should stay quiet and automatic. It i
 
 ## Release Notes
 
-Version `0.1.1` is a stability release:
+Version `0.1.2` is a usability and provider-status release:
 
-- safer completion rule for test-requested tasks
-- stronger JSON protocol guidance for web models
-- repeatable bootstrap smoke tool
-- refreshed README and bootstrap proof
+- live green/gray model availability dots
+- UI sends can still auto-open missing model pages
+- connected models turn green after successful attach/open
+- composer now uses Enter to send and Shift+Enter for newline
+- root `DESIGN.md` is the single UI design source

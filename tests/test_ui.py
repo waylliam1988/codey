@@ -17,7 +17,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('id="provider-dot"', HTML)
         self.assertIn("--ok-dot:", HTML)
         self.assertIn(".dot.ok", HTML)
+        self.assertIn("let providerStatus", HTML)
+        self.assertIn("function refreshProviderStatus()", HTML)
+        self.assertIn("fetch('/api/providers')", HTML)
+        self.assertIn("providerStatus[id] ? 'ok' : ''", HTML)
         self.assertIn(".provider-item.active .check", HTML)
+        self.assertNotIn("providerAvailability(_id) { return 'ok'; }", HTML)
 
     def test_provider_selector_orders_deepseek_mimo_qwen(self) -> None:
         deepseek = HTML.index('data-provider="deepseek"')
@@ -45,6 +50,18 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_provider_selector_is_enabled_when_idle(self) -> None:
         self.assertIn("$('provider-button').disabled = running", HTML)
         self.assertIn("$('provider-button').disabled = false", HTML)
+        self.assertNotIn("btn.disabled = !providerStatus", HTML)
+
+    def test_provider_status_is_quiet_and_refreshes_on_menu_open(self) -> None:
+        self.assertIn("if (menu.classList.contains('open')) refreshProviderStatus();", HTML)
+        self.assertIn("if (data.type === 'providers')", HTML)
+        self.assertIn("applyProviderStatus(data.providers)", HTML)
+        self.assertIn("data.provider_failure.action === 'connect'", HTML)
+        self.assertIn("providerStatus[data.provider] = false", HTML)
+        self.assertIn("addSendError(sid)", HTML)
+        self.assertNotIn("Could not connect model", HTML)
+        self.assertNotIn("Open the model page", HTML)
+        self.assertNotIn("PlaywrightContextManager", HTML)
 
     def test_deleting_last_session_preserves_selected_provider(self) -> None:
         self.assertIn("const fallbackProvider = currentProviderId()", HTML)
@@ -78,6 +95,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("alert('Failed to start:", HTML)
         self.assertNotIn("alert('Failed to continue:", HTML)
         self.assertNotIn("alert('A task is already running')", HTML)
+
+    def test_composer_enter_sends_and_shift_enter_keeps_newline(self) -> None:
+        self.assertIn('id="send-hint">Enter</span>', HTML)
+        self.assertIn("e.key === 'Enter' && !e.shiftKey", HTML)
+        self.assertIn("!e.isComposing", HTML)
+        self.assertIn("e.keyCode !== 229", HTML)
+        self.assertNotIn("e.key === 'Enter' && (e.ctrlKey || e.metaKey)", HTML)
+        self.assertNotIn('id="send-hint">Ctrl ↵</span>', HTML)
 
     def test_routine_failures_do_not_use_native_alerts(self) -> None:
         self.assertNotIn("alert(", HTML)

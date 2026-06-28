@@ -88,7 +88,7 @@ Do not reuse these tints elsewhere. Diff is the only place where background tint
 | Status prefix | 10.5px | 500 | sans | `DONE`, `ERROR`, `PAUSED`, … uppercase |
 | Tool line | 12px | 400 | mono | Aligned grid, not pills |
 | Context hint | 11.5px | 400 | sans | Composer context row |
-| Keyboard hint | 11px | 400 | mono | e.g. `Ctrl ↵` |
+| Keyboard hint | 11px | 400 | mono | e.g. `Enter` |
 
 **Weight rule:** default 400; emphasis 500. Avoid 600+ except rare cases (e.g. shell card title).
 
@@ -243,13 +243,13 @@ demo_snake · DeepSeek          ← composer-context (11.5px, --muted)
 ┌─────────────────────────────────────────┐
 │ Send a message to Codey…                │
 └─────────────────────────────────────────┘
-● DeepSeek ⌄              Ctrl ↵    ■  ▶
+● DeepSeek ⌄              Enter     ■  ▶
 ```
 
 - Box: `--bg-2`, 1px `--border`, radius 10px; focus border `--text-dim` (not blue).
-- **Provider picker:** borderless; **green dot** + label + chevron. Offline state: hollow gray circle (`.dot.off`), dimmed label.
+- **Provider picker:** borderless; status dot + label + chevron. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.
 - **Send / Stop:** square **icon buttons** (`.icon-btn`), transparent until hover. No filled accent send button.
-- `Ctrl ↵` hint: visible on composer focus/hover only, `--faint`.
+- `Enter` hint: visible on composer focus/hover only, `--faint`. `Enter` sends; `Shift+Enter` inserts a newline.
 
 Provider is **session-level** — it lives in the composer, not duplicated as a primary control elsewhere.
 
@@ -355,7 +355,7 @@ These are compatible extensions — implement using the rules above:
 - Inline rename instead of `prompt()`
 - Toast notifications (gray panel, mono optional, no green/red toast backgrounds)
 - Minimal Markdown in assistant messages (sans body; code blocks in mono)
-- Provider health: offline = `.dot.off`, online = `.dot.ok` — do not add a second green usage
+- Provider health: offline = default solid gray `.dot`, online = `.dot.ok` — do not add a second green usage
 - Top bar `Export markdown`, etc. — menu pattern same as `.ctx-menu`
 
 ---

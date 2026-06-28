@@ -35,7 +35,13 @@ from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
 from codey.changes import ChangeTracker
-from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, connect_existing_provider, connect_provider
+from codey.providers import (
+    DEFAULT_PROVIDER_ID,
+    PROVIDER_LABELS,
+    connect_existing_provider,
+    connect_provider,
+    provider_tab_availability,
+)
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
 from codey.review import (
     ReviewResult,
@@ -234,6 +240,26 @@ def review_label(provider_id: str) -> str:
     return PROVIDER_LABELS.get(provider_id, provider_id)
 
 
+def provider_availability() -> dict[str, bool]:
+    return provider_tab_availability()
+
+
+def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict]:
+    statuses = statuses or {}
+    return [
+        {"id": provider_id, "label": label, "available": bool(statuses.get(provider_id))}
+        for provider_id, label in PROVIDER_LABELS.items()
+    ]
+
+
+def provider_status_update(provider_id: str, available: bool) -> list[dict]:
+    return [{
+        "id": provider_id,
+        "label": PROVIDER_LABELS.get(provider_id, provider_id),
+        "available": available,
+    }]
+
+
 def _recent_log_text(lines: list[str]) -> str:
     return "\n".join(lines[-REVIEW_LOG_LINES:])
 
@@ -404,6 +430,10 @@ class State:
         self.status = "connecting"
         self.emit({"type": "status", "status": "connecting"})
         provider = connect_provider(provider_id)
+        self.emit({
+            "type": "providers",
+            "providers": provider_status_update(provider_id, True),
+        })
         self.emit({"type": "log", "level": "info", "text": f"{provider.name} connected: {provider.location}"})
         return provider
 
@@ -681,12 +711,13 @@ class Handler(BaseHTTPRequestHandler):
             })
             return
         if url.path == "/api/providers":
+            try:
+                statuses = provider_availability()
+            except Exception:
+                statuses = {}
             self._send_json(200, {
                 "default": DEFAULT_PROVIDER_ID,
-                "providers": [
-                    {"id": provider_id, "label": label}
-                    for provider_id, label in PROVIDER_LABELS.items()
-                ],
+                "providers": provider_payload(statuses),
             })
             return
         if url.path == "/api/changes":

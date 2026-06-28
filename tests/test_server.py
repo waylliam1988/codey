@@ -134,8 +134,38 @@ class ApprovedShellTests(unittest.TestCase):
             self.assertIn("escapes project root", data["error"])
 
 
+class ProviderStatusTests(unittest.TestCase):
+    def test_provider_payload_marks_available_models(self) -> None:
+        payload = server.provider_payload({"deepseek": True, "mimo": False})
+
+        by_id = {item["id"]: item for item in payload}
+        self.assertTrue(by_id["deepseek"]["available"])
+        self.assertFalse(by_id["mimo"]["available"])
+        self.assertFalse(by_id["qwen"]["available"])
+
+    def test_provider_status_update_only_reports_changed_model(self) -> None:
+        payload = server.provider_status_update("deepseek", True)
+
+        self.assertEqual(payload, [{"id": "deepseek", "label": "DeepSeek", "available": True}])
+
+    def test_provider_availability_reads_cdp_tabs_without_connecting(self) -> None:
+        with (
+            mock.patch.object(
+                server,
+                "provider_tab_availability",
+                return_value={"deepseek": True, "mimo": True, "qwen": False},
+            ) as detected,
+            mock.patch.object(server, "connect_existing_provider") as connected,
+        ):
+            statuses = server.provider_availability()
+
+        self.assertEqual(statuses, {"deepseek": True, "mimo": True, "qwen": False})
+        detected.assert_called_once_with()
+        connected.assert_not_called()
+
+
 class SessionThreadingTests(unittest.TestCase):
-    def test_state_opens_a_fresh_provider_connection_each_time(self) -> None:
+    def test_state_opens_provider_connection_each_time(self) -> None:
         class FakeProvider:
             name = "DeepSeek Web"
             location = "https://chat.deepseek.com/"
@@ -152,6 +182,22 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIsNot(first, second)
         self.assertEqual(connected.call_count, 2)
         self.assertEqual(connected.call_args_list, [mock.call("qwen"), mock.call("qwen")])
+
+    def test_state_marks_provider_available_after_connect(self) -> None:
+        class FakeProvider:
+            name = "Xiaomi MiMo Chat"
+            location = "https://aistudio.xiaomimimo.com/#/c"
+
+        state = server.State()
+        events = state.subscribe()
+        with mock.patch.object(server, "connect_provider", return_value=FakeProvider()):
+            state.get_provider("mimo")
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        providers = next(event for event in emitted if event["type"] == "providers")
+        self.assertEqual(providers["providers"], [{"id": "mimo", "label": "MiMo", "available": True}])
 
     def test_run_task_keeps_selected_provider_through_agent_completion(self) -> None:
         state = server.State()

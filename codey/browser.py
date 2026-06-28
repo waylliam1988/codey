@@ -12,12 +12,14 @@ you log into DeepSeek once; cookies persist there forever.
 
 from __future__ import annotations
 
+import json
 import socket
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.request import urlopen
 
 from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
@@ -26,6 +28,11 @@ QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 DEFAULT_PORT = 9222
 DEFAULT_PROFILE = Path.home() / ".codey" / "edge-profile"
+PROVIDER_URL_CONTAINS = {
+    "deepseek": "chat.deepseek.com",
+    "qwen": "chat.qwen.ai",
+    "mimo": "aistudio.xiaomimimo.com",
+}
 
 EDGE_PATHS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
@@ -74,6 +81,32 @@ def _wait_port(port: int, timeout: float = 20.0) -> None:
     raise TimeoutError(f"CDP port {port} did not open within {timeout:.0f}s")
 
 
+def list_cdp_targets(port: int = DEFAULT_PORT, timeout: float = 1.0) -> list[dict]:
+    """Read Edge CDP targets without starting Playwright or opening pages."""
+    if not _port_open(port):
+        return []
+    try:
+        with urlopen(f"http://127.0.0.1:{port}/json/list", timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8", errors="replace"))
+    except Exception:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
+
+
+def detect_open_provider_tabs(port: int = DEFAULT_PORT) -> dict[str, bool]:
+    statuses = {provider_id: False for provider_id in PROVIDER_URL_CONTAINS}
+    for target in list_cdp_targets(port):
+        if str(target.get("type") or "") != "page":
+            continue
+        url = str(target.get("url") or "")
+        for provider_id, marker in PROVIDER_URL_CONTAINS.items():
+            if marker in url:
+                statuses[provider_id] = True
+    return statuses
+
+
 @dataclass
 class Session:
     pw: Playwright
@@ -90,7 +123,7 @@ def _start_playwright_with_retry() -> Playwright:
         try:
             return sync_playwright().start()
         except AttributeError as exc:
-            if "_playwright" not in str(exc):
+            if not _is_playwright_startup_race(exc):
                 raise
             last_error = exc
             time.sleep(0.25 * (attempt + 1))
@@ -98,6 +131,11 @@ def _start_playwright_with_retry() -> Playwright:
         "Playwright failed to initialize. Close stale Codey/Edge automation "
         "sessions and try again."
     ) from last_error
+
+
+def _is_playwright_startup_race(exc: AttributeError) -> bool:
+    message = str(exc)
+    return "_playwright" in message or "'_playwright'" in message or '"_playwright"' in message
 
 
 def open_chat_page(

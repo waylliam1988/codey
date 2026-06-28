@@ -538,6 +538,7 @@
     font-family: inherit;
   }
   .provider-item:hover { background: var(--hover); color: var(--text); }
+  .provider-item .dot:not(.ok) { box-shadow: none; }
   .provider-item .label { flex: 1; min-width: 0; }
   .provider-item .check {
     width: 12px;
@@ -558,10 +559,6 @@
   .dot.ok {
     background: var(--ok-dot);
     box-shadow: 0 0 0 3px rgba(78, 201, 176, .14);
-  }
-  .dot.off {
-    background: transparent;
-    border: 1.5px solid var(--muted);
   }
 
   /* send / stop — square icon buttons, no color */
@@ -719,29 +716,29 @@
       <div class="composer-bar">
         <div class="provider-chooser">
           <button class="provider-button" id="provider-button" title="Model" disabled>
-            <span class="dot ok" id="provider-dot"></span>
+            <span class="dot" id="provider-dot"></span>
             <span class="name" id="provider-name">DeepSeek</span>
             <svg class="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           <div class="provider-menu" id="provider-menu" aria-hidden="true">
             <button class="provider-item" data-provider="deepseek">
-              <span class="dot ok" aria-hidden="true"></span>
+              <span class="dot" aria-hidden="true"></span>
               <span class="label">DeepSeek</span>
               <span class="check">✓</span>
             </button>
             <button class="provider-item" data-provider="mimo">
-              <span class="dot ok" aria-hidden="true"></span>
+              <span class="dot" aria-hidden="true"></span>
               <span class="label">MiMo</span>
               <span class="check">✓</span>
             </button>
             <button class="provider-item" data-provider="qwen">
-              <span class="dot ok" aria-hidden="true"></span>
+              <span class="dot" aria-hidden="true"></span>
               <span class="label">Qwen</span>
               <span class="check">✓</span>
             </button>
           </div>
         </div>
-        <span class="send-hint" id="send-hint">Ctrl ↵</span>
+        <span class="send-hint" id="send-hint">Enter</span>
         <button class="icon-btn" id="stop" style="display:none" title="Stop">
           <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none"/></svg>
         </button>
@@ -870,14 +867,32 @@ function providerLabel(id) {
   if (id === 'mimo') return 'MiMo';
   return 'DeepSeek';
 }
-function providerAvailability(_id) { return 'ok'; } // future health check hook
+let providerStatus = Object.fromEntries(PROVIDERS.map(id => [id, false]));
+function providerAvailability(id) { return providerStatus[id] ? 'ok' : ''; }
 function syncProviderUI(providerId) {
   const id = PROVIDERS.includes(providerId) ? providerId : DEFAULT_PROVIDER;
   $('provider-name').textContent = providerLabel(id);
   $('provider-dot').className = 'dot ' + providerAvailability(id);
   document.querySelectorAll('.provider-item').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.provider === id);
+    const dot = btn.querySelector('.dot');
+    if (dot) dot.className = 'dot ' + providerAvailability(btn.dataset.provider);
   });
+}
+function applyProviderStatus(providers) {
+  if (!Array.isArray(providers)) return;
+  for (const item of providers) {
+    if (item && PROVIDERS.includes(item.id)) providerStatus[item.id] = !!item.available;
+  }
+  syncProviderUI(currentProviderId());
+}
+async function refreshProviderStatus() {
+  try {
+    const r = await fetch('/api/providers');
+    if (!r.ok) return;
+    const data = await r.json();
+    applyProviderStatus(data.providers);
+  } catch {}
 }
 function persistActive() {
   saveSessions(sessions);
@@ -1430,10 +1445,15 @@ evtSrc.onmessage = (e) => {
     setStatus(running ? 'Running' : '', running ? 'run' : 'ok');
     $('provider-button').disabled = running;
     updateSend();
+    refreshProviderStatus();
     return;
   }
   if (data.type === 'status') {
     setStatus(data.status === 'connecting' ? 'Connecting to Edge…' : data.status, 'warn');
+    return;
+  }
+  if (data.type === 'providers') {
+    applyProviderStatus(data.providers);
     return;
   }
   const sid = data.session_id;
@@ -1454,6 +1474,14 @@ evtSrc.onmessage = (e) => {
     updateSend();
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
+    if (reason === 'error' && data.provider_failure && data.provider_failure.action === 'connect') {
+      if (data.provider && PROVIDERS.includes(data.provider)) {
+        providerStatus[data.provider] = false;
+        syncProviderUI(currentProviderId());
+      }
+      addSendError(sid);
+      return;
+    }
     if (summary.startsWith('ERROR:')) {
       addToSession(sid, { type: 'err', text: summary.replace(/^ERROR:\s*/i, ''), sessionId: sid });
     } else if (reason === 'max_turns') {
@@ -1790,7 +1818,7 @@ function updateSend() {
 }
 $('task').addEventListener('input', () => { resizeTask(); updateSend(); });
 $('task').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
     e.preventDefault();
     if (!$('send').disabled) $('send').click();
   }
@@ -1810,6 +1838,7 @@ $('provider-button').onclick = (e) => {
   const menu = $('provider-menu');
   menu.classList.toggle('open');
   $('provider-button').classList.toggle('open', menu.classList.contains('open'));
+  if (menu.classList.contains('open')) refreshProviderStatus();
 };
 document.addEventListener('click', (e) => {
   if (!$('provider-menu').contains(e.target) && !$('provider-button').contains(e.target)) {

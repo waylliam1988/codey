@@ -148,6 +148,16 @@ class ProviderRegistryTests(unittest.TestCase):
     def test_provider_ids_are_ordered_for_ui(self) -> None:
         self.assertEqual(registry.provider_ids(), ("deepseek", "mimo", "qwen"))
 
+    def test_provider_tab_availability_returns_all_registered_providers(self) -> None:
+        with mock.patch.object(
+            registry,
+            "detect_open_provider_tabs",
+            return_value={"deepseek": True, "mimo": True},
+        ):
+            statuses = registry.provider_tab_availability()
+
+        self.assertEqual(statuses, {"deepseek": True, "mimo": True, "qwen": False})
+
     def test_connect_provider_dispatches_supported_ids(self) -> None:
         deepseek = object()
         qwen = object()

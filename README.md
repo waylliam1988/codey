@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.1`
+Version: `0.1.2`
 
 ---
 
@@ -54,7 +54,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core. Recent live tests also hardened MiMo submission so the driver clicks the real send button instead of nearby upload controls, and clarified the JSON tool protocol for Qwen.
 
-Version `0.1.1` adds a stricter verification guard: when the user asks Codey to run tests and files were changed, Codey will not accept `done` until a successful `run` tool call has completed. It also adds a reusable bootstrap smoke test for checking whether connected web models can repair a broken temporary copy of Codey.
+Version `0.1.2` makes the model picker show live availability with green/gray dots, keeps UI sends able to auto-open a missing model page, and changes the composer to `Enter` to send / `Shift+Enter` for a newline.
 
 ---
 

@@ -76,6 +76,24 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         browser_obj.contexts[0].new_page.assert_not_called()
         pw.stop.assert_called_once_with()
 
+    def test_detect_open_provider_tabs_uses_cdp_target_urls(self) -> None:
+        targets = [
+            {"type": "page", "url": "https://chat.deepseek.com/a/chat/s/1"},
+            {"type": "page", "url": "https://aistudio.xiaomimimo.com/#/chat/1"},
+            {"type": "service_worker", "url": "https://chat.qwen.ai/sw.js"},
+        ]
+
+        with mock.patch.object(browser, "list_cdp_targets", return_value=targets):
+            statuses = browser.detect_open_provider_tabs()
+
+        self.assertEqual(statuses, {"deepseek": True, "qwen": False, "mimo": True})
+
+    def test_detect_open_provider_tabs_returns_all_false_when_cdp_is_closed(self) -> None:
+        with mock.patch.object(browser, "list_cdp_targets", return_value=[]):
+            statuses = browser.detect_open_provider_tabs()
+
+        self.assertEqual(statuses, {"deepseek": False, "qwen": False, "mimo": False})
+
 
 class PlaywrightStartupTests(unittest.TestCase):
     def test_start_playwright_retries_internal_missing_playwright_error(self) -> None:
@@ -108,6 +126,11 @@ class PlaywrightStartupTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "Playwright failed to initialize"):
                 browser._start_playwright_with_retry()
+
+    def test_start_playwright_race_detection_accepts_quoted_attribute(self) -> None:
+        exc = AttributeError('"PlaywrightContextManager" object has no attribute "_playwright"')
+
+        self.assertTrue(browser._is_playwright_startup_race(exc))
 
 
 if __name__ == "__main__":
