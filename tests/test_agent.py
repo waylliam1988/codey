@@ -14,6 +14,7 @@ class FakeProvider:
 
     def __init__(self, *replies: str) -> None:
         self.replies = list(replies)
+        self.sent: list[str] = []
         self.new_chat_calls = 0
 
     def new_chat(self) -> None:
@@ -21,6 +22,7 @@ class FakeProvider:
 
     def send(self, _text: str, timeout: float | None = None) -> str:
         del timeout
+        self.sent.append(_text)
         return self.replies.pop(0)
 
     def close(self) -> None:
@@ -454,6 +456,38 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "approval")
         self.assertEqual(requests, [(".", "git status --short")])
         self.assertTrue(any("shell approval requested" in event for event in events))
+
+    def test_done_after_edit_requires_requested_verification_run(self) -> None:
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"return 1","new_string":"return 2"}}'
+        premature_done = '{"tool":"done","args":{"summary":"fixed"}}'
+        run_tests = '{"tool":"run","args":{"command":"python -m unittest","path":"."}}'
+        done = '{"tool":"done","args":{"summary":"fixed and tested"}}'
+        provider = FakeProvider(edit, premature_done, run_tests, done)
+        events: list[str] = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("def value():\n    return 1\n", encoding="utf-8")
+            (root / "test_app.py").write_text(
+                "import unittest\n"
+                "from app import value\n\n"
+                "class AppTests(unittest.TestCase):\n"
+                "    def test_value(self):\n"
+                "        self.assertEqual(value(), 2)\n",
+                encoding="utf-8",
+            )
+
+            result = agent.run(
+                provider,
+                root,
+                "Fix app.py, then run python -m unittest.",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(result.summary, "fixed and tested")
+        self.assertTrue(any("verification" in event.lower() for event in events))
+        self.assertTrue(any("python -m unittest" in prompt for prompt in provider.sent))
 
 
 if __name__ == "__main__":

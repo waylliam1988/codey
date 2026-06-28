@@ -8,7 +8,7 @@ Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, and 
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.0`
+Version: `0.1.1`
 
 ---
 
@@ -51,6 +51,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Qwen Studio | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core. Recent live tests also hardened MiMo submission so the driver clicks the real send button instead of nearby upload controls, and clarified the JSON tool protocol for Qwen.
+
+Version `0.1.1` adds a stricter verification guard: when the user asks Codey to run tests and files were changed, Codey will not accept `done` until a successful `run` tool call has completed. It also adds a reusable bootstrap smoke test for checking whether connected web models can repair a broken temporary copy of Codey.
 
 ---
 
@@ -153,6 +155,8 @@ Each model:
 5. reached a green state.
 
 See [BOOTSTRAP_PROOF.md](BOOTSTRAP_PROOF.md).
+
+The current release also includes [TEST_REPORT.md](TEST_REPORT.md), which records the latest single-model, two-model, and self-bootstrap smoke results.
 
 This does not prove Codey will never break. It proves the core repair loop exists: when Codey breaks in a testable way, it can use connected web AI, local tools, diff, restore, and tests to help repair itself.
 

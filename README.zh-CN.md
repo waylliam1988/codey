@@ -8,7 +8,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen 和小
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.0`
+版本：`0.1.1`
 
 ---
 
@@ -51,6 +51,8 @@ Codey 想解决的是一个很朴素的问题：
 | Qwen Studio | 已实机测试 |
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。最近的实机测试也加强了 MiMo 发送逻辑，确保点击真正的发送按钮，而不是旁边的上传按钮；同时也让 Qwen 更容易理解本地 JSON 工具协议。
+
+`0.1.1` 增加了一条更稳的验证护栏：如果用户要求跑测试，并且 Codey 已经改了文件，那么在出现一次成功的 `run` 工具结果之前，Codey 不会接受模型直接 `done`。这一版还加入了可复用的自举 smoke 测试，用来检查网页模型能不能修复一个被故意弄坏的 Codey 临时副本。
 
 ---
 
@@ -162,6 +164,8 @@ Codey 已经测试过用 DeepSeek、MiMo 和 Qwen 修复被故意弄坏的 Codey
 5. 测试通过后结束。
 
 见 [BOOTSTRAP_PROOF.md](BOOTSTRAP_PROOF.md)。
+
+当前版本还包含 [TEST_REPORT.md](TEST_REPORT.md)，记录最近一次单模型、双模型和自举 smoke 的实机结果。
 
 这不代表 Codey 永远不会坏。它证明的是：当 Codey 出现可测试、可定位的问题时，它已经有机会依靠接入的网页 AI、本地工具、diff、restore 和测试，把自己修回来。
 

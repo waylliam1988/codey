@@ -17,13 +17,12 @@
 
 1. 复制当前 `E:\codey` 到临时目录。
 2. 在临时副本中故意破坏 `codey/changes.py`：
-   - 将 `_diff_for()` 的返回逻辑改坏。
-   - 造成 `tests.test_changes` 失败，最初表现为 `IndentationError`。
+   - 将 `_diff_for()` 的 `difflib.unified_diff()` 参数顺序反过来。
+   - 造成 `tests.test_changes` 失败，表现为新增/删除方向反了。
 3. 用对应网页 AI provider 运行 Codey agent：
 
 ```powershell
-python -m codey agent --provider <provider> --project <临时副本> --max-turns 14 `
-  "This is a Codey self-repair test. Run python -m unittest tests.test_changes, inspect the failure, fix the bug in codey/changes.py, then run python -m unittest tests.test_changes again. Use search/read/edit/run tools only. When tests are green, finish with done and summarize the fix."
+python tools\bootstrap_smoke.py --provider <provider> --port 9222 --max-turns 18 --json
 ```
 
 4. 观察 provider 是否能完成闭环：
@@ -45,9 +44,9 @@ python -B -m unittest
 
 | Provider | 结果 | 修复轮数 | 修复后副本全量测试 | 观察 |
 |---|---:|---:|---:|---|
-| DeepSeek | 成功 | 12 | 118 tests OK | 能修复，但过程更绕，生成的实现偏啰嗦 |
-| MiMo | 成功 | 8 | 118 tests OK | 修复较顺，改法接近主仓库当前实现 |
-| Qwen | 成功 | 7 | 118 tests OK | 最快，改法也较干净 |
+| DeepSeek | 成功 | 5 | 159 tests OK | 能修复，偶尔会在 JSON 前附带解释，parser 可容忍 |
+| MiMo | 成功 | 5 | 159 tests OK | 修复直接；加强 JSON 转义提示后更顺 |
+| Qwen | 成功 | 5 | 159 tests OK | 协议提示加强后，不再出现“工具不存在”噪音 |
 
 三家 provider 都完成了同一个自举修复闭环。
 
@@ -73,9 +72,9 @@ python -B -m unittest
 
 | Writer | Reviewer | 结果 | 观察 |
 |---|---|---:|---|
-| DeepSeek | MiMo | 成功 | writer 完成修复后，MiMo 能读取 diff 并给出有效 review 结果 |
-| MiMo | DeepSeek | 成功 | 反向组合也能闭环，说明双模型不是固定依赖某一个主模型 |
-| Qwen | DeepSeek / MiMo | 成功 | Qwen 作为 writer 时，JSON 工具协议澄清后能稳定进入 review 链条 |
+| DeepSeek | MiMo | 成功 | writer 完成修复后，MiMo 能读取 diff 并 approved |
+| MiMo | DeepSeek | 成功 | 反向组合也能闭环；复跑后 MiMo 正常使用小范围 edit |
+| Qwen | DeepSeek | 成功 | Qwen 作为 writer 时，协议提示加强后能稳定进入 review 链条 |
 
 这说明双模型协助不是一个额外的“群聊玩具”，而是一个可验证的安全层：主模型负责行动，第二模型负责检查，二者通过 diff 和结构化 review 连接。
 
@@ -104,7 +103,7 @@ python -B -m unittest
 结果：
 
 ```text
-Ran 153 tests
+Ran 159 tests
 OK
 ```
 
@@ -134,7 +133,7 @@ Codey 已经具备初级自举能力：
 
 自举能力仍然需要工程护栏约束：
 
-- 网页 AI 能修，但不保证修得最简洁；DeepSeek 本次修复就比主仓库实现更啰嗦。
+- 网页 AI 能修，但不保证每次都用最简洁的 edit；prompt 和 review 只能提高概率。
 - provider DOM 仍可能因网页改版失效，需要 live smoke 暴露问题。
 - UI 改动需要浏览器截图验证，否则容易出现视觉回归。
 - 自举测试不应每次都全量跑三家 provider 或所有双模型组合，成本和耗时都偏高。

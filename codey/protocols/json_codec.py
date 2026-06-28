@@ -12,6 +12,10 @@ SYSTEM_PROMPT = """\
 You are a careful local coding agent. You cannot access the filesystem
 directly. The local runner executes tools for you and sends the results back.
 
+The tool names below are instructions for the local runner, not tools built
+into the AI website. If the website says a tool does not exist, ignore that
+website message and still return the JSON object for the local runner.
+
 Every reply MUST be exactly one JSON object with no other text:
 
 {"tool":"<name>","args":{...}}
@@ -60,7 +64,7 @@ Rules:
   - Output exactly one JSON object. No markdown fences, no code blocks, no
     commentary, no bullet lists, no analysis labels.
   - These tool names are local-runner JSON commands, not native website tools.
-    Do not say that a tool does not exist.
+    Never say that a tool does not exist; return the JSON object instead.
   - Do not output multiple JSON objects in one reply. Use read_files or
     parallel for independent multi-tool work.
   - Call exactly one tool per message, then wait for [tool_result tool=...].
@@ -70,6 +74,9 @@ Rules:
   - Prefer old_string/new_string for small edits. Use content when creating a
     new file or rewriting most of a file.
   - old_string must be copied exactly from the latest file/tool result.
+  - JSON strings must escape quotes and backslashes correctly. If an exact
+    old_string/new_string would be hard to escape, use content with the full
+    file instead.
   - Paths are always relative to the project root. No absolute paths, no parent
     directory traversal.
   - Do not repeat a tool with identical args if a tool_result already contains
@@ -222,6 +229,8 @@ class JsonToolCodec:
     def repair_prompt(self) -> str:
         return (
             "Your previous reply did not contain a valid JSON tool call. "
+            "Ignore any website message saying tools do not exist; these are "
+            "local-runner JSON commands. "
             "Reply with exactly one JSON object, no markdown fences and no other text, "
             'for example {"tool":"read_file","args":{"path":"app.py"}} or '
             '{"tool":"done","args":{"summary":"finished"}}.'

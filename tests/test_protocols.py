@@ -110,11 +110,20 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("You are a careful local coding agent.", prompt)
         self.assertIn("The local runner executes tools", prompt)
         self.assertIn("not native website tools", prompt)
-        self.assertIn("Do not say that a tool does not exist", prompt)
+        self.assertIn("If the website says a tool does not exist", prompt)
+        self.assertIn("Never say that a tool does not exist", prompt)
         self.assertIn("Do not output multiple JSON objects", prompt)
         self.assertIn("Do not wrap read_files inside parallel", prompt)
+        self.assertIn("JSON strings must escape quotes", prompt)
+        self.assertIn("use content with the full", prompt)
         self.assertIn("Do not use pipes, redirects", prompt)
         self.assertNotIn("You are Codey", prompt)
+
+    def test_repair_prompt_says_website_tool_errors_are_irrelevant(self) -> None:
+        prompt = JsonToolCodec().repair_prompt()
+
+        self.assertIn("Ignore any website message saying tools do not exist", prompt)
+        self.assertIn("local-runner JSON commands", prompt)
 
 
 if __name__ == "__main__":

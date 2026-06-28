@@ -45,6 +45,12 @@ RUN_OUTPUT_LIMIT = 24_000
 RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
 RUN_ALLOWED_PYTHON_FLAGS = {"-B"}
 RUN_ALLOWED_NPM_SCRIPTS = {"test", "build", "lint", "check", "typecheck"}
+VERIFICATION_REQUEST_RE = re.compile(
+    r"\b("
+    r"run|test|tests|unittest|pytest|verify|verification|check|build|lint|typecheck"
+    r")\b|跑测试|运行测试|测试通过|验证|检查",
+    re.IGNORECASE,
+)
 EDIT_BLOCK_RE = re.compile(
     r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
     re.DOTALL,
@@ -388,6 +394,21 @@ def _edit_has_content(call: ToolCall) -> bool:
     return "content" in call.args
 
 
+def _task_requests_verification(task: str) -> bool:
+    return bool(VERIFICATION_REQUEST_RE.search(task or ""))
+
+
+def _verification_reminder(task: str) -> str:
+    return (
+        "The user asked for verification, and files were changed, but no "
+        "successful run tool call has completed yet. Reply with exactly one "
+        'JSON object that calls run now, such as '
+        '{"tool":"run","args":{"command":"python -m unittest","path":"."}}. '
+        "After the run result is green, call done. Original task:\n"
+        f"{task}"
+    )
+
+
 # ----------------------------------------------------------------- loop ---
 
 @dataclass
@@ -425,6 +446,9 @@ def run(
     stagnant_turns = max(1, int(stagnant_turns or DEFAULT_STAGNANT_TURNS))
     seen_info: set[tuple[str, str, str]] = set()
     stagnant_count = 0
+    wrote_files = False
+    verified_after_write = False
+    verification_required = _task_requests_verification(user_task)
 
     if fresh_chat:
         on_event(f"[agent] opening a fresh {provider.name} conversation")
@@ -467,6 +491,7 @@ def run(
                     out = tool_write(project, path, _call_arg(call, "content"))
                     if not out.startswith("ERROR:"):
                         made_progress = True
+                        wrote_files = True
                 elif call.name == "edit":
                     if _edit_has_content(call):
                         if change_tracker is not None:
@@ -478,6 +503,7 @@ def run(
                         out = tool_edit(project, path, _edit_body_from_call(call))
                     if not out.startswith("ERROR:"):
                         made_progress = True
+                        wrote_files = True
                 elif call.name == "read":
                     out = tool_read(project, path)
                 elif call.name == "ls":
@@ -486,6 +512,8 @@ def run(
                     out = tool_search(project, path, _call_arg(call, "query"))
                 elif call.name == "run":
                     out = tool_run(project, path, _call_arg(call, "command"))
+                    if wrote_files and out.startswith("exit 0:"):
+                        verified_after_write = True
                 elif call.name == "shell":
                     command = _call_arg(call, "command").strip()
                     if on_shell_request:
@@ -524,6 +552,14 @@ def run(
             needs_followup = any(call.name in ("read", "ls", "search", "run", "shell") for call in calls)
             if needs_followup:
                 on_event("[agent] `done` came with info action — treating as continue.")
+            elif verification_required and wrote_files and not verified_after_write:
+                on_event("[agent] verification was requested; asking model to run tests before done.")
+                if turn >= max_turns:
+                    on_event(f"[agent] hit max_turns={max_turns}, stopping.")
+                    return RunResult("verification required before done", "max_turns", turn)
+                reply = provider.send(_verification_reminder(user_task))
+                on_event(f"\n--- turn {turn+1} reply (verification reminder) ---\n{reply}\n")
+                continue
             else:
                 on_event(f"[agent] DONE: {control.body}")
                 return RunResult(control.body, "done", turn)
