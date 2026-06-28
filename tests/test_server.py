@@ -184,6 +184,164 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
 
+    def test_run_task_uses_second_model_for_approved_review(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        reviewer = mock.Mock()
+        reviewer.name = "Xiaomi MiMo Chat"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=server.RunResult("complete", "done", 3),
+            ) as agent_run,
+            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer) as connect_review,
+        ):
+            server._run_task("session-1", td, "task", 8, False, "deepseek")
+
+        self.assertEqual(agent_run.call_count, 1)
+        connect_review.assert_called_once_with("mimo")
+        reviewer.new_chat.assert_called_once_with()
+        reviewer.send.assert_called_once()
+        reviewer.close.assert_called_once_with()
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        review_event = next(event for event in emitted if event["type"] == "review")
+        self.assertEqual(review_event["text"], "MiMo approved")
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["summary"], "complete")
+
+    def test_run_task_sends_review_findings_back_to_writer_once(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        reviewer = mock.Mock()
+        reviewer.name = "Xiaomi MiMo Chat"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.return_value = (
+            '{"verdict":"changes_requested","summary":"Fix one issue",'
+            '"findings":[{"path":"app.py","issue":"Missing empty case",'
+            '"suggested_fix":"Add a guard"}]}'
+        )
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                side_effect=[
+                    server.RunResult("first pass", "done", 3),
+                    server.RunResult("review fixed", "done", 2),
+                ],
+            ) as agent_run,
+            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+        ):
+            server._run_task("session-1", td, "task", 20, False, "deepseek")
+
+        self.assertEqual(agent_run.call_count, 2)
+        followup = agent_run.call_args_list[1].args[2]
+        self.assertIn("second model reviewed", followup)
+        self.assertIn("Missing empty case", followup)
+        self.assertFalse(agent_run.call_args_list[1].kwargs["fresh_chat"])
+        self.assertLessEqual(agent_run.call_args_list[1].kwargs["max_turns"], server.REVIEW_FIX_TURNS)
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        review_event = next(event for event in emitted if event["type"] == "review")
+        self.assertEqual(review_event["text"], "MiMo suggested changes")
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["summary"], "review fixed")
+
+    def test_run_task_falls_back_to_one_model_when_review_unavailable(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=server.RunResult("complete", "done", 3),
+            ) as agent_run,
+            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
+        ):
+            server._run_task("session-1", td, "task", 8, False, "deepseek")
+
+        self.assertEqual(agent_run.call_count, 1)
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        review_event = next(event for event in emitted if event["type"] == "review")
+        self.assertEqual(review_event["text"], "Unavailable. Continued with one model.")
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["summary"], "complete")
+
+    def test_run_task_skips_review_when_there_are_no_changes(self) -> None:
+        state = server.State()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=server.RunResult("complete", "done", 3),
+            ),
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+            ),
+            mock.patch.object(server, "connect_existing_provider") as connect_review,
+        ):
+            server._run_task("session-1", td, "task", 8, False, "deepseek")
+
+        connect_review.assert_not_called()
+
     def test_run_task_emits_provider_failure_diagnostic_on_error(self) -> None:
         state = server.State()
         events = state.subscribe()

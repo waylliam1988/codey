@@ -1,0 +1,189 @@
+"""Small two-model review protocol.
+
+The writer model owns all tool use. The review model only receives a compact
+diff and returns structured feedback that Codey may pass back to the writer.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any
+
+
+MAX_REVIEW_DIFF_CHARS = 60_000
+MAX_REVIEW_LOG_CHARS = 8_000
+MAX_FIELD_CHARS = 2_000
+MAX_FINDINGS = 8
+
+
+@dataclass(frozen=True)
+class ReviewFinding:
+    path: str
+    issue: str
+    suggested_fix: str = ""
+
+
+@dataclass(frozen=True)
+class ReviewResult:
+    verdict: str
+    summary: str
+    findings: list[ReviewFinding]
+
+    @property
+    def approved(self) -> bool:
+        return self.verdict == "approved"
+
+
+def _clip(text: object, limit: int = MAX_FIELD_CHARS) -> str:
+    value = "" if text is None else str(text)
+    value = value.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(value) <= limit:
+        return value
+    return value[:limit].rstrip() + "\n[truncated]"
+
+
+def _json_objects(text: str) -> list[dict[str, Any]]:
+    decoder = json.JSONDecoder()
+    objects: list[dict[str, Any]] = []
+    for index, char in enumerate(text or ""):
+        if char != "{":
+            continue
+        try:
+            value, _end = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            objects.append(value)
+    return objects
+
+
+def parse_review_response(text: str) -> ReviewResult:
+    """Parse a review response while tolerating light prose around JSON."""
+    for obj in _json_objects(text):
+        findings = _parse_findings(obj.get("findings"))
+        verdict = _normalize_verdict(obj.get("verdict") or obj.get("status"), findings)
+        summary = _clip(
+            obj.get("summary")
+            or obj.get("message")
+            or ("Looks good" if verdict == "approved" else "Changes requested")
+        )
+        return ReviewResult(verdict=verdict, summary=summary, findings=findings)
+    raise ValueError("review response did not contain a JSON object")
+
+
+def _parse_findings(value: object) -> list[ReviewFinding]:
+    if not isinstance(value, list):
+        return []
+    findings: list[ReviewFinding] = []
+    for item in value[:MAX_FINDINGS]:
+        if not isinstance(item, dict):
+            continue
+        issue = _clip(item.get("issue") or item.get("problem") or item.get("message"))
+        if not issue:
+            continue
+        findings.append(
+            ReviewFinding(
+                path=_clip(item.get("path") or item.get("file"), 400),
+                issue=issue,
+                suggested_fix=_clip(
+                    item.get("suggested_fix")
+                    or item.get("fix")
+                    or item.get("suggestion")
+                ),
+            )
+        )
+    return findings
+
+
+def _normalize_verdict(value: object, findings: list[ReviewFinding]) -> str:
+    raw = _clip(value, 80).lower().replace("-", "_").replace(" ", "_")
+    if raw in {"approved", "approve", "ok", "pass", "passed", "looks_good"}:
+        return "approved"
+    if raw in {
+        "changes_requested",
+        "request_changes",
+        "needs_changes",
+        "change_requested",
+        "failed",
+        "fail",
+        "rework",
+    }:
+        return "changes_requested"
+    return "changes_requested" if findings else "approved"
+
+
+def has_reviewable_changes(changes: dict) -> bool:
+    return bool(
+        changes
+        and changes.get("ok")
+        and int(changes.get("changed_count") or 0) > 0
+        and str(changes.get("diff") or "").strip()
+    )
+
+
+def render_review_prompt(
+    *,
+    project: str,
+    task: str,
+    writer_summary: str,
+    changes: dict,
+    recent_log: str = "",
+) -> str:
+    files = changes.get("files") if isinstance(changes.get("files"), list) else []
+    file_lines = []
+    for file in files[:20]:
+        if not isinstance(file, dict):
+            continue
+        path = _clip(file.get("path"), 400)
+        status = _clip(file.get("status") or "M", 20)
+        additions = int(file.get("additions") or 0)
+        deletions = int(file.get("deletions") or 0)
+        file_lines.append(f"- {status} {path} +{additions} -{deletions}")
+    changed_files = "\n".join(file_lines) if file_lines else "(not listed)"
+    diff = _clip(changes.get("diff"), MAX_REVIEW_DIFF_CHARS)
+    log = _clip(recent_log, MAX_REVIEW_LOG_CHARS) or "(no recent tool log)"
+
+    return (
+        "You are Codey's second model. Review the writer model's completed "
+        "code change. You are read-only: do not ask to edit files directly.\n\n"
+        "Only request changes for concrete correctness, test, integration, or "
+        "user-visible issues. Do not request broad rewrites or style-only cleanup.\n\n"
+        "Return exactly one JSON object and no markdown fences:\n"
+        '{"verdict":"approved","summary":"Looks good","findings":[]}\n'
+        "or\n"
+        '{"verdict":"changes_requested","summary":"One issue found","findings":'
+        '[{"path":"relative/file.py","issue":"Concrete problem",'
+        '"suggested_fix":"Small fix"}]}\n\n'
+        f"Project: {project}\n\n"
+        f"Original user task:\n{_clip(task, 6_000)}\n\n"
+        f"Writer summary:\n{_clip(writer_summary, 2_000)}\n\n"
+        f"Changed files:\n{changed_files}\n\n"
+        f"Recent tool log:\n{log}\n\n"
+        f"Diff:\n{diff}\n"
+    )
+
+
+def render_writer_followup(task: str, review: ReviewResult) -> str:
+    lines = [
+        "Continue the Codey task in this same project.",
+        "A second model reviewed the current diff and found concrete issues.",
+        "Treat the review as advisory: verify it against the files, fix only valid issues, run relevant tests, then call done.",
+        "",
+        "Original user task:",
+        _clip(task, 6_000),
+        "",
+        "Review summary:",
+        review.summary,
+        "",
+        "Review findings:",
+    ]
+    if review.findings:
+        for index, finding in enumerate(review.findings, start=1):
+            lines.append(f"{index}. {finding.path or '(unknown path)'}")
+            lines.append(f"   Issue: {finding.issue}")
+            if finding.suggested_fix:
+                lines.append(f"   Suggested fix: {finding.suggested_fix}")
+    else:
+        lines.append("1. " + review.summary)
+    return "\n".join(lines)

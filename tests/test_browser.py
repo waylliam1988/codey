@@ -20,6 +20,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             "chat.deepseek.com",
             port=9333,
             profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
         )
 
     def test_qwen_wrapper_uses_generic_chat_page(self) -> None:
@@ -34,6 +36,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             "chat.qwen.ai",
             port=9444,
             profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
         )
 
     def test_mimo_wrapper_uses_generic_chat_page(self) -> None:
@@ -45,10 +49,32 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         self.assertIs(result, session)
         opened.assert_called_once_with(
             browser.MIMO_URL,
-            "aistudio.xiaomimimo.com/#/c",
+            "aistudio.xiaomimimo.com",
             port=9555,
             profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
         )
+
+    def test_open_chat_page_can_attach_without_opening_missing_tab(self) -> None:
+        pw = mock.Mock()
+        browser_obj = mock.Mock()
+        browser_obj.contexts = [mock.Mock(pages=[])]
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+
+        with (
+            mock.patch.object(browser, "_port_open", return_value=True),
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "no existing provider tab"):
+                browser.open_chat_page(
+                    "https://example.test/",
+                    "example.test",
+                    open_if_missing=False,
+                )
+
+        browser_obj.contexts[0].new_page.assert_not_called()
+        pw.stop.assert_called_once_with()
 
 
 class PlaywrightStartupTests(unittest.TestCase):

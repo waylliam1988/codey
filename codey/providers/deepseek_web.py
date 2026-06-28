@@ -22,8 +22,17 @@ class DeepSeekWebProvider:
         *,
         port: int = DEFAULT_PORT,
         profile: Path = DEFAULT_PROFILE,
+        open_if_missing: bool = True,
+        bring_to_front: bool = True,
     ) -> DeepSeekWebProvider:
-        return cls(open_deepseek(port=port, profile=profile))
+        return cls(
+            open_deepseek(
+                port=port,
+                profile=profile,
+                open_if_missing=open_if_missing,
+                bring_to_front=bring_to_front,
+            )
+        )
 
     @property
     def location(self) -> str:

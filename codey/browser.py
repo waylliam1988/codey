@@ -106,9 +106,13 @@ def open_chat_page(
     *,
     port: int = DEFAULT_PORT,
     profile: Path = DEFAULT_PROFILE,
+    open_if_missing: bool = True,
+    bring_to_front: bool = True,
 ) -> Session:
     """Return a Playwright session attached to a matching provider tab."""
     if not _port_open(port):
+        if not open_if_missing:
+            raise RuntimeError(f"CDP port {port} is not open")
         _launch_edge(port, profile, start_url)
         _wait_port(port)
 
@@ -125,39 +129,67 @@ def open_chat_page(
             break
 
     if page is None:
+        if not open_if_missing:
+            pw.stop()
+            raise RuntimeError(f"no existing provider tab matched {url_contains}")
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         page = ctx.new_page()
         page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
 
-    page.bring_to_front()
+    if bring_to_front:
+        page.bring_to_front()
     return Session(pw=pw, browser=browser, page=page)
 
 
-def open_deepseek(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> Session:
+def open_deepseek(
+    port: int = DEFAULT_PORT,
+    profile: Path = DEFAULT_PROFILE,
+    *,
+    open_if_missing: bool = True,
+    bring_to_front: bool = True,
+) -> Session:
     """Return a session attached to a DeepSeek tab."""
     return open_chat_page(
         DEEPSEEK_URL,
         "chat.deepseek.com",
         port=port,
         profile=profile,
+        open_if_missing=open_if_missing,
+        bring_to_front=bring_to_front,
     )
 
 
-def open_qwen(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> Session:
+def open_qwen(
+    port: int = DEFAULT_PORT,
+    profile: Path = DEFAULT_PROFILE,
+    *,
+    open_if_missing: bool = True,
+    bring_to_front: bool = True,
+) -> Session:
     """Return a session attached to a Qwen Studio tab."""
     return open_chat_page(
         QWEN_URL,
         "chat.qwen.ai",
         port=port,
         profile=profile,
+        open_if_missing=open_if_missing,
+        bring_to_front=bring_to_front,
     )
 
 
-def open_mimo(port: int = DEFAULT_PORT, profile: Path = DEFAULT_PROFILE) -> Session:
+def open_mimo(
+    port: int = DEFAULT_PORT,
+    profile: Path = DEFAULT_PROFILE,
+    *,
+    open_if_missing: bool = True,
+    bring_to_front: bool = True,
+) -> Session:
     """Return a session attached to a Xiaomi MiMo Chat tab."""
     return open_chat_page(
         MIMO_URL,
-        "aistudio.xiaomimimo.com/#/c",
+        "aistudio.xiaomimimo.com",
         port=port,
         profile=profile,
+        open_if_missing=open_if_missing,
+        bring_to_front=bring_to_front,
     )

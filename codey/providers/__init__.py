@@ -7,6 +7,7 @@ from codey.providers.qwen_web import QwenWebProvider
 from codey.providers.registry import (
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
+    connect_existing_provider,
     connect_provider,
     provider_ids,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "MimoWebProvider",
     "PROVIDER_LABELS",
     "QwenWebProvider",
+    "connect_existing_provider",
     "connect_provider",
     "provider_ids",
 ]

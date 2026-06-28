@@ -57,8 +57,18 @@ class MimoDriverTests(unittest.TestCase):
 
         textarea.press.assert_called_once_with("Enter")
 
-    def test_final_text_rejects_missing_raw_response(self) -> None:
-        with mock.patch.object(mimo, "_copy_last_text", return_value=""):
+    def test_final_text_falls_back_to_visible_answer(self) -> None:
+        with (
+            mock.patch.object(mimo, "_copy_last_text", return_value=""),
+            mock.patch.object(mimo, "_last_text", return_value='{"verdict":"approved"}'),
+        ):
+            self.assertEqual(mimo._final_text(object()), '{"verdict":"approved"}')
+
+    def test_final_text_rejects_missing_raw_and_visible_response(self) -> None:
+        with (
+            mock.patch.object(mimo, "_copy_last_text", return_value=""),
+            mock.patch.object(mimo, "_last_text", return_value=""),
+        ):
             with self.assertRaisesRegex(RuntimeError, "raw Xiaomi MiMo response"):
                 mimo._final_text(object())
 

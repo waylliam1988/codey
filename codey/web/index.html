@@ -1098,6 +1098,8 @@ function appendMessageNode(chat, m) {
     chat.appendChild(div);
   } else if (m.type === 'done') {
     chat.appendChild(statusRow('Done', m.text || 'Task complete', { kind: 'done' }));
+  } else if (m.type === 'review') {
+    chat.appendChild(statusRow('Review', m.text || 'Complete', { kind: 'review' }));
   } else if (m.type === 'changes') {
     const div = document.createElement('div');
     div.className = 'msg changes';
@@ -1484,6 +1486,10 @@ evtSrc.onmessage = (e) => {
   }
   if (data.type === 'reply') {
     if (data.text) addToSession(sid, { type: 'asst', text: data.text });
+    return;
+  }
+  if (data.type === 'review') {
+    if (data.text) addToSession(sid, { type: 'review', text: data.text });
     return;
   }
   if (data.type === 'log') {

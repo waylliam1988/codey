@@ -17,7 +17,12 @@ class DeepSeekWebProviderTests(unittest.TestCase):
             provider = DeepSeekWebProvider.connect(port=9333, profile=profile)
 
         self.assertIs(provider.session, session)
-        opened.assert_called_once_with(port=9333, profile=profile)
+        opened.assert_called_once_with(
+            port=9333,
+            profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
+        )
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
         page = SimpleNamespace(url="https://chat.deepseek.com/")
@@ -71,7 +76,12 @@ class QwenWebProviderTests(unittest.TestCase):
             provider = QwenWebProvider.connect(port=9444, profile=profile)
 
         self.assertIs(provider.session, session)
-        opened.assert_called_once_with(port=9444, profile=profile)
+        opened.assert_called_once_with(
+            port=9444,
+            profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
+        )
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
         page = SimpleNamespace(url="https://chat.qwen.ai/c/test")
@@ -104,7 +114,12 @@ class MimoWebProviderTests(unittest.TestCase):
             provider = MimoWebProvider.connect(port=9555, profile=profile)
 
         self.assertIs(provider.session, session)
-        opened.assert_called_once_with(port=9555, profile=profile)
+        opened.assert_called_once_with(
+            port=9555,
+            profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
+        )
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
         page = SimpleNamespace(url="https://aistudio.xiaomimimo.com/#/c")
@@ -145,6 +160,18 @@ class ProviderRegistryTests(unittest.TestCase):
             self.assertIs(registry.connect_provider("deepseek", port=9222), deepseek)
             self.assertIs(registry.connect_provider("qwen", port=9222), qwen)
             self.assertIs(registry.connect_provider("mimo", port=9222), mimo)
+
+    def test_connect_existing_provider_does_not_open_or_raise_window(self) -> None:
+        qwen = object()
+        with mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen) as connected:
+            self.assertIs(registry.connect_existing_provider("qwen"), qwen)
+
+        connected.assert_called_once_with(
+            port=registry.DEFAULT_PORT,
+            profile=registry.DEFAULT_PROFILE,
+            open_if_missing=False,
+            bring_to_front=False,
+        )
 
     def test_connect_provider_rejects_unknown_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported provider"):

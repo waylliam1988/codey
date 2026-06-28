@@ -111,9 +111,12 @@ def _copy_last_text(page: Page) -> str:
 
 def _final_text(page: Page) -> str:
     raw = _copy_last_text(page)
-    if not raw:
-        raise RuntimeError("Could not read the raw Xiaomi MiMo response")
-    return raw
+    if raw:
+        return raw
+    fallback = _last_text(page)
+    if fallback:
+        return fallback
+    raise RuntimeError("Could not read the raw Xiaomi MiMo response")
 
 
 def _submission_started(page: Page, baseline: int, baseline_text: str = "") -> bool:

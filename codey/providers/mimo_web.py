@@ -22,8 +22,17 @@ class MimoWebProvider:
         *,
         port: int = DEFAULT_PORT,
         profile: Path = DEFAULT_PROFILE,
+        open_if_missing: bool = True,
+        bring_to_front: bool = True,
     ) -> MimoWebProvider:
-        return cls(open_mimo(port=port, profile=profile))
+        return cls(
+            open_mimo(
+                port=port,
+                profile=profile,
+                open_if_missing=open_if_missing,
+                bring_to_front=bring_to_front,
+            )
+        )
 
     @property
     def location(self) -> str:

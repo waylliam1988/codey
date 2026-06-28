@@ -77,6 +77,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("alert('Failed to continue:", HTML)
         self.assertNotIn("alert('A task is already running')", HTML)
 
+    def test_review_status_is_quiet_and_has_no_switch(self) -> None:
+        self.assertIn("data.type === 'review'", HTML)
+        self.assertIn("{ type: 'review', text: data.text }", HTML)
+        self.assertIn("statusRow('Review'", HTML)
+        self.assertNotIn("Review mode", HTML)
+        self.assertNotIn("group chat", HTML)
+        self.assertNotIn("cowork", HTML)
+        self.assertNotIn("Switch provider", HTML)
+
     def test_changes_drawer_supports_snapshot_mode_and_restore(self) -> None:
         self.assertIn('id="changes-restore"', HTML)
         self.assertIn("Reading changes", HTML)

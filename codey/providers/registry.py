@@ -25,12 +25,38 @@ def connect_provider(
     *,
     port: int = DEFAULT_PORT,
     profile: Path = DEFAULT_PROFILE,
+    open_if_missing: bool = True,
+    bring_to_front: bool = True,
 ) -> ChatProvider:
     normalized = (provider_id or DEFAULT_PROVIDER_ID).strip().lower()
     if normalized == "deepseek":
-        return DeepSeekWebProvider.connect(port=port, profile=profile)
+        return DeepSeekWebProvider.connect(
+            port=port,
+            profile=profile,
+            open_if_missing=open_if_missing,
+            bring_to_front=bring_to_front,
+        )
     if normalized == "qwen":
-        return QwenWebProvider.connect(port=port, profile=profile)
+        return QwenWebProvider.connect(
+            port=port,
+            profile=profile,
+            open_if_missing=open_if_missing,
+            bring_to_front=bring_to_front,
+        )
     if normalized == "mimo":
-        return MimoWebProvider.connect(port=port, profile=profile)
+        return MimoWebProvider.connect(
+            port=port,
+            profile=profile,
+            open_if_missing=open_if_missing,
+            bring_to_front=bring_to_front,
+        )
     raise ValueError(f"unsupported provider: {provider_id}")
+
+
+def connect_existing_provider(provider_id: str) -> ChatProvider:
+    """Attach to an already-open provider tab without opening a new one."""
+    return connect_provider(
+        provider_id,
+        open_if_missing=False,
+        bring_to_front=False,
+    )

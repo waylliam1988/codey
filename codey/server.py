@@ -35,8 +35,15 @@ from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
 from codey.changes import ChangeTracker
-from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, connect_provider
+from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, connect_existing_provider, connect_provider
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
+from codey.review import (
+    ReviewResult,
+    has_reviewable_changes,
+    parse_review_response,
+    render_review_prompt,
+    render_writer_followup,
+)
 
 WEB_DIR = Path(__file__).parent / "web"
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -45,6 +52,9 @@ MAX_DIFF_CHARS = 240_000
 MAX_UNTRACKED_DIFF_BYTES = 120_000
 SHELL_TIMEOUT = 120
 SHELL_OUTPUT_LIMIT = 24_000
+REVIEW_TIMEOUT = 300.0
+REVIEW_FIX_TURNS = 12
+REVIEW_LOG_LINES = 80
 CHANGE_EXCLUDED_PATH_PARTS = {
     "__pycache__",
     ".pytest_cache",
@@ -213,6 +223,67 @@ def collect_changes(project: str | Path | None, tracker: ChangeTracker | None = 
     if git_data.get("error") in {"not a git repository"} or str(git_data.get("error", "")).startswith("git unavailable"):
         return _empty_snapshot_changes(project, "git unavailable" if str(git_data.get("error", "")).startswith("git unavailable") else None)
     return git_data
+
+
+def reviewer_candidates(writer_id: str) -> tuple[str, ...]:
+    writer = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
+    return tuple(provider_id for provider_id in PROVIDER_LABELS if provider_id != writer)
+
+
+def review_label(provider_id: str) -> str:
+    return PROVIDER_LABELS.get(provider_id, provider_id)
+
+
+def _recent_log_text(lines: list[str]) -> str:
+    return "\n".join(lines[-REVIEW_LOG_LINES:])
+
+
+def _emit_review(session_id: str, text: str) -> None:
+    STATE.emit({"type": "review", "session_id": session_id, "text": text})
+
+
+def _run_review(
+    *,
+    session_id: str,
+    project: str,
+    task: str,
+    writer_summary: str,
+    changes: dict,
+    recent_log: str,
+    writer_id: str,
+) -> tuple[str, ReviewResult] | None:
+    last_error: Exception | None = None
+    for reviewer_id in reviewer_candidates(writer_id):
+        reviewer = None
+        try:
+            reviewer = connect_existing_provider(reviewer_id)
+            reviewer.new_chat()
+            prompt = render_review_prompt(
+                project=project,
+                task=task,
+                writer_summary=writer_summary,
+                changes=changes,
+                recent_log=recent_log,
+            )
+            reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
+            review = parse_review_response(reply)
+            label = review_label(reviewer_id)
+            if review.approved:
+                _emit_review(session_id, f"{label} approved")
+            else:
+                _emit_review(session_id, f"{label} suggested changes")
+            return reviewer_id, review
+        except Exception as exc:
+            last_error = exc
+        finally:
+            if reviewer is not None:
+                try:
+                    reviewer.close()
+                except Exception:
+                    pass
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("no review model available")
 
 
 def restore_snapshot_changes(
@@ -407,7 +478,12 @@ def _run_task(
         "provider": provider_id,
     })
 
+    recent_events: list[str] = []
+
     def on_event(msg: str) -> None:
+        recent_events.append(str(msg))
+        if len(recent_events) > REVIEW_LOG_LINES * 2:
+            del recent_events[:REVIEW_LOG_LINES]
         STATE.emit({"type": "log", "session_id": session_id, "level": "info", "text": msg})
 
     def on_shell_request(cwd_rel: str, command: str) -> None:
@@ -459,6 +535,43 @@ def _run_task(
                 fresh_chat=fresh_chat,
                 change_tracker=tracker,
             )
+            if result.stop_reason == "done" and not STATE.stop_flag.is_set():
+                changes = collect_changes(project, tracker)
+                if has_reviewable_changes(changes):
+                    try:
+                        provider.close()
+                    except Exception:
+                        pass
+                    provider = None
+                    try:
+                        reviewed = _run_review(
+                            session_id=session_id,
+                            project=project,
+                            task=task,
+                            writer_summary=result.summary,
+                            changes=changes,
+                            recent_log=_recent_log_text(recent_events),
+                            writer_id=provider_id,
+                        )
+                    except Exception:
+                        _emit_review(session_id, "Unavailable. Continued with one model.")
+                        reviewed = None
+                    if reviewed is not None:
+                        _reviewer_id, review = reviewed
+                        if not review.approved:
+                            followup = render_writer_followup(task, review)
+                            provider = STATE.get_provider(provider_id)
+                            result = agent_run(
+                                provider,
+                                Path(project),
+                                followup,
+                                max_turns=min(max_turns, REVIEW_FIX_TURNS),
+                                on_event=on_event,
+                                on_shell_request=on_shell_request,
+                                stop_flag=STATE.stop_flag,
+                                fresh_chat=False,
+                                change_tracker=tracker,
+                            )
         else:
             # Plain chat: just send + capture the reply, no tools executed.
             if fresh_chat:
@@ -479,7 +592,7 @@ def _run_task(
             "provider": provider_id,
         })
     except Exception as exc:
-        if "provider" in locals():
+        if "provider" in locals() and provider is not None:
             failure = getattr(provider, "last_failure", None)
         else:
             failure = capture_provider_failure(
@@ -503,7 +616,7 @@ def _run_task(
         })
     finally:
         try:
-            if "provider" in locals():
+            if "provider" in locals() and provider is not None:
                 provider.close()
         except Exception:
             pass

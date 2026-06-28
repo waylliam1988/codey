@@ -49,6 +49,36 @@ class LiveSmokeTests(unittest.TestCase):
         provider.close.assert_called_once_with()
         self.assertTrue(data["ok"])
 
+    def test_run_smoke_can_use_reviewer(self) -> None:
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        writer.close = mock.Mock()
+        reviewer = mock.Mock()
+        reviewer.name = "MiMo"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        reviewer.close = mock.Mock()
+        changes = {"ok": True, "changed_count": 1, "files": [], "diff": "+x"}
+
+        with (
+            mock.patch.object(live_smoke, "connect_provider", side_effect=[writer, reviewer]) as connect,
+            mock.patch.object(live_smoke, "run", return_value=mock.Mock(stop_reason="done", summary="done", turns=3)),
+            mock.patch.object(live_smoke, "collect_changes", return_value=changes),
+            mock.patch.object(live_smoke.shutil, "rmtree"),
+        ):
+            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "mimo")
+
+        self.assertEqual(connect.call_args_list[0], mock.call("deepseek", port=9222))
+        self.assertEqual(
+            connect.call_args_list[1],
+            mock.call("mimo", port=9222, open_if_missing=False, bring_to_front=False),
+        )
+        reviewer.new_chat.assert_called_once_with()
+        reviewer.close.assert_called_once_with()
+        self.assertEqual(data["review"], "approved")
+        self.assertTrue(data["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()
