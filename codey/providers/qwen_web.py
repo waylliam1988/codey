@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from codey import qwen
 from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE, Session, open_qwen
+from codey.provider_diagnostics import ProviderFailure, run_provider_action
 
 
 @dataclass
@@ -13,6 +14,7 @@ class QwenWebProvider:
     session: Session
 
     name: ClassVar[str] = "Qwen Studio"
+    last_failure: ProviderFailure | None = None
 
     @classmethod
     def connect(
@@ -28,13 +30,23 @@ class QwenWebProvider:
         return self.session.page.url
 
     def new_chat(self) -> None:
-        qwen.new_chat(self.session.page)
+        run_provider_action(
+            self,
+            action="new_chat",
+            page=self.session.page,
+            func=lambda: qwen.new_chat(self.session.page),
+        )
 
     def send(self, text: str, timeout: float | None = None) -> str:
         kwargs = {}
         if timeout is not None:
             kwargs["response_timeout"] = timeout
-        return qwen.chat(self.session.page, text, **kwargs)
+        return run_provider_action(
+            self,
+            action="send",
+            page=self.session.page,
+            func=lambda: qwen.chat(self.session.page, text, **kwargs),
+        )
 
     def close(self) -> None:
         self.session.close()

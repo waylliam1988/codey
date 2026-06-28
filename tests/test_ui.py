@@ -32,6 +32,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("provider: s.provider || DEFAULT_PROVIDER", HTML)
         self.assertIn("provider: PROVIDERS.includes(s.provider)", HTML)
 
+    def test_retry_uses_current_session_model_picker(self) -> None:
+        retry_start = HTML.index("function retryTask(sessionId)")
+        retry_end = HTML.index("function sessionProjectPath", retry_start)
+        retry_block = HTML[retry_start:retry_end]
+        self.assertIn("syncProviderUI(s.provider || DEFAULT_PROVIDER)", retry_block)
+        self.assertIn("$('send').click()", retry_block)
+        self.assertIn("provider: currentProviderId()", HTML)
+
     def test_provider_selector_is_enabled_when_idle(self) -> None:
         self.assertIn("$('provider-button').disabled = running", HTML)
         self.assertIn("$('provider-button').disabled = false", HTML)
@@ -55,6 +63,16 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("Could not send the message", HTML)
         self.assertIn("if (r.status === 409) { addSendError(activeId); return; }", HTML)
         self.assertIn("if (r.status === 409 || !r.ok) addSendError(sessionId);", HTML)
+        self.assertIn("action: { label: 'Retry'", HTML)
+        self.assertNotIn("Switch provider", HTML)
+        self.assertNotIn("Switch model", HTML)
+        self.assertNotIn('title="Provider"', HTML)
+        self.assertIn('title="Model"', HTML)
+        err_start = HTML.index("} else if (m.type === 'err') {")
+        err_end = HTML.index("} else if (m.type === 'info') {", err_start)
+        err_block = HTML[err_start:err_end]
+        self.assertIn("Retry", err_block)
+        self.assertNotIn("Continue", err_block)
         self.assertNotIn("alert('Failed to start:", HTML)
         self.assertNotIn("alert('Failed to continue:", HTML)
         self.assertNotIn("alert('A task is already running')", HTML)

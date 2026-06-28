@@ -21,6 +21,7 @@ class DeepSeekWebProviderTests(unittest.TestCase):
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
         page = SimpleNamespace(url="https://chat.deepseek.com/")
+        page.title = mock.Mock(return_value="DeepSeek")
         session = SimpleNamespace(page=page, close=mock.Mock())
         provider = DeepSeekWebProvider(session)
 
@@ -40,6 +41,27 @@ class DeepSeekWebProviderTests(unittest.TestCase):
         provider.close()
         session.close.assert_called_once_with()
 
+    def test_send_failure_records_small_diagnostic(self) -> None:
+        page = SimpleNamespace(url="https://chat.deepseek.com/c/1")
+        page.title = mock.Mock(return_value="DeepSeek")
+        session = SimpleNamespace(page=page, close=mock.Mock())
+        provider = DeepSeekWebProvider(session)
+
+        with mock.patch.object(
+            deepseek_web.deepseek,
+            "chat",
+            side_effect=TimeoutError("response timed out"),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "response timed out"):
+                provider.send("hello")
+
+        self.assertIsNotNone(provider.last_failure)
+        self.assertEqual(provider.last_failure.model, "DeepSeek Web")
+        self.assertEqual(provider.last_failure.action, "send")
+        self.assertEqual(provider.last_failure.url, "https://chat.deepseek.com/c/1")
+        self.assertEqual(provider.last_failure.title, "DeepSeek")
+        self.assertEqual(provider.last_failure.message, "response timed out")
+
 
 class QwenWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
@@ -53,6 +75,7 @@ class QwenWebProviderTests(unittest.TestCase):
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
         page = SimpleNamespace(url="https://chat.qwen.ai/c/test")
+        page.title = mock.Mock(return_value="Qwen")
         session = SimpleNamespace(page=page, close=mock.Mock())
         provider = QwenWebProvider(session)
 
@@ -85,6 +108,7 @@ class MimoWebProviderTests(unittest.TestCase):
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
         page = SimpleNamespace(url="https://aistudio.xiaomimimo.com/#/c")
+        page.title = mock.Mock(return_value="MiMo")
         session = SimpleNamespace(page=page, close=mock.Mock())
         provider = MimoWebProvider(session)
 

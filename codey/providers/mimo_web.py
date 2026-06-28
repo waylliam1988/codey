@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from codey import mimo
 from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE, Session, open_mimo
+from codey.provider_diagnostics import ProviderFailure, run_provider_action
 
 
 @dataclass
@@ -13,6 +14,7 @@ class MimoWebProvider:
     session: Session
 
     name: ClassVar[str] = "Xiaomi MiMo Chat"
+    last_failure: ProviderFailure | None = None
 
     @classmethod
     def connect(
@@ -28,13 +30,23 @@ class MimoWebProvider:
         return self.session.page.url
 
     def new_chat(self) -> None:
-        mimo.new_chat(self.session.page)
+        run_provider_action(
+            self,
+            action="new_chat",
+            page=self.session.page,
+            func=lambda: mimo.new_chat(self.session.page),
+        )
 
     def send(self, text: str, timeout: float | None = None) -> str:
         kwargs = {}
         if timeout is not None:
             kwargs["response_timeout"] = timeout
-        return mimo.chat(self.session.page, text, **kwargs)
+        return run_provider_action(
+            self,
+            action="send",
+            page=self.session.page,
+            func=lambda: mimo.chat(self.session.page, text, **kwargs),
+        )
 
     def close(self) -> None:
         self.session.close()

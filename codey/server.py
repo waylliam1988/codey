@@ -35,6 +35,7 @@ from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
 from codey.changes import ChangeTracker
 from codey.providers import DEFAULT_PROVIDER_ID, PROVIDER_LABELS, connect_provider
+from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
 
 WEB_DIR = Path(__file__).parent / "web"
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -299,6 +300,7 @@ class State:
         self.status: str = "idle"
         self.last_summary: str | None = None
         self.last_stop_reason: str | None = None
+        self.last_provider_failure: ProviderFailure | None = None
         self.stop_flag = threading.Event()
         self.pending_shell: dict[str, dict] = {}
         self.change_trackers: dict[str, ChangeTracker] = {}
@@ -391,6 +393,7 @@ def _run_task(
     STATE.task = task
     STATE.provider_id = provider_id
     STATE.status = "running"
+    STATE.last_provider_failure = None
     STATE.stop_flag.clear()
     STATE.emit({
         "type": "task_start",
@@ -475,6 +478,16 @@ def _run_task(
             "provider": provider_id,
         })
     except Exception as exc:
+        if "provider" in locals():
+            failure = getattr(provider, "last_failure", None)
+        else:
+            failure = capture_provider_failure(
+                model=PROVIDER_LABELS.get(provider_id, provider_id),
+                action="connect",
+                page=None,
+                error=exc,
+            )
+        STATE.last_provider_failure = failure
         STATE.status = "error"
         STATE.last_stop_reason = "error"
         STATE.emit({
@@ -485,6 +498,7 @@ def _run_task(
             "turns": 0,
             "max_turns": max_turns,
             "provider": provider_id,
+            "provider_failure": failure.to_dict() if failure else None,
         })
     finally:
         try:
@@ -542,6 +556,11 @@ class Handler(BaseHTTPRequestHandler):
                 "summary": STATE.last_summary,
                 "stop_reason": STATE.last_stop_reason,
                 "provider": STATE.provider_id,
+                "provider_failure": (
+                    STATE.last_provider_failure.to_dict()
+                    if STATE.last_provider_failure
+                    else None
+                ),
             })
             return
         if url.path == "/api/providers":

@@ -9,6 +9,7 @@ from unittest import mock
 
 from codey import server
 from codey.changes import ChangeTracker
+from codey.provider_diagnostics import ProviderFailure
 
 
 class GitChangesTests(unittest.TestCase):
@@ -182,6 +183,65 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.provider_id, "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
+
+    def test_run_task_emits_provider_failure_diagnostic_on_error(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "MiMo"
+        provider.location = "https://aistudio.xiaomimimo.com/#/c"
+        provider.last_failure = ProviderFailure(
+            model="MiMo",
+            action="send",
+            url="https://aistudio.xiaomimimo.com/#/c",
+            title="MiMo",
+            message="response timed out",
+            time="2026-06-28T01:02:03+00:00",
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(server, "agent_run", side_effect=TimeoutError("response timed out")),
+        ):
+            server._run_task("session-1", td, "task", 8, False, "mimo")
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["stop_reason"], "error")
+        self.assertEqual(task_done["provider_failure"], {
+            "model": "MiMo",
+            "action": "send",
+            "url": "https://aistudio.xiaomimimo.com/#/c",
+            "title": "MiMo",
+            "message": "response timed out",
+            "time": "2026-06-28T01:02:03+00:00",
+        })
+        self.assertIs(state.last_provider_failure, provider.last_failure)
+
+    def test_run_task_records_connect_failure_without_provider_page(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", side_effect=RuntimeError("Edge not reachable")),
+        ):
+            server._run_task("session-1", None, "hello", 8, False, "qwen")
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        failure = task_done["provider_failure"]
+        self.assertEqual(failure["model"], "Qwen")
+        self.assertEqual(failure["action"], "connect")
+        self.assertEqual(failure["url"], "")
+        self.assertEqual(failure["title"], "")
+        self.assertEqual(failure["message"], "Edge not reachable")
 
     def test_restore_snapshot_changes_endpoint(self) -> None:
         with tempfile.TemporaryDirectory() as td:

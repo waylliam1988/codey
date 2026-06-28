@@ -6,6 +6,7 @@ from typing import ClassVar
 
 from codey import deepseek
 from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE, Session, open_deepseek
+from codey.provider_diagnostics import ProviderFailure, run_provider_action
 
 
 @dataclass
@@ -13,6 +14,7 @@ class DeepSeekWebProvider:
     session: Session
 
     name: ClassVar[str] = "DeepSeek Web"
+    last_failure: ProviderFailure | None = None
 
     @classmethod
     def connect(
@@ -28,13 +30,23 @@ class DeepSeekWebProvider:
         return self.session.page.url
 
     def new_chat(self) -> None:
-        deepseek.new_chat(self.session.page)
+        run_provider_action(
+            self,
+            action="new_chat",
+            page=self.session.page,
+            func=lambda: deepseek.new_chat(self.session.page),
+        )
 
     def send(self, text: str, timeout: float | None = None) -> str:
         kwargs = {}
         if timeout is not None:
             kwargs["response_timeout"] = timeout
-        return deepseek.chat(self.session.page, text, **kwargs)
+        return run_provider_action(
+            self,
+            action="send",
+            page=self.session.page,
+            func=lambda: deepseek.chat(self.session.page, text, **kwargs),
+        )
 
     def close(self) -> None:
         self.session.close()
