@@ -37,7 +37,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Restore snapshot changes without requiring Git
 - Use Git when available, but not require it
 - Retry with another model when one model fails
-- Use a second open model as a quiet code reviewer when available
+- Use two open web models together: one writes, the other reviews
 - Record compact provider failure diagnostics for debugging web-page breakage
 
 ---
@@ -54,13 +54,22 @@ Codey uses browser automation, so websites may break after UI changes. The curre
 
 ---
 
-## Two-Model Review
+## Two-Model Assistance
 
-If Codey finds another supported model already open in Edge, it can use that model as a quiet reviewer after the writer model finishes a code change.
+One AI model can write code, but it can also miss small mistakes. Two models make the loop steadier: one model focuses on building, and another model looks over the changed code like a second pair of eyes.
 
-The reviewer does not edit files. It only reads a compact diff and returns structured feedback. If it approves, the task ends. If it finds a concrete issue, Codey sends that feedback back to the writer for one repair pass. If review is unavailable, Codey continues with the single-model result.
+You do not need to learn a new mode. If you open two supported AI pages in Edge, Codey can automatically use them together:
 
-This keeps the main UI simple: there is no group-chat screen and no extra switch to learn.
+- The model you select in Codey is the writer.
+- Another open supported model becomes the reviewer.
+- The writer reads files, edits code, and runs tests.
+- The reviewer does not touch your files. It only reads the diff and points out concrete problems.
+- If the reviewer approves, Codey finishes.
+- If the reviewer finds a real issue, Codey asks the writer to repair it once more.
+
+If only one model page is open, Codey simply works in single-model mode. If the second model is closed, logged out, or fails to answer, Codey quietly falls back to the single-model result.
+
+In plain words: open one model for simple work; open two model pages when you want a little extra confidence. No group chat, no extra switch, no new concepts on the main screen.
 
 ---
 
