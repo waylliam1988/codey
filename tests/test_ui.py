@@ -50,6 +50,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("Continue", HTML)
         self.assertIn("Retry", HTML)
 
+    def test_send_failures_render_inline_error(self) -> None:
+        self.assertIn("function addSendError(sessionId)", HTML)
+        self.assertIn("Could not send the message", HTML)
+        self.assertIn("if (r.status === 409) { addSendError(activeId); return; }", HTML)
+        self.assertIn("if (r.status === 409 || !r.ok) addSendError(sessionId);", HTML)
+        self.assertNotIn("alert('Failed to start:", HTML)
+        self.assertNotIn("alert('Failed to continue:", HTML)
+        self.assertNotIn("alert('A task is already running')", HTML)
+
     def test_changes_drawer_supports_snapshot_mode_and_restore(self) -> None:
         self.assertIn('id="changes-restore"', HTML)
         self.assertIn("Reading changes", HTML)

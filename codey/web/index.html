@@ -1502,6 +1502,10 @@ function addToSession(sid, m) {
   if (sid === activeId) { appendMessageNode($('chat'), m); scrollChat(); }
 }
 
+function addSendError(sessionId) {
+  addToSession(sessionId, { type: 'err', text: 'Could not send the message', sessionId });
+}
+
 function handleLog(sid, line) {
   if (!line) return;
   const turnMatch = line.match(/^\s*--- turn (\d+) reply.*?---\s*\n([\s\S]*)$/);
@@ -1808,11 +1812,9 @@ $('send').onclick = async () => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id: activeId, project, task, provider: currentProviderId() }),
   });
-  if (r.status === 409) { alert('A task is already running'); return; }
+  if (r.status === 409) { addSendError(activeId); return; }
   if (!r.ok) {
-    let detail = '';
-    try { detail = (await r.json()).error || ''; } catch {}
-    alert('Failed to start: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
+    addSendError(activeId);
     return;
   }
 };
@@ -1842,12 +1844,7 @@ async function continueTask(sessionId) {
       provider: s.provider || DEFAULT_PROVIDER,
     }),
   });
-  if (r.status === 409) { alert('A task is already running'); return; }
-  if (!r.ok) {
-    let detail = '';
-    try { detail = (await r.json()).error || ''; } catch {}
-    alert('Failed to continue: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
-  }
+  if (r.status === 409 || !r.ok) addSendError(sessionId);
 }
 $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
 $('changes-close').onclick = closeChangesDrawer;
