@@ -6,6 +6,8 @@
 
 Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, and Xiaomi MiMo, and gives them a controlled local tool loop: read files, edit files, run tests, show diffs, and restore changes.
 
+It is a local-first, low-cost AI coding workspace built for multiple web models.
+
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
 Version: `0.1.1`

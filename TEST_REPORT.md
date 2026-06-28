@@ -44,7 +44,7 @@ Fixes:
 
 ```text
 python -B -m unittest
-Ran 159 tests
+Ran 160 tests
 OK
 ```
 
@@ -77,12 +77,12 @@ difflib.unified_diff(before_lines, after_lines, ...)
 
 | Mode | Result | Turns | Final full tests |
 |---|---:|---:|---:|
-| DeepSeek single | Pass | 5 | 159 OK |
-| MiMo single | Pass | 5 | 159 OK |
-| Qwen single | Pass | 5 | 159 OK |
-| DeepSeek writer + MiMo reviewer | Pass | 5 | 159 OK |
-| MiMo writer + DeepSeek reviewer | Pass | 5 after prompt fix | 159 OK |
-| Qwen writer + DeepSeek reviewer | Pass | 5 | 159 OK |
+| DeepSeek single | Pass | 5 | 160 OK |
+| MiMo single | Pass | 5 | 160 OK |
+| Qwen single | Pass | 5 | 160 OK |
+| DeepSeek writer + MiMo reviewer | Pass | 5 | 160 OK |
+| MiMo writer + DeepSeek reviewer | Pass | 5 after prompt fix | 160 OK |
+| Qwen writer + DeepSeek reviewer | Pass | 5 | 160 OK |
 
 ## Does Two-Model Help?
 

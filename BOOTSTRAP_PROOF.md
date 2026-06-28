@@ -44,9 +44,9 @@ python -B -m unittest
 
 | Provider | 结果 | 修复轮数 | 修复后副本全量测试 | 观察 |
 |---|---:|---:|---:|---|
-| DeepSeek | 成功 | 5 | 159 tests OK | 能修复，偶尔会在 JSON 前附带解释，parser 可容忍 |
-| MiMo | 成功 | 5 | 159 tests OK | 修复直接；加强 JSON 转义提示后更顺 |
-| Qwen | 成功 | 5 | 159 tests OK | 协议提示加强后，不再出现“工具不存在”噪音 |
+| DeepSeek | 成功 | 5 | 160 tests OK | 能修复，偶尔会在 JSON 前附带解释，parser 可容忍 |
+| MiMo | 成功 | 5 | 160 tests OK | 修复直接；加强 JSON 转义提示后更顺 |
+| Qwen | 成功 | 5 | 160 tests OK | 协议提示加强后，不再出现“工具不存在”噪音 |
 
 三家 provider 都完成了同一个自举修复闭环。
 
@@ -103,7 +103,7 @@ python -B -m unittest
 结果：
 
 ```text
-Ran 159 tests
+Ran 160 tests
 OK
 ```
 
