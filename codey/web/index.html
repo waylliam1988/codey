@@ -403,6 +403,11 @@
   .shell-card .sc-meta {
     color: var(--muted); font-family: var(--font-mono); font-size: 11.5px;
   }
+  .shell-card .sc-error {
+    color: var(--err-text);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
   .shell-command {
     font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
     color: var(--text); background: var(--bg); border: 1px solid var(--border);
@@ -1138,13 +1143,16 @@ function appendMessageNode(chat, m) {
     card.className = 'shell-card';
     const title = document.createElement('div');
     title.className = 'sc-title';
-    title.textContent = 'Approval required';
+    title.textContent = 'Command approval';
     const meta = document.createElement('div');
     meta.className = 'sc-meta';
     meta.textContent = m.cwd ? `Runs in ${m.cwd}` : 'Runs in .';
     const cmd = document.createElement('div');
     cmd.className = 'shell-command';
     cmd.textContent = '$ ' + (m.command || '');
+    const error = document.createElement('div');
+    error.className = 'sc-error';
+    error.hidden = true;
     const actions = document.createElement('div');
     actions.className = 'shell-actions';
     const deny = document.createElement('button');
@@ -1153,10 +1161,10 @@ function appendMessageNode(chat, m) {
     const approve = document.createElement('button');
     approve.className = 'text-btn primary';
     approve.textContent = 'Allow';
-    approve.onclick = () => approveShell(m.id, true, approve, deny);
-    deny.onclick = () => approveShell(m.id, false, approve, deny);
+    approve.onclick = () => approveCommand(m.id, true, approve, deny, error);
+    deny.onclick = () => approveCommand(m.id, false, approve, deny, error);
     actions.append(deny, approve);
-    card.append(title, meta, cmd, actions);
+    card.append(title, meta, cmd, error, actions);
     div.appendChild(card);
     chat.appendChild(div);
   } else if (m.type === 'shell_result') {
@@ -1293,7 +1301,7 @@ async function pickProject() {
     let data = {};
     try { data = await r.json(); } catch {}
     if (!r.ok) {
-      alert('Failed to pick folder: ' + (data.error || ('HTTP ' + r.status)));
+      setStatus('Could not add project', 'err');
       return;
     }
     if (!data.ok || !data.path) return;
@@ -1736,10 +1744,22 @@ function renderDiffLines(lines) {
   return out.join('');
 }
 
-async function approveShell(id, approved, approveBtn, denyBtn) {
+function showCommandApprovalError(errorEl) {
+  if (errorEl) {
+    errorEl.textContent = 'Could not send approval';
+    errorEl.hidden = false;
+  }
+  setStatus('Could not send approval', 'err');
+}
+
+async function approveCommand(id, approved, approveBtn, denyBtn, errorEl) {
   if (!id) return;
   approveBtn.disabled = true;
   denyBtn.disabled = true;
+  if (errorEl) {
+    errorEl.textContent = '';
+    errorEl.hidden = true;
+  }
   try {
     const r = await fetch('/api/shell_approval', {
       method: 'POST',
@@ -1747,14 +1767,12 @@ async function approveShell(id, approved, approveBtn, denyBtn) {
       body: JSON.stringify({ id, approved }),
     });
     if (!r.ok) {
-      let detail = '';
-      try { detail = (await r.json()).error || ''; } catch {}
-      alert('Shell approval failed: HTTP ' + r.status + (detail ? ' - ' + detail : ''));
+      showCommandApprovalError(errorEl);
       approveBtn.disabled = false;
       denyBtn.disabled = false;
     }
   } catch (err) {
-    alert('Shell approval failed: ' + err);
+    showCommandApprovalError(errorEl);
     approveBtn.disabled = false;
     denyBtn.disabled = false;
   }

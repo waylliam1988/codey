@@ -79,6 +79,16 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("alert('Failed to continue:", HTML)
         self.assertNotIn("alert('A task is already running')", HTML)
 
+    def test_routine_failures_do_not_use_native_alerts(self) -> None:
+        self.assertNotIn("alert(", HTML)
+        self.assertIn("setStatus('Could not add project', 'err')", HTML)
+        self.assertIn("Command approval", HTML)
+        self.assertIn("Could not send approval", HTML)
+        self.assertIn("function showCommandApprovalError", HTML)
+        self.assertNotIn("Failed to pick folder", HTML)
+        self.assertNotIn("Shell approval failed", HTML)
+        self.assertNotIn("approveShell", HTML)
+
     def test_review_status_is_quiet_and_has_no_switch(self) -> None:
         self.assertIn("data.type === 'review'", HTML)
         self.assertIn("{ type: 'review', text: data.text }", HTML)
