@@ -31,6 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
 from codey.changes import ChangeTracker
@@ -512,7 +513,7 @@ def _run_task(
 # ------------------------------------------------------------ http layer ---
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "Codey/0.1"
+    server_version = f"Codey/{__version__}"
 
     def log_message(self, fmt, *args):
         # Quiet the default access log.

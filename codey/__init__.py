@@ -1,1 +1,3 @@
-"""Codey: minimal web-AI coding agent (DeepSeek via Edge CDP)."""
+"""Codey: use web AI models as a local coding assistant."""
+
+__version__ = "0.1.0"
