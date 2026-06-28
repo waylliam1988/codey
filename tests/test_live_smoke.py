@@ -79,6 +79,62 @@ class LiveSmokeTests(unittest.TestCase):
         self.assertEqual(data["review"], "approved")
         self.assertTrue(data["ok"])
 
+    def test_run_smoke_reports_reviewer_failure_without_failing_task(self) -> None:
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        writer.close = mock.Mock()
+        reviewer = mock.Mock()
+        reviewer.name = "MiMo"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.side_effect = RuntimeError("generation failed")
+        reviewer.close = mock.Mock()
+        changes = {"ok": True, "changed_count": 1, "files": [], "diff": "+x"}
+
+        with (
+            mock.patch.object(live_smoke, "connect_provider", side_effect=[writer, reviewer]),
+            mock.patch.object(live_smoke, "run", return_value=mock.Mock(stop_reason="done", summary="done", turns=3)),
+            mock.patch.object(live_smoke, "collect_changes", return_value=changes),
+            mock.patch.object(live_smoke.shutil, "rmtree"),
+        ):
+            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "mimo")
+
+        reviewer.close.assert_called_once_with()
+        self.assertEqual(data["review"], "unavailable")
+        self.assertTrue(data["ok"])
+        self.assertTrue(any("generation failed" in event for event in data["events"]))
+
+    def test_run_smoke_repairs_invalid_reviewer_json_once(self) -> None:
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        writer.close = mock.Mock()
+        reviewer = mock.Mock()
+        reviewer.name = "MiMo"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.side_effect = [
+            "looks good but not json",
+            '{"verdict":"approved","summary":"Looks good","findings":[]}',
+        ]
+        reviewer.close = mock.Mock()
+        changes = {"ok": True, "changed_count": 1, "files": [], "diff": "+x"}
+
+        with (
+            mock.patch.object(live_smoke, "connect_provider", side_effect=[writer, reviewer]),
+            mock.patch.object(live_smoke, "run", return_value=mock.Mock(stop_reason="done", summary="done", turns=3)),
+            mock.patch.object(live_smoke, "collect_changes", return_value=changes),
+            mock.patch.object(live_smoke.shutil, "rmtree"),
+        ):
+            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "mimo")
+
+        self.assertEqual(reviewer.send.call_count, 2)
+        self.assertEqual(data["review"], "approved")
+        self.assertTrue(data["ok"])
+
+    def test_run_smoke_rejects_same_writer_and_reviewer(self) -> None:
+        with self.assertRaisesRegex(ValueError, "reviewer must be different"):
+            live_smoke.run_smoke("deepseek", "edit", 9222, 8, "deepseek")
+
 
 if __name__ == "__main__":
     unittest.main()

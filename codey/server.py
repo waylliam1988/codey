@@ -40,7 +40,7 @@ from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
 from codey.review import (
     ReviewResult,
     has_reviewable_changes,
-    parse_review_response,
+    parse_review_with_repair,
     render_review_prompt,
     render_writer_followup,
 )
@@ -266,7 +266,10 @@ def _run_review(
                 recent_log=recent_log,
             )
             reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
-            review = parse_review_response(reply)
+            review = parse_review_with_repair(
+                reply,
+                lambda repair: reviewer.send(repair, timeout=REVIEW_TIMEOUT),
+            )
             label = review_label(reviewer_id)
             if review.approved:
                 _emit_review(session_id, f"{label} approved")
@@ -814,7 +817,7 @@ class Handler(BaseHTTPRequestHandler):
             continued = False
             if pending.get("continue_after") and not STATE.busy:
                 continuation = (
-                    "Continue the interrupted Codey task in this same conversation.\n"
+                    "Continue the interrupted task in this same conversation.\n"
                     "The user approved and ran this shell command:\n"
                     f"{command}\n\n"
                     f"Exit code: {result.get('exit_code')}\n"

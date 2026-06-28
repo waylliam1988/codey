@@ -31,6 +31,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("provider: currentProviderId()", HTML)
         self.assertIn("provider: s.provider || DEFAULT_PROVIDER", HTML)
         self.assertIn("provider: PROVIDERS.includes(s.provider)", HTML)
+        self.assertIn("Continue the unfinished task in this same conversation.", HTML)
+        self.assertNotIn("Continue the unfinished Codey task", HTML)
 
     def test_retry_uses_current_session_model_picker(self) -> None:
         retry_start = HTML.index("function retryTask(sessionId)")

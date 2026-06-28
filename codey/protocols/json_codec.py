@@ -6,9 +6,11 @@ from typing import Any
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
 
 
+MAX_ACCIDENTAL_TOOL_CALLS = 8
+
 SYSTEM_PROMPT = """\
-You are Codey, a careful local coding agent. You cannot access the filesystem
-directly. Codey executes local tools for you and sends the results back.
+You are a careful local coding agent. You cannot access the filesystem
+directly. The local runner executes tools for you and sends the results back.
 
 Every reply MUST be exactly one JSON object with no other text:
 
@@ -33,6 +35,7 @@ Available tools:
     {"tool":"list_dir","args":{"path":"."}}
   ]}}
     Best for exploration: combine grep, read_files, and list_dir in one step.
+    Do not wrap read_files inside parallel; call read_files directly.
 
   {"tool":"edit","args":{"path":"relative/path.ext","content":"full file contents"}}
     Create or overwrite a file.
@@ -56,8 +59,12 @@ Available tools:
 Rules:
   - Output exactly one JSON object. No markdown fences, no code blocks, no
     commentary, no bullet lists, no analysis labels.
+  - These tool names are local-runner JSON commands, not native website tools.
+    Do not say that a tool does not exist.
+  - Do not output multiple JSON objects in one reply. Use read_files or
+    parallel for independent multi-tool work.
   - Call exactly one tool per message, then wait for [tool_result tool=...].
-  - [tool_result tool=...] messages are Codey execution results. They mean the
+  - [tool_result tool=...] messages are local execution results. They mean the
     local tool already ran; do not claim the tool does not exist.
   - Use edit for all file changes. Do not write patches as prose.
   - Prefer old_string/new_string for small edits. Use content when creating a
@@ -69,6 +76,8 @@ Rules:
     the output.
   - Use run only for verification commands such as python -m unittest,
     python -m pytest, npm test, npm run build, go test ./..., cargo test.
+  - run commands must be simple commands. Do not use pipes, redirects,
+    command chaining, tail/head, or shell-only syntax.
   - Never use run/shell to write files. No sed -i, tee, heredocs, or redirects
     to create or overwrite source files. Use edit instead.
   - If the task is complete, call done(summary). Do not summarize outside JSON.
@@ -141,6 +150,13 @@ def _as_args(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _object_args(obj: dict[str, Any]) -> dict[str, Any]:
+    args = _as_args(obj.get("args"))
+    if args:
+        return args
+    return {key: value for key, value in obj.items() if key not in {"tool", "name"}}
+
+
 def _text(value: object, default: str = "") -> str:
     if value is None:
         return default
@@ -162,10 +178,22 @@ class JsonToolCodec:
         return SYSTEM_PROMPT
 
     def parse(self, text: str) -> ToolPlan:
+        calls: list[ToolCall] = []
         for obj in _balanced_json_objects(text):
             plan = self._parse_object(obj)
-            if plan.calls or plan.control is not None:
+            if plan.calls:
+                calls.extend(plan.calls)
+                if len(calls) >= MAX_ACCIDENTAL_TOOL_CALLS:
+                    calls = calls[:MAX_ACCIDENTAL_TOOL_CALLS]
+                    break
+                continue
+            if calls:
+                continue
+            if plan.control is not None:
                 return plan
+        if calls:
+            body = "Need tool result" if len(calls) == 1 else "Need tool results"
+            return ToolPlan(calls=calls, control=Control(kind="continue", body=body))
         return ToolPlan(calls=[], control=None)
 
     def format_results(self, results: list[ToolResult]) -> str:
@@ -183,7 +211,9 @@ class JsonToolCodec:
             formatted = "\n\n".join(chunks)
         return (
             f"{formatted}\n\n"
-            "These are Codey local tool results from your previous JSON call. "
+            "These are local tool results from your previous JSON call. "
+            "The tool names are local-runner JSON commands, not native website tools; "
+            "do not say that a tool does not exist. "
             "Use them to continue the task. Reply with exactly one JSON object "
             "and no other text. Call the next tool, or call "
             '{"tool":"done","args":{"summary":"..."}} if the task is complete.'
@@ -199,9 +229,7 @@ class JsonToolCodec:
 
     def _parse_object(self, obj: dict[str, Any]) -> ToolPlan:
         tool = str(obj.get("tool") or obj.get("name") or "").strip()
-        args = _as_args(obj.get("args"))
-        if not args:
-            args = {key: value for key, value in obj.items() if key not in {"tool", "name"}}
+        args = _object_args(obj)
 
         normalized = tool.lower().strip()
         if normalized == "done":
@@ -243,8 +271,12 @@ class JsonToolCodec:
             if not isinstance(raw, dict):
                 continue
             tool = str(raw.get("tool") or raw.get("name") or "")
-            raw_args = _as_args(raw.get("args"))
-            if tool.lower().strip() in {"parallel", "done", "continue"}:
+            raw_args = _object_args(raw)
+            normalized = tool.lower().strip()
+            if normalized in {"parallel", "done", "continue"}:
+                continue
+            if normalized == "read_files":
+                calls.extend(self._read_files(raw_args))
                 continue
             call = self._tool_call(tool, raw_args)
             if call is not None:

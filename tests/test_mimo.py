@@ -51,11 +51,58 @@ class MimoDriverTests(unittest.TestCase):
 
         with (
             mock.patch.object(mimo, "_visible_locator", return_value=textarea),
-            mock.patch.object(mimo, "_submission_started", return_value=True),
+            mock.patch.object(mimo, "_wait_submission_started", return_value=True),
+            mock.patch.object(mimo, "_send_button", return_value=None) as send_button,
         ):
             mimo._submit(page, baseline=0)
 
         textarea.press.assert_called_once_with("Enter")
+        send_button.assert_called_once_with(page)
+
+    def test_submit_clicks_explicit_send_button_when_available(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        button = mock.Mock()
+
+        with (
+            mock.patch.object(mimo, "_visible_locator", return_value=textarea),
+            mock.patch.object(mimo, "_wait_submission_started", return_value=True) as wait_started,
+            mock.patch.object(mimo, "_send_button", return_value=button),
+        ):
+            mimo._submit(page, baseline=0, submitted_text="hello")
+
+        textarea.press.assert_not_called()
+        button.click.assert_called_once_with()
+        wait_started.assert_called_once_with(page, 0, "", "hello")
+
+    def test_send_button_uses_mimo_send_selector_not_nearby_upload_button(self) -> None:
+        page = mock.Mock()
+        send = mock.Mock()
+        send.is_visible.return_value = True
+        send.is_enabled.return_value = True
+        locator = mock.Mock()
+        locator.count.return_value = 1
+        locator.nth.return_value = send
+        page.locator.return_value = locator
+
+        result = mimo._send_button(page)
+
+        self.assertIs(result, send)
+        page.locator.assert_called_with(mimo.SEND_BUTTON)
+
+    def test_submission_started_accepts_cleared_input_after_send_click(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        textarea.input_value.return_value = ""
+
+        with (
+            mock.patch.object(mimo, "_response_count", return_value=0),
+            mock.patch.object(mimo, "_last_text", return_value=""),
+            mock.patch.object(mimo, "_visible_locator", return_value=textarea),
+        ):
+            started = mimo._submission_started(page, baseline=0, submitted_text="hello")
+
+        self.assertTrue(started)
 
     def test_final_text_falls_back_to_visible_answer(self) -> None:
         with (

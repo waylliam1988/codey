@@ -15,7 +15,7 @@ from codey.changes import ChangeTracker
 from codey.providers.registry import connect_provider
 from codey.review import (
     has_reviewable_changes,
-    parse_review_response,
+    parse_review_with_repair,
     render_review_prompt,
     render_writer_followup,
 )
@@ -57,8 +57,9 @@ def _run_review_pass(
     max_turns: int,
     tracker: ChangeTracker,
 ) -> tuple[str, str, str]:
-    reviewer = connect_provider(reviewer_id, port=port, open_if_missing=False, bring_to_front=False)
+    reviewer = None
     try:
+        reviewer = connect_provider(reviewer_id, port=port, open_if_missing=False, bring_to_front=False)
         reviewer.new_chat()
         reply = reviewer.send(
             render_review_prompt(
@@ -69,9 +70,13 @@ def _run_review_pass(
                 recent_log="\n".join(events[-80:]),
             )
         )
-        result = parse_review_response(reply)
+        result = parse_review_with_repair(reply, reviewer.send)
+    except Exception as exc:
+        events.append(f"[review] unavailable: {exc}")
+        return "unavailable", writer_summary, "done"
     finally:
-        reviewer.close()
+        if reviewer is not None:
+            reviewer.close()
 
     if result.approved:
         return "approved", writer_summary, "done"
@@ -100,6 +105,8 @@ def run_smoke(
     max_turns: int,
     reviewer_id: str | None = None,
 ) -> dict:
+    if reviewer_id and reviewer_id == provider_id:
+        raise ValueError("reviewer must be different from provider")
     root = Path(tempfile.mkdtemp(prefix=f"codey-live-{case}-")).resolve()
     try:
         _make_fixture(root, case)

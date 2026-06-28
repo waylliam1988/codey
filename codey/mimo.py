@@ -11,12 +11,14 @@ from codey.web_clipboard import copy_action_text
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 MIMO_ORIGIN = "https://aistudio.xiaomimimo.com"
 INPUT = "textarea"
+SEND_BUTTON = 'button[data-track-id="home_send_btn"], button[data-track-name="home_send_message"]'
 ANSWER = '.markdown-prose, [class*="Markdown_markdown"]'
 
 READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 60.0
 COPY_READY_TIMEOUT = 10.0
 SUBMIT_CONFIRM_TIMEOUT = 15.0
+SUBMIT_READY_TIMEOUT = 5.0
 
 
 def _visible_locator(page: Page, selector: str) -> Locator | None:
@@ -119,27 +121,73 @@ def _final_text(page: Page) -> str:
     raise RuntimeError("Could not read the raw Xiaomi MiMo response")
 
 
-def _submission_started(page: Page, baseline: int, baseline_text: str = "") -> bool:
+def _submission_started(
+    page: Page,
+    baseline: int,
+    baseline_text: str = "",
+    submitted_text: str = "",
+) -> bool:
     try:
         count = _response_count(page)
         current = _last_text(page) if count else ""
     except Exception:
         return False
-    return count > baseline or (bool(current) and current != baseline_text)
+    if count > baseline or (bool(current) and current != baseline_text):
+        return True
+    if submitted_text:
+        textarea = _visible_locator(page, INPUT)
+        try:
+            return textarea is not None and not textarea.input_value().strip()
+        except Exception:
+            return False
+    return False
 
 
-def _submit(page: Page, baseline: int, baseline_text: str = "") -> None:
+def _submit(page: Page, baseline: int, baseline_text: str = "", submitted_text: str = "") -> None:
     textarea = _visible_locator(page, INPUT)
     if textarea is None:
         raise TimeoutError("Xiaomi MiMo Chat input is not visible")
-    textarea.press("Enter")
 
-    deadline = time.time() + SUBMIT_CONFIRM_TIMEOUT
-    while time.time() < deadline:
-        if _submission_started(page, baseline, baseline_text):
+    button = _send_button(page)
+    if button is not None:
+        button.click()
+        if _wait_submission_started(page, baseline, baseline_text, submitted_text):
             return
-        time.sleep(0.2)
+        raise TimeoutError("Xiaomi MiMo Chat did not submit the message")
+
+    textarea.press("Enter")
+    if _wait_submission_started(page, baseline, baseline_text, submitted_text):
+        return
+
     raise TimeoutError("Xiaomi MiMo Chat did not submit the message")
+
+
+def _send_button(page: Page) -> Locator | None:
+    deadline = time.time() + SUBMIT_READY_TIMEOUT
+    while time.time() < deadline:
+        button = _visible_locator(page, SEND_BUTTON)
+        try:
+            if button is not None and button.is_enabled():
+                return button
+        except Exception:
+            pass
+        time.sleep(0.2)
+    return None
+
+
+def _wait_submission_started(
+    page: Page,
+    baseline: int,
+    baseline_text: str = "",
+    submitted_text: str = "",
+    timeout: float = SUBMIT_CONFIRM_TIMEOUT,
+) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _submission_started(page, baseline, baseline_text, submitted_text):
+            return True
+        time.sleep(0.2)
+    return False
 
 
 def _wait_late_response(
@@ -184,7 +232,7 @@ def chat(
     textarea.click()
     textarea.fill(text)
     time.sleep(0.2)
-    _submit(page, baseline, baseline_text)
+    _submit(page, baseline, baseline_text, text)
 
     sent_at = time.time()
     deadline = sent_at + response_timeout

@@ -1,20 +1,29 @@
 """Small two-model review protocol.
 
 The writer model owns all tool use. The review model only receives a compact
-diff and returns structured feedback that Codey may pass back to the writer.
+diff and returns structured feedback that can be passed back to the writer.
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 
 MAX_REVIEW_DIFF_CHARS = 60_000
 MAX_REVIEW_LOG_CHARS = 8_000
 MAX_FIELD_CHARS = 2_000
 MAX_FINDINGS = 8
+REVIEW_REPAIR_PROMPT = (
+    "Your previous review did not contain a valid JSON object. "
+    "Return only the JSON object now, preserving your previous verdict and "
+    "concrete findings. No analysis, no explanation, no markdown. "
+    '{"verdict":"approved","summary":"Looks good","findings":[]} or '
+    '{"verdict":"changes_requested","summary":"One issue found","findings":'
+    '[{"path":"relative/file.py","issue":"Concrete problem",'
+    '"suggested_fix":"Small fix"}]}'
+)
 
 
 @dataclass(frozen=True)
@@ -70,6 +79,21 @@ def parse_review_response(text: str) -> ReviewResult:
         )
         return ReviewResult(verdict=verdict, summary=summary, findings=findings)
     raise ValueError("review response did not contain a JSON object")
+
+
+def review_repair_prompt() -> str:
+    return REVIEW_REPAIR_PROMPT
+
+
+def parse_review_with_repair(
+    first_reply: str,
+    send_repair_prompt: Callable[[str], str],
+) -> ReviewResult:
+    """Parse a reviewer reply, allowing one JSON-only repair turn."""
+    try:
+        return parse_review_response(first_reply)
+    except ValueError:
+        return parse_review_response(send_repair_prompt(REVIEW_REPAIR_PROMPT))
 
 
 def _parse_findings(value: object) -> list[ReviewFinding]:
@@ -145,10 +169,12 @@ def render_review_prompt(
     log = _clip(recent_log, MAX_REVIEW_LOG_CHARS) or "(no recent tool log)"
 
     return (
-        "You are Codey's second model. Review the writer model's completed "
+        "You are a careful code reviewer. Review the writer model's completed "
         "code change. You are read-only: do not ask to edit files directly.\n\n"
         "Only request changes for concrete correctness, test, integration, or "
         "user-visible issues. Do not request broad rewrites or style-only cleanup.\n\n"
+        "Return only JSON. No analysis. No explanation. The first character "
+        "must be { and the last character must be }.\n"
         "Return exactly one JSON object and no markdown fences:\n"
         '{"verdict":"approved","summary":"Looks good","findings":[]}\n'
         "or\n"
@@ -166,7 +192,7 @@ def render_review_prompt(
 
 def render_writer_followup(task: str, review: ReviewResult) -> str:
     lines = [
-        "Continue the Codey task in this same project.",
+        "Continue the task in this same project.",
         "A second model reviewed the current diff and found concrete issues.",
         "Treat the review as advisory: verify it against the files, fix only valid issues, run relevant tests, then call done.",
         "",

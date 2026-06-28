@@ -261,6 +261,21 @@ replacement
 
             self.assertIn("exit 0: python -m py_compile ok.py", output)
 
+    def test_run_allows_python_no_bytecode_flag_before_module(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "test_sample.py").write_text(
+                "import unittest\n\n"
+                "class SampleTests(unittest.TestCase):\n"
+                "    def test_ok(self):\n"
+                "        self.assertTrue(True)\n",
+                encoding="utf-8",
+            )
+
+            output = agent.tool_run(root, ".", "python -B -m unittest")
+
+            self.assertIn("exit 0: python -B -m unittest", output)
+
     def test_run_rejects_dangerous_shell_syntax(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             output = agent.tool_run(Path(td), ".", "python -m unittest && rm -rf .")

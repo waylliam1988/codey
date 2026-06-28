@@ -316,6 +316,47 @@ class SessionThreadingTests(unittest.TestCase):
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["summary"], "complete")
 
+    def test_run_task_repairs_invalid_review_json_once(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        reviewer = mock.Mock()
+        reviewer.name = "Xiaomi MiMo Chat"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.side_effect = [
+            "looks good but not json",
+            '{"verdict":"approved","summary":"Looks good","findings":[]}',
+        ]
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=server.RunResult("complete", "done", 3),
+            ),
+            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+        ):
+            server._run_task("session-1", td, "task", 8, False, "deepseek")
+
+        self.assertEqual(reviewer.send.call_count, 2)
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        review_event = next(event for event in emitted if event["type"] == "review")
+        self.assertEqual(review_event["text"], "MiMo approved")
+
     def test_run_task_skips_review_when_there_are_no_changes(self) -> None:
         state = server.State()
         writer = mock.Mock()

@@ -37,6 +37,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Restore snapshot changes without requiring Git
 - Use Git when available, but not require it
 - Retry with another model when one model fails
+- Use a second open model as a quiet code reviewer when available
 - Record compact provider failure diagnostics for debugging web-page breakage
 
 ---
@@ -49,7 +50,17 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Xiaomi MiMo Chat | Tested |
 | Qwen Studio | Tested |
 
-Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core. Recent live tests also hardened MiMo submission so the driver clicks the real send button instead of nearby upload controls, and clarified the JSON tool protocol for Qwen.
+
+---
+
+## Two-Model Review
+
+If Codey finds another supported model already open in Edge, it can use that model as a quiet reviewer after the writer model finishes a code change.
+
+The reviewer does not edit files. It only reads a compact diff and returns structured feedback. If it approves, the task ends. If it finds a concrete issue, Codey sends that feedback back to the writer for one repair pass. If review is unavailable, Codey continues with the single-model result.
+
+This keeps the main UI simple: there is no group-chat screen and no extra switch to learn.
 
 ---
 

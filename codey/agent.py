@@ -43,6 +43,7 @@ SEARCH_MAX_FILE_BYTES = 512 * 1024
 RUN_TIMEOUT_SECONDS = 90
 RUN_OUTPUT_LIMIT = 24_000
 RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
+RUN_ALLOWED_PYTHON_FLAGS = {"-B"}
 RUN_ALLOWED_NPM_SCRIPTS = {"test", "build", "lint", "check", "typecheck"}
 EDIT_BLOCK_RE = re.compile(
     r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
@@ -257,9 +258,12 @@ def _is_allowed_run_command(argv: list[str]) -> bool:
         return False
     exe = Path(argv[0]).name.lower()
     if exe in {"python", "python.exe", "py", "py.exe"}:
-        if len(argv) >= 3 and argv[1] == "-m" and argv[2] in {"unittest", "pytest", "py_compile"}:
+        args = argv[1:]
+        while args and args[0] in RUN_ALLOWED_PYTHON_FLAGS:
+            args = args[1:]
+        if len(args) >= 2 and args[0] == "-m" and args[1] in {"unittest", "pytest", "py_compile"}:
             return True
-        if len(argv) >= 2 and argv[1].endswith(".py"):
+        if len(args) >= 1 and args[0].endswith(".py"):
             return True
         return False
     if exe in {"pytest", "pytest.exe"}:
