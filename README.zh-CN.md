@@ -187,6 +187,20 @@ Codey 已经测试过用 DeepSeek、MiMo 和 Qwen 修复被故意弄坏的 Codey
 
 这不代表 Codey 永远不会坏。它证明的是：当 Codey 出现可测试、可定位的问题时，它已经有机会依靠接入的网页 AI、本地工具、diff、restore 和测试，把自己修回来。
 
+## 端到端测试
+
+真实 Edge UI 流程可以用确定性的测试 Provider 重放，并自动检查项目选择、模型切换、SSE、文件修改、测试、review、任务收据、diff 和 restore：
+
+```powershell
+python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
+```
+
+当 Edge CDP 已打开并登录三个模型网页时，可以运行真实 Provider 矩阵。每个结果都会在 Agent 结束后再经过独立功能断言和 unittest 验证：
+
+```powershell
+python -B tools/live_smoke.py --provider all --case edit --port 9222 --max-turns 10 --json
+```
+
 ---
 
 ## 示例任务

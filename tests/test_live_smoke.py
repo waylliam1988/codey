@@ -41,6 +41,7 @@ class LiveSmokeTests(unittest.TestCase):
         with (
             mock.patch.object(live_smoke, "connect_provider", return_value=provider) as connect,
             mock.patch.object(live_smoke, "run", return_value=mock.Mock(stop_reason="done", summary="done", turns=3)),
+            mock.patch.object(live_smoke, "_verify_fixture", return_value={"ok": True, "exit_code": 0, "output": "OK"}),
             mock.patch.object(live_smoke.shutil, "rmtree"),
         ):
             data = live_smoke.run_smoke("deepseek", "create", 9222, 8)
@@ -65,6 +66,7 @@ class LiveSmokeTests(unittest.TestCase):
             mock.patch.object(live_smoke, "connect_provider", side_effect=[writer, reviewer]) as connect,
             mock.patch.object(live_smoke, "run", return_value=mock.Mock(stop_reason="done", summary="done", turns=3)),
             mock.patch.object(live_smoke, "collect_changes", return_value=changes),
+            mock.patch.object(live_smoke, "_verify_fixture", return_value={"ok": True, "exit_code": 0, "output": "OK"}),
             mock.patch.object(live_smoke.shutil, "rmtree"),
         ):
             data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "mimo")
@@ -95,6 +97,7 @@ class LiveSmokeTests(unittest.TestCase):
             mock.patch.object(live_smoke, "connect_provider", side_effect=[writer, reviewer]),
             mock.patch.object(live_smoke, "run", return_value=mock.Mock(stop_reason="done", summary="done", turns=3)),
             mock.patch.object(live_smoke, "collect_changes", return_value=changes),
+            mock.patch.object(live_smoke, "_verify_fixture", return_value={"ok": True, "exit_code": 0, "output": "OK"}),
             mock.patch.object(live_smoke.shutil, "rmtree"),
         ):
             data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "mimo")
@@ -123,6 +126,7 @@ class LiveSmokeTests(unittest.TestCase):
             mock.patch.object(live_smoke, "connect_provider", side_effect=[writer, reviewer]),
             mock.patch.object(live_smoke, "run", return_value=mock.Mock(stop_reason="done", summary="done", turns=3)),
             mock.patch.object(live_smoke, "collect_changes", return_value=changes),
+            mock.patch.object(live_smoke, "_verify_fixture", return_value={"ok": True, "exit_code": 0, "output": "OK"}),
             mock.patch.object(live_smoke.shutil, "rmtree"),
         ):
             data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "mimo")
@@ -134,6 +138,33 @@ class LiveSmokeTests(unittest.TestCase):
     def test_run_smoke_rejects_same_writer_and_reviewer(self) -> None:
         with self.assertRaisesRegex(ValueError, "reviewer must be different"):
             live_smoke.run_smoke("deepseek", "edit", 9222, 8, "deepseek")
+
+    def test_run_smoke_fails_when_independent_verification_fails(self) -> None:
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
+
+        with (
+            mock.patch.object(live_smoke, "connect_provider", return_value=provider),
+            mock.patch.object(live_smoke, "run", return_value=mock.Mock(stop_reason="done", summary="done", turns=1)),
+            mock.patch.object(live_smoke, "_verify_fixture", return_value={"ok": False, "exit_code": 1, "output": "wrong result"}),
+        ):
+            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8)
+
+        self.assertFalse(data["ok"])
+        self.assertEqual(data["verification"]["output"], "wrong result")
+
+    def test_run_matrix_keeps_running_after_provider_failure(self) -> None:
+        with mock.patch.object(
+            live_smoke,
+            "run_smoke",
+            side_effect=[{"ok": True, "summary": "done"}, RuntimeError("offline")],
+        ):
+            data = live_smoke.run_matrix("edit", 9222, 8, ("deepseek", "qwen"))
+
+        self.assertFalse(data["ok"])
+        self.assertEqual([item["provider"] for item in data["results"]], ["deepseek", "qwen"])
+        self.assertEqual(data["results"][1]["stop_reason"], "error")
 
 
 if __name__ == "__main__":

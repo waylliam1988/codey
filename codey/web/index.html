@@ -1604,8 +1604,8 @@ function handleLog(sid, line) {
   if (turnMatch) {
     const n = parseInt(turnMatch[1], 10);
     addToSession(sid, { type: 'turn', n });
-    const body = turnMatch[2].trim();
-    if (body) addToSession(sid, { type: 'asst', text: body });
+    // Agent replies are JSON protocol traffic. Tool/status rows below are the
+    // user-facing representation, so rendering the raw payload duplicates it.
     return;
   }
   const toolMatch = line.match(/^\s*·\s+(\w+)\s+(\S*)\s*->\s*(.*)$/);
@@ -1624,7 +1624,8 @@ function handleLog(sid, line) {
     addToSession(sid, { type: 'err', text: line.replace(/^ERROR:\s*/i, ''), sessionId: sid }); return;
   }
   if (line.startsWith('[agent]') || line.startsWith('[codey]')) {
-    addToSession(sid, { type: 'info', text: line }); return;
+    // Routine runtime diagnostics belong in logs, not the user chat stream.
+    return;
   }
 }
 

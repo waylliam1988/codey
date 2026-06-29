@@ -1,7 +1,48 @@
 # Codey 0.1.6 Test Report
 
-Date: 2026-06-29
+Date: 2026-06-30
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+
+## 2026-06-30 End-to-End Coverage
+
+The UI now has a repeatable browser E2E test that launches real headless Edge
+against the real local HTTP/SSE server. A deterministic provider drives the
+agent so the test can assert the complete product flow without depending on
+model variability:
+
+- add a project through the UI
+- select a provider
+- submit a task and receive SSE updates
+- write a file and run its test
+- display review and task receipt status
+- open and expand the diff drawer
+- restore the snapshot and verify the file is removed
+- capture screenshots for the completed and restored states
+
+```text
+python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
+PASS
+```
+
+The live smoke runner now supports a three-provider matrix and independently
+verifies the temporary project after the agent finishes. A model returning
+`done` is no longer enough to pass: Codey separately executes a functional
+assertion and the fixture's unittest suite.
+
+```text
+python -B tools/live_smoke.py --provider all --case edit --port 9222 --max-turns 10 --json
+DeepSeek: PASS (5 turns)
+Qwen: PASS (4 turns)
+MiMo: PASS (4 turns)
+
+python -B -m unittest
+Ran 214 tests
+OK
+```
+
+The browser E2E exposed raw JSON protocol payloads and routine `[agent]` logs
+in the chat stream. The UI now keeps those internal details out of the chat
+and shows only turn dividers, tool rows, review state, and the final receipt.
 
 ## 0.1.6 Update
 
@@ -165,7 +206,8 @@ So the two-model feature is useful, but it should stay quiet and automatic. It i
 - Web pages can change DOM structure and break provider drivers.
 - DeepSeek sometimes adds prose before JSON; the parser tolerates this.
 - Web models can still be verbose or choose larger edits than a human would.
-- UI screenshot testing is still manual/lightweight.
+- Functional UI assertions and screenshot capture are automated, but there is
+  no pixel-diff visual regression baseline yet.
 
 ## Release Notes
 

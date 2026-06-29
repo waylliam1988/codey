@@ -178,6 +178,24 @@ The current release also includes [TEST_REPORT.md](TEST_REPORT.md), which record
 
 This does not prove Codey will never break. It proves the core repair loop exists: when Codey breaks in a testable way, it can use connected web AI, local tools, diff, restore, and tests to help repair itself.
 
+## End-to-end tests
+
+The real Edge UI flow can be replayed with a deterministic test provider. The
+test covers project selection, provider switching, SSE, file edits, test
+execution, review, task receipts, diff, and snapshot restore:
+
+```powershell
+python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
+```
+
+With all three model pages logged in through Edge CDP, run the real-provider
+matrix below. Every result is independently checked with a functional
+assertion and unittest after the agent finishes:
+
+```powershell
+python -B tools/live_smoke.py --provider all --case edit --port 9222 --max-turns 10 --json
+```
+
 ---
 
 ## Example Tasks

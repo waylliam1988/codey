@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -20,6 +21,9 @@ from codey.review import (
     render_writer_followup,
 )
 from codey.server import collect_changes
+
+
+PROVIDER_IDS = ("deepseek", "qwen", "mimo")
 
 
 def _make_fixture(root: Path, name: str) -> None:
@@ -42,6 +46,59 @@ def _make_fixture(root: Path, name: str) -> None:
         )
         return
     raise ValueError(f"unknown fixture: {name}")
+
+
+def _verify_fixture(root: Path, case: str) -> dict:
+    """Verify the result independently of the model's own test command."""
+    if case == "create":
+        assertion = "from math_utils import add; assert add(2, 3) == 5"
+    elif case == "edit":
+        assertion = (
+            "from pricing import discounted_price; "
+            "assert discounted_price(100, 20) == 80"
+        )
+    else:
+        raise ValueError(f"unknown fixture: {case}")
+
+    commands = (
+        [sys.executable, "-B", "-c", assertion],
+        [sys.executable, "-B", "-m", "unittest"],
+    )
+    outputs: list[str] = []
+    for command in commands:
+        try:
+            proc = subprocess.run(
+                command,
+                cwd=root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=120,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "exit_code": None,
+                "output": "independent verification timed out after 120s",
+            }
+        output = "\n".join(
+            part for part in (proc.stdout.rstrip(), proc.stderr.rstrip()) if part
+        )
+        if output:
+            outputs.append(output)
+        if proc.returncode != 0:
+            return {
+                "ok": False,
+                "exit_code": proc.returncode,
+                "output": "\n\n".join(outputs)[-4000:],
+            }
+    return {
+        "ok": True,
+        "exit_code": 0,
+        "output": "\n\n".join(outputs)[-4000:],
+    }
 
 
 def _run_review_pass(
@@ -163,12 +220,14 @@ def run_smoke(
         finally:
             if provider is not None:
                 provider.close()
+        verification = _verify_fixture(root, case)
         return {
-            "ok": final_stop_reason == "done",
+            "ok": final_stop_reason == "done" and verification["ok"],
             "summary": final_summary,
             "stop_reason": final_stop_reason,
             "turns": result.turns,
             "review": review_status,
+            "verification": verification,
             "events": events,
             "project": str(root),
         }
@@ -176,9 +235,31 @@ def run_smoke(
         shutil.rmtree(root, ignore_errors=True)
 
 
+def run_matrix(
+    case: str,
+    port: int,
+    max_turns: int,
+    provider_ids: tuple[str, ...] = PROVIDER_IDS,
+) -> dict:
+    results = []
+    for provider_id in provider_ids:
+        try:
+            data = run_smoke(provider_id, case, port, max_turns)
+        except Exception as exc:
+            data = {
+                "ok": False,
+                "summary": str(exc),
+                "stop_reason": "error",
+                "provider": provider_id,
+            }
+        data.setdefault("provider", provider_id)
+        results.append(data)
+    return {"ok": all(item.get("ok") for item in results), "results": results}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", choices=("deepseek", "qwen", "mimo"), default="deepseek")
+    ap.add_argument("--provider", choices=(*PROVIDER_IDS, "all"), default="deepseek")
     ap.add_argument("--case", choices=("create", "edit"), default="create")
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--max-turns", type=int, default=8)
@@ -186,9 +267,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
-    data = run_smoke(args.provider, args.case, args.port, args.max_turns, args.reviewer)
+    if args.provider == "all":
+        if args.reviewer:
+            ap.error("--reviewer cannot be used with --provider all")
+        data = run_matrix(args.case, args.port, args.max_turns)
+    else:
+        data = run_smoke(args.provider, args.case, args.port, args.max_turns, args.reviewer)
     if args.json:
         print(json.dumps(data, ensure_ascii=False))
+    elif args.provider == "all":
+        for item in data["results"]:
+            status = "PASS" if item.get("ok") else "FAIL"
+            print(f"{item['provider']}: {status} - {item.get('summary', '')}")
     else:
         print(data["summary"])
     return 0 if data["ok"] else 1
