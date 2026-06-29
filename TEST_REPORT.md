@@ -1,7 +1,38 @@
-# Codey 0.1.3 Test Report
+# Codey 0.1.4 Test Report
 
-Date: 2026-06-28  
+Date: 2026-06-29
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+
+## 0.1.4 Update
+
+Version `0.1.4` adds compact task receipts in the chat stream:
+
+```text
+DONE · 2 files changed · checks passed · restore available        View diff
+```
+
+The receipt is built from local facts, not model prose:
+
+- changed file count comes from Git or snapshot changes
+- `checks passed` comes from a successful local `run`
+- `restore available` appears only for snapshot changes that can be restored
+- `View diff` reuses the existing right-side changes drawer
+
+Verification:
+
+```text
+python -B -m unittest
+Ran 183 tests
+OK
+
+python -B -m unittest tests.test_receipt tests.test_agent tests.test_server tests.test_ui
+Ran 82 tests
+OK
+```
+
+Manual UI preview used a temporary local server that exercised the real send/SSE path. The chat showed the receipt line, `View diff` opened the drawer, and expanded diffs showed red/green lines with line numbers.
+
+The 0.1.3 live provider smoke below remains the latest full DeepSeek/MiMo/Qwen live smoke pass.
 
 ## Scope
 

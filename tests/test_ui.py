@@ -77,6 +77,16 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("Continue", HTML)
         self.assertIn("Retry", HTML)
 
+    def test_done_receipt_can_open_changes_without_duplicate_summary(self) -> None:
+        self.assertIn("data.receipt && data.receipt.text", HTML)
+        self.assertIn("text: data.receipt.text", HTML)
+        self.assertIn("label: 'View diff'", HTML)
+        self.assertIn("onclick: () => openChangesDrawer(m.project)", HTML)
+        self.assertIn("let shownReceipt = false", HTML)
+        self.assertIn("shownReceipt = true", HTML)
+        self.assertIn("!shownReceipt) maybeAddChangesSummary(sid)", HTML)
+        self.assertIn("type: 'changes'", HTML)
+
     def test_send_failures_render_inline_error(self) -> None:
         self.assertIn("function addSendError(sessionId)", HTML)
         self.assertIn("Could not send the message", HTML)

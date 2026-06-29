@@ -10,7 +10,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen 和小
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.3`
+版本：`0.1.4`
 
 ---
 
@@ -36,6 +36,7 @@ Codey 想解决的是一个很朴素的问题：
 - 让模型读取和修改你选择的项目目录
 - 运行测试，并把结果继续反馈给模型
 - 显示红绿 diff
+- 每次任务结束后显示一条克制的任务收据，例如 `DONE · 2 files changed · checks passed · restore available`
 - 即使没有 Git，也能用 snapshot diff 和 restore 恢复改动
 - 有 Git 时自动增强为 Git diff / commit 工作流
 - 一个模型失败时，可以换另一个模型再试
@@ -54,7 +55,7 @@ Codey 想解决的是一个很朴素的问题：
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。最近的实机测试也加强了 MiMo 发送逻辑，确保点击真正的发送按钮，而不是旁边的上传按钮；同时也让 Qwen 更容易理解本地 JSON 工具协议。
 
-`0.1.3` 让模型浏览器可以长期保留：重启 Codey UI 后，会优先复用已经存在的 Edge CDP 浏览器和模型网页；如果没有可用的 CDP 浏览器，才会自动打开新的模型浏览器。`0.1.2` 增加了实时绿点/实心灰点模型状态，并把输入框改成 `Enter` 发送、`Shift+Enter` 换行。
+`0.1.4` 增加了对话流里的轻量任务收据，让新手不用打开新面板，也能知道这次改了几个文件、检查是否通过、是否可以恢复。`0.1.3` 让模型浏览器可以长期保留：重启 Codey UI 后，会优先复用已经存在的 Edge CDP 浏览器和模型网页；如果没有可用的 CDP 浏览器，才会自动打开新的模型浏览器。
 
 ---
 
@@ -123,6 +124,14 @@ C:\Users\<你>\.codey\edge-profile
 ```
 
 Codey 会让网页 AI 返回结构化工具调用，然后在本地真实读写文件，并显示改动。
+
+任务结束后，Codey 会用一行很轻的收据总结本地事实：
+
+```text
+DONE · 2 files changed · checks passed · restore available        View diff
+```
+
+点击 `View diff`，右侧栏会打开具体的红绿 diff。
 
 ---
 
@@ -242,6 +251,7 @@ codey/
   mimo.py                   MiMo 页面驱动
   qwen.py                   Qwen 页面驱动
   provider_diagnostics.py   小型 provider 失败记录
+  receipt.py                任务完成收据
   protocols/
     json_codec.py           JSON-only 工具协议
   providers/

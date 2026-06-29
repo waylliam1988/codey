@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.3`
+Version: `0.1.4`
 
 ---
 
@@ -36,6 +36,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Let the model read and modify files in a selected project folder
 - Run tests and feed results back to the model
 - Show red/green diffs
+- Show a compact task receipt after each run, such as `DONE · 2 files changed · checks passed · restore available`
 - Restore snapshot changes without requiring Git
 - Use Git when available, but not require it
 - Retry with another model when one model fails
@@ -54,7 +55,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core. Recent live tests also hardened MiMo submission so the driver clicks the real send button instead of nearby upload controls, and clarified the JSON tool protocol for Qwen.
 
-Version `0.1.3` keeps the model browser durable across Codey UI restarts: Codey first reuses an existing Edge CDP browser and model tab, and only opens a new model browser when no usable CDP browser exists. Version `0.1.2` added live green/gray model availability dots and changed the composer to `Enter` to send / `Shift+Enter` for a newline.
+Version `0.1.4` adds compact task receipts in the chat stream, so beginners can see what happened, whether checks passed, and whether restore is available without opening a new panel. Version `0.1.3` keeps the model browser durable across Codey UI restarts: Codey first reuses an existing Edge CDP browser and model tab, and only opens a new model browser when no usable CDP browser exists.
 
 ---
 
@@ -114,6 +115,14 @@ Create a small Python snake game in one file. Make it runnable with python snake
 ```
 
 Codey will ask the web AI for structured tool calls, apply edits locally, and show what changed.
+
+When a task finishes, Codey summarizes the local facts in one quiet line:
+
+```text
+DONE · 2 files changed · checks passed · restore available        View diff
+```
+
+`View diff` opens the right-side changes drawer for the detailed red/green diff.
 
 ---
 
@@ -233,6 +242,7 @@ codey/
   mimo.py                   MiMo page driver
   qwen.py                   Qwen page driver
   provider_diagnostics.py   compact provider failure records
+  receipt.py                task completion receipt builder
   protocols/
     json_codec.py           JSON-only tool protocol
   providers/

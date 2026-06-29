@@ -1117,7 +1117,11 @@ function appendMessageNode(chat, m) {
     div.appendChild(row);
     chat.appendChild(div);
   } else if (m.type === 'done') {
-    chat.appendChild(statusRow('Done', m.text || 'Task complete', { kind: 'done' }));
+    const action = m.project && m.changed ? {
+      label: 'View diff',
+      onclick: () => openChangesDrawer(m.project),
+    } : null;
+    chat.appendChild(statusRow('Done', m.text || 'Task complete', { kind: 'done', action }));
   } else if (m.type === 'review') {
     chat.appendChild(statusRow('Review', m.text || 'Complete', { kind: 'review' }));
   } else if (m.type === 'changes') {
@@ -1474,6 +1478,7 @@ evtSrc.onmessage = (e) => {
     updateSend();
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
+    let shownReceipt = false;
     if (reason === 'error' && data.provider_failure && data.provider_failure.action === 'connect') {
       if (data.provider && PROVIDERS.includes(data.provider)) {
         providerStatus[data.provider] = false;
@@ -1492,10 +1497,19 @@ evtSrc.onmessage = (e) => {
       addToSession(sid, { type: 'pause', text: 'Paused after several turns without new file writes', sessionId: sid });
     } else if (reason === 'approval') {
       // shell approval card is emitted separately
+    } else if (data.receipt && data.receipt.text) {
+      const changes = data.changes || {};
+      addToSession(sid, {
+        type: 'done',
+        text: data.receipt.text,
+        project: changes.project || sessionProjectPath(sid),
+        changed: !!(data.receipt.changed_count || changes.changed_count),
+      });
+      shownReceipt = true;
     } else if (summary) {
       addToSession(sid, { type: 'done', text: summary });
     }
-    if (reason !== 'error' && reason !== 'approval') maybeAddChangesSummary(sid);
+    if (reason !== 'error' && reason !== 'approval' && !shownReceipt) maybeAddChangesSummary(sid);
     return;
   }
   if (data.type === 'shell_request') {

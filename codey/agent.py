@@ -424,6 +424,7 @@ class RunResult:
     summary: str
     stop_reason: str = "done"  # done | stopped | max_turns | no_progress | protocol
     turns: int = 0
+    checks_passed: bool = False
 
 
 def run(
@@ -447,8 +448,11 @@ def run(
     seen_info: set[tuple[str, str, str]] = set()
     stagnant_count = 0
     wrote_files = False
-    verified_after_write = False
+    checks_passed = False
     verification_required = _task_requests_verification(user_task)
+
+    def finish(summary: str, stop_reason: str, turns: int) -> RunResult:
+        return RunResult(summary, stop_reason, turns, checks_passed)
 
     if fresh_chat:
         on_event(f"[agent] opening a fresh {provider.name} conversation")
@@ -475,7 +479,7 @@ def run(
     for turn in range(1, max_turns + 1):
         if stop_flag is not None and stop_flag.is_set():
             on_event("[agent] stopped by user.")
-            return RunResult("stopped", "stopped", turn)
+            return finish("stopped", "stopped", turn)
         plan = parse_reply(reply, codec)
         calls = plan.calls
         control = plan.control
@@ -492,6 +496,7 @@ def run(
                     if not out.startswith("ERROR:"):
                         made_progress = True
                         wrote_files = True
+                        checks_passed = False
                 elif call.name == "edit":
                     if _edit_has_content(call):
                         if change_tracker is not None:
@@ -504,6 +509,7 @@ def run(
                     if not out.startswith("ERROR:"):
                         made_progress = True
                         wrote_files = True
+                        checks_passed = False
                 elif call.name == "read":
                     out = tool_read(project, path)
                 elif call.name == "ls":
@@ -512,14 +518,13 @@ def run(
                     out = tool_search(project, path, _call_arg(call, "query"))
                 elif call.name == "run":
                     out = tool_run(project, path, _call_arg(call, "command"))
-                    if wrote_files and out.startswith("exit 0:"):
-                        verified_after_write = True
+                    checks_passed = out.startswith("exit 0:")
                 elif call.name == "shell":
                     command = _call_arg(call, "command").strip()
                     if on_shell_request:
                         on_shell_request(path, command)
                     on_event(f"[agent] shell approval requested: {command}")
-                    return RunResult("shell command requires approval", "approval", turn)
+                    return finish("shell command requires approval", "approval", turn)
                 else:
                     out = f"ERROR: malformed tool call {call.name} (path={path})"
             except Exception as exc:
@@ -535,12 +540,12 @@ def run(
         if control is None:
             if results:
                 on_event("[agent] reply had actions but no control element — assuming done.")
-                return RunResult(f"applied {len(results)} action(s) (no control element)", "protocol", turn)
+                return finish(f"applied {len(results)} action(s) (no control element)", "protocol", turn)
             stagnant_count += 1
             if stagnant_count >= stagnant_turns:
                 msg = f"stopped after {stagnant_turns} turns without valid tool progress"
                 on_event(f"[agent] {msg}.")
-                return RunResult(msg, "no_progress", turn)
+                return finish(msg, "no_progress", turn)
             on_event("[agent] reply contained no valid JSON tool call; nudging the model.")
             reply = provider.send(codec.repair_prompt())
             on_event(f"\n--- turn {turn+1} reply (after nudge) ---\n{reply}\n")
@@ -552,17 +557,17 @@ def run(
             needs_followup = any(call.name in ("read", "ls", "search", "run", "shell") for call in calls)
             if needs_followup:
                 on_event("[agent] `done` came with info action — treating as continue.")
-            elif verification_required and wrote_files and not verified_after_write:
+            elif verification_required and wrote_files and not checks_passed:
                 on_event("[agent] verification was requested; asking model to run tests before done.")
                 if turn >= max_turns:
                     on_event(f"[agent] hit max_turns={max_turns}, stopping.")
-                    return RunResult("verification required before done", "max_turns", turn)
+                    return finish("verification required before done", "max_turns", turn)
                 reply = provider.send(_verification_reminder(user_task))
                 on_event(f"\n--- turn {turn+1} reply (verification reminder) ---\n{reply}\n")
                 continue
             else:
                 on_event(f"[agent] DONE: {control.body}")
-                return RunResult(control.body, "done", turn)
+                return finish(control.body, "done", turn)
 
         if made_progress:
             stagnant_count = 0
@@ -571,14 +576,14 @@ def run(
             if stagnant_count >= stagnant_turns:
                 msg = control.body or f"stopped after {stagnant_turns} turns without file writes or new tool information"
                 on_event(f"[agent] no progress for {stagnant_turns} turns, stopping.")
-                return RunResult(msg, "no_progress", turn)
+                return finish(msg, "no_progress", turn)
 
         if turn >= max_turns:
             on_event(f"[agent] hit max_turns={max_turns}, stopping.")
-            return RunResult(control.body or f"hit max_turns={max_turns}", "max_turns", turn)
+            return finish(control.body or f"hit max_turns={max_turns}", "max_turns", turn)
 
         next_prompt = codec.format_results(results)
         reply = provider.send(next_prompt)
         on_event(f"\n--- turn {turn+1} reply ---\n{reply}\n")
 
-    return RunResult("(max turns reached)", "max_turns", max_turns)
+    return finish("(max turns reached)", "max_turns", max_turns)

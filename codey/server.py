@@ -43,6 +43,7 @@ from codey.providers import (
     provider_tab_availability,
 )
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
+from codey.receipt import build_task_receipt
 from codey.review import (
     ReviewResult,
     has_reviewable_changes,
@@ -512,6 +513,7 @@ def _run_task(
     })
 
     recent_events: list[str] = []
+    task_changes: dict | None = None
 
     def on_event(msg: str) -> None:
         recent_events.append(str(msg))
@@ -569,8 +571,8 @@ def _run_task(
                 change_tracker=tracker,
             )
             if result.stop_reason == "done" and not STATE.stop_flag.is_set():
-                changes = collect_changes(project, tracker)
-                if has_reviewable_changes(changes):
+                task_changes = collect_changes(project, tracker)
+                if has_reviewable_changes(task_changes):
                     try:
                         provider.close()
                     except Exception:
@@ -582,7 +584,7 @@ def _run_task(
                             project=project,
                             task=task,
                             writer_summary=result.summary,
-                            changes=changes,
+                            changes=task_changes,
                             recent_log=_recent_log_text(recent_events),
                             writer_id=provider_id,
                         )
@@ -612,10 +614,15 @@ def _run_task(
             reply = provider.send(task)
             STATE.emit({"type": "reply", "session_id": session_id, "text": reply})
             result = RunResult("", "done", 1)
+        if project:
+            task_changes = collect_changes(project, tracker)
+            receipt = build_task_receipt(task_changes, checks_passed=result.checks_passed)
+        else:
+            receipt = None
         STATE.last_summary = result.summary
         STATE.last_stop_reason = result.stop_reason
         STATE.status = "done"
-        STATE.emit({
+        event = {
             "type": "task_done",
             "session_id": session_id,
             "summary": result.summary,
@@ -623,7 +630,17 @@ def _run_task(
             "turns": result.turns,
             "max_turns": max_turns,
             "provider": provider_id,
-        })
+        }
+        if receipt is not None:
+            event["receipt"] = receipt.to_dict()
+            if task_changes and task_changes.get("ok"):
+                event["changes"] = {
+                    "changed_count": task_changes.get("changed_count", 0),
+                    "files": task_changes.get("files", [])[:3],
+                    "mode": task_changes.get("mode"),
+                    "project": project,
+                }
+        STATE.emit(event)
     except Exception as exc:
         if "provider" in locals() and provider is not None:
             failure = getattr(provider, "last_failure", None)

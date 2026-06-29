@@ -486,8 +486,48 @@ class RunLoopTests(unittest.TestCase):
 
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(result.summary, "fixed and tested")
+        self.assertTrue(result.checks_passed)
         self.assertTrue(any("verification" in event.lower() for event in events))
         self.assertTrue(any("python -m unittest" in prompt for prompt in provider.sent))
+
+    def test_edit_after_successful_run_requires_fresh_check(self) -> None:
+        run = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}'
+        done = '{"tool":"done","args":{"summary":"updated"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(run, edit, done),
+                root,
+                "update app",
+                on_event=lambda _m: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.checks_passed)
+
+    def test_failed_run_after_success_clears_checks_passed(self) -> None:
+        run_ok = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = "}}'
+        run_fail = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
+        done = '{"tool":"done","args":{"summary":"updated"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(run_ok, edit, run_fail, done),
+                root,
+                "update app",
+                on_event=lambda _m: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.checks_passed)
 
 
 if __name__ == "__main__":

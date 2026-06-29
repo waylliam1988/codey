@@ -213,7 +213,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=server.RunResult("complete", "done", 3),
+                return_value=server.RunResult("complete", "done", 3, True),
             ) as agent_run,
         ):
             server._run_task("session-1", td, "task", 8, False, "qwen")
@@ -226,9 +226,52 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["provider"], "qwen")
+        self.assertEqual(task_done["receipt"]["text"], "No files changed · checks passed")
         self.assertEqual(state.provider_id, "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
+
+    def test_run_task_emits_receipt_and_inline_changes(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
+        changes = {
+            "ok": True,
+            "mode": "snapshot",
+            "changed_count": 2,
+            "files": [
+                {"path": "app.py", "status": "M", "additions": 1, "deletions": 1},
+                {"path": "test_app.py", "status": "A", "additions": 5, "deletions": 0},
+                {"path": "README.md", "status": "M", "additions": 1, "deletions": 0},
+                {"path": "extra.py", "status": "A", "additions": 1, "deletions": 0},
+            ],
+            "diff": "+new",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=server.RunResult("complete", "done", 3, True),
+            ),
+            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
+        ):
+            server._run_task("session-1", td, "task", 8, False, "deepseek")
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["receipt"]["text"], "2 files changed · checks passed · restore available")
+        self.assertEqual(task_done["changes"]["changed_count"], 2)
+        self.assertEqual(len(task_done["changes"]["files"]), 3)
+        self.assertEqual(task_done["changes"]["project"], td)
 
     def test_run_task_uses_second_model_for_approved_review(self) -> None:
         state = server.State()

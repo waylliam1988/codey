@@ -200,7 +200,7 @@ Left label + 1px `--border` line extending right.
 **Status rows** (done, pause, limit, error):
 
 ```
-DONE · Task complete
+DONE · 2 files changed · checks passed · restore available        View diff
 PAUSED · No progress for several turns          Continue
 ERROR · Connection refused                      Retry
 ```

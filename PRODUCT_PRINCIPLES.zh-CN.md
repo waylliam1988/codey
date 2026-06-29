@@ -267,16 +267,13 @@ Codey 现在已经有轻量历史雏形：
 
 未来如果增强，不应该做复杂任务管理器。
 
-更合理的是把一次运行整理成一张轻量“任务收据”：
+更合理的是把一次运行整理成一行轻量“任务收据”：
 
 ```text
-DONE · Fixed tests
-Changes · 2 files
-Tests · passed
-Review · MiMo approved
+DONE · 2 files changed · checks passed · restore available        View diff
 ```
 
-这只是整理已有信息，不是新增一个重系统。
+它只整理已有事实，不新增任务管理器；具体红绿 diff 仍然放在右侧 changes drawer。
 
 ## 关于数据和统计
 
