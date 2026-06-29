@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.5`
+Version: `0.1.6`
 
 ---
 
@@ -41,6 +41,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Use Git when available, but not require it
 - Retry with another model when one model fails
 - Use two open web models together: one writes, the other reviews
+- Continue long conversations quietly with an automatic factual summary and fresh model chat
 - Record compact provider failure diagnostics for debugging web-page breakage
 
 ---
@@ -54,6 +55,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Qwen Studio | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core. Recent live tests also hardened MiMo submission so the driver clicks the real send button instead of nearby upload controls, and clarified the JSON tool protocol for Qwen.
+
+Version `0.1.6` adds a hidden context safety net. Near one shared context budget, Codey asks the current model for a compact factual summary, opens a fresh model chat, and continues without adding controls or notices to the UI. If summarizing fails, Codey falls back to local task facts; if the fresh chat or its first message fails, the old budget and summary remain available for retry.
 
 Version `0.1.4` adds compact task receipts in the chat stream, so beginners can see what happened, whether checks passed, and whether restore is available without opening a new panel. Version `0.1.3` keeps the model browser durable across Codey UI restarts: Codey first reuses an existing Edge CDP browser and model tab, and only opens a new model browser when no usable CDP browser exists.
 

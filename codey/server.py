@@ -27,6 +27,7 @@ import subprocess
 import threading
 import time
 import uuid
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -36,6 +37,11 @@ from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
 from codey.changes import ChangeTracker
+from codey.handoff import (
+    ConversationContext,
+    ConversationSnapshot,
+    render_continuation_prompt,
+)
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
@@ -64,6 +70,7 @@ REVIEW_TIMEOUT = 300.0
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
+MAX_CONVERSATION_STATES = 32
 CHANGE_EXCLUDED_PATH_PARTS = {
     "__pycache__",
     ".pytest_cache",
@@ -286,6 +293,7 @@ def _run_review(
         reviewer = None
         try:
             reviewer = connect_existing_provider(reviewer_id)
+            STATE.set_provider_session(reviewer_id, None)
             reviewer.new_chat()
             prompt = render_review_prompt(
                 project=project,
@@ -409,7 +417,8 @@ class State:
         self.pending_shell: dict[str, dict] = {}
         self.pending_teach: dict[str, dict] = {}
         self.change_trackers: dict[str, ChangeTracker] = {}
-        self.reset_next_chat = False
+        self.conversations: dict[str, ConversationContext] = {}
+        self.provider_sessions: dict[str, str] = {}
 
     def emit(self, event: dict) -> None:
         with self.lock:
@@ -440,6 +449,35 @@ class State:
         })
         self.emit({"type": "log", "level": "info", "text": f"{provider.name} connected: {provider.location}"})
         return provider
+
+    def conversation_for(self, session_id: str) -> ConversationContext:
+        with self.lock:
+            context = self.conversations.pop(session_id, None)
+            if context is None:
+                if len(self.conversations) >= MAX_CONVERSATION_STATES:
+                    oldest = next(iter(self.conversations))
+                    self.conversations.pop(oldest)
+                context = ConversationContext()
+            self.conversations[session_id] = context
+            return context
+
+    def forget_conversation(self, session_id: str) -> None:
+        with self.lock:
+            self.conversations.pop(session_id, None)
+            for provider_id, owner in list(self.provider_sessions.items()):
+                if owner == session_id:
+                    self.provider_sessions.pop(provider_id)
+
+    def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
+        with self.lock:
+            return self.provider_sessions.get(provider_id) != session_id
+
+    def set_provider_session(self, provider_id: str, session_id: str | None) -> None:
+        with self.lock:
+            if session_id:
+                self.provider_sessions[provider_id] = session_id
+            else:
+                self.provider_sessions.pop(provider_id, None)
 
     def handle_control_teach(self, request: provider_controls.ControlTeachRequest):
         while True:
@@ -595,10 +633,44 @@ def _run_task(
 
     try:
         provider = STATE.get_provider(provider_id)
-        with STATE.lock:
-            reset_requested = STATE.reset_next_chat
-            STATE.reset_next_chat = False
-        fresh_chat = (not continue_task) or reset_requested
+        mode = "project" if project else "chat"
+        project_text = str(Path(project).expanduser().resolve()) if project else ""
+        conversation = STATE.conversation_for(session_id)
+        provider_session_changed = STATE.provider_session_changed(
+            provider_id,
+            session_id,
+        )
+        can_summarize_current_chat = (
+            conversation.initialized
+            and provider_id == conversation.provider_id
+            and not provider_session_changed
+        )
+        fresh_chat, handoff = conversation.plan_request(
+            provider_id=provider_id,
+            mode=mode,
+            project=project_text,
+            force_rollover=(
+                continue_task
+                or provider_session_changed
+            ),
+            next_prompt=task,
+        )
+        if fresh_chat and can_summarize_current_chat:
+            handoff = conversation.prepare_model_handoff(provider.send)
+        prior_snapshot = conversation.snapshot
+        conversation.update_snapshot(ConversationSnapshot(
+            mode=mode,
+            goal=prior_snapshot.goal or task,
+            project=project_text,
+            provider_id=prior_snapshot.provider_id,
+            changed_files=prior_snapshot.changed_files,
+            checks_passed=prior_snapshot.checks_passed,
+            summary=prior_snapshot.summary,
+            blocker=prior_snapshot.blocker,
+            latest_user=task if mode == "chat" else "",
+            latest_reply=prior_snapshot.latest_reply if mode == "chat" else "",
+            conversation_summary=prior_snapshot.conversation_summary,
+        ))
         if project:
             key = str(Path(project).expanduser().resolve())
             with STATE.lock:
@@ -616,7 +688,11 @@ def _run_task(
                 stop_flag=STATE.stop_flag,
                 fresh_chat=fresh_chat,
                 change_tracker=tracker,
+                conversation=conversation,
+                provider_id=provider_id,
+                handoff=handoff,
             )
+            STATE.set_provider_session(provider_id, session_id)
             if result.stop_reason == "done" and not STATE.stop_flag.is_set():
                 task_changes = collect_changes(project, tracker)
                 if has_reviewable_changes(task_changes):
@@ -653,17 +729,47 @@ def _run_task(
                                 stop_flag=STATE.stop_flag,
                                 fresh_chat=False,
                                 change_tracker=tracker,
+                                conversation=conversation,
+                                provider_id=provider_id,
                             )
         else:
             # Plain chat: just send + capture the reply, no tools executed.
             if fresh_chat:
                 provider.new_chat()
-            reply = provider.send(task)
+            prompt = render_continuation_prompt(handoff, task) if handoff else task
+            reply = provider.send(prompt)
+            if fresh_chat:
+                conversation.begin_window(provider_id, "chat")
+            STATE.set_provider_session(provider_id, session_id)
+            conversation.record_exchange(
+                prompt,
+                reply,
+                replace(
+                    conversation.snapshot,
+                    provider_id=provider_id,
+                    blocker="",
+                    latest_user=task,
+                    latest_reply=reply,
+                ),
+            )
             STATE.emit({"type": "reply", "session_id": session_id, "text": reply})
             result = RunResult("", "done", 1)
         if project:
             task_changes = collect_changes(project, tracker)
             receipt = build_task_receipt(task_changes, checks_passed=result.checks_passed)
+            files = tuple(
+                str(item.get("path") or "")
+                for item in (task_changes.get("files") or [])
+                if item.get("path")
+            )
+            conversation.update_snapshot(replace(
+                conversation.snapshot,
+                provider_id=provider_id,
+                changed_files=files,
+                checks_passed=result.checks_passed,
+                summary=result.summary,
+                blocker="" if result.stop_reason == "done" else result.summary,
+            ))
         else:
             receipt = None
         STATE.last_summary = result.summary
@@ -689,6 +795,12 @@ def _run_task(
                 }
         STATE.emit(event)
     except provider_controls.ControlTeachCancelled:
+        if "conversation" in locals():
+            conversation.update_snapshot(replace(
+                conversation.snapshot,
+                provider_id=provider_id,
+                blocker="stopped",
+            ))
         STATE.last_summary = ""
         STATE.last_stop_reason = "stopped"
         STATE.status = "done"
@@ -703,6 +815,12 @@ def _run_task(
             "provider_failure": None,
         })
     except Exception as exc:
+        if "conversation" in locals():
+            conversation.update_snapshot(replace(
+                conversation.snapshot,
+                provider_id=provider_id,
+                blocker=str(exc),
+            ))
         if "provider" in locals() and provider is not None:
             failure = getattr(provider, "last_failure", None)
         else:
@@ -958,8 +1076,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True})
             return
         if url.path == "/api/new_chat":
-            STATE.reset_next_chat = True
-            STATE.emit({"type": "log", "level": "info", "text": "[codey] next task will start in a fresh provider chat"})
+            session_id = str(body.get("session_id") or "").strip()
+            if session_id:
+                STATE.forget_conversation(session_id)
             self._send_json(200, {"ok": True})
             return
         if url.path == "/api/stop":

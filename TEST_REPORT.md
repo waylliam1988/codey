@@ -1,9 +1,41 @@
-# Codey 0.1.4 Test Report
+# Codey 0.1.6 Test Report
 
 Date: 2026-06-29
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
 
-## 0.1.4 Update
+## 0.1.6 Update
+
+Version `0.1.6` adds a hidden, provider-neutral context handoff:
+
+- one lightweight token estimate for every model
+- a soft rollover point near 150k estimated tokens and a 200k hard budget
+- one final hidden model turn that returns a bounded factual JSON summary
+- a fresh model chat seeded with that summary
+- local-fact fallback when summarizing fails
+- no budget reset until the fresh chat's first handoff message succeeds
+- no new UI controls, context meter, command, or compression notice
+
+Automated verification:
+
+```text
+python -B -m unittest
+Ran 210 tests
+OK
+```
+
+Live verification:
+
+| Flow | Result |
+|---|---|
+| DeepSeek chat summary -> fresh chat | Preserved two decisions |
+| Qwen chat summary -> fresh chat | Preserved two decisions |
+| MiMo chat summary -> fresh chat | Preserved two decisions |
+| Qwen project summary -> fresh chat | Three edits completed; 3 tests passed |
+| Qwen empty response recovery | Regenerated once and continued normally |
+
+All project live tests used temporary directories. The main repository was not used as a model editing target.
+
+## Previous 0.1.4 Update
 
 Version `0.1.4` adds compact task receipts in the chat stream:
 

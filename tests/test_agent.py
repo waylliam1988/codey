@@ -4,8 +4,10 @@ import tempfile
 import unittest
 import json
 from pathlib import Path
+from unittest import mock
 
 from codey import agent
+from codey.handoff import ConversationContext, ConversationSnapshot
 
 
 class FakeProvider:
@@ -348,6 +350,110 @@ class DefaultsTests(unittest.TestCase):
 
 
 class RunLoopTests(unittest.TestCase):
+    def test_context_rollover_opens_fresh_chat_with_project_handoff(self) -> None:
+        summary = (
+            '{"goal":"Finish the original feature","decisions":["Keep app.py"],'
+            '"current_state":"Tests pass"}'
+        )
+        done = '{"tool":"done","args":{"summary":"continued"}}'
+        provider = FakeProvider(summary, done)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            context = ConversationContext(hard_limit=200)
+            context.begin_window("deepseek", "project", str(root))
+            context.update_snapshot(ConversationSnapshot(
+                mode="project",
+                goal="Finish the original feature",
+                project=str(root),
+                provider_id="deepseek",
+                changed_files=("app.py",),
+                checks_passed=True,
+            ))
+            context.used_tokens = 149
+
+            result = agent.run(
+                provider,
+                root,
+                "Add the final test",
+                on_event=lambda _m: None,
+                fresh_chat=False,
+                conversation=context,
+                provider_id="deepseek",
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(provider.new_chat_calls, 1)
+        self.assertIn("Return only one compact JSON object", provider.sent[0])
+        self.assertIn("Factual handoff", provider.sent[1])
+        self.assertIn("Finish the original feature", provider.sent[1])
+        self.assertIn("Add the final test", provider.sent[1])
+
+    def test_failed_fresh_chat_does_not_reset_token_budget(self) -> None:
+        summary = '{"current_state":"Keep the existing conversation"}'
+        done = '{"tool":"done","args":{"summary":"continued"}}'
+        provider = FakeProvider(summary, done)
+        provider.new_chat = mock.Mock(side_effect=RuntimeError("button missing"))
+        events: list[str] = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            context = ConversationContext(hard_limit=200)
+            context.begin_window("deepseek", "project", str(root))
+            context.update_snapshot(ConversationSnapshot(
+                mode="project",
+                goal="Continue safely",
+                project=str(root),
+                provider_id="deepseek",
+            ))
+            context.used_tokens = 149
+
+            result = agent.run(
+                provider,
+                root,
+                "Finish the task",
+                on_event=events.append,
+                fresh_chat=False,
+                conversation=context,
+                provider_id="deepseek",
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertGreater(context.used_tokens, 149)
+        self.assertTrue(any("reusing current tab" in event for event in events))
+
+    def test_failed_first_handoff_send_keeps_summary_and_budget(self) -> None:
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.send.side_effect = [
+            '{"current_state":"Keep this summary"}',
+            TimeoutError("send failed"),
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            context = ConversationContext(hard_limit=200)
+            context.begin_window("deepseek", "project", str(root))
+            context.update_snapshot(ConversationSnapshot(
+                mode="project",
+                goal="Continue safely",
+                project=str(root),
+                provider_id="deepseek",
+            ))
+            context.used_tokens = 149
+
+            with self.assertRaisesRegex(TimeoutError, "send failed"):
+                agent.run(
+                    provider,
+                    root,
+                    "Finish the task",
+                    on_event=lambda _message: None,
+                    fresh_chat=False,
+                    conversation=context,
+                    provider_id="deepseek",
+                )
+
+        self.assertGreater(context.used_tokens, 149)
+        self.assertIn("Keep this summary", context.snapshot.conversation_summary)
+        provider.new_chat.assert_called_once_with()
+
     def test_edit_tool_call_updates_file(self) -> None:
         reply = '{"tool":"edit","args":{"path":"app.py","old_string":"return \'old\'","new_string":"return \'new\'"}}'
         done = '{"tool":"done","args":{"summary":"updated"}}'

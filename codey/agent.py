@@ -16,6 +16,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from codey.handoff import (
+    ConversationContext,
+    ConversationSnapshot,
+    render_continuation_prompt,
+)
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.providers import ChatProvider
 from codey.protocols import JsonToolCodec, ProtocolCodec
@@ -440,6 +445,9 @@ def run(
     stop_flag=None,
     fresh_chat: bool = True,
     change_tracker: ChangeTracker | None = None,
+    conversation: ConversationContext | None = None,
+    provider_id: str = "",
+    handoff: str = "",
 ) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
@@ -449,31 +457,90 @@ def run(
     stagnant_count = 0
     wrote_files = False
     checks_passed = False
+    changed_files = set(conversation.snapshot.changed_files if conversation else ())
     verification_required = _task_requests_verification(user_task)
+    project_text = str(project)
+    active_provider_id = provider_id or getattr(provider, "name", "")
+
+    def snapshot(summary: str = "", blocker: str = "") -> ConversationSnapshot:
+        prior = conversation.snapshot if conversation else None
+        return ConversationSnapshot(
+            mode="project",
+            goal=(prior.goal if prior and prior.goal else user_task),
+            project=project_text,
+            provider_id=active_provider_id,
+            changed_files=tuple(sorted(changed_files)),
+            checks_passed=checks_passed,
+            summary=summary,
+            blocker=blocker,
+            conversation_summary=(prior.conversation_summary if prior else ""),
+        )
 
     def finish(summary: str, stop_reason: str, turns: int) -> RunResult:
+        if conversation is not None:
+            blocker = "" if stop_reason == "done" else summary
+            conversation.update_snapshot(snapshot(summary, blocker))
         return RunResult(summary, stop_reason, turns, checks_passed)
 
-    if fresh_chat:
+    def open_fresh_chat() -> bool:
         on_event(f"[agent] opening a fresh {provider.name} conversation")
         try:
             provider.new_chat()
         except Exception as exc:
             on_event(f"[agent] could not open new chat: {exc}; reusing current tab")
+            return False
+        return True
 
     project_instructions = load_project_instructions(project)
     if project_instructions:
         names = ", ".join(doc.name for doc in project_instructions)
         on_event(f"[agent] loaded project instructions: {names}")
 
-    intro = (
-        f"{codec.system_prompt()}\n\n"
-        f"Project root: {project}\n"
-        f"Project instructions:\n{format_project_instructions(project_instructions)}\n\n"
-        f"Initial listing:\n{tool_ls(project, '.')}\n\n"
-        f"User task:\n{user_task}"
-    )
-    reply = provider.send(intro)
+    def project_intro(request: str, factual_handoff: str = "") -> str:
+        current = (
+            render_continuation_prompt(factual_handoff, request)
+            if factual_handoff
+            else request
+        )
+        return (
+            f"{codec.system_prompt()}\n\n"
+            f"Project root: {project}\n"
+            f"Project instructions:\n{format_project_instructions(project_instructions)}\n\n"
+            f"Initial listing:\n{tool_ls(project, '.')}\n\n"
+            f"User task:\n{current}"
+        )
+
+    def send_prompt(prompt: str, *, restart_request: str | None = None) -> str:
+        opened_fresh_chat = False
+        if conversation is not None and conversation.needs_rollover(prompt):
+            factual_handoff = conversation.prepare_model_handoff(provider.send)
+            if open_fresh_chat():
+                prompt = project_intro(restart_request or prompt, factual_handoff)
+                opened_fresh_chat = True
+        reply_text = provider.send(prompt)
+        if conversation is not None:
+            if opened_fresh_chat:
+                conversation.begin_window(active_provider_id, "project", project_text)
+            conversation.record_exchange(prompt, reply_text, snapshot())
+        return reply_text
+
+    if fresh_chat:
+        opened_fresh_chat = open_fresh_chat()
+        intro = project_intro(user_task, handoff)
+        reply = provider.send(intro)
+        if conversation is not None:
+            if opened_fresh_chat:
+                conversation.begin_window(active_provider_id, "project", project_text)
+            conversation.record_exchange(intro, reply, snapshot())
+    elif conversation is not None:
+        followup = (
+            "Continue with the established project and JSON tool protocol.\n\n"
+            f"User request:\n{user_task}"
+        )
+        reply = send_prompt(followup, restart_request=user_task)
+    else:
+        intro = project_intro(user_task)
+        reply = provider.send(intro)
     on_event(f"\n--- turn 1 reply ---\n{reply}\n")
 
     for turn in range(1, max_turns + 1):
@@ -497,6 +564,7 @@ def run(
                         made_progress = True
                         wrote_files = True
                         checks_passed = False
+                        changed_files.add(path)
                 elif call.name == "edit":
                     if _edit_has_content(call):
                         if change_tracker is not None:
@@ -510,6 +578,7 @@ def run(
                         made_progress = True
                         wrote_files = True
                         checks_passed = False
+                        changed_files.add(path)
                 elif call.name == "read":
                     out = tool_read(project, path)
                 elif call.name == "ls":
@@ -536,6 +605,8 @@ def run(
                 if sig not in seen_info:
                     seen_info.add(sig)
                     made_progress = True
+        if conversation is not None:
+            conversation.update_snapshot(snapshot(control.body if control else ""))
 
         if control is None:
             if results:
@@ -547,7 +618,8 @@ def run(
                 on_event(f"[agent] {msg}.")
                 return finish(msg, "no_progress", turn)
             on_event("[agent] reply contained no valid JSON tool call; nudging the model.")
-            reply = provider.send(codec.repair_prompt())
+            repair = codec.repair_prompt()
+            reply = send_prompt(repair, restart_request=repair)
             on_event(f"\n--- turn {turn+1} reply (after nudge) ---\n{reply}\n")
             continue
 
@@ -562,7 +634,8 @@ def run(
                 if turn >= max_turns:
                     on_event(f"[agent] hit max_turns={max_turns}, stopping.")
                     return finish("verification required before done", "max_turns", turn)
-                reply = provider.send(_verification_reminder(user_task))
+                reminder = _verification_reminder(user_task)
+                reply = send_prompt(reminder, restart_request=reminder)
                 on_event(f"\n--- turn {turn+1} reply (verification reminder) ---\n{reply}\n")
                 continue
             else:
@@ -583,7 +656,13 @@ def run(
             return finish(control.body or f"hit max_turns={max_turns}", "max_turns", turn)
 
         next_prompt = codec.format_results(results)
-        reply = provider.send(next_prompt)
+        reply = send_prompt(
+            next_prompt,
+            restart_request=(
+                "Continue the unfinished task using the latest local tool results below.\n\n"
+                f"{next_prompt}"
+            ),
+        )
         on_event(f"\n--- turn {turn+1} reply ---\n{reply}\n")
 
     return finish("(max turns reached)", "max_turns", max_turns)

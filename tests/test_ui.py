@@ -39,6 +39,13 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("Continue the unfinished task in this same conversation.", HTML)
         self.assertNotIn("Continue the unfinished Codey task", HTML)
 
+    def test_context_handoff_stays_hidden(self) -> None:
+        self.assertIn("JSON.stringify({ session_id: s.id })", HTML)
+        self.assertNotIn("/compact", HTML)
+        self.assertNotIn("context limit", HTML.lower())
+        self.assertNotIn("context compression", HTML.lower())
+        self.assertNotIn("handoff summary", HTML.lower())
+
     def test_retry_uses_current_session_model_picker(self) -> None:
         retry_start = HTML.index("function retryTask(sessionId)")
         retry_end = HTML.index("function sessionProjectPath", retry_start)

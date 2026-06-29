@@ -1241,7 +1241,11 @@ function newSession(projectId = null) {
   const provider = currentProviderId();
   const s = { id: uid(), projectId, title: 'New chat', messages: [], createdAt: Date.now(), provider };
   sessions.unshift(s); activeId = s.id; persistActive(); renderSidebar(); renderChat();
-  fetch('/api/new_chat', { method: 'POST' }).catch(() => {});
+  fetch('/api/new_chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: s.id }),
+  }).catch(() => {});
 }
 function deleteSession(id) {
   if (!confirm('Delete this chat?')) return;

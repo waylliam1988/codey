@@ -167,6 +167,15 @@ class ProviderStatusTests(unittest.TestCase):
 
 
 class SessionThreadingTests(unittest.TestCase):
+    def test_conversation_state_is_bounded(self) -> None:
+        state = server.State()
+
+        for index in range(server.MAX_CONVERSATION_STATES + 1):
+            state.conversation_for(f"session-{index}")
+
+        self.assertEqual(len(state.conversations), server.MAX_CONVERSATION_STATES)
+        self.assertNotIn("session-0", state.conversations)
+
     def test_state_opens_provider_connection_each_time(self) -> None:
         class FakeProvider:
             name = "DeepSeek Web"
@@ -272,6 +281,123 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.provider_id, "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
+
+    def test_plain_chat_followup_reuses_same_model_conversation(self) -> None:
+        state = server.State()
+        first = mock.Mock()
+        first.name = "DeepSeek Web"
+        first.location = "https://chat.deepseek.com/"
+        first.send.return_value = "First answer"
+        second = mock.Mock()
+        second.name = "DeepSeek Web"
+        second.location = "https://chat.deepseek.com/"
+        second.send.return_value = "Second answer"
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", side_effect=[first, second]),
+        ):
+            server._run_task("session-1", None, "First question", 8, False, "deepseek")
+            server._run_task("session-1", None, "Follow-up question", 8, False, "deepseek")
+
+        first.new_chat.assert_called_once_with()
+        second.new_chat.assert_not_called()
+        second.send.assert_called_once_with("Follow-up question")
+
+    def test_plain_chat_model_switch_uses_hidden_handoff(self) -> None:
+        state = server.State()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        writer.send.return_value = "The chosen database is SQLite."
+        next_model = mock.Mock()
+        next_model.name = "Qwen Studio"
+        next_model.location = "https://chat.qwen.ai/"
+        next_model.send.return_value = "We can continue with SQLite."
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", side_effect=[writer, next_model]),
+        ):
+            server._run_task("session-1", None, "Choose a database", 8, False, "deepseek")
+            server._run_task("session-1", None, "Add a migration plan", 8, False, "qwen")
+
+        next_model.new_chat.assert_called_once_with()
+        prompt = next_model.send.call_args.args[0]
+        self.assertIn("Factual handoff", prompt)
+        self.assertIn("Choose a database", prompt)
+        self.assertIn("The chosen database is SQLite.", prompt)
+        self.assertIn("Add a migration plan", prompt)
+
+    def test_returning_to_session_restores_its_model_chat(self) -> None:
+        state = server.State()
+        first_a = mock.Mock()
+        first_a.name = "DeepSeek Web"
+        first_a.location = "https://chat.deepseek.com/"
+        first_a.send.return_value = "Session A chose SQLite."
+        session_b = mock.Mock()
+        session_b.name = "DeepSeek Web"
+        session_b.location = "https://chat.deepseek.com/"
+        session_b.send.return_value = "Session B answer."
+        second_a = mock.Mock()
+        second_a.name = "DeepSeek Web"
+        second_a.location = "https://chat.deepseek.com/"
+        second_a.send.return_value = "Session A continued."
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(
+                state,
+                "get_provider",
+                side_effect=[first_a, session_b, second_a],
+            ),
+        ):
+            server._run_task("session-a", None, "Choose a database", 8, False, "deepseek")
+            server._run_task("session-b", None, "Explain Python", 8, False, "deepseek")
+            server._run_task("session-a", None, "Add migrations", 8, False, "deepseek")
+
+        second_a.new_chat.assert_called_once_with()
+        prompt = second_a.send.call_args.args[0]
+        self.assertIn("Factual handoff", prompt)
+        self.assertIn("Session A chose SQLite.", prompt)
+        self.assertNotIn("Session B answer.", prompt)
+
+    def test_project_continue_starts_fresh_chat_with_original_goal(self) -> None:
+        state = server.State()
+        first = mock.Mock()
+        first.name = "DeepSeek Web"
+        first.location = "https://chat.deepseek.com/"
+        first.send.return_value = '{"tool":"done","args":{"summary":"first pass"}}'
+        second = mock.Mock()
+        second.name = "DeepSeek Web"
+        second.location = "https://chat.deepseek.com/"
+        second.send.side_effect = [
+            '{"goal":"Build the calculator","current_state":"First pass complete"}',
+            '{"tool":"done","args":{"summary":"continued"}}',
+        ]
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", side_effect=[first, second]),
+        ):
+            server._run_task("session-1", td, "Build the calculator", 8, False, "deepseek")
+            server._run_task(
+                "session-1",
+                td,
+                "Continue the unfinished task.",
+                8,
+                True,
+                "deepseek",
+            )
+
+        first.new_chat.assert_called_once_with()
+        second.new_chat.assert_called_once_with()
+        self.assertIn("Return only one compact JSON object", second.send.call_args_list[0].args[0])
+        prompt = second.send.call_args_list[1].args[0]
+        self.assertIn("Factual handoff", prompt)
+        self.assertIn("Build the calculator", prompt)
+        self.assertIn("Continue the unfinished task.", prompt)
 
     def test_run_task_emits_receipt_and_inline_changes(self) -> None:
         state = server.State()

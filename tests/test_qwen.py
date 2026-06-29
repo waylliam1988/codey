@@ -130,6 +130,54 @@ class QwenDriverTests(unittest.TestCase):
         self.assertEqual(raw, '{"tool":"done","args":{"summary":"raw"}}')
         copy_action.assert_called_once_with(page, copy_button, origin=qwen.QWEN_URL)
 
+    def test_regenerate_empty_response_uses_last_response_action(self) -> None:
+        page = mock.Mock()
+        responses = mock.Mock()
+        response = mock.Mock()
+        regenerate_locator = mock.Mock()
+        regenerate = mock.Mock()
+        page.locator.return_value = responses
+        responses.count.return_value = 1
+        responses.last = response
+        response.locator.return_value = regenerate_locator
+        regenerate_locator.last = regenerate
+        regenerate.count.return_value = 1
+        regenerate.is_visible.return_value = True
+
+        with mock.patch.object(qwen, "_visible_locator", return_value=mock.Mock()):
+            recovered = qwen._regenerate_empty_response(page)
+
+        self.assertTrue(recovered)
+        response.locator.assert_called_once_with(qwen.REGENERATE)
+        regenerate.click.assert_called_once_with()
+
+    def test_chat_regenerates_one_empty_response(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        with (
+            mock.patch.object(qwen, "wait_ready"),
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_submit"),
+            mock.patch.object(qwen, "_response_count", side_effect=[0, 1]),
+            mock.patch.object(qwen, "_last_text", return_value="recovered"),
+            mock.patch.object(qwen, "_empty_response_visible", side_effect=[True, False]),
+            mock.patch.object(qwen, "_generation_complete", return_value=True),
+            mock.patch.object(qwen, "_regenerate_empty_response", return_value=True) as regenerate,
+            mock.patch.object(qwen, "_final_text", return_value="raw recovered"),
+            mock.patch.object(qwen.time, "sleep"),
+        ):
+            reply = qwen.chat(
+                page,
+                "hello",
+                response_timeout=1,
+                stable_ticks=0,
+                tick=0,
+                min_wait=0,
+            )
+
+        self.assertEqual(reply, "raw recovered")
+        regenerate.assert_called_once_with(page)
+
     def test_resolve_preference_selects_first_visible_reply(self) -> None:
         page = mock.Mock()
         choices = mock.Mock()

@@ -17,7 +17,9 @@ SEND_READY = "button.send-button:not(.disabled):not([disabled])"
 STOP_ACTIVE = "button.stop-button:not(.disabled)"
 RESPONSE_MESSAGE = ".chat-response-message"
 ANSWER = ".response-message-content.phase-answer"
+EMPTY_RESPONSE = ".response-message-empty"
 RESPONSE_COPY = ".response-message-footer .qwen-chat-package-comp-new-action-control-container-copy"
+REGENERATE = ".response-message-footer .qwen-chat-package-comp-new-action-control-container-regenerate"
 PREFERENCE_CHOICE = "button.smulti-make-better"
 
 READY_TIMEOUT = 90.0
@@ -27,6 +29,7 @@ SUBMIT_CONFIRM_TIMEOUT = 15.0
 COPY_READY_TIMEOUT = 10.0
 PREFERENCE_TIMEOUT = 15.0
 MAX_SUBMIT_ATTEMPTS = 2
+REGENERATE_START_TIMEOUT = 15.0
 
 
 def _visible_locator(page: Page, selector: str) -> Locator | None:
@@ -110,6 +113,33 @@ def _copy_last_text(page: Page) -> str:
     if copy_button is None:
         return ""
     return copy_action_text(page, copy_button, origin=QWEN_URL)
+
+
+def _empty_response_visible(page: Page) -> bool:
+    responses = page.locator(RESPONSE_MESSAGE)
+    if not responses.count():
+        return False
+    empty = responses.last.locator(EMPTY_RESPONSE).last
+    return bool(empty.count() and empty.is_visible())
+
+
+def _regenerate_empty_response(page: Page) -> bool:
+    responses = page.locator(RESPONSE_MESSAGE)
+    if not responses.count():
+        return False
+    regenerate = responses.last.locator(REGENERATE).last
+    if not regenerate.count() or not regenerate.is_visible():
+        return False
+    regenerate.click()
+
+    deadline = time.time() + REGENERATE_START_TIMEOUT
+    while time.time() < deadline:
+        if _visible_locator(page, STOP_ACTIVE) is not None:
+            return True
+        if not _empty_response_visible(page):
+            return True
+        time.sleep(0.2)
+    return False
 
 
 def _resolve_preference(page: Page) -> bool:
@@ -220,8 +250,19 @@ def chat(
     last = ""
     stable = 0
     appeared = False
+    regenerated = False
     while time.time() < deadline:
         time.sleep(tick)
+        if _empty_response_visible(page) and _generation_complete(page):
+            if regenerated or not _regenerate_empty_response(page):
+                raise RuntimeError("Qwen Studio returned an empty response")
+            regenerated = True
+            sent_at = time.time()
+            deadline = sent_at + response_timeout
+            last = ""
+            stable = 0
+            appeared = False
+            continue
         count = _response_count(page)
         current = _last_text(page) if count else ""
         if count <= baseline and current == baseline_text:
