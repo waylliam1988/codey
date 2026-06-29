@@ -50,7 +50,7 @@ class MimoDriverTests(unittest.TestCase):
         textarea = mock.Mock()
 
         with (
-            mock.patch.object(mimo, "_visible_locator", return_value=textarea),
+            mock.patch.object(mimo.controls, "visible_locator", return_value=textarea),
             mock.patch.object(mimo, "_wait_submission_started", return_value=True),
             mock.patch.object(mimo, "_send_button", return_value=None) as send_button,
         ):
@@ -65,7 +65,7 @@ class MimoDriverTests(unittest.TestCase):
         button = mock.Mock()
 
         with (
-            mock.patch.object(mimo, "_visible_locator", return_value=textarea),
+            mock.patch.object(mimo.controls, "visible_locator", return_value=textarea),
             mock.patch.object(mimo, "_wait_submission_started", return_value=True) as wait_started,
             mock.patch.object(mimo, "_send_button", return_value=button),
         ):
@@ -98,7 +98,7 @@ class MimoDriverTests(unittest.TestCase):
         with (
             mock.patch.object(mimo, "_response_count", return_value=0),
             mock.patch.object(mimo, "_last_text", return_value=""),
-            mock.patch.object(mimo, "_visible_locator", return_value=textarea),
+            mock.patch.object(mimo.controls, "visible_locator", return_value=textarea),
         ):
             started = mimo._submission_started(page, baseline=0, submitted_text="hello")
 

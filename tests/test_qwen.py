@@ -56,7 +56,7 @@ class QwenDriverTests(unittest.TestCase):
         page = mock.Mock()
         send = mock.Mock()
 
-        with mock.patch.object(qwen, "_visible_locator", return_value=send):
+        with mock.patch.object(qwen.controls, "visible_locator", return_value=send):
             qwen._submit(page, baseline=0)
 
         send.click.assert_called_once_with()
@@ -66,7 +66,7 @@ class QwenDriverTests(unittest.TestCase):
         send = mock.Mock()
 
         with (
-            mock.patch.object(qwen, "_visible_locator", return_value=send),
+            mock.patch.object(qwen.controls, "visible_locator", return_value=send),
             mock.patch.object(qwen, "_submission_started", side_effect=[False, False, True]),
             mock.patch.object(qwen.time, "sleep"),
         ):
@@ -79,7 +79,7 @@ class QwenDriverTests(unittest.TestCase):
         send = mock.Mock()
 
         with (
-            mock.patch.object(qwen, "_visible_locator", return_value=send),
+            mock.patch.object(qwen.controls, "visible_locator", return_value=send),
             mock.patch.object(qwen, "_submission_started", return_value=True),
             mock.patch.object(qwen.time, "time", side_effect=[0, 0, 0, 16, 16, 16]),
             mock.patch.object(qwen.time, "sleep"),
@@ -90,7 +90,7 @@ class QwenDriverTests(unittest.TestCase):
 
     def test_submission_started_requires_generation_or_new_response(self) -> None:
         with (
-            mock.patch.object(qwen, "_visible_locator", return_value=None),
+            mock.patch.object(qwen.controls, "visible_locator", return_value=None),
             mock.patch.object(qwen, "_response_count", return_value=0),
         ):
             started = qwen._submission_started(mock.Mock(), baseline=0)
@@ -99,7 +99,7 @@ class QwenDriverTests(unittest.TestCase):
 
     def test_submission_started_accepts_new_response(self) -> None:
         with (
-            mock.patch.object(qwen, "_visible_locator", return_value=None),
+            mock.patch.object(qwen.controls, "visible_locator", return_value=None),
             mock.patch.object(qwen, "_response_count", return_value=2),
         ):
             started = qwen._submission_started(mock.Mock(), baseline=1)

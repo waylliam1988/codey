@@ -76,6 +76,19 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".link-btn", HTML)
         self.assertIn("Continue", HTML)
         self.assertIn("Retry", HTML)
+        self.assertIn("Resume", HTML)
+
+    def test_control_teaching_uses_plain_paused_status_row(self) -> None:
+        self.assertIn("data.type === 'teach_request'", HTML)
+        self.assertIn("Click the control in the model page", HTML)
+        self.assertIn("resumeTeaching", HTML)
+        self.assertIn("/api/teach/resume", HTML)
+        teach_start = HTML.index("} else if (m.type === 'teach') {")
+        teach_end = HTML.index("} else if (m.type === 'err') {", teach_start)
+        teach_block = HTML[teach_start:teach_end]
+        self.assertNotIn("DOM", teach_block)
+        self.assertNotIn("selector", teach_block.lower())
+        self.assertNotIn("override", teach_block.lower())
 
     def test_done_receipt_can_open_changes_without_duplicate_summary(self) -> None:
         self.assertIn("data.receipt && data.receipt.text", HTML)

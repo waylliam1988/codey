@@ -3,10 +3,12 @@ from __future__ import annotations
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey import provider_controls
 from codey import server
 from codey.changes import ChangeTracker
 from codey.provider_diagnostics import ProviderFailure
@@ -198,6 +200,46 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         providers = next(event for event in emitted if event["type"] == "providers")
         self.assertEqual(providers["providers"], [{"id": "mimo", "label": "MiMo", "available": True}])
+
+    def test_state_pauses_for_control_teaching_and_resumes_with_captured_control(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        page = mock.Mock()
+        page.url = "https://chat.qwen.ai/"
+        request = provider_controls.ControlTeachRequest(
+            provider_id="qwen",
+            action=provider_controls.CONTROL_SEND_BUTTON,
+            page=page,
+            session_id="session-1",
+            require_enabled=True,
+        )
+        captured = provider_controls.CapturedControl(
+            fingerprint={"tag": "button", "role": "button", "text": "Send"},
+            current_selector='[data-codey-teach-current="token"]',
+        )
+        button = mock.Mock()
+
+        with (
+            mock.patch.object(provider_controls, "start_click_capture", return_value="token") as start,
+            mock.patch.object(provider_controls, "finish_click_capture", return_value=captured) as finish,
+            mock.patch.object(provider_controls, "resolve_captured_control", return_value=button) as resolve,
+        ):
+            slot: list[object] = []
+            thread = threading.Thread(target=lambda: slot.append(state.handle_control_teach(request)))
+            thread.start()
+            emitted = events.get(timeout=1)
+            pending_id = emitted["id"]
+            with state.lock:
+                state.pending_teach[pending_id]["event"].set()
+            thread.join(timeout=1)
+
+        self.assertEqual(slot, [button])
+        self.assertEqual(emitted["type"], "teach_request")
+        self.assertEqual(emitted["text"], "Click the send button in the model page")
+        start.assert_called_once_with(page)
+        finish.assert_called_once_with(page, "token", provider_controls.CONTROL_SEND_BUTTON, timeout=1.0)
+        resolve.assert_called_once_with(request, captured)
+        self.assertEqual(state.pending_teach, {})
 
     def test_run_task_keeps_selected_provider_through_agent_completion(self) -> None:
         state = server.State()
@@ -530,6 +572,33 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(failure["url"], "")
         self.assertEqual(failure["title"], "")
         self.assertEqual(failure["message"], "Edge not reachable")
+
+    def test_run_task_treats_control_teaching_cancel_as_stop(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "Qwen Studio"
+        provider.location = "https://chat.qwen.ai/"
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(
+                server,
+                "agent_run",
+                side_effect=provider_controls.ControlTeachCancelled("cancelled"),
+            ),
+        ):
+            server._run_task("session-1", td, "task", 8, False, "qwen")
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["stop_reason"], "stopped")
+        self.assertEqual(task_done["summary"], "")
+        self.assertIsNone(task_done["provider_failure"])
 
     def test_restore_snapshot_changes_endpoint(self) -> None:
         with tempfile.TemporaryDirectory() as td:

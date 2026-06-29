@@ -31,6 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from codey import provider_controls
 from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
@@ -62,6 +63,7 @@ SHELL_OUTPUT_LIMIT = 24_000
 REVIEW_TIMEOUT = 300.0
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
+CONTROL_TEACH_TIMEOUT = 300.0
 CHANGE_EXCLUDED_PATH_PARTS = {
     "__pycache__",
     ".pytest_cache",
@@ -405,6 +407,7 @@ class State:
         self.last_provider_failure: ProviderFailure | None = None
         self.stop_flag = threading.Event()
         self.pending_shell: dict[str, dict] = {}
+        self.pending_teach: dict[str, dict] = {}
         self.change_trackers: dict[str, ChangeTracker] = {}
         self.reset_next_chat = False
 
@@ -438,8 +441,50 @@ class State:
         self.emit({"type": "log", "level": "info", "text": f"{provider.name} connected: {provider.location}"})
         return provider
 
+    def handle_control_teach(self, request: provider_controls.ControlTeachRequest):
+        while True:
+            teach_id = "teach_" + uuid.uuid4().hex[:12]
+            token = provider_controls.start_click_capture(request.page)
+            pending = {
+                "id": teach_id,
+                "request": request,
+                "token": token,
+                "event": threading.Event(),
+                "cancelled": False,
+            }
+            with self.lock:
+                self.pending_teach[teach_id] = pending
+            self.emit({
+                "type": "teach_request",
+                "session_id": request.session_id,
+                "id": teach_id,
+                "text": request.message,
+            })
+            if not pending["event"].wait(CONTROL_TEACH_TIMEOUT):
+                with self.lock:
+                    self.pending_teach.pop(teach_id, None)
+                provider_controls.cancel_click_capture(request.page)
+                raise TimeoutError("Timed out waiting for Resume")
+            if pending.get("cancelled"):
+                provider_controls.cancel_click_capture(request.page)
+                raise provider_controls.ControlTeachCancelled("control teaching was cancelled")
+            try:
+                captured = provider_controls.finish_click_capture(
+                    request.page,
+                    token,
+                    request.action,
+                    timeout=1.0,
+                )
+                return provider_controls.resolve_captured_control(request, captured)
+            except ValueError:
+                continue
+            finally:
+                with self.lock:
+                    self.pending_teach.pop(teach_id, None)
+
 
 STATE = State()
+provider_controls.set_teach_handler(STATE.handle_control_teach)
 
 
 def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
@@ -494,6 +539,8 @@ def _run_task(
     continue_task: bool,
     provider_id: str,
 ) -> None:
+    provider_controls.set_teach_handler(STATE.handle_control_teach)
+    provider_controls.set_session_id(session_id)
     STATE.busy = True
     STATE.project = project
     STATE.task = task
@@ -641,6 +688,20 @@ def _run_task(
                     "project": project,
                 }
         STATE.emit(event)
+    except provider_controls.ControlTeachCancelled:
+        STATE.last_summary = ""
+        STATE.last_stop_reason = "stopped"
+        STATE.status = "done"
+        STATE.emit({
+            "type": "task_done",
+            "session_id": session_id,
+            "summary": "",
+            "stop_reason": "stopped",
+            "turns": 0,
+            "max_turns": max_turns,
+            "provider": provider_id,
+            "provider_failure": None,
+        })
     except Exception as exc:
         if "provider" in locals() and provider is not None:
             failure = getattr(provider, "last_failure", None)
@@ -665,6 +726,7 @@ def _run_task(
             "provider_failure": failure.to_dict() if failure else None,
         })
     finally:
+        provider_controls.set_session_id("")
         try:
             if "provider" in locals() and provider is not None:
                 provider.close()
@@ -886,6 +948,15 @@ class Handler(BaseHTTPRequestHandler):
                 continued = True
             self._send_json(200, {"ok": True, "approved": True, "continued": continued, "result": result})
             return
+        if url.path == "/api/teach/resume":
+            teach_id = str(body.get("id") or "").strip()
+            with STATE.lock:
+                pending = STATE.pending_teach.get(teach_id)
+            if not pending:
+                self._send_json(404, {"error": "pause not found"}); return
+            pending["event"].set()
+            self._send_json(200, {"ok": True})
+            return
         if url.path == "/api/new_chat":
             STATE.reset_next_chat = True
             STATE.emit({"type": "log", "level": "info", "text": "[codey] next task will start in a fresh provider chat"})
@@ -893,6 +964,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/stop":
             STATE.stop_flag.set()
+            with STATE.lock:
+                pending_teach = list(STATE.pending_teach.values())
+            for pending in pending_teach:
+                pending["cancelled"] = True
+                pending["event"].set()
             STATE.emit({"type": "log", "level": "warn", "text": "stop requested"})
             self._send_json(200, {"ok": True})
             return

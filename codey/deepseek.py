@@ -18,8 +18,10 @@ import time
 
 from playwright.sync_api import Page
 
+from codey import provider_controls as controls
 from codey.web_clipboard import copy_action_text
 
+PROVIDER_ID = "deepseek"
 INPUT = "textarea.ds-scroll-area"
 SEND_READY = 'div[role="button"].ds-button--primary:not(.ds-button--disabled)'
 RESPONSE = ".ds-markdown"
@@ -40,13 +42,34 @@ def new_chat(page) -> None:
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        try:
-            if page.locator(INPUT).first.is_visible():
-                return
-        except Exception:
-            pass
+        if _message_box(page) is not None:
+            return
         time.sleep(0.4)
+    if _message_box(page, teach=True) is not None:
+        return
     raise TimeoutError("DeepSeek chat input did not appear. Are you logged in?")
+
+
+def _message_box(page: Page, *, teach: bool = False):
+    return controls.locate_control(
+        page,
+        PROVIDER_ID,
+        controls.CONTROL_MESSAGE_BOX,
+        (INPUT,),
+        teach=teach,
+    )
+
+
+def _send_button(page: Page, *, timeout: float = 0.0, teach: bool = False):
+    return controls.locate_control(
+        page,
+        PROVIDER_ID,
+        controls.CONTROL_SEND_BUTTON,
+        (SEND_READY,),
+        timeout=timeout,
+        require_enabled=True,
+        teach=teach,
+    )
 
 
 # Reconstruct fenced markdown from the rendered DOM.  Two important quirks:
@@ -189,21 +212,21 @@ def chat(
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
 
-    ta = page.locator(INPUT).first
+    ta = _message_box(page, teach=True)
+    if ta is None:
+        raise TimeoutError("DeepSeek chat input is not visible")
     ta.click()
     ta.fill(text)
     time.sleep(0.3)
 
-    deadline = time.time() + 5
-    btn = None
-    while time.time() < deadline:
-        loc = page.locator(SEND_READY)
-        if loc.count() > 0:
-            btn = loc.last
-            break
-        time.sleep(0.2)
+    btn = _send_button(page, timeout=5)
     if btn is None:
         ta.press("Enter")
+        time.sleep(0.4)
+        if _response_count(page) <= baseline and controls.can_teach():
+            btn = _send_button(page, teach=True)
+            if btn is not None:
+                btn.click()
     else:
         btn.click()
 

@@ -6,8 +6,10 @@ import time
 
 from playwright.sync_api import Locator, Page
 
+from codey import provider_controls as controls
 from codey.web_clipboard import copy_action_text
 
+PROVIDER_ID = "mimo"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 MIMO_ORIGIN = "https://aistudio.xiaomimimo.com"
 INPUT = "textarea"
@@ -22,23 +24,27 @@ SUBMIT_READY_TIMEOUT = 5.0
 
 
 def _visible_locator(page: Page, selector: str) -> Locator | None:
-    locator = page.locator(selector)
-    for index in range(locator.count() - 1, -1, -1):
-        candidate = locator.nth(index)
-        try:
-            if candidate.is_visible():
-                return candidate
-        except Exception:
-            continue
-    return None
+    return controls.visible_locator(page, selector)
+
+
+def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
+    return controls.locate_control(
+        page,
+        PROVIDER_ID,
+        controls.CONTROL_MESSAGE_BOX,
+        (INPUT,),
+        teach=teach,
+    )
 
 
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if _visible_locator(page, INPUT) is not None:
+        if _message_box(page) is not None:
             return
         time.sleep(0.4)
+    if _message_box(page, teach=True) is not None:
+        return
     raise TimeoutError("Xiaomi MiMo Chat input did not appear. Are you logged in?")
 
 
@@ -135,7 +141,7 @@ def _submission_started(
     if count > baseline or (bool(current) and current != baseline_text):
         return True
     if submitted_text:
-        textarea = _visible_locator(page, INPUT)
+        textarea = _message_box(page)
         try:
             return textarea is not None and not textarea.input_value().strip()
         except Exception:
@@ -144,7 +150,7 @@ def _submission_started(
 
 
 def _submit(page: Page, baseline: int, baseline_text: str = "", submitted_text: str = "") -> None:
-    textarea = _visible_locator(page, INPUT)
+    textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Xiaomi MiMo Chat input is not visible")
 
@@ -159,20 +165,30 @@ def _submit(page: Page, baseline: int, baseline_text: str = "", submitted_text: 
     if _wait_submission_started(page, baseline, baseline_text, submitted_text):
         return
 
+    if controls.can_teach():
+        button = controls.request_teaching(
+            page,
+            PROVIDER_ID,
+            controls.CONTROL_SEND_BUTTON,
+            require_enabled=True,
+        )
+        if button is not None:
+            button.click()
+            if _wait_submission_started(page, baseline, baseline_text, submitted_text):
+                return
+
     raise TimeoutError("Xiaomi MiMo Chat did not submit the message")
 
 
 def _send_button(page: Page) -> Locator | None:
-    deadline = time.time() + SUBMIT_READY_TIMEOUT
-    while time.time() < deadline:
-        button = _visible_locator(page, SEND_BUTTON)
-        try:
-            if button is not None and button.is_enabled():
-                return button
-        except Exception:
-            pass
-        time.sleep(0.2)
-    return None
+    return controls.locate_control(
+        page,
+        PROVIDER_ID,
+        controls.CONTROL_SEND_BUTTON,
+        (SEND_BUTTON,),
+        timeout=SUBMIT_READY_TIMEOUT,
+        require_enabled=True,
+    )
 
 
 def _wait_submission_started(
@@ -226,7 +242,7 @@ def chat(
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
 
-    textarea = _visible_locator(page, INPUT)
+    textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Xiaomi MiMo Chat input is not visible")
     textarea.click()

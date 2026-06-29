@@ -1203,6 +1203,10 @@ function appendMessageNode(chat, m) {
     chat.appendChild(statusRow('Paused', m.text || 'No progress for several turns', {
       action: { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
     }));
+  } else if (m.type === 'teach') {
+    chat.appendChild(statusRow('Paused', m.text || 'Click the control in the model page', {
+      action: { label: 'Resume', disabled: false, onclick: () => resumeTeaching(m.id, m.sessionId || activeId) },
+    }));
   } else if (m.type === 'err') {
     chat.appendChild(statusRow('Error', m.text || '', {
       err: true,
@@ -1461,6 +1465,11 @@ evtSrc.onmessage = (e) => {
     return;
   }
   const sid = data.session_id;
+  if (data.type === 'teach_request') {
+    removeTeachMessage(sid);
+    addToSession(sid, { type: 'teach', id: data.id, text: data.text, sessionId: sid });
+    return;
+  }
   if (data.type === 'task_start') {
     runningSessionId = sid;
     turnCounter = 0;
@@ -1552,14 +1561,37 @@ evtSrc.onerror = () => setStatus('Disconnected', 'err');
 function addToSession(sid, m) {
   const s = sessions.find(x => x.id === sid);
   if (!s) return;
-  if ((m.type === 'limit' || m.type === 'pause' || m.type === 'err') && !m.sessionId) m.sessionId = sid;
+  if ((m.type === 'limit' || m.type === 'pause' || m.type === 'teach' || m.type === 'err') && !m.sessionId) m.sessionId = sid;
   s.messages.push(m);
   persistActive();
   if (sid === activeId) { appendMessageNode($('chat'), m); scrollChat(); }
 }
 
+function removeTeachMessage(sessionId, teachId) {
+  const s = sessions.find(x => x.id === sessionId);
+  if (!s) return;
+  const before = s.messages.length;
+  s.messages = s.messages.filter(m => !(m.type === 'teach' && (!teachId || m.id === teachId)));
+  if (s.messages.length !== before) {
+    persistActive();
+    if (sessionId === activeId) renderChat();
+  }
+}
+
 function addSendError(sessionId) {
   addToSession(sessionId, { type: 'err', text: 'Could not send the message', sessionId });
+}
+
+async function resumeTeaching(teachId, sessionId) {
+  if (!teachId) return;
+  try {
+    const r = await fetch('/api/teach/resume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: teachId }),
+    });
+    if (r.ok) removeTeachMessage(sessionId, teachId);
+  } catch {}
 }
 
 function handleLog(sid, line) {

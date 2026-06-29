@@ -6,8 +6,10 @@ import time
 
 from playwright.sync_api import Locator, Page
 
+from codey import provider_controls as controls
 from codey.web_clipboard import copy_action_text
 
+PROVIDER_ID = "qwen"
 QWEN_URL = "https://chat.qwen.ai/"
 INPUT = "textarea.message-input-textarea"
 SEND_BUTTON = "button.send-button"
@@ -28,23 +30,45 @@ MAX_SUBMIT_ATTEMPTS = 2
 
 
 def _visible_locator(page: Page, selector: str) -> Locator | None:
-    locator = page.locator(selector)
-    for index in range(locator.count() - 1, -1, -1):
-        candidate = locator.nth(index)
-        try:
-            if candidate.is_visible():
-                return candidate
-        except Exception:
-            continue
-    return None
+    return controls.visible_locator(page, selector)
+
+
+def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
+    return controls.locate_control(
+        page,
+        PROVIDER_ID,
+        controls.CONTROL_MESSAGE_BOX,
+        (INPUT,),
+        teach=teach,
+    )
+
+
+def _send_button(
+    page: Page,
+    *,
+    timeout: float = 0.0,
+    require_enabled: bool = True,
+    teach: bool = False,
+) -> Locator | None:
+    return controls.locate_control(
+        page,
+        PROVIDER_ID,
+        controls.CONTROL_SEND_BUTTON,
+        (SEND_READY, SEND_BUTTON),
+        timeout=timeout,
+        require_enabled=require_enabled,
+        teach=teach,
+    )
 
 
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if _visible_locator(page, INPUT) is not None:
+        if _message_box(page) is not None:
             return
         time.sleep(0.4)
+    if _message_box(page, teach=True) is not None:
+        return
     raise TimeoutError("Qwen Studio chat input did not appear. Are you logged in?")
 
 
@@ -121,7 +145,7 @@ def _final_text(page: Page) -> str:
 
 
 def _generation_complete(page: Page) -> bool:
-    return _visible_locator(page, SEND_BUTTON) is not None and _visible_locator(page, STOP_ACTIVE) is None
+    return _send_button(page, require_enabled=False) is not None and _visible_locator(page, STOP_ACTIVE) is None
 
 
 def _submission_started(page: Page, baseline: int) -> bool:
@@ -130,13 +154,7 @@ def _submission_started(page: Page, baseline: int) -> bool:
 
 def _submit(page: Page, baseline: int) -> None:
     for attempt in range(MAX_SUBMIT_ATTEMPTS):
-        deadline = time.time() + SEND_TIMEOUT
-        send = None
-        while time.time() < deadline:
-            send = _visible_locator(page, SEND_READY)
-            if send is not None:
-                break
-            time.sleep(0.25)
+        send = _send_button(page, timeout=SEND_TIMEOUT, teach=True)
         if send is None:
             raise TimeoutError("Qwen Studio send button did not become ready")
 
@@ -190,7 +208,7 @@ def chat(
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
 
-    textarea = _visible_locator(page, INPUT)
+    textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Qwen Studio chat input is not visible")
     textarea.click()
