@@ -23,7 +23,7 @@ SUMMARY_KEYS = (
 )
 
 
-def _compact_text(value: str, limit: int = MAX_HANDOFF_TEXT_CHARS) -> str:
+def compact_text(value: str, limit: int = MAX_HANDOFF_TEXT_CHARS) -> str:
     text = str(value or "").strip()
     if len(text) <= limit:
         return text
@@ -54,7 +54,7 @@ def _extract_json_object(text: str) -> dict | None:
 
 
 def _normalize_model_summary(text: str) -> str:
-    source = _compact_text(text, MAX_MODEL_SUMMARY_CHARS)
+    source = compact_text(text, MAX_MODEL_SUMMARY_CHARS)
     value = _extract_json_object(source)
     if value is None:
         value = {"current_state": source}
@@ -63,10 +63,10 @@ def _normalize_model_summary(text: str) -> str:
     for key in SUMMARY_KEYS:
         item = value.get(key)
         if isinstance(item, str) and item.strip():
-            summary[key] = _compact_text(item)
+            summary[key] = compact_text(item)
         elif isinstance(item, list):
             items = [
-                _compact_text(entry)
+                compact_text(entry)
                 for entry in item
                 if isinstance(entry, str) and entry.strip()
             ][:MAX_SUMMARY_LIST_ITEMS]
@@ -94,7 +94,7 @@ class ConversationSnapshot:
     def to_payload(self) -> dict:
         payload: dict[str, object] = {
             "mode": self.mode,
-            "goal": _compact_text(self.goal),
+            "goal": compact_text(self.goal),
         }
         if self.project:
             payload["project"] = self.project
@@ -106,18 +106,18 @@ class ConversationSnapshot:
         if self.checks_passed is not None:
             payload["checks"] = "passed" if self.checks_passed else "not passed"
         if self.summary:
-            payload["latest_result"] = _compact_text(self.summary)
+            payload["latest_result"] = compact_text(self.summary)
         if self.blocker:
-            payload["current_blocker"] = _compact_text(self.blocker)
+            payload["current_blocker"] = compact_text(self.blocker)
         if self.latest_user:
-            payload["latest_user_message"] = _compact_text(self.latest_user)
+            payload["latest_user_message"] = compact_text(self.latest_user)
         if self.latest_reply:
-            payload["latest_model_reply"] = _compact_text(self.latest_reply)
+            payload["latest_model_reply"] = compact_text(self.latest_reply)
         if self.conversation_summary:
             try:
                 payload["conversation_summary"] = json.loads(self.conversation_summary)
             except json.JSONDecodeError:
-                payload["conversation_summary"] = _compact_text(
+                payload["conversation_summary"] = compact_text(
                     self.conversation_summary,
                     MAX_MODEL_SUMMARY_CHARS,
                 )
@@ -166,6 +166,16 @@ class ConversationContext:
     snapshot: ConversationSnapshot = field(
         default_factory=lambda: ConversationSnapshot(mode="chat")
     )
+    on_change: Callable[[ConversationContext], None] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+
+    def _changed(self) -> None:
+        callback = self.on_change
+        if callback is not None:
+            callback(self)
 
     @property
     def soft_limit(self) -> int:
@@ -182,6 +192,7 @@ class ConversationContext:
         self.initialized = False
         self.handoff_summary = ""
         self.snapshot = ConversationSnapshot(mode="chat")
+        self._changed()
 
     def begin_window(self, provider_id: str, mode: str, project: str = "") -> None:
         self.provider_id = provider_id
@@ -191,9 +202,11 @@ class ConversationContext:
         self.initialized = True
         self.handoff_summary = ""
         self.snapshot = replace(self.snapshot, conversation_summary="")
+        self._changed()
 
     def prepare_handoff(self) -> str:
         self.handoff_summary = render_handoff(self.snapshot)
+        self._changed()
         return self.handoff_summary
 
     def prepare_model_handoff(self, send_summary: Callable[[str], str]) -> str:
@@ -215,6 +228,8 @@ class ConversationContext:
         self.snapshot = snapshot
         if self.used_tokens >= self.soft_limit:
             self.prepare_handoff()
+        else:
+            self._changed()
 
     def record_exchange(
         self,
@@ -227,6 +242,8 @@ class ConversationContext:
             self.snapshot = snapshot
         if self.used_tokens >= self.soft_limit:
             self.prepare_handoff()
+        else:
+            self._changed()
 
     def needs_rollover(self, next_prompt: str = "") -> bool:
         return (

@@ -188,7 +188,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
     writer = ScriptedWriter()
     httpd: ThreadingHTTPServer | None = None
     try:
-        codey_server.STATE = codey_server.State()
+        codey_server.STATE = codey_server.State(temp_root / "state")
         provider_controls.set_teach_handler(codey_server.STATE.handle_control_teach)
         codey_server.connect_provider = lambda provider_id: writer
         codey_server.connect_existing_provider = lambda provider_id: ScriptedReviewer()

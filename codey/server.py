@@ -35,7 +35,8 @@ from codey import provider_controls
 from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
-from codey.changes import ChangeTracker
+from codey.changes import ChangeTracker, SnapshotStore
+from codey.conversation_store import ConversationStore
 from codey.handoff import ConversationContext
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
@@ -45,6 +46,7 @@ from codey.providers import (
     provider_tab_availability,
 )
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
+from codey.project_facts import ProjectFactsStore
 from codey.review import (
     ReviewResult,
     parse_review_with_repair,
@@ -86,6 +88,17 @@ def _run_git(project: Path, args: list[str]) -> subprocess.CompletedProcess[str]
         timeout=GIT_TIMEOUT,
         check=False,
     )
+
+
+def is_git_repository(project: str | Path) -> bool:
+    try:
+        proc = _run_git(
+            Path(project).expanduser().resolve(),
+            ["rev-parse", "--is-inside-work-tree"],
+        )
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0 and proc.stdout.strip() == "true"
 
 
 def parse_git_status(short_status: str) -> list[dict]:
@@ -322,7 +335,7 @@ def restore_snapshot_changes(
 ) -> tuple[int, dict]:
     if not project:
         return 400, {"ok": False, "error": "project required"}
-    if tracker is None:
+    if tracker is None or not tracker.has_snapshots:
         return 404, {"ok": False, "error": "no snapshot changes to restore"}
     result = tracker.restore(paths)
     payload = {
@@ -390,7 +403,7 @@ def execute_approved_shell(project: str | Path, rel: str, command: str) -> dict:
 
 
 class State:
-    def __init__(self) -> None:
+    def __init__(self, state_home: str | Path | None = None) -> None:
         self.lock = threading.Lock()
         self.events: queue.Queue[dict] = queue.Queue()
         self.subscribers: list[queue.Queue[dict]] = []
@@ -407,7 +420,54 @@ class State:
         self.pending_teach: dict[str, dict] = {}
         self.change_trackers: dict[str, ChangeTracker] = {}
         self.conversations: dict[str, ConversationContext] = {}
+        self.conversation_tokens: dict[str, object] = {}
+        self.conversation_store_lock = threading.Lock()
         self.provider_sessions: dict[str, str] = {}
+        self.project_facts = (
+            ProjectFactsStore(state_home) if state_home else ProjectFactsStore()
+        )
+        self.conversation_store = (
+            ConversationStore(state_home) if state_home else ConversationStore()
+        )
+        self.snapshot_store = (
+            SnapshotStore(state_home) if state_home else SnapshotStore()
+        )
+
+    def _save_conversation(
+        self,
+        session_id: str,
+        token: object,
+        context: ConversationContext,
+    ) -> None:
+        with self.conversation_store_lock:
+            if self.conversation_tokens.get(session_id) is not token:
+                return
+            try:
+                self.conversation_store.save(session_id, context)
+            except (OSError, ValueError):
+                pass
+
+    def change_tracker_for(
+        self,
+        project: str | Path,
+        *,
+        persistent: bool,
+    ) -> ChangeTracker:
+        key = str(Path(project).expanduser().resolve())
+        with self.lock:
+            tracker = self.change_trackers.get(key)
+            current_persistent = tracker is not None and tracker.store is not None
+            if tracker is None or current_persistent != persistent:
+                if not persistent:
+                    if tracker is not None:
+                        tracker.disable_persistence()
+                    self.snapshot_store.delete(key)
+                tracker = ChangeTracker(
+                    key,
+                    self.snapshot_store if persistent else None,
+                )
+                self.change_trackers[key] = tracker
+            return tracker
 
     def emit(self, event: dict) -> None:
         with self.lock:
@@ -444,17 +504,31 @@ class State:
             if context is None:
                 if len(self.conversations) >= MAX_CONVERSATION_STATES:
                     oldest = next(iter(self.conversations))
-                    self.conversations.pop(oldest)
-                context = ConversationContext()
+                    evicted = self.conversations.pop(oldest)
+                    evicted.on_change = None
+                    with self.conversation_store_lock:
+                        self.conversation_tokens.pop(oldest, None)
+                with self.conversation_store_lock:
+                    token = object()
+                    self.conversation_tokens[session_id] = token
+                    context = self.conversation_store.load(session_id)
+                context.on_change = lambda value, owner=session_id, owner_token=token: (
+                    self._save_conversation(owner, owner_token, value)
+                )
             self.conversations[session_id] = context
             return context
 
     def forget_conversation(self, session_id: str) -> None:
         with self.lock:
-            self.conversations.pop(session_id, None)
+            context = self.conversations.pop(session_id, None)
+            if context is not None:
+                context.on_change = None
             for provider_id, owner in list(self.provider_sessions.items()):
                 if owner == session_id:
                     self.provider_sessions.pop(provider_id)
+            with self.conversation_store_lock:
+                self.conversation_tokens.pop(session_id, None)
+                self.conversation_store.delete(session_id)
 
     def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
         with self.lock:
@@ -571,6 +645,8 @@ def _run_task(
         collect_changes=collect_changes,
         run_review=_run_review,
         capture_provider_failure=capture_provider_failure,
+        project_facts=STATE.project_facts,
+        is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
     )
@@ -651,8 +727,11 @@ class Handler(BaseHTTPRequestHandler):
             query = parse_qs(url.query)
             project = (query.get("project") or [""])[0].strip()
             key = str(Path(project).expanduser().resolve()) if project else ""
-            with STATE.lock:
-                tracker = STATE.change_trackers.get(key)
+            tracker = (
+                STATE.change_tracker_for(key, persistent=not is_git_repository(key))
+                if key
+                else None
+            )
             payload = collect_changes(project, tracker)
             self._send_json(200 if payload.get("ok") else 400, payload)
             return
@@ -716,8 +795,11 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/changes":
             project = (body.get("project") or "").strip()
             key = str(Path(project).expanduser().resolve()) if project else ""
-            with STATE.lock:
-                tracker = STATE.change_trackers.get(key)
+            tracker = (
+                STATE.change_tracker_for(key, persistent=not is_git_repository(key))
+                if key
+                else None
+            )
             payload = collect_changes(project, tracker)
             self._send_json(200 if payload.get("ok") else 400, payload)
             return
@@ -732,8 +814,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             clean_paths = [str(path) for path in paths] if paths is not None else None
             key = str(Path(project).expanduser().resolve())
-            with STATE.lock:
-                tracker = STATE.change_trackers.get(key)
+            tracker = STATE.change_tracker_for(
+                key,
+                persistent=not is_git_repository(key),
+            )
+            if not tracker.has_snapshots:
+                tracker = None
             status, payload = restore_snapshot_changes(project, tracker, clean_paths)
             self._send_json(status, payload)
             return

@@ -46,6 +46,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("context compression", HTML.lower())
         self.assertNotIn("handoff summary", HTML.lower())
 
+    def test_local_continuity_stays_hidden_and_chat_deletion_cleans_state(self) -> None:
+        self.assertIn("async function forgetSessionState(id)", HTML)
+        self.assertIn("if (!await forgetSessionState(id)) return;", HTML)
+        self.assertIn("await Promise.all", HTML)
+        self.assertNotIn("Project Facts", HTML)
+        self.assertNotIn("Conversation Snapshot", HTML)
+        self.assertNotIn("Durable Snapshot", HTML)
+        self.assertNotIn("Recovered", HTML)
+
     def test_retry_uses_current_session_model_picker(self) -> None:
         retry_start = HTML.index("function retryTask(sessionId)")
         retry_end = HTML.index("function sessionProjectPath", retry_start)

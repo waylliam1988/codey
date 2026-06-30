@@ -3,8 +3,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from codey.tool_runtime import read_file, run_command, write_file
+from codey.tool_runtime import edit_file, read_file, run_command, write_file
 
 
 class ToolOutcomeTests(unittest.TestCase):
@@ -51,6 +52,22 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.changed)
+
+    def test_write_and_edit_reject_oversized_result_without_changing_file(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.txt"
+            path.write_text("old", encoding="utf-8")
+            body = "<<<<<<< SEARCH\nold\n=======\nlarge\n>>>>>>> REPLACE"
+
+            with mock.patch("codey.tool_runtime.WRITE_MAX_FILE_BYTES", 4):
+                written = write_file(root, "new.txt", "large")
+                edited = edit_file(root, "app.txt", body)
+
+            self.assertFalse(written.ok)
+            self.assertFalse((root / "new.txt").exists())
+            self.assertFalse(edited.ok)
+            self.assertEqual(path.read_text(encoding="utf-8"), "old")
 
 
 if __name__ == "__main__":

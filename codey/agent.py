@@ -50,6 +50,9 @@ class ChangeTracker(Protocol):
     def capture_before(self, rel: str) -> None:
         """Record a file's pre-write content if it has not been captured."""
 
+    def capture_after(self, rel: str) -> None:
+        """Record the content produced by a successful write."""
+
 
 @dataclass(frozen=True)
 class ProjectInstruction:
@@ -160,6 +163,7 @@ def run(
     conversation: ConversationContext | None = None,
     provider_id: str = "",
     handoff: str = "",
+    project_facts: str = "",
 ) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
@@ -222,10 +226,16 @@ def run(
             if factual_handoff
             else request
         )
+        facts = (
+            f"Verified project facts from successful local runs:\n{project_facts}\n\n"
+            if project_facts
+            else ""
+        )
         return (
             f"{codec.system_prompt()}\n\n"
             f"Project root: {project}\n"
             f"Project instructions:\n{format_project_instructions(project_instructions)}\n\n"
+            f"{facts}"
             f"Initial listing:\n{list_directory(project, '.').output}\n\n"
             f"User task:\n{current}"
         )
@@ -281,6 +291,8 @@ def run(
                         change_tracker.capture_before(path)
                     outcome = write_file(project, path, _call_arg(call, "content"))
                     if outcome.ok and outcome.changed:
+                        if change_tracker is not None:
+                            change_tracker.capture_after(path)
                         made_progress = True
                         wrote_files = True
                         checks_passed = False
@@ -295,6 +307,8 @@ def run(
                             change_tracker.capture_before(path)
                         outcome = edit_file(project, path, _edit_body_from_call(call))
                     if outcome.ok and outcome.changed:
+                        if change_tracker is not None:
+                            change_tracker.capture_after(path)
                         made_progress = True
                         wrote_files = True
                         checks_passed = False

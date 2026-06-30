@@ -1,7 +1,43 @@
-# Codey 0.1.7 Test Report
+# Codey 0.1.8 Test Report
 
-Date: 2026-06-30
+Date: 2026-07-01
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+
+## Hidden Local Continuity
+
+The current working tree adds three bounded, invisible continuity mechanisms:
+
+- Project Facts records only successful controlled `run` commands and injects
+  them into later tasks for the same project.
+- Conversation persistence stores one compact factual snapshot for each recent
+  chat, so a restarted Codey process opens a fresh provider chat with a silent
+  handoff instead of losing the task state.
+- Durable Snapshot atomically stores the non-Git recovery baseline before a
+  project write, retains expected after-content hashes for conflict detection,
+  and deletes the record after a successful restore.
+
+The three mechanisms share only a small atomic JSON writer. They use separate
+files and retention rules, and none adds a UI control, banner, or status message.
+Git projects continue to use Git and do not persist a recovery snapshot.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 260 passed |
+| Abrupt child-process exit | Facts, conversation, diff, and restore survived |
+| Snapshot save failure | Project write was blocked |
+| Manual edit after Codey write | Restore conflict preserved user content |
+| Missing post-write hash after an interrupted write | Restore refused to overwrite current content |
+| Chat deletion racing a late save | Deleted context stayed deleted |
+| Non-Git project initialized as Git | Old tracker persistence was disabled; stale references could not recreate recovery |
+| Real Edge UI E2E | Passed; UI unchanged, diff and restore passed |
+| DeepSeek / Qwen / MiMo edit matrix | Passed in 5 / 4 / 4 turns |
+| Independent provider verification | All three unittest fixtures passed |
+
+The live provider run also emitted Node's existing `DEP0169` warning from the
+browser automation runtime. It did not affect any provider result and is not
+introduced by the local continuity code.
 
 ## 0.1.7 Maintainability Refactor
 

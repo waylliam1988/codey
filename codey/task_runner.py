@@ -9,9 +9,9 @@ from typing import Callable
 
 from codey import provider_controls
 from codey.agent import RunResult
-from codey.changes import ChangeTracker
 from codey.events import RunEvent, render_run_event
 from codey.handoff import ConversationSnapshot, render_continuation_prompt
+from codey.project_facts import ProjectFactsStore
 from codey.providers import PROVIDER_LABELS
 from codey.receipt import build_task_receipt
 from codey.review import has_reviewable_changes, render_writer_followup
@@ -38,6 +38,8 @@ class TaskRunner:
         collect_changes: Callable,
         run_review: Callable,
         capture_provider_failure: Callable,
+        project_facts: ProjectFactsStore | None = None,
+        is_git_repository: Callable[[str | Path], bool] | None = None,
         review_fix_turns: int = 12,
         review_log_lines: int = 80,
     ) -> None:
@@ -46,6 +48,8 @@ class TaskRunner:
         self.collect_changes = collect_changes
         self.run_review = run_review
         self.capture_provider_failure = capture_provider_failure
+        self.project_facts = project_facts
+        self.is_git_repository = is_git_repository or (lambda _project: False)
         self.review_fix_turns = review_fix_turns
         self.review_log_lines = review_log_lines
 
@@ -89,6 +93,24 @@ class TaskRunner:
             payload = self._ui_event(session_id, event)
             if payload is not None:
                 state.emit(payload)
+            if (
+                project
+                and self.project_facts is not None
+                and event.kind == "tool"
+                and event.call is not None
+                and event.call.name == "run"
+                and event.outcome is not None
+                and event.outcome.ok
+                and event.outcome.exit_code == 0
+            ):
+                try:
+                    self.project_facts.record_success(
+                        project,
+                        str(event.call.args.get("path") or "."),
+                        str(event.call.args.get("command") or ""),
+                    )
+                except (OSError, ValueError):
+                    pass
 
         def on_shell_request(cwd_rel: str, command: str) -> None:
             if not project:
@@ -153,12 +175,16 @@ class TaskRunner:
                 conversation_summary=prior_snapshot.conversation_summary,
             ))
             if project:
+                verified_facts = (
+                    self.project_facts.render(project)
+                    if self.project_facts is not None
+                    else ""
+                )
                 key = str(Path(project).expanduser().resolve())
-                with state.lock:
-                    tracker = state.change_trackers.get(key)
-                    if tracker is None:
-                        tracker = ChangeTracker(project)
-                        state.change_trackers[key] = tracker
+                tracker = state.change_tracker_for(
+                    key,
+                    persistent=not self.is_git_repository(key),
+                )
                 result = self.agent_run(
                     provider,
                     Path(project),
@@ -172,6 +198,7 @@ class TaskRunner:
                     conversation=conversation,
                     provider_id=provider_id,
                     handoff=handoff,
+                    project_facts=verified_facts,
                 )
                 state.set_provider_session(provider_id, session_id)
                 if result.stop_reason == "done" and not state.stop_flag.is_set():
@@ -204,6 +231,11 @@ class TaskRunner:
                             if not review.approved:
                                 followup = render_writer_followup(task, review)
                                 provider = state.get_provider(provider_id)
+                                verified_facts = (
+                                    self.project_facts.render(project)
+                                    if self.project_facts is not None
+                                    else ""
+                                )
                                 result = self.agent_run(
                                     provider,
                                     Path(project),
@@ -216,6 +248,7 @@ class TaskRunner:
                                     change_tracker=tracker,
                                     conversation=conversation,
                                     provider_id=provider_id,
+                                    project_facts=verified_facts,
                                 )
             else:
                 if fresh_chat:

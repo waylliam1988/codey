@@ -763,6 +763,7 @@ class SessionThreadingTests(unittest.TestCase):
             tracker = ChangeTracker(root)
             tracker.capture_before("app.py")
             path.write_text("new\n", encoding="utf-8")
+            tracker.capture_after("app.py")
             tracker.collect()
 
             status, payload = server.restore_snapshot_changes(root, tracker, ["app.py"])
@@ -777,6 +778,64 @@ class SessionThreadingTests(unittest.TestCase):
 
         self.assertEqual(status, 404)
         self.assertFalse(payload["ok"])
+
+    @unittest.skipIf(shutil.which("git") is None, "git is not installed")
+    def test_git_task_does_not_persist_recovery_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+            state = server.State(state_td)
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+
+            def fake_agent_run(*_args, **kwargs):
+                tracker = kwargs["change_tracker"]
+                tracker.capture_before("app.py")
+                path.write_text("new\n", encoding="utf-8")
+                tracker.capture_after("app.py")
+                return RunResult("complete", "done", 1, True)
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(
+                    server,
+                    "collect_changes",
+                    return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+                ),
+            ):
+                server._run_task("session-1", str(root), "task", 4, False, "deepseek")
+
+            self.assertFalse(state.snapshot_store.path_for(root).exists())
+
+    @unittest.skipIf(shutil.which("git") is None, "git is not installed")
+    def test_cached_tracker_switches_to_git_mode_after_repository_init(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+            state = server.State(state_td)
+            snapshot_tracker = state.change_tracker_for(root, persistent=True)
+            snapshot_tracker.capture_before("app.py")
+            path.write_text("new\n", encoding="utf-8")
+            snapshot_tracker.capture_after("app.py")
+            recovery = state.snapshot_store.path_for(root)
+            self.assertTrue(recovery.is_file())
+
+            subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
+            git_tracker = state.change_tracker_for(root, persistent=False)
+            git_tracker.capture_before("app.py")
+            path.write_text("newer\n", encoding="utf-8")
+            git_tracker.capture_after("app.py")
+            snapshot_tracker.capture_after("app.py")
+
+            self.assertIsNot(snapshot_tracker, git_tracker)
+            self.assertIsNone(git_tracker.store)
+            self.assertIsNone(snapshot_tracker.store)
+            self.assertFalse(recovery.exists())
 
 
 class UiLaunchTests(unittest.TestCase):

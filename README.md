@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.7`
+Version: `0.1.8`
 
 ---
 
@@ -42,6 +42,9 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Retry with another model when one model fails
 - Use two open web models together: one writes, the other reviews
 - Continue long conversations quietly with an automatic factual summary and fresh model chat
+- Reuse project commands that have already succeeded locally
+- Resume the same chat after a Codey restart from one bounded factual snapshot
+- Keep non-Git diff and restore available across Codey restarts
 - Record compact provider failure diagnostics for debugging web-page breakage
 
 ---
@@ -55,6 +58,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Qwen Studio | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core. Recent live tests also hardened MiMo submission so the driver clicks the real send button instead of nearby upload controls, and clarified the JSON tool protocol for Qwen.
+
+Version `0.1.8` adds a hidden local continuity layer. Each project keeps only a small set of commands that really succeeded, each recent chat keeps one bounded factual snapshot, and the current non-Git recovery baseline is written atomically before project files change. These records add no UI controls or notices and do not store cookies, page DOM, or full chat transcripts. The release passed 260 tests, the real Edge UI flow, and the DeepSeek / Qwen / MiMo edit matrix.
 
 Version `0.1.7` keeps the product experience unchanged while making the runtime easier to maintain. Local tools now return structured outcomes, the agent emits structured events, task orchestration is separate from HTTP transport, and the UI no longer parses human-readable logs. The release passed 224 automated tests plus real Edge, provider, review, handoff, and self-bootstrap flows.
 
@@ -266,6 +271,9 @@ codey/
   browser.py                Edge/CDP connection helpers
   browser_worker.py         Playwright thread scheduler
   changes.py                snapshot diff and restore support
+  local_store.py            atomic JSON state writes
+  project_facts.py          facts verified by successful local runs
+  conversation_store.py     bounded factual conversation persistence
   deepseek.py               DeepSeek page driver
   mimo.py                   MiMo page driver
   qwen.py                   Qwen page driver

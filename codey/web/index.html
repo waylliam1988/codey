@@ -1247,8 +1247,21 @@ function newSession(projectId = null) {
     body: JSON.stringify({ session_id: s.id }),
   }).catch(() => {});
 }
-function deleteSession(id) {
+async function forgetSessionState(id) {
+  try {
+    const response = await fetch('/api/new_chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: id }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+async function deleteSession(id) {
   if (!confirm('Delete this chat?')) return;
+  if (!await forgetSessionState(id)) return;
   const fallbackProvider = currentProviderId();
   sessions = sessions.filter(s => s.id !== id);
   if (!sessions.length) {
@@ -1270,10 +1283,11 @@ function renameSession(id) {
   renderSidebar();
   if (id === activeId) renderChat();
 }
-function clearMessages(id) {
+async function clearMessages(id) {
   const s = sessions.find(x => x.id === id);
   if (!s) return;
   if (!confirm('Clear all messages in this chat?')) return;
+  if (!await forgetSessionState(id)) return;
   s.messages = [];
   persistActive();
   if (id === activeId) renderChat();
@@ -1290,10 +1304,14 @@ function renameProject(id) {
   renderSidebar();
   if (activeProject() && activeProject().id === id) renderChat();
 }
-function deleteProject(id) {
+async function deleteProject(id) {
   const p = projectById(id);
   if (!p) return;
   if (!confirm(`Remove project "${p.name}" from the sidebar? Files on disk will not be deleted, but local chats under this project will be.`)) return;
+  const cleared = await Promise.all(
+    sessions.filter(s => s.projectId === id).map(s => forgetSessionState(s.id))
+  );
+  if (!cleared.every(Boolean)) return;
   projects = projects.filter(x => x.id !== id);
   sessions = sessions.filter(s => s.projectId !== id);
   if (!sessions.length) sessions = [{ id: uid(), title: 'New chat', messages: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER }];

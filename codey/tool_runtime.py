@@ -26,6 +26,7 @@ SEARCH_EXCLUDED_DIRS = {
 }
 SEARCH_MAX_RESULTS = 80
 SEARCH_MAX_FILE_BYTES = 512 * 1024
+WRITE_MAX_FILE_BYTES = 512 * 1024
 RUN_TIMEOUT_SECONDS = 90
 RUN_OUTPUT_LIMIT = 24_000
 RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
@@ -70,6 +71,8 @@ def safe_join(root: Path, rel: str) -> Path:
 
 
 def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
+    if len(content.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
+        return ToolOutcome.error(f"file too large to write: {rel}")
     path = safe_join(root, rel)
     if path.is_file():
         try:
@@ -143,6 +146,8 @@ def edit_file(root: Path, rel: str, body: str) -> ToolOutcome:
 
     if updated == content:
         return ToolOutcome(f"edited {rel} (no changes)", True)
+    if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
+        return ToolOutcome.error(f"file too large to write: {rel}")
     path.write_text(updated, encoding="utf-8")
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"

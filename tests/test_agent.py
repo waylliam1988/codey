@@ -528,10 +528,14 @@ class RunLoopTests(unittest.TestCase):
 
         class Tracker:
             def __init__(self) -> None:
-                self.paths: list[str] = []
+                self.before: list[str] = []
+                self.after: list[str] = []
 
             def capture_before(self, rel: str) -> None:
-                self.paths.append(rel)
+                self.before.append(rel)
+
+            def capture_after(self, rel: str) -> None:
+                self.after.append(rel)
 
         tracker = Tracker()
         with tempfile.TemporaryDirectory() as td:
@@ -548,7 +552,8 @@ class RunLoopTests(unittest.TestCase):
             )
 
             self.assertEqual(result.stop_reason, "done")
-            self.assertEqual(tracker.paths, ["app.py"])
+            self.assertEqual(tracker.before, ["app.py"])
+            self.assertEqual(tracker.after, ["app.py"])
 
     def test_edit_content_tool_call_writes_file(self) -> None:
         reply = '{"tool":"edit","args":{"path":"app.py","content":"VALUE = 1\\n"}}'
@@ -576,6 +581,9 @@ class RunLoopTests(unittest.TestCase):
                 self.paths: list[str] = []
 
             def capture_before(self, rel: str) -> None:
+                self.paths.append(rel)
+
+            def capture_after(self, rel: str) -> None:
                 self.paths.append(rel)
 
         tracker = Tracker()
