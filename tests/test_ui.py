@@ -107,14 +107,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("!shownReceipt) maybeAddChangesSummary(sid)", HTML)
         self.assertIn("type: 'changes'", HTML)
 
-    def test_agent_turns_hide_raw_json_protocol_replies(self) -> None:
-        start = HTML.index("function handleLog(sid, line)")
-        end = HTML.index("function retryTask(sessionId)", start)
-        block = HTML[start:end]
-
-        self.assertIn("addToSession(sid, { type: 'turn', n });", block)
-        self.assertNotIn("addToSession(sid, { type: 'asst', text: body });", block)
-        self.assertNotIn("addToSession(sid, { type: 'info', text: line });", block)
+    def test_agent_events_are_structured_instead_of_parsed_from_logs(self) -> None:
+        self.assertIn("if (data.type === 'turn')", HTML)
+        self.assertIn("if (data.type === 'tool')", HTML)
+        self.assertIn("if (data.type === 'info')", HTML)
+        self.assertNotIn("const turnMatch = line.match", HTML)
+        self.assertNotIn("const toolMatch = line.match", HTML)
+        self.assertNotIn("if (data.type === 'log')", HTML)
+        self.assertNotIn("function handleLog", HTML)
 
     def test_send_failures_render_inline_error(self) -> None:
         self.assertIn("function addSendError(sessionId)", HTML)

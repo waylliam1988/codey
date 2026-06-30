@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.6`
+Version: `0.1.7`
 
 ---
 
@@ -55,6 +55,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Qwen Studio | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core. Recent live tests also hardened MiMo submission so the driver clicks the real send button instead of nearby upload controls, and clarified the JSON tool protocol for Qwen.
+
+Version `0.1.7` keeps the product experience unchanged while making the runtime easier to maintain. Local tools now return structured outcomes, the agent emits structured events, task orchestration is separate from HTTP transport, and the UI no longer parses human-readable logs. The release passed 224 automated tests plus real Edge, provider, review, handoff, and self-bootstrap flows.
 
 Version `0.1.6` adds a hidden context safety net. Near one shared context budget, Codey asks the current model for a compact factual summary, opens a fresh model chat, and continues without adding controls or notices to the UI. If summarizing fails, Codey falls back to local task facts; if the fresh chat or its first message fails, the old budget and summary remain available for retry.
 
@@ -258,6 +260,9 @@ Browser Session + provider DOM driver
 ```text
 codey/
   agent.py                  provider-independent agent runtime
+  events.py                 structured run events and log rendering
+  tool_runtime.py           local tools and structured outcomes
+  task_runner.py            task, conversation, review, and receipt orchestration
   browser.py                Edge/CDP connection helpers
   browser_worker.py         Playwright thread scheduler
   changes.py                snapshot diff and restore support
@@ -271,7 +276,7 @@ codey/
   providers/
     registry.py             provider registry
     *_web.py                provider adapters
-  server.py                 local HTTP + SSE backend
+  server.py                 local HTTP + SSE transport and runtime state
   web/
     index.html              single-file control panel
 ```

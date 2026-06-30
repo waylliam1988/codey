@@ -1469,6 +1469,24 @@ evtSrc.onmessage = (e) => {
     return;
   }
   const sid = data.session_id;
+  if (data.type === 'turn') {
+    addToSession(sid, { type: 'turn', n: data.turn || 0 });
+    return;
+  }
+  if (data.type === 'tool') {
+    addToSession(sid, {
+      type: 'tool',
+      kind: data.kind || '',
+      path: data.path || '',
+      result: (data.result || '').toString().slice(0, 200),
+      error: !!data.error,
+    });
+    return;
+  }
+  if (data.type === 'info') {
+    if (data.text) addToSession(sid, { type: 'info', text: data.text });
+    return;
+  }
   if (data.type === 'teach_request') {
     removeTeachMessage(sid);
     addToSession(sid, { type: 'teach', id: data.id, text: data.text, sessionId: sid });
@@ -1555,10 +1573,6 @@ evtSrc.onmessage = (e) => {
     if (data.text) addToSession(sid, { type: 'review', text: data.text });
     return;
   }
-  if (data.type === 'log') {
-    handleLog(sid, data.text || '');
-    return;
-  }
 };
 evtSrc.onerror = () => setStatus('Disconnected', 'err');
 
@@ -1596,37 +1610,6 @@ async function resumeTeaching(teachId, sessionId) {
     });
     if (r.ok) removeTeachMessage(sessionId, teachId);
   } catch {}
-}
-
-function handleLog(sid, line) {
-  if (!line) return;
-  const turnMatch = line.match(/^\s*--- turn (\d+) reply.*?---\s*\n([\s\S]*)$/);
-  if (turnMatch) {
-    const n = parseInt(turnMatch[1], 10);
-    addToSession(sid, { type: 'turn', n });
-    // Agent replies are JSON protocol traffic. Tool/status rows below are the
-    // user-facing representation, so rendering the raw payload duplicates it.
-    return;
-  }
-  const toolMatch = line.match(/^\s*·\s+(\w+)\s+(\S*)\s*->\s*(.*)$/);
-  if (toolMatch) {
-    const [, kind, path, result] = toolMatch;
-    addToSession(sid, { type: 'tool', kind, path, result: result.slice(0, 200), error: /^ERROR/.test(result) });
-    return;
-  }
-  if (line.startsWith('[agent] DONE')) return;
-  if (line.startsWith('[agent] loaded project instructions:')) {
-    const names = line.replace('[agent] loaded project instructions:', '').trim();
-    addToSession(sid, { type: 'info', text: names ? `loaded project instructions: ${names}` : 'loaded project instructions' });
-    return;
-  }
-  if (line.startsWith('ERROR') || line.includes('Traceback')) {
-    addToSession(sid, { type: 'err', text: line.replace(/^ERROR:\s*/i, ''), sessionId: sid }); return;
-  }
-  if (line.startsWith('[agent]') || line.startsWith('[codey]')) {
-    // Routine runtime diagnostics belong in logs, not the user chat stream.
-    return;
-  }
 }
 
 function retryTask(sessionId) {

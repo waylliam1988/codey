@@ -10,7 +10,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen 和小
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.6`
+版本：`0.1.7`
 
 ---
 
@@ -55,6 +55,8 @@ Codey 想解决的是一个很朴素的问题：
 | Qwen Studio | 已实机测试 |
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。最近的实机测试也加强了 MiMo 发送逻辑，确保点击真正的发送按钮，而不是旁边的上传按钮；同时也让 Qwen 更容易理解本地 JSON 工具协议。
+
+`0.1.7` 保持产品体验不变，同时让底层更容易维护。本地工具改为返回结构化结果，Agent 使用统一的结构化事件，任务编排与 HTTP 传输分离，前端也不再解析给人看的日志。本次发布通过了 224 项自动测试，以及真实 Edge、三模型、双模型 review、上下文接力和自举修复流程。
 
 `0.1.6` 增加了隐藏的上下文安全网。接近统一的上下文预算时，Codey 会让当前模型生成一份精简的事实总结，打开新对话并继续，不在主界面增加按钮或提示。总结失败时会退回本地任务事实；新对话或第一条接力消息失败时，旧预算和总结仍会保留，方便重试。
 
@@ -263,6 +265,9 @@ Browser Session + provider DOM driver
 ```text
 codey/
   agent.py                  与模型网站无关的 agent runtime
+  events.py                 结构化运行事件和日志渲染
+  tool_runtime.py           本地工具和结构化执行结果
+  task_runner.py            任务、会话、review 和收据编排
   browser.py                Edge/CDP 连接
   browser_worker.py         Playwright 线程调度
   changes.py                snapshot diff 和 restore
@@ -276,7 +281,7 @@ codey/
   providers/
     registry.py             模型注册表
     *_web.py                网页模型适配器
-  server.py                 本地 HTTP + SSE 后端
+  server.py                 本地 HTTP + SSE 传输和运行状态
   web/
     index.html              单文件控制面板
 ```

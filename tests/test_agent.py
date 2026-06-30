@@ -7,7 +7,9 @@ from pathlib import Path
 from unittest import mock
 
 from codey import agent
+from codey.events import render_run_event
 from codey.handoff import ConversationContext, ConversationSnapshot
+from codey import tool_runtime
 
 
 class FakeProvider:
@@ -162,24 +164,24 @@ class ToolTests(unittest.TestCase):
             root = Path(td)
 
             with self.assertRaises(ValueError):
-                agent._safe_join(root, "../escape.txt")
+                tool_runtime.safe_join(root, "../escape.txt")
 
     def test_write_read_and_ls(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
 
-            result = agent.tool_write(root, "src/app.py", "print('ok')\n")
-            self.assertIn("wrote src/app.py", result)
+            result = tool_runtime.write_file(root, "src/app.py", "print('ok')\n")
+            self.assertIn("wrote src/app.py", result.output)
 
-            self.assertEqual(agent.tool_read(root, "src/app.py"), "print('ok')\n")
-            listing = agent.tool_ls(root, ".")
+            self.assertEqual(tool_runtime.read_file(root, "src/app.py").output, "print('ok')\n")
+            listing = tool_runtime.list_directory(root, ".").output
             self.assertIn("src/", listing)
             self.assertIn("app.py", listing)
 
     def test_read_missing_file_returns_error(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(
-                agent.tool_read(Path(td), "missing.py"),
+                tool_runtime.read_file(Path(td), "missing.py").output,
                 "ERROR: not a file: missing.py",
             )
 
@@ -192,7 +194,7 @@ class ToolTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            output = agent.tool_search(root, ".", "LOGIN_HANDLER")
+            output = tool_runtime.search_files(root, ".", "LOGIN_HANDLER").output
 
             self.assertIn("src/app.py:1: def login_handler():", output)
 
@@ -202,12 +204,12 @@ class ToolTests(unittest.TestCase):
             (root / "node_modules").mkdir()
             (root / "node_modules" / "lib.js").write_text("login_handler\n", encoding="utf-8")
 
-            self.assertEqual(agent.tool_search(root, ".", "login_handler"), "(no matches)")
+            self.assertEqual(tool_runtime.search_files(root, ".", "login_handler").output, "(no matches)")
 
     def test_search_requires_query(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(
-                agent.tool_search(Path(td), ".", "   "),
+                tool_runtime.search_files(Path(td), ".", "   ").output,
                 "ERROR: search query required",
             )
 
@@ -221,7 +223,7 @@ def old():
 def new():
 >>>>>>> REPLACE"""
 
-            result = agent.tool_edit(root, "app.py", body)
+            result = tool_runtime.edit_file(root, "app.py", body).output
 
             self.assertEqual(result, "edited app.py (1 replacement)")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def new():\n    return 1\n")
@@ -236,7 +238,7 @@ same
 other
 >>>>>>> REPLACE"""
 
-            result = agent.tool_edit(root, "app.py", body)
+            result = tool_runtime.edit_file(root, "app.py", body).output
 
             self.assertEqual(result, "ERROR: SEARCH text matched 2 times in app.py; make it unique")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "same\nsame\n")
@@ -252,7 +254,7 @@ replacement
 >>>>>>> REPLACE"""
 
             self.assertEqual(
-                agent.tool_edit(root, "app.py", body),
+                tool_runtime.edit_file(root, "app.py", body).output,
                 "ERROR: SEARCH text not found in app.py",
             )
 
@@ -261,7 +263,7 @@ replacement
             root = Path(td)
             (root / "ok.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            output = agent.tool_run(root, ".", "python -m py_compile ok.py")
+            output = tool_runtime.run_command(root, ".", "python -m py_compile ok.py").output
 
             self.assertIn("exit 0: python -m py_compile ok.py", output)
 
@@ -276,19 +278,19 @@ replacement
                 encoding="utf-8",
             )
 
-            output = agent.tool_run(root, ".", "python -B -m unittest")
+            output = tool_runtime.run_command(root, ".", "python -B -m unittest").output
 
             self.assertIn("exit 0: python -B -m unittest", output)
 
     def test_run_rejects_dangerous_shell_syntax(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            output = agent.tool_run(Path(td), ".", "python -m unittest && rm -rf .")
+            output = tool_runtime.run_command(Path(td), ".", "python -m unittest && rm -rf .").output
 
             self.assertEqual(output, "ERROR: command not allowed: python -m unittest && rm -rf .")
 
     def test_run_rejects_non_allowlisted_command(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            output = agent.tool_run(Path(td), ".", "git status")
+            output = tool_runtime.run_command(Path(td), ".", "git status").output
 
             self.assertEqual(output, "ERROR: command not allowed: git status")
 
@@ -303,7 +305,7 @@ replacement
                 encoding="utf-8",
             )
 
-            output = agent.tool_run(root, ".", "python -m unittest")
+            output = tool_runtime.run_command(root, ".", "python -m unittest").output
 
             self.assertIn("exit 0: python -m unittest", output)
             self.assertFalse((root / "__pycache__").exists())
@@ -350,6 +352,30 @@ class DefaultsTests(unittest.TestCase):
 
 
 class RunLoopTests(unittest.TestCase):
+    def test_emits_structured_turn_and_tool_events(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"done","args":{"summary":"finished"}}',
+        )
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Read app.py",
+                on_event=events.append,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        run_events = [event for event in events if event.kind in {"turn", "tool"}]
+        self.assertEqual([event.kind for event in run_events], ["turn", "tool", "turn"])
+        self.assertEqual(run_events[1].call.name, "read")
+        self.assertTrue(run_events[1].outcome.ok)
+        self.assertEqual(run_events[1].outcome.output, "VALUE = 1\n")
+
     def test_context_rollover_opens_fresh_chat_with_project_handoff(self) -> None:
         summary = (
             '{"goal":"Finish the original feature","decisions":["Keep app.py"],'
@@ -388,12 +414,36 @@ class RunLoopTests(unittest.TestCase):
         self.assertIn("Finish the original feature", provider.sent[1])
         self.assertIn("Add the final test", provider.sent[1])
 
+    def test_noop_edit_does_not_require_fresh_verification(self) -> None:
+        edit = (
+            '{"tool":"edit","args":{"path":"app.py",'
+            '"old_string":"VALUE = 1","new_string":"VALUE = 1"}}'
+        )
+        done = '{"tool":"done","args":{"summary":"already correct"}}'
+        provider = FakeProvider(edit, done)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Check app.py and run tests if you change it.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(result.summary, "already correct")
+        self.assertFalse(result.checks_passed)
+        self.assertEqual(len(provider.sent), 2)
+
     def test_failed_fresh_chat_does_not_reset_token_budget(self) -> None:
         summary = '{"current_state":"Keep the existing conversation"}'
         done = '{"tool":"done","args":{"summary":"continued"}}'
         provider = FakeProvider(summary, done)
         provider.new_chat = mock.Mock(side_effect=RuntimeError("button missing"))
-        events: list[str] = []
+        events = []
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
             context = ConversationContext(hard_limit=200)
@@ -418,7 +468,7 @@ class RunLoopTests(unittest.TestCase):
 
         self.assertEqual(result.stop_reason, "done")
         self.assertGreater(context.used_tokens, 149)
-        self.assertTrue(any("reusing current tab" in event for event in events))
+        self.assertTrue(any("reusing current tab" in render_run_event(event) for event in events))
 
     def test_failed_first_handoff_send_keeps_summary_and_budget(self) -> None:
         provider = mock.Mock()
@@ -548,7 +598,7 @@ class RunLoopTests(unittest.TestCase):
     def test_shell_action_requests_approval_and_stops(self) -> None:
         reply = '{"tool":"shell","args":{"path":".","command":"git status --short"}}'
         requests: list[tuple[str, str]] = []
-        events: list[str] = []
+        events = []
         with tempfile.TemporaryDirectory() as td:
             result = agent.run(
                 FakeProvider(reply),
@@ -561,7 +611,7 @@ class RunLoopTests(unittest.TestCase):
 
         self.assertEqual(result.stop_reason, "approval")
         self.assertEqual(requests, [(".", "git status --short")])
-        self.assertTrue(any("shell approval requested" in event for event in events))
+        self.assertTrue(any("shell approval requested" in render_run_event(event) for event in events))
 
     def test_done_after_edit_requires_requested_verification_run(self) -> None:
         edit = '{"tool":"edit","args":{"path":"app.py","old_string":"return 1","new_string":"return 2"}}'
@@ -569,7 +619,7 @@ class RunLoopTests(unittest.TestCase):
         run_tests = '{"tool":"run","args":{"command":"python -m unittest","path":"."}}'
         done = '{"tool":"done","args":{"summary":"fixed and tested"}}'
         provider = FakeProvider(edit, premature_done, run_tests, done)
-        events: list[str] = []
+        events = []
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("def value():\n    return 1\n", encoding="utf-8")
@@ -593,7 +643,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(result.summary, "fixed and tested")
         self.assertTrue(result.checks_passed)
-        self.assertTrue(any("verification" in event.lower() for event in events))
+        self.assertTrue(any("verification" in render_run_event(event).lower() for event in events))
         self.assertTrue(any("python -m unittest" in prompt for prompt in provider.sent))
 
     def test_edit_after_successful_run_requires_fresh_check(self) -> None:

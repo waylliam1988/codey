@@ -13,6 +13,7 @@ if __package__ in (None, ""):
 
 from codey.agent import run
 from codey.changes import ChangeTracker
+from codey.events import render_run_event
 from codey.providers.registry import connect_provider
 from codey.review import (
     has_reviewable_changes,
@@ -42,6 +43,12 @@ BOOTSTRAP_TASK = (
     "python -B -m unittest tests.test_changes again. Use JSON tools only. "
     "When tests are green, finish with done and summarize the fix."
 )
+
+
+def _record_event(events: list[str], event) -> None:
+    text = render_run_event(event)
+    events.append(text)
+    print(text)
 
 
 def _copy_repo(src: Path, dst: Path) -> None:
@@ -123,7 +130,7 @@ def _review_pass(
             root,
             followup,
             max_turns=min(max_turns, 12),
-            on_event=lambda message: events.append(str(message)) or print(message),
+            on_event=lambda event: _record_event(events, event),
             fresh_chat=False,
             change_tracker=tracker,
         )
@@ -162,9 +169,8 @@ def run_bootstrap_smoke(
 
         events: list[str] = []
 
-        def on_event(message: str) -> None:
-            events.append(str(message))
-            print(message)
+        def on_event(event) -> None:
+            _record_event(events, event)
 
         tracker = ChangeTracker(project)
         provider = connect_provider(provider_id, port=port)

@@ -10,6 +10,7 @@ from unittest import mock
 
 from codey import provider_controls
 from codey import server
+from codey.agent import RunResult
 from codey.changes import ChangeTracker
 from codey.provider_diagnostics import ProviderFailure
 
@@ -264,7 +265,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=server.RunResult("complete", "done", 3, True),
+                return_value=RunResult("complete", "done", 3, True),
             ) as agent_run,
         ):
             server._run_task("session-1", td, "task", 8, False, "qwen")
@@ -281,6 +282,34 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.provider_id, "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
+
+    def test_run_task_reads_empty_file_without_error_or_legacy_log_event(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
+        provider.send.side_effect = [
+            '{"tool":"read_file","args":{"path":"empty.txt"}}',
+            '{"tool":"done","args":{"summary":"empty file read"}}',
+        ]
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+        ):
+            Path(td, "empty.txt").write_text("", encoding="utf-8")
+            server._run_task("session-empty", td, "Read empty.txt", 8, False, "deepseek")
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        tool = next(event for event in emitted if event["type"] == "tool")
+        done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(tool["result"], "")
+        self.assertEqual(done["stop_reason"], "done")
+        self.assertFalse(any(event["type"] == "log" for event in emitted))
 
     def test_plain_chat_followup_reuses_same_model_conversation(self) -> None:
         state = server.State()
@@ -425,7 +454,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=server.RunResult("complete", "done", 3, True),
+                return_value=RunResult("complete", "done", 3, True),
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
@@ -465,7 +494,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=server.RunResult("complete", "done", 3),
+                return_value=RunResult("complete", "done", 3),
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer) as connect_review,
@@ -514,8 +543,8 @@ class SessionThreadingTests(unittest.TestCase):
                 server,
                 "agent_run",
                 side_effect=[
-                    server.RunResult("first pass", "done", 3),
-                    server.RunResult("review fixed", "done", 2),
+                    RunResult("first pass", "done", 3),
+                    RunResult("review fixed", "done", 2),
                 ],
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
@@ -557,7 +586,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=server.RunResult("complete", "done", 3),
+                return_value=RunResult("complete", "done", 3),
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
@@ -600,7 +629,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=server.RunResult("complete", "done", 3),
+                return_value=RunResult("complete", "done", 3),
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
@@ -627,7 +656,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=server.RunResult("complete", "done", 3),
+                return_value=RunResult("complete", "done", 3),
             ),
             mock.patch.object(
                 server,

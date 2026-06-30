@@ -1,7 +1,39 @@
-# Codey 0.1.6 Test Report
+# Codey 0.1.7 Test Report
 
 Date: 2026-06-30
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+
+## 0.1.7 Maintainability Refactor
+
+The agent now produces one structured `RunEvent` stream. CLI logs, review
+context, SSE updates, and the UI are projections of that stream; the UI no
+longer parses human log strings. Local tools return structured `ToolOutcome`
+values, so check success and exit codes are not inferred from display text.
+Task orchestration moved from the HTTP handler module into `task_runner.py`.
+
+No legacy `agent.tool_*` wrappers were retained solely for tests. Tests now
+exercise `tool_runtime.py` directly.
+
+Follow-up regressions cover successful empty-file reads, no-op writes and
+edits, and the absence of the legacy string `log` SSE path. A successful tool
+call now counts as progress only when `ToolOutcome.changed` is true.
+
+Verification after the refactor:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 224 passed |
+| Real Edge UI E2E | Pass, including diff, restore, and shell denial |
+| DeepSeek / Qwen / MiMo edit matrix | Pass, 5 / 4 / 4 turns |
+| DeepSeek / Qwen / MiMo create matrix | Pass, 4 / 4 / 3 turns |
+| Three writer/reviewer pairs | All approved |
+| DeepSeek / Qwen / MiMo self-bootstrap | Pass, 5 / 5 / 6 turns |
+| Same-model chat continuation | Marker preserved |
+| DeepSeek to Qwen handoff | Marker and decision preserved |
+
+Every live project smoke used a temporary directory and independent
+post-agent verification. Every bootstrap smoke repaired a temporary Codey
+copy and then passed all 219 tests.
 
 ## 2026-06-30 End-to-End Coverage
 
@@ -17,6 +49,7 @@ model variability:
 - display review and task receipt status
 - open and expand the diff drawer
 - restore the snapshot and verify the file is removed
+- deny a shell approval request and verify no command is executed
 - capture screenshots for the completed and restored states
 
 ```text
@@ -36,7 +69,7 @@ Qwen: PASS (4 turns)
 MiMo: PASS (4 turns)
 
 python -B -m unittest
-Ran 214 tests
+Ran 224 tests
 OK
 ```
 
@@ -126,7 +159,7 @@ The current architecture is still reasonably clean:
 
 - `agent.py` remains provider-independent.
 - web page selectors stay isolated in provider drivers.
-- two-model review lives in `review.py` and `server.py`, without adding a group-chat UI.
+- two-model review lives in `review.py` and `task_runner.py`, without adding a group-chat UI.
 - snapshot diff / restore stays separate in `changes.py`.
 
 I did not extract the repeated `_visible_locator` helpers from MiMo and Qwen. They look similar, but keeping provider DOM code local is currently more robust: if one website changes, the repair stays in one adapter.

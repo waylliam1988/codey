@@ -27,21 +27,16 @@ import subprocess
 import threading
 import time
 import uuid
-from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from codey import provider_controls
 from codey import __version__
-from codey.agent import DEFAULT_MAX_TURNS, RunResult, run as agent_run
+from codey.agent import DEFAULT_MAX_TURNS, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
 from codey.changes import ChangeTracker
-from codey.handoff import (
-    ConversationContext,
-    ConversationSnapshot,
-    render_continuation_prompt,
-)
+from codey.handoff import ConversationContext
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
@@ -50,14 +45,12 @@ from codey.providers import (
     provider_tab_availability,
 )
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
-from codey.receipt import build_task_receipt
 from codey.review import (
     ReviewResult,
-    has_reviewable_changes,
     parse_review_with_repair,
     render_review_prompt,
-    render_writer_followup,
 )
+from codey.task_runner import TaskRequest, TaskRunner
 
 WEB_DIR = Path(__file__).parent / "web"
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -270,10 +263,6 @@ def provider_status_update(provider_id: str, available: bool) -> list[dict]:
     }]
 
 
-def _recent_log_text(lines: list[str]) -> str:
-    return "\n".join(lines[-REVIEW_LOG_LINES:])
-
-
 def _emit_review(session_id: str, text: str) -> None:
     STATE.emit({"type": "review", "session_id": session_id, "text": text})
 
@@ -447,7 +436,6 @@ class State:
             "type": "providers",
             "providers": provider_status_update(provider_id, True),
         })
-        self.emit({"type": "log", "level": "info", "text": f"{provider.name} connected: {provider.location}"})
         return provider
 
     def conversation_for(self, session_id: str) -> ConversationContext:
@@ -577,281 +565,23 @@ def _run_task(
     continue_task: bool,
     provider_id: str,
 ) -> None:
-    provider_controls.set_teach_handler(STATE.handle_control_teach)
-    provider_controls.set_session_id(session_id)
-    STATE.busy = True
-    STATE.project = project
-    STATE.task = task
-    STATE.provider_id = provider_id
-    STATE.status = "running"
-    STATE.last_provider_failure = None
-    STATE.stop_flag.clear()
-    STATE.emit({
-        "type": "task_start",
-        "session_id": session_id,
-        "project": project,
-        "task": task,
-        "mode": "agent" if project else "chat",
-        "max_turns": max_turns,
-        "continue_task": continue_task,
-        "provider": provider_id,
-    })
-
-    recent_events: list[str] = []
-    task_changes: dict | None = None
-
-    def on_event(msg: str) -> None:
-        recent_events.append(str(msg))
-        if len(recent_events) > REVIEW_LOG_LINES * 2:
-            del recent_events[:REVIEW_LOG_LINES]
-        STATE.emit({"type": "log", "session_id": session_id, "level": "info", "text": msg})
-
-    def on_shell_request(cwd_rel: str, command: str) -> None:
-        if not project:
-            return
-        approval_id = "shell_" + uuid.uuid4().hex[:12]
-        pending = {
-            "id": approval_id,
-            "session_id": session_id,
-            "project": project,
-            "cwd": cwd_rel or ".",
-            "command": command,
-            "max_turns": max_turns,
-            "provider": provider_id,
-            "continue_after": True,
-        }
-        with STATE.lock:
-            STATE.pending_shell[approval_id] = pending
-        STATE.emit({
-            "type": "shell_request",
-            "session_id": session_id,
-            "id": approval_id,
-            "project": project,
-            "cwd": pending["cwd"],
-            "command": command,
-        })
-
-    try:
-        provider = STATE.get_provider(provider_id)
-        mode = "project" if project else "chat"
-        project_text = str(Path(project).expanduser().resolve()) if project else ""
-        conversation = STATE.conversation_for(session_id)
-        provider_session_changed = STATE.provider_session_changed(
-            provider_id,
-            session_id,
-        )
-        can_summarize_current_chat = (
-            conversation.initialized
-            and provider_id == conversation.provider_id
-            and not provider_session_changed
-        )
-        fresh_chat, handoff = conversation.plan_request(
-            provider_id=provider_id,
-            mode=mode,
-            project=project_text,
-            force_rollover=(
-                continue_task
-                or provider_session_changed
-            ),
-            next_prompt=task,
-        )
-        if fresh_chat and can_summarize_current_chat:
-            handoff = conversation.prepare_model_handoff(provider.send)
-        prior_snapshot = conversation.snapshot
-        conversation.update_snapshot(ConversationSnapshot(
-            mode=mode,
-            goal=prior_snapshot.goal or task,
-            project=project_text,
-            provider_id=prior_snapshot.provider_id,
-            changed_files=prior_snapshot.changed_files,
-            checks_passed=prior_snapshot.checks_passed,
-            summary=prior_snapshot.summary,
-            blocker=prior_snapshot.blocker,
-            latest_user=task if mode == "chat" else "",
-            latest_reply=prior_snapshot.latest_reply if mode == "chat" else "",
-            conversation_summary=prior_snapshot.conversation_summary,
-        ))
-        if project:
-            key = str(Path(project).expanduser().resolve())
-            with STATE.lock:
-                tracker = STATE.change_trackers.get(key)
-                if tracker is None:
-                    tracker = ChangeTracker(project)
-                    STATE.change_trackers[key] = tracker
-            result = agent_run(
-                provider,
-                Path(project),
-                task,
-                max_turns=max_turns,
-                on_event=on_event,
-                on_shell_request=on_shell_request,
-                stop_flag=STATE.stop_flag,
-                fresh_chat=fresh_chat,
-                change_tracker=tracker,
-                conversation=conversation,
-                provider_id=provider_id,
-                handoff=handoff,
-            )
-            STATE.set_provider_session(provider_id, session_id)
-            if result.stop_reason == "done" and not STATE.stop_flag.is_set():
-                task_changes = collect_changes(project, tracker)
-                if has_reviewable_changes(task_changes):
-                    try:
-                        provider.close()
-                    except Exception:
-                        pass
-                    provider = None
-                    try:
-                        reviewed = _run_review(
-                            session_id=session_id,
-                            project=project,
-                            task=task,
-                            writer_summary=result.summary,
-                            changes=task_changes,
-                            recent_log=_recent_log_text(recent_events),
-                            writer_id=provider_id,
-                        )
-                    except Exception:
-                        _emit_review(session_id, "Unavailable. Continued with one model.")
-                        reviewed = None
-                    if reviewed is not None:
-                        _reviewer_id, review = reviewed
-                        if not review.approved:
-                            followup = render_writer_followup(task, review)
-                            provider = STATE.get_provider(provider_id)
-                            result = agent_run(
-                                provider,
-                                Path(project),
-                                followup,
-                                max_turns=min(max_turns, REVIEW_FIX_TURNS),
-                                on_event=on_event,
-                                on_shell_request=on_shell_request,
-                                stop_flag=STATE.stop_flag,
-                                fresh_chat=False,
-                                change_tracker=tracker,
-                                conversation=conversation,
-                                provider_id=provider_id,
-                            )
-        else:
-            # Plain chat: just send + capture the reply, no tools executed.
-            if fresh_chat:
-                provider.new_chat()
-            prompt = render_continuation_prompt(handoff, task) if handoff else task
-            reply = provider.send(prompt)
-            if fresh_chat:
-                conversation.begin_window(provider_id, "chat")
-            STATE.set_provider_session(provider_id, session_id)
-            conversation.record_exchange(
-                prompt,
-                reply,
-                replace(
-                    conversation.snapshot,
-                    provider_id=provider_id,
-                    blocker="",
-                    latest_user=task,
-                    latest_reply=reply,
-                ),
-            )
-            STATE.emit({"type": "reply", "session_id": session_id, "text": reply})
-            result = RunResult("", "done", 1)
-        if project:
-            task_changes = collect_changes(project, tracker)
-            receipt = build_task_receipt(task_changes, checks_passed=result.checks_passed)
-            files = tuple(
-                str(item.get("path") or "")
-                for item in (task_changes.get("files") or [])
-                if item.get("path")
-            )
-            conversation.update_snapshot(replace(
-                conversation.snapshot,
-                provider_id=provider_id,
-                changed_files=files,
-                checks_passed=result.checks_passed,
-                summary=result.summary,
-                blocker="" if result.stop_reason == "done" else result.summary,
-            ))
-        else:
-            receipt = None
-        STATE.last_summary = result.summary
-        STATE.last_stop_reason = result.stop_reason
-        STATE.status = "done"
-        event = {
-            "type": "task_done",
-            "session_id": session_id,
-            "summary": result.summary,
-            "stop_reason": result.stop_reason,
-            "turns": result.turns,
-            "max_turns": max_turns,
-            "provider": provider_id,
-        }
-        if receipt is not None:
-            event["receipt"] = receipt.to_dict()
-            if task_changes and task_changes.get("ok"):
-                event["changes"] = {
-                    "changed_count": task_changes.get("changed_count", 0),
-                    "files": task_changes.get("files", [])[:3],
-                    "mode": task_changes.get("mode"),
-                    "project": project,
-                }
-        STATE.emit(event)
-    except provider_controls.ControlTeachCancelled:
-        if "conversation" in locals():
-            conversation.update_snapshot(replace(
-                conversation.snapshot,
-                provider_id=provider_id,
-                blocker="stopped",
-            ))
-        STATE.last_summary = ""
-        STATE.last_stop_reason = "stopped"
-        STATE.status = "done"
-        STATE.emit({
-            "type": "task_done",
-            "session_id": session_id,
-            "summary": "",
-            "stop_reason": "stopped",
-            "turns": 0,
-            "max_turns": max_turns,
-            "provider": provider_id,
-            "provider_failure": None,
-        })
-    except Exception as exc:
-        if "conversation" in locals():
-            conversation.update_snapshot(replace(
-                conversation.snapshot,
-                provider_id=provider_id,
-                blocker=str(exc),
-            ))
-        if "provider" in locals() and provider is not None:
-            failure = getattr(provider, "last_failure", None)
-        else:
-            failure = capture_provider_failure(
-                model=PROVIDER_LABELS.get(provider_id, provider_id),
-                action="connect",
-                page=None,
-                error=exc,
-            )
-        STATE.last_provider_failure = failure
-        STATE.status = "error"
-        STATE.last_stop_reason = "error"
-        STATE.emit({
-            "type": "task_done",
-            "session_id": session_id,
-            "summary": f"ERROR: {exc}",
-            "stop_reason": "error",
-            "turns": 0,
-            "max_turns": max_turns,
-            "provider": provider_id,
-            "provider_failure": failure.to_dict() if failure else None,
-        })
-    finally:
-        provider_controls.set_session_id("")
-        try:
-            if "provider" in locals() and provider is not None:
-                provider.close()
-        except Exception:
-            pass
-        STATE.busy = False
-
+    runner = TaskRunner(
+        STATE,
+        agent_run=agent_run,
+        collect_changes=collect_changes,
+        run_review=_run_review,
+        capture_provider_failure=capture_provider_failure,
+        review_fix_turns=REVIEW_FIX_TURNS,
+        review_log_lines=REVIEW_LOG_LINES,
+    )
+    runner.run(TaskRequest(
+        session_id=session_id,
+        project=project,
+        task=task,
+        max_turns=max_turns,
+        continue_task=continue_task,
+        provider_id=provider_id,
+    ))
 
 # ------------------------------------------------------------ http layer ---
 
@@ -1088,7 +818,6 @@ class Handler(BaseHTTPRequestHandler):
             for pending in pending_teach:
                 pending["cancelled"] = True
                 pending["event"].set()
-            STATE.emit({"type": "log", "level": "warn", "text": "stop requested"})
             self._send_json(200, {"ok": True})
             return
         self.send_response(404); self.end_headers()

@@ -43,6 +43,7 @@ def cmd_chat(args: argparse.Namespace) -> int:
 
 def cmd_agent(args: argparse.Namespace) -> int:
     from codey.agent import run
+    from codey.events import render_run_event
     from codey.providers import connect_provider
 
     task = " ".join(args.task)
@@ -57,7 +58,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
             project,
             task,
             max_turns=args.max_turns,
-            on_event=lambda m: _safe_print(m, file=sys.stderr),
+            on_event=lambda event: _safe_print(render_run_event(event), file=sys.stderr),
         )
     finally:
         provider.close()

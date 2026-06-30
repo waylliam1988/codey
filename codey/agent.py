@@ -8,57 +8,40 @@ stay outside this module.
 
 from __future__ import annotations
 
-import os
 import re
-import shlex
-import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from codey.events import RunEvent, print_run_event
 from codey.handoff import (
     ConversationContext,
     ConversationSnapshot,
     render_continuation_prompt,
 )
-from codey.models import Control, ToolCall, ToolPlan, ToolResult
+from codey.models import ToolCall, ToolPlan, ToolResult
 from codey.providers import ChatProvider
 from codey.protocols import JsonToolCodec, ProtocolCodec
+from codey.tool_runtime import (
+    ToolOutcome,
+    edit_file,
+    list_directory,
+    read_file,
+    run_command,
+    safe_join,
+    search_files,
+    write_file,
+)
 
 DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
-SEARCH_EXCLUDED_DIRS = {
-    ".git",
-    ".hg",
-    ".svn",
-    ".venv",
-    "venv",
-    "node_modules",
-    "__pycache__",
-    "dist",
-    "build",
-    ".next",
-    ".turbo",
-    "target",
-}
-SEARCH_MAX_RESULTS = 80
-SEARCH_MAX_FILE_BYTES = 512 * 1024
-RUN_TIMEOUT_SECONDS = 90
-RUN_OUTPUT_LIMIT = 24_000
-RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
-RUN_ALLOWED_PYTHON_FLAGS = {"-B"}
-RUN_ALLOWED_NPM_SCRIPTS = {"test", "build", "lint", "check", "typecheck"}
 VERIFICATION_REQUEST_RE = re.compile(
     r"\b("
     r"run|test|tests|unittest|pytest|verify|verification|check|build|lint|typecheck"
     r")\b|跑测试|运行测试|测试通过|验证|检查",
     re.IGNORECASE,
-)
-EDIT_BLOCK_RE = re.compile(
-    r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
-    re.DOTALL,
 )
 DEFAULT_CODEC = JsonToolCodec()
 
@@ -75,274 +58,11 @@ class ProjectInstruction:
     truncated: bool = False
 
 
-@dataclass(frozen=True)
-class EditBlock:
-    search: str
-    replace: str
-
-
 def parse_reply(text: str, codec: ProtocolCodec = DEFAULT_CODEC) -> ToolPlan:
     return codec.parse(text)
 
 
 # ----------------------------------------------------------------- tools ---
-
-def _safe_join(root: Path, rel: str) -> Path:
-    p = (root / rel).resolve()
-    root_resolved = root.resolve()
-    if root_resolved not in p.parents and p != root_resolved:
-        raise ValueError(f"path escapes project root: {rel}")
-    return p
-
-
-def tool_write(root: Path, rel: str, content: str) -> str:
-    p = _safe_join(root, rel)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
-    return f"wrote {rel} ({len(content)} chars)"
-
-
-def parse_edit_body(body: str) -> list[EditBlock]:
-    matches = list(EDIT_BLOCK_RE.finditer(body.strip()))
-    if not matches:
-        raise ValueError("edit body must contain SEARCH/REPLACE block")
-    leftover = EDIT_BLOCK_RE.sub("", body.strip()).strip()
-    if leftover:
-        raise ValueError("edit body contains text outside SEARCH/REPLACE blocks")
-    blocks: list[EditBlock] = []
-    for m in matches:
-        search = m.group(1)
-        replace = m.group(2)
-        if not search:
-            raise ValueError("SEARCH section cannot be empty")
-        blocks.append(EditBlock(search=search, replace=replace))
-    return blocks
-
-
-def _replace_unique(content: str, search: str, replace: str) -> tuple[str, bool]:
-    count = content.count(search)
-    if count == 1:
-        return content.replace(search, replace, 1), True
-    if count == 0 and "\r\n" in content and "\r\n" not in search:
-        crlf_search = search.replace("\n", "\r\n")
-        crlf_replace = replace.replace("\n", "\r\n")
-        crlf_count = content.count(crlf_search)
-        if crlf_count == 1:
-            return content.replace(crlf_search, crlf_replace, 1), True
-    return content, False
-
-
-def tool_edit(root: Path, rel: str, body: str) -> str:
-    p = _safe_join(root, rel)
-    if not p.is_file():
-        return f"ERROR: not a file: {rel}"
-    try:
-        blocks = parse_edit_body(body)
-        content = p.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return f"ERROR: not utf-8 text: {rel}"
-    except ValueError as exc:
-        return f"ERROR: {exc}"
-
-    updated = content
-    for block in blocks:
-        exact_count = updated.count(block.search)
-        crlf_count = 0
-        if exact_count == 0 and "\r\n" in updated and "\r\n" not in block.search:
-            crlf_count = updated.count(block.search.replace("\n", "\r\n"))
-        total = exact_count or crlf_count
-        if total == 0:
-            return f"ERROR: SEARCH text not found in {rel}"
-        if total > 1:
-            return f"ERROR: SEARCH text matched {total} times in {rel}; make it unique"
-        updated, ok = _replace_unique(updated, block.search, block.replace)
-        if not ok:
-            return f"ERROR: SEARCH text not found in {rel}"
-
-    if updated == content:
-        return f"edited {rel} (no changes)"
-    p.write_text(updated, encoding="utf-8")
-    return f"edited {rel} ({len(blocks)} replacement{'s' if len(blocks) != 1 else ''})"
-
-
-def tool_read(root: Path, rel: str) -> str:
-    p = _safe_join(root, rel)
-    if not p.is_file():
-        return f"ERROR: not a file: {rel}"
-    try:
-        return p.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return f"ERROR: not utf-8 text: {rel}"
-
-
-def tool_ls(root: Path, rel: str) -> str:
-    p = _safe_join(root, rel)
-    if not p.is_dir():
-        return f"ERROR: not a directory: {rel}"
-    lines: list[str] = []
-    for entry in sorted(p.iterdir()):
-        if entry.name.startswith("."):
-            continue
-        if entry.is_dir():
-            lines.append(f"{entry.name}/")
-            for sub in sorted(entry.iterdir())[:50]:
-                if sub.name.startswith("."):
-                    continue
-                tag = "/" if sub.is_dir() else ""
-                lines.append(f"  {sub.name}{tag}")
-        else:
-            lines.append(entry.name)
-    return "\n".join(lines) if lines else "(empty)"
-
-
-def _searchable_files(start: Path) -> list[Path]:
-    if start.is_file():
-        return [start]
-    files: list[Path] = []
-    stack = [start]
-    while stack:
-        current = stack.pop()
-        try:
-            entries = sorted(current.iterdir())
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.is_dir():
-                if entry.name in SEARCH_EXCLUDED_DIRS:
-                    continue
-                stack.append(entry)
-            elif entry.is_file():
-                files.append(entry)
-    return files
-
-
-def tool_search(
-    root: Path,
-    rel: str,
-    query: str,
-    *,
-    max_results: int = SEARCH_MAX_RESULTS,
-) -> str:
-    query = query.strip()
-    if not query:
-        return "ERROR: search query required"
-    start = _safe_join(root, rel or ".")
-    if not start.exists():
-        return f"ERROR: path not found: {rel}"
-    needle = query.lower()
-    matches: list[str] = []
-    truncated = False
-    root_resolved = root.resolve()
-    for path in _searchable_files(start):
-        try:
-            if path.stat().st_size > SEARCH_MAX_FILE_BYTES:
-                continue
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        for line_no, line in enumerate(text.splitlines(), start=1):
-            if needle not in line.lower():
-                continue
-            rel_path = path.relative_to(root_resolved).as_posix()
-            clean = line.strip()
-            if len(clean) > 240:
-                clean = clean[:237] + "..."
-            matches.append(f"{rel_path}:{line_no}: {clean}")
-            if len(matches) >= max_results:
-                truncated = True
-                break
-        if truncated:
-            break
-    if not matches:
-        return "(no matches)"
-    if truncated:
-        matches.append(f"... truncated after {max_results} matches")
-    return "\n".join(matches)
-
-
-def _command_has_forbidden_tokens(argv: list[str]) -> bool:
-    return any(token in arg for arg in argv for token in RUN_FORBIDDEN_TOKENS)
-
-
-def _is_allowed_run_command(argv: list[str]) -> bool:
-    if not argv:
-        return False
-    exe = Path(argv[0]).name.lower()
-    if exe in {"python", "python.exe", "py", "py.exe"}:
-        args = argv[1:]
-        while args and args[0] in RUN_ALLOWED_PYTHON_FLAGS:
-            args = args[1:]
-        if len(args) >= 2 and args[0] == "-m" and args[1] in {"unittest", "pytest", "py_compile"}:
-            return True
-        if len(args) >= 1 and args[0].endswith(".py"):
-            return True
-        return False
-    if exe in {"pytest", "pytest.exe"}:
-        return True
-    if exe in {"npm", "npm.cmd", "npm.exe"}:
-        return len(argv) >= 2 and (
-            argv[1] in RUN_ALLOWED_NPM_SCRIPTS
-            or (len(argv) >= 3 and argv[1] == "run" and argv[2] in RUN_ALLOWED_NPM_SCRIPTS)
-        )
-    if exe in {"pnpm", "pnpm.cmd", "pnpm.exe", "yarn", "yarn.cmd", "yarn.exe"}:
-        return len(argv) >= 2 and (
-            argv[1] in RUN_ALLOWED_NPM_SCRIPTS
-            or (len(argv) >= 3 and argv[1] == "run" and argv[2] in RUN_ALLOWED_NPM_SCRIPTS)
-        )
-    if exe in {"go", "go.exe"}:
-        return len(argv) >= 2 and argv[1] in {"test", "build", "vet"}
-    if exe in {"cargo", "cargo.exe"}:
-        return len(argv) >= 2 and argv[1] in {"test", "build", "check"}
-    if exe in {"dotnet", "dotnet.exe"}:
-        return len(argv) >= 2 and argv[1] in {"test", "build"}
-    return False
-
-
-def tool_run(root: Path, rel: str, command: str) -> str:
-    command = command.strip()
-    if not command:
-        return "ERROR: command required"
-    try:
-        argv = shlex.split(command)
-    except ValueError as exc:
-        return f"ERROR: invalid command: {exc}"
-    if _command_has_forbidden_tokens(argv) or not _is_allowed_run_command(argv):
-        return f"ERROR: command not allowed: {command}"
-    cwd = _safe_join(root, rel or ".")
-    if not cwd.is_dir():
-        return f"ERROR: not a directory: {rel}"
-    env = os.environ.copy()
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
-    try:
-        proc = subprocess.run(
-            argv,
-            cwd=cwd,
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=RUN_TIMEOUT_SECONDS,
-            shell=False,
-            check=False,
-        )
-    except FileNotFoundError:
-        return f"ERROR: command not found: {argv[0]}"
-    except subprocess.TimeoutExpired:
-        return f"ERROR: command timed out after {RUN_TIMEOUT_SECONDS}s: {command}"
-
-    output_parts = []
-    if proc.stdout:
-        output_parts.append(proc.stdout.rstrip())
-    if proc.stderr:
-        output_parts.append("[stderr]\n" + proc.stderr.rstrip())
-    output = "\n\n".join(output_parts) or "(no output)"
-    truncated = len(output) > RUN_OUTPUT_LIMIT
-    if truncated:
-        output = output[:RUN_OUTPUT_LIMIT].rstrip() + "\n\n... output truncated by Codey"
-    return f"exit {proc.returncode}: {command}\n{output}"
-
-
 def load_project_instructions(
     root: Path,
     *,
@@ -350,7 +70,7 @@ def load_project_instructions(
 ) -> list[ProjectInstruction]:
     docs: list[ProjectInstruction] = []
     for name in PROJECT_INSTRUCTION_FILES:
-        path = _safe_join(root, name)
+        path = safe_join(root, name)
         if not path.is_file():
             continue
         try:
@@ -417,14 +137,6 @@ def _verification_reminder(task: str) -> str:
 # ----------------------------------------------------------------- loop ---
 
 @dataclass
-class StepResult:
-    calls: list[ToolCall]
-    control: Control | None
-    tool_outputs: list[str] = field(default_factory=list)
-    raw_reply: str = ""
-
-
-@dataclass
 class RunResult:
     summary: str
     stop_reason: str = "done"  # done | stopped | max_turns | no_progress | protocol
@@ -440,7 +152,7 @@ def run(
     codec: ProtocolCodec = DEFAULT_CODEC,
     max_turns: int = DEFAULT_MAX_TURNS,
     stagnant_turns: int = DEFAULT_STAGNANT_TURNS,
-    on_event=print,
+    on_event=print_run_event,
     on_shell_request=None,
     stop_flag=None,
     fresh_chat: bool = True,
@@ -461,6 +173,12 @@ def run(
     verification_required = _task_requests_verification(user_task)
     project_text = str(project)
     active_provider_id = provider_id or getattr(provider, "name", "")
+
+    def emit(event: RunEvent) -> None:
+        on_event(event)
+
+    def report_reply(turn: int, reply_text: str, note: str = "") -> None:
+        emit(RunEvent.turn_started(turn, reply_text, note))
 
     def snapshot(summary: str = "", blocker: str = "") -> ConversationSnapshot:
         prior = conversation.snapshot if conversation else None
@@ -483,18 +201,20 @@ def run(
         return RunResult(summary, stop_reason, turns, checks_passed)
 
     def open_fresh_chat() -> bool:
-        on_event(f"[agent] opening a fresh {provider.name} conversation")
+        emit(RunEvent.status(f"[agent] opening a fresh {provider.name} conversation"))
         try:
             provider.new_chat()
         except Exception as exc:
-            on_event(f"[agent] could not open new chat: {exc}; reusing current tab")
+            emit(RunEvent.status(
+                f"[agent] could not open new chat: {exc}; reusing current tab"
+            ))
             return False
         return True
 
     project_instructions = load_project_instructions(project)
     if project_instructions:
         names = ", ".join(doc.name for doc in project_instructions)
-        on_event(f"[agent] loaded project instructions: {names}")
+        emit(RunEvent.info("loaded project instructions", names=names))
 
     def project_intro(request: str, factual_handoff: str = "") -> str:
         current = (
@@ -506,7 +226,7 @@ def run(
             f"{codec.system_prompt()}\n\n"
             f"Project root: {project}\n"
             f"Project instructions:\n{format_project_instructions(project_instructions)}\n\n"
-            f"Initial listing:\n{tool_ls(project, '.')}\n\n"
+            f"Initial listing:\n{list_directory(project, '.').output}\n\n"
             f"User task:\n{current}"
         )
 
@@ -541,11 +261,11 @@ def run(
     else:
         intro = project_intro(user_task)
         reply = provider.send(intro)
-    on_event(f"\n--- turn 1 reply ---\n{reply}\n")
+    report_reply(1, reply)
 
     for turn in range(1, max_turns + 1):
         if stop_flag is not None and stop_flag.is_set():
-            on_event("[agent] stopped by user.")
+            emit(RunEvent.status("[agent] stopped by user."))
             return finish("stopped", "stopped", turn)
         plan = parse_reply(reply, codec)
         calls = plan.calls
@@ -559,8 +279,8 @@ def run(
                 if call.name == "write":
                     if change_tracker is not None:
                         change_tracker.capture_before(path)
-                    out = tool_write(project, path, _call_arg(call, "content"))
-                    if not out.startswith("ERROR:"):
+                    outcome = write_file(project, path, _call_arg(call, "content"))
+                    if outcome.ok and outcome.changed:
                         made_progress = True
                         wrote_files = True
                         checks_passed = False
@@ -569,38 +289,44 @@ def run(
                     if _edit_has_content(call):
                         if change_tracker is not None:
                             change_tracker.capture_before(path)
-                        out = tool_write(project, path, _call_arg(call, "content"))
+                        outcome = write_file(project, path, _call_arg(call, "content"))
                     else:
                         if change_tracker is not None:
                             change_tracker.capture_before(path)
-                        out = tool_edit(project, path, _edit_body_from_call(call))
-                    if not out.startswith("ERROR:"):
+                        outcome = edit_file(project, path, _edit_body_from_call(call))
+                    if outcome.ok and outcome.changed:
                         made_progress = True
                         wrote_files = True
                         checks_passed = False
                         changed_files.add(path)
                 elif call.name == "read":
-                    out = tool_read(project, path)
+                    outcome = read_file(project, path)
                 elif call.name == "ls":
-                    out = tool_ls(project, path)
+                    outcome = list_directory(project, path)
                 elif call.name == "search":
-                    out = tool_search(project, path, _call_arg(call, "query"))
+                    outcome = search_files(project, path, _call_arg(call, "query"))
                 elif call.name == "run":
-                    out = tool_run(project, path, _call_arg(call, "command"))
-                    checks_passed = out.startswith("exit 0:")
+                    outcome = run_command(project, path, _call_arg(call, "command"))
+                    checks_passed = outcome.ok
                 elif call.name == "shell":
                     command = _call_arg(call, "command").strip()
                     if on_shell_request:
                         on_shell_request(path, command)
-                    on_event(f"[agent] shell approval requested: {command}")
+                    emit(RunEvent.status(
+                        f"[agent] shell approval requested: {command}"
+                    ))
                     return finish("shell command requires approval", "approval", turn)
                 else:
-                    out = f"ERROR: malformed tool call {call.name} (path={path})"
+                    outcome = ToolOutcome.error(
+                        f"malformed tool call {call.name} (path={path})"
+                    )
             except Exception as exc:
-                out = f"ERROR: {exc}"
-            on_event(f"  · {call.name} {path if path != '.' else ''} -> {out.splitlines()[0][:80]}")
+                outcome = ToolOutcome.error(str(exc))
+            out = outcome.output
+            emit(RunEvent.tool_finished(turn, call, outcome))
             results.append(ToolResult(call=call, output=out))
-            if call.name in ("read", "ls", "search", "run", "shell") and not out.startswith("ERROR:"):
+            produced_information = outcome.ok or outcome.exit_code is not None
+            if call.name in ("read", "ls", "search", "run", "shell") and produced_information:
                 sig = (call.name, path, out)
                 if sig not in seen_info:
                     seen_info.add(sig)
@@ -610,17 +336,21 @@ def run(
 
         if control is None:
             if results:
-                on_event("[agent] reply had actions but no control element — assuming done.")
+                emit(RunEvent.status(
+                    "[agent] reply had actions but no control element — assuming done."
+                ))
                 return finish(f"applied {len(results)} action(s) (no control element)", "protocol", turn)
             stagnant_count += 1
             if stagnant_count >= stagnant_turns:
                 msg = f"stopped after {stagnant_turns} turns without valid tool progress"
-                on_event(f"[agent] {msg}.")
+                emit(RunEvent.status(f"[agent] {msg}."))
                 return finish(msg, "no_progress", turn)
-            on_event("[agent] reply contained no valid JSON tool call; nudging the model.")
+            emit(RunEvent.status(
+                "[agent] reply contained no valid JSON tool call; nudging the model."
+            ))
             repair = codec.repair_prompt()
             reply = send_prompt(repair, restart_request=repair)
-            on_event(f"\n--- turn {turn+1} reply (after nudge) ---\n{reply}\n")
+            report_reply(turn + 1, reply, "(after nudge)")
             continue
 
         if control.kind == "done":
@@ -628,18 +358,24 @@ def run(
             # treat it as `continue` — it almost certainly needs the result.
             needs_followup = any(call.name in ("read", "ls", "search", "run", "shell") for call in calls)
             if needs_followup:
-                on_event("[agent] `done` came with info action — treating as continue.")
+                emit(RunEvent.status(
+                    "[agent] `done` came with info action — treating as continue."
+                ))
             elif verification_required and wrote_files and not checks_passed:
-                on_event("[agent] verification was requested; asking model to run tests before done.")
+                emit(RunEvent.status(
+                    "[agent] verification was requested; asking model to run tests before done."
+                ))
                 if turn >= max_turns:
-                    on_event(f"[agent] hit max_turns={max_turns}, stopping.")
+                    emit(RunEvent.status(
+                        f"[agent] hit max_turns={max_turns}, stopping."
+                    ))
                     return finish("verification required before done", "max_turns", turn)
                 reminder = _verification_reminder(user_task)
                 reply = send_prompt(reminder, restart_request=reminder)
-                on_event(f"\n--- turn {turn+1} reply (verification reminder) ---\n{reply}\n")
+                report_reply(turn + 1, reply, "(verification reminder)")
                 continue
             else:
-                on_event(f"[agent] DONE: {control.body}")
+                emit(RunEvent.status(f"[agent] DONE: {control.body}"))
                 return finish(control.body, "done", turn)
 
         if made_progress:
@@ -648,11 +384,13 @@ def run(
             stagnant_count += 1
             if stagnant_count >= stagnant_turns:
                 msg = control.body or f"stopped after {stagnant_turns} turns without file writes or new tool information"
-                on_event(f"[agent] no progress for {stagnant_turns} turns, stopping.")
+                emit(RunEvent.status(
+                    f"[agent] no progress for {stagnant_turns} turns, stopping."
+                ))
                 return finish(msg, "no_progress", turn)
 
         if turn >= max_turns:
-            on_event(f"[agent] hit max_turns={max_turns}, stopping.")
+            emit(RunEvent.status(f"[agent] hit max_turns={max_turns}, stopping."))
             return finish(control.body or f"hit max_turns={max_turns}", "max_turns", turn)
 
         next_prompt = codec.format_results(results)
@@ -663,6 +401,6 @@ def run(
                 f"{next_prompt}"
             ),
         )
-        on_event(f"\n--- turn {turn+1} reply ---\n{reply}\n")
+        report_reply(turn + 1, reply)
 
     return finish("(max turns reached)", "max_turns", max_turns)

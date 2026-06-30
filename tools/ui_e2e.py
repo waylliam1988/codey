@@ -36,6 +36,11 @@ class ScriptedWriter:
 
     def send(self, text: str, timeout: float | None = None) -> str:
         del timeout
+        if "Request a shell command" in text:
+            return (
+                '{"tool":"shell","args":{"command":"git status --short",'
+                '"path":"."}}'
+            )
         if "[tool_result tool=edit" in text:
             self.step = 2
             return '{"tool":"run","args":{"command":"python -m unittest","path":"."}}'
@@ -137,6 +142,18 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
     restored_screenshot = artifacts / "ui-restored.png"
     page.screenshot(path=str(restored_screenshot), full_page=True)
 
+    page.locator("#changes-close").click()
+    page.locator("#task").fill(
+        "Request a shell command for git status --short and wait for approval."
+    )
+    page.locator("#send").click()
+    expect(page.locator("#chat")).to_contain_text("Command approval")
+    deny = page.get_by_role("button", name="Deny", exact=True)
+    expect(deny).to_be_visible()
+    deny.click()
+    expect(page.locator("#chat")).to_contain_text("Denied")
+    expect(page.locator("#chat")).to_contain_text("git status --short")
+
     return {
         "ok": True,
         "url": base_url,
@@ -149,6 +166,7 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
             "task receipt",
             "diff drawer",
             "snapshot restore",
+            "shell approval denial",
         ],
         "screenshots": [str(done_screenshot), str(restored_screenshot)],
     }
