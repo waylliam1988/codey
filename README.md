@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.9`
+Version: `0.1.10`
 
 ---
 
@@ -59,6 +59,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Qwen Studio | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.10` adds ProfileDoctor as a quiet second recovery step. When bounded local discovery cannot choose safely, one already-open healthy model receives at most eight strictly sanitized structural candidates and may return only one candidate ID. It cannot provide selectors, code, text, or coordinates; it is called once without recursive assistance, and its choice is remembered only after the normal input, submission, or answer validation succeeds. If it declines or fails, human click teaching remains the final fallback. No UI was added. The release passed 294 tests, the complete Edge UI E2E flow, and forced ProfileDoctor send recovery on DeepSeek, Qwen, and MiMo.
 
 Version `0.1.9` adds bounded recovery for small provider-page changes without adding UI. DeepSeek, Qwen, and MiMo now share versioned selector profiles and a conservative fallback that can rediscover the message box, send button, and newest answer. Codey requires a unique actionable match, verifies the resulting page state before remembering it, and forgets learned controls after repeated failures. If automatic recovery is not confident, the existing one-click human teaching remains the final fallback. The release passed 277 tests, the complete Edge UI E2E flow, normal live tasks on all three providers, and forced core-selector recovery on all three sites.
 
@@ -280,6 +282,8 @@ codey/
   provider_profiles.json    versioned selectors for supported model pages
   provider_profiles.py      validated profile loader
   provider_discovery.py     bounded DOM candidate discovery and scoring
+  provider_controls.py      verified recovery, learning, and human teaching
+  profile_doctor.py         one-shot sanitized candidate selection
   deepseek.py               DeepSeek page driver
   mimo.py                   MiMo page driver
   qwen.py                   Qwen page driver
@@ -288,7 +292,7 @@ codey/
   protocols/
     json_codec.py           JSON-only tool protocol
   providers/
-    registry.py             provider registry
+    registry.py             provider registry and sibling-tab borrowing
     *_web.py                provider adapters
   server.py                 local HTTP + SSE transport and runtime state
   web/

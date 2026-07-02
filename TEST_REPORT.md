@@ -1,7 +1,34 @@
-# Codey 0.1.9 Test Report
+# Codey 0.1.10 Test Report
 
 Date: 2026-07-02
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+
+## 0.1.10 ProfileDoctor
+
+ProfileDoctor runs only after deterministic local recovery cannot choose a
+provider-page candidate safely. It exposes at most eight candidates, removes
+conversation and answer text, reduces labels and DOM identifiers to a fixed
+semantic vocabulary, and replaces exact geometry with coarse buckets. One
+already-open sibling provider may return only a candidate ID or `null`. The
+request is one-shot, assistance is disabled during the call to prevent
+recursion, and the existing state validation remains the only path that can
+persist a learned control. A failed or invalid decision falls through to the
+existing human teaching flow.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 294 passed |
+| One-call, no-recursion, strict decision-schema tests | Passed |
+| Sanitization and bounded-candidate tests | Passed |
+| Malicious tag / role / type values | Reduced to fixed `other` enum values |
+| Deterministic → Doctor → human ordering tests | Passed |
+| Validation-before-save and storage-failure tests | Passed |
+| Same-CDP sibling-tab borrowing tests | Passed |
+| Real Edge UI E2E | All 9 checks passed; UI unchanged |
+| Forced DeepSeek / Qwen / MiMo send recovery | Doctor selected one candidate; submission verified before save |
+| Provider-added response status text | Parsed deterministically without a second model call |
 
 ## 0.1.9 Bounded Provider Recovery
 

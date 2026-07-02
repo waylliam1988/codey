@@ -31,7 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from codey import provider_controls
+from codey import profile_doctor, provider_controls
 from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
@@ -41,6 +41,7 @@ from codey.handoff import ConversationContext
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
+    borrow_open_provider,
     connect_existing_provider,
     connect_provider,
     provider_tab_availability,
@@ -65,6 +66,7 @@ REVIEW_TIMEOUT = 300.0
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
+PROFILE_DOCTOR_TIMEOUT = 90.0
 MAX_CONVERSATION_STATES = 32
 CHANGE_EXCLUDED_PATH_PARTS = {
     "__pycache__",
@@ -582,9 +584,35 @@ class State:
                 with self.lock:
                     self.pending_teach.pop(teach_id, None)
 
+    def handle_profile_doctor(
+        self,
+        request: profile_doctor.ProfileDoctorRequest,
+    ) -> str | None:
+        """Use one healthy sibling tab for one bounded candidate decision."""
+        for provider_id in reviewer_candidates(request.provider_id):
+            helper = borrow_open_provider(provider_id, request.page)
+            if helper is None:
+                continue
+            try:
+                helper.new_chat()
+            except Exception:
+                helper.close()
+                continue
+            self.set_provider_session(provider_id, None)
+            try:
+                return profile_doctor.choose_candidate(
+                    request,
+                    lambda prompt: helper.send(prompt, timeout=PROFILE_DOCTOR_TIMEOUT),
+                )
+            except Exception:
+                return None
+            finally:
+                helper.close()
+
 
 STATE = State()
 provider_controls.set_teach_handler(STATE.handle_control_teach)
+provider_controls.set_doctor_handler(STATE.handle_profile_doctor)
 
 
 def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:

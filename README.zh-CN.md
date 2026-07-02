@@ -10,7 +10,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen 和小
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.9`
+版本：`0.1.10`
 
 ---
 
@@ -59,6 +59,8 @@ Codey 想解决的是一个很朴素的问题：
 | Qwen Studio | 已实机测试 |
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
+
+`0.1.10` 增加了无感的第二层恢复 ProfileDoctor。本地有边界发现无法安全选择时，一个已经打开且可用的其他模型只会收到最多 8 个经过严格脱敏的结构候选，并且只能返回一个候选编号。它不能提供选择器、代码、正文或坐标；每次恢复只调用一次，也不能递归求助。候选仍要通过原有的填写、发送或回答读取验证后才会保存；模型放弃或失败时，人类点击教学仍是最后兜底。前端没有增加任何概念。本次发布通过 294 项测试、完整 Edge UI E2E，以及 DeepSeek、Qwen、MiMo 三站的 ProfileDoctor 发送故障注入。
 
 `0.1.9` 增加了有边界的网页小改版恢复能力，不增加任何 UI。DeepSeek、Qwen 和 MiMo 共用版本化选择器 Profile；固定选择器失效时，Codey 会克制地重新发现输入框、发送按钮和最新回答。只有可操作控件唯一匹配，并且填写、发送或读取结果得到实际验证后，才会记住新控件；连续失败会自动遗忘。自动判断没有把握时，原有的人类点击教学仍是最后兜底。本次发布通过 277 项测试、完整 Edge UI E2E、三站正常实机任务，以及三站核心选择器强制失效后的自动恢复测试。
 
@@ -285,6 +287,8 @@ codey/
   provider_profiles.json    支持模型网页的版本化选择器
   provider_profiles.py      经过验证的 Profile 加载
   provider_discovery.py     有边界的 DOM 候选发现和评分
+  provider_controls.py      经过验证的恢复、记忆和人工教学
+  profile_doctor.py         单次脱敏候选选择
   deepseek.py               DeepSeek 页面驱动
   mimo.py                   MiMo 页面驱动
   qwen.py                   Qwen 页面驱动
@@ -293,7 +297,7 @@ codey/
   protocols/
     json_codec.py           JSON-only 工具协议
   providers/
-    registry.py             模型注册表
+    registry.py             模型注册表和同一 CDP 标签页借用
     *_web.py                网页模型适配器
   server.py                 本地 HTTP + SSE 传输和运行状态
   web/

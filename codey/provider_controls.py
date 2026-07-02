@@ -11,12 +11,14 @@ import json
 import re
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 from codey import provider_discovery as discovery
+from codey import profile_doctor
 from codey.local_store import read_json, write_json_atomic
 
 CONTROL_MESSAGE_BOX = "message_box"
@@ -31,6 +33,7 @@ CONTROL_STORE = Path.home() / ".codey" / "provider-controls.json"
 MAX_LEARNED_FAILURES = 2
 
 _handler: Callable[["ControlTeachRequest"], Any] | None = None
+_doctor_handler: Callable[[profile_doctor.ProfileDoctorRequest], str | None] | None = None
 _context = threading.local()
 
 
@@ -63,12 +66,24 @@ def set_teach_handler(handler: Callable[[ControlTeachRequest], Any] | None) -> N
     _handler = handler
 
 
+def set_doctor_handler(
+    handler: Callable[[profile_doctor.ProfileDoctorRequest], str | None] | None,
+) -> None:
+    global _doctor_handler
+    _doctor_handler = handler
+
+
 def can_teach() -> bool:
-    return _handler is not None
+    return _handler is not None and not _assistance_suppressed()
+
+
+def can_doctor() -> bool:
+    return _doctor_handler is not None and not _assistance_suppressed()
 
 
 def set_session_id(session_id: str) -> None:
     _context.session_id = session_id or ""
+    _context.doctor_attempts = set()
 
 
 def visible_locator(page: Any, selector: str) -> Any | None:
@@ -189,7 +204,18 @@ def discover_control(
     anchor: Any | None = None,
 ) -> Any | None:
     """Find a plausible composer control without allowing a broad selector to click it."""
-    found = discovery.find_control(page, action, anchor=anchor)
+    candidates = discovery.control_candidates(page, action, anchor=anchor)
+    found = discovery.select_control_candidate(candidates, action)
+    if found is not None and not _discovery_is_usable(found, action, require_enabled):
+        found = None
+    if found is None:
+        found = _doctor_selection(
+            page,
+            provider_id,
+            action,
+            candidates,
+            require_enabled=require_enabled,
+        )
     if found is None:
         return None
     fingerprint = fingerprint_from_click(found.fingerprint)
@@ -282,9 +308,57 @@ def response_count(
 def discover_response(page: Any, provider_id: str) -> Any | None:
     watches = getattr(_context, "response_watches", {})
     token = watches.get(provider_id, "") if isinstance(watches, dict) else ""
-    found = discovery.find_response(page, token)
+    candidates = discovery.response_candidates(page, token)
+    found = discovery.select_response_candidate(candidates)
     if found is None:
         return None
+    return _remember_discovered_response(page, provider_id, found)
+
+
+def request_doctor_response(page: Any, provider_id: str) -> Any | None:
+    """Ask once only after normal response discovery has exhausted its wait."""
+    watches = getattr(_context, "response_watches", {})
+    token = watches.get(provider_id, "") if isinstance(watches, dict) else ""
+    found = _doctor_selection(
+        page,
+        provider_id,
+        CONTROL_RESPONSE,
+        discovery.response_candidates(page, token),
+    )
+    if found is None:
+        return None
+    return _remember_discovered_response(page, provider_id, found)
+
+
+def teach_response(page: Any, provider_id: str) -> Any | None:
+    if not can_teach():
+        return None
+    response = request_teaching(page, provider_id, CONTROL_RESPONSE)
+    _response_locator_map()[provider_id] = response
+    return response
+
+
+def recover_response(
+    page: Any,
+    provider_id: str,
+    read: Callable[[], str],
+) -> str | None:
+    """Validate Doctor first, then use human teaching only if it did not work."""
+    for locate in (request_doctor_response, teach_response):
+        if locate(page, provider_id) is None:
+            continue
+        try:
+            return read()
+        except Exception:
+            reject_control(provider_id, CONTROL_RESPONSE)
+    return None
+
+
+def _remember_discovered_response(
+    page: Any,
+    provider_id: str,
+    found: discovery.Discovery,
+) -> Any:
     fingerprint = fingerprint_from_click(found.fingerprint)
     response = found.locator
     _response_locator_map()[provider_id] = response
@@ -316,7 +390,7 @@ def request_teaching(
     *,
     require_enabled: bool = False,
 ) -> Any:
-    if _handler is None:
+    if not can_teach():
         label = CONTROL_LABELS.get(action, "control")
         raise TimeoutError(f"Could not find the {label} in the model page")
     request = ControlTeachRequest(
@@ -327,6 +401,83 @@ def request_teaching(
         require_enabled=require_enabled,
     )
     return _handler(request)
+
+
+def _doctor_selection(
+    page: Any,
+    provider_id: str,
+    action: str,
+    candidates: tuple[discovery.Discovery, ...],
+    *,
+    require_enabled: bool = False,
+) -> discovery.Discovery | None:
+    if not candidates or not can_doctor():
+        return None
+    key = (str(getattr(_context, "session_id", "") or ""), provider_id, action)
+    attempts = _doctor_attempts()
+    if key in attempts:
+        return None
+    eligible = tuple(
+        item
+        for item in candidates
+        if _discovery_is_usable(item, action, require_enabled)
+    )
+    if not eligible:
+        return None
+    attempts.add(key)
+    request = profile_doctor.make_request(
+        provider_id,
+        action,
+        page,
+        eligible,
+        session_id=key[0],
+    )
+    try:
+        with suppress_assistance():
+            selected = _doctor_handler(request) if _doctor_handler is not None else None
+    except Exception:
+        return None
+    if not selected or not selected.startswith("c"):
+        return None
+    try:
+        index = int(selected[1:]) - 1
+    except ValueError:
+        return None
+    return eligible[index] if 0 <= index < len(eligible) else None
+
+
+def _discovery_is_usable(
+    item: discovery.Discovery,
+    action: str,
+    require_enabled: bool,
+) -> bool:
+    fingerprint = fingerprint_from_click(item.fingerprint)
+    return control_fingerprint_is_valid(fingerprint, action) and _usable(
+        item.locator,
+        require_enabled,
+    )
+
+
+def _doctor_attempts() -> set[tuple[str, str, str]]:
+    attempts = getattr(_context, "doctor_attempts", None)
+    if attempts is None:
+        attempts = set()
+        _context.doctor_attempts = attempts
+    return attempts
+
+
+def _assistance_suppressed() -> bool:
+    return bool(getattr(_context, "assistance_depth", 0))
+
+
+@contextmanager
+def suppress_assistance():
+    depth = int(getattr(_context, "assistance_depth", 0))
+    _context.assistance_depth = depth + 1
+    try:
+        yield
+    finally:
+        _context.assistance_depth = depth
 
 
 def start_click_capture(page: Any) -> str:
@@ -371,6 +522,8 @@ def resolve_captured_control(request: ControlTeachRequest, captured: CapturedCon
             captured.fingerprint,
         )
         _remember_source(request.provider_id, request.action, "pending")
+        if request.action == CONTROL_RESPONSE:
+            _response_locator_map()[request.provider_id] = control
         return control
     label = CONTROL_LABELS.get(request.action, "control")
     raise TimeoutError(f"Could not reuse the taught {label}")
@@ -584,6 +737,8 @@ def control_fingerprint_is_valid(fingerprint: dict[str, Any], action: str) -> bo
         return _looks_like_message_box(fingerprint)
     if action == CONTROL_SEND_BUTTON:
         return _looks_like_send_button(fingerprint) and not _looks_like_upload(fingerprint)
+    if action == CONTROL_RESPONSE:
+        return _looks_like_response(fingerprint)
     return True
 
 
@@ -706,6 +861,17 @@ def _looks_like_message_box(fingerprint: dict[str, Any]) -> bool:
     role = _clean(fingerprint.get("role"), 48).lower()
     return tag in {"textarea", "input"} or role in {"textbox", "searchbox"} or bool(
         fingerprint.get("contenteditable") or fingerprint.get("placeholder")
+    )
+
+
+def _looks_like_response(fingerprint: dict[str, Any]) -> bool:
+    tag = _clean(fingerprint.get("tag"), 32).lower()
+    if tag in {"button", "textarea", "input", "nav", "header", "footer"}:
+        return False
+    return bool(
+        fingerprint.get("text")
+        or fingerprint.get("classes")
+        or fingerprint.get("data")
     )
 
 

@@ -231,6 +231,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
         codey_server.provider_availability = original_provider_availability
         codey_server.pick_folder = original_pick_folder
         provider_controls.set_teach_handler(original_state.handle_control_teach)
+        provider_controls.set_doctor_handler(original_state.handle_profile_doctor)
         shutil.rmtree(temp_root, ignore_errors=True)
 
 

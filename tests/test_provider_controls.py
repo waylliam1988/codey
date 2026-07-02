@@ -11,6 +11,7 @@ from codey import provider_controls as controls
 class ProviderControlsTests(unittest.TestCase):
     def tearDown(self) -> None:
         controls.set_teach_handler(None)
+        controls.set_doctor_handler(None)
         controls.set_session_id("")
 
     def test_save_control_overwrites_latest_teaching(self) -> None:
@@ -346,6 +347,150 @@ class ProviderControlsTests(unittest.TestCase):
         self.assertEqual(request.action, controls.CONTROL_SEND_BUTTON)
         self.assertEqual(request.session_id, "session-1")
         self.assertEqual(request.message, "Click the send button in the model page")
+
+    def test_doctor_selects_ambiguous_candidate_then_existing_confirmation_saves_it(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        first = mock.Mock()
+        second = mock.Mock()
+        first.is_enabled.return_value = True
+        second.is_enabled.return_value = True
+        candidates = (
+            controls.discovery.Discovery(
+                first,
+                {"tag": "button", "ariaLabel": "Send message"},
+                70,
+            ),
+            controls.discovery.Discovery(
+                second,
+                {"tag": "button", "ariaLabel": "Submit"},
+                69,
+            ),
+        )
+        controls.set_session_id("session-1")
+        doctor = mock.Mock(return_value="c2")
+        controls.set_doctor_handler(doctor)
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            with (
+                mock.patch.object(controls.discovery, "control_candidates", return_value=candidates),
+                mock.patch.object(controls.discovery, "select_control_candidate", return_value=None),
+            ):
+                result = controls.discover_control(
+                    page,
+                    "qwen",
+                    controls.CONTROL_SEND_BUTTON,
+                    require_enabled=True,
+                )
+                controls.confirm_control("qwen", controls.CONTROL_SEND_BUTTON, path=path)
+
+            record = controls.load_control("qwen", controls.CONTROL_SEND_BUTTON, path=path)
+
+        self.assertIs(result, second)
+        doctor.assert_called_once()
+        self.assertEqual(record["fingerprint"]["aria_label"], "Submit")
+        self.assertTrue(record["verified"])
+
+    def test_doctor_runs_once_per_action_and_cannot_recurse(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        locator = mock.Mock()
+        locator.is_enabled.return_value = True
+        candidates = (
+            controls.discovery.Discovery(
+                locator,
+                {"tag": "button", "ariaLabel": "Send"},
+                50,
+            ),
+        )
+        calls = []
+
+        def doctor(_request):
+            calls.append((controls.can_doctor(), controls.can_teach()))
+            return None
+
+        controls.set_session_id("session-1")
+        controls.set_doctor_handler(doctor)
+        controls.set_teach_handler(mock.Mock())
+        with (
+            mock.patch.object(controls.discovery, "control_candidates", return_value=candidates),
+            mock.patch.object(controls.discovery, "select_control_candidate", return_value=None),
+        ):
+            controls.discover_control(page, "qwen", controls.CONTROL_SEND_BUTTON)
+            controls.discover_control(page, "qwen", controls.CONTROL_SEND_BUTTON)
+
+        self.assertEqual(calls, [(False, False)])
+
+    def test_manual_teaching_follows_failed_doctor(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        locator = mock.Mock()
+        candidates = (
+            controls.discovery.Discovery(
+                locator,
+                {"tag": "textarea", "placeholder": "Message"},
+                50,
+            ),
+        )
+        order = []
+        controls.set_session_id("session-1")
+        controls.set_doctor_handler(lambda _request: order.append("doctor"))
+        controls.set_teach_handler(lambda _request: order.append("manual") or "taught")
+        with (
+            mock.patch.object(controls.discovery, "control_candidates", return_value=candidates),
+            mock.patch.object(controls.discovery, "select_control_candidate", return_value=None),
+        ):
+            result = controls.locate_control(
+                page,
+                "qwen",
+                controls.CONTROL_MESSAGE_BOX,
+                (),
+                teach=True,
+            )
+
+        self.assertEqual(result, "taught")
+        self.assertEqual(order, ["doctor", "manual"])
+
+    def test_response_doctor_waits_for_explicit_timeout_recovery(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        response = mock.Mock()
+        response.is_visible.return_value = True
+        candidate = controls.discovery.Discovery(
+            response,
+            {"tag": "article", "classes": ["answer"]},
+            40,
+        )
+        doctor = mock.Mock(return_value="c1")
+        controls.set_session_id("session-1")
+        controls.set_doctor_handler(doctor)
+        controls._context.response_watches = {"qwen": "watch"}
+        with (
+            mock.patch.object(controls.discovery, "response_candidates", return_value=(candidate,)),
+            mock.patch.object(controls.discovery, "select_response_candidate", return_value=None),
+        ):
+            self.assertIsNone(controls.discover_response(page, "qwen"))
+            selected = controls.request_doctor_response(page, "qwen")
+
+        self.assertIs(selected, response)
+        doctor.assert_called_once()
+
+    def test_failed_doctor_response_validation_falls_through_to_teaching(self) -> None:
+        read = mock.Mock(side_effect=[ValueError("detached"), "answer"])
+        with (
+            mock.patch.object(controls, "request_doctor_response", return_value=mock.Mock()),
+            mock.patch.object(controls, "teach_response", return_value=mock.Mock()),
+            mock.patch.object(controls, "reject_control") as reject,
+        ):
+            answer = controls.recover_response(mock.Mock(), "qwen", read)
+
+        self.assertEqual(answer, "answer")
+        self.assertEqual(read.call_count, 2)
+        reject.assert_called_once_with("qwen", controls.CONTROL_RESPONSE)
+
+    def test_response_fingerprint_rejects_interactive_control(self) -> None:
+        self.assertFalse(
+            controls.control_fingerprint_is_valid(
+                controls.fingerprint_from_click({"tag": "button", "text": "Copy"}),
+                controls.CONTROL_RESPONSE,
+            )
+        )
 
 
 if __name__ == "__main__":

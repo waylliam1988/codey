@@ -8,11 +8,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import provider_controls
+from codey import profile_doctor, provider_controls
 from codey import server
 from codey.agent import RunResult
 from codey.changes import ChangeTracker
 from codey.provider_diagnostics import ProviderFailure
+from codey.provider_discovery import Discovery
 
 
 class GitChangesTests(unittest.TestCase):
@@ -250,6 +251,62 @@ class SessionThreadingTests(unittest.TestCase):
         finish.assert_called_once_with(page, "token", provider_controls.CONTROL_SEND_BUTTON, timeout=1.0)
         resolve.assert_called_once_with(request, captured)
         self.assertEqual(state.pending_teach, {})
+
+    def test_profile_doctor_uses_one_healthy_sibling_model_call(self) -> None:
+        state = server.State()
+        state.set_provider_session("qwen", "old-session")
+        page = mock.Mock()
+        helper = mock.Mock()
+        helper.send.return_value = '{"candidate_id":"c1"}'
+        request = profile_doctor.make_request(
+            "deepseek",
+            provider_controls.CONTROL_SEND_BUTTON,
+            page,
+            (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
+        )
+
+        with mock.patch.object(
+            server,
+            "borrow_open_provider",
+            side_effect=[None, helper],
+        ) as borrowed:
+            selected = state.handle_profile_doctor(request)
+
+        self.assertEqual(selected, "c1")
+        self.assertEqual(
+            borrowed.call_args_list,
+            [mock.call("mimo", page), mock.call("qwen", page)],
+        )
+        helper.new_chat.assert_called_once_with()
+        helper.send.assert_called_once()
+        self.assertEqual(helper.send.call_args.kwargs["timeout"], server.PROFILE_DOCTOR_TIMEOUT)
+        helper.close.assert_called_once_with()
+        self.assertTrue(state.provider_session_changed("qwen", "old-session"))
+
+    def test_profile_doctor_does_not_try_another_model_after_call_failure(self) -> None:
+        state = server.State()
+        page = mock.Mock()
+        first = mock.Mock()
+        first.send.side_effect = TimeoutError("failed")
+        second = mock.Mock()
+        request = profile_doctor.make_request(
+            "deepseek",
+            provider_controls.CONTROL_SEND_BUTTON,
+            page,
+            (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
+        )
+
+        with mock.patch.object(
+            server,
+            "borrow_open_provider",
+            side_effect=[first, second],
+        ) as borrowed:
+            selected = state.handle_profile_doctor(request)
+
+        self.assertIsNone(selected)
+        borrowed.assert_called_once_with("mimo", page)
+        first.send.assert_called_once()
+        second.send.assert_not_called()
 
     def test_run_task_keeps_selected_provider_through_agent_completion(self) -> None:
         state = server.State()

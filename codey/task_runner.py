@@ -63,6 +63,7 @@ class TaskRunner:
         provider_id = request.provider_id
 
         provider_controls.set_teach_handler(state.handle_control_teach)
+        provider_controls.set_doctor_handler(getattr(state, "handle_profile_doctor", None))
         provider_controls.set_session_id(session_id)
         state.busy = True
         state.project = project

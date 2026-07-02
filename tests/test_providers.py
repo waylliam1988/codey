@@ -183,6 +183,23 @@ class ProviderRegistryTests(unittest.TestCase):
             bring_to_front=False,
         )
 
+    def test_borrow_open_provider_reuses_sibling_page_without_closing_context(self) -> None:
+        owner = SimpleNamespace(url="https://chat.deepseek.com/")
+        sibling = SimpleNamespace(url="https://chat.qwen.ai/c/1")
+        owner.context = SimpleNamespace(pages=[owner, sibling])
+
+        provider = registry.borrow_open_provider("qwen", owner)
+
+        self.assertIsInstance(provider, QwenWebProvider)
+        self.assertIs(provider.session.page, sibling)
+        provider.close()
+
+    def test_borrow_open_provider_does_not_open_missing_tab(self) -> None:
+        owner = SimpleNamespace(url="https://chat.deepseek.com/")
+        owner.context = SimpleNamespace(pages=[owner])
+
+        self.assertIsNone(registry.borrow_open_provider("qwen", owner))
+
     def test_connect_provider_rejects_unknown_provider(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported provider"):
             registry.connect_provider("unknown")

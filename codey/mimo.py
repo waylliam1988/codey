@@ -311,6 +311,9 @@ def _chat(
         return late
     if appeared and last:
         return _final_text(page)
+    recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
+    if recovered is not None:
+        return recovered
     controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     raise TimeoutError(f"Xiaomi MiMo response timed out after {response_timeout:.0f}s")
 

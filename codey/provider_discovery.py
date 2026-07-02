@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -16,34 +16,57 @@ SEND_BUTTON = "send_button"
 class Discovery:
     locator: Any
     fingerprint: dict[str, Any]
+    score: int = 0
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def find_control(page: Any, action: str, *, anchor: Any | None = None) -> Discovery | None:
+    return select_control_candidate(control_candidates(page, action, anchor=anchor), action)
+
+
+def control_candidates(
+    page: Any,
+    action: str,
+    *,
+    anchor: Any | None = None,
+    limit: int = 8,
+) -> tuple[Discovery, ...]:
     if action not in {MESSAGE_BOX, SEND_BUTTON}:
-        return None
+        return ()
     anchor_box = _bounding_box(anchor)
     token = f"codey_{time.time_ns()}"
     try:
         raw = page.evaluate(_DISCOVER_CONTROLS_JS, {"token": token, "anchorBox": anchor_box})
     except Exception:
-        return None
+        return ()
     candidates = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
     ranked = sorted(
         ((score_control_candidate(item, action, anchor_box), item) for item in candidates),
         key=lambda pair: pair[0],
         reverse=True,
     )
+    results: list[Discovery] = []
+    for score, item in ranked:
+        if score < 0 or len(results) >= max(1, limit):
+            break
+        locator = _unique_visible(page, str(item.get("selector") or ""))
+        fingerprint = item.get("fingerprint")
+        if locator is None or not isinstance(fingerprint, dict):
+            continue
+        results.append(Discovery(locator, fingerprint, score, _candidate_metadata(item)))
+    return tuple(results)
+
+
+def select_control_candidate(
+    candidates: tuple[Discovery, ...],
+    action: str,
+) -> Discovery | None:
     threshold = 58 if action == MESSAGE_BOX else 62
-    if not ranked or ranked[0][0] < threshold:
+    if not candidates or candidates[0].score < threshold:
         return None
-    if len(ranked) > 1 and ranked[0][0] - ranked[1][0] < 12:
+    if len(candidates) > 1 and candidates[0].score - candidates[1].score < 12:
         return None
-    best = ranked[0][1]
-    locator = _unique_visible(page, str(best.get("selector") or ""))
-    fingerprint = best.get("fingerprint")
-    if locator is None or not isinstance(fingerprint, dict):
-        return None
-    return Discovery(locator, fingerprint)
+    return candidates[0]
 
 
 def score_control_candidate(
@@ -123,26 +146,43 @@ def stop_response_watch(page: Any, token: str) -> None:
 
 
 def find_response(page: Any, token: str) -> Discovery | None:
+    return select_response_candidate(response_candidates(page, token))
+
+
+def response_candidates(
+    page: Any,
+    token: str,
+    *,
+    limit: int = 8,
+) -> tuple[Discovery, ...]:
     if not token:
-        return None
+        return ()
     try:
         raw = page.evaluate(_READ_RESPONSE_WATCH_JS, {"token": token})
     except Exception:
-        return None
+        return ()
     candidates = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
     ranked = sorted(
         ((score_response_candidate(item), item) for item in candidates),
         key=lambda pair: pair[0],
         reverse=True,
     )
-    if not ranked or ranked[0][0] < 48:
+    results: list[Discovery] = []
+    for score, item in ranked:
+        if score < 0 or len(results) >= max(1, limit):
+            break
+        locator = _unique_visible(page, str(item.get("selector") or ""))
+        fingerprint = item.get("fingerprint")
+        if locator is None or not isinstance(fingerprint, dict):
+            continue
+        results.append(Discovery(locator, fingerprint, score, _candidate_metadata(item)))
+    return tuple(results)
+
+
+def select_response_candidate(candidates: tuple[Discovery, ...]) -> Discovery | None:
+    if not candidates or candidates[0].score < 48:
         return None
-    best = ranked[0][1]
-    locator = _unique_visible(page, str(best.get("selector") or ""))
-    fingerprint = best.get("fingerprint")
-    if locator is None or not isinstance(fingerprint, dict):
-        return None
-    return Discovery(locator, fingerprint)
+    return candidates[0]
 
 
 def score_response_candidate(candidate: dict[str, Any]) -> int:
@@ -200,6 +240,14 @@ def _bounding_box(locator: Any | None) -> dict[str, Any] | None:
         return locator.bounding_box()
     except Exception:
         return None
+
+
+def _candidate_metadata(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: item.get(key)
+        for key in ("enabled", "area", "bottom_ratio", "anchor_distance")
+        if key in item
+    }
 
 
 def _fingerprint(value: Any) -> dict[str, Any]:
