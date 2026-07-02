@@ -45,12 +45,13 @@ class QwenDriverTests(unittest.TestCase):
 
     def test_last_text_reads_only_the_latest_answer_node(self) -> None:
         page = mock.Mock()
-        page.evaluate.return_value = "reply"
+        response = mock.Mock()
+        response.inner_text.return_value = "reply"
 
-        self.assertEqual(qwen._last_text(page), "reply")
+        with mock.patch.object(qwen.controls, "locate_response", return_value=response):
+            self.assertEqual(qwen._last_text(page), "reply")
 
-        script = page.evaluate.call_args.args[0]
-        self.assertIn("answers[answers.length - 1]", script)
+        response.inner_text.assert_called_once_with()
 
     def test_submit_confirms_that_qwen_accepted_message(self) -> None:
         page = mock.Mock()
@@ -217,8 +218,9 @@ class QwenDriverTests(unittest.TestCase):
         with (
             mock.patch.object(qwen, "_resolve_preference", return_value=False),
             mock.patch.object(qwen, "_copy_last_text", return_value=""),
+            mock.patch.object(qwen, "_last_text", return_value=""),
         ):
-            with self.assertRaisesRegex(RuntimeError, "raw Qwen Studio response"):
+            with self.assertRaisesRegex(RuntimeError, "Qwen Studio response"):
                 qwen._final_text(object())
 
 

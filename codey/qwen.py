@@ -7,20 +7,21 @@ import time
 from playwright.sync_api import Locator, Page
 
 from codey import provider_controls as controls
+from codey.provider_profiles import get_profile
 from codey.web_clipboard import copy_action_text
 
 PROVIDER_ID = "qwen"
+PROFILE = get_profile(PROVIDER_ID)
 QWEN_URL = "https://chat.qwen.ai/"
-INPUT = "textarea.message-input-textarea"
-SEND_BUTTON = "button.send-button"
-SEND_READY = "button.send-button:not(.disabled):not([disabled])"
-STOP_ACTIVE = "button.stop-button:not(.disabled)"
-RESPONSE_MESSAGE = ".chat-response-message"
-ANSWER = ".response-message-content.phase-answer"
-EMPTY_RESPONSE = ".response-message-empty"
-RESPONSE_COPY = ".response-message-footer .qwen-chat-package-comp-new-action-control-container-copy"
-REGENERATE = ".response-message-footer .qwen-chat-package-comp-new-action-control-container-regenerate"
-PREFERENCE_CHOICE = "button.smulti-make-better"
+INPUT = PROFILE.selector("message_box")
+SEND_READY, SEND_BUTTON = PROFILE.selectors("send_button")
+STOP_ACTIVE = PROFILE.selector("stop_button")
+RESPONSE_MESSAGE = PROFILE.selector("response_message")
+ANSWER = PROFILE.combined("response")
+EMPTY_RESPONSE = PROFILE.selector("empty_response")
+RESPONSE_COPY = PROFILE.selector("copy_button")
+REGENERATE = PROFILE.selector("regenerate_button")
+PREFERENCE_CHOICE = PROFILE.selector("preference_choice")
 
 READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 60.0
@@ -41,7 +42,7 @@ def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
         page,
         PROVIDER_ID,
         controls.CONTROL_MESSAGE_BOX,
-        (INPUT,),
+        PROFILE.selectors("message_box"),
         teach=teach,
     )
 
@@ -53,14 +54,16 @@ def _send_button(
     require_enabled: bool = True,
     teach: bool = False,
 ) -> Locator | None:
+    message_box = _message_box(page)
     return controls.locate_control(
         page,
         PROVIDER_ID,
         controls.CONTROL_SEND_BUTTON,
-        (SEND_READY, SEND_BUTTON),
+        PROFILE.selectors("send_button"),
         timeout=timeout,
         require_enabled=require_enabled,
         teach=teach,
+        anchor=message_box,
     )
 
 
@@ -81,19 +84,17 @@ def new_chat(page: Page) -> None:
 
 
 def _response_count(page: Page) -> int:
-    return page.locator(ANSWER).count()
+    return controls.response_count(page, PROVIDER_ID, PROFILE.selectors("response"))
 
 
 def _last_text(page: Page) -> str:
-    return page.evaluate(
-        r"""({ answerSelector }) => {
-          const answers = document.querySelectorAll(answerSelector);
-          if (!answers.length) return '';
-          const answer = answers[answers.length - 1];
-          return (answer.innerText || answer.textContent || '').trim();
-        }""",
-        {"answerSelector": ANSWER},
-    )
+    response = controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
+    if response is None:
+        return ""
+    try:
+        return response.inner_text().strip()
+    except Exception:
+        return ""
 
 
 def _copy_last_text(page: Page) -> str:
@@ -170,7 +171,10 @@ def _final_text(page: Page) -> str:
     _resolve_preference(page)
     raw = _copy_last_text(page)
     if not raw:
-        raise RuntimeError("Could not read the raw Qwen Studio response")
+        raw = _last_text(page)
+    if not raw:
+        raise RuntimeError("Could not read the Qwen Studio response")
+    controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     return raw
 
 
@@ -178,26 +182,34 @@ def _generation_complete(page: Page) -> bool:
     return _send_button(page, require_enabled=False) is not None and _visible_locator(page, STOP_ACTIVE) is None
 
 
-def _submission_started(page: Page, baseline: int) -> bool:
-    return _visible_locator(page, STOP_ACTIVE) is not None or _response_count(page) > baseline
+def _submission_started(page: Page, baseline: int, submitted_text: str = "") -> bool:
+    if _visible_locator(page, STOP_ACTIVE) is not None or _response_count(page) > baseline:
+        return True
+    if not submitted_text:
+        return False
+    message_box = _message_box(page)
+    return message_box is not None and not controls.control_has_text(message_box, submitted_text)
 
 
-def _submit(page: Page, baseline: int) -> None:
+def _submit(page: Page, baseline: int, submitted_text: str = "") -> None:
     for attempt in range(MAX_SUBMIT_ATTEMPTS):
         send = _send_button(page, timeout=SEND_TIMEOUT, teach=True)
         if send is None:
             raise TimeoutError("Qwen Studio send button did not become ready")
 
-        if attempt and _submission_started(page, baseline):
+        if attempt and _submission_started(page, baseline, submitted_text):
+            controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
             return
         if attempt == 0:
             time.sleep(0.75)
         send.click()
         confirm_deadline = time.time() + SUBMIT_CONFIRM_TIMEOUT
         while time.time() < confirm_deadline:
-            if _submission_started(page, baseline):
+            if _submission_started(page, baseline, submitted_text):
+                controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
                 return
             time.sleep(0.2)
+    controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
     raise TimeoutError("Qwen Studio did not submit the message")
 
 
@@ -224,7 +236,7 @@ def _wait_late_response(
     return ""
 
 
-def chat(
+def _chat(
     page: Page,
     text: str,
     response_timeout: float = 300.0,
@@ -237,13 +249,16 @@ def chat(
 
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
+    controls.start_response_watch(page, PROVIDER_ID)
 
     textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Qwen Studio chat input is not visible")
     textarea.click()
     textarea.fill(text)
-    _submit(page, baseline)
+    if controls.control_has_text(textarea, text):
+        controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+    _submit(page, baseline, text)
 
     sent_at = time.time()
     deadline = sent_at + response_timeout
@@ -294,4 +309,19 @@ def chat(
         return late
     if appeared and last:
         return _final_text(page)
+    controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     raise TimeoutError(f"Qwen Studio response timed out after {response_timeout:.0f}s")
+
+
+def chat(
+    page: Page,
+    text: str,
+    response_timeout: float = 300.0,
+    stable_ticks: int = 2,
+    tick: float = 0.8,
+    min_wait: float = 1.5,
+) -> str:
+    try:
+        return _chat(page, text, response_timeout, stable_ticks, tick, min_wait)
+    finally:
+        controls.stop_response_watch(page, PROVIDER_ID)

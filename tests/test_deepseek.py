@@ -61,20 +61,20 @@ class DeepSeekTimeoutTests(unittest.TestCase):
         container = mock.Mock()
         actions = mock.Mock()
         copy_button = mock.Mock()
-        page.locator.return_value = responses
-        responses.count.return_value = 1
-        responses.last = response
         response.locator.return_value = container
         container.locator.return_value = actions
         actions.count.return_value = 5
         actions.first = copy_button
         copy_button.is_visible.return_value = True
 
-        with mock.patch.object(
-            deepseek,
-            "copy_action_text",
-            return_value='{"tool":"done","args":{"summary":"raw"}}',
-        ) as copy_action:
+        with (
+            mock.patch.object(deepseek.controls, "locate_response", return_value=response),
+            mock.patch.object(
+                deepseek,
+                "copy_action_text",
+                return_value='{"tool":"done","args":{"summary":"raw"}}',
+            ) as copy_action,
+        ):
             raw = deepseek._copy_last_text(page)
 
         self.assertEqual(raw, '{"tool":"done","args":{"summary":"raw"}}')

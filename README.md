@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.8`
+Version: `0.1.9`
 
 ---
 
@@ -45,6 +45,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Reuse project commands that have already succeeded locally
 - Resume the same chat after a Codey restart from one bounded factual snapshot
 - Keep non-Git diff and restore available across Codey restarts
+- Recover from small provider-page DOM changes with bounded, verified discovery
 - Record compact provider failure diagnostics for debugging web-page breakage
 
 ---
@@ -57,7 +58,9 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Xiaomi MiMo Chat | Tested |
 | Qwen Studio | Tested |
 
-Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core. Recent live tests also hardened MiMo submission so the driver clicks the real send button instead of nearby upload controls, and clarified the JSON tool protocol for Qwen.
+Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.9` adds bounded recovery for small provider-page changes without adding UI. DeepSeek, Qwen, and MiMo now share versioned selector profiles and a conservative fallback that can rediscover the message box, send button, and newest answer. Codey requires a unique actionable match, verifies the resulting page state before remembering it, and forgets learned controls after repeated failures. If automatic recovery is not confident, the existing one-click human teaching remains the final fallback. The release passed 277 tests, the complete Edge UI E2E flow, normal live tasks on all three providers, and forced core-selector recovery on all three sites.
 
 Version `0.1.8` adds a hidden local continuity layer. Each project keeps only a small set of commands that really succeeded, each recent chat keeps one bounded factual snapshot, and the current non-Git recovery baseline is written atomically before project files change. These records add no UI controls or notices and do not store cookies, page DOM, or full chat transcripts. The release passed 260 tests, the real Edge UI flow, and the DeepSeek / Qwen / MiMo edit matrix.
 
@@ -67,7 +70,7 @@ Version `0.1.6` adds a hidden context safety net. Near one shared context budget
 
 Version `0.1.4` adds compact task receipts in the chat stream, so beginners can see what happened, whether checks passed, and whether restore is available without opening a new panel. Version `0.1.3` keeps the model browser durable across Codey UI restarts: Codey first reuses an existing Edge CDP browser and model tab, and only opens a new model browser when no usable CDP browser exists.
 
-If a provider page changes and Codey cannot find the message box or send button, it can pause and ask you to click that control once. Codey stores only that small control record and reuses it later, so the main workflow stays quiet.
+If a provider page changes, Codey first attempts the bounded recovery above. When it still cannot identify a control safely, it pauses and asks you to click that control once. It stores only the latest verified control record, never the page DOM or your conversation, so the main workflow stays quiet.
 
 ---
 
@@ -274,6 +277,9 @@ codey/
   local_store.py            atomic JSON state writes
   project_facts.py          facts verified by successful local runs
   conversation_store.py     bounded factual conversation persistence
+  provider_profiles.json    versioned selectors for supported model pages
+  provider_profiles.py      validated profile loader
+  provider_discovery.py     bounded DOM candidate discovery and scoring
   deepseek.py               DeepSeek page driver
   mimo.py                   MiMo page driver
   qwen.py                   Qwen page driver

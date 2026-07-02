@@ -10,14 +10,28 @@ class MimoDriverTests(unittest.TestCase):
     def test_ready_timeout_allows_slow_homepage(self) -> None:
         self.assertGreaterEqual(mimo.READY_TIMEOUT, 90)
 
+    def test_dismisses_only_profiled_announcement_close_button(self) -> None:
+        page = mock.Mock()
+        button = mock.Mock()
+        with mock.patch.object(mimo, "_visible_locator", side_effect=[button, None]) as visible:
+            dismissed = mimo._dismiss_known_notice(page)
+
+        self.assertTrue(dismissed)
+        visible.assert_has_calls([
+            mock.call(page, mimo.PROFILE.selector("dismiss_notice")),
+            mock.call(page, mimo.PROFILE.selector("dismiss_notice")),
+        ])
+        button.click.assert_called_once_with()
+
     def test_last_text_reads_latest_markdown_answer(self) -> None:
         page = mock.Mock()
-        page.evaluate.return_value = "reply"
+        response = mock.Mock()
+        response.inner_text.return_value = "reply"
 
-        self.assertEqual(mimo._last_text(page), "reply")
+        with mock.patch.object(mimo.controls, "locate_response", return_value=response):
+            self.assertEqual(mimo._last_text(page), "reply")
 
-        script = page.evaluate.call_args.args[0]
-        self.assertIn("answers[answers.length - 1]", script)
+        response.inner_text.assert_called_once_with()
 
     def test_copy_last_text_uses_first_action_after_latest_answer(self) -> None:
         page = mock.Mock()
@@ -27,9 +41,7 @@ class MimoDriverTests(unittest.TestCase):
         before_button = mock.Mock()
         copy_button = mock.Mock()
 
-        page.locator.side_effect = lambda selector: responses if selector == mimo.ANSWER else buttons
-        responses.count.return_value = 1
-        responses.last = response
+        page.locator.return_value = buttons
         response.bounding_box.return_value = {"x": 280, "y": 100, "width": 600, "height": 80}
         buttons.count.return_value = 2
         buttons.nth.side_effect = [before_button, copy_button]
@@ -38,7 +50,10 @@ class MimoDriverTests(unittest.TestCase):
         copy_button.is_visible.return_value = True
         copy_button.bounding_box.return_value = {"x": 282, "y": 174, "width": 28, "height": 28}
 
-        with mock.patch.object(mimo, "copy_action_text", return_value="raw reply") as copy_action:
+        with (
+            mock.patch.object(mimo.controls, "locate_response", return_value=response),
+            mock.patch.object(mimo, "copy_action_text", return_value="raw reply") as copy_action,
+        ):
             raw = mimo._copy_last_text(page)
 
         self.assertEqual(raw, "raw reply")
@@ -88,7 +103,7 @@ class MimoDriverTests(unittest.TestCase):
         result = mimo._send_button(page)
 
         self.assertIs(result, send)
-        page.locator.assert_called_with(mimo.SEND_BUTTON)
+        page.locator.assert_any_call(mimo.PROFILE.selector("send_button"))
 
     def test_submission_started_accepts_cleared_input_after_send_click(self) -> None:
         page = mock.Mock()

@@ -1,11 +1,39 @@
-# Codey 0.1.8 Test Report
+# Codey 0.1.9 Test Report
 
-Date: 2026-07-01
+Date: 2026-07-02
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
 
-## Hidden Local Continuity
+## 0.1.9 Bounded Provider Recovery
 
-The current working tree adds three bounded, invisible continuity mechanisms:
+The three provider drivers now read their normal selectors from one validated,
+versioned local profile. If those selectors stop matching, a bounded discovery
+layer scores only composer controls and DOM regions changed after submission.
+Actionable learned selectors must resolve to one visible control, and Codey
+persists them only after observing successful input, submission, or answer
+reading. Two failed validations remove a learned record. Optional learning
+storage is atomic and cannot fail an otherwise successful provider operation.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 277 passed |
+| Provider-focused tests | 51 passed |
+| Real Edge UI E2E | All 9 checks passed; UI unchanged |
+| Normal DeepSeek / Qwen / MiMo tasks | Passed in 5 / 4 / 4 turns |
+| Forced DeepSeek core-selector failure | Recovered; input, send, and answer records verified |
+| Forced Qwen core-selector failure | Returned `RECOVERY_OK`; all three records verified |
+| Forced MiMo core-selector failure | Returned `RECOVERY_OK`; all three records verified |
+| Optional storage failure | Did not interrupt the successful provider operation |
+| Syntax and patch checks | Passed |
+
+The recovery scope remains deliberately small. It does not bypass login or
+CAPTCHA challenges, click low-confidence controls, retain page DOM, or add any
+new interface concept. Human one-click teaching remains the final fallback.
+
+## 0.1.8 Hidden Local Continuity
+
+Version 0.1.8 added three bounded, invisible continuity mechanisms:
 
 - Project Facts records only successful controlled `run` commands and injects
   them into later tasks for the same project.

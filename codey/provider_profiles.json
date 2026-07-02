@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "deepseek": {
+      "version": 1,
+      "hosts": ["chat.deepseek.com"],
+      "selectors": {
+        "message_box": ["textarea.ds-scroll-area"],
+        "send_button": ["div[role=\"button\"].ds-button--primary:not(.ds-button--disabled)"],
+        "response": [".ds-markdown"],
+        "response_action": ["[role=\"button\"]"]
+      }
+    },
+    "qwen": {
+      "version": 1,
+      "hosts": ["chat.qwen.ai"],
+      "selectors": {
+        "message_box": ["textarea.message-input-textarea"],
+        "send_button": ["button.send-button:not(.disabled):not([disabled])", "button.send-button"],
+        "stop_button": ["button.stop-button:not(.disabled)"],
+        "response_message": [".chat-response-message"],
+        "response": [".response-message-content.phase-answer"],
+        "empty_response": [".response-message-empty"],
+        "copy_button": [".response-message-footer .qwen-chat-package-comp-new-action-control-container-copy"],
+        "regenerate_button": [".response-message-footer .qwen-chat-package-comp-new-action-control-container-regenerate"],
+        "preference_choice": ["button.smulti-make-better"]
+      }
+    },
+    "mimo": {
+      "version": 2,
+      "hosts": ["aistudio.xiaomimimo.com"],
+      "selectors": {
+        "message_box": ["textarea"],
+        "send_button": ["button[data-track-id=\"home_send_btn\"]", "button[data-track-name=\"home_send_message\"]"],
+        "response": [".markdown-prose", "[class*=\"Markdown_markdown\"]"],
+        "dismiss_notice": ["button[aria-label=\"关闭公告\"]"]
+      }
+    }
+  }
+}

@@ -19,18 +19,21 @@ import time
 from playwright.sync_api import Page
 
 from codey import provider_controls as controls
+from codey.provider_profiles import get_profile
 from codey.web_clipboard import copy_action_text
 
 PROVIDER_ID = "deepseek"
-INPUT = "textarea.ds-scroll-area"
-SEND_READY = 'div[role="button"].ds-button--primary:not(.ds-button--disabled)'
-RESPONSE = ".ds-markdown"
-RESPONSE_ACTION = '[role="button"]'
+PROFILE = get_profile(PROVIDER_ID)
+INPUT = PROFILE.selector("message_box")
+SEND_READY = PROFILE.selector("send_button")
+RESPONSE = PROFILE.combined("response")
+RESPONSE_ACTION = PROFILE.combined("response_action")
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 90.0
 COPY_READY_TIMEOUT = 10.0
+SUBMIT_CONFIRM_TIMEOUT = 15.0
 
 
 def new_chat(page) -> None:
@@ -55,20 +58,22 @@ def _message_box(page: Page, *, teach: bool = False):
         page,
         PROVIDER_ID,
         controls.CONTROL_MESSAGE_BOX,
-        (INPUT,),
+        PROFILE.selectors("message_box"),
         teach=teach,
     )
 
 
 def _send_button(page: Page, *, timeout: float = 0.0, teach: bool = False):
+    message_box = _message_box(page)
     return controls.locate_control(
         page,
         PROVIDER_ID,
         controls.CONTROL_SEND_BUTTON,
-        (SEND_READY,),
+        PROFILE.selectors("send_button"),
         timeout=timeout,
         require_enabled=True,
         teach=teach,
+        anchor=message_box,
     )
 
 
@@ -127,27 +132,22 @@ _EXTRACT_JS = r"""
 
 
 def _last_text(page: Page) -> str:
-    return page.evaluate(
-        """(extractJs) => {
-            const list = document.querySelectorAll('.ds-markdown');
-            if (!list.length) return '';
-            const fn = eval('(' + extractJs + ')');
-            return fn(list[list.length-1]);
-        }""",
-        _EXTRACT_JS,
-    )
+    response = controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
+    if response is None:
+        return ""
+    return response.evaluate(_EXTRACT_JS)
 
 
 def _response_count(page: Page) -> int:
-    return page.locator(RESPONSE).count()
+    return controls.response_count(page, PROVIDER_ID, PROFILE.selectors("response"))
 
 
 def _copy_last_text(page: Page) -> str:
     """Read the source response through DeepSeek's first answer action."""
-    responses = page.locator(RESPONSE)
-    if not responses.count():
+    response = controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
+    if response is None:
         return ""
-    actions = responses.last.locator("xpath=../..").locator(RESPONSE_ACTION)
+    actions = response.locator("xpath=../..").locator(RESPONSE_ACTION)
     deadline = time.time() + COPY_READY_TIMEOUT
     while time.time() < deadline:
         if actions.count():
@@ -164,8 +164,47 @@ def _copy_last_text(page: Page) -> str:
 def _final_text(page: Page) -> str:
     raw = _copy_last_text(page)
     if not raw:
-        raise RuntimeError("Could not read the raw DeepSeek response")
+        raw = _last_text(page)
+    if not raw:
+        raise RuntimeError("Could not read the DeepSeek response")
+    controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     return raw
+
+
+def _submission_started(
+    page: Page,
+    baseline: int,
+    baseline_text: str,
+    submitted_text: str,
+) -> bool:
+    try:
+        count = _response_count(page)
+        current = _last_text(page) if count else ""
+    except Exception:
+        return False
+    if count > baseline or (current and current != baseline_text):
+        return True
+    message_box = _message_box(page)
+    if message_box is None:
+        return False
+    try:
+        return not controls.control_has_text(message_box, submitted_text)
+    except Exception:
+        return False
+
+
+def _wait_submission_started(
+    page: Page,
+    baseline: int,
+    baseline_text: str,
+    submitted_text: str,
+) -> bool:
+    deadline = time.time() + SUBMIT_CONFIRM_TIMEOUT
+    while time.time() < deadline:
+        if _submission_started(page, baseline, baseline_text, submitted_text):
+            return True
+        time.sleep(0.2)
+    return False
 
 
 def _wait_late_response(
@@ -212,48 +251,69 @@ def chat(
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
 
-    ta = _message_box(page, teach=True)
-    if ta is None:
-        raise TimeoutError("DeepSeek chat input is not visible")
-    ta.click()
-    ta.fill(text)
-    time.sleep(0.3)
+    controls.start_response_watch(page, PROVIDER_ID)
+    try:
+        ta = _message_box(page, teach=True)
+        if ta is None:
+            raise TimeoutError("DeepSeek chat input is not visible")
+        ta.click()
+        ta.fill(text)
+        if controls.control_has_text(ta, text):
+            controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+        time.sleep(0.3)
 
-    btn = _send_button(page, timeout=5)
-    if btn is None:
-        ta.press("Enter")
-        time.sleep(0.4)
-        if _response_count(page) <= baseline and controls.can_teach():
+        btn = _send_button(page, timeout=5)
+        if btn is not None:
+            btn.click()
+        else:
+            ta.press("Enter")
+        submitted = _wait_submission_started(page, baseline, baseline_text, text)
+        if submitted and btn is not None:
+            controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
+        elif btn is not None:
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
+        if not submitted and controls.control_has_text(ta, text):
+            ta.press("Enter")
+            submitted = _wait_submission_started(page, baseline, baseline_text, text)
+        if not submitted and controls.can_teach():
             btn = _send_button(page, teach=True)
             if btn is not None:
                 btn.click()
-    else:
-        btn.click()
+                submitted = _wait_submission_started(page, baseline, baseline_text, text)
+                if submitted:
+                    controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
+                else:
+                    controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
+        if not submitted:
+            raise TimeoutError("DeepSeek did not submit the message")
 
-    sent_at = time.time()
-    start_deadline = sent_at + response_timeout
-    last = ""
-    stable = 0
-    appeared = False
-    while time.time() < start_deadline:
-        time.sleep(tick)
-        current = _last_text(page)
-        if _response_count(page) <= baseline and current == baseline_text:
-            continue
-        appeared = True
-        if not current:
-            stable = 0
-            continue
-        if current == last and (time.time() - sent_at) >= min_wait:
-            stable += 1
-            if stable >= stable_ticks:
-                return _final_text(page)
-        else:
-            stable = 0
-            last = current
-    late = _wait_late_response(page, baseline, baseline_text=baseline_text, grace=TIMEOUT_GRACE, tick=tick)
-    if late:
-        return late
-    if appeared and last:
-        return _final_text(page)
-    raise TimeoutError(f"DeepSeek response timed out after {response_timeout:.0f}s")
+        sent_at = time.time()
+        start_deadline = sent_at + response_timeout
+        last = ""
+        stable = 0
+        appeared = False
+        while time.time() < start_deadline:
+            time.sleep(tick)
+            current = _last_text(page)
+            if _response_count(page) <= baseline and current == baseline_text:
+                continue
+            appeared = True
+            if not current:
+                stable = 0
+                continue
+            if current == last and (time.time() - sent_at) >= min_wait:
+                stable += 1
+                if stable >= stable_ticks:
+                    return _final_text(page)
+            else:
+                stable = 0
+                last = current
+        late = _wait_late_response(page, baseline, baseline_text=baseline_text, grace=TIMEOUT_GRACE, tick=tick)
+        if late:
+            return late
+        if appeared and last:
+            return _final_text(page)
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
+        raise TimeoutError(f"DeepSeek response timed out after {response_timeout:.0f}s")
+    finally:
+        controls.stop_response_watch(page, PROVIDER_ID)

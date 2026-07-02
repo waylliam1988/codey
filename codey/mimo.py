@@ -7,14 +7,16 @@ import time
 from playwright.sync_api import Locator, Page
 
 from codey import provider_controls as controls
+from codey.provider_profiles import get_profile
 from codey.web_clipboard import copy_action_text
 
 PROVIDER_ID = "mimo"
+PROFILE = get_profile(PROVIDER_ID)
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 MIMO_ORIGIN = "https://aistudio.xiaomimimo.com"
-INPUT = "textarea"
-SEND_BUTTON = 'button[data-track-id="home_send_btn"], button[data-track-name="home_send_message"]'
-ANSWER = '.markdown-prose, [class*="Markdown_markdown"]'
+INPUT = PROFILE.selector("message_box")
+SEND_BUTTON = PROFILE.combined("send_button")
+ANSWER = PROFILE.combined("response")
 
 READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 60.0
@@ -32,14 +34,31 @@ def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
         page,
         PROVIDER_ID,
         controls.CONTROL_MESSAGE_BOX,
-        (INPUT,),
+        PROFILE.selectors("message_box"),
         teach=teach,
     )
+
+
+def _dismiss_known_notice(page: Page) -> bool:
+    """Close only explicitly profiled, non-transactional announcements."""
+    for selector in PROFILE.selectors("dismiss_notice"):
+        button = _visible_locator(page, selector)
+        if button is None:
+            continue
+        button.click()
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            if _visible_locator(page, selector) is None:
+                return True
+            time.sleep(0.1)
+        return False
+    return False
 
 
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
+        _dismiss_known_notice(page)
         if _message_box(page) is not None:
             return
         time.sleep(0.4)
@@ -54,19 +73,17 @@ def new_chat(page: Page) -> None:
 
 
 def _response_count(page: Page) -> int:
-    return page.locator(ANSWER).count()
+    return controls.response_count(page, PROVIDER_ID, PROFILE.selectors("response"))
 
 
 def _last_text(page: Page) -> str:
-    return page.evaluate(
-        """({ answerSelector }) => {
-          const answers = document.querySelectorAll(answerSelector);
-          if (!answers.length) return '';
-          const answer = answers[answers.length - 1];
-          return (answer.innerText || answer.textContent || '').trim();
-        }""",
-        {"answerSelector": ANSWER},
-    )
+    response = controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
+    if response is None:
+        return ""
+    try:
+        return response.inner_text().strip()
+    except Exception:
+        return ""
 
 
 def _first_visible_button_after(page: Page, x_min: float, y_min: float, y_max: float) -> Locator | None:
@@ -93,10 +110,9 @@ def _first_visible_button_after(page: Page, x_min: float, y_min: float, y_max: f
 
 def _copy_last_text(page: Page) -> str:
     """Use MiMo's copy action to recover raw text before Markdown rendering."""
-    responses = page.locator(ANSWER)
-    if not responses.count():
+    response = controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
+    if response is None:
         return ""
-    response = responses.last
     deadline = time.time() + COPY_READY_TIMEOUT
     while time.time() < deadline:
         try:
@@ -120,9 +136,11 @@ def _copy_last_text(page: Page) -> str:
 def _final_text(page: Page) -> str:
     raw = _copy_last_text(page)
     if raw:
+        controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
         return raw
     fallback = _last_text(page)
     if fallback:
+        controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
         return fallback
     raise RuntimeError("Could not read the raw Xiaomi MiMo response")
 
@@ -158,7 +176,9 @@ def _submit(page: Page, baseline: int, baseline_text: str = "", submitted_text: 
     if button is not None:
         button.click()
         if _wait_submission_started(page, baseline, baseline_text, submitted_text):
+            controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
             return
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
         raise TimeoutError("Xiaomi MiMo Chat did not submit the message")
 
     textarea.press("Enter")
@@ -175,19 +195,23 @@ def _submit(page: Page, baseline: int, baseline_text: str = "", submitted_text: 
         if button is not None:
             button.click()
             if _wait_submission_started(page, baseline, baseline_text, submitted_text):
+                controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
                 return
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
 
     raise TimeoutError("Xiaomi MiMo Chat did not submit the message")
 
 
 def _send_button(page: Page) -> Locator | None:
+    message_box = _message_box(page)
     return controls.locate_control(
         page,
         PROVIDER_ID,
         controls.CONTROL_SEND_BUTTON,
-        (SEND_BUTTON,),
+        PROFILE.selectors("send_button"),
         timeout=SUBMIT_READY_TIMEOUT,
         require_enabled=True,
+        anchor=message_box,
     )
 
 
@@ -228,7 +252,7 @@ def _wait_late_response(
     return last
 
 
-def chat(
+def _chat(
     page: Page,
     text: str,
     response_timeout: float = 300.0,
@@ -241,12 +265,15 @@ def chat(
 
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
+    controls.start_response_watch(page, PROVIDER_ID)
 
     textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Xiaomi MiMo Chat input is not visible")
     textarea.click()
     textarea.fill(text)
+    if controls.control_has_text(textarea, text):
+        controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
     time.sleep(0.2)
     _submit(page, baseline, baseline_text, text)
 
@@ -284,4 +311,19 @@ def chat(
         return late
     if appeared and last:
         return _final_text(page)
+    controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     raise TimeoutError(f"Xiaomi MiMo response timed out after {response_timeout:.0f}s")
+
+
+def chat(
+    page: Page,
+    text: str,
+    response_timeout: float = 300.0,
+    stable_ticks: int = 4,
+    tick: float = 0.8,
+    min_wait: float = 1.5,
+) -> str:
+    try:
+        return _chat(page, text, response_timeout, stable_ticks, tick, min_wait)
+    finally:
+        controls.stop_response_watch(page, PROVIDER_ID)
