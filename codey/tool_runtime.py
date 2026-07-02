@@ -9,6 +9,9 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from codey import cancellation
+from codey.text_budget import clip_middle
+
 
 SEARCH_EXCLUDED_DIRS = {
     ".git",
@@ -305,17 +308,12 @@ def run_command(root: Path, rel: str, command: str) -> ToolOutcome:
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     try:
-        proc = subprocess.run(
+        proc = cancellation.run_process(
             argv,
             cwd=cwd,
             env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=RUN_TIMEOUT_SECONDS,
             shell=False,
-            check=False,
         )
     except FileNotFoundError:
         return ToolOutcome.error(f"command not found: {argv[0]}")
@@ -330,9 +328,7 @@ def run_command(root: Path, rel: str, command: str) -> ToolOutcome:
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
-    truncated = len(output) > RUN_OUTPUT_LIMIT
-    if truncated:
-        output = output[:RUN_OUTPUT_LIMIT].rstrip() + "\n\n... output truncated by Codey"
+    output, truncated = clip_middle(output, RUN_OUTPUT_LIMIT)
     display = f"exit {proc.returncode}: {command}\n{output}"
     return ToolOutcome(
         display,

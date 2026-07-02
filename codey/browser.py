@@ -19,6 +19,8 @@ from urllib.request import urlopen
 
 from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
+from codey import cancellation
+
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
@@ -75,9 +77,10 @@ def _launch_edge(port: int, profile: Path, start_url: str) -> subprocess.Popen:
 def _wait_port(port: int, timeout: float = 20.0) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
+        cancellation.check()
         if _port_open(port):
             return
-        time.sleep(0.3)
+        cancellation.wait(0.3)
     raise TimeoutError(f"CDP port {port} did not open within {timeout:.0f}s")
 
 
@@ -217,13 +220,14 @@ class Session:
 def _start_playwright_with_retry() -> Playwright:
     last_error: Exception | None = None
     for attempt in range(2):
+        cancellation.check()
         try:
             return sync_playwright().start()
         except AttributeError as exc:
             if not _is_playwright_startup_race(exc):
                 raise
             last_error = exc
-            time.sleep(0.25 * (attempt + 1))
+            cancellation.wait(0.25 * (attempt + 1))
     raise RuntimeError(
         "Playwright failed to initialize. Close stale Codey/Edge automation "
         "sessions and try again."
@@ -245,6 +249,7 @@ def open_chat_page(
     bring_to_front: bool = True,
 ) -> Session:
     """Return a Playwright session attached to a matching provider tab."""
+    cancellation.check()
     cdp_port = _ensure_cdp_port(
         preferred=port,
         profile=profile,
@@ -255,6 +260,7 @@ def open_chat_page(
 
     pw = _start_playwright_with_retry()
     browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
+    _check_cancelled_connection(pw)
 
     page: Page | None = None
     for ctx in browser.contexts:
@@ -271,11 +277,22 @@ def open_chat_page(
             raise RuntimeError(f"no existing provider tab matched {url_contains}")
         ctx = browser.contexts[0] if browser.contexts else browser.new_context()
         page = ctx.new_page()
+        _check_cancelled_connection(pw)
         page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
 
     if bring_to_front:
+        _check_cancelled_connection(pw)
         page.bring_to_front()
+    _check_cancelled_connection(pw)
     return Session(pw=pw, browser=browser, page=page)
+
+
+def _check_cancelled_connection(pw: Playwright) -> None:
+    try:
+        cancellation.check()
+    except cancellation.TaskCancelled:
+        pw.stop()
+        raise
 
 
 def open_deepseek(

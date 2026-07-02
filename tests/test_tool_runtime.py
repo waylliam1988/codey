@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey import cancellation
 from codey.tool_runtime import edit_file, read_file, run_command, write_file
 
 
@@ -33,6 +36,45 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertEqual(outcome.exit_code, 3)
         self.assertTrue(outcome.output.startswith("exit 3:"))
         self.assertFalse(outcome.output.startswith("ERROR:"))
+
+    def test_run_command_is_cancelled_without_waiting_for_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "sleep.py").write_text(
+                "import time\ntime.sleep(30)\n",
+                encoding="utf-8",
+            )
+            event = threading.Event()
+            timer = threading.Timer(0.1, event.set)
+            started = time.monotonic()
+            timer.start()
+            try:
+                with cancellation.scope(event):
+                    with self.assertRaises(cancellation.TaskCancelled):
+                        run_command(root, ".", "python sleep.py")
+            finally:
+                timer.cancel()
+
+        self.assertLess(time.monotonic() - started, 2.0)
+
+    def test_run_command_preserves_head_and_tail_of_large_output(self) -> None:
+        completed = __import__("subprocess").CompletedProcess(
+            ["python", "large.py"],
+            1,
+            stdout="HEAD" + ("x" * 200) + "TAIL",
+            stderr="",
+        )
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch("codey.tool_runtime.RUN_OUTPUT_LIMIT", 80),
+            mock.patch("codey.tool_runtime.cancellation.run_process", return_value=completed),
+        ):
+            outcome = run_command(Path(td), ".", "python large.py")
+
+        self.assertTrue(outcome.truncated)
+        self.assertIn("HEAD", outcome.output)
+        self.assertTrue(outcome.output.endswith("TAIL"))
+        self.assertIn("middle of output omitted", outcome.output)
 
     def test_writing_identical_content_is_not_a_change(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
-from codey import provider_controls
+from codey import cancellation, provider_controls
 from codey.agent import RunResult
 from codey.events import RunEvent, render_run_event
 from codey.handoff import ConversationSnapshot, render_continuation_prompt
@@ -72,6 +72,7 @@ class TaskRunner:
         state.status = "running"
         state.last_provider_failure = None
         state.stop_flag.clear()
+        previous_cancel_event = cancellation.set_event(state.stop_flag)
         state.emit({
             "type": "task_start",
             "session_id": session_id,
@@ -201,7 +202,10 @@ class TaskRunner:
                     handoff=handoff,
                     project_facts=verified_facts,
                 )
-                state.set_provider_session(provider_id, session_id)
+                state.set_provider_session(
+                    provider_id,
+                    None if result.stop_reason == "stopped" else session_id,
+                )
                 if result.stop_reason == "done" and not state.stop_flag.is_set():
                     task_changes = self.collect_changes(project, tracker)
                     if has_reviewable_changes(task_changes):
@@ -220,6 +224,8 @@ class TaskRunner:
                                 recent_log="\n".join(recent_events[-self.review_log_lines:]),
                                 writer_id=provider_id,
                             )
+                        except cancellation.TaskCancelled:
+                            raise
                         except Exception:
                             state.emit({
                                 "type": "review",
@@ -315,7 +321,8 @@ class TaskRunner:
                         "project": project,
                     }
             state.emit(event)
-        except provider_controls.ControlTeachCancelled:
+        except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
+            state.set_provider_session(provider_id, None)
             if "conversation" in locals():
                 conversation.update_snapshot(replace(
                     conversation.snapshot,
@@ -365,6 +372,7 @@ class TaskRunner:
                 "provider_failure": failure.to_dict() if failure else None,
             })
         finally:
+            cancellation.set_event(previous_cancel_event)
             provider_controls.set_session_id("")
             try:
                 if "provider" in locals() and provider is not None:

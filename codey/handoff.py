@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass, field, replace
 from typing import Callable
 
+from codey import cancellation
+
 DEFAULT_HARD_CONTEXT_TOKENS = 200_000
 SOFT_CONTEXT_NUMERATOR = 3
 SOFT_CONTEXT_DENOMINATOR = 4
@@ -142,7 +144,7 @@ def render_continuation_prompt(handoff: str, current_request: str) -> str:
 def render_summary_prompt(snapshot: ConversationSnapshot) -> str:
     known_facts = render_handoff(replace(snapshot, conversation_summary=""))
     return (
-        "Codey will continue this conversation in a fresh model chat. "
+        "This local coding session will continue in a fresh model chat. "
         "Do not call tools and do not continue the task yet. Return only one compact "
         "JSON object with these optional keys: goal, decisions, current_state, "
         "next_step, constraints, open_questions. Keep only facts needed to continue. "
@@ -215,6 +217,8 @@ class ConversationContext:
         prompt = render_summary_prompt(self.snapshot)
         try:
             reply = send_summary(prompt)
+        except cancellation.TaskCancelled:
+            raise
         except Exception:
             return self.prepare_handoff()
         self.used_tokens += estimate_tokens(prompt) + estimate_tokens(reply)

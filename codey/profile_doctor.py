@@ -7,6 +7,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Iterable
 
+from codey import cancellation
 from codey.provider_discovery import Discovery
 
 
@@ -93,7 +94,9 @@ def choose_candidate(
     """Ask exactly once and accept only one known candidate id or null."""
     if not request.candidates:
         return None
+    cancellation.check()
     reply = send(render_prompt(request))
+    cancellation.check()
     payload = _decision_payload(reply)
     if payload is None:
         return None

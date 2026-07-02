@@ -220,7 +220,7 @@ class PlaywrightStartupTests(unittest.TestCase):
 
         with (
             mock.patch.object(browser, "sync_playwright", return_value=manager) as sync_playwright,
-            mock.patch.object(browser.time, "sleep") as sleep,
+            mock.patch.object(browser.cancellation, "wait") as sleep,
         ):
             result = browser._start_playwright_with_retry()
 
@@ -236,7 +236,7 @@ class PlaywrightStartupTests(unittest.TestCase):
 
         with (
             mock.patch.object(browser, "sync_playwright", return_value=manager),
-            mock.patch.object(browser.time, "sleep"),
+            mock.patch.object(browser.cancellation, "wait"),
         ):
             with self.assertRaisesRegex(RuntimeError, "Playwright failed to initialize"):
                 browser._start_playwright_with_retry()

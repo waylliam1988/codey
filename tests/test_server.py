@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import profile_doctor, provider_controls
+from codey import cancellation, profile_doctor, provider_controls
 from codey import server
 from codey.agent import RunResult
 from codey.changes import ChangeTracker
@@ -135,7 +135,26 @@ class ApprovedShellTests(unittest.TestCase):
             data = server.execute_approved_shell(td, "..", 'python -c "print(\'approved\')"')
 
             self.assertFalse(data["ok"])
-            self.assertIn("escapes project root", data["error"])
+        self.assertIn("escapes project root", data["error"])
+
+    def test_execute_approved_shell_preserves_large_output_head_and_tail(self) -> None:
+        completed = subprocess.CompletedProcess(
+            "command",
+            1,
+            stdout="HEAD" + ("x" * 200) + "TAIL",
+            stderr="",
+        )
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "SHELL_OUTPUT_LIMIT", 80),
+            mock.patch.object(server.subprocess, "run", return_value=completed),
+        ):
+            data = server.execute_approved_shell(td, ".", "command")
+
+        self.assertTrue(data["truncated"])
+        self.assertTrue(data["output"].startswith("HEAD"))
+        self.assertTrue(data["output"].endswith("TAIL"))
+        self.assertIn("middle of output omitted", data["output"])
 
 
 class ProviderStatusTests(unittest.TestCase):
@@ -165,6 +184,26 @@ class ProviderStatusTests(unittest.TestCase):
 
         self.assertEqual(statuses, {"deepseek": True, "mimo": True, "qwen": False})
         detected.assert_called_once_with()
+        connected.assert_not_called()
+
+    def test_review_honors_task_cancellation_before_connecting(self) -> None:
+        event = threading.Event()
+        event.set()
+        with (
+            cancellation.scope(event),
+            mock.patch.object(server, "connect_existing_provider") as connected,
+        ):
+            with self.assertRaises(cancellation.TaskCancelled):
+                server._run_review(
+                    session_id="session-1",
+                    project="E:/demo",
+                    task="task",
+                    writer_summary="done",
+                    changes={"ok": True, "changed_count": 1, "diff": "+x"},
+                    recent_log="",
+                    writer_id="deepseek",
+                )
+
         connected.assert_not_called()
 
 
@@ -307,6 +346,26 @@ class SessionThreadingTests(unittest.TestCase):
         borrowed.assert_called_once_with("mimo", page)
         first.send.assert_called_once()
         second.send.assert_not_called()
+
+    def test_profile_doctor_honors_task_cancellation_before_borrowing_tab(self) -> None:
+        state = server.State()
+        request = profile_doctor.make_request(
+            "deepseek",
+            provider_controls.CONTROL_SEND_BUTTON,
+            mock.Mock(),
+            (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
+        )
+        event = threading.Event()
+        event.set()
+
+        with (
+            cancellation.scope(event),
+            mock.patch.object(server, "borrow_open_provider") as borrowed,
+        ):
+            with self.assertRaises(cancellation.TaskCancelled):
+                state.handle_profile_doctor(request)
+
+        borrowed.assert_not_called()
 
     def test_run_task_keeps_selected_provider_through_agent_completion(self) -> None:
         state = server.State()
@@ -811,6 +870,54 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["stop_reason"], "stopped")
         self.assertEqual(task_done["summary"], "")
         self.assertIsNone(task_done["provider_failure"])
+
+    def test_run_task_treats_shared_cancellation_as_stop_and_forgets_provider_session(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "Qwen Studio"
+        provider.location = "https://chat.qwen.ai/"
+        state.set_provider_session("qwen", "session-1")
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(
+                server,
+                "agent_run",
+                side_effect=cancellation.TaskCancelled("task stopped"),
+            ),
+        ):
+            server._run_task("session-1", td, "hello", 8, False, "qwen")
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["stop_reason"], "stopped")
+        self.assertIsNone(task_done["provider_failure"])
+        self.assertTrue(state.provider_session_changed("qwen", "session-1"))
+
+    def test_stopped_agent_result_also_forgets_provider_session(self) -> None:
+        state = server.State()
+        provider = mock.Mock(name="provider")
+        provider.name = "Qwen Studio"
+        state.set_provider_session("qwen", "session-1")
+
+        def stopped_agent(*_args, **_kwargs):
+            state.stop_flag.set()
+            return RunResult("stopped", "stopped", 2, False)
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(server, "agent_run", side_effect=stopped_agent),
+        ):
+            server._run_task("session-1", td, "task", 8, False, "qwen")
+
+        self.assertTrue(state.provider_session_changed("qwen", "session-1"))
 
     def test_restore_snapshot_changes_endpoint(self) -> None:
         with tempfile.TemporaryDirectory() as td:

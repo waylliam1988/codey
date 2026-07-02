@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+from codey import cancellation
 from codey import provider_discovery as discovery
 from codey import profile_doctor
 from codey.local_store import read_json, write_json_atomic
@@ -90,6 +91,8 @@ def visible_locator(page: Any, selector: str) -> Any | None:
     locator = page.locator(selector)
     try:
         count = locator.count()
+    except cancellation.TaskCancelled:
+        raise
     except Exception:
         return None
     try:
@@ -117,9 +120,11 @@ def locate_control(
     teach: bool = False,
     anchor: Any | None = None,
 ) -> Any | None:
+    cancellation.check()
     deadline = time.time() + max(0.0, timeout)
     first = True
     while first or time.time() < deadline:
+        cancellation.check()
         first = False
         for selector in selectors:
             control = visible_locator(page, selector)
@@ -132,7 +137,7 @@ def locate_control(
             return control
         if time.time() >= deadline:
             break
-        time.sleep(0.2)
+        cancellation.wait(0.2)
     control = discover_control(
         page,
         provider_id,
@@ -204,6 +209,7 @@ def discover_control(
     anchor: Any | None = None,
 ) -> Any | None:
     """Find a plausible composer control without allowing a broad selector to click it."""
+    cancellation.check()
     candidates = discovery.control_candidates(page, action, anchor=anchor)
     found = discovery.select_control_candidate(candidates, action)
     if found is not None and not _discovery_is_usable(found, action, require_enabled):
@@ -349,6 +355,8 @@ def recover_response(
             continue
         try:
             return read()
+        except cancellation.TaskCancelled:
+            raise
         except Exception:
             reject_control(provider_id, CONTROL_RESPONSE)
     return None
@@ -390,6 +398,7 @@ def request_teaching(
     *,
     require_enabled: bool = False,
 ) -> Any:
+    cancellation.check()
     if not can_teach():
         label = CONTROL_LABELS.get(action, "control")
         raise TimeoutError(f"Could not find the {label} in the model page")
@@ -411,6 +420,7 @@ def _doctor_selection(
     *,
     require_enabled: bool = False,
 ) -> discovery.Discovery | None:
+    cancellation.check()
     if not candidates or not can_doctor():
         return None
     key = (str(getattr(_context, "session_id", "") or ""), provider_id, action)
@@ -435,6 +445,8 @@ def _doctor_selection(
     try:
         with suppress_assistance():
             selected = _doctor_handler(request) if _doctor_handler is not None else None
+    except cancellation.TaskCancelled:
+        raise
     except Exception:
         return None
     if not selected or not selected.startswith("c"):
@@ -481,6 +493,7 @@ def suppress_assistance():
 
 
 def start_click_capture(page: Any) -> str:
+    cancellation.check()
     token = "codey_" + str(int(time.time() * 1000))
     page.evaluate(_INSTALL_CAPTURE_JS, {"token": token})
     return token
@@ -752,10 +765,11 @@ def control_label(fingerprint: dict[str, Any]) -> str:
 
 def _wait_for_click(page: Any, deadline: float) -> dict[str, Any]:
     while time.time() < deadline:
+        cancellation.check()
         captured = page.evaluate("window.__codeyTeachClick || null")
         if captured:
             return captured
-        time.sleep(0.1)
+        cancellation.wait(0.1)
     raise TimeoutError("Timed out waiting for a click in the model page")
 
 

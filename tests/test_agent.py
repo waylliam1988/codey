@@ -340,7 +340,7 @@ class ProjectInstructionTests(unittest.TestCase):
 
             self.assertEqual(len(docs), 1)
             self.assertTrue(docs[0].truncated)
-            self.assertEqual(docs[0].content, "abc\n\n[truncated by Codey]")
+            self.assertEqual(docs[0].content, "abc\n\n[content truncated]")
 
 
 class DefaultsTests(unittest.TestCase):

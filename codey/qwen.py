@@ -6,7 +6,7 @@ import time
 
 from playwright.sync_api import Locator, Page
 
-from codey import provider_controls as controls
+from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
 from codey.web_clipboard import copy_action_text
 
@@ -68,17 +68,19 @@ def _send_button(
 
 
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
+    cancellation.check()
     deadline = time.time() + timeout
     while time.time() < deadline:
         if _message_box(page) is not None:
             return
-        time.sleep(0.4)
+        cancellation.wait(0.4)
     if _message_box(page, teach=True) is not None:
         return
     raise TimeoutError("Qwen Studio chat input did not appear. Are you logged in?")
 
 
 def new_chat(page: Page) -> None:
+    cancellation.check()
     page.goto(QWEN_URL, wait_until="domcontentloaded", timeout=60000)
     wait_ready(page)
 
@@ -110,9 +112,10 @@ def _copy_last_text(page: Page) -> str:
         if locator.count() and locator.is_visible():
             copy_button = locator
             break
-        time.sleep(0.2)
+        cancellation.wait(0.2)
     if copy_button is None:
         return ""
+    cancellation.check()
     return copy_action_text(page, copy_button, origin=QWEN_URL)
 
 
@@ -131,6 +134,7 @@ def _regenerate_empty_response(page: Page) -> bool:
     regenerate = responses.last.locator(REGENERATE).last
     if not regenerate.count() or not regenerate.is_visible():
         return False
+    cancellation.check()
     regenerate.click()
 
     deadline = time.time() + REGENERATE_START_TIMEOUT
@@ -139,7 +143,7 @@ def _regenerate_empty_response(page: Page) -> bool:
             return True
         if not _empty_response_visible(page):
             return True
-        time.sleep(0.2)
+        cancellation.wait(0.2)
     return False
 
 
@@ -158,12 +162,13 @@ def _resolve_preference(page: Page) -> bool:
     if choice is None:
         return False
 
+    cancellation.check()
     choice.click()
     deadline = time.time() + PREFERENCE_TIMEOUT
     while time.time() < deadline:
         if _visible_locator(page, PREFERENCE_CHOICE) is None:
             return True
-        time.sleep(0.2)
+        cancellation.wait(0.2)
     raise TimeoutError("Qwen Studio preference selection did not close")
 
 
@@ -201,14 +206,15 @@ def _submit(page: Page, baseline: int, submitted_text: str = "") -> None:
             controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
             return
         if attempt == 0:
-            time.sleep(0.75)
+            cancellation.wait(0.75)
+        cancellation.check()
         send.click()
         confirm_deadline = time.time() + SUBMIT_CONFIRM_TIMEOUT
         while time.time() < confirm_deadline:
             if _submission_started(page, baseline, submitted_text):
                 controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
                 return
-            time.sleep(0.2)
+            cancellation.wait(0.2)
     controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
     raise TimeoutError("Qwen Studio did not submit the message")
 
@@ -230,9 +236,11 @@ def _wait_late_response(
                 last = current
                 if _generation_complete(page):
                     return _final_text(page)
+        except cancellation.TaskCancelled:
+            raise
         except Exception:
             pass
-        time.sleep(tick)
+        cancellation.wait(tick)
     return ""
 
 
@@ -245,6 +253,7 @@ def _chat(
     min_wait: float = 1.5,
 ) -> str:
     """Send one message and return the final answer text from Qwen Studio."""
+    cancellation.check()
     wait_ready(page)
 
     baseline = _response_count(page)
@@ -254,7 +263,9 @@ def _chat(
     textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Qwen Studio chat input is not visible")
+    cancellation.check()
     textarea.click()
+    cancellation.check()
     textarea.fill(text)
     if controls.control_has_text(textarea, text):
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
@@ -267,7 +278,7 @@ def _chat(
     appeared = False
     regenerated = False
     while time.time() < deadline:
-        time.sleep(tick)
+        cancellation.wait(tick)
         if _empty_response_visible(page) and _generation_complete(page):
             if regenerated or not _regenerate_empty_response(page):
                 raise RuntimeError("Qwen Studio returned an empty response")

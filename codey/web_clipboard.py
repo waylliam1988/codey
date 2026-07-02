@@ -7,6 +7,8 @@ import uuid
 
 from playwright.sync_api import Locator, Page
 
+from codey import cancellation
+
 
 def copy_action_text(
     page: Page,
@@ -33,13 +35,14 @@ def copy_action_text(
 
     copied = ""
     try:
+        cancellation.check()
         action.click()
         deadline = time.time() + max(0.0, timeout)
         while time.time() < deadline:
             copied = page.evaluate("navigator.clipboard.readText()") or ""
             if copied != sentinel:
                 break
-            time.sleep(0.1)
+            cancellation.wait(0.1)
     finally:
         restore = previous if previous is not None else ""
         try:

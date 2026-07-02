@@ -18,7 +18,7 @@ import time
 
 from playwright.sync_api import Page
 
-from codey import provider_controls as controls
+from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
 from codey.web_clipboard import copy_action_text
 
@@ -38,16 +38,18 @@ SUBMIT_CONFIRM_TIMEOUT = 15.0
 
 def new_chat(page) -> None:
     """Reset the page to a fresh DeepSeek conversation (clears prior context)."""
+    cancellation.check()
     page.goto(DEEPSEEK_URL, wait_until="domcontentloaded", timeout=60000)
     wait_ready(page)
 
 
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
+    cancellation.check()
     deadline = time.time() + timeout
     while time.time() < deadline:
         if _message_box(page) is not None:
             return
-        time.sleep(0.4)
+        cancellation.wait(0.4)
     if _message_box(page, teach=True) is not None:
         return
     raise TimeoutError("DeepSeek chat input did not appear. Are you logged in?")
@@ -154,10 +156,13 @@ def _copy_last_text(page: Page) -> str:
             copy_button = actions.first
             try:
                 if copy_button.is_visible():
+                    cancellation.check()
                     return copy_action_text(page, copy_button, origin=DEEPSEEK_URL)
+            except cancellation.TaskCancelled:
+                raise
             except Exception:
                 pass
-        time.sleep(0.2)
+        cancellation.wait(0.2)
     return ""
 
 
@@ -203,7 +208,7 @@ def _wait_submission_started(
     while time.time() < deadline:
         if _submission_started(page, baseline, baseline_text, submitted_text):
             return True
-        time.sleep(0.2)
+        cancellation.wait(0.2)
     return False
 
 
@@ -231,9 +236,11 @@ def _wait_late_response(
                     return _final_text(page)
                 except RuntimeError:
                     pass
+        except cancellation.TaskCancelled:
+            raise
         except Exception:
             pass
-        time.sleep(tick)
+        cancellation.wait(tick)
     return ""
 
 
@@ -246,6 +253,7 @@ def chat(
     min_wait: float = 1.5,
 ) -> str:
     """Send `text`, wait for the next assistant message to stabilise, return it."""
+    cancellation.check()
     wait_ready(page)
 
     baseline = _response_count(page)
@@ -256,16 +264,20 @@ def chat(
         ta = _message_box(page, teach=True)
         if ta is None:
             raise TimeoutError("DeepSeek chat input is not visible")
+        cancellation.check()
         ta.click()
+        cancellation.check()
         ta.fill(text)
         if controls.control_has_text(ta, text):
             controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-        time.sleep(0.3)
+        cancellation.wait(0.3)
 
         btn = _send_button(page, timeout=5)
         if btn is not None:
+            cancellation.check()
             btn.click()
         else:
+            cancellation.check()
             ta.press("Enter")
         submitted = _wait_submission_started(page, baseline, baseline_text, text)
         if submitted and btn is not None:
@@ -273,11 +285,13 @@ def chat(
         elif btn is not None:
             controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
         if not submitted and controls.control_has_text(ta, text):
+            cancellation.check()
             ta.press("Enter")
             submitted = _wait_submission_started(page, baseline, baseline_text, text)
         if not submitted and controls.can_teach():
             btn = _send_button(page, teach=True)
             if btn is not None:
+                cancellation.check()
                 btn.click()
                 submitted = _wait_submission_started(page, baseline, baseline_text, text)
                 if submitted:
@@ -293,7 +307,7 @@ def chat(
         stable = 0
         appeared = False
         while time.time() < start_deadline:
-            time.sleep(tick)
+            cancellation.wait(tick)
             current = _last_text(page)
             if _response_count(page) <= baseline and current == baseline_text:
                 continue

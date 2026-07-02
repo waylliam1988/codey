@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from playwright.sync_api import Page, expect, sync_playwright
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey import provider_controls
+from codey import cancellation, provider_controls
 from codey import server as codey_server
 
 
@@ -36,6 +37,9 @@ class ScriptedWriter:
 
     def send(self, text: str, timeout: float | None = None) -> str:
         del timeout
+        if "Wait until stopped by the UI" in text:
+            cancellation.wait(30)
+            raise AssertionError("responsive stop did not cancel the provider wait")
         if "Request a shell command" in text:
             return (
                 '{"tool":"shell","args":{"command":"git status --short",'
@@ -154,6 +158,19 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
     expect(page.locator("#chat")).to_contain_text("Denied")
     expect(page.locator("#chat")).to_contain_text("git status --short")
 
+    page.locator("#task").fill("Wait until stopped by the UI.")
+    page.locator("#send").click()
+    stop = page.locator("#stop")
+    expect(stop).to_be_visible()
+    stopped_at = time.monotonic()
+    stop.click()
+    expect(stop).to_be_hidden(timeout=3_000)
+    if time.monotonic() - stopped_at >= 3.0:
+        raise AssertionError("Stop did not cancel the provider wait within 3 seconds")
+    expect(page.locator("#provider-button")).to_be_enabled()
+    page.locator("#task").fill("ready after stop")
+    expect(page.locator("#send")).to_be_enabled()
+
     return {
         "ok": True,
         "url": base_url,
@@ -167,6 +184,7 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
             "diff drawer",
             "snapshot restore",
             "shell approval denial",
+            "responsive stop",
         ],
         "screenshots": [str(done_screenshot), str(restored_screenshot)],
     }

@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.10`
+Version: `0.1.11`
 
 ---
 
@@ -46,6 +46,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Resume the same chat after a Codey restart from one bounded factual snapshot
 - Keep non-Git diff and restore available across Codey restarts
 - Recover from small provider-page DOM changes with bounded, verified discovery
+- Stop a running provider wait, review, recovery, or test command promptly
+- Preserve both the beginning and end of long command output
 - Record compact provider failure diagnostics for debugging web-page breakage
 
 ---
@@ -59,6 +61,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Qwen Studio | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.11` makes the existing Stop action responsive during provider polling, recovery, review, and controlled test commands. One shared task-local cancellation signal interrupts those waits; a stopped provider session is discarded so the next task starts in a fresh conversation. An individual synchronous browser navigation, click, or fill still finishes under its own Playwright timeout. Codey does not click a website's stop-generation control and adds no UI. Long `run` and approved Shell output now keeps both its beginning and end within the same bounded context budget instead of losing the final error summary. The release passed 310 tests, all 10 real Edge UI E2E checks, and live cancellation probes on DeepSeek, Qwen, and MiMo.
 
 Version `0.1.10` adds ProfileDoctor as a quiet second recovery step. When bounded local discovery cannot choose safely, one already-open healthy model receives at most eight strictly sanitized structural candidates and may return only one candidate ID. It cannot provide selectors, code, text, or coordinates; it is called once without recursive assistance, and its choice is remembered only after the normal input, submission, or answer validation succeeds. If it declines or fails, human click teaching remains the final fallback. No UI was added. The release passed 294 tests, the complete Edge UI E2E flow, and forced ProfileDoctor send recovery on DeepSeek, Qwen, and MiMo.
 
@@ -270,7 +274,9 @@ Browser Session + provider DOM driver
 ```text
 codey/
   agent.py                  provider-independent agent runtime
+  cancellation.py           shared task-local cancellation and process cleanup
   events.py                 structured run events and log rendering
+  text_budget.py            bounded head-and-tail output clipping
   tool_runtime.py           local tools and structured outcomes
   task_runner.py            task, conversation, review, and receipt orchestration
   browser.py                Edge/CDP connection helpers

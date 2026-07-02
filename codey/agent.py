@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from codey import cancellation
 from codey.events import RunEvent, print_run_event
 from codey.handoff import (
     ConversationContext,
@@ -82,7 +83,7 @@ def load_project_instructions(
             continue
         truncated = len(content) > max_chars
         if truncated:
-            content = content[:max_chars].rstrip() + "\n\n[truncated by Codey]"
+            content = content[:max_chars].rstrip() + "\n\n[content truncated]"
         docs.append(ProjectInstruction(name=name, content=content, truncated=truncated))
     return docs
 
@@ -208,6 +209,8 @@ def run(
         emit(RunEvent.status(f"[agent] opening a fresh {provider.name} conversation"))
         try:
             provider.new_chat()
+        except cancellation.TaskCancelled:
+            raise
         except Exception as exc:
             emit(RunEvent.status(
                 f"[agent] could not open new chat: {exc}; reusing current tab"
@@ -334,6 +337,8 @@ def run(
                     outcome = ToolOutcome.error(
                         f"malformed tool call {call.name} (path={path})"
                     )
+            except cancellation.TaskCancelled:
+                raise
             except Exception as exc:
                 outcome = ToolOutcome.error(str(exc))
             out = outcome.output

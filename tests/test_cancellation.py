@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+
+from codey import cancellation
+
+
+class CancellationTests(unittest.TestCase):
+    def test_set_event_interrupts_shared_wait(self) -> None:
+        event = threading.Event()
+        event.set()
+
+        with cancellation.scope(event):
+            with self.assertRaises(cancellation.TaskCancelled):
+                cancellation.wait(30)
+
+    def test_scope_restores_previous_event(self) -> None:
+        outer = threading.Event()
+        inner = threading.Event()
+
+        with cancellation.scope(outer):
+            self.assertIs(cancellation.current_event(), outer)
+            with cancellation.scope(inner):
+                self.assertIs(cancellation.current_event(), inner)
+            self.assertIs(cancellation.current_event(), outer)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Job Object regression")
+    def test_cancel_terminates_real_parent_and_child_processes(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            parent_pid = root / "parent.pid"
+            child_pid = root / "child.pid"
+            child = root / "child.py"
+            parent = root / "parent.py"
+            child.write_text(
+                "import os, pathlib, sys, time\n"
+                "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+                "time.sleep(30)\n",
+                encoding="utf-8",
+            )
+            parent.write_text(
+                "import os, pathlib, subprocess, sys, time\n"
+                "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\n"
+                "subprocess.Popen([sys.executable, sys.argv[2], sys.argv[3]])\n"
+                "time.sleep(30)\n",
+                encoding="utf-8",
+            )
+            event = threading.Event()
+
+            def stop_after_child_starts() -> None:
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline and not child_pid.exists():
+                    time.sleep(0.01)
+                event.set()
+
+            stopper = threading.Thread(target=stop_after_child_starts)
+            started = time.monotonic()
+            stopper.start()
+            try:
+                with cancellation.scope(event):
+                    with self.assertRaises(cancellation.TaskCancelled):
+                        cancellation.run_process(
+                            [
+                                sys.executable,
+                                str(parent),
+                                str(parent_pid),
+                                str(child),
+                                str(child_pid),
+                            ],
+                            cwd=root,
+                            timeout=30,
+                        )
+            finally:
+                stopper.join(timeout=5)
+
+            self.assertLess(time.monotonic() - started, 1.0)
+            self.assertTrue(parent_pid.exists())
+            self.assertTrue(child_pid.exists())
+            self.assertFalse(_windows_process_is_active(int(parent_pid.read_text())))
+            self.assertFalse(_windows_process_is_active(int(child_pid.read_text())))
+
+
+def _windows_process_is_active(pid: int) -> bool:
+    import ctypes
+    from ctypes import wintypes
+
+    process_query_limited_information = 0x1000
+    still_active = 259
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, wintypes.LPDWORD]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    handle = kernel32.OpenProcess(
+        process_query_limited_information,
+        False,
+        pid,
+    )
+    if not handle:
+        return False
+    try:
+        exit_code = wintypes.DWORD()
+        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+            return False
+        return exit_code.value == still_active
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+if __name__ == "__main__":
+    unittest.main()

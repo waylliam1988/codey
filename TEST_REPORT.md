@@ -1,7 +1,31 @@
-# Codey 0.1.10 Test Report
+# Codey 0.1.11 Test Report
 
-Date: 2026-07-02
+Date: 2026-07-03
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+
+## 0.1.11 Responsive Stop and Bounded Output
+
+One task-local cancellation signal now covers provider polling, browser and
+control recovery waits, ProfileDoctor, review, and controlled `run` processes.
+Stopping does not click a provider website's stop-generation control. It
+discards the provider session, reports `task_done: stopped`, and makes the next
+task open a fresh conversation. Controlled subprocesses are terminated with
+their process trees. Long `run` and approved Shell output share one pure
+head-and-tail clipping function and do not retain a hidden full log.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 310 passed |
+| Cancellation and real Windows parent/child process-tree tests | Passed |
+| Provider, ProfileDoctor, Review, and TaskRunner cancellation tests | Passed |
+| Head-and-tail output tests for `run` and approved Shell | Passed |
+| Real Edge UI E2E | All 10 checks passed, including responsive Stop |
+| Live DeepSeek cancellation | Cancelled; fresh conversation opened |
+| Live Qwen cancellation | Cancelled in under 1 ms measured latency; fresh conversation opened |
+| Live MiMo cancellation | Cancelled in under 1 ms measured latency; fresh conversation opened |
+| UI surface | Unchanged |
 
 ## 0.1.10 ProfileDoctor
 

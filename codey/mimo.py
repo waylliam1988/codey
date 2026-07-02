@@ -6,7 +6,7 @@ import time
 
 from playwright.sync_api import Locator, Page
 
-from codey import provider_controls as controls
+from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
 from codey.web_clipboard import copy_action_text
 
@@ -45,29 +45,32 @@ def _dismiss_known_notice(page: Page) -> bool:
         button = _visible_locator(page, selector)
         if button is None:
             continue
+        cancellation.check()
         button.click()
         deadline = time.time() + 5.0
         while time.time() < deadline:
             if _visible_locator(page, selector) is None:
                 return True
-            time.sleep(0.1)
+            cancellation.wait(0.1)
         return False
     return False
 
 
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
+    cancellation.check()
     deadline = time.time() + timeout
     while time.time() < deadline:
         _dismiss_known_notice(page)
         if _message_box(page) is not None:
             return
-        time.sleep(0.4)
+        cancellation.wait(0.4)
     if _message_box(page, teach=True) is not None:
         return
     raise TimeoutError("Xiaomi MiMo Chat input did not appear. Are you logged in?")
 
 
 def new_chat(page: Page) -> None:
+    cancellation.check()
     page.goto(MIMO_URL, wait_until="domcontentloaded", timeout=60000)
     wait_ready(page)
 
@@ -128,8 +131,9 @@ def _copy_last_text(page: Page) -> str:
                 y_max=float(box["y"] + box["height"]) + 90.0,
             )
             if action is not None:
+                cancellation.check()
                 return copy_action_text(page, action, origin=MIMO_ORIGIN)
-        time.sleep(0.2)
+        cancellation.wait(0.2)
     return ""
 
 
@@ -174,6 +178,7 @@ def _submit(page: Page, baseline: int, baseline_text: str = "", submitted_text: 
 
     button = _send_button(page)
     if button is not None:
+        cancellation.check()
         button.click()
         if _wait_submission_started(page, baseline, baseline_text, submitted_text):
             controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
@@ -181,6 +186,7 @@ def _submit(page: Page, baseline: int, baseline_text: str = "", submitted_text: 
         controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
         raise TimeoutError("Xiaomi MiMo Chat did not submit the message")
 
+    cancellation.check()
     textarea.press("Enter")
     if _wait_submission_started(page, baseline, baseline_text, submitted_text):
         return
@@ -193,6 +199,7 @@ def _submit(page: Page, baseline: int, baseline_text: str = "", submitted_text: 
             require_enabled=True,
         )
         if button is not None:
+            cancellation.check()
             button.click()
             if _wait_submission_started(page, baseline, baseline_text, submitted_text):
                 controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
@@ -226,7 +233,7 @@ def _wait_submission_started(
     while time.time() < deadline:
         if _submission_started(page, baseline, baseline_text, submitted_text):
             return True
-        time.sleep(0.2)
+        cancellation.wait(0.2)
     return False
 
 
@@ -246,9 +253,11 @@ def _wait_late_response(
             if current and (count > baseline or current != baseline_text):
                 last = current
                 return _final_text(page)
+        except cancellation.TaskCancelled:
+            raise
         except Exception:
             pass
-        time.sleep(tick)
+        cancellation.wait(tick)
     return last
 
 
@@ -261,6 +270,7 @@ def _chat(
     min_wait: float = 1.5,
 ) -> str:
     """Send one message and return the final raw answer text from MiMo Chat."""
+    cancellation.check()
     wait_ready(page)
 
     baseline = _response_count(page)
@@ -270,11 +280,13 @@ def _chat(
     textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Xiaomi MiMo Chat input is not visible")
+    cancellation.check()
     textarea.click()
+    cancellation.check()
     textarea.fill(text)
     if controls.control_has_text(textarea, text):
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-    time.sleep(0.2)
+    cancellation.wait(0.2)
     _submit(page, baseline, baseline_text, text)
 
     sent_at = time.time()
@@ -283,7 +295,7 @@ def _chat(
     stable = 0
     appeared = False
     while time.time() < deadline:
-        time.sleep(tick)
+        cancellation.wait(tick)
         count = _response_count(page)
         current = _last_text(page) if count else ""
         if count <= baseline and current == baseline_text:

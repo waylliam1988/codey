@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 import unittest
+import threading
 from unittest import mock
 
-from codey import mimo
+from codey import cancellation, mimo
 
 
 class MimoDriverTests(unittest.TestCase):
+    def test_cancelled_chat_exits_before_touching_page(self) -> None:
+        event = threading.Event()
+        event.set()
+        page = mock.Mock()
+
+        with cancellation.scope(event):
+            with self.assertRaises(cancellation.TaskCancelled):
+                mimo.chat(page, "hello")
+
+        page.locator.assert_not_called()
+        page.goto.assert_not_called()
+
     def test_ready_timeout_allows_slow_homepage(self) -> None:
         self.assertGreaterEqual(mimo.READY_TIMEOUT, 90)
 

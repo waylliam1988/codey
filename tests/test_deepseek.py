@@ -1,12 +1,43 @@
 from __future__ import annotations
 
 import unittest
+import threading
+import time
 from unittest import mock
 
-from codey import deepseek
+from codey import cancellation, deepseek
 
 
 class DeepSeekTimeoutTests(unittest.TestCase):
+    def test_cancelled_chat_exits_before_touching_page(self) -> None:
+        event = threading.Event()
+        event.set()
+        page = mock.Mock()
+
+        with cancellation.scope(event):
+            with self.assertRaises(cancellation.TaskCancelled):
+                deepseek.chat(page, "hello")
+
+        page.locator.assert_not_called()
+        page.goto.assert_not_called()
+
+    def test_provider_wait_observes_stop_within_one_second(self) -> None:
+        event = threading.Event()
+        timer = threading.Timer(0.1, event.set)
+        started = time.monotonic()
+        timer.start()
+        try:
+            with (
+                cancellation.scope(event),
+                mock.patch.object(deepseek, "_message_box", return_value=None),
+            ):
+                with self.assertRaises(cancellation.TaskCancelled):
+                    deepseek.wait_ready(object(), timeout=30)
+        finally:
+            timer.cancel()
+
+        self.assertLess(time.monotonic() - started, 1.0)
+
     def test_ready_timeout_allows_slow_deepseek_homepage(self) -> None:
         self.assertGreaterEqual(deepseek.READY_TIMEOUT, 90)
 

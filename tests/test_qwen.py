@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 import unittest
+import threading
 from unittest import mock
 
-from codey import qwen
+from codey import cancellation, qwen
 
 
 class QwenDriverTests(unittest.TestCase):
+    def test_cancelled_chat_exits_before_touching_page(self) -> None:
+        event = threading.Event()
+        event.set()
+        page = mock.Mock()
+
+        with cancellation.scope(event):
+            with self.assertRaises(cancellation.TaskCancelled):
+                qwen.chat(page, "hello")
+
+        page.locator.assert_not_called()
+        page.goto.assert_not_called()
+
     def test_ready_timeout_allows_slow_homepage(self) -> None:
         self.assertGreaterEqual(qwen.READY_TIMEOUT, 90)
 
@@ -69,7 +82,7 @@ class QwenDriverTests(unittest.TestCase):
         with (
             mock.patch.object(qwen.controls, "visible_locator", return_value=send),
             mock.patch.object(qwen, "_submission_started", side_effect=[False, False, True]),
-            mock.patch.object(qwen.time, "sleep"),
+            mock.patch.object(qwen.cancellation, "wait"),
         ):
             qwen._submit(page, baseline=0)
 
@@ -83,7 +96,7 @@ class QwenDriverTests(unittest.TestCase):
             mock.patch.object(qwen.controls, "visible_locator", return_value=send),
             mock.patch.object(qwen, "_submission_started", return_value=True),
             mock.patch.object(qwen.time, "time", side_effect=[0, 0, 0, 16, 16, 16]),
-            mock.patch.object(qwen.time, "sleep"),
+            mock.patch.object(qwen.cancellation, "wait"),
         ):
             qwen._submit(page, baseline=0)
 
@@ -165,7 +178,7 @@ class QwenDriverTests(unittest.TestCase):
             mock.patch.object(qwen, "_generation_complete", return_value=True),
             mock.patch.object(qwen, "_regenerate_empty_response", return_value=True) as regenerate,
             mock.patch.object(qwen, "_final_text", return_value="raw recovered"),
-            mock.patch.object(qwen.time, "sleep"),
+            mock.patch.object(qwen.cancellation, "wait"),
         ):
             reply = qwen.chat(
                 page,

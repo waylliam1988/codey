@@ -31,7 +31,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from codey import profile_doctor, provider_controls
+from codey import cancellation, profile_doctor, provider_controls
 from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
@@ -54,6 +54,7 @@ from codey.review import (
     render_review_prompt,
 )
 from codey.task_runner import TaskRequest, TaskRunner
+from codey.text_budget import clip_middle
 
 WEB_DIR = Path(__file__).parent / "web"
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -204,7 +205,7 @@ def collect_git_changes(project: str | Path | None) -> dict:
     diff = "\n\n".join(part for part in diff_parts if part)
     truncated = len(diff) > MAX_DIFF_CHARS
     if truncated:
-        diff = diff[:MAX_DIFF_CHARS].rstrip() + "\n\n... diff truncated by Codey"
+        diff = diff[:MAX_DIFF_CHARS].rstrip() + "\n\n... diff truncated ..."
     return {
         "ok": True,
         "mode": "git",
@@ -292,8 +293,10 @@ def _run_review(
     recent_log: str,
     writer_id: str,
 ) -> tuple[str, ReviewResult] | None:
+    cancellation.check()
     last_error: Exception | None = None
     for reviewer_id in reviewer_candidates(writer_id):
+        cancellation.check()
         reviewer = None
         try:
             reviewer = connect_existing_provider(reviewer_id)
@@ -317,6 +320,8 @@ def _run_review(
             else:
                 _emit_review(session_id, f"{label} suggested changes")
             return reviewer_id, review
+        except cancellation.TaskCancelled:
+            raise
         except Exception as exc:
             last_error = exc
         finally:
@@ -392,9 +397,7 @@ def execute_approved_shell(project: str | Path, rel: str, command: str) -> dict:
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
-    truncated = len(output) > SHELL_OUTPUT_LIMIT
-    if truncated:
-        output = output[:SHELL_OUTPUT_LIMIT].rstrip() + "\n\n... output truncated by Codey"
+    output, truncated = clip_middle(output, SHELL_OUTPUT_LIMIT)
     return {
         "ok": True,
         "error": None,
@@ -589,12 +592,17 @@ class State:
         request: profile_doctor.ProfileDoctorRequest,
     ) -> str | None:
         """Use one healthy sibling tab for one bounded candidate decision."""
+        cancellation.check()
         for provider_id in reviewer_candidates(request.provider_id):
+            cancellation.check()
             helper = borrow_open_provider(provider_id, request.page)
             if helper is None:
                 continue
             try:
                 helper.new_chat()
+            except cancellation.TaskCancelled:
+                helper.close()
+                raise
             except Exception:
                 helper.close()
                 continue
@@ -604,6 +612,8 @@ class State:
                     request,
                     lambda prompt: helper.send(prompt, timeout=PROFILE_DOCTOR_TIMEOUT),
                 )
+            except cancellation.TaskCancelled:
+                raise
             except Exception:
                 return None
             finally:

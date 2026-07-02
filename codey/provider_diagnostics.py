@@ -4,6 +4,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
 
+from codey import cancellation
+
 
 T = TypeVar("T")
 
@@ -49,6 +51,8 @@ def run_provider_action(
 ) -> T:
     try:
         return func()
+    except cancellation.TaskCancelled:
+        raise
     except Exception as exc:
         provider.last_failure = capture_provider_failure(
             model=str(getattr(provider, "name", "")),

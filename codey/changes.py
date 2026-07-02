@@ -284,7 +284,7 @@ class ChangeTracker:
         diff_text = "\n\n".join(diff_parts)
         truncated = len(diff_text) > MAX_SNAPSHOT_DIFF_CHARS
         if truncated:
-            diff_text = diff_text[:MAX_SNAPSHOT_DIFF_CHARS].rstrip() + "\n\n... diff truncated by Codey"
+            diff_text = diff_text[:MAX_SNAPSHOT_DIFF_CHARS].rstrip() + "\n\n... diff truncated ..."
         changed_paths = {snapshot.path for snapshot in snapshots}
         for rel in list(self._before):
             if rel in changed_paths:

@@ -14,6 +14,7 @@ class UiBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertIn("snapshot restore", result["checks"])
         self.assertIn("shell approval denial", result["checks"])
+        self.assertIn("responsive stop", result["checks"])
 
 
 if __name__ == "__main__":
