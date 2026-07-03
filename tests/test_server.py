@@ -207,6 +207,187 @@ class ProviderStatusTests(unittest.TestCase):
         connected.assert_not_called()
 
 
+class RunSnapshotTests(unittest.TestCase):
+    def test_reserve_run_is_atomic(self) -> None:
+        state = server.State()
+        barrier = threading.Barrier(8)
+        results = []
+
+        def reserve() -> None:
+            barrier.wait()
+            results.append(state.reserve_run(
+                session_id="session-1",
+                project=None,
+                task="hello",
+                provider_id="deepseek",
+            ))
+
+        threads = [threading.Thread(target=reserve) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        accepted = [item for item in results if item is not None]
+        self.assertEqual(len(accepted), 1)
+        self.assertTrue(state.busy)
+        self.assertEqual(state.active_run, accepted[0])
+
+    def test_stop_after_reservation_survives_task_start(self) -> None:
+        state = server.State()
+        state.stop_flag.set()
+        run = state.reserve_run(
+            session_id="session-1",
+            project=None,
+            task="hello",
+            provider_id="deepseek",
+        )
+        self.assertIsNotNone(run)
+        self.assertFalse(state.stop_flag.is_set())
+        assert run is not None
+
+        state.stop_flag.set()
+        self.assertTrue(state.start_run(run.run_id))
+
+        self.assertTrue(state.stop_flag.is_set())
+
+    def test_state_snapshot_keeps_pending_action_and_terminal_event(self) -> None:
+        state = server.State()
+        run = state.reserve_run(
+            session_id="session-1",
+            project="E:/demo",
+            task="test",
+            provider_id="qwen",
+        )
+        self.assertIsNotNone(run)
+        assert run is not None
+        self.assertTrue(state.start_run(run.run_id))
+        pending = {
+            "type": "shell_request",
+            "run_id": run.run_id,
+            "session_id": run.session_id,
+            "id": "shell-1",
+            "command": "pytest",
+            "cwd": ".",
+        }
+        state.pending_shell["shell-1"] = {"ui_event": pending}
+        terminal = {
+            "type": "task_done",
+            "session_id": run.session_id,
+            "stop_reason": "approval",
+            "summary": "",
+        }
+
+        self.assertTrue(state.finish_run(run.run_id, terminal))
+        payload = state.run_state_payload()
+
+        self.assertFalse(payload["busy"])
+        self.assertEqual(payload["run_id"], run.run_id)
+        self.assertEqual(payload["pending_event"], pending)
+        self.assertEqual(payload["last_terminal_event"]["run_id"], run.run_id)
+
+    def test_state_snapshot_restores_active_teaching_card(self) -> None:
+        state = server.State()
+        run = state.reserve_run(
+            session_id="session-1",
+            project=None,
+            task="hello",
+            provider_id="deepseek",
+        )
+        self.assertIsNotNone(run)
+        assert run is not None
+        state.start_run(run.run_id)
+        teaching = {
+            "type": "teach_request",
+            "run_id": run.run_id,
+            "session_id": run.session_id,
+            "id": "teach-1",
+            "text": "Click the message box",
+        }
+        state.pending_teach["teach-1"] = {"ui_event": teaching}
+
+        payload = state.run_state_payload()
+
+        self.assertTrue(payload["busy"])
+        self.assertEqual(payload["pending_event"], teaching)
+
+    def test_active_run_does_not_restore_an_unrelated_old_card(self) -> None:
+        state = server.State()
+        state.pending_shell["old"] = {"ui_event": {
+            "type": "shell_request",
+            "run_id": "run_old",
+            "session_id": "session-old",
+            "id": "old",
+        }}
+        run = state.reserve_run(
+            session_id="session-new",
+            project=None,
+            task="hello",
+            provider_id="deepseek",
+        )
+        self.assertIsNotNone(run)
+
+        self.assertIsNone(state.run_state_payload()["pending_event"])
+
+    def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            state.last_terminal_event = {
+                "type": "task_done",
+                "run_id": "run_old",
+                "session_id": "session-1",
+            }
+            state.last_summary = "old receipt"
+            state.last_stop_reason = "done"
+            state.last_shell_result = {
+                "type": "shell_result",
+                "id": "shell-old",
+                "session_id": "session-1",
+            }
+
+            state.forget_conversation("session-2")
+            self.assertIsNotNone(state.last_terminal_event)
+            state.forget_conversation("session-1")
+
+            self.assertIsNone(state.last_terminal_event)
+            self.assertIsNone(state.last_shell_result)
+            self.assertEqual(state.last_summary, "")
+            self.assertEqual(state.last_stop_reason, "")
+
+    def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
+        state = server.State()
+        first = {
+            "type": "shell_result",
+            "id": "shell-1",
+            "session_id": "session-1",
+            "approved": False,
+        }
+        latest = {**first, "id": "shell-2", "approved": True}
+
+        state.record_shell_result(first)
+        state.record_shell_result(latest)
+
+        self.assertEqual(state.run_state_payload()["last_shell_result"], latest)
+
+    def test_submit_task_reserves_before_browser_queue(self) -> None:
+        state = server.State()
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "submit_browser_task") as submit,
+        ):
+            run_id = server._submit_task(
+                "session-1", None, "hello", 8, False, "deepseek"
+            )
+            rejected = server._submit_task(
+                "session-2", None, "second", 8, False, "qwen"
+            )
+
+        self.assertIsNotNone(run_id)
+        self.assertIsNone(rejected)
+        self.assertTrue(state.busy)
+        self.assertEqual(submit.call_args.args[-1], run_id)
+
+
 class SessionThreadingTests(unittest.TestCase):
     def test_conversation_state_is_bounded(self) -> None:
         state = server.State()
@@ -1008,7 +1189,7 @@ class UiLaunchTests(unittest.TestCase):
 
         with (
             mock.patch.dict("sys.modules", {"webview": fake_webview}),
-            mock.patch.object(server, "ThreadingHTTPServer") as httpd_cls,
+            mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
         ):
             httpd = mock.Mock()
             httpd.server_address = ("127.0.0.1", 43210)

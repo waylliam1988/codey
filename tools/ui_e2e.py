@@ -7,7 +7,6 @@ import sys
 import tempfile
 import threading
 import time
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from playwright.sync_api import Page, expect, sync_playwright
@@ -40,6 +39,14 @@ class ScriptedWriter:
         if "Wait until stopped by the UI" in text:
             cancellation.wait(30)
             raise AssertionError("responsive stop did not cancel the provider wait")
+        if "Stay active across one UI reload" in text:
+            cancellation.wait(4)
+            return '{"tool":"done","args":{"summary":"reload completed"}}'
+        if "Finish while state reconciliation is delayed" in text:
+            cancellation.wait(1.5)
+            return '{"tool":"done","args":{"summary":"delayed state completed"}}'
+        if "The user approved and ran this shell command" in text:
+            return '{"tool":"done","args":{"summary":"approval continuation completed"}}'
         if "Request a shell command" in text:
             return (
                 '{"tool":"shell","args":{"command":"git status --short",'
@@ -152,11 +159,113 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
     )
     page.locator("#send").click()
     expect(page.locator("#chat")).to_contain_text("Command approval")
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator("#chat")).to_contain_text("Command approval")
     deny = page.get_by_role("button", name="Deny", exact=True)
     expect(deny).to_be_visible()
+    page.evaluate("evtSrc.close()")
     deny.click()
     expect(page.locator("#chat")).to_contain_text("Denied")
     expect(page.locator("#chat")).to_contain_text("git status --short")
+    page.reload(wait_until="domcontentloaded")
+    expect(page.get_by_role("button", name="Deny", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Allow", exact=True)).to_have_count(0)
+    expect(page.locator(".shell-output")).to_have_count(1)
+
+    def drop_approval_response(route) -> None:
+        route.fetch()
+        route.abort()
+
+    page.locator("#task").fill(
+        "Request a shell command for git status --short and wait for approval."
+    )
+    page.locator("#send").click()
+    expect(page.locator("#chat")).to_contain_text("Command approval")
+    deny = page.get_by_role("button", name="Deny", exact=True)
+    expect(deny).to_be_visible()
+    page.evaluate("evtSrc.close()")
+    page.route("**/api/shell_approval", drop_approval_response)
+    deny.click()
+    expect(deny).to_be_enabled()
+    page.unroute("**/api/shell_approval", drop_approval_response)
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator(".shell-output")).to_have_count(2)
+    expect(page.get_by_role("button", name="Deny", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Allow", exact=True)).to_have_count(0)
+
+    page.locator("#task").fill(
+        "Request a shell command for git status --short and wait for approval."
+    )
+    page.locator("#send").click()
+    expect(page.locator("#chat")).to_contain_text("Command approval")
+    allow = page.get_by_role("button", name="Allow", exact=True)
+    expect(allow).to_be_visible()
+    page.evaluate("evtSrc.close()")
+    page.route("**/api/shell_approval", drop_approval_response)
+    allow.click()
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        snapshot = page.request.get(base_url + "api/state").json()
+        terminal = snapshot.get("last_terminal_event") or {}
+        if (
+            not snapshot.get("busy")
+            and terminal.get("summary") == "approval continuation completed"
+        ):
+            break
+        page.wait_for_timeout(100)
+    else:
+        raise AssertionError("approved continuation did not finish while disconnected")
+
+    page.unroute("**/api/shell_approval", drop_approval_response)
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator(".shell-output")).to_have_count(3)
+    expect(page.get_by_role("button", name="Deny", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name="Allow", exact=True)).to_have_count(0)
+    restored_messages = page.evaluate(
+        "() => activeSession().messages.map(m => ({type: m.type, approved: m.approved}))"
+    )
+    executed_index = max(
+        index
+        for index, message in enumerate(restored_messages)
+        if message["type"] == "shell_result" and message["approved"]
+    )
+    done_index = max(
+        index for index, message in enumerate(restored_messages) if message["type"] == "done"
+    )
+    if executed_index >= done_index:
+        raise AssertionError("continued task result appeared before its shell execution")
+
+    done_prefixes = page.locator(".sr-prefix", has_text="Done")
+    done_before = done_prefixes.count()
+    page.locator("#task").fill("Stay active across one UI reload.")
+    page.locator("#send").click()
+    expect(page.locator("#stop")).to_be_visible()
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator("#stop")).to_be_visible(timeout=3_000)
+    expect(page.locator("#status")).to_contain_text("Running")
+    expect(page.locator("#stop")).to_be_hidden(timeout=8_000)
+    expect(page.locator(".sr-prefix", has_text="Done")).to_have_count(done_before + 1)
+    page.wait_for_timeout(500)
+    expect(page.locator(".sr-prefix", has_text="Done")).to_have_count(done_before + 1)
+
+    done_before = done_prefixes.count()
+    page.locator("#task").fill("Finish while state reconciliation is delayed.")
+    page.locator("#send").click()
+    expect(page.locator("#stop")).to_be_visible()
+
+    def delay_state_response(route) -> None:
+        response = route.fetch()
+        time.sleep(2.5)
+        route.fulfill(response=response)
+
+    page.route("**/api/state", delay_state_response)
+    page.reload(wait_until="domcontentloaded")
+    expect(page.locator("#stop")).to_be_hidden(timeout=6_000)
+    expect(page.locator("#status")).not_to_contain_text("Running")
+    expect(page.locator(".sr-prefix", has_text="Done")).to_have_count(done_before + 1)
+    expect(page.locator("#provider-button")).to_be_enabled()
+    page.unroute("**/api/state", delay_state_response)
 
     page.locator("#task").fill("Wait until stopped by the UI.")
     page.locator("#send").click()
@@ -184,6 +293,12 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
             "diff drawer",
             "snapshot restore",
             "shell approval denial",
+            "shell approval reconnect recovery",
+            "shell approval HTTP reconciliation",
+            "shell result snapshot reconciliation",
+            "shell result before continued task completion",
+            "SSE reconnect reconciliation",
+            "stale state cannot override newer SSE completion",
             "responsive stop",
         ],
         "screenshots": [str(done_screenshot), str(restored_screenshot)],
@@ -204,7 +319,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
     original_provider_availability = codey_server.provider_availability
     original_pick_folder = codey_server.pick_folder
     writer = ScriptedWriter()
-    httpd: ThreadingHTTPServer | None = None
+    httpd: codey_server.CodeyHTTPServer | None = None
     try:
         codey_server.STATE = codey_server.State(temp_root / "state")
         provider_controls.set_teach_handler(codey_server.STATE.handle_control_teach)
@@ -217,7 +332,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
         }
         codey_server.pick_folder = lambda mode="open", initial=None: str(project)
 
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), codey_server.Handler)
+        httpd = codey_server.CodeyHTTPServer(("127.0.0.1", 0), codey_server.Handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         host, port = httpd.server_address

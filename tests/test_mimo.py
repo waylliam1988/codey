@@ -5,6 +5,7 @@ import threading
 from unittest import mock
 
 from codey import cancellation, mimo
+from codey.provider_submission import SendAttempt
 
 
 class MimoDriverTests(unittest.TestCase):
@@ -85,7 +86,7 @@ class MimoDriverTests(unittest.TestCase):
             mimo._submit(page, baseline=0)
 
         textarea.press.assert_called_once_with("Enter")
-        send_button.assert_called_once_with(page)
+        send_button.assert_called_once_with(page, teach=True)
 
     def test_submit_clicks_explicit_send_button_when_available(self) -> None:
         page = mock.Mock()
@@ -117,6 +118,44 @@ class MimoDriverTests(unittest.TestCase):
 
         self.assertIs(result, send)
         page.locator.assert_any_call(mimo.PROFILE.selector("send_button"))
+
+    def test_uncertain_enter_submission_never_requests_a_second_action(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        with (
+            mock.patch.object(mimo, "_message_box", return_value=textarea),
+            mock.patch.object(mimo, "_send_button", return_value=None),
+            mock.patch.object(mimo, "_wait_submission_started", return_value=False),
+            mock.patch.object(mimo.controls, "request_teaching") as teaching,
+        ):
+            attempt = mimo._submit(page, baseline=0, submitted_text="hello")
+
+        textarea.press.assert_called_once_with("Enter")
+        teaching.assert_not_called()
+        self.assertEqual(attempt.phase, "attempted")
+
+    def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        with (
+            mock.patch.object(mimo, "wait_ready"),
+            mock.patch.object(mimo, "_message_box", return_value=textarea),
+            mock.patch.object(mimo, "_submit", return_value=attempt),
+            mock.patch.object(mimo, "_response_count", side_effect=[0, 1]),
+            mock.patch.object(mimo, "_last_text", return_value="delayed reply"),
+            mock.patch.object(mimo, "_final_text", return_value="raw delayed reply"),
+            mock.patch.object(mimo.controls, "control_has_text", return_value=True),
+            mock.patch.object(mimo.controls, "confirm_control"),
+            mock.patch.object(mimo.cancellation, "wait"),
+        ):
+            reply = mimo.chat(
+                page, "hello", response_timeout=1, stable_ticks=0, tick=0, min_wait=0
+            )
+
+        self.assertEqual(reply, "raw delayed reply")
+        self.assertTrue(attempt.confirmed)
 
     def test_submission_started_accepts_cleared_input_after_send_click(self) -> None:
         page = mock.Mock()

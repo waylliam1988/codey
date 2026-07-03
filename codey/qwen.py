@@ -8,6 +8,11 @@ from playwright.sync_api import Locator, Page
 
 from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
+from codey.provider_submission import (
+    SendAttempt,
+    SubmissionUncertain,
+    confirm_submission,
+)
 from codey.web_clipboard import copy_action_text
 
 PROVIDER_ID = "qwen"
@@ -26,10 +31,10 @@ PREFERENCE_CHOICE = PROFILE.selector("preference_choice")
 READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 60.0
 SEND_TIMEOUT = 30.0
+INPUT_SETTLE_TIME = 1.5
 SUBMIT_CONFIRM_TIMEOUT = 15.0
 COPY_READY_TIMEOUT = 10.0
 PREFERENCE_TIMEOUT = 15.0
-MAX_SUBMIT_ATTEMPTS = 2
 REGENERATE_START_TIMEOUT = 15.0
 
 
@@ -45,6 +50,17 @@ def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
         PROFILE.selectors("message_box"),
         teach=teach,
     )
+
+
+def _fill_message(page: Page, textarea: Locator, text: str) -> None:
+    """Enter text through Qwen's keyboard path so its UI state is updated."""
+    cancellation.check()
+    textarea.click()
+    cancellation.check()
+    textarea.press("Control+A")
+    textarea.press("Backspace")
+    cancellation.check()
+    page.keyboard.insert_text(text)
 
 
 def _send_button(
@@ -188,35 +204,34 @@ def _generation_complete(page: Page) -> bool:
 
 
 def _submission_started(page: Page, baseline: int, submitted_text: str = "") -> bool:
-    if _visible_locator(page, STOP_ACTIVE) is not None or _response_count(page) > baseline:
-        return True
-    if not submitted_text:
+    try:
+        if _visible_locator(page, STOP_ACTIVE) is not None or _response_count(page) > baseline:
+            return True
+        if not submitted_text:
+            return False
+        message_box = _message_box(page)
+        return message_box is not None and not controls.control_has_text(message_box, submitted_text)
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
         return False
-    message_box = _message_box(page)
-    return message_box is not None and not controls.control_has_text(message_box, submitted_text)
 
 
-def _submit(page: Page, baseline: int, submitted_text: str = "") -> None:
-    for attempt in range(MAX_SUBMIT_ATTEMPTS):
-        send = _send_button(page, timeout=SEND_TIMEOUT, teach=True)
-        if send is None:
-            raise TimeoutError("Qwen Studio send button did not become ready")
+def _submit(page: Page, baseline: int, submitted_text: str = "") -> SendAttempt:
+    send = _send_button(page, timeout=SEND_TIMEOUT, teach=True)
+    if send is None:
+        raise TimeoutError("Qwen Studio send button did not become ready")
 
-        if attempt and _submission_started(page, baseline, submitted_text):
-            controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-            return
-        if attempt == 0:
-            cancellation.wait(0.75)
-        cancellation.check()
-        send.click()
-        confirm_deadline = time.time() + SUBMIT_CONFIRM_TIMEOUT
-        while time.time() < confirm_deadline:
-            if _submission_started(page, baseline, submitted_text):
-                controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-                return
-            cancellation.wait(0.2)
-    controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-    raise TimeoutError("Qwen Studio did not submit the message")
+    attempt = SendAttempt()
+    cancellation.wait(INPUT_SETTLE_TIME)
+    attempt.submit("click", send.click)
+    confirm_deadline = time.time() + SUBMIT_CONFIRM_TIMEOUT
+    while time.time() < confirm_deadline:
+        if _submission_started(page, baseline, submitted_text):
+            confirm_submission(attempt, PROVIDER_ID)
+            return attempt
+        cancellation.wait(0.2)
+    return attempt
 
 
 def _wait_late_response(
@@ -263,13 +278,10 @@ def _chat(
     textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Qwen Studio chat input is not visible")
-    cancellation.check()
-    textarea.click()
-    cancellation.check()
-    textarea.fill(text)
+    _fill_message(page, textarea, text)
     if controls.control_has_text(textarea, text):
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-    _submit(page, baseline, text)
+    attempt = _submit(page, baseline, text)
 
     sent_at = time.time()
     deadline = sent_at + response_timeout
@@ -280,6 +292,7 @@ def _chat(
     while time.time() < deadline:
         cancellation.wait(tick)
         if _empty_response_visible(page) and _generation_complete(page):
+            confirm_submission(attempt, PROVIDER_ID)
             if regenerated or not _regenerate_empty_response(page):
                 raise RuntimeError("Qwen Studio returned an empty response")
             regenerated = True
@@ -293,6 +306,7 @@ def _chat(
         current = _last_text(page) if count else ""
         if count <= baseline and current == baseline_text:
             continue
+        confirm_submission(attempt, PROVIDER_ID)
         appeared = True
         if not current:
             stable = 0
@@ -317,13 +331,17 @@ def _chat(
         tick=tick,
     )
     if late:
+        confirm_submission(attempt, PROVIDER_ID)
         return late
     if appeared and last:
         return _final_text(page)
     recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
     if recovered is not None:
+        confirm_submission(attempt, PROVIDER_ID)
         return recovered
     controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
+    if not attempt.confirmed:
+        raise SubmissionUncertain("Qwen Studio submission status is uncertain")
     raise TimeoutError(f"Qwen Studio response timed out after {response_timeout:.0f}s")
 
 

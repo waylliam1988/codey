@@ -25,6 +25,7 @@ class TaskRequest:
     max_turns: int
     continue_task: bool
     provider_id: str
+    run_id: str = ""
 
 
 class TaskRunner:
@@ -61,20 +62,29 @@ class TaskRunner:
         max_turns = request.max_turns
         continue_task = request.continue_task
         provider_id = request.provider_id
+        run_id = request.run_id
+
+        if not run_id:
+            reserved = state.reserve_run(
+                session_id=session_id,
+                project=project,
+                task=task,
+                provider_id=provider_id,
+            )
+            if reserved is None:
+                return
+            run_id = reserved.run_id
+        if not state.start_run(run_id):
+            return
 
         provider_controls.set_teach_handler(state.handle_control_teach)
         provider_controls.set_doctor_handler(getattr(state, "handle_profile_doctor", None))
         provider_controls.set_session_id(session_id)
-        state.busy = True
-        state.project = project
-        state.task = task
-        state.provider_id = provider_id
-        state.status = "running"
         state.last_provider_failure = None
-        state.stop_flag.clear()
         previous_cancel_event = cancellation.set_event(state.stop_flag)
         state.emit({
             "type": "task_start",
+            "run_id": run_id,
             "session_id": session_id,
             "project": project,
             "task": task,
@@ -92,7 +102,7 @@ class TaskRunner:
             recent_events.append(message)
             if len(recent_events) > self.review_log_lines * 2:
                 del recent_events[:self.review_log_lines]
-            payload = self._ui_event(session_id, event)
+            payload = self._ui_event(run_id, session_id, event)
             if payload is not None:
                 state.emit(payload)
             if (
@@ -127,17 +137,20 @@ class TaskRunner:
                 "max_turns": max_turns,
                 "provider": provider_id,
                 "continue_after": True,
+                "run_id": run_id,
             }
-            with state.lock:
-                state.pending_shell[approval_id] = pending
-            state.emit({
+            pending["ui_event"] = {
                 "type": "shell_request",
+                "run_id": run_id,
                 "session_id": session_id,
                 "id": approval_id,
                 "project": project,
                 "cwd": pending["cwd"],
                 "command": command,
-            })
+            }
+            with state.lock:
+                state.pending_shell[approval_id] = pending
+            state.emit(pending["ui_event"])
 
         try:
             provider = state.get_provider(provider_id)
@@ -299,11 +312,9 @@ class TaskRunner:
                 ))
             else:
                 receipt = None
-            state.last_summary = result.summary
-            state.last_stop_reason = result.stop_reason
-            state.status = "done"
             event = {
                 "type": "task_done",
+                "run_id": run_id,
                 "session_id": session_id,
                 "summary": result.summary,
                 "stop_reason": result.stop_reason,
@@ -320,7 +331,7 @@ class TaskRunner:
                         "mode": task_changes.get("mode"),
                         "project": project,
                     }
-            state.emit(event)
+            state.finish_run(run_id, event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             state.set_provider_session(provider_id, None)
             if "conversation" in locals():
@@ -329,11 +340,9 @@ class TaskRunner:
                     provider_id=provider_id,
                     blocker="stopped",
                 ))
-            state.last_summary = ""
-            state.last_stop_reason = "stopped"
-            state.status = "done"
-            state.emit({
+            state.finish_run(run_id, {
                 "type": "task_done",
+                "run_id": run_id,
                 "session_id": session_id,
                 "summary": "",
                 "stop_reason": "stopped",
@@ -359,10 +368,9 @@ class TaskRunner:
                     error=exc,
                 )
             state.last_provider_failure = failure
-            state.status = "error"
-            state.last_stop_reason = "error"
-            state.emit({
+            state.finish_run(run_id, {
                 "type": "task_done",
+                "run_id": run_id,
                 "session_id": session_id,
                 "summary": f"ERROR: {exc}",
                 "stop_reason": "error",
@@ -379,24 +387,24 @@ class TaskRunner:
                     provider.close()
             except Exception:
                 pass
-            state.busy = False
 
     @staticmethod
-    def _ui_event(session_id: str, event: RunEvent) -> dict | None:
+    def _ui_event(run_id: str, session_id: str, event: RunEvent) -> dict | None:
         if event.kind == "turn":
-            return {"type": "turn", "session_id": session_id, "turn": event.turn}
+            return {"type": "turn", "run_id": run_id, "session_id": session_id, "turn": event.turn}
         if event.kind == "info":
             text = event.message
             names = str(event.metadata.get("names") or "")
             if names:
                 text = f"{text}: {names}"
-            return {"type": "info", "session_id": session_id, "text": text}
+            return {"type": "info", "run_id": run_id, "session_id": session_id, "text": text}
         if event.kind != "tool" or event.call is None or event.outcome is None:
             return None
         path = str(event.call.args.get("path") or "")
         result = event.outcome.first_line(200)
         return {
             "type": "tool",
+            "run_id": run_id,
             "session_id": session_id,
             "turn": event.turn,
             "kind": event.call.name,

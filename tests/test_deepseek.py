@@ -6,6 +6,7 @@ import time
 from unittest import mock
 
 from codey import cancellation, deepseek
+from codey.provider_submission import SendAttempt
 
 
 class DeepSeekTimeoutTests(unittest.TestCase):
@@ -111,6 +112,43 @@ class DeepSeekTimeoutTests(unittest.TestCase):
         self.assertEqual(raw, '{"tool":"done","args":{"summary":"raw"}}')
         response.locator.assert_called_once_with("xpath=../..")
         copy_action.assert_called_once_with(page, copy_button, origin=deepseek.DEEPSEEK_URL)
+
+    def test_uncertain_submission_uses_only_the_chosen_action(self) -> None:
+        page = mock.Mock()
+        message_box = mock.Mock()
+        button = mock.Mock()
+        with (
+            mock.patch.object(deepseek, "_send_button", return_value=button),
+            mock.patch.object(deepseek, "_wait_submission_started", return_value=False),
+        ):
+            attempt = deepseek._submit(page, message_box, 0, "", "hello")
+
+        button.click.assert_called_once_with()
+        message_box.press.assert_not_called()
+        self.assertEqual(attempt.phase, "attempted")
+
+    def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
+        page = mock.Mock()
+        message_box = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        with (
+            mock.patch.object(deepseek, "wait_ready"),
+            mock.patch.object(deepseek, "_message_box", return_value=message_box),
+            mock.patch.object(deepseek, "_submit", return_value=attempt),
+            mock.patch.object(deepseek, "_response_count", side_effect=[0, 1, 1]),
+            mock.patch.object(deepseek, "_last_text", return_value="delayed reply"),
+            mock.patch.object(deepseek, "_final_text", return_value="raw delayed reply"),
+            mock.patch.object(deepseek.controls, "control_has_text", return_value=True),
+            mock.patch.object(deepseek.controls, "confirm_control"),
+            mock.patch.object(deepseek.cancellation, "wait"),
+        ):
+            reply = deepseek.chat(
+                page, "hello", response_timeout=1, stable_ticks=1, tick=0, min_wait=0
+            )
+
+        self.assertEqual(reply, "raw delayed reply")
+        self.assertTrue(attempt.confirmed)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,12 @@ class UiBrowserE2ETests(unittest.TestCase):
         self.assertTrue(result["ok"], result)
         self.assertIn("snapshot restore", result["checks"])
         self.assertIn("shell approval denial", result["checks"])
+        self.assertIn("shell approval reconnect recovery", result["checks"])
+        self.assertIn("shell approval HTTP reconciliation", result["checks"])
+        self.assertIn("shell result snapshot reconciliation", result["checks"])
+        self.assertIn("shell result before continued task completion", result["checks"])
+        self.assertIn("SSE reconnect reconciliation", result["checks"])
+        self.assertIn("stale state cannot override newer SSE completion", result["checks"])
         self.assertIn("responsive stop", result["checks"])
 
 

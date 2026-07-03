@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.11`
+Version: `0.1.12`
 
 ---
 
@@ -48,6 +48,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Recover from small provider-page DOM changes with bounded, verified discovery
 - Stop a running provider wait, review, recovery, or test command promptly
 - Preserve both the beginning and end of long command output
+- Recover the active run, approval, or teaching prompt after a UI reconnect
+- Prevent uncertain provider submissions from being sent twice
 - Record compact provider failure diagnostics for debugging web-page breakage
 
 ---
@@ -61,6 +63,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Qwen Studio | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.12` keeps the UI and backend aligned across a browser refresh or brief SSE interruption. The backend creates one atomic run ID, exposes one bounded in-memory run snapshot, and lets the UI quietly recover Stop state, pending Shell approval or control teaching, and the final receipt without duplicating `task_done`. One state reconciliation runs at a time; newer SSE events wait briefly and replay after the snapshot, so a slow stale response cannot restore an already completed task to Running. Clearing a chat also revokes its saved terminal receipt. A reconnect stays invisible unless it lasts five seconds, when the existing status line briefly shows `Reconnecting…`. Shell approval results are applied from both the HTTP response and SSE with the same deduplication key; the latest result also remains in the bounded snapshot, and resolving it removes the old approval card. Recovery preserves execution order, so a Shell result appears before the completion of the task it resumed. DeepSeek, Qwen, and MiMo share one one-shot submission boundary: the send method is selected before interaction, the remote action runs once, and an uncertain attempt continues watching the original answer for the full response window without resubmitting. No automatic resend or new UI concept was added. The release passed 331 tests, all 16 real Edge UI E2E checks, and live one-submission probes on all three providers.
 
 Version `0.1.11` makes the existing Stop action responsive during provider polling, recovery, review, and controlled test commands. One shared task-local cancellation signal interrupts those waits; a stopped provider session is discarded so the next task starts in a fresh conversation. An individual synchronous browser navigation, click, or fill still finishes under its own Playwright timeout. Codey does not click a website's stop-generation control and adds no UI. Long `run` and approved Shell output now keeps both its beginning and end within the same bounded context budget instead of losing the final error summary. The release passed 310 tests, all 10 real Edge UI E2E checks, and live cancellation probes on DeepSeek, Qwen, and MiMo.
 
@@ -289,6 +293,7 @@ codey/
   provider_profiles.py      validated profile loader
   provider_discovery.py     bounded DOM candidate discovery and scoring
   provider_controls.py      verified recovery, learning, and human teaching
+  provider_submission.py    shared one-shot remote submission boundary
   profile_doctor.py         one-shot sanitized candidate selection
   deepseek.py               DeepSeek page driver
   mimo.py                   MiMo page driver

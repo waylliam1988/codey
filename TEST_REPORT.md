@@ -1,7 +1,46 @@
-# Codey 0.1.11 Test Report
+# Codey 0.1.12 Test Report
 
 Date: 2026-07-03
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+
+## 0.1.12 Run Reconciliation and One-Shot Submission
+
+The backend now reserves a unique run ID before browser work is queued and
+keeps one bounded in-memory snapshot of the active run, pending approval or
+teaching request, and last terminal event. After an SSE reconnect, the UI
+reconciles against that snapshot, restores the existing controls, and dedupes
+the terminal receipt by run ID. Short interruptions stay silent; only a
+connection that remains unavailable for five seconds reuses the existing
+status line for `Reconnecting…`.
+
+DeepSeek, Qwen, and MiMo now share one submission boundary. Each provider
+chooses click or Enter before the remote action, marks the attempt first, and
+performs no second action after an exception or unconfirmed result. An
+uncertain attempt continues through the complete original response window and
+is accepted if the answer appears later. Qwen input uses its real keyboard
+path because live testing showed that direct DOM filling changed the visible
+textarea without updating the website's send state.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 331 passed |
+| Atomic run reservation and snapshot isolation | Passed |
+| Approval and teaching recovery after reconnect | Passed |
+| Chat clear revokes the matching saved terminal receipt | Passed |
+| Terminal receipt deduplication by run ID | Passed |
+| Delayed, quiet reconnect status | Passed |
+| Delayed answers after uncertain submission on all three providers | Passed |
+| Shell result from HTTP while SSE is closed | Passed and deduplicated |
+| Shell result snapshot after both HTTP and SSE are lost | Restored once; approval card removed |
+| Disconnected Allow followed by completed continuation | Executed appears before Done |
+| Stale busy snapshot returned after newer task_done SSE | Buffered event replay leaves UI done |
+| Real Edge UI E2E | All 16 checks passed, including five reload/reconcile flows |
+| Live DeepSeek edit task | Passed in 5 turns; unittest passed |
+| Live Qwen edit task | Passed in 4 turns; unittest passed |
+| Live MiMo edit task | Passed in 4 turns; unittest passed |
+| New UI controls or cards | None |
 
 ## 0.1.11 Responsive Stop and Bounded Output
 

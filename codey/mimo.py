@@ -8,6 +8,11 @@ from playwright.sync_api import Locator, Page
 
 from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
+from codey.provider_submission import (
+    SendAttempt,
+    SubmissionUncertain,
+    confirm_submission,
+)
 from codey.web_clipboard import copy_action_text
 
 PROVIDER_ID = "mimo"
@@ -171,45 +176,28 @@ def _submission_started(
     return False
 
 
-def _submit(page: Page, baseline: int, baseline_text: str = "", submitted_text: str = "") -> None:
+def _submit(
+    page: Page,
+    baseline: int,
+    baseline_text: str = "",
+    submitted_text: str = "",
+) -> SendAttempt:
     textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Xiaomi MiMo Chat input is not visible")
 
-    button = _send_button(page)
+    button = _send_button(page, teach=True)
+    attempt = SendAttempt()
     if button is not None:
-        cancellation.check()
-        button.click()
-        if _wait_submission_started(page, baseline, baseline_text, submitted_text):
-            controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-            return
-        controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-        raise TimeoutError("Xiaomi MiMo Chat did not submit the message")
-
-    cancellation.check()
-    textarea.press("Enter")
+        attempt.submit("click", button.click)
+    else:
+        attempt.submit("enter", lambda: textarea.press("Enter"))
     if _wait_submission_started(page, baseline, baseline_text, submitted_text):
-        return
-
-    if controls.can_teach():
-        button = controls.request_teaching(
-            page,
-            PROVIDER_ID,
-            controls.CONTROL_SEND_BUTTON,
-            require_enabled=True,
-        )
-        if button is not None:
-            cancellation.check()
-            button.click()
-            if _wait_submission_started(page, baseline, baseline_text, submitted_text):
-                controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-                return
-            controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-
-    raise TimeoutError("Xiaomi MiMo Chat did not submit the message")
+        confirm_submission(attempt, PROVIDER_ID)
+    return attempt
 
 
-def _send_button(page: Page) -> Locator | None:
+def _send_button(page: Page, *, teach: bool = False) -> Locator | None:
     message_box = _message_box(page)
     return controls.locate_control(
         page,
@@ -218,6 +206,7 @@ def _send_button(page: Page) -> Locator | None:
         PROFILE.selectors("send_button"),
         timeout=SUBMIT_READY_TIMEOUT,
         require_enabled=True,
+        teach=teach,
         anchor=message_box,
     )
 
@@ -287,7 +276,7 @@ def _chat(
     if controls.control_has_text(textarea, text):
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
     cancellation.wait(0.2)
-    _submit(page, baseline, baseline_text, text)
+    attempt = _submit(page, baseline, baseline_text, text)
 
     sent_at = time.time()
     deadline = sent_at + response_timeout
@@ -300,6 +289,7 @@ def _chat(
         current = _last_text(page) if count else ""
         if count <= baseline and current == baseline_text:
             continue
+        confirm_submission(attempt, PROVIDER_ID)
         appeared = True
         if not current:
             stable = 0
@@ -320,13 +310,17 @@ def _chat(
         tick=tick,
     )
     if late:
+        confirm_submission(attempt, PROVIDER_ID)
         return late
     if appeared and last:
         return _final_text(page)
     recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
     if recovered is not None:
+        confirm_submission(attempt, PROVIDER_ID)
         return recovered
     controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
+    if not attempt.confirmed:
+        raise SubmissionUncertain("Xiaomi MiMo Chat submission status is uncertain")
     raise TimeoutError(f"Xiaomi MiMo response timed out after {response_timeout:.0f}s")
 
 

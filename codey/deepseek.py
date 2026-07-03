@@ -20,6 +20,11 @@ from playwright.sync_api import Page
 
 from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
+from codey.provider_submission import (
+    SendAttempt,
+    SubmissionUncertain,
+    confirm_submission,
+)
 from codey.web_clipboard import copy_action_text
 
 PROVIDER_ID = "deepseek"
@@ -212,6 +217,25 @@ def _wait_submission_started(
     return False
 
 
+def _submit(
+    page: Page,
+    message_box,
+    baseline: int,
+    baseline_text: str,
+    submitted_text: str,
+) -> SendAttempt:
+    button = _send_button(page, timeout=5, teach=True)
+    attempt = SendAttempt()
+    if button is not None:
+        attempt.submit("click", button.click)
+    else:
+        attempt.submit("enter", lambda: message_box.press("Enter"))
+
+    if _wait_submission_started(page, baseline, baseline_text, submitted_text):
+        confirm_submission(attempt, PROVIDER_ID)
+    return attempt
+
+
 def _wait_late_response(
     page: Page,
     baseline: int,
@@ -272,34 +296,7 @@ def chat(
             controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
         cancellation.wait(0.3)
 
-        btn = _send_button(page, timeout=5)
-        if btn is not None:
-            cancellation.check()
-            btn.click()
-        else:
-            cancellation.check()
-            ta.press("Enter")
-        submitted = _wait_submission_started(page, baseline, baseline_text, text)
-        if submitted and btn is not None:
-            controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-        elif btn is not None:
-            controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-        if not submitted and controls.control_has_text(ta, text):
-            cancellation.check()
-            ta.press("Enter")
-            submitted = _wait_submission_started(page, baseline, baseline_text, text)
-        if not submitted and controls.can_teach():
-            btn = _send_button(page, teach=True)
-            if btn is not None:
-                cancellation.check()
-                btn.click()
-                submitted = _wait_submission_started(page, baseline, baseline_text, text)
-                if submitted:
-                    controls.confirm_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-                else:
-                    controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-        if not submitted:
-            raise TimeoutError("DeepSeek did not submit the message")
+        attempt = _submit(page, ta, baseline, baseline_text, text)
 
         sent_at = time.time()
         start_deadline = sent_at + response_timeout
@@ -311,6 +308,7 @@ def chat(
             current = _last_text(page)
             if _response_count(page) <= baseline and current == baseline_text:
                 continue
+            confirm_submission(attempt, PROVIDER_ID)
             appeared = True
             if not current:
                 stable = 0
@@ -324,13 +322,17 @@ def chat(
                 last = current
         late = _wait_late_response(page, baseline, baseline_text=baseline_text, grace=TIMEOUT_GRACE, tick=tick)
         if late:
+            confirm_submission(attempt, PROVIDER_ID)
             return late
         if appeared and last:
             return _final_text(page)
         recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
         if recovered is not None:
+            confirm_submission(attempt, PROVIDER_ID)
             return recovered
         controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
+        if not attempt.confirmed:
+            raise SubmissionUncertain("DeepSeek submission status is uncertain")
         raise TimeoutError(f"DeepSeek response timed out after {response_timeout:.0f}s")
     finally:
         controls.stop_response_watch(page, PROVIDER_ID)

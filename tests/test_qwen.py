@@ -5,6 +5,7 @@ import threading
 from unittest import mock
 
 from codey import cancellation, qwen
+from codey.provider_submission import SendAttempt
 
 
 class QwenDriverTests(unittest.TestCase):
@@ -66,6 +67,16 @@ class QwenDriverTests(unittest.TestCase):
 
         response.inner_text.assert_called_once_with()
 
+    def test_fill_message_uses_qwen_keyboard_input_path(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+
+        qwen._fill_message(page, textarea, "hello")
+
+        textarea.click.assert_called_once_with()
+        textarea.fill.assert_not_called()
+        page.keyboard.insert_text.assert_called_once_with("hello")
+
     def test_submit_confirms_that_qwen_accepted_message(self) -> None:
         page = mock.Mock()
         send = mock.Mock()
@@ -93,14 +104,55 @@ class QwenDriverTests(unittest.TestCase):
         send = mock.Mock()
 
         with (
-            mock.patch.object(qwen.controls, "visible_locator", return_value=send),
+            mock.patch.object(qwen, "_send_button", return_value=send),
             mock.patch.object(qwen, "_submission_started", return_value=True),
-            mock.patch.object(qwen.time, "time", side_effect=[0, 0, 0, 16, 16, 16]),
+            mock.patch.object(qwen.time, "time", side_effect=[0, 0]),
             mock.patch.object(qwen.cancellation, "wait"),
         ):
             qwen._submit(page, baseline=0)
 
         send.click.assert_called_once_with()
+
+    def test_uncertain_submission_never_clicks_twice(self) -> None:
+        page = mock.Mock()
+        send = mock.Mock()
+
+        with (
+            mock.patch.object(qwen, "_send_button", return_value=send),
+            mock.patch.object(qwen, "_submission_started", return_value=False),
+            mock.patch.object(qwen.time, "time", side_effect=[0, 16]),
+            mock.patch.object(qwen.cancellation, "wait"),
+        ):
+            attempt = qwen._submit(page, baseline=0, submitted_text="hello")
+
+        send.click.assert_called_once_with()
+        self.assertEqual(attempt.phase, "attempted")
+
+    def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        with (
+            mock.patch.object(qwen, "wait_ready"),
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_fill_message"),
+            mock.patch.object(qwen, "_submit", return_value=attempt),
+            mock.patch.object(qwen, "_response_count", side_effect=[0, 1]),
+            mock.patch.object(qwen, "_last_text", return_value="delayed reply"),
+            mock.patch.object(qwen, "_empty_response_visible", return_value=False),
+            mock.patch.object(qwen, "_generation_complete", return_value=True),
+            mock.patch.object(qwen, "_final_text", return_value="raw delayed reply"),
+            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+            mock.patch.object(qwen.controls, "confirm_control"),
+            mock.patch.object(qwen.cancellation, "wait"),
+        ):
+            reply = qwen.chat(
+                page, "hello", response_timeout=1, stable_ticks=0, tick=0, min_wait=0
+            )
+
+        self.assertEqual(reply, "raw delayed reply")
+        self.assertTrue(attempt.confirmed)
 
     def test_submission_started_requires_generation_or_new_response(self) -> None:
         with (
@@ -110,6 +162,10 @@ class QwenDriverTests(unittest.TestCase):
             started = qwen._submission_started(mock.Mock(), baseline=0)
 
         self.assertFalse(started)
+
+    def test_submission_probe_failure_remains_uncertain(self) -> None:
+        with mock.patch.object(qwen, "_visible_locator", side_effect=ValueError("detached")):
+            self.assertFalse(qwen._submission_started(mock.Mock(), baseline=0, submitted_text="hello"))
 
     def test_submission_started_accepts_new_response(self) -> None:
         with (

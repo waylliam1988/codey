@@ -811,6 +811,7 @@ let sessions = loadJson(LS_SESSIONS, []).map(s => ({
   id: s.id || uid(),
   title: s.title || 'New chat',
   messages: Array.isArray(s.messages) ? s.messages : [],
+  terminalRuns: Array.isArray(s.terminalRuns) ? s.terminalRuns.slice(-32) : [],
   createdAt: s.createdAt || Date.now(),
   projectId: s.projectId || null,
   provider: PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER,
@@ -839,7 +840,7 @@ if (legacyProject && !projects.some(p => pathKey(p.path) === pathKey(legacyProje
 localStorage.removeItem(LS_LEGACY_PROJECT);
 
 if (!sessions.length) {
-  const s = { id: uid(), title: 'New chat', messages: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER };
+  const s = { id: uid(), title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER };
   sessions = [s]; activeId = s.id; saveSessions(sessions);
   localStorage.setItem(LS_ACTIVE, activeId);
 }
@@ -1239,7 +1240,7 @@ function openProject(projectId) {
 }
 function newSession(projectId = null) {
   const provider = currentProviderId();
-  const s = { id: uid(), projectId, title: 'New chat', messages: [], createdAt: Date.now(), provider };
+  const s = { id: uid(), projectId, title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), provider };
   sessions.unshift(s); activeId = s.id; persistActive(); renderSidebar(); renderChat();
   fetch('/api/new_chat', {
     method: 'POST',
@@ -1265,7 +1266,7 @@ async function deleteSession(id) {
   const fallbackProvider = currentProviderId();
   sessions = sessions.filter(s => s.id !== id);
   if (!sessions.length) {
-    const s = { id: uid(), title: 'New chat', messages: [], createdAt: Date.now(), projectId: null, provider: fallbackProvider };
+    const s = { id: uid(), title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), projectId: null, provider: fallbackProvider };
     sessions = [s];
   }
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
@@ -1289,6 +1290,7 @@ async function clearMessages(id) {
   if (!confirm('Clear all messages in this chat?')) return;
   if (!await forgetSessionState(id)) return;
   s.messages = [];
+  s.terminalRuns = [];
   persistActive();
   if (id === activeId) renderChat();
 }
@@ -1314,7 +1316,7 @@ async function deleteProject(id) {
   if (!cleared.every(Boolean)) return;
   projects = projects.filter(x => x.id !== id);
   sessions = sessions.filter(s => s.projectId !== id);
-  if (!sessions.length) sessions = [{ id: uid(), title: 'New chat', messages: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER }];
+  if (!sessions.length) sessions = [{ id: uid(), title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER }];
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
   persistActive(); renderSidebar(); renderChat();
 }
@@ -1442,9 +1444,13 @@ document.addEventListener('click', (e) => {
 
 // ============================ SSE event ingestion ============================
 let runningSessionId = null;
+let runningRunId = null;
 let turnCounter = 0;
 let activeChangesProject = '';
 let lastChangesData = null;
+let reconnectTimer = null;
+let reconcilePromise = null;
+let bufferedServerEvents = [];
 
 function setStatus(text, kind) {
   const el = $('status');
@@ -1467,17 +1473,11 @@ function setStatus(text, kind) {
   }
 }
 
-const evtSrc = new EventSource('/api/events');
-evtSrc.onmessage = (e) => {
-  let data; try { data = JSON.parse(e.data); } catch { return; }
-  if (data.type === 'hello') {
-    const running = data.status === 'running';
-    setStatus(running ? 'Running' : '', running ? 'run' : 'ok');
-    $('provider-button').disabled = running;
-    updateSend();
-    refreshProviderStatus();
-    return;
-  }
+function handleServerEvent(data) {
+  const runId = (data.run_id || '').toString();
+  const sid = data.session_id;
+  const mayOutliveRun = ['task_start', 'task_done', 'shell_request', 'shell_result', 'teach_request'];
+  if (runId && runningRunId && !mayOutliveRun.includes(data.type) && runId !== runningRunId) return;
   if (data.type === 'status') {
     setStatus(data.status === 'connecting' ? 'Connecting to Edge…' : data.status, 'warn');
     return;
@@ -1486,9 +1486,8 @@ evtSrc.onmessage = (e) => {
     applyProviderStatus(data.providers);
     return;
   }
-  const sid = data.session_id;
   if (data.type === 'turn') {
-    addToSession(sid, { type: 'turn', n: data.turn || 0 });
+    addToSession(sid, { type: 'turn', n: data.turn || 0, runId });
     return;
   }
   if (data.type === 'tool') {
@@ -1498,19 +1497,24 @@ evtSrc.onmessage = (e) => {
       path: data.path || '',
       result: (data.result || '').toString().slice(0, 200),
       error: !!data.error,
+      runId,
     });
     return;
   }
   if (data.type === 'info') {
-    if (data.text) addToSession(sid, { type: 'info', text: data.text });
+    if (data.text) addToSession(sid, { type: 'info', text: data.text, runId });
     return;
   }
   if (data.type === 'teach_request') {
     removeTeachMessage(sid);
-    addToSession(sid, { type: 'teach', id: data.id, text: data.text, sessionId: sid });
+    addToSession(sid, {
+      type: 'teach', id: data.id, text: data.text, sessionId: sid, runId,
+      eventKey: `teach:${data.id}`,
+    });
     return;
   }
   if (data.type === 'task_start') {
+    runningRunId = runId;
     runningSessionId = sid;
     turnCounter = 0;
     setStatus('Running', 'run');
@@ -1520,30 +1524,36 @@ evtSrc.onmessage = (e) => {
     return;
   }
   if (data.type === 'task_done') {
-    runningSessionId = null;
-    setStatus('', 'ok');
-    $('stop').style.display = 'none';
-    $('provider-button').disabled = false;
-    updateSend();
+    const current = !runId || runId === runningRunId;
+    if (current) {
+      runningRunId = null;
+      runningSessionId = null;
+      setStatus('', 'ok');
+      $('stop').style.display = 'none';
+      $('provider-button').disabled = false;
+      updateSend();
+    }
+    if (!markTerminalRun(sid, runId)) return;
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
+    const terminalKey = runId ? `terminal:${runId}` : '';
     let shownReceipt = false;
     if (reason === 'error' && data.provider_failure && data.provider_failure.action === 'connect') {
       if (data.provider && PROVIDERS.includes(data.provider)) {
         providerStatus[data.provider] = false;
         syncProviderUI(currentProviderId());
       }
-      addSendError(sid);
+      addSendError(sid, terminalKey, runId);
       return;
     }
     if (summary.startsWith('ERROR:')) {
-      addToSession(sid, { type: 'err', text: summary.replace(/^ERROR:\s*/i, ''), sessionId: sid });
+      addToSession(sid, { type: 'err', text: summary.replace(/^ERROR:\s*/i, ''), sessionId: sid, runId, eventKey: terminalKey });
     } else if (reason === 'max_turns') {
       const turns = data.turns || data.max_turns || 0;
       const label = turns ? `Reached turn limit (${turns})` : 'Reached turn limit';
-      addToSession(sid, { type: 'limit', text: label, sessionId: sid });
+      addToSession(sid, { type: 'limit', text: label, sessionId: sid, runId, eventKey: terminalKey });
     } else if (reason === 'no_progress') {
-      addToSession(sid, { type: 'pause', text: 'Paused after several turns without new file writes', sessionId: sid });
+      addToSession(sid, { type: 'pause', text: 'Paused after several turns without new file writes', sessionId: sid, runId, eventKey: terminalKey });
     } else if (reason === 'approval') {
       // shell approval card is emitted separately
     } else if (data.receipt && data.receipt.text) {
@@ -1553,12 +1563,14 @@ evtSrc.onmessage = (e) => {
         text: data.receipt.text,
         project: changes.project || sessionProjectPath(sid),
         changed: !!(data.receipt.changed_count || changes.changed_count),
+        runId,
+        eventKey: terminalKey,
       });
       shownReceipt = true;
     } else if (summary) {
-      addToSession(sid, { type: 'done', text: summary });
+      addToSession(sid, { type: 'done', text: summary, runId, eventKey: terminalKey });
     }
-    if (reason !== 'error' && reason !== 'approval' && !shownReceipt) maybeAddChangesSummary(sid);
+    if (reason !== 'error' && reason !== 'approval' && !shownReceipt) maybeAddChangesSummary(sid, terminalKey, runId);
     return;
   }
   if (data.type === 'shell_request') {
@@ -1568,10 +1580,13 @@ evtSrc.onmessage = (e) => {
       command: data.command,
       cwd: data.cwd,
       project: data.project,
+      runId,
+      eventKey: `shell:${data.id}`,
     });
     return;
   }
   if (data.type === 'shell_result') {
+    removeShellRequest(sid, data.id);
     addToSession(sid, {
       type: 'shell_result',
       id: data.id,
@@ -1580,27 +1595,128 @@ evtSrc.onmessage = (e) => {
       cwd: data.cwd,
       output: data.output,
       exitCode: data.exit_code,
+      runId,
+      eventKey: `shell-result:${data.id}`,
     });
     return;
   }
   if (data.type === 'reply') {
-    if (data.text) addToSession(sid, { type: 'asst', text: data.text });
+    if (data.text) addToSession(sid, { type: 'asst', text: data.text, runId });
     return;
   }
   if (data.type === 'review') {
-    if (data.text) addToSession(sid, { type: 'review', text: data.text });
+    if (data.text) addToSession(sid, { type: 'review', text: data.text, runId });
     return;
   }
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer === null) return;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+}
+
+function scheduleReconnectStatus() {
+  if (reconnectTimer !== null) return;
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (evtSrc.readyState !== EventSource.OPEN) setStatus('Reconnecting…', 'warn');
+  }, 5000);
+}
+
+function applyRunState(data) {
+  if (data.last_shell_result) handleServerEvent(data.last_shell_result);
+  if (data.last_terminal_event) handleServerEvent(data.last_terminal_event);
+  if (data.pending_event) handleServerEvent(data.pending_event);
+
+  const busy = !!data.busy && !!data.run_id;
+  runningRunId = busy ? data.run_id : null;
+  runningSessionId = busy ? data.session_id : null;
+  if (busy) {
+    const connecting = data.run_status === 'connecting';
+    setStatus(connecting ? 'Connecting to Edge…' : 'Running', connecting ? 'warn' : 'run');
+  } else {
+    setStatus('', 'ok');
+  }
+  $('stop').style.display = busy ? '' : 'none';
+  $('provider-button').disabled = busy;
+  updateSend();
+}
+
+function reconcileRunState() {
+  if (reconcilePromise) return reconcilePromise;
+  bufferedServerEvents = [];
+  reconcilePromise = (async () => {
+    try {
+      const response = await fetch('/api/state', { cache: 'no-store' });
+      if (!response.ok) throw new Error('state unavailable');
+      applyRunState(await response.json());
+      clearReconnectTimer();
+    } catch {
+      scheduleReconnectStatus();
+    } finally {
+      const events = bufferedServerEvents;
+      bufferedServerEvents = [];
+      reconcilePromise = null;
+      for (const event of events) handleServerEvent(event);
+    }
+  })();
+  return reconcilePromise;
+}
+
+function ingestServerEvent(data) {
+  if (reconcilePromise) {
+    bufferedServerEvents.push(data);
+    return;
+  }
+  handleServerEvent(data);
+}
+
+async function acceptRunResponse(response, sessionId) {
+  const data = await response.json();
+  runningRunId = data.run_id || null;
+  runningSessionId = runningRunId ? sessionId : null;
+  if (runningRunId) {
+    setStatus('Running', 'run');
+    $('stop').style.display = '';
+    $('provider-button').disabled = true;
+    updateSend();
+  }
+  await reconcileRunState();
+}
+
+const evtSrc = new EventSource('/api/events');
+evtSrc.onmessage = (e) => {
+  let data; try { data = JSON.parse(e.data); } catch { return; }
+  if (data.type === 'hello') {
+    clearReconnectTimer();
+    reconcileRunState();
+    refreshProviderStatus();
+    return;
+  }
+  ingestServerEvent(data);
 };
-evtSrc.onerror = () => setStatus('Disconnected', 'err');
+evtSrc.onerror = scheduleReconnectStatus;
 
 function addToSession(sid, m) {
   const s = sessions.find(x => x.id === sid);
-  if (!s) return;
+  if (!s) return false;
+  if (m.eventKey && s.messages.some(item => item.eventKey === m.eventKey)) return false;
   if ((m.type === 'limit' || m.type === 'pause' || m.type === 'teach' || m.type === 'err') && !m.sessionId) m.sessionId = sid;
   s.messages.push(m);
   persistActive();
   if (sid === activeId) { appendMessageNode($('chat'), m); scrollChat(); }
+  return true;
+}
+
+function markTerminalRun(sid, runId) {
+  if (!runId) return true;
+  const s = sessions.find(x => x.id === sid);
+  if (!s) return false;
+  if (s.terminalRuns.includes(runId)) return false;
+  s.terminalRuns = [...s.terminalRuns, runId].slice(-32);
+  persistActive();
+  return true;
 }
 
 function removeTeachMessage(sessionId, teachId) {
@@ -1614,8 +1730,19 @@ function removeTeachMessage(sessionId, teachId) {
   }
 }
 
-function addSendError(sessionId) {
-  addToSession(sessionId, { type: 'err', text: 'Could not send the message', sessionId });
+function removeShellRequest(sessionId, approvalId) {
+  const s = sessions.find(x => x.id === sessionId);
+  if (!s) return;
+  const before = s.messages.length;
+  s.messages = s.messages.filter(m => !(m.type === 'shell_request' && m.id === approvalId));
+  if (s.messages.length !== before) {
+    persistActive();
+    if (sessionId === activeId) renderChat();
+  }
+}
+
+function addSendError(sessionId, eventKey = '', runId = '') {
+  addToSession(sessionId, { type: 'err', text: 'Could not send the message', sessionId, eventKey, runId });
 }
 
 async function resumeTeaching(teachId, sessionId) {
@@ -1672,14 +1799,14 @@ async function restoreChanges(project) {
   return data;
 }
 
-async function maybeAddChangesSummary(sid) {
+async function maybeAddChangesSummary(sid, eventKey = '', runId = '') {
   const project = sessionProjectPath(sid);
   if (!project) return;
   try {
     const data = await fetchChanges(project);
     if (!data.ok || !data.changed_count) return;
     const files = Array.isArray(data.files) ? data.files.slice(0, 3) : [];
-    addToSession(sid, { type: 'changes', count: data.changed_count, files, project });
+    addToSession(sid, { type: 'changes', count: data.changed_count, files, project, eventKey, runId });
   } catch {}
 }
 
@@ -1850,7 +1977,10 @@ async function approveCommand(id, approved, approveBtn, denyBtn, errorEl) {
       showCommandApprovalError(errorEl);
       approveBtn.disabled = false;
       denyBtn.disabled = false;
+      return;
     }
+    const data = await r.json();
+    if (data.event) handleServerEvent(data.event);
   } catch (err) {
     showCommandApprovalError(errorEl);
     approveBtn.disabled = false;
@@ -1922,6 +2052,7 @@ $('send').onclick = async () => {
     addSendError(activeId);
     return;
   }
+  await acceptRunResponse(r, activeId);
 };
 async function continueTask(sessionId) {
   if (runningSessionId) return;
@@ -1949,7 +2080,11 @@ async function continueTask(sessionId) {
       provider: s.provider || DEFAULT_PROVIDER,
     }),
   });
-  if (r.status === 409 || !r.ok) addSendError(sessionId);
+  if (r.status === 409 || !r.ok) {
+    addSendError(sessionId);
+    return;
+  }
+  await acceptRunResponse(r, sessionId);
 }
 $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
 $('changes-close').onclick = closeChangesDrawer;

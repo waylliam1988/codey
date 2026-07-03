@@ -7,7 +7,7 @@ Endpoints
     GET  /                serves codey/web/index.html
     GET  /api/state       returns current run state as JSON
     POST /api/run         body {project, task, provider, max_turns} → starts agent in
-                          a background thread, returns {ok:true}
+                          a background thread, returns {ok:true, run_id}
     GET  /api/changes     query {project} → returns git status + diff
     POST /api/changes     body {project} → returns git status + diff
     POST /api/shell_approval body {id, approved} → approve/reject shell request
@@ -24,9 +24,11 @@ import json
 import queue
 import difflib
 import subprocess
+import sys
 import threading
 import time
 import uuid
+from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -407,6 +409,41 @@ def execute_approved_shell(project: str | Path, rel: str, command: str) -> dict:
     }
 
 
+@dataclass(frozen=True)
+class RunSnapshot:
+    run_id: str
+    session_id: str
+    project: str | None
+    task: str
+    provider_id: str
+    status: str = "queued"
+
+
+RUN_EVENT_TYPES = {
+    "task_start",
+    "turn",
+    "tool",
+    "info",
+    "reply",
+    "review",
+    "shell_request",
+    "shell_result",
+    "teach_request",
+    "task_done",
+    "status",
+}
+
+
+class CodeyHTTPServer(ThreadingHTTPServer):
+    """Keep routine browser disconnects out of the local server log."""
+
+    def handle_error(self, request, client_address) -> None:
+        error = sys.exc_info()[1]
+        if isinstance(error, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class State:
     def __init__(self, state_home: str | Path | None = None) -> None:
         self.lock = threading.Lock()
@@ -428,6 +465,9 @@ class State:
         self.conversation_tokens: dict[str, object] = {}
         self.conversation_store_lock = threading.Lock()
         self.provider_sessions: dict[str, str] = {}
+        self.active_run: RunSnapshot | None = None
+        self.last_terminal_event: dict | None = None
+        self.last_shell_result: dict | None = None
         self.project_facts = (
             ProjectFactsStore(state_home) if state_home else ProjectFactsStore()
         )
@@ -474,11 +514,139 @@ class State:
                 self.change_trackers[key] = tracker
             return tracker
 
+    def reserve_run(
+        self,
+        *,
+        session_id: str,
+        project: str | None,
+        task: str,
+        provider_id: str,
+    ) -> RunSnapshot | None:
+        """Atomically reserve the single browser task slot."""
+        with self.lock:
+            if self.active_run is not None or self.busy:
+                return None
+            self.stop_flag.clear()
+            run = RunSnapshot(
+                run_id="run_" + uuid.uuid4().hex,
+                session_id=session_id,
+                project=project,
+                task=task,
+                provider_id=provider_id,
+            )
+            self.active_run = run
+            self.busy = True
+            self.project = project
+            self.task = task
+            self.provider_id = provider_id
+            self.status = run.status
+            return run
+
+    def start_run(self, run_id: str) -> bool:
+        with self.lock:
+            if self.active_run is None or self.active_run.run_id != run_id:
+                return False
+            self.active_run = replace(self.active_run, status="running")
+            self.status = "running"
+            return True
+
+    def set_run_status(self, status: str) -> None:
+        with self.lock:
+            if self.active_run is not None:
+                self.active_run = replace(self.active_run, status=status)
+            self.status = status
+
+    def release_run(self, run_id: str) -> None:
+        with self.lock:
+            if self.active_run is None or self.active_run.run_id != run_id:
+                return
+            self.active_run = None
+            self.busy = False
+            self.status = "idle"
+
+    def finish_run(self, run_id: str, event: dict) -> bool:
+        payload = dict(event)
+        payload["run_id"] = run_id
+        with self.lock:
+            run = self.active_run
+            if run is None or run.run_id != run_id:
+                return False
+            payload.setdefault("session_id", run.session_id)
+            self.active_run = None
+            self.busy = False
+            self.last_terminal_event = payload
+            self.last_summary = str(payload.get("summary") or "")
+            self.last_stop_reason = str(payload.get("stop_reason") or "done")
+            self.status = "error" if self.last_stop_reason == "error" else "done"
+        self.emit(payload)
+        return True
+
+    def record_shell_result(self, event: dict) -> None:
+        payload = dict(event)
+        with self.lock:
+            self.last_shell_result = payload
+        self.emit(payload)
+
+    def run_state_payload(self) -> dict:
+        with self.lock:
+            active = self.active_run
+            terminal = dict(self.last_terminal_event) if self.last_terminal_event else None
+            shell_result = dict(self.last_shell_result) if self.last_shell_result else None
+            pending = self._pending_ui_event_locked(active)
+            source = active
+            run_id = source.run_id if source else str((terminal or {}).get("run_id") or "")
+            session_id = source.session_id if source else str((terminal or {}).get("session_id") or "")
+            return {
+                "run_id": run_id,
+                "session_id": session_id,
+                "busy": active is not None,
+                "run_status": active.status if active else self.status,
+                "project": active.project if active else self.project,
+                "task": active.task if active else self.task,
+                "provider": active.provider_id if active else self.provider_id,
+                "summary": self.last_summary,
+                "stop_reason": self.last_stop_reason,
+                "provider_failure": (
+                    self.last_provider_failure.to_dict()
+                    if self.last_provider_failure
+                    else None
+                ),
+                "pending_event": pending,
+                "last_terminal_event": terminal,
+                "last_shell_result": shell_result,
+            }
+
+    def _pending_ui_event_locked(self, active: RunSnapshot | None) -> dict | None:
+        candidates = [
+            pending.get("ui_event")
+            for pending in [
+                *reversed(tuple(self.pending_teach.values())),
+                *reversed(tuple(self.pending_shell.values())),
+            ]
+            if isinstance(pending.get("ui_event"), dict)
+        ]
+        if active is not None:
+            for event in candidates:
+                if event.get("run_id") == active.run_id:
+                    return dict(event)
+            return None
+        return dict(candidates[0]) if candidates else None
+
     def emit(self, event: dict) -> None:
         with self.lock:
+            payload = dict(event)
+            active = self.active_run
+            if (
+                active is not None
+                and payload.get("type") in RUN_EVENT_TYPES
+                and not payload.get("run_id")
+                and payload.get("session_id") in (None, active.session_id)
+            ):
+                payload["run_id"] = active.run_id
+                payload.setdefault("session_id", active.session_id)
             for sub in list(self.subscribers):
                 try:
-                    sub.put_nowait(event)
+                    sub.put_nowait(payload)
                 except Exception:
                     pass
 
@@ -494,9 +662,10 @@ class State:
                 self.subscribers.remove(q)
 
     def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID):
-        self.status = "connecting"
+        self.set_run_status("connecting")
         self.emit({"type": "status", "status": "connecting"})
         provider = connect_provider(provider_id)
+        self.set_run_status("running")
         self.emit({
             "type": "providers",
             "providers": provider_status_update(provider_id, True),
@@ -528,6 +697,18 @@ class State:
             context = self.conversations.pop(session_id, None)
             if context is not None:
                 context.on_change = None
+            if (
+                self.last_terminal_event is not None
+                and self.last_terminal_event.get("session_id") == session_id
+            ):
+                self.last_terminal_event = None
+                self.last_summary = ""
+                self.last_stop_reason = ""
+            if (
+                self.last_shell_result is not None
+                and self.last_shell_result.get("session_id") == session_id
+            ):
+                self.last_shell_result = None
             for provider_id, owner in list(self.provider_sessions.items()):
                 if owner == session_id:
                     self.provider_sessions.pop(provider_id)
@@ -558,13 +739,21 @@ class State:
                 "cancelled": False,
             }
             with self.lock:
+                run_id = (
+                    self.active_run.run_id
+                    if self.active_run is not None
+                    and self.active_run.session_id == request.session_id
+                    else ""
+                )
+                pending["ui_event"] = {
+                    "type": "teach_request",
+                    "run_id": run_id,
+                    "session_id": request.session_id,
+                    "id": teach_id,
+                    "text": request.message,
+                }
                 self.pending_teach[teach_id] = pending
-            self.emit({
-                "type": "teach_request",
-                "session_id": request.session_id,
-                "id": teach_id,
-                "text": request.message,
-            })
+            self.emit(pending["ui_event"])
             if not pending["event"].wait(CONTROL_TEACH_TIMEOUT):
                 with self.lock:
                     self.pending_teach.pop(teach_id, None)
@@ -676,7 +865,18 @@ def _run_task(
     max_turns: int,
     continue_task: bool,
     provider_id: str,
+    run_id: str = "",
 ) -> None:
+    if not run_id:
+        reserved = STATE.reserve_run(
+            session_id=session_id,
+            project=project,
+            task=task,
+            provider_id=provider_id,
+        )
+        if reserved is None:
+            return
+        run_id = reserved.run_id
     runner = TaskRunner(
         STATE,
         agent_run=agent_run,
@@ -695,7 +895,41 @@ def _run_task(
         max_turns=max_turns,
         continue_task=continue_task,
         provider_id=provider_id,
+        run_id=run_id,
     ))
+
+
+def _submit_task(
+    session_id: str,
+    project: str | None,
+    task: str,
+    max_turns: int,
+    continue_task: bool,
+    provider_id: str,
+) -> str | None:
+    reserved = STATE.reserve_run(
+        session_id=session_id,
+        project=project,
+        task=task,
+        provider_id=provider_id,
+    )
+    if reserved is None:
+        return None
+    try:
+        submit_browser_task(
+            _run_task,
+            session_id,
+            project,
+            task,
+            max_turns,
+            continue_task,
+            provider_id,
+            reserved.run_id,
+        )
+    except Exception:
+        STATE.release_run(reserved.run_id)
+        raise
+    return reserved.run_id
 
 # ------------------------------------------------------------ http layer ---
 
@@ -736,20 +970,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
             return
         if url.path == "/api/state":
-            self._send_json(200, {
-                "busy": STATE.busy,
-                "status": STATE.status,
-                "project": STATE.project,
-                "task": STATE.task,
-                "summary": STATE.last_summary,
-                "stop_reason": STATE.last_stop_reason,
-                "provider": STATE.provider_id,
-                "provider_failure": (
-                    STATE.last_provider_failure.to_dict()
-                    if STATE.last_provider_failure
-                    else None
-                ),
-            })
+            self._send_json(200, STATE.run_state_payload())
             return
         if url.path == "/api/providers":
             try:
@@ -788,8 +1009,6 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "invalid json"}); return
 
         if url.path == "/api/run":
-            if STATE.busy:
-                self._send_json(409, {"error": "busy"}); return
             session_id = str(body.get("session_id") or "").strip() or "default"
             project = (body.get("project") or "").strip() or None
             task = (body.get("task") or "").strip()
@@ -806,16 +1025,20 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"error": f"unsupported provider: {provider_id}"}); return
             if project:
                 Path(project).mkdir(parents=True, exist_ok=True)
-            submit_browser_task(
-                _run_task,
-                session_id,
-                project,
-                task,
-                max_turns,
-                continue_task,
-                provider_id,
-            )
-            self._send_json(200, {"ok": True})
+            try:
+                run_id = _submit_task(
+                    session_id,
+                    project,
+                    task,
+                    max_turns,
+                    continue_task,
+                    provider_id,
+                )
+            except Exception as exc:
+                self._send_json(500, {"error": str(exc)}); return
+            if run_id is None:
+                self._send_json(409, {"error": "busy"}); return
+            self._send_json(200, {"ok": True, "run_id": run_id})
             return
         if url.path == "/api/pick_folder":
             mode = str(body.get("mode") or "open").strip().lower()
@@ -871,8 +1094,9 @@ class Handler(BaseHTTPRequestHandler):
             session_id = pending["session_id"]
             command = pending["command"]
             if not approved:
-                STATE.emit({
+                event = {
                     "type": "shell_result",
+                    "run_id": pending.get("run_id") or "",
                     "session_id": session_id,
                     "id": approval_id,
                     "approved": False,
@@ -880,13 +1104,15 @@ class Handler(BaseHTTPRequestHandler):
                     "cwd": pending["cwd"],
                     "output": "用户已拒绝执行该命令。",
                     "exit_code": None,
-                })
-                self._send_json(200, {"ok": True, "approved": False})
+                }
+                STATE.record_shell_result(event)
+                self._send_json(200, {"ok": True, "approved": False, "event": event})
                 return
 
             result = execute_approved_shell(pending["project"], pending["cwd"], command)
-            STATE.emit({
+            event = {
                 "type": "shell_result",
+                "run_id": pending.get("run_id") or "",
                 "session_id": session_id,
                 "id": approval_id,
                 "approved": True,
@@ -895,9 +1121,10 @@ class Handler(BaseHTTPRequestHandler):
                 "output": result.get("output") or result.get("error") or "",
                 "exit_code": result.get("exit_code"),
                 "ok": result.get("ok"),
-            })
+            }
+            STATE.record_shell_result(event)
             continued = False
-            if pending.get("continue_after") and not STATE.busy:
+            if pending.get("continue_after"):
                 continuation = (
                     "Continue the interrupted task in this same conversation.\n"
                     "The user approved and ran this shell command:\n"
@@ -908,8 +1135,7 @@ class Handler(BaseHTTPRequestHandler):
                     "Use this result to continue the original task. If the task is complete,"
                     " reply with a JSON done tool call."
                 )
-                submit_browser_task(
-                    _run_task,
+                continuation_run = _submit_task(
                     session_id,
                     pending["project"],
                     continuation,
@@ -917,8 +1143,14 @@ class Handler(BaseHTTPRequestHandler):
                     True,
                     pending.get("provider") or DEFAULT_PROVIDER_ID,
                 )
-                continued = True
-            self._send_json(200, {"ok": True, "approved": True, "continued": continued, "result": result})
+                continued = continuation_run is not None
+            self._send_json(200, {
+                "ok": True,
+                "approved": True,
+                "continued": continued,
+                "result": result,
+                "event": event,
+            })
             return
         if url.path == "/api/teach/resume":
             teach_id = str(body.get("id") or "").strip()
@@ -977,7 +1209,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
-    httpd = ThreadingHTTPServer((host, port), Handler)
+    httpd = CodeyHTTPServer((host, port), Handler)
     actual_port = httpd.server_address[1]
     url = f"http://{host}:{actual_port}/"
     print(f"[codey] UI ready: {url}")
