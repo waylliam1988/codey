@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import cancellation, profile_doctor, provider_controls
+from codey import cancellation, changes, profile_doctor, provider_controls
 from codey import server
 from codey.agent import RunResult
 from codey.changes import ChangeTracker
@@ -18,7 +18,7 @@ from codey.provider_discovery import Discovery
 
 class GitChangesTests(unittest.TestCase):
     def test_parse_git_status(self) -> None:
-        files = server.parse_git_status(" M codey/server.py\n?? new.txt\nR  old.py -> new.py\n")
+        files = changes.parse_git_status(" M codey/server.py\n?? new.txt\nR  old.py -> new.py\n")
 
         self.assertEqual(files[0]["status"], "M")
         self.assertEqual(files[0]["path"], "codey/server.py")
@@ -28,14 +28,14 @@ class GitChangesTests(unittest.TestCase):
         self.assertEqual(files[2]["path"], "old.py -> new.py")
 
     def test_displayable_change_path_filters_generated_caches(self) -> None:
-        self.assertFalse(server.is_displayable_change_path("__pycache__/"))
-        self.assertFalse(server.is_displayable_change_path("pkg/__pycache__/app.cpython-312.pyc"))
-        self.assertFalse(server.is_displayable_change_path(".pytest_cache/v/cache/nodeids"))
-        self.assertTrue(server.is_displayable_change_path("app.py"))
+        self.assertFalse(changes.is_displayable_change_path("__pycache__/"))
+        self.assertFalse(changes.is_displayable_change_path("pkg/__pycache__/app.cpython-312.pyc"))
+        self.assertFalse(changes.is_displayable_change_path(".pytest_cache/v/cache/nodeids"))
+        self.assertTrue(changes.is_displayable_change_path("app.py"))
 
     def test_collect_changes_uses_empty_snapshot_for_non_git_directory(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            data = server.collect_changes(td)
+            data = changes.collect_changes(td)
 
             self.assertTrue(data["ok"], data)
             self.assertEqual(data["mode"], "snapshot")
@@ -48,7 +48,7 @@ class GitChangesTests(unittest.TestCase):
             tracker.capture_before("app.py")
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            data = server.collect_changes(root, tracker)
+            data = changes.collect_changes(root, tracker)
 
             self.assertTrue(data["ok"], data)
             self.assertEqual(data["mode"], "snapshot")
@@ -62,7 +62,7 @@ class GitChangesTests(unittest.TestCase):
             subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True, text=True)
             (root / "note.txt").write_text("hello\nworld\n", encoding="utf-8")
 
-            data = server.collect_git_changes(root)
+            data = changes.collect_git_changes(root)
 
             self.assertTrue(data["ok"], data)
             self.assertEqual(data["mode"], "git")
@@ -100,7 +100,7 @@ class GitChangesTests(unittest.TestCase):
             (root / "__pycache__").mkdir()
             (root / "__pycache__" / "app.cpython-312.pyc").write_bytes(b"cache")
 
-            data = server.collect_git_changes(root)
+            data = changes.collect_git_changes(root)
 
             self.assertTrue(data["ok"], data)
             self.assertEqual([file["path"] for file in data["files"]], ["app.py"])
@@ -114,7 +114,7 @@ class GitChangesTests(unittest.TestCase):
             tracker.capture_before("tracked.txt")
             (root / "tracked.txt").write_text("snapshot\n", encoding="utf-8")
 
-            data = server.collect_changes(root, tracker)
+            data = changes.collect_changes(root, tracker)
 
             self.assertTrue(data["ok"], data)
             self.assertEqual(data["mode"], "git")
@@ -208,6 +208,9 @@ class ProviderStatusTests(unittest.TestCase):
 
 
 class RunSnapshotTests(unittest.TestCase):
+    def test_state_has_no_unused_legacy_event_queue(self) -> None:
+        self.assertFalse(hasattr(server.State(), "events"))
+
     def test_reserve_run_is_atomic(self) -> None:
         state = server.State()
         barrier = threading.Barrier(8)
@@ -579,6 +582,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.provider_id, "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
+        for name in provider_controls._TASK_CONTEXT_FIELDS:
+            self.assertFalse(hasattr(provider_controls._context, name), name)
 
     def test_run_task_reads_empty_file_without_error_or_legacy_log_event(self) -> None:
         state = server.State()
@@ -1024,6 +1029,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(failure["url"], "")
         self.assertEqual(failure["title"], "")
         self.assertEqual(failure["message"], "Edge not reachable")
+        for name in provider_controls._TASK_CONTEXT_FIELDS:
+            self.assertFalse(hasattr(provider_controls._context, name), name)
 
     def test_run_task_treats_control_teaching_cancel_as_stop(self) -> None:
         state = server.State()
@@ -1079,6 +1086,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["stop_reason"], "stopped")
         self.assertIsNone(task_done["provider_failure"])
         self.assertTrue(state.provider_session_changed("qwen", "session-1"))
+        for name in provider_controls._TASK_CONTEXT_FIELDS:
+            self.assertFalse(hasattr(provider_controls._context, name), name)
 
     def test_stopped_agent_result_also_forgets_provider_session(self) -> None:
         state = server.State()
@@ -1111,7 +1120,7 @@ class SessionThreadingTests(unittest.TestCase):
             tracker.capture_after("app.py")
             tracker.collect()
 
-            status, payload = server.restore_snapshot_changes(root, tracker, ["app.py"])
+            status, payload = changes.restore_snapshot_changes(root, tracker, ["app.py"])
 
             self.assertEqual(status, 200)
             self.assertTrue(payload["ok"], payload)
@@ -1119,7 +1128,7 @@ class SessionThreadingTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
 
     def test_restore_snapshot_changes_reports_missing_tracker(self) -> None:
-        status, payload = server.restore_snapshot_changes("E:/missing", None)
+        status, payload = changes.restore_snapshot_changes("E:/missing", None)
 
         self.assertEqual(status, 404)
         self.assertFalse(payload["ok"])

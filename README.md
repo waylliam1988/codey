@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.12`
+Version: `0.1.13`
 
 ---
 
@@ -63,6 +63,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Qwen Studio | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.13` keeps the interface unchanged while tightening the runtime underneath it. Git and snapshot change handling now live together in `changes.py`; local runtime files share one state root; and every UI, CLI, and smoke task owns an explicit provider context that is cleared after success, cancellation, connection failure, or CDP close failure. Qwen now commits its controlled composer state with one real trailing key and verifies the exact submitted text before sending. The release passed 344 tests, all 16 real Edge UI E2E checks, and live edit tasks on DeepSeek, Qwen, and MiMo.
 
 Version `0.1.12` keeps the UI and backend aligned across a browser refresh or brief SSE interruption. The backend creates one atomic run ID, exposes one bounded in-memory run snapshot, and lets the UI quietly recover Stop state, pending Shell approval or control teaching, and the final receipt without duplicating `task_done`. One state reconciliation runs at a time; newer SSE events wait briefly and replay after the snapshot, so a slow stale response cannot restore an already completed task to Running. Clearing a chat also revokes its saved terminal receipt. A reconnect stays invisible unless it lasts five seconds, when the existing status line briefly shows `Reconnecting…`. Shell approval results are applied from both the HTTP response and SSE with the same deduplication key; the latest result also remains in the bounded snapshot, and resolving it removes the old approval card. Recovery preserves execution order, so a Shell result appears before the completion of the task it resumed. DeepSeek, Qwen, and MiMo share one one-shot submission boundary: the send method is selected before interaction, the remote action runs once, and an uncertain attempt continues watching the original answer for the full response window without resubmitting. No automatic resend or new UI concept was added. The release passed 331 tests, all 16 real Edge UI E2E checks, and live one-submission probes on all three providers.
 
@@ -285,8 +287,8 @@ codey/
   task_runner.py            task, conversation, review, and receipt orchestration
   browser.py                Edge/CDP connection helpers
   browser_worker.py         Playwright thread scheduler
-  changes.py                snapshot diff and restore support
-  local_store.py            atomic JSON state writes
+  changes.py                Git and snapshot diff / restore support
+  local_store.py            shared local data root and atomic JSON writes
   project_facts.py          facts verified by successful local runs
   conversation_store.py     bounded factual conversation persistence
   provider_profiles.json    versioned selectors for supported model pages

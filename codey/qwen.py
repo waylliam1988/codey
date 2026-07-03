@@ -52,7 +52,7 @@ def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
     )
 
 
-def _fill_message(page: Page, textarea: Locator, text: str) -> None:
+def _fill_message(page: Page, textarea: Locator, text: str) -> str:
     """Enter text through Qwen's keyboard path so its UI state is updated."""
     cancellation.check()
     textarea.click()
@@ -61,6 +61,12 @@ def _fill_message(page: Page, textarea: Locator, text: str) -> None:
     textarea.press("Backspace")
     cancellation.check()
     page.keyboard.insert_text(text)
+    # Qwen may display inserted text before its controlled composer accepts it.
+    # A real trailing key commits the full value; keeping it avoids a batched
+    # add/remove pair that can leave the website's internal state empty.
+    textarea.press("End")
+    textarea.press("Space")
+    return f"{text} "
 
 
 def _send_button(
@@ -278,10 +284,10 @@ def _chat(
     textarea = _message_box(page, teach=True)
     if textarea is None:
         raise TimeoutError("Qwen Studio chat input is not visible")
-    _fill_message(page, textarea, text)
-    if controls.control_has_text(textarea, text):
+    submitted_text = _fill_message(page, textarea, text)
+    if controls.control_has_text(textarea, submitted_text):
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-    attempt = _submit(page, baseline, text)
+    attempt = _submit(page, baseline, submitted_text)
 
     sent_at = time.time()
     deadline = sent_at + response_timeout

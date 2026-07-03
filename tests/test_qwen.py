@@ -67,15 +67,25 @@ class QwenDriverTests(unittest.TestCase):
 
         response.inner_text.assert_called_once_with()
 
-    def test_fill_message_uses_qwen_keyboard_input_path(self) -> None:
+    def test_fill_message_commits_inserted_text_to_qwen_composer_state(self) -> None:
         page = mock.Mock()
         textarea = mock.Mock()
 
-        qwen._fill_message(page, textarea, "hello")
+        submitted_text = qwen._fill_message(page, textarea, "hello")
 
-        textarea.click.assert_called_once_with()
+        self.assertEqual(
+            textarea.method_calls,
+            [
+                mock.call.click(),
+                mock.call.press("Control+A"),
+                mock.call.press("Backspace"),
+                mock.call.press("End"),
+                mock.call.press("Space"),
+            ],
+        )
         textarea.fill.assert_not_called()
         page.keyboard.insert_text.assert_called_once_with("hello")
+        self.assertEqual(submitted_text, "hello ")
 
     def test_submit_confirms_that_qwen_accepted_message(self) -> None:
         page = mock.Mock()

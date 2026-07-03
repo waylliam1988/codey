@@ -12,7 +12,26 @@ class ProviderControlsTests(unittest.TestCase):
     def tearDown(self) -> None:
         controls.set_teach_handler(None)
         controls.set_doctor_handler(None)
-        controls.set_session_id("")
+        controls.end_task_context()
+
+    def test_task_context_cleanup_removes_all_task_local_state(self) -> None:
+        page = mock.Mock()
+        controls.begin_task_context("session-1")
+        controls._doctor_attempts().add(("session-1", "qwen", "send_button"))
+        controls._remember_source("qwen", controls.CONTROL_SEND_BUTTON, "pending")
+        controls._remember_pending(
+            "qwen",
+            controls.CONTROL_SEND_BUTTON,
+            page,
+            {"tag": "button"},
+        )
+        controls._response_locator_map()["qwen"] = mock.Mock()
+        controls._context.response_watches = {"qwen": "watch"}
+
+        controls.end_task_context()
+
+        for name in controls._TASK_CONTEXT_FIELDS:
+            self.assertFalse(hasattr(controls._context, name), name)
 
     def test_save_control_overwrites_latest_teaching(self) -> None:
         page = mock.Mock()
@@ -331,7 +350,7 @@ class ProviderControlsTests(unittest.TestCase):
     def test_request_teaching_calls_registered_handler_with_session(self) -> None:
         page = mock.Mock()
         handler = mock.Mock(return_value="control")
-        controls.set_session_id("session-1")
+        controls.begin_task_context("session-1")
         controls.set_teach_handler(handler)
 
         result = controls.request_teaching(
@@ -366,7 +385,7 @@ class ProviderControlsTests(unittest.TestCase):
                 69,
             ),
         )
-        controls.set_session_id("session-1")
+        controls.begin_task_context("session-1")
         doctor = mock.Mock(return_value="c2")
         controls.set_doctor_handler(doctor)
         with tempfile.TemporaryDirectory() as td:
@@ -407,7 +426,7 @@ class ProviderControlsTests(unittest.TestCase):
             calls.append((controls.can_doctor(), controls.can_teach()))
             return None
 
-        controls.set_session_id("session-1")
+        controls.begin_task_context("session-1")
         controls.set_doctor_handler(doctor)
         controls.set_teach_handler(mock.Mock())
         with (
@@ -430,7 +449,7 @@ class ProviderControlsTests(unittest.TestCase):
             ),
         )
         order = []
-        controls.set_session_id("session-1")
+        controls.begin_task_context("session-1")
         controls.set_doctor_handler(lambda _request: order.append("doctor"))
         controls.set_teach_handler(lambda _request: order.append("manual") or "taught")
         with (
@@ -458,7 +477,7 @@ class ProviderControlsTests(unittest.TestCase):
             40,
         )
         doctor = mock.Mock(return_value="c1")
-        controls.set_session_id("session-1")
+        controls.begin_task_context("session-1")
         controls.set_doctor_handler(doctor)
         controls._context.response_watches = {"qwen": "watch"}
         with (

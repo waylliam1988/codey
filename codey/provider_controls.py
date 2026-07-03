@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 from codey import cancellation
 from codey import provider_discovery as discovery
 from codey import profile_doctor
-from codey.local_store import read_json, write_json_atomic
+from codey.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
 
 CONTROL_MESSAGE_BOX = "message_box"
 CONTROL_SEND_BUTTON = "send_button"
@@ -30,12 +30,21 @@ CONTROL_LABELS = {
     CONTROL_SEND_BUTTON: "send button",
     CONTROL_RESPONSE: "answer",
 }
-CONTROL_STORE = Path.home() / ".codey" / "provider-controls.json"
+CONTROL_STORE = DEFAULT_STATE_HOME / "provider-controls.json"
 MAX_LEARNED_FAILURES = 2
 
 _handler: Callable[["ControlTeachRequest"], Any] | None = None
 _doctor_handler: Callable[[profile_doctor.ProfileDoctorRequest], str | None] | None = None
 _context = threading.local()
+_TASK_CONTEXT_FIELDS = (
+    "session_id",
+    "doctor_attempts",
+    "assistance_depth",
+    "sources",
+    "pending",
+    "response_locators",
+    "response_watches",
+)
 
 
 class ControlTeachCancelled(RuntimeError):
@@ -82,9 +91,16 @@ def can_doctor() -> bool:
     return _doctor_handler is not None and not _assistance_suppressed()
 
 
-def set_session_id(session_id: str) -> None:
+def begin_task_context(session_id: str) -> None:
+    end_task_context()
     _context.session_id = session_id or ""
     _context.doctor_attempts = set()
+
+
+def end_task_context() -> None:
+    for name in _TASK_CONTEXT_FIELDS:
+        if hasattr(_context, name):
+            delattr(_context, name)
 
 
 def visible_locator(page: Any, selector: str) -> Any | None:

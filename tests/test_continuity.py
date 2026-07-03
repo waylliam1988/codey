@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey import server
+from codey import changes, server
 
 
 class LocalContinuityTests(unittest.TestCase):
@@ -40,13 +40,13 @@ class LocalContinuityTests(unittest.TestCase):
             facts = restarted.project_facts.render(root)
             conversation = restarted.conversation_for("chat-1")
             tracker = restarted.change_tracker_for(root, persistent=True)
-            changes = server.collect_changes(root, tracker)
+            change_data = changes.collect_changes(root, tracker)
             restored = tracker.restore()
 
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("python -m unittest", facts)
             self.assertEqual(conversation.snapshot.goal, "ORANGE-417")
-            self.assertEqual(changes["changed_count"], 1)
+            self.assertEqual(change_data["changed_count"], 1)
             self.assertTrue(restored.ok, restored)
             self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
 

@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import json
 import queue
-import difflib
 import subprocess
 import sys
 import threading
@@ -37,7 +36,13 @@ from codey import cancellation, profile_doctor, provider_controls
 from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
-from codey.changes import ChangeTracker, SnapshotStore
+from codey.changes import (
+    ChangeTracker,
+    SnapshotStore,
+    collect_changes,
+    is_git_repository,
+    restore_snapshot_changes,
+)
 from codey.conversation_store import ConversationStore
 from codey.handoff import ConversationContext
 from codey.providers import (
@@ -60,9 +65,6 @@ from codey.text_budget import clip_middle
 
 WEB_DIR = Path(__file__).parent / "web"
 FOLDER_DIALOG_LOCK = threading.Lock()
-GIT_TIMEOUT = 10
-MAX_DIFF_CHARS = 240_000
-MAX_UNTRACKED_DIFF_BYTES = 120_000
 SHELL_TIMEOUT = 120
 SHELL_OUTPUT_LIMIT = 24_000
 REVIEW_TIMEOUT = 300.0
@@ -71,187 +73,6 @@ REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
 PROFILE_DOCTOR_TIMEOUT = 90.0
 MAX_CONVERSATION_STATES = 32
-CHANGE_EXCLUDED_PATH_PARTS = {
-    "__pycache__",
-    ".pytest_cache",
-    ".mypy_cache",
-    ".ruff_cache",
-    "node_modules",
-    ".next",
-    "dist",
-    "build",
-}
-
-
-def _run_git(project: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["git", "-C", str(project), *args],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=GIT_TIMEOUT,
-        check=False,
-    )
-
-
-def is_git_repository(project: str | Path) -> bool:
-    try:
-        proc = _run_git(
-            Path(project).expanduser().resolve(),
-            ["rev-parse", "--is-inside-work-tree"],
-        )
-    except (FileNotFoundError, OSError, subprocess.SubprocessError):
-        return False
-    return proc.returncode == 0 and proc.stdout.strip() == "true"
-
-
-def parse_git_status(short_status: str) -> list[dict]:
-    files: list[dict] = []
-    for line in short_status.splitlines():
-        if not line.strip():
-            continue
-        status = line[:2].strip() or "M"
-        path = line[3:].strip() if len(line) > 3 else line[2:].strip()
-        files.append({"path": path, "status": status, "additions": 0, "deletions": 0})
-    return files
-
-
-def is_displayable_change_path(path: str) -> bool:
-    normalized = (path or "").replace("\\", "/").strip("/")
-    parts = [part for part in normalized.split("/") if part and part != "->"]
-    return not any(part in CHANGE_EXCLUDED_PATH_PARTS for part in parts)
-
-
-def _merge_numstat(stats: dict[str, dict[str, int]], text: str) -> None:
-    for line in text.splitlines():
-        parts = line.split("\t")
-        if len(parts) < 3:
-            continue
-        added, deleted, path = parts[0], parts[1], parts[2]
-        item = stats.setdefault(path, {"additions": 0, "deletions": 0})
-        if added.isdigit():
-            item["additions"] += int(added)
-        if deleted.isdigit():
-            item["deletions"] += int(deleted)
-
-
-def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
-    path = (root / rel).resolve()
-    try:
-        if not path.is_file() or path.stat().st_size > MAX_UNTRACKED_DIFF_BYTES:
-            return None
-        text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None
-    lines = text.splitlines(keepends=True)
-    rel_posix = rel.replace("\\", "/")
-    diff = difflib.unified_diff(
-        [],
-        lines,
-        fromfile="/dev/null",
-        tofile=f"b/{rel_posix}",
-        lineterm="",
-    )
-    return "\n".join(diff), len(text.splitlines())
-
-
-def collect_git_changes(project: str | Path | None) -> dict:
-    if not project:
-        return {"ok": False, "error": "project required", "files": [], "diff": ""}
-    root = Path(project).expanduser().resolve()
-    if not root.exists():
-        return {"ok": False, "error": "project not found", "files": [], "diff": ""}
-
-    try:
-        top = _run_git(root, ["rev-parse", "--show-toplevel"])
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return {"ok": False, "error": f"git unavailable: {exc}", "files": [], "diff": ""}
-    if top.returncode != 0:
-        return {"ok": False, "error": "not a git repository", "files": [], "diff": ""}
-    git_root = Path(top.stdout.strip()).resolve()
-
-    try:
-        status_proc = _run_git(git_root, ["status", "--short"])
-        unstaged_num = _run_git(git_root, ["diff", "--numstat"])
-        staged_num = _run_git(git_root, ["diff", "--cached", "--numstat"])
-        unstaged_diff = _run_git(git_root, ["diff", "--no-ext-diff", "--"])
-        staged_diff = _run_git(git_root, ["diff", "--cached", "--no-ext-diff", "--"])
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "error": "git command timed out", "files": [], "diff": ""}
-
-    files = [file for file in parse_git_status(status_proc.stdout) if is_displayable_change_path(file["path"])]
-    stats: dict[str, dict[str, int]] = {}
-    _merge_numstat(stats, unstaged_num.stdout)
-    _merge_numstat(stats, staged_num.stdout)
-
-    diff_parts: list[str] = []
-    if staged_diff.stdout:
-        diff_parts.append(staged_diff.stdout.rstrip())
-    if unstaged_diff.stdout:
-        diff_parts.append(unstaged_diff.stdout.rstrip())
-
-    for file in files:
-        path = file["path"]
-        stat = stats.get(path)
-        if stat:
-            file.update(stat)
-        if file["status"] == "??":
-            untracked = _untracked_file_diff(git_root, path)
-            if untracked:
-                diff_text, additions = untracked
-                file["additions"] = additions
-                file["deletions"] = 0
-                diff_parts.append(diff_text)
-
-    diff = "\n\n".join(part for part in diff_parts if part)
-    truncated = len(diff) > MAX_DIFF_CHARS
-    if truncated:
-        diff = diff[:MAX_DIFF_CHARS].rstrip() + "\n\n... diff truncated ..."
-    return {
-        "ok": True,
-        "mode": "git",
-        "vcs": {"git_available": True, "is_repo": True},
-        "root": str(git_root),
-        "files": files,
-        "changed_count": len(files),
-        "diff": diff,
-        "truncated": truncated,
-    }
-
-
-def _empty_snapshot_changes(project: str | Path | None, error: str | None = None) -> dict:
-    root = str(Path(project).expanduser().resolve()) if project else ""
-    return {
-        "ok": True,
-        "mode": "snapshot",
-        "vcs": {"git_available": error != "git unavailable", "is_repo": False},
-        "root": root,
-        "files": [],
-        "changed_count": 0,
-        "diff": "",
-        "truncated": False,
-    }
-
-
-def collect_changes(project: str | Path | None, tracker: ChangeTracker | None = None) -> dict:
-    if not project:
-        return {"ok": False, "error": "project required", "files": [], "diff": ""}
-    git_data = collect_git_changes(project)
-    if git_data.get("ok"):
-        return git_data
-    if tracker is not None:
-        data = tracker.collect()
-        data["vcs"] = {
-            "git_available": not str(git_data.get("error", "")).startswith("git unavailable"),
-            "is_repo": False,
-        }
-        return data
-    if git_data.get("error") in {"not a git repository"} or str(git_data.get("error", "")).startswith("git unavailable"):
-        return _empty_snapshot_changes(project, "git unavailable" if str(git_data.get("error", "")).startswith("git unavailable") else None)
-    return git_data
-
-
 def reviewer_candidates(writer_id: str) -> tuple[str, ...]:
     writer = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
     return tuple(provider_id for provider_id in PROVIDER_LABELS if provider_id != writer)
@@ -335,25 +156,6 @@ def _run_review(
     if last_error is not None:
         raise last_error
     raise RuntimeError("no review model available")
-
-
-def restore_snapshot_changes(
-    project: str | Path | None,
-    tracker: ChangeTracker | None,
-    paths: list[str] | None = None,
-) -> tuple[int, dict]:
-    if not project:
-        return 400, {"ok": False, "error": "project required"}
-    if tracker is None or not tracker.has_snapshots:
-        return 404, {"ok": False, "error": "no snapshot changes to restore"}
-    result = tracker.restore(paths)
-    payload = {
-        "ok": result.ok,
-        "restored": result.restored,
-        "conflicts": result.conflicts,
-        "error": result.error,
-    }
-    return (200 if result.ok else 409), payload
 
 
 def _safe_project_cwd(project: str | Path, rel: str) -> Path:
@@ -447,7 +249,6 @@ class CodeyHTTPServer(ThreadingHTTPServer):
 class State:
     def __init__(self, state_home: str | Path | None = None) -> None:
         self.lock = threading.Lock()
-        self.events: queue.Queue[dict] = queue.Queue()
         self.subscribers: list[queue.Queue[dict]] = []
         self.busy = False
         self.project: str | None = None

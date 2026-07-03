@@ -5,10 +5,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey import changes
 from tools import bootstrap_smoke
 
 
 class BootstrapSmokeTests(unittest.TestCase):
+    def test_collect_changes_comes_from_changes_module(self) -> None:
+        self.assertIs(bootstrap_smoke.collect_changes, changes.collect_changes)
+
     def test_inject_bug_reverses_snapshot_diff_direction(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -43,6 +47,8 @@ class BootstrapSmokeTests(unittest.TestCase):
         reviewer.close = mock.Mock()
 
         with (
+            mock.patch.object(bootstrap_smoke.provider_controls, "begin_task_context") as begin_context,
+            mock.patch.object(bootstrap_smoke.provider_controls, "end_task_context") as end_context,
             mock.patch.object(bootstrap_smoke, "_copy_repo"),
             mock.patch.object(bootstrap_smoke, "inject_bug"),
             mock.patch.object(
@@ -61,6 +67,8 @@ class BootstrapSmokeTests(unittest.TestCase):
             data = bootstrap_smoke.run_bootstrap_smoke("deepseek", port=9222, max_turns=8, reviewer_id="mimo")
 
         self.assertTrue(data["ok"], data)
+        begin_context.assert_called_once_with("bootstrap-smoke:deepseek")
+        end_context.assert_called_once_with()
         self.assertTrue(data["initial_failure"])
         self.assertEqual(data["review"], "approved")
         self.assertEqual(connect.call_args_list[0], mock.call("deepseek", port=9222))
@@ -69,6 +77,51 @@ class BootstrapSmokeTests(unittest.TestCase):
             mock.call("mimo", port=9222, open_if_missing=False, bring_to_front=False),
         )
         reviewer.new_chat.assert_called_once_with()
+
+    def test_run_bootstrap_smoke_cleans_task_context_when_provider_connection_fails(self) -> None:
+        with (
+            mock.patch.object(bootstrap_smoke, "_copy_repo"),
+            mock.patch.object(bootstrap_smoke, "inject_bug"),
+            mock.patch.object(
+                bootstrap_smoke.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=1, stdout="", stderr="FAIL"),
+            ),
+            mock.patch.object(bootstrap_smoke.provider_controls, "begin_task_context") as begin_context,
+            mock.patch.object(bootstrap_smoke.provider_controls, "end_task_context") as end_context,
+            mock.patch.object(bootstrap_smoke, "connect_provider", side_effect=RuntimeError("offline")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "offline"):
+                bootstrap_smoke.run_bootstrap_smoke("mimo", port=9222, max_turns=8)
+
+        begin_context.assert_called_once_with("bootstrap-smoke:mimo")
+        end_context.assert_called_once_with()
+
+    def test_run_bootstrap_smoke_cleans_task_context_when_provider_close_fails(self) -> None:
+        provider = mock.Mock()
+        provider.close.side_effect = RuntimeError("CDP disconnected")
+
+        with (
+            mock.patch.object(bootstrap_smoke, "_copy_repo"),
+            mock.patch.object(bootstrap_smoke, "inject_bug"),
+            mock.patch.object(
+                bootstrap_smoke.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=1, stdout="", stderr="FAIL"),
+            ),
+            mock.patch.object(bootstrap_smoke.provider_controls, "begin_task_context"),
+            mock.patch.object(bootstrap_smoke.provider_controls, "end_task_context") as end_context,
+            mock.patch.object(bootstrap_smoke, "connect_provider", return_value=provider),
+            mock.patch.object(
+                bootstrap_smoke,
+                "run",
+                return_value=mock.Mock(stop_reason="done", summary="done", turns=1),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "CDP disconnected"):
+                bootstrap_smoke.run_bootstrap_smoke("qwen", port=9222, max_turns=8)
+
+        end_context.assert_called_once_with()
 
     def test_run_bootstrap_smoke_requires_initial_failure(self) -> None:
         writer = mock.Mock()

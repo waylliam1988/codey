@@ -20,14 +20,15 @@ from urllib.request import urlopen
 from playwright.sync_api import Browser, Page, Playwright, sync_playwright
 
 from codey import cancellation
+from codey.local_store import DEFAULT_STATE_HOME
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 DEFAULT_PORT = 9222
-DEFAULT_PROFILE = Path.home() / ".codey" / "edge-profile"
+DEFAULT_PROFILE = DEFAULT_STATE_HOME / "edge-profile"
 CDP_PORT_CANDIDATES = tuple(range(DEFAULT_PORT, DEFAULT_PORT + 17))
-CDP_STATE_FILE = Path.home() / ".codey" / "cdp-port.json"
+CDP_STATE_FILE = DEFAULT_STATE_HOME / "cdp-port.json"
 PROVIDER_URL_CONTAINS = {
     "deepseek": "chat.deepseek.com",
     "qwen": "chat.qwen.ai",

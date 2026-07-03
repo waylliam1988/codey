@@ -1,7 +1,33 @@
-# Codey 0.1.12 Test Report
+# Codey 0.1.13 Test Report
 
-Date: 2026-07-03
+Date: 2026-07-04
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+
+## 0.1.13 Runtime Ownership and Provider Context
+
+Git and snapshot change collection now share `changes.py`, while the HTTP
+server retains only transport and request orchestration. Edge profile, CDP
+state, learned controls, continuity data, and recovery snapshots use one local
+state root. UI, CLI, and smoke tasks explicitly own provider-local context and
+clear it after every exit path, including connection and CDP close failures.
+Qwen keeps one real trailing keyboard input so its controlled composer commits
+the same text that Codey verifies and submits.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 344 passed |
+| Git and snapshot change ownership | Unified in `changes.py`; server transport unchanged |
+| Local runtime paths | Edge profile, CDP state, controls, facts, conversations, and snapshots share one root |
+| Provider task-local context | Cleared after success, cancellation, task failure, connection failure, and CDP close failure |
+| CLI and smoke close-failure regression tests | All four entry points passed |
+| Removed runtime residue | Unused `State.events` queue removed |
+| Real Edge UI E2E | All 16 checks passed |
+| Live DeepSeek edit task | Passed in 5 turns; unittest passed |
+| Live Qwen edit task | Passed in 9 turns; all submissions confirmed and unittest passed |
+| Live MiMo edit task | Passed in 4 turns; unittest passed |
+| New UI controls or cards | None |
 
 ## 0.1.12 Run Reconciliation and One-Shot Submission
 

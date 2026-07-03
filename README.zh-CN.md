@@ -10,7 +10,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen 和小
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.12`
+版本：`0.1.13`
 
 ---
 
@@ -63,6 +63,8 @@ Codey 想解决的是一个很朴素的问题：
 | Qwen Studio | 已实机测试 |
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
+
+`0.1.13` 保持前端不变，只收紧底层结构。Git 和 snapshot 的改动处理统一收到 `changes.py`；本地运行数据共用一个存储根目录；UI、CLI 和 smoke 中的每项任务都有明确的 Provider 上下文，无论成功、取消、连接失败还是 CDP 关闭失败都会清理。Qwen 现在用一次真实尾随按键提交网页输入状态，并在发送前验证实际文本。本版通过 344 项测试、真实 Edge UI E2E 全部 16 项检查，以及 DeepSeek、Qwen、MiMo 三站实机编辑任务。
 
 `0.1.12` 让 UI 在刷新或 SSE 短暂中断后，仍能与后端的真实任务状态对齐。后端原子创建唯一 `run_id`，只保留一份有上限的内存快照；前端会无感恢复 Stop、Shell 审批、控件教学和最终收据，并且不重复显示 `task_done`。同一时间只运行一个对账请求；更新的 SSE 事件会短暂缓冲，在快照应用后按顺序重放，因此较慢的旧快照不会把已经完成的任务重新变成 Running。清空聊天也会同步撤销后端保留的旧收据。断线在 5 秒内不显示任何东西；只有持续更久时，才复用顶部状态行显示 `Reconnecting…`。Shell 审批结果同时通过 HTTP 响应和 SSE 送达，并使用同一去重键；最新一条结果也保留在有上限的快照里，收到结果后会移除旧审批卡。对账会保持真实执行顺序，Shell 结果会先于它继续的任务完成收据出现。DeepSeek、Qwen 和 MiMo 共用一个单次提交边界：操作前先确定发送方式，远程提交最多一次；结果不确定时不重发，而是在完整回答窗口内继续等待原回答。本版没有自动重发，也没有增加新界面概念；通过 331 项测试、真实 Edge UI E2E 全部 16 项检查，以及三站单次提交实机探针。
 
@@ -290,8 +292,8 @@ codey/
   task_runner.py            任务、会话、review 和收据编排
   browser.py                Edge/CDP 连接
   browser_worker.py         Playwright 线程调度
-  changes.py                snapshot diff 和 restore
-  local_store.py            原子 JSON 状态写入
+  changes.py                Git 与 snapshot diff / restore
+  local_store.py            共享本地数据根目录和原子 JSON 写入
   project_facts.py          经过成功运行验证的项目事实
   conversation_store.py     有上限的对话事实持久化
   provider_profiles.json    支持模型网页的版本化选择器

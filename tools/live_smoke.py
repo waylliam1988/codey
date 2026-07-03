@@ -12,7 +12,8 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.agent import run
-from codey.changes import ChangeTracker
+from codey import provider_controls
+from codey.changes import ChangeTracker, collect_changes
 from codey.events import render_run_event
 from codey.providers.registry import connect_provider
 from codey.review import (
@@ -21,7 +22,6 @@ from codey.review import (
     render_review_prompt,
     render_writer_followup,
 )
-from codey.server import collect_changes
 
 
 PROVIDER_IDS = ("deepseek", "qwen", "mimo")
@@ -179,8 +179,10 @@ def run_smoke(
         def on_event(event) -> None:
             _record_event(events, event)
 
-        provider = connect_provider(provider_id, port=port)
+        provider_controls.begin_task_context(f"live-smoke:{provider_id}:{case}")
+        provider = None
         try:
+            provider = connect_provider(provider_id, port=port)
             if case == "create":
                 task = (
                     "Create math_utils.py with add(a, b) returning a + b. "
@@ -224,8 +226,11 @@ def run_smoke(
                         tracker=tracker,
                     )
         finally:
-            if provider is not None:
-                provider.close()
+            try:
+                if provider is not None:
+                    provider.close()
+            finally:
+                provider_controls.end_task_context()
         verification = _verify_fixture(root, case)
         return {
             "ok": final_stop_reason == "done" and verification["ok"],

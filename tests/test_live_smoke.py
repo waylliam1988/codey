@@ -5,10 +5,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey import changes
 from tools import live_smoke
 
 
 class LiveSmokeTests(unittest.TestCase):
+    def test_collect_changes_comes_from_changes_module(self) -> None:
+        self.assertIs(live_smoke.collect_changes, changes.collect_changes)
+
     def test_create_fixture_starts_empty_project(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -39,6 +43,8 @@ class LiveSmokeTests(unittest.TestCase):
         provider.close = mock.Mock()
 
         with (
+            mock.patch.object(live_smoke.provider_controls, "begin_task_context") as begin_context,
+            mock.patch.object(live_smoke.provider_controls, "end_task_context") as end_context,
             mock.patch.object(live_smoke, "connect_provider", return_value=provider) as connect,
             mock.patch.object(live_smoke, "run", return_value=mock.Mock(stop_reason="done", summary="done", turns=3)),
             mock.patch.object(live_smoke, "_verify_fixture", return_value={"ok": True, "exit_code": 0, "output": "OK"}),
@@ -47,8 +53,41 @@ class LiveSmokeTests(unittest.TestCase):
             data = live_smoke.run_smoke("deepseek", "create", 9222, 8)
 
         connect.assert_called_once_with("deepseek", port=9222)
+        begin_context.assert_called_once_with("live-smoke:deepseek:create")
+        end_context.assert_called_once_with()
         provider.close.assert_called_once_with()
         self.assertTrue(data["ok"])
+
+    def test_run_smoke_cleans_task_context_when_provider_connection_fails(self) -> None:
+        with (
+            mock.patch.object(live_smoke.provider_controls, "begin_task_context") as begin_context,
+            mock.patch.object(live_smoke.provider_controls, "end_task_context") as end_context,
+            mock.patch.object(live_smoke, "connect_provider", side_effect=RuntimeError("offline")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "offline"):
+                live_smoke.run_smoke("qwen", "edit", 9222, 8)
+
+        begin_context.assert_called_once_with("live-smoke:qwen:edit")
+        end_context.assert_called_once_with()
+
+    def test_run_smoke_cleans_task_context_when_provider_close_fails(self) -> None:
+        provider = mock.Mock()
+        provider.close.side_effect = RuntimeError("CDP disconnected")
+
+        with (
+            mock.patch.object(live_smoke.provider_controls, "begin_task_context"),
+            mock.patch.object(live_smoke.provider_controls, "end_task_context") as end_context,
+            mock.patch.object(live_smoke, "connect_provider", return_value=provider),
+            mock.patch.object(
+                live_smoke,
+                "run",
+                return_value=mock.Mock(stop_reason="done", summary="done", turns=1),
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "CDP disconnected"):
+                live_smoke.run_smoke("deepseek", "create", 9222, 8)
+
+        end_context.assert_called_once_with()
 
     def test_run_smoke_can_use_reviewer(self) -> None:
         writer = mock.Mock()

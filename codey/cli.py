@@ -28,20 +28,28 @@ def cmd_ui(args: argparse.Namespace) -> int:
 
 
 def cmd_chat(args: argparse.Namespace) -> int:
+    from codey import provider_controls
     from codey.providers import connect_provider
 
     prompt = " ".join(args.prompt)
     _safe_print("[codey] attaching Edge ...", file=sys.stderr)
-    provider = connect_provider(args.provider, port=args.port)
+    provider_controls.begin_task_context(f"cli-chat:{args.provider}")
+    provider = None
     try:
+        provider = connect_provider(args.provider, port=args.port)
         reply = provider.send(prompt, timeout=args.timeout)
     finally:
-        provider.close()
+        try:
+            if provider is not None:
+                provider.close()
+        finally:
+            provider_controls.end_task_context()
     _safe_print(reply)
     return 0
 
 
 def cmd_agent(args: argparse.Namespace) -> int:
+    from codey import provider_controls
     from codey.agent import run
     from codey.events import render_run_event
     from codey.providers import connect_provider
@@ -51,8 +59,10 @@ def cmd_agent(args: argparse.Namespace) -> int:
     project.mkdir(parents=True, exist_ok=True)
 
     _safe_print(f"[codey] project: {project}", file=sys.stderr)
-    provider = connect_provider(args.provider, port=args.port)
+    provider_controls.begin_task_context(f"cli-agent:{args.provider}")
+    provider = None
     try:
+        provider = connect_provider(args.provider, port=args.port)
         result = run(
             provider,
             project,
@@ -61,7 +71,11 @@ def cmd_agent(args: argparse.Namespace) -> int:
             on_event=lambda event: _safe_print(render_run_event(event), file=sys.stderr),
         )
     finally:
-        provider.close()
+        try:
+            if provider is not None:
+                provider.close()
+        finally:
+            provider_controls.end_task_context()
     _safe_print(result.summary)
     return 0
 

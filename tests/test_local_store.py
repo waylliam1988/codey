@@ -5,10 +5,18 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import local_store
+from codey import browser, local_store, provider_controls
 
 
 class LocalStoreTests(unittest.TestCase):
+    def test_runtime_paths_share_one_state_home(self) -> None:
+        self.assertEqual(browser.DEFAULT_PROFILE, local_store.DEFAULT_STATE_HOME / "edge-profile")
+        self.assertEqual(browser.CDP_STATE_FILE, local_store.DEFAULT_STATE_HOME / "cdp-port.json")
+        self.assertEqual(
+            provider_controls.CONTROL_STORE,
+            local_store.DEFAULT_STATE_HOME / "provider-controls.json",
+        )
+
     def test_atomic_json_round_trip_replaces_previous_value(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "state.json"

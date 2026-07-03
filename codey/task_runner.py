@@ -79,7 +79,7 @@ class TaskRunner:
 
         provider_controls.set_teach_handler(state.handle_control_teach)
         provider_controls.set_doctor_handler(getattr(state, "handle_profile_doctor", None))
-        provider_controls.set_session_id(session_id)
+        provider_controls.begin_task_context(session_id)
         state.last_provider_failure = None
         previous_cancel_event = cancellation.set_event(state.stop_flag)
         state.emit({
@@ -381,7 +381,7 @@ class TaskRunner:
             })
         finally:
             cancellation.set_event(previous_cancel_event)
-            provider_controls.set_session_id("")
+            provider_controls.end_task_context()
             try:
                 if "provider" in locals() and provider is not None:
                     provider.close()

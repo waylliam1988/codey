@@ -12,7 +12,8 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from codey.agent import run
-from codey.changes import ChangeTracker
+from codey import provider_controls
+from codey.changes import ChangeTracker, collect_changes
 from codey.events import render_run_event
 from codey.providers.registry import connect_provider
 from codey.review import (
@@ -21,7 +22,6 @@ from codey.review import (
     render_review_prompt,
     render_writer_followup,
 )
-from codey.server import collect_changes
 
 
 BUGGY_DIFF = (
@@ -173,8 +173,10 @@ def run_bootstrap_smoke(
             _record_event(events, event)
 
         tracker = ChangeTracker(project)
-        provider = connect_provider(provider_id, port=port)
+        provider_controls.begin_task_context(f"bootstrap-smoke:{provider_id}")
+        provider = None
         try:
+            provider = connect_provider(provider_id, port=port)
             result = run(
                 provider,
                 project,
@@ -204,8 +206,11 @@ def run_bootstrap_smoke(
                         max_turns=max_turns,
                     )
         finally:
-            if provider is not None:
-                provider.close()
+            try:
+                if provider is not None:
+                    provider.close()
+            finally:
+                provider_controls.end_task_context()
 
         final_tests = _run_python_unittest(project)
         initial_failure = before.returncode != 0
