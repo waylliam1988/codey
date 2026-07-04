@@ -165,6 +165,7 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertTrue(by_id["deepseek"]["available"])
         self.assertFalse(by_id["mimo"]["available"])
         self.assertFalse(by_id["qwen"]["available"])
+        self.assertFalse(by_id["glm"]["available"])
 
     def test_provider_status_update_only_reports_changed_model(self) -> None:
         payload = server.provider_status_update("deepseek", True)
@@ -176,13 +177,16 @@ class ProviderStatusTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "provider_tab_availability",
-                return_value={"deepseek": True, "mimo": True, "qwen": False},
+                return_value={"deepseek": True, "mimo": True, "qwen": False, "glm": False},
             ) as detected,
             mock.patch.object(server, "connect_existing_provider") as connected,
         ):
             statuses = server.provider_availability()
 
-        self.assertEqual(statuses, {"deepseek": True, "mimo": True, "qwen": False})
+        self.assertEqual(
+            statuses,
+            {"deepseek": True, "mimo": True, "qwen": False, "glm": False},
+        )
         detected.assert_called_once_with()
         connected.assert_not_called()
 

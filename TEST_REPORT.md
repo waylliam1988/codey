@@ -1,7 +1,41 @@
-# Codey 0.1.14 Test Report
+# Codey 0.1.15 Test Report
 
 Date: 2026-07-04
-Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.15 GLM Provider
+
+GLM is registered as a fourth provider and reuses the existing browser,
+one-shot submission, cancellation, recovery, diagnostics, and task-context
+boundaries. Its local profile anchors the composer, accepts the send control
+only after non-whitespace text enables it, and selects the final Markdown
+answer while excluding the neighboring thinking panel. A GLM-only formatting
+note puts JSON in a code block with ASCII quotes; normal chat remains normal.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 384 passed |
+| Provider registry, profile, browser wrapper, CLI, and smoke choices | GLM included and cross-checked |
+| Blank or whitespace-only composer state | Send remained unavailable |
+| Blank `GlmWebProvider.send()` input | Rejected before formatting or page access |
+| Non-empty composer state | Send became available and was verified before click |
+| Thinking and final answer DOM | Final answer selected independently |
+| Discovery, Doctor, teaching, or cached response inside/around thinking DOM | Rejected before text is read |
+| One-shot uncertain submission | No second click; delayed answer still observed |
+| Duplicate question guard | Extra user question is reported rather than silently accepted |
+| Full 4K tool protocol on live GLM page | Returned valid ASCII JSON; one question after completion |
+| Live GLM edit task, first run | Passed in 4 turns; independent unittest passed |
+| Live GLM edit task in four-provider matrix | Passed in 4 turns; independent unittest passed |
+| Live GLM review of a DeepSeek edit | Approved; independent unittest passed |
+| Live GLM edit after final-answer guard | Passed in 5 turns; independent unittest passed |
+| Real Edge UI E2E | All 16 checks passed, including GLM picker selection |
+| Existing DeepSeek and MiMo matrix tasks | Passed in 4 / 4 turns |
+| Qwen startup root cause | Composer appeared before `/api/v2/models/` completed; click reached the React handler but emitted no chat request |
+| Qwen startup repair | Waits for successful model bootstrap; necessary draft settling and A/B choice handling remain |
+| Fresh Qwen edit reruns | Passed in 4 / 5 turns; both independent unittest checks passed |
+| New UI concepts | None; one provider row added |
 
 ## 0.1.14 Protocol Efficiency and Safety
 

@@ -4,13 +4,13 @@
 
 [中文说明](README.zh-CN.md)
 
-Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, and Xiaomi MiMo, and gives them a controlled local tool loop: read files, edit files, run tests, show diffs, and restore changes.
+Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, Xiaomi MiMo, and GLM, and gives them a controlled local tool loop: read files, edit files, run tests, show diffs, and restore changes.
 
 It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.14`
+Version: `0.1.15`
 
 ---
 
@@ -32,7 +32,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 
 ## What It Can Do
 
-- Chat with DeepSeek, MiMo, or Qwen from a local control panel
+- Chat with DeepSeek, MiMo, Qwen, or GLM from a local control panel
 - Let the model read and modify files in a selected project folder
 - Run tests and feed results back to the model
 - Show red/green diffs
@@ -61,8 +61,11 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | DeepSeek Web | Tested |
 | Xiaomi MiMo Chat | Tested |
 | Qwen Studio | Tested |
+| GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.15` adds GLM as the fourth provider without adding a new workflow. Its profile verifies the real non-whitespace send state, reads only the final answer rather than the adjacent thinking panel, and uses the same one-shot submission, cancellation, recovery, and ProfileDoctor boundaries as the other providers. A small GLM-only formatting note keeps JSON quotes as ASCII inside a `json` code block; normal chat is not forced to return JSON. Provider construction and smoke choices now come from one registry, while the existing monochrome picker simply gains one `GLM` row. Qwen now waits for its model bootstrap to finish instead of trusting an input box that appears too early; its real draft-settle and A/B-choice handling remain intact. The release passed 384 tests and all 16 real Edge UI E2E checks. GLM completed the live edit fixture with independent unittest verification, and separately approved a real DeepSeek diff as the read-only reviewer. Two fresh Qwen edit reruns passed in four and five turns.
 
 Version `0.1.14` keeps the interface unchanged while making the local tool protocol more consistent, safer, and more context-efficient during tasks. One compact tool contract now supplies the model-facing names, aliases, examples, read-only properties, and result labels. `parallel` accepts only bounded `list_dir`, `read_file`, and `grep` calls and rejects an unsafe batch before any item runs. Large files are returned in complete-line pages with an explicit next offset and a 16,000-character budget for file content; small files keep their exact previous output. A single `edit` call can apply up to eight replacements to one file, but writes only after every replacement validates in memory. The release passed 363 tests, all 16 real Edge UI E2E checks, and live edit tasks on DeepSeek, Qwen, and MiMo in four turns each.
 
@@ -212,7 +215,7 @@ execution, review, task receipts, diff, and snapshot restore:
 python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
 ```
 
-With all three model pages logged in through Edge CDP, run the real-provider
+With all four model pages logged in through Edge CDP, run the real-provider
 matrix below. Every result is independently checked with a functional
 assertion and unittest after the agent finishes:
 
@@ -269,6 +272,7 @@ Agent Runtime -- JsonToolCodec
 ChatProvider -- DeepSeekWebProvider
              -- QwenWebProvider
              -- MimoWebProvider
+             -- GlmWebProvider
    |
 Browser Session + provider DOM driver
 ```
@@ -302,6 +306,7 @@ codey/
   deepseek.py               DeepSeek page driver
   mimo.py                   MiMo page driver
   qwen.py                   Qwen page driver
+  glm.py                    GLM page driver
   provider_diagnostics.py   compact provider failure records
   receipt.py                task completion receipt builder
   protocols/

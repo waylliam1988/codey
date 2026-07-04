@@ -12,13 +12,20 @@ class ProviderProfileTests(unittest.TestCase):
     def test_bundled_profiles_are_versioned_and_complete(self) -> None:
         profiles = provider_profiles.load_profiles()
 
-        self.assertEqual(set(profiles), {"deepseek", "qwen", "mimo"})
+        self.assertEqual(set(profiles), {"deepseek", "qwen", "mimo", "glm"})
         for profile in profiles.values():
             self.assertGreaterEqual(profile.version, 1)
             self.assertTrue(profile.hosts)
             self.assertTrue(profile.selectors("message_box"))
             self.assertTrue(profile.selectors("send_button"))
             self.assertTrue(profile.selectors("response"))
+
+        glm = profiles["glm"]
+        self.assertIn("not(.empty)", glm.selector("send_button"))
+        self.assertIn(
+            ":not(.text-advance-thinking-content)",
+            glm.selector("response"),
+        )
 
     def test_profile_loader_rejects_unknown_schema(self) -> None:
         payload = {"schema_version": 999, "profiles": {}}

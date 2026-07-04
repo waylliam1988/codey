@@ -12,6 +12,7 @@ from codey.browser import (
 )
 from codey.providers.base import ChatProvider
 from codey.providers.deepseek_web import DeepSeekWebProvider
+from codey.providers.glm_web import GlmWebProvider
 from codey.providers.mimo_web import MimoWebProvider
 from codey.providers.qwen_web import QwenWebProvider
 
@@ -20,6 +21,13 @@ PROVIDER_LABELS = {
     "deepseek": "DeepSeek",
     "mimo": "MiMo",
     "qwen": "Qwen",
+    "glm": "GLM",
+}
+PROVIDER_TYPES = {
+    "deepseek": DeepSeekWebProvider,
+    "mimo": MimoWebProvider,
+    "qwen": QwenWebProvider,
+    "glm": GlmWebProvider,
 }
 
 
@@ -49,28 +57,15 @@ def connect_provider(
     bring_to_front: bool = True,
 ) -> ChatProvider:
     normalized = (provider_id or DEFAULT_PROVIDER_ID).strip().lower()
-    if normalized == "deepseek":
-        return DeepSeekWebProvider.connect(
-            port=port,
-            profile=profile,
-            open_if_missing=open_if_missing,
-            bring_to_front=bring_to_front,
-        )
-    if normalized == "qwen":
-        return QwenWebProvider.connect(
-            port=port,
-            profile=profile,
-            open_if_missing=open_if_missing,
-            bring_to_front=bring_to_front,
-        )
-    if normalized == "mimo":
-        return MimoWebProvider.connect(
-            port=port,
-            profile=profile,
-            open_if_missing=open_if_missing,
-            bring_to_front=bring_to_front,
-        )
-    raise ValueError(f"unsupported provider: {provider_id}")
+    provider_type = PROVIDER_TYPES.get(normalized)
+    if provider_type is None:
+        raise ValueError(f"unsupported provider: {provider_id}")
+    return provider_type.connect(
+        port=port,
+        profile=profile,
+        open_if_missing=open_if_missing,
+        bring_to_front=bring_to_front,
+    )
 
 
 def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | None:
@@ -94,13 +89,8 @@ def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | No
     if page is None:
         return None
     session = _BorrowedSession(page)
-    if normalized == "deepseek":
-        return DeepSeekWebProvider(session)
-    if normalized == "qwen":
-        return QwenWebProvider(session)
-    if normalized == "mimo":
-        return MimoWebProvider(session)
-    return None
+    provider_type = PROVIDER_TYPES.get(normalized)
+    return provider_type(session) if provider_type is not None else None
 
 
 def connect_existing_provider(provider_id: str) -> ChatProvider:

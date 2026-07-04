@@ -28,6 +28,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("codey.deepseek", imports)
         self.assertNotIn("codey.qwen", imports)
         self.assertNotIn("codey.mimo", imports)
+        self.assertNotIn("codey.glm", imports)
         self.assertIn("codey.providers", imports)
         self.assertIn("codey.protocols", imports)
 
@@ -39,6 +40,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn("codey.deepseek", imports)
                 self.assertNotIn("codey.qwen", imports)
                 self.assertNotIn("codey.mimo", imports)
+                self.assertNotIn("codey.glm", imports)
 
     def test_http_server_delegates_task_orchestration(self) -> None:
         imports = imported_modules(ROOT / "codey" / "server.py")

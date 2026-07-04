@@ -114,6 +114,11 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
     expect(page.locator("#composer-context")).to_contain_text(project.name)
 
     page.locator("#provider-button").click()
+    glm = page.locator('[data-provider="glm"]')
+    expect(glm).to_be_visible()
+    glm.click()
+    expect(page.locator("#provider-name")).to_have_text("GLM")
+    page.locator("#provider-button").click()
     qwen = page.locator('[data-provider="qwen"]')
     expect(qwen).to_be_visible()
     qwen.click()
@@ -329,6 +334,7 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
             "deepseek": True,
             "qwen": True,
             "mimo": True,
+            "glm": True,
         }
         codey_server.pick_folder = lambda mode="open", initial=None: str(project)
 

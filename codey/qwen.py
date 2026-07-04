@@ -18,11 +18,8 @@ from codey.web_clipboard import copy_action_text
 PROVIDER_ID = "qwen"
 PROFILE = get_profile(PROVIDER_ID)
 QWEN_URL = "https://chat.qwen.ai/"
-INPUT = PROFILE.selector("message_box")
-SEND_READY, SEND_BUTTON = PROFILE.selectors("send_button")
 STOP_ACTIVE = PROFILE.selector("stop_button")
 RESPONSE_MESSAGE = PROFILE.selector("response_message")
-ANSWER = PROFILE.combined("response")
 EMPTY_RESPONSE = PROFILE.selector("empty_response")
 RESPONSE_COPY = PROFILE.selector("copy_button")
 REGENERATE = PROFILE.selector("regenerate_button")
@@ -31,11 +28,31 @@ PREFERENCE_CHOICE = PROFILE.selector("preference_choice")
 READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 60.0
 SEND_TIMEOUT = 30.0
-INPUT_SETTLE_TIME = 1.5
+COMPOSER_SETTLE_TIME = 1.5
 SUBMIT_CONFIRM_TIMEOUT = 15.0
 COPY_READY_TIMEOUT = 10.0
 PREFERENCE_TIMEOUT = 15.0
 REGENERATE_START_TIMEOUT = 15.0
+
+_BOOTSTRAP_READY_JS = r"""
+() => {
+  if (window.__codeyQwenReady) return true;
+  const modelReady = performance.getEntriesByType('resource').some((entry) => {
+    try {
+      const url = new URL(entry.name);
+      const status = Number(entry.responseStatus || 0);
+      return url.origin === location.origin
+        && url.pathname === '/api/v2/models/'
+        && entry.responseEnd > 0
+        && (status === 0 || (status >= 200 && status < 300));
+    } catch (_) {
+      return false;
+    }
+  });
+  if (modelReady) window.__codeyQwenReady = true;
+  return modelReady;
+}
+"""
 
 
 def _visible_locator(page: Page, selector: str) -> Locator | None:
@@ -69,6 +86,16 @@ def _fill_message(page: Page, textarea: Locator, text: str) -> str:
     return f"{text} "
 
 
+def _bootstrap_ready(page: Page) -> bool:
+    """Return whether Qwen has loaded the model state used by its send handler."""
+    try:
+        return bool(page.evaluate(_BOOTSTRAP_READY_JS))
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
+        return False
+
+
 def _send_button(
     page: Page,
     *,
@@ -93,12 +120,12 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     cancellation.check()
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if _message_box(page) is not None:
+        if _message_box(page) is not None and _bootstrap_ready(page):
             return
         cancellation.wait(0.4)
-    if _message_box(page, teach=True) is not None:
+    if _message_box(page, teach=True) is not None and _bootstrap_ready(page):
         return
-    raise TimeoutError("Qwen Studio chat input did not appear. Are you logged in?")
+    raise TimeoutError("Qwen Studio did not finish loading. Are you logged in?")
 
 
 def new_chat(page: Page) -> None:
@@ -229,7 +256,8 @@ def _submit(page: Page, baseline: int, submitted_text: str = "") -> SendAttempt:
         raise TimeoutError("Qwen Studio send button did not become ready")
 
     attempt = SendAttempt()
-    cancellation.wait(INPUT_SETTLE_TIME)
+    # Qwen enables the button before its send closure receives the latest draft.
+    cancellation.wait(COMPOSER_SETTLE_TIME)
     attempt.submit("click", send.click)
     confirm_deadline = time.time() + SUBMIT_CONFIRM_TIMEOUT
     while time.time() < confirm_deadline:
@@ -248,13 +276,11 @@ def _wait_late_response(
     tick: float = 0.8,
 ) -> str:
     deadline = time.time() + max(0.0, grace)
-    last = ""
     while time.time() < deadline:
         try:
             count = _response_count(page)
             current = _last_text(page) if count else ""
             if current and (count > baseline or current != baseline_text):
-                last = current
                 if _generation_complete(page):
                     return _final_text(page)
         except cancellation.TaskCancelled:
@@ -347,7 +373,10 @@ def _chat(
         return recovered
     controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     if not attempt.confirmed:
-        raise SubmissionUncertain("Qwen Studio submission status is uncertain")
+        action = ""
+        if attempt.action_error is not None:
+            action = f"; click failed with {type(attempt.action_error).__name__}"
+        raise SubmissionUncertain(f"Qwen Studio submission status is uncertain{action}")
     raise TimeoutError(f"Qwen Studio response timed out after {response_timeout:.0f}s")
 
 

@@ -14,6 +14,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('data-provider="deepseek"', HTML)
         self.assertIn('data-provider="qwen"', HTML)
         self.assertIn('data-provider="mimo"', HTML)
+        self.assertIn('data-provider="glm"', HTML)
+        self.assertIn("glm: 'GLM'", HTML)
         self.assertIn('id="provider-dot"', HTML)
         self.assertIn("--ok-dot:", HTML)
         self.assertIn(".dot.ok", HTML)
@@ -24,13 +26,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".provider-item.active .check", HTML)
         self.assertNotIn("providerAvailability(_id) { return 'ok'; }", HTML)
 
-    def test_provider_selector_orders_deepseek_mimo_qwen(self) -> None:
+    def test_provider_selector_orders_deepseek_mimo_qwen_glm(self) -> None:
         deepseek = HTML.index('data-provider="deepseek"')
         mimo = HTML.index('data-provider="mimo"')
         qwen = HTML.index('data-provider="qwen"')
+        glm = HTML.index('data-provider="glm"')
 
         self.assertLess(deepseek, mimo)
         self.assertLess(mimo, qwen)
+        self.assertLess(qwen, glm)
 
     def test_run_and_continue_requests_keep_session_provider(self) -> None:
         self.assertIn("provider: currentProviderId()", HTML)

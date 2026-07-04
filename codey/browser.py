@@ -25,6 +25,7 @@ from codey.local_store import DEFAULT_STATE_HOME
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
+GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
 DEFAULT_PORT = 9222
 DEFAULT_PROFILE = DEFAULT_STATE_HOME / "edge-profile"
 CDP_PORT_CANDIDATES = tuple(range(DEFAULT_PORT, DEFAULT_PORT + 17))
@@ -33,6 +34,7 @@ PROVIDER_URL_CONTAINS = {
     "deepseek": "chat.deepseek.com",
     "qwen": "chat.qwen.ai",
     "mimo": "aistudio.xiaomimimo.com",
+    "glm": "chatglm.cn",
 }
 
 EDGE_PATHS = [
@@ -343,6 +345,24 @@ def open_mimo(
     return open_chat_page(
         MIMO_URL,
         "aistudio.xiaomimimo.com",
+        port=port,
+        profile=profile,
+        open_if_missing=open_if_missing,
+        bring_to_front=bring_to_front,
+    )
+
+
+def open_glm(
+    port: int = DEFAULT_PORT,
+    profile: Path = DEFAULT_PROFILE,
+    *,
+    open_if_missing: bool = True,
+    bring_to_front: bool = True,
+) -> Session:
+    """Return a session attached to a GLM tab."""
+    return open_chat_page(
+        GLM_URL,
+        "chatglm.cn",
         port=port,
         profile=profile,
         open_if_missing=open_if_missing,

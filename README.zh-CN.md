@@ -4,13 +4,13 @@
 
 [English](README.md)
 
-Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen 和小米 MiMo，然后给它们一个受控的本地工具循环：读文件、改文件、跑测试、看 diff、恢复改动。
+Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小米 MiMo 和 GLM，然后给它们一个受控的本地工具循环：读文件、改文件、跑测试、看 diff、恢复改动。
 
 它是一个本地优先、低成本、多网页模型兼容的 AI 编程工作台。
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.14`
+版本：`0.1.15`
 
 ---
 
@@ -32,7 +32,7 @@ Codey 想解决的是一个很朴素的问题：
 
 ## 它能做什么？
 
-- 在本地控制面板里选择 DeepSeek、MiMo 或 Qwen
+- 在本地控制面板里选择 DeepSeek、MiMo、Qwen 或 GLM
 - 让模型读取和修改你选择的项目目录
 - 运行测试，并把结果继续反馈给模型
 - 显示红绿 diff
@@ -61,8 +61,11 @@ Codey 想解决的是一个很朴素的问题：
 | DeepSeek Web | 已实机测试 |
 | Xiaomi MiMo Chat | 已实机测试 |
 | Qwen Studio | 已实机测试 |
+| GLM | 已实机测试 |
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
+
+`0.1.15` 增加 GLM 作为第四个模型，但不增加新的使用流程。它的 Profile 会验证真正的非空白发送状态，只读取正式答案而不混入旁边的思考区，并复用其他模型已有的单次提交、取消、恢复和 ProfileDoctor 边界。一条仅对 GLM 生效的小型格式提示会让 JSON 在 `json` 代码块中保留 ASCII 引号，但不会强迫普通聊天返回 JSON。Provider 构造和 smoke 选项现在统一来自一份注册表；原有的黑白模型选择器只增加一行 `GLM`。Qwen 现在会等待网页的模型初始化完成，不再把过早出现的输入框误判为可发送；真实需要的草稿沉降和 A/B 选择处理仍然保留。本版通过 384 项测试和真实 Edge UI E2E 全部 16 项检查；GLM 已多次完成实机编辑任务并通过独立 unittest 验证，还在另一项实机任务中作为只读 Reviewer 批准了 DeepSeek 的 Diff。Qwen 两次从全新对话完成实机编辑任务，分别使用 4 轮和 5 轮。
 
 `0.1.14` 保持前端不变，让本地工具协议更一致、更安全，也更节省任务过程中的上下文。一份小型工具契约统一提供给模型的名称、别名、示例、只读属性和结果名称。`parallel` 只接受数量受限的 `list_dir`、`read_file` 和 `grep`；批次中只要混入写文件、运行命令或嵌套批处理，就会在执行任何一项前整体拒绝。大文件按完整代码行分页，文件正文使用 16,000 字符预算，并明确给出下一页位置；小文件仍返回与之前完全相同的内容。一次 `edit` 最多可以对同一文件执行 8 个替换，但只有全部替换都在内存中验证成功后才会写入。本版通过 363 项测试、真实 Edge UI E2E 全部 16 项检查，以及 DeepSeek、Qwen、MiMo 三站各 4 轮的实机编辑任务。
 
@@ -219,7 +222,7 @@ Codey 已经测试过用 DeepSeek、MiMo 和 Qwen 修复被故意弄坏的 Codey
 python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
 ```
 
-当 Edge CDP 已打开并登录三个模型网页时，可以运行真实 Provider 矩阵。每个结果都会在 Agent 结束后再经过独立功能断言和 unittest 验证：
+当 Edge CDP 已打开并登录四个模型网页时，可以运行真实 Provider 矩阵。每个结果都会在 Agent 结束后再经过独立功能断言和 unittest 验证：
 
 ```powershell
 python -B tools/live_smoke.py --provider all --case edit --port 9222 --max-turns 10 --json
@@ -274,11 +277,12 @@ Agent Runtime -- JsonToolCodec
 ChatProvider -- DeepSeekWebProvider
              -- QwenWebProvider
              -- MimoWebProvider
+             -- GlmWebProvider
    |
 Browser Session + provider DOM driver
 ```
 
-`agent.py` 只认识 `ChatProvider`、`ProtocolCodec` 和工具调用，不知道具体网页 DOM。DeepSeek、Qwen 和 MiMo 的网页选择器分别在自己的驱动里。
+`agent.py` 只认识 `ChatProvider`、`ProtocolCodec` 和工具调用，不知道具体网页 DOM。DeepSeek、Qwen、MiMo 和 GLM 的网页选择器分别在自己的驱动里。
 
 ---
 
@@ -307,6 +311,7 @@ codey/
   deepseek.py               DeepSeek 页面驱动
   mimo.py                   MiMo 页面驱动
   qwen.py                   Qwen 页面驱动
+  glm.py                    GLM 页面驱动
   provider_diagnostics.py   小型 provider 失败记录
   receipt.py                任务完成收据
   protocols/

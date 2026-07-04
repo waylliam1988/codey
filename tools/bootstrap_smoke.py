@@ -15,7 +15,7 @@ from codey.agent import run
 from codey import provider_controls
 from codey.changes import ChangeTracker, collect_changes
 from codey.events import render_run_event
-from codey.providers.registry import connect_provider
+from codey.providers.registry import connect_provider, provider_ids
 from codey.review import (
     has_reviewable_changes,
     parse_review_with_repair,
@@ -235,8 +235,9 @@ def run_bootstrap_smoke(
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", choices=("deepseek", "qwen", "mimo"), default="deepseek")
-    ap.add_argument("--reviewer", choices=("deepseek", "qwen", "mimo"))
+    supported = provider_ids()
+    ap.add_argument("--provider", choices=supported, default="deepseek")
+    ap.add_argument("--reviewer", choices=supported)
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--max-turns", type=int, default=16)
     ap.add_argument("--keep", action="store_true")

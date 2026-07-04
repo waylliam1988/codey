@@ -24,6 +24,27 @@ class QwenDriverTests(unittest.TestCase):
     def test_ready_timeout_allows_slow_homepage(self) -> None:
         self.assertGreaterEqual(qwen.READY_TIMEOUT, 90)
 
+    def test_wait_ready_requires_model_bootstrap_after_input_appears(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        with (
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_bootstrap_ready", side_effect=[False, True]) as ready,
+            mock.patch.object(qwen.cancellation, "wait") as wait,
+        ):
+            qwen.wait_ready(page, timeout=1)
+
+        self.assertEqual(ready.call_count, 2)
+        wait.assert_called_once_with(0.4)
+
+    def test_bootstrap_ready_is_read_without_page_content(self) -> None:
+        page = mock.Mock()
+        page.evaluate.return_value = True
+
+        self.assertTrue(qwen._bootstrap_ready(page))
+
+        page.evaluate.assert_called_once_with(qwen._BOOTSTRAP_READY_JS)
+
     def test_wait_late_response_requires_generation_completion(self) -> None:
         with (
             mock.patch.object(qwen, "_response_count", return_value=2),
@@ -109,6 +130,25 @@ class QwenDriverTests(unittest.TestCase):
 
         send.click.assert_called_once_with()
 
+    def test_submit_allows_qwen_draft_state_to_settle_before_click(self) -> None:
+        page = mock.Mock()
+        send = mock.Mock()
+        events = []
+        send.click.side_effect = lambda: events.append("click")
+
+        with (
+            mock.patch.object(qwen, "_send_button", return_value=send),
+            mock.patch.object(qwen, "_submission_started", return_value=True),
+            mock.patch.object(
+                qwen.cancellation,
+                "wait",
+                side_effect=lambda seconds: events.append(("wait", seconds)),
+            ),
+        ):
+            qwen._submit(page, baseline=0, submitted_text="hello ")
+
+        self.assertEqual(events, [("wait", qwen.COMPOSER_SETTLE_TIME), "click"])
+
     def test_submit_rechecks_state_before_retry_click(self) -> None:
         page = mock.Mock()
         send = mock.Mock()
@@ -137,6 +177,33 @@ class QwenDriverTests(unittest.TestCase):
 
         send.click.assert_called_once_with()
         self.assertEqual(attempt.phase, "attempted")
+
+    def test_uncertain_submission_reports_sanitized_click_error_type(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: (_ for _ in ()).throw(ValueError("private")))
+        with (
+            mock.patch.object(qwen, "wait_ready"),
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_fill_message", return_value="hello "),
+            mock.patch.object(qwen, "_submit", return_value=attempt),
+            mock.patch.object(qwen, "_response_count", return_value=0),
+            mock.patch.object(qwen, "_last_text", return_value=""),
+            mock.patch.object(qwen, "_empty_response_visible", return_value=False),
+            mock.patch.object(qwen, "_wait_late_response", return_value=""),
+            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+            mock.patch.object(qwen.controls, "recover_response", return_value=None),
+            mock.patch.object(qwen.controls, "reject_control"),
+            mock.patch.object(qwen.cancellation, "wait"),
+        ):
+            with self.assertRaisesRegex(
+                qwen.SubmissionUncertain,
+                "click failed with ValueError",
+            ) as caught:
+                qwen.chat(page, "hello", response_timeout=0)
+
+        self.assertNotIn("private", str(caught.exception))
 
     def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
         page = mock.Mock()

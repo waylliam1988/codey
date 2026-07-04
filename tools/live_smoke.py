@@ -15,7 +15,7 @@ from codey.agent import run
 from codey import provider_controls
 from codey.changes import ChangeTracker, collect_changes
 from codey.events import render_run_event
-from codey.providers.registry import connect_provider
+from codey.providers.registry import connect_provider, provider_ids
 from codey.review import (
     has_reviewable_changes,
     parse_review_with_repair,
@@ -24,7 +24,7 @@ from codey.review import (
 )
 
 
-PROVIDER_IDS = ("deepseek", "qwen", "mimo")
+PROVIDER_IDS = provider_ids()
 
 
 def _record_event(events: list[str], event) -> None:
@@ -274,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--case", choices=("create", "edit"), default="create")
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--max-turns", type=int, default=8)
-    ap.add_argument("--reviewer", choices=("deepseek", "qwen", "mimo"))
+    ap.add_argument("--reviewer", choices=PROVIDER_IDS)
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 

@@ -736,6 +736,11 @@
               <span class="label">Qwen</span>
               <span class="check">✓</span>
             </button>
+            <button class="provider-item" data-provider="glm">
+              <span class="dot" aria-hidden="true"></span>
+              <span class="label">GLM</span>
+              <span class="check">✓</span>
+            </button>
           </div>
         </div>
         <span class="send-hint" id="send-hint">Enter</span>
@@ -788,7 +793,8 @@ const LS_ACTIVE   = 'codey:active';
 const LS_PROJECTS = 'codey:projects';
 const LS_LEGACY_PROJECT = 'codey:project';
 const DEFAULT_PROVIDER = 'deepseek';
-const PROVIDERS = ['deepseek', 'mimo', 'qwen'];
+const PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', qwen: 'Qwen', glm: 'GLM' };
+const PROVIDERS = Object.keys(PROVIDER_LABELS);
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function loadJson(key, fallback) {
@@ -864,9 +870,7 @@ function currentProviderId() {
   return s && PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER;
 }
 function providerLabel(id) {
-  if (id === 'qwen') return 'Qwen';
-  if (id === 'mimo') return 'MiMo';
-  return 'DeepSeek';
+  return PROVIDER_LABELS[id] || PROVIDER_LABELS[DEFAULT_PROVIDER];
 }
 let providerStatus = Object.fromEntries(PROVIDERS.map(id => [id, false]));
 function providerAvailability(id) { return providerStatus[id] ? 'ok' : ''; }

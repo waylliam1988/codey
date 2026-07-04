@@ -56,6 +56,22 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             bring_to_front=True,
         )
 
+    def test_glm_wrapper_uses_generic_chat_page(self) -> None:
+        session = object()
+        profile = Path("glm-profile")
+        with mock.patch.object(browser, "open_chat_page", return_value=session) as opened:
+            result = browser.open_glm(port=9666, profile=profile)
+
+        self.assertIs(result, session)
+        opened.assert_called_once_with(
+            browser.GLM_URL,
+            "chatglm.cn",
+            port=9666,
+            profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
+        )
+
     def test_open_chat_page_can_attach_without_opening_missing_tab(self) -> None:
         pw = mock.Mock()
         browser_obj = mock.Mock()
@@ -81,6 +97,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             {"type": "page", "url": "https://chat.deepseek.com/a/chat/s/1"},
             {"type": "page", "url": "https://aistudio.xiaomimimo.com/#/chat/1"},
             {"type": "service_worker", "url": "https://chat.qwen.ai/sw.js"},
+            {"type": "page", "url": "https://chatglm.cn/main/alltoolsdetail?lang=zh"},
         ]
 
         with (
@@ -90,7 +107,10 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         ):
             statuses = browser.detect_open_provider_tabs()
 
-        self.assertEqual(statuses, {"deepseek": True, "qwen": False, "mimo": True})
+        self.assertEqual(
+            statuses,
+            {"deepseek": True, "qwen": False, "mimo": True, "glm": True},
+        )
 
     def test_detect_open_provider_tabs_returns_all_false_when_cdp_is_closed(self) -> None:
         with (
@@ -100,7 +120,10 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         ):
             statuses = browser.detect_open_provider_tabs()
 
-        self.assertEqual(statuses, {"deepseek": False, "qwen": False, "mimo": False})
+        self.assertEqual(
+            statuses,
+            {"deepseek": False, "qwen": False, "mimo": False, "glm": False},
+        )
         targets.assert_not_called()
 
     def test_candidate_ports_prefers_saved_cdp_port_after_restart(self) -> None:

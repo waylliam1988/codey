@@ -5,8 +5,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.providers import DeepSeekWebProvider, MimoWebProvider, QwenWebProvider
-from codey.providers import deepseek_web, mimo_web, qwen_web, registry
+from codey.providers import (
+    DeepSeekWebProvider,
+    GlmWebProvider,
+    MimoWebProvider,
+    QwenWebProvider,
+)
+from codey.providers import deepseek_web, glm_web, mimo_web, qwen_web, registry
 
 
 class DeepSeekWebProviderTests(unittest.TestCase):
@@ -144,9 +149,63 @@ class MimoWebProviderTests(unittest.TestCase):
         session.close.assert_called_once_with()
 
 
+class GlmWebProviderTests(unittest.TestCase):
+    def test_connect_wraps_browser_session(self) -> None:
+        session = SimpleNamespace()
+        profile = Path("glm-profile")
+        with mock.patch.object(glm_web, "open_glm", return_value=session) as opened:
+            provider = GlmWebProvider.connect(port=9666, profile=profile)
+
+        self.assertIs(provider.session, session)
+        opened.assert_called_once_with(
+            port=9666,
+            profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
+        )
+
+    def test_delegates_operations_while_driver_owns_formatting_hint(self) -> None:
+        page = SimpleNamespace(url="https://chatglm.cn/main/alltoolsdetail?lang=zh")
+        page.title = mock.Mock(return_value="智谱清言")
+        session = SimpleNamespace(page=page, close=mock.Mock())
+        provider = GlmWebProvider(session)
+
+        with (
+            mock.patch.object(glm_web.glm, "new_chat") as new_chat,
+            mock.patch.object(glm_web.glm, "chat", return_value="glm reply") as chat,
+        ):
+            provider.new_chat()
+            reply = provider.send("hello", timeout=25.0)
+
+        self.assertEqual(provider.name, "GLM")
+        self.assertEqual(reply, "glm reply")
+        new_chat.assert_called_once_with(page)
+        chat.assert_called_once_with(page, "hello", response_timeout=25.0)
+
+        provider.close()
+        session.close.assert_called_once_with()
+
+    def test_blank_message_is_rejected_before_provider_touches_page(self) -> None:
+        page = mock.Mock(url="https://chatglm.cn/main/alltoolsdetail?lang=zh")
+        page.title.return_value = "智谱清言"
+        provider = GlmWebProvider(SimpleNamespace(page=page, close=mock.Mock()))
+
+        with self.assertRaisesRegex(ValueError, "cannot be blank"):
+            provider.send("   ")
+
+        page.locator.assert_not_called()
+        page.title.assert_not_called()
+
+
 class ProviderRegistryTests(unittest.TestCase):
+    def test_provider_registry_surfaces_stay_in_sync(self) -> None:
+        ids = set(registry.provider_ids())
+
+        self.assertEqual(ids, set(registry.PROVIDER_TYPES))
+        self.assertEqual(ids, set(registry.PROVIDER_URL_CONTAINS))
+
     def test_provider_ids_are_ordered_for_ui(self) -> None:
-        self.assertEqual(registry.provider_ids(), ("deepseek", "mimo", "qwen"))
+        self.assertEqual(registry.provider_ids(), ("deepseek", "mimo", "qwen", "glm"))
 
     def test_provider_tab_availability_returns_all_registered_providers(self) -> None:
         with mock.patch.object(
@@ -156,20 +215,26 @@ class ProviderRegistryTests(unittest.TestCase):
         ):
             statuses = registry.provider_tab_availability()
 
-        self.assertEqual(statuses, {"deepseek": True, "mimo": True, "qwen": False})
+        self.assertEqual(
+            statuses,
+            {"deepseek": True, "mimo": True, "qwen": False, "glm": False},
+        )
 
     def test_connect_provider_dispatches_supported_ids(self) -> None:
         deepseek = object()
         qwen = object()
         mimo = object()
+        glm = object()
         with (
             mock.patch.object(registry.DeepSeekWebProvider, "connect", return_value=deepseek),
             mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen),
             mock.patch.object(registry.MimoWebProvider, "connect", return_value=mimo),
+            mock.patch.object(registry.GlmWebProvider, "connect", return_value=glm),
         ):
             self.assertIs(registry.connect_provider("deepseek", port=9222), deepseek)
             self.assertIs(registry.connect_provider("qwen", port=9222), qwen)
             self.assertIs(registry.connect_provider("mimo", port=9222), mimo)
+            self.assertIs(registry.connect_provider("glm", port=9222), glm)
 
     def test_connect_existing_provider_does_not_open_or_raise_window(self) -> None:
         qwen = object()
@@ -193,6 +258,16 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertIsInstance(provider, QwenWebProvider)
         self.assertIs(provider.session.page, sibling)
         provider.close()
+
+    def test_borrow_open_glm_provider_reuses_sibling_page(self) -> None:
+        owner = SimpleNamespace(url="https://chat.deepseek.com/")
+        sibling = SimpleNamespace(url="https://chatglm.cn/main/alltoolsdetail?lang=zh")
+        owner.context = SimpleNamespace(pages=[owner, sibling])
+
+        provider = registry.borrow_open_provider("glm", owner)
+
+        self.assertIsInstance(provider, GlmWebProvider)
+        self.assertIs(provider.session.page, sibling)
 
     def test_borrow_open_provider_does_not_open_missing_tab(self) -> None:
         owner = SimpleNamespace(url="https://chat.deepseek.com/")
