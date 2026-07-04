@@ -1,12 +1,156 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
+from codey.tool_runtime import (
+    MAX_REPLACEMENTS,
+    READ_DEFAULT_LINES,
+    READ_MAX_LINES,
+    bounded_positive_int,
+)
 
 
 MAX_ACCIDENTAL_TOOL_CALLS = 8
+MAX_PARALLEL_CALLS = 4
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    runtime_name: str | None
+    aliases: tuple[str, ...] = ()
+    read_only: bool = False
+    parallel_safe: bool = False
+    examples: tuple[str, ...] = ()
+    description: str = ""
+
+
+TOOL_SPECS = (
+    ToolSpec(
+        "list_dir",
+        "ls",
+        aliases=("ls",),
+        read_only=True,
+        parallel_safe=True,
+        examples=('{"tool":"list_dir","args":{"path":"."}}',),
+        description="List files in a directory.",
+    ),
+    ToolSpec(
+        "read_file",
+        "read",
+        aliases=("read",),
+        read_only=True,
+        parallel_safe=True,
+        examples=(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"read_file","args":{"path":"app.py","offset":301,"limit":300}}',
+        ),
+        description="Read one file. Large files are returned in complete-line pages.",
+    ),
+    ToolSpec(
+        "read_files",
+        None,
+        read_only=True,
+        examples=('{"tool":"read_files","args":{"paths":["a.py","b.py"]}}',),
+        description=(
+            f"Read up to {MAX_ACCIDENTAL_TOOL_CALLS} files in one step. "
+            "Do not nest it inside parallel."
+        ),
+    ),
+    ToolSpec(
+        "grep",
+        "search",
+        aliases=("search",),
+        read_only=True,
+        parallel_safe=True,
+        examples=(
+            '{"tool":"grep","args":{"pattern":"login handler","path":"."}}',
+        ),
+        description="Search file contents before reading when the location is unknown.",
+    ),
+    ToolSpec(
+        "parallel",
+        None,
+        read_only=True,
+        examples=(
+            '{"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"pattern":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}',
+        ),
+        description=(
+            f"Batch at most {MAX_PARALLEL_CALLS} independent read-only list_dir, "
+            "read_file, or grep calls. Local execution remains sequential."
+        ),
+    ),
+    ToolSpec(
+        "edit",
+        "edit",
+        examples=(
+            '{"tool":"edit","args":{"path":"app.py","content":"full file contents"}}',
+            '{"tool":"edit","args":{"path":"app.py","old_string":"old exact text","new_string":"new text"}}',
+            '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}',
+        ),
+        description=(
+            f"Create or edit one file. Up to {MAX_REPLACEMENTS} replacements are "
+            "validated together and written atomically."
+        ),
+    ),
+    ToolSpec(
+        "run",
+        "run",
+        examples=(
+            '{"tool":"run","args":{"command":"python -m unittest","path":"."}}',
+        ),
+        description="Run an allowed test, build, lint, or check command.",
+    ),
+    ToolSpec(
+        "shell",
+        "shell",
+        examples=(
+            '{"tool":"shell","args":{"command":"git status --short","path":"."}}',
+        ),
+        description="Ask the user to approve a necessary non-allowlisted command.",
+    ),
+    ToolSpec(
+        "done",
+        None,
+        examples=('{"tool":"done","args":{"summary":"one-line summary"}}',),
+        description="Finish the task.",
+    ),
+    # Compatibility only. New prompts expose edit(content=...) instead.
+    ToolSpec("write", "write"),
+)
+
+
+def _tool_spec_index() -> dict[str, ToolSpec]:
+    index: dict[str, ToolSpec] = {}
+    for spec in TOOL_SPECS:
+        for name in (spec.name, *spec.aliases):
+            if name in index:
+                raise RuntimeError(f"duplicate tool contract name: {name}")
+            index[name] = spec
+    return index
+
+
+TOOL_SPEC_BY_NAME = _tool_spec_index()
+RESULT_TOOL_NAMES = {
+    spec.runtime_name: spec.name
+    for spec in TOOL_SPECS
+    if spec.runtime_name is not None and spec.examples
+}
+RESULT_TOOL_NAMES["write"] = "edit"
+
+
+def _render_tool_contract() -> str:
+    chunks: list[str] = []
+    for spec in TOOL_SPECS:
+        if not spec.examples:
+            continue
+        examples = "\n".join(f"  {example}" for example in spec.examples)
+        chunks.append(f"{examples}\n    {spec.description}")
+    return "\n\n".join(chunks)
+
 
 SYSTEM_PROMPT = """\
 You are a careful local coding agent. You cannot access the filesystem
@@ -22,94 +166,35 @@ Every reply MUST be exactly one JSON object with no other text:
 
 Available tools:
 
-  {"tool":"list_dir","args":{"path":"."}}
-    List files in a directory.
-
-  {"tool":"read_file","args":{"path":"relative/path.ext"}}
-    Read one file.
-
-  {"tool":"read_files","args":{"paths":["a.py","b.py"]}}
-    Read multiple files in one step.
-
-  {"tool":"grep","args":{"pattern":"login handler","path":".","glob":"**/*"}}
-    Search file contents. Use before reading when you do not know where code is.
-
-  {"tool":"parallel","args":{"calls":[
-    {"tool":"grep","args":{"pattern":"login","path":"."}},
-    {"tool":"list_dir","args":{"path":"."}}
-  ]}}
-    Best for exploration: combine grep, read_files, and list_dir in one step.
-    Do not wrap read_files inside parallel; call read_files directly.
-
-  {"tool":"edit","args":{"path":"relative/path.ext","content":"full file contents"}}
-    Create or overwrite a file.
-
-  {"tool":"edit","args":{
-    "path":"relative/path.ext",
-    "old_string":"old exact text copied from a read/tool result",
-    "new_string":"new replacement text"
-  }}
-    Replace a short unique block in an existing file.
-
-  {"tool":"run","args":{"command":"python -m unittest","path":"."}}
-    Run allowed tests/builds/checks.
-
-  {"tool":"shell","args":{"command":"git status --short","path":"."}}
-    Ask the user to approve a necessary non-allowlisted shell command.
-
-  {"tool":"done","args":{"summary":"one-line summary"}}
-    Finish the task.
+""" + _render_tool_contract() + """
 
 Rules:
-  - Output exactly one JSON object. No markdown fences, no code blocks, no
-    commentary, no bullet lists, no analysis labels.
-  - These tool names are local-runner JSON commands, not native website tools.
-    Never say that a tool does not exist; return the JSON object instead.
-  - Do not output multiple JSON objects in one reply. Use read_files or
-    parallel for independent multi-tool work.
-  - Call exactly one tool per message, then wait for [tool_result tool=...].
-  - [tool_result tool=...] messages are local execution results. They mean the
-    local tool already ran; do not claim the tool does not exist.
-  - Use edit for all file changes. Do not write patches as prose.
-  - Prefer old_string/new_string for small edits. Use content when creating a
-    new file or rewriting most of a file.
-  - old_string must be copied exactly from the latest file/tool result.
-  - JSON strings must escape quotes and backslashes correctly. If an exact
-    old_string/new_string would be hard to escape, use content with the full
-    file instead.
-  - Paths are always relative to the project root. No absolute paths, no parent
-    directory traversal.
-  - Do not repeat a tool with identical args if a tool_result already contains
-    the output.
-  - Use run only for verification commands such as python -m unittest,
-    python -m pytest, npm test, npm run build, go test ./..., cargo test.
-  - run commands must be simple commands. Do not use pipes, redirects,
-    command chaining, tail/head, or shell-only syntax.
-  - Never use run/shell to write files. No sed -i, tee, heredocs, or redirects
-    to create or overwrite source files. Use edit instead.
+  - Output exactly one JSON object. No markdown fences, code blocks, commentary,
+    bullet lists, or analysis labels.
+  - These are local-runner JSON commands, not native website tools. Never say a
+    tool does not exist; return the JSON object instead.
+  - Call one tool per message, then wait for [tool_result tool=...]. read_files
+    and parallel are the only read-only batching wrappers.
+  - parallel accepts only list_dir, read_file, and grep, with at most four calls.
+    It never accepts edit, run, shell, done, read_files, or nested parallel.
+  - A trailing [read_file page: ...] line is metadata, not file content. Never
+    include it in old_string. Continue with the stated offset when needed.
+  - Use edit for all file changes. Use old_string/new_string for one small edit,
+    replacements for multiple edits in one file, and content only for creation
+    or a substantial rewrite. Never mix these edit modes.
+  - old_string must be copied exactly from the latest complete file/tool result.
+    An overlong-line preview is not a complete old_string.
+  - JSON strings must escape quotes and backslashes correctly. If exact strings
+    are hard to escape, use content with the full file instead.
+  - Paths are relative to the project root. No absolute paths or parent traversal.
+  - Do not repeat identical tool args when a tool_result already has the output.
+  - Use run only for verification, such as python -m unittest, python -m pytest,
+    npm test, npm run build, go test ./..., or cargo test.
+  - run commands must be simple. No pipes, redirects, chaining, tail/head, or
+    shell-only syntax. Never use run/shell to write files; use edit.
+  - [tool_result tool=...] means the local tool already ran. Continue from it.
   - If the task is complete, call done(summary). Do not summarize outside JSON.
 """
-
-
-TOOL_ALIASES = {
-    "list_dir": "ls",
-    "ls": "ls",
-    "read_file": "read",
-    "read": "read",
-    "grep": "search",
-    "search": "search",
-    "run": "run",
-    "shell": "shell",
-    "edit": "edit",
-    "write": "write",
-}
-
-RESULT_TOOL_NAMES = {
-    "ls": "list_dir",
-    "read": "read_file",
-    "search": "grep",
-    "write": "edit",
-}
 
 
 def _balanced_json_objects(text: str) -> list[dict[str, Any]]:
@@ -178,6 +263,22 @@ def _summary_from_args(args: dict[str, Any]) -> str:
     return "done"
 
 
+class ProtocolValidationError(ValueError):
+    pass
+
+
+def _positive_int_arg(
+    args: dict[str, Any],
+    name: str,
+    default: int,
+    maximum: int | None = None,
+) -> int:
+    try:
+        return bounded_positive_int(args.get(name, default), name, maximum)
+    except ValueError as exc:
+        raise ProtocolValidationError(str(exc)) from exc
+
+
 class JsonToolCodec:
     name = "json"
 
@@ -187,7 +288,12 @@ class JsonToolCodec:
     def parse(self, text: str) -> ToolPlan:
         calls: list[ToolCall] = []
         for obj in _balanced_json_objects(text):
-            plan = self._parse_object(obj)
+            try:
+                plan = self._parse_object(obj)
+            except ProtocolValidationError as exc:
+                return ToolPlan(calls=[], control=None, protocol_error=str(exc))
+            if plan.protocol_error:
+                return plan
             if plan.calls:
                 calls.extend(plan.calls)
                 if len(calls) >= MAX_ACCIDENTAL_TOOL_CALLS:
@@ -263,46 +369,104 @@ class JsonToolCodec:
         paths = args.get("paths")
         if isinstance(paths, str):
             paths = [paths]
-        if not isinstance(paths, list):
-            return []
+        if not isinstance(paths, list) or not paths:
+            raise ProtocolValidationError("read_files requires a non-empty paths list")
+        if len(paths) > MAX_ACCIDENTAL_TOOL_CALLS:
+            raise ProtocolValidationError(
+                f"read_files accepts at most {MAX_ACCIDENTAL_TOOL_CALLS} paths"
+            )
         calls = []
         for path in paths:
-            if path:
-                calls.append(ToolCall(name="read", args={"path": str(path)}))
+            if not path:
+                raise ProtocolValidationError("read_files paths cannot be empty")
+            calls.append(ToolCall(name="read", args={"path": str(path)}))
         return calls
 
     def _parallel(self, args: dict[str, Any]) -> list[ToolCall]:
         raw_calls = args.get("calls")
-        if not isinstance(raw_calls, list):
-            return []
-        calls: list[ToolCall] = []
+        if not isinstance(raw_calls, list) or not raw_calls:
+            raise ProtocolValidationError("parallel requires a non-empty calls list")
+        if len(raw_calls) > MAX_PARALLEL_CALLS:
+            raise ProtocolValidationError(
+                f"parallel accepts at most {MAX_PARALLEL_CALLS} read-only calls"
+            )
+
+        validated: list[tuple[str, dict[str, Any]]] = []
         for raw in raw_calls:
             if not isinstance(raw, dict):
-                continue
-            tool = str(raw.get("tool") or raw.get("name") or "")
-            raw_args = _object_args(raw)
-            normalized = tool.lower().strip()
-            if normalized in {"parallel", "done", "continue"}:
-                continue
-            if normalized == "read_files":
-                calls.extend(self._read_files(raw_args))
-                continue
+                raise ProtocolValidationError("every parallel call must be an object")
+            tool = str(raw.get("tool") or raw.get("name") or "").lower().strip()
+            spec = TOOL_SPEC_BY_NAME.get(tool)
+            if spec is None or not spec.parallel_safe:
+                raise ProtocolValidationError(
+                    "parallel accepts read-only list_dir, read_file, and grep calls only"
+                )
+            validated.append((tool, _object_args(raw)))
+
+        calls: list[ToolCall] = []
+        for tool, raw_args in validated:
             call = self._tool_call(tool, raw_args)
-            if call is not None:
-                calls.append(call)
+            if call is None:
+                raise ProtocolValidationError(f"invalid {tool} call inside parallel")
+            calls.append(call)
         return calls
 
     def _tool_call(self, tool: str, args: dict[str, Any]) -> ToolCall | None:
-        normalized = TOOL_ALIASES.get(tool.lower().strip())
-        if normalized is None:
+        spec = TOOL_SPEC_BY_NAME.get(tool.lower().strip())
+        if spec is None or spec.runtime_name is None:
             return None
+        normalized = spec.runtime_name
 
         path = _text(args.get("path") or args.get("cwd"), ".").strip() or "."
         call_args: dict[str, Any] = {"path": path}
 
         if normalized == "edit":
-            if "content" in args:
+            has_content = "content" in args
+            has_replacements = "replacements" in args
+            has_single = any(
+                name in args
+                for name in ("old_string", "new_string", "search", "replace", "replacement")
+            )
+            if sum((has_content, has_replacements, has_single)) != 1:
+                raise ProtocolValidationError(
+                    "edit requires exactly one mode: content, old_string/new_string, "
+                    "or replacements"
+                )
+            if has_content:
                 call_args["content"] = _text(args.get("content"))
+            elif has_replacements:
+                replacements = args.get("replacements")
+                if not isinstance(replacements, list) or not replacements:
+                    raise ProtocolValidationError(
+                        "edit replacements must be a non-empty list"
+                    )
+                if len(replacements) > MAX_REPLACEMENTS:
+                    raise ProtocolValidationError(
+                        f"edit supports at most {MAX_REPLACEMENTS} replacements"
+                    )
+                normalized_replacements: list[dict[str, str]] = []
+                for item in replacements:
+                    if not isinstance(item, dict):
+                        raise ProtocolValidationError(
+                            "every edit replacement must be an object"
+                        )
+                    old = item.get("old_string", item.get("search"))
+                    if "new_string" in item:
+                        new = item.get("new_string")
+                    elif "replace" in item:
+                        new = item.get("replace")
+                    else:
+                        new = item.get("replacement")
+                    if old is None or new is None or not str(old):
+                        raise ProtocolValidationError(
+                            "every edit replacement requires non-empty old_string "
+                            "and a new_string"
+                        )
+                    normalized_replacements.append({
+                        "search": _text(old),
+                        "replace": _text(new),
+                    })
+                call_args["replacements"] = normalized_replacements
             else:
                 old = args.get("old_string")
                 new = args.get("new_string")
@@ -310,24 +474,34 @@ class JsonToolCodec:
                     old = args.get("search")
                 if new is None:
                     new = args.get("replace", args.get("replacement"))
-                if old is None or new is None:
-                    return None
+                if old is None or new is None or not str(old):
+                    raise ProtocolValidationError(
+                        "edit requires non-empty old_string and a new_string"
+                    )
                 call_args["replacements"] = [{"search": _text(old), "replace": _text(new)}]
         elif normalized == "write":
             if "content" not in args:
-                return None
+                raise ProtocolValidationError("write requires content")
             call_args["content"] = _text(args.get("content"))
+        elif normalized == "read":
+            if "offset" in args:
+                call_args["offset"] = _positive_int_arg(args, "offset", 1)
+            if "limit" in args:
+                call_args["limit"] = _positive_int_arg(
+                    args,
+                    "limit",
+                    READ_DEFAULT_LINES,
+                    READ_MAX_LINES,
+                )
         elif normalized == "search":
             pattern = args.get("pattern", args.get("query"))
             if not pattern:
-                return None
+                raise ProtocolValidationError("grep requires a pattern")
             call_args["query"] = _text(pattern)
-            if "glob" in args:
-                call_args["glob"] = _text(args.get("glob"))
         elif normalized in {"run", "shell"}:
             command = args.get("command", args.get("cmd"))
             if not command:
-                return None
+                raise ProtocolValidationError(f"{spec.name} requires a command")
             call_args["command"] = _text(command)
 
         return ToolCall(name=normalized, args=call_args)

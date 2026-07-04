@@ -1,7 +1,35 @@
-# Codey 0.1.13 Test Report
+# Codey 0.1.14 Test Report
 
 Date: 2026-07-04
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen tabs open
+
+## 0.1.14 Protocol Efficiency and Safety
+
+The JSON tool protocol now derives its public names, aliases, examples,
+read-only properties, and result labels from one compact contract. Unsafe
+`parallel` batches are rejected as a whole before execution. `read_file`
+returns large UTF-8 files in complete-line pages with bounded line and file
+content character counts, while preserving the exact output of small and empty files.
+Structured `replacements` apply up to eight changes to one file after every
+search is validated in memory; a failed later search leaves the file intact.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 363 passed |
+| Tool contract examples and aliases | Generated and parsed from one immutable specification |
+| Unsafe `parallel` with a valid read before an edit | Entire batch rejected; no tool event or file change |
+| `parallel` wrappers, commands, writes, nesting, and over-limit batches | Rejected before execution |
+| `read_file` pagination | Complete lines, explicit next offset, 300-line default, 600-line maximum, 16,000-character file-content budget |
+| Empty and small files | Previous output preserved exactly |
+| Overlong single line | Bounded head/tail preview marked unsafe for `old_string` |
+| Atomic replacements | Later validation failure leaves original bytes unchanged; eight-item limit enforced in codec and runtime |
+| Real Edge UI E2E | All 16 checks passed |
+| Live DeepSeek edit task | Passed in 4 turns; unittest passed |
+| Live Qwen edit task | Passed in 4 turns; `read_files` used; unittest passed |
+| Live MiMo edit task | Passed in 4 turns; unittest passed |
+| New UI controls or cards | None |
 
 ## 0.1.13 Runtime Ownership and Provider Context
 

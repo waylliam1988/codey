@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.13`
+Version: `0.1.14`
 
 ---
 
@@ -63,6 +63,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | Qwen Studio | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.14` keeps the interface unchanged while making the local tool protocol more consistent, safer, and more context-efficient during tasks. One compact tool contract now supplies the model-facing names, aliases, examples, read-only properties, and result labels. `parallel` accepts only bounded `list_dir`, `read_file`, and `grep` calls and rejects an unsafe batch before any item runs. Large files are returned in complete-line pages with an explicit next offset and a 16,000-character budget for file content; small files keep their exact previous output. A single `edit` call can apply up to eight replacements to one file, but writes only after every replacement validates in memory. The release passed 363 tests, all 16 real Edge UI E2E checks, and live edit tasks on DeepSeek, Qwen, and MiMo in four turns each.
 
 Version `0.1.13` keeps the interface unchanged while tightening the runtime underneath it. Git and snapshot change handling now live together in `changes.py`; local runtime files share one state root; and every UI, CLI, and smoke task owns an explicit provider context that is cleared after success, cancellation, connection failure, or CDP close failure. Qwen now commits its controlled composer state with one real trailing key and verifies the exact submitted text before sending. The release passed 344 tests, all 16 real Edge UI E2E checks, and live edit tasks on DeepSeek, Qwen, and MiMo.
 

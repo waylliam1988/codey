@@ -8,7 +8,17 @@ from pathlib import Path
 from unittest import mock
 
 from codey import cancellation
-from codey.tool_runtime import edit_file, read_file, run_command, write_file
+from codey.tool_runtime import (
+    EditBlock,
+    LONG_LINE_MARKER,
+    MAX_REPLACEMENTS,
+    READ_MAX_CHARS,
+    READ_MAX_LINES,
+    edit_file,
+    read_file,
+    run_command,
+    write_file,
+)
 
 
 class ToolOutcomeTests(unittest.TestCase):
@@ -95,21 +105,126 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.changed)
 
+    def test_read_file_pages_on_complete_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.txt").write_text(
+                "one\ntwo\nthree\nfour\nfive\n",
+                encoding="utf-8",
+            )
+
+            first = read_file(root, "app.txt", limit=2)
+            middle = read_file(root, "app.txt", offset=3, limit=2)
+            last = read_file(root, "app.txt", offset=5, limit=2)
+
+        self.assertTrue(first.truncated)
+        self.assertTrue(first.output.startswith("one\ntwo\n"))
+        self.assertIn("lines 1-2 of 5; next offset=3", first.output)
+        self.assertTrue(middle.output.startswith("three\nfour\n"))
+        self.assertIn("next offset=5", middle.output)
+        self.assertTrue(last.output.startswith("five\n"))
+        self.assertIn("lines 5-5 of 5", last.output)
+        self.assertNotIn("next offset=", last.output)
+
+    def test_read_file_character_budget_never_splits_a_normal_line(self) -> None:
+        first_line = "a" * (READ_MAX_CHARS // 2) + "\n"
+        second_line = "b" * (READ_MAX_CHARS // 2) + "\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "large.txt").write_text(first_line + second_line, encoding="utf-8")
+
+            outcome = read_file(root, "large.txt")
+
+        content, metadata = outcome.output.rsplit("\n\n[", 1)
+        self.assertEqual(content, first_line.rstrip("\n"))
+        self.assertNotIn("b", content)
+        self.assertIn("lines 1-1 of 2; next offset=2", metadata)
+
+    def test_read_file_marks_overlong_line_as_preview_only(self) -> None:
+        line = "HEAD" + ("x" * READ_MAX_CHARS) + "TAIL\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "generated.txt").write_text(line + "next\n", encoding="utf-8")
+
+            outcome = read_file(root, "generated.txt")
+
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.truncated)
+        self.assertIn("HEAD", outcome.output)
+        self.assertIn("TAIL", outcome.output)
+        self.assertIn(LONG_LINE_MARKER.strip(), outcome.output)
+        self.assertIn("preview only, not a complete old_string", outcome.output)
+        self.assertIn("next offset=2", outcome.output)
+
+    def test_read_file_validates_page_bounds_and_empty_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "empty.txt").write_text("", encoding="utf-8")
+            (root / "one.txt").write_text("one\n", encoding="utf-8")
+
+            empty = read_file(root, "empty.txt")
+            past_end = read_file(root, "one.txt", offset=2)
+            zero = read_file(root, "one.txt", limit=0)
+            fractional = read_file(root, "one.txt", offset=1.5)
+            oversized = read_file(root, "one.txt", limit=READ_MAX_LINES + 1)
+
+        self.assertEqual(empty.output, "")
+        self.assertFalse(past_end.ok)
+        self.assertIn("exceeds one.txt total lines 1", past_end.output)
+        self.assertIn("positive integer", zero.output)
+        self.assertIn("positive integer", fractional.output)
+        self.assertIn(f"at most {READ_MAX_LINES}", oversized.output)
+
     def test_write_and_edit_reject_oversized_result_without_changing_file(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             path = root / "app.txt"
             path.write_text("old", encoding="utf-8")
-            body = "<<<<<<< SEARCH\nold\n=======\nlarge\n>>>>>>> REPLACE"
+            blocks = [EditBlock("old", "large")]
 
             with mock.patch("codey.tool_runtime.WRITE_MAX_FILE_BYTES", 4):
                 written = write_file(root, "new.txt", "large")
-                edited = edit_file(root, "app.txt", body)
+                edited = edit_file(root, "app.txt", blocks)
 
             self.assertFalse(written.ok)
             self.assertFalse((root / "new.txt").exists())
             self.assertFalse(edited.ok)
             self.assertEqual(path.read_text(encoding="utf-8"), "old")
+
+    def test_multiple_replacements_are_written_once_after_all_validate(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.txt"
+            path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+            blocks = [
+                EditBlock("one", "ONE"),
+                EditBlock("two", "TWO"),
+                EditBlock("missing", "THREE"),
+            ]
+
+            failed = edit_file(root, "app.txt", blocks)
+            remaining = path.read_text(encoding="utf-8")
+
+        self.assertFalse(failed.ok)
+        self.assertEqual(remaining, "one\ntwo\nthree\n")
+
+    def test_runtime_rejects_more_than_maximum_replacements(self) -> None:
+        blocks = [
+            EditBlock(str(index), "x")
+            for index in range(MAX_REPLACEMENTS + 1)
+        ]
+        original = "\n".join(str(index) for index in range(MAX_REPLACEMENTS + 1))
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.txt"
+            path.write_text(original, encoding="utf-8")
+
+            outcome = edit_file(root, "app.txt", blocks)
+            remaining = path.read_text(encoding="utf-8")
+
+        self.assertFalse(outcome.ok)
+        self.assertIn(f"at most {MAX_REPLACEMENTS}", outcome.output)
+        self.assertEqual(remaining, original)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ from codey.models import ToolCall, ToolPlan, ToolResult
 from codey.providers import ChatProvider
 from codey.protocols import JsonToolCodec, ProtocolCodec
 from codey.tool_runtime import (
+    EditBlock,
     ToolOutcome,
     edit_file,
     list_directory,
@@ -36,6 +37,15 @@ from codey.tool_runtime import (
 
 DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
+SUPPORTED_TOOL_NAMES = frozenset({
+    "edit",
+    "ls",
+    "read",
+    "run",
+    "search",
+    "shell",
+    "write",
+})
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
 VERIFICATION_REQUEST_RE = re.compile(
@@ -105,18 +115,18 @@ def _call_arg(call: ToolCall, name: str, default: str = "") -> str:
     return str(value)
 
 
-def _edit_body_from_call(call: ToolCall) -> str:
+def _edit_blocks_from_call(call: ToolCall) -> list[EditBlock]:
     replacements = call.args.get("replacements")
     if not isinstance(replacements, list):
-        return ""
-    blocks: list[str] = []
+        return []
+    blocks: list[EditBlock] = []
     for item in replacements:
         if not isinstance(item, dict):
             continue
         search = str(item.get("search") or "")
         replace = str(item.get("replace") or "")
-        blocks.append(f"<<<<<<< SEARCH\n{search}\n=======\n{replace}\n>>>>>>> REPLACE")
-    return "\n".join(blocks)
+        blocks.append(EditBlock(search, replace))
+    return blocks
 
 
 def _edit_has_content(call: ToolCall) -> bool:
@@ -281,6 +291,22 @@ def run(
             emit(RunEvent.status("[agent] stopped by user."))
             return finish("stopped", "stopped", turn)
         plan = parse_reply(reply, codec)
+        if plan.protocol_error:
+            stagnant_count += 1
+            emit(RunEvent.status(
+                f"[agent] rejected invalid tool request: {plan.protocol_error}"
+            ))
+            if stagnant_count >= stagnant_turns:
+                msg = f"stopped after {stagnant_turns} invalid tool requests"
+                emit(RunEvent.status(f"[agent] {msg}."))
+                return finish(msg, "protocol", turn)
+            repair = (
+                f"Protocol error: {plan.protocol_error}\n\n"
+                f"{codec.repair_prompt()}"
+            )
+            reply = send_prompt(repair, restart_request=repair)
+            report_reply(turn + 1, reply, "(after protocol correction)")
+            continue
         calls = plan.calls
         control = plan.control
 
@@ -308,7 +334,7 @@ def run(
                     else:
                         if change_tracker is not None:
                             change_tracker.capture_before(path)
-                        outcome = edit_file(project, path, _edit_body_from_call(call))
+                        outcome = edit_file(project, path, _edit_blocks_from_call(call))
                     if outcome.ok and outcome.changed:
                         if change_tracker is not None:
                             change_tracker.capture_after(path)
@@ -317,7 +343,12 @@ def run(
                         checks_passed = False
                         changed_files.add(path)
                 elif call.name == "read":
-                    outcome = read_file(project, path)
+                    read_options = {
+                        name: call.args[name]
+                        for name in ("offset", "limit")
+                        if name in call.args
+                    }
+                    outcome = read_file(project, path, **read_options)
                 elif call.name == "ls":
                     outcome = list_directory(project, path)
                 elif call.name == "search":

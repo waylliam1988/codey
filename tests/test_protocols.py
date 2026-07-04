@@ -1,9 +1,19 @@
 from __future__ import annotations
 
+import json
 import unittest
 
+from codey.agent import SUPPORTED_TOOL_NAMES
 from codey.models import ToolCall, ToolResult
 from codey.protocols import JsonToolCodec
+from codey.protocols.json_codec import (
+    MAX_ACCIDENTAL_TOOL_CALLS,
+    MAX_PARALLEL_CALLS,
+    RESULT_TOOL_NAMES,
+    TOOL_SPECS,
+    TOOL_SPEC_BY_NAME,
+)
+from codey.tool_runtime import MAX_REPLACEMENTS, READ_MAX_LINES
 
 
 class JsonToolCodecTests(unittest.TestCase):
@@ -38,6 +48,23 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIsNotNone(plan.control)
         self.assertEqual(plan.control.kind, "continue")
 
+    def test_read_files_rejects_more_than_the_batch_limit(self) -> None:
+        plan = JsonToolCodec().parse(json.dumps({
+            "tool": "read_files",
+            "args": {
+                "paths": [
+                    f"{index}.py"
+                    for index in range(MAX_ACCIDENTAL_TOOL_CALLS + 1)
+                ],
+            },
+        }))
+
+        self.assertEqual(plan.calls, [])
+        self.assertIn(
+            f"at most {MAX_ACCIDENTAL_TOOL_CALLS}",
+            plan.protocol_error,
+        )
+
     def test_parse_parallel_tool_calls(self) -> None:
         codec = JsonToolCodec()
         plan = codec.parse(
@@ -51,18 +78,114 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(plan.calls[0].args["query"], "login")
         self.assertEqual(plan.calls[1].args["path"], "src")
 
-    def test_parse_parallel_tolerates_read_files_with_misnested_paths(self) -> None:
+    def test_parallel_rejects_unsafe_batch_without_partial_execution(self) -> None:
         codec = JsonToolCodec()
         plan = codec.parse(
             '{"tool":"parallel","args":{"calls":['
-            '{"tool":"read_files","paths":["pricing.py","test_pricing.py"]}'
+            '{"tool":"read_file","args":{"path":"safe.py"}},'
+            '{"tool":"edit","args":{"path":"app.py","content":"changed"}}'
             ']}}'
         )
 
-        self.assertEqual([call.name for call in plan.calls], ["read", "read"])
-        self.assertEqual([call.args["path"] for call in plan.calls], ["pricing.py", "test_pricing.py"])
-        self.assertIsNotNone(plan.control)
-        self.assertEqual(plan.control.kind, "continue")
+        self.assertEqual(plan.calls, [])
+        self.assertIsNone(plan.control)
+        self.assertIn("read-only", plan.protocol_error)
+
+    def test_parallel_rejects_every_non_leaf_or_mutating_tool(self) -> None:
+        codec = JsonToolCodec()
+        unsafe = ("read_files", "parallel", "edit", "run", "shell", "done")
+
+        for name in unsafe:
+            with self.subTest(tool=name):
+                plan = codec.parse(json.dumps({
+                    "tool": "parallel",
+                    "args": {"calls": [{"tool": name, "args": {}}]},
+                }))
+                self.assertEqual(plan.calls, [])
+                self.assertIn("read-only", plan.protocol_error)
+
+    def test_parallel_rejects_more_than_the_contract_limit(self) -> None:
+        calls = [
+            {"tool": "read_file", "args": {"path": f"{index}.py"}}
+            for index in range(MAX_PARALLEL_CALLS + 1)
+        ]
+
+        plan = JsonToolCodec().parse(json.dumps({
+            "tool": "parallel",
+            "args": {"calls": calls},
+        }))
+
+        self.assertEqual(plan.calls, [])
+        self.assertIn(f"at most {MAX_PARALLEL_CALLS}", plan.protocol_error)
+
+    def test_parse_read_file_page(self) -> None:
+        plan = JsonToolCodec().parse(
+            '{"tool":"read_file","args":{"path":"app.py","offset":301,"limit":120}}'
+        )
+
+        self.assertEqual(
+            plan.calls[0].args,
+            {"path": "app.py", "offset": 301, "limit": 120},
+        )
+
+    def test_rejects_invalid_read_file_page(self) -> None:
+        codec = JsonToolCodec()
+
+        zero = codec.parse('{"tool":"read_file","args":{"path":"app.py","offset":0}}')
+        fractional = codec.parse(
+            '{"tool":"read_file","args":{"path":"app.py","offset":1.5}}'
+        )
+        oversized = codec.parse(json.dumps({
+            "tool": "read_file",
+            "args": {"path": "app.py", "limit": READ_MAX_LINES + 1},
+        }))
+
+        self.assertIn("positive integer", zero.protocol_error)
+        self.assertIn("positive integer", fractional.protocol_error)
+        self.assertIn(f"at most {READ_MAX_LINES}", oversized.protocol_error)
+
+    def test_parse_atomic_replacements(self) -> None:
+        plan = JsonToolCodec().parse(json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "replacements": [
+                    {"old_string": "one", "new_string": "ONE"},
+                    {"old_string": "two", "new_string": ""},
+                ],
+            },
+        }))
+
+        self.assertEqual(plan.protocol_error, "")
+        self.assertEqual(plan.calls[0].args["replacements"], [
+            {"search": "one", "replace": "ONE"},
+            {"search": "two", "replace": ""},
+        ])
+
+    def test_replacements_limit_and_edit_modes_are_protocol_errors(self) -> None:
+        codec = JsonToolCodec()
+        too_many = codec.parse(json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "replacements": [
+                    {"old_string": str(index), "new_string": "x"}
+                    for index in range(MAX_REPLACEMENTS + 1)
+                ],
+            },
+        }))
+        mixed = codec.parse(json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "content": "new",
+                "old_string": "old",
+                "new_string": "new",
+            },
+        }))
+
+        self.assertIn(f"at most {MAX_REPLACEMENTS}", too_many.protocol_error)
+        self.assertIn("exactly one mode", mixed.protocol_error)
 
     def test_extracts_json_from_web_reply_noise(self) -> None:
         codec = JsonToolCodec()
@@ -111,13 +234,55 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("The local runner executes tools", prompt)
         self.assertIn("not native website tools", prompt)
         self.assertIn("If the website says a tool does not exist", prompt)
-        self.assertIn("Never say that a tool does not exist", prompt)
-        self.assertIn("Do not output multiple JSON objects", prompt)
-        self.assertIn("Do not wrap read_files inside parallel", prompt)
+        self.assertIn("Never say a\n    tool does not exist", prompt)
+        self.assertIn("Output exactly one JSON object", prompt)
+        self.assertIn("It never accepts edit, run, shell", prompt)
+        self.assertIn("read_file page:", prompt)
+        self.assertIn("written atomically", prompt)
         self.assertIn("JSON strings must escape quotes", prompt)
         self.assertIn("use content with the full", prompt)
-        self.assertIn("Do not use pipes, redirects", prompt)
+        self.assertIn("No pipes, redirects", prompt)
         self.assertNotIn("You are Codey", prompt)
+
+    def test_tool_contract_names_and_examples_stay_in_sync(self) -> None:
+        codec = JsonToolCodec()
+        names = [name for spec in TOOL_SPECS for name in (spec.name, *spec.aliases)]
+
+        self.assertEqual(len(names), len(set(names)))
+        self.assertEqual(set(names), set(TOOL_SPEC_BY_NAME))
+        for spec in TOOL_SPECS:
+            self.assertFalse(spec.parallel_safe and not spec.read_only)
+            for example in spec.examples:
+                with self.subTest(tool=spec.name, example=example):
+                    plan = codec.parse(example)
+                    self.assertEqual(plan.protocol_error, "")
+                    self.assertTrue(plan.calls or plan.control is not None)
+
+    def test_tool_contract_runtime_names_match_agent_and_results(self) -> None:
+        runtime_names = {
+            spec.runtime_name
+            for spec in TOOL_SPECS
+            if spec.runtime_name is not None
+        }
+
+        self.assertEqual(runtime_names, SUPPORTED_TOOL_NAMES)
+        self.assertEqual(set(RESULT_TOOL_NAMES), runtime_names)
+
+    def test_legacy_tool_names_parse_to_supported_runtime_calls(self) -> None:
+        cases = (
+            ("ls", {"path": "."}, "ls"),
+            ("read", {"path": "app.py"}, "read"),
+            ("search", {"path": ".", "query": "needle"}, "search"),
+            ("write", {"path": "app.py", "content": "VALUE = 1\n"}, "write"),
+        )
+
+        for name, args, runtime_name in cases:
+            with self.subTest(tool=name):
+                plan = JsonToolCodec().parse(json.dumps({"tool": name, "args": args}))
+                self.assertEqual(plan.protocol_error, "")
+                self.assertEqual(len(plan.calls), 1)
+                self.assertEqual(plan.calls[0].name, runtime_name)
+                self.assertIn(plan.calls[0].name, SUPPORTED_TOOL_NAMES)
 
     def test_repair_prompt_says_website_tool_errors_are_irrelevant(self) -> None:
         prompt = JsonToolCodec().repair_prompt()

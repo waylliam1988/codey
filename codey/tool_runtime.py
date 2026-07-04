@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -30,15 +29,16 @@ SEARCH_EXCLUDED_DIRS = {
 SEARCH_MAX_RESULTS = 80
 SEARCH_MAX_FILE_BYTES = 512 * 1024
 WRITE_MAX_FILE_BYTES = 512 * 1024
+READ_DEFAULT_LINES = 300
+READ_MAX_LINES = 600
+READ_MAX_CHARS = 16_000
+MAX_REPLACEMENTS = 8
 RUN_TIMEOUT_SECONDS = 90
 RUN_OUTPUT_LIMIT = 24_000
 RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
 RUN_ALLOWED_PYTHON_FLAGS = {"-B"}
 RUN_ALLOWED_NPM_SCRIPTS = {"test", "build", "lint", "check", "typecheck"}
-EDIT_BLOCK_RE = re.compile(
-    r"<<<<<<< SEARCH\n(.*?)\n=======\n(.*?)\n>>>>>>> REPLACE",
-    re.DOTALL,
-)
+LONG_LINE_MARKER = "\n[... middle of overlong line omitted; not a complete old_string ...]\n"
 
 
 @dataclass(frozen=True)
@@ -88,23 +88,6 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
     return ToolOutcome(f"wrote {rel} ({len(content)} chars)", True, changed=True)
 
 
-def parse_edit_body(body: str) -> list[EditBlock]:
-    matches = list(EDIT_BLOCK_RE.finditer(body.strip()))
-    if not matches:
-        raise ValueError("edit body must contain SEARCH/REPLACE block")
-    leftover = EDIT_BLOCK_RE.sub("", body.strip()).strip()
-    if leftover:
-        raise ValueError("edit body contains text outside SEARCH/REPLACE blocks")
-    blocks: list[EditBlock] = []
-    for match in matches:
-        search = match.group(1)
-        replace = match.group(2)
-        if not search:
-            raise ValueError("SEARCH section cannot be empty")
-        blocks.append(EditBlock(search=search, replace=replace))
-    return blocks
-
-
 def _replace_unique(content: str, search: str, replace: str) -> tuple[str, bool]:
     count = content.count(search)
     if count == 1:
@@ -118,17 +101,23 @@ def _replace_unique(content: str, search: str, replace: str) -> tuple[str, bool]
     return content, False
 
 
-def edit_file(root: Path, rel: str, body: str) -> ToolOutcome:
+def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
+    if not blocks:
+        return ToolOutcome.error("edit requires at least one replacement")
+    if len(blocks) > MAX_REPLACEMENTS:
+        return ToolOutcome.error(
+            f"edit supports at most {MAX_REPLACEMENTS} replacements"
+        )
+    if any(not block.search for block in blocks):
+        return ToolOutcome.error("edit SEARCH text cannot be empty")
+
     path = safe_join(root, rel)
     if not path.is_file():
         return ToolOutcome.error(f"not a file: {rel}")
     try:
-        blocks = parse_edit_body(body)
         content = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
-    except ValueError as exc:
-        return ToolOutcome.error(str(exc))
 
     updated = content
     for block in blocks:
@@ -157,14 +146,98 @@ def edit_file(root: Path, rel: str, body: str) -> ToolOutcome:
     return ToolOutcome(f"edited {rel} ({count} {label})", True, changed=True)
 
 
-def read_file(root: Path, rel: str) -> ToolOutcome:
+def bounded_positive_int(
+    value: object,
+    name: str,
+    maximum: int | None = None,
+) -> int:
+    if isinstance(value, int) and not isinstance(value, bool):
+        parsed = value
+    elif isinstance(value, str) and value.strip().isdigit():
+        parsed = int(value)
+    else:
+        raise ValueError(f"{name} must be a positive integer")
+    if parsed < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    if maximum is not None and parsed > maximum:
+        raise ValueError(f"{name} must be at most {maximum}")
+    return parsed
+
+
+def _append_page_metadata(content: str, metadata: str) -> str:
+    separator = "" if content.endswith("\n") else "\n"
+    return f"{content}{separator}\n[{metadata}]"
+
+
+def read_file(
+    root: Path,
+    rel: str,
+    *,
+    offset: int = 1,
+    limit: int = READ_DEFAULT_LINES,
+) -> ToolOutcome:
     path = safe_join(root, rel)
     if not path.is_file():
         return ToolOutcome.error(f"not a file: {rel}")
     try:
-        return ToolOutcome(path.read_text(encoding="utf-8"), True)
+        start_line = bounded_positive_int(offset, "offset")
+        line_limit = bounded_positive_int(limit, "limit", READ_MAX_LINES)
+        text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
+    except ValueError as exc:
+        return ToolOutcome.error(str(exc))
+
+    lines = text.splitlines(keepends=True)
+    total = len(lines)
+    if total == 0:
+        if start_line != 1:
+            return ToolOutcome.error(f"offset {start_line} exceeds {rel} total lines 0")
+        return ToolOutcome("", True)
+    if start_line > total:
+        return ToolOutcome.error(
+            f"offset {start_line} exceeds {rel} total lines {total}"
+        )
+
+    available = lines[start_line - 1 : start_line - 1 + line_limit]
+    first = available[0]
+    if len(first) > READ_MAX_CHARS:
+        preview, _ = clip_middle(first, READ_MAX_CHARS, LONG_LINE_MARKER)
+        next_offset = start_line + 1
+        next_text = f"; next offset={next_offset}" if next_offset <= total else ""
+        metadata = (
+            f"read_file page: line {start_line} of {total} exceeds "
+            f"{READ_MAX_CHARS} chars; preview only, not a complete old_string"
+            f"{next_text}"
+        )
+        return ToolOutcome(
+            _append_page_metadata(preview, metadata),
+            True,
+            truncated=True,
+        )
+
+    selected: list[str] = []
+    chars = 0
+    for line in available:
+        if selected and chars + len(line) > READ_MAX_CHARS:
+            break
+        selected.append(line)
+        chars += len(line)
+
+    content = "".join(selected)
+    end_line = start_line + len(selected) - 1
+    partial = start_line > 1 or end_line < total
+    if not partial:
+        return ToolOutcome(content, True)
+    next_text = f"; next offset={end_line + 1}" if end_line < total else ""
+    metadata = (
+        f"read_file page: lines {start_line}-{end_line} of {total}{next_text}"
+    )
+    return ToolOutcome(
+        _append_page_metadata(content, metadata),
+        True,
+        truncated=True,
+    )
 
 
 def list_directory(root: Path, rel: str) -> ToolOutcome:

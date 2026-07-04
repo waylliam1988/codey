@@ -217,13 +217,9 @@ class ToolTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("def old():\n    return 1\n", encoding="utf-8")
-            body = """<<<<<<< SEARCH
-def old():
-=======
-def new():
->>>>>>> REPLACE"""
+            blocks = [tool_runtime.EditBlock("def old():", "def new():")]
 
-            result = tool_runtime.edit_file(root, "app.py", body).output
+            result = tool_runtime.edit_file(root, "app.py", blocks).output
 
             self.assertEqual(result, "edited app.py (1 replacement)")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def new():\n    return 1\n")
@@ -232,13 +228,9 @@ def new():
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("same\nsame\n", encoding="utf-8")
-            body = """<<<<<<< SEARCH
-same
-=======
-other
->>>>>>> REPLACE"""
+            blocks = [tool_runtime.EditBlock("same", "other")]
 
-            result = tool_runtime.edit_file(root, "app.py", body).output
+            result = tool_runtime.edit_file(root, "app.py", blocks).output
 
             self.assertEqual(result, "ERROR: SEARCH text matched 2 times in app.py; make it unique")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "same\nsame\n")
@@ -247,14 +239,10 @@ other
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app.py").write_text("current\n", encoding="utf-8")
-            body = """<<<<<<< SEARCH
-missing
-=======
-replacement
->>>>>>> REPLACE"""
+            blocks = [tool_runtime.EditBlock("missing", "replacement")]
 
             self.assertEqual(
-                tool_runtime.edit_file(root, "app.py", body).output,
+                tool_runtime.edit_file(root, "app.py", blocks).output,
                 "ERROR: SEARCH text not found in app.py",
             )
 
@@ -375,6 +363,64 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(run_events[1].call.name, "read")
         self.assertTrue(run_events[1].outcome.ok)
         self.assertEqual(run_events[1].outcome.output, "VALUE = 1\n")
+
+    def test_invalid_parallel_batch_executes_nothing_and_requests_correction(self) -> None:
+        invalid = json.dumps({
+            "tool": "parallel",
+            "args": {"calls": [
+                {"tool": "read_file", "args": {"path": "safe.py"}},
+                {
+                    "tool": "edit",
+                    "args": {"path": "app.py", "content": "changed\n"},
+                },
+            ]},
+        })
+        done = '{"tool":"done","args":{"summary":"stopped unsafe batch"}}'
+        provider = FakeProvider(invalid, done)
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "safe.py").write_text("SAFE = True\n", encoding="utf-8")
+            (root / "app.py").write_text("original\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Inspect safely",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+            content = (root / "app.py").read_text(encoding="utf-8")
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(content, "original\n")
+        self.assertFalse(any(event.kind == "tool" for event in events))
+        self.assertIn("Protocol error:", provider.sent[1])
+        self.assertIn("read-only", provider.sent[1])
+
+    def test_read_file_page_arguments_reach_runtime(self) -> None:
+        read = (
+            '{"tool":"read_file","args":'
+            '{"path":"app.py","offset":3,"limit":1}}'
+        )
+        done = '{"tool":"done","args":{"summary":"read page"}}'
+        provider = FakeProvider(read, done)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Read the relevant page",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("three", provider.sent[1])
+        self.assertNotIn("one\ntwo", provider.sent[1])
+        self.assertIn("lines 3-3 of 4; next offset=4", provider.sent[1])
 
     def test_context_rollover_opens_fresh_chat_with_project_handoff(self) -> None:
         summary = (
@@ -521,6 +567,35 @@ class RunLoopTests(unittest.TestCase):
 
             self.assertEqual(result.stop_reason, "done")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def value():\n    return 'new'\n")
+
+    def test_replacements_tool_call_applies_one_atomic_file_write(self) -> None:
+        edit = json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "replacements": [
+                    {"old_string": "VALUE = 1", "new_string": "VALUE = 2"},
+                    {"old_string": "NAME = 'old'", "new_string": "NAME = 'new'"},
+                ],
+            },
+        })
+        done = '{"tool":"done","args":{"summary":"updated"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("VALUE = 1\nNAME = 'old'\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(edit, done),
+                root,
+                "update both values",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+            content = path.read_text(encoding="utf-8")
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(content, "VALUE = 2\nNAME = 'new'\n")
 
     def test_edit_tool_call_captures_change_baseline(self) -> None:
         reply = '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
