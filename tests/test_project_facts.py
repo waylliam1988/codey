@@ -35,6 +35,13 @@ class FakeProvider:
 
 
 class ProjectFactsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.consensus_patch = mock.patch.object(server, "_run_consensus", return_value=None)
+        self.consensus_patch.start()
+
+    def tearDown(self) -> None:
+        self.consensus_patch.stop()
+
     def test_records_only_safe_success_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             store = ProjectFactsStore(state_td)

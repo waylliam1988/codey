@@ -12,8 +12,10 @@ from codey import cancellation, changes, profile_doctor, provider_controls
 from codey import server
 from codey.agent import RunResult
 from codey.changes import ChangeTracker
+from codey.consensus import ConsensusAdvice, ConsensusResult
 from codey.provider_diagnostics import ProviderFailure
 from codey.provider_discovery import Discovery
+from codey.task_runner import _project_has_user_files
 
 
 class GitChangesTests(unittest.TestCase):
@@ -211,6 +213,81 @@ class ProviderStatusTests(unittest.TestCase):
         connected.assert_not_called()
 
 
+class ConsensusConnectionTests(unittest.TestCase):
+    def test_consensus_borrows_sibling_tab_from_selected_provider(self) -> None:
+        state = server.State()
+        selected = mock.Mock()
+        selected.session.page = object()
+        selected.send.return_value = "combined answer"
+        advisor = mock.Mock()
+        advisor.name = "MiMo"
+        advisor.send.return_value = "advisor note"
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(
+                server,
+                "provider_availability",
+                return_value={"deepseek": True, "mimo": True, "qwen": False, "glm": False},
+            ),
+            mock.patch.object(server, "borrow_open_provider", return_value=advisor) as borrowed,
+            mock.patch.object(
+                server,
+                "connect_existing_provider",
+                side_effect=AssertionError("should borrow sibling tab"),
+            ),
+        ):
+            result = server._run_consensus(
+                selected_provider=selected,
+                selected_provider_id="deepseek",
+                task="Explain breathing apps",
+            )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.answer, "combined answer")
+        borrowed.assert_called_once_with("mimo", selected.session.page)
+        advisor.new_chat.assert_called_once_with()
+        advisor.close.assert_called_once_with()
+        selected.send.assert_called_once()
+
+    def test_project_audit_borrows_sibling_tab_from_selected_provider(self) -> None:
+        state = server.State()
+        selected = mock.Mock()
+        selected.session.page = object()
+        advisor = mock.Mock()
+        advisor.name = "MiMo"
+        advisor.send.return_value = '{"tool":"done","args":{"summary":"audit report"}}'
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(
+                server,
+                "provider_availability",
+                return_value={"deepseek": True, "mimo": True, "qwen": False, "glm": False},
+            ),
+            mock.patch.object(server, "borrow_open_provider", return_value=advisor) as borrowed,
+            mock.patch.object(
+                server,
+                "connect_existing_provider",
+                side_effect=AssertionError("should borrow sibling tab"),
+            ),
+        ):
+            Path(td, "app.py").write_text("print('hello')\n", encoding="utf-8")
+            reports = server._run_project_audit(
+                project=td,
+                selected_provider=selected,
+                selected_provider_id="deepseek",
+                task="Review this project",
+            )
+
+        self.assertEqual([report.text for report in reports], ["audit report"])
+        borrowed.assert_called_once_with("mimo", selected.session.page)
+        advisor.new_chat.assert_called_once_with()
+        advisor.close.assert_called_once_with()
+
+
 class RunSnapshotTests(unittest.TestCase):
     def test_state_has_no_unused_legacy_event_queue(self) -> None:
         self.assertFalse(hasattr(server.State(), "events"))
@@ -396,6 +473,16 @@ class RunSnapshotTests(unittest.TestCase):
 
 
 class SessionThreadingTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.consensus_patch = mock.patch.object(server, "_run_consensus", return_value=None)
+        self.consensus_mock = self.consensus_patch.start()
+        self.project_audit_patch = mock.patch.object(server, "_run_project_audit", return_value=())
+        self.project_audit_mock = self.project_audit_patch.start()
+
+    def tearDown(self) -> None:
+        self.project_audit_patch.stop()
+        self.consensus_patch.stop()
+
     def test_conversation_state_is_bounded(self) -> None:
         state = server.State()
 
@@ -640,6 +727,57 @@ class SessionThreadingTests(unittest.TestCase):
         first.new_chat.assert_called_once_with()
         second.new_chat.assert_not_called()
         second.send.assert_called_once_with("Follow-up question")
+
+    def test_plain_chat_uses_hidden_consensus_when_advisors_are_available(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
+        self.consensus_mock.return_value = ConsensusResult("Combined answer", 2)
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(server, "agent_run") as agent_run,
+        ):
+            server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek")
+
+        agent_run.assert_not_called()
+        provider.new_chat.assert_called_once_with()
+        provider.send.assert_not_called()
+        self.consensus_mock.assert_called_once()
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        reply = next(event for event in emitted if event["type"] == "reply")
+        self.assertEqual(reply["text"], "Combined answer")
+
+    def test_plain_chat_consensus_aggregate_failure_does_not_resend_prompt(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
+        provider.send.return_value = "unsafe fallback"
+        self.consensus_mock.side_effect = RuntimeError("aggregate timed out")
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(server, "agent_run") as agent_run,
+        ):
+            server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek")
+
+        agent_run.assert_not_called()
+        provider.new_chat.assert_called_once_with()
+        provider.send.assert_not_called()
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["stop_reason"], "error")
+        self.assertIn("aggregate timed out", task_done["summary"])
 
     def test_plain_chat_model_switch_uses_hidden_handoff(self) -> None:
         state = server.State()
@@ -995,6 +1133,258 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertFalse(task_done["changed"])
         self.assertEqual(task_done["receipt"]["changed_count"], 0)
         self.assertNotIn("changes", task_done)
+
+    def test_project_read_only_task_can_use_hidden_consensus_answer(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        self.consensus_mock.return_value = ConsensusResult("Combined final answer", 2)
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("Writer draft", "done", 1, False, False),
+            ) as agent_run,
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+            ),
+            mock.patch.object(server, "connect_existing_provider") as connect_review,
+        ):
+            Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
+            server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek")
+
+        self.consensus_mock.assert_called_once()
+        self.assertEqual(agent_run.call_args.args[2], "Discuss architecture")
+        connect_review.assert_not_called()
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["summary"], "Combined final answer")
+        self.assertFalse(task_done["changed"])
+
+    def test_existing_project_uses_read_only_audit_reports_before_writer(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        self.project_audit_mock.return_value = (
+            ConsensusAdvice("qwen", "Qwen", "Possible bug in app.py."),
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("Writer review", "done", 1, False, False),
+            ) as agent_run,
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+            ),
+        ):
+            Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
+            server._run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek")
+
+        self.project_audit_mock.assert_called_once()
+        self.consensus_mock.assert_not_called()
+        task = agent_run.call_args.args[2]
+        self.assertIn("Private read-only project audit reports", task)
+        self.assertIn("Possible bug in app.py.", task)
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["summary"], "Writer review")
+        self.assertFalse(task_done["changed"])
+
+    def test_existing_project_audit_failure_degrades_to_writer(self) -> None:
+        state = server.State()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        self.project_audit_mock.side_effect = RuntimeError("audit unavailable")
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("Writer review", "done", 1, False, False),
+            ) as agent_run,
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+            ),
+        ):
+            Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
+            server._run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek")
+
+        self.project_audit_mock.assert_called_once()
+        self.assertEqual(agent_run.call_args.args[2], "Review this project for bugs")
+
+    def test_project_read_only_consensus_failure_keeps_writer_answer(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        self.consensus_mock.side_effect = RuntimeError("aggregate timed out")
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("Writer draft", "done", 1, False, False),
+            ),
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+            ),
+        ):
+            Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
+            server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek")
+
+        self.consensus_mock.assert_called_once()
+        self.assertNotIn("deepseek", state.provider_sessions)
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["summary"], "Writer draft")
+        self.assertEqual(task_done["stop_reason"], "done")
+
+    def test_existing_project_write_task_skips_consensus_and_keeps_review_after_changes(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        reviewer = mock.Mock()
+        reviewer.name = "Xiaomi MiMo Chat"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 0}],
+            "diff": "diff --git a/app.py b/app.py\n+new\n",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("implemented", "done", 2, True, True),
+            ) as agent_run,
+            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer) as review_connect,
+        ):
+            Path(td, "app.py").write_text("print('existing')\n", encoding="utf-8")
+            server._run_task("session-1", td, "Build the feature", 8, False, "deepseek")
+
+        self.consensus_mock.assert_not_called()
+        self.assertEqual(agent_run.call_args.args[2], "Build the feature")
+        review_connect.assert_called_once_with("mimo")
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        review_event = next(event for event in emitted if event["type"] == "review")
+        self.assertEqual(review_event["text"], "MiMo approved")
+
+    def test_empty_project_uses_hidden_plan_before_writer(self) -> None:
+        state = server.State()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        self.consensus_mock.return_value = ConsensusResult("Start with the smallest useful app.", 2)
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("implemented", "done", 2, True, True),
+            ) as agent_run,
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+            ),
+        ):
+            Path(td, ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+            server._run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek")
+
+        self.consensus_mock.assert_called_once()
+        task = agent_run.call_args.args[2]
+        self.assertIn("Private new-project advisory plan", task)
+        self.assertIn("Start with the smallest useful app.", task)
+        self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
+
+    def test_empty_project_plan_failure_opens_fresh_writer_chat(self) -> None:
+        state = server.State()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        self.consensus_mock.side_effect = RuntimeError("aggregate timed out")
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("implemented", "done", 2, True, True),
+            ) as agent_run,
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+            ),
+        ):
+            server._run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek")
+
+        self.consensus_mock.assert_called_once()
+        self.assertEqual(agent_run.call_args.args[2], "Build a new breathing app")
+        self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
+
+    def test_empty_project_detector_skips_directory_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as root_td, tempfile.TemporaryDirectory() as outside_td:
+            outside = Path(outside_td)
+            outside.joinpath("real.py").write_text("print('outside')\n", encoding="utf-8")
+            link = Path(root_td, "linked-outside")
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"directory symlink unavailable: {exc}")
+
+            self.assertFalse(_project_has_user_files(root_td))
 
     def test_run_task_emits_provider_failure_diagnostic_on_error(self) -> None:
         state = server.State()

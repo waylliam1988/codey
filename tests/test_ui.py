@@ -207,6 +207,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("{ type: 'review', text: data.text, runId }", HTML)
         self.assertIn("statusRow('Review'", HTML)
         self.assertNotIn("Review mode", HTML)
+
+    def test_consensus_has_no_visible_ui_mode(self) -> None:
+        self.assertNotIn("MoA", HTML)
+        self.assertNotIn("Consensus", HTML)
+        self.assertNotIn("Ask all", HTML)
+        self.assertNotIn("multi-model", HTML)
         self.assertNotIn("group chat", HTML)
         self.assertNotIn("cowork", HTML)
         self.assertNotIn("Switch provider", HTML)

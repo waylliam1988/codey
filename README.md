@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.16`
+Version: `0.1.17`
 
 ---
 
@@ -41,6 +41,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Restore snapshot changes without requiring Git
 - Use Git when available, but not require it
 - Retry with another model when one model fails
+- Use already-open models as hidden advisors for chat, empty-project planning, and read-only project audits
 - Use two open web models together: one writes, the other reviews
 - Continue long conversations quietly with an automatic factual summary and fresh model chat
 - Reuse project commands that have already succeeded locally
@@ -65,6 +66,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.17` adds a hidden MoA layer without adding UI controls. When another supported model page is already open, `New Chat` may use it as a private read-only advisor and ask the selected model to synthesize one final answer. Empty or placeholder-only projects can get one hidden advisory plan before the Writer starts, which helps new-project brainstorming. Existing projects use bounded read-only advisor audits before the selected model acts: advisors may list, grep, and read selected non-sensitive files, but cannot edit, run commands, request shell approval, or see anything outside the project. Dotfiles, env files, secret-like paths, excluded dependency/build directories, key/certificate files, lock files, binaries, symlinks, and oversized files are not shared with hidden project audit advisors. Their private reports are passed to the selected Writer, which must verify them against the real files and remains the only model allowed to edit or test. If the task finishes without file changes, the answer can still be refined by the hidden consensus layer. If an advisor fails or does not finish cleanly, Codey falls back quietly; if the selected model has already started hidden synthesis and that submission fails, Codey does not resend the original prompt because the first remote submission may have succeeded. Review remains separate: it still runs only after real file changes and still reviews the final Diff. The deterministic UI E2E flow now covers plain-chat consensus, project audit consensus, empty-project planning, and the existing write/test/review/restore path with no new visible modes.
 
 Version `0.1.16` keeps `New Chat` as a safe plain conversation with no project access, while project chats can now handle both discussion and coding without a mode switch. Read-only project questions return the selected model's full answer directly and no longer show a `No files changed` receipt. If a task actually writes files, Codey still shows the final answer, test receipt, diff entry, and optional second-model review. The change adds no new UI controls; the release passed 388 tests, all 19 real Edge UI E2E checks, and a live DeepSeek project discussion that completed in one turn without creating files.
 

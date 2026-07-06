@@ -9,8 +9,13 @@ from typing import Callable
 
 from codey import cancellation, provider_controls
 from codey.agent import RunResult
+from codey.consensus import (
+    apply_new_project_plan_to_task,
+    apply_project_audit_to_task,
+    render_project_context,
+)
 from codey.events import RunEvent, render_run_event
-from codey.handoff import ConversationSnapshot, render_continuation_prompt
+from codey.handoff import ConversationSnapshot, render_continuation_prompt, render_handoff
 from codey.project_facts import ProjectFactsStore
 from codey.providers import PROVIDER_LABELS
 from codey.receipt import build_task_receipt
@@ -28,6 +33,55 @@ class TaskRequest:
     run_id: str = ""
 
 
+NEW_PROJECT_IGNORED_DIRS = {
+    ".git",
+    ".hg",
+    ".svn",
+    ".codey",
+    ".idea",
+    ".vscode",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "node_modules",
+    ".next",
+    "dist",
+    "build",
+}
+NEW_PROJECT_IGNORED_FILES = {
+    ".DS_Store",
+    "Thumbs.db",
+    ".gitignore",
+    ".gitattributes",
+    ".gitkeep",
+}
+
+
+def _project_has_user_files(project: str | Path) -> bool:
+    """Return true when a project has real user files worth inspecting first."""
+
+    stack = [Path(project).expanduser()]
+    while stack:
+        current = stack.pop()
+        try:
+            entries = tuple(current.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            name = entry.name
+            if name in NEW_PROJECT_IGNORED_DIRS:
+                continue
+            try:
+                if entry.is_dir() and not entry.is_symlink():
+                    stack.append(entry)
+                elif entry.is_file() and name not in NEW_PROJECT_IGNORED_FILES:
+                    return True
+            except OSError:
+                continue
+    return False
+
+
 class TaskRunner:
     """Coordinate one task while leaving transport and storage outside."""
 
@@ -39,6 +93,8 @@ class TaskRunner:
         collect_changes: Callable,
         run_review: Callable,
         capture_provider_failure: Callable,
+        run_consensus: Callable | None = None,
+        run_project_audit: Callable | None = None,
         project_facts: ProjectFactsStore | None = None,
         is_git_repository: Callable[[str | Path], bool] | None = None,
         review_fix_turns: int = 12,
@@ -48,6 +104,8 @@ class TaskRunner:
         self.agent_run = agent_run
         self.collect_changes = collect_changes
         self.run_review = run_review
+        self.run_consensus = run_consensus
+        self.run_project_audit = run_project_audit
         self.capture_provider_failure = capture_provider_failure
         self.project_facts = project_facts
         self.is_git_repository = is_git_repository or (lambda _project: False)
@@ -196,6 +254,52 @@ class TaskRunner:
                     if self.project_facts is not None
                     else ""
                 )
+                agent_task = task
+                agent_fresh_chat = fresh_chat
+                has_user_files = _project_has_user_files(project)
+                used_project_audit = False
+                if self.run_consensus is not None and not has_user_files:
+                    context = render_project_context(
+                        conversation.snapshot,
+                        verified_facts,
+                    )
+                    try:
+                        planned = self.run_consensus(
+                            selected_provider=provider,
+                            selected_provider_id=provider_id,
+                            task=task,
+                            context=context,
+                            plan=True,
+                        )
+                    except cancellation.TaskCancelled:
+                        raise
+                    except Exception:
+                        state.set_provider_session(provider_id, None)
+                        agent_fresh_chat = True
+                        planned = None
+                    if planned is not None:
+                        agent_task = apply_new_project_plan_to_task(task, planned.answer)
+                        agent_fresh_chat = True
+                elif self.run_project_audit is not None and has_user_files:
+                    context = render_project_context(
+                        conversation.snapshot,
+                        verified_facts,
+                    )
+                    try:
+                        reports = self.run_project_audit(
+                            project=project,
+                            selected_provider=provider,
+                            selected_provider_id=provider_id,
+                            task=task,
+                            context=context,
+                        )
+                    except cancellation.TaskCancelled:
+                        raise
+                    except Exception:
+                        reports = ()
+                    if reports:
+                        agent_task = apply_project_audit_to_task(task, reports)
+                        used_project_audit = True
                 key = str(Path(project).expanduser().resolve())
                 tracker = state.change_tracker_for(
                     key,
@@ -204,12 +308,12 @@ class TaskRunner:
                 result = self.agent_run(
                     provider,
                     Path(project),
-                    task,
+                    agent_task,
                     max_turns=max_turns,
                     on_event=on_event,
                     on_shell_request=on_shell_request,
                     stop_flag=state.stop_flag,
-                    fresh_chat=fresh_chat,
+                    fresh_chat=agent_fresh_chat,
                     change_tracker=tracker,
                     conversation=conversation,
                     provider_id=provider_id,
@@ -221,6 +325,33 @@ class TaskRunner:
                     provider_id,
                     None if result.stop_reason == "stopped" else session_id,
                 )
+                if (
+                    self.run_consensus is not None
+                    and not used_project_audit
+                    and result.stop_reason == "done"
+                    and not result.changed
+                    and not state.stop_flag.is_set()
+                ):
+                    context = render_project_context(
+                        conversation.snapshot,
+                        verified_facts,
+                        draft=result.summary,
+                    )
+                    try:
+                        consulted = self.run_consensus(
+                            selected_provider=provider,
+                            selected_provider_id=provider_id,
+                            task=task,
+                            context=context,
+                            draft=result.summary,
+                        )
+                    except cancellation.TaskCancelled:
+                        raise
+                    except Exception:
+                        state.set_provider_session(provider_id, None)
+                        consulted = None
+                    if consulted is not None:
+                        result = replace(result, summary=consulted.answer)
                 if (
                     result.stop_reason == "done"
                     and task_changed
@@ -281,7 +412,25 @@ class TaskRunner:
                 if fresh_chat:
                     provider.new_chat()
                 prompt = render_continuation_prompt(handoff, task) if handoff else task
-                reply = provider.send(prompt)
+                consulted = None
+                if self.run_consensus is not None:
+                    try:
+                        consulted = self.run_consensus(
+                            selected_provider=provider,
+                            selected_provider_id=provider_id,
+                            task=task,
+                            context=handoff or (
+                                render_handoff(conversation.snapshot)
+                                if conversation.initialized
+                                else ""
+                            ),
+                        )
+                    except cancellation.TaskCancelled:
+                        raise
+                    except Exception:
+                        state.set_provider_session(provider_id, None)
+                        raise
+                reply = consulted.answer if consulted is not None else provider.send(prompt)
                 if fresh_chat:
                     conversation.begin_window(provider_id, "chat")
                 state.set_provider_session(provider_id, session_id)

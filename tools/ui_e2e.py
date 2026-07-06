@@ -36,6 +36,24 @@ class ScriptedWriter:
 
     def send(self, text: str, timeout: float | None = None) -> str:
         del timeout
+        if "Synthesize the private advisor notes" in text:
+            if "The user approved and ran this shell command" in text:
+                return "approval continuation completed"
+            if "Stay active across one UI reload" in text:
+                return "reload completed"
+            if "Finish while state reconciliation is delayed" in text:
+                return "delayed state completed"
+            if "Request a shell command" in text:
+                return "git status request completed"
+            if "Wait until stopped by the UI" in text:
+                return "stopped"
+            if "Explain box breathing without project access" in text:
+                return "Combined box breathing answer from hidden advisors."
+            if "Discuss a breathing app without changing files" in text:
+                return "Combined project breathing answer without file changes."
+            if "Create result.txt containing exactly" in text:
+                return "browser flow completed"
+            return "Combined answer."
         if text == "Explain box breathing without project access.":
             return "Box breathing uses equal inhale, hold, exhale, and hold phases."
         if "Wait until stopped by the UI" in text:
@@ -50,6 +68,11 @@ class ScriptedWriter:
         if "The user approved and ran this shell command" in text:
             return '{"tool":"done","args":{"summary":"approval continuation completed"}}'
         if "Discuss a breathing app without changing files" in text:
+            if "Private read-only project audit reports" in text:
+                return (
+                    '{"tool":"done","args":{"summary":"Combined project breathing '
+                    'answer without file changes."}}'
+                )
             return (
                 '{"tool":"done","args":{"summary":"Start with one guided breathing '
                 'rhythm.\\n\\nAdd customization only after the basic exercise feels calm."}}'
@@ -83,6 +106,15 @@ class ScriptedReviewer:
         pass
 
     def send(self, text: str, timeout: float | None = None) -> str:
+        if "private read-only project reviewer" in text:
+            del timeout
+            return (
+                '{"tool":"done","args":{"summary":"Advisor note: inspect the simple '
+                'breathing loop and keep the implementation focused."}}'
+            )
+        if "private read-only advisor" in text:
+            del timeout
+            return "Advisor note: keep the answer concise and practical."
         del text, timeout
         return '{"verdict":"approved","summary":"E2E change is correct","findings":[]}'
 
@@ -114,12 +146,17 @@ def _wait_for_file(path: Path, *, exists: bool, page: Page, timeout_ms: int = 15
     raise AssertionError(f"expected {path.name} to {state}")
 
 
-def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) -> dict:
+def _exercise_page(
+    page: Page,
+    base_url: str,
+    project: Path,
+    artifacts: Path,
+) -> dict:
     page.goto(base_url, wait_until="domcontentloaded")
     page.locator("#task").fill("Explain box breathing without project access.")
     page.locator("#send").click()
     expect(page.locator(".msg.asst .body")).to_contain_text(
-        "Box breathing uses equal inhale",
+        "Combined box breathing answer",
         timeout=15_000,
     )
     expect(page.locator("#chat")).not_to_contain_text('{"tool"')
@@ -144,7 +181,7 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
     page.locator("#task").fill("Discuss a breathing app without changing files.")
     page.locator("#send").click()
     expect(page.locator(".msg.asst .body")).to_contain_text(
-        "Start with one guided breathing rhythm",
+        "Combined project breathing answer",
         timeout=15_000,
     )
     expect(done_prefixes).to_have_count(done_before_discussion)
@@ -328,9 +365,11 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
         "url": base_url,
         "checks": [
             "plain New Chat without project tools",
+            "plain New Chat hidden consensus",
             "project picker",
             "provider selection",
             "project discussion without file changes",
+            "project hidden consensus",
             "project answer before changed receipt",
             "SSE task lifecycle",
             "agent edit and test",

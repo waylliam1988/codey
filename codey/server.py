@@ -25,7 +25,6 @@ import queue
 import subprocess
 import sys
 import threading
-import time
 import uuid
 from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -44,6 +43,7 @@ from codey.changes import (
     restore_snapshot_changes,
 )
 from codey.conversation_store import ConversationStore
+from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.handoff import ConversationContext
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
@@ -156,6 +156,69 @@ def _run_review(
     if last_error is not None:
         raise last_error
     raise RuntimeError("no review model available")
+
+
+def _connect_consensus_provider(selected_provider, provider_id: str):
+    """Use an already-open sibling tab while a Writer provider is active."""
+
+    owner_page = getattr(getattr(selected_provider, "session", None), "page", None)
+    if owner_page is not None:
+        helper = borrow_open_provider(provider_id, owner_page)
+        if helper is None:
+            raise RuntimeError(f"{review_label(provider_id)} tab is not open in this browser context")
+        return helper
+    return connect_existing_provider(provider_id)
+
+
+def _run_consensus(
+    *,
+    selected_provider,
+    selected_provider_id: str,
+    task: str,
+    context: str = "",
+    draft: str = "",
+    plan: bool = False,
+) -> ConsensusResult | None:
+    return run_consensus(
+        selected_provider=selected_provider,
+        selected_provider_id=selected_provider_id,
+        task=task,
+        provider_ids=tuple(PROVIDER_LABELS),
+        provider_labels=PROVIDER_LABELS,
+        availability=provider_availability,
+        connect_existing=lambda provider_id: _connect_consensus_provider(
+            selected_provider,
+            provider_id,
+        ),
+        clear_provider_session=lambda provider_id: STATE.set_provider_session(provider_id, None),
+        context=context,
+        draft=draft,
+        plan=plan,
+    )
+
+
+def _run_project_audit(
+    *,
+    project: str | Path,
+    selected_provider=None,
+    selected_provider_id: str,
+    task: str,
+    context: str = "",
+) -> tuple[ConsensusAdvice, ...]:
+    return run_project_audit(
+        project=project,
+        selected_provider_id=selected_provider_id,
+        task=task,
+        provider_ids=tuple(PROVIDER_LABELS),
+        provider_labels=PROVIDER_LABELS,
+        availability=provider_availability,
+        connect_existing=lambda provider_id: _connect_consensus_provider(
+            selected_provider,
+            provider_id,
+        ),
+        clear_provider_session=lambda provider_id: STATE.set_provider_session(provider_id, None),
+        context=context,
+    )
 
 
 def _safe_project_cwd(project: str | Path, rel: str) -> Path:
@@ -684,6 +747,8 @@ def _run_task(
         collect_changes=collect_changes,
         run_review=_run_review,
         capture_provider_failure=capture_provider_failure,
+        run_consensus=_run_consensus,
+        run_project_audit=_run_project_audit,
         project_facts=STATE.project_facts,
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
@@ -798,7 +863,8 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/events":
             self._sse()
             return
-        self.send_response(404); self.end_headers()
+        self.send_response(404)
+        self.end_headers()
 
     def do_POST(self) -> None:  # noqa: N802
         url = urlparse(self.path)
@@ -807,7 +873,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(raw.decode("utf-8")) if raw else {}
         except Exception:
-            self._send_json(400, {"error": "invalid json"}); return
+            self._send_json(400, {"error": "invalid json"})
+            return
 
         if url.path == "/api/run":
             session_id = str(body.get("session_id") or "").strip() or "default"
@@ -818,12 +885,15 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)
             except (TypeError, ValueError):
-                self._send_json(400, {"error": "invalid max_turns"}); return
+                self._send_json(400, {"error": "invalid max_turns"})
+                return
             max_turns = max(1, min(max_turns, 500))
             if not task:
-                self._send_json(400, {"error": "task required"}); return
+                self._send_json(400, {"error": "task required"})
+                return
             if provider_id not in PROVIDER_LABELS:
-                self._send_json(400, {"error": f"unsupported provider: {provider_id}"}); return
+                self._send_json(400, {"error": f"unsupported provider: {provider_id}"})
+                return
             if project:
                 Path(project).mkdir(parents=True, exist_ok=True)
             try:
@@ -836,22 +906,27 @@ class Handler(BaseHTTPRequestHandler):
                     provider_id,
                 )
             except Exception as exc:
-                self._send_json(500, {"error": str(exc)}); return
+                self._send_json(500, {"error": str(exc)})
+                return
             if run_id is None:
-                self._send_json(409, {"error": "busy"}); return
+                self._send_json(409, {"error": "busy"})
+                return
             self._send_json(200, {"ok": True, "run_id": run_id})
             return
         if url.path == "/api/pick_folder":
             mode = str(body.get("mode") or "open").strip().lower()
             if mode not in {"open", "new"}:
-                self._send_json(400, {"error": "invalid mode"}); return
+                self._send_json(400, {"error": "invalid mode"})
+                return
             initial = str(body.get("initial") or "").strip() or None
             try:
                 path = pick_folder(mode=mode, initial=initial)
             except Exception as exc:
-                self._send_json(500, {"error": str(exc)}); return
+                self._send_json(500, {"error": str(exc)})
+                return
             if not path:
-                self._send_json(200, {"ok": False, "cancelled": True}); return
+                self._send_json(200, {"ok": False, "cancelled": True})
+                return
             self._send_json(200, {"ok": True, "path": path, "name": Path(path).name or path})
             return
         if url.path == "/api/changes":
@@ -891,7 +966,8 @@ class Handler(BaseHTTPRequestHandler):
             with STATE.lock:
                 pending = STATE.pending_shell.pop(approval_id, None)
             if not pending:
-                self._send_json(404, {"error": "approval not found"}); return
+                self._send_json(404, {"error": "approval not found"})
+                return
             session_id = pending["session_id"]
             command = pending["command"]
             if not approved:
@@ -958,7 +1034,8 @@ class Handler(BaseHTTPRequestHandler):
             with STATE.lock:
                 pending = STATE.pending_teach.get(teach_id)
             if not pending:
-                self._send_json(404, {"error": "pause not found"}); return
+                self._send_json(404, {"error": "pause not found"})
+                return
             pending["event"].set()
             self._send_json(200, {"ok": True})
             return
@@ -977,7 +1054,8 @@ class Handler(BaseHTTPRequestHandler):
                 pending["event"].set()
             self._send_json(200, {"ok": True})
             return
-        self.send_response(404); self.end_headers()
+        self.send_response(404)
+        self.end_headers()
 
     def _sse(self) -> None:
         self.send_response(200)

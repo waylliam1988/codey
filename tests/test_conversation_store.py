@@ -193,6 +193,7 @@ class ConversationStoreTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", restarted),
                 mock.patch.object(restarted, "get_provider", return_value=provider),
+                mock.patch.object(server, "_run_consensus", return_value=None),
             ):
                 server._run_task("chat-1", None, "Continue", 4, False, "deepseek")
 
