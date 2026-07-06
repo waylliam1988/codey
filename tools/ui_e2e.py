@@ -36,6 +36,8 @@ class ScriptedWriter:
 
     def send(self, text: str, timeout: float | None = None) -> str:
         del timeout
+        if text == "Explain box breathing without project access.":
+            return "Box breathing uses equal inhale, hold, exhale, and hold phases."
         if "Wait until stopped by the UI" in text:
             cancellation.wait(30)
             raise AssertionError("responsive stop did not cancel the provider wait")
@@ -47,6 +49,11 @@ class ScriptedWriter:
             return '{"tool":"done","args":{"summary":"delayed state completed"}}'
         if "The user approved and ran this shell command" in text:
             return '{"tool":"done","args":{"summary":"approval continuation completed"}}'
+        if "Discuss a breathing app without changing files" in text:
+            return (
+                '{"tool":"done","args":{"summary":"Start with one guided breathing '
+                'rhythm.\\n\\nAdd customization only after the basic exercise feels calm."}}'
+            )
         if "Request a shell command" in text:
             return (
                 '{"tool":"shell","args":{"command":"git status --short",'
@@ -109,6 +116,14 @@ def _wait_for_file(path: Path, *, exists: bool, page: Page, timeout_ms: int = 15
 
 def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) -> dict:
     page.goto(base_url, wait_until="domcontentloaded")
+    page.locator("#task").fill("Explain box breathing without project access.")
+    page.locator("#send").click()
+    expect(page.locator(".msg.asst .body")).to_contain_text(
+        "Box breathing uses equal inhale",
+        timeout=15_000,
+    )
+    expect(page.locator("#chat")).not_to_contain_text('{"tool"')
+
     expect(page.locator("#btn-add-project")).to_be_visible()
     page.locator("#btn-add-project").click()
     expect(page.locator("#composer-context")).to_contain_text(project.name)
@@ -124,9 +139,25 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
     qwen.click()
     expect(page.locator("#provider-name")).to_have_text("Qwen")
 
+    done_prefixes = page.locator(".sr-prefix", has_text="Done")
+    done_before_discussion = done_prefixes.count()
+    page.locator("#task").fill("Discuss a breathing app without changing files.")
+    page.locator("#send").click()
+    expect(page.locator(".msg.asst .body")).to_contain_text(
+        "Start with one guided breathing rhythm",
+        timeout=15_000,
+    )
+    expect(done_prefixes).to_have_count(done_before_discussion)
+    expect(page.locator("#chat")).not_to_contain_text("No files changed")
+    if (project / "result.txt").exists():
+        raise AssertionError("project discussion unexpectedly changed a file")
+
     page.locator("#task").fill(TASK)
     page.locator("#send").click()
     expect(page.locator("#chat")).to_contain_text("Done", timeout=30_000)
+    expect(
+        page.locator(".msg.asst .body", has_text="browser flow completed")
+    ).to_have_count(1)
     expect(page.locator("#chat")).to_contain_text("checks passed")
     expect(page.locator("#chat")).to_contain_text("DeepSeek approved")
     expect(page.locator("#chat")).not_to_contain_text('{"tool"')
@@ -220,7 +251,10 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
             break
         page.wait_for_timeout(100)
     else:
-        raise AssertionError("approved continuation did not finish while disconnected")
+        raise AssertionError(
+            "approved continuation did not finish while disconnected: "
+            + json.dumps(snapshot, ensure_ascii=False)
+        )
 
     page.unroute("**/api/shell_approval", drop_approval_response)
     page.reload(wait_until="domcontentloaded")
@@ -228,21 +262,24 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
     expect(page.get_by_role("button", name="Deny", exact=True)).to_have_count(0)
     expect(page.get_by_role("button", name="Allow", exact=True)).to_have_count(0)
     restored_messages = page.evaluate(
-        "() => activeSession().messages.map(m => ({type: m.type, approved: m.approved}))"
+        "() => activeSession().messages.map(m => ({type: m.type, approved: m.approved, text: m.text || ''}))"
     )
     executed_index = max(
         index
         for index, message in enumerate(restored_messages)
         if message["type"] == "shell_result" and message["approved"]
     )
-    done_index = max(
-        index for index, message in enumerate(restored_messages) if message["type"] == "done"
+    answer_index = max(
+        index
+        for index, message in enumerate(restored_messages)
+        if message["type"] == "asst"
+        and "approval continuation completed" in message["text"]
     )
-    if executed_index >= done_index:
+    if executed_index >= answer_index:
         raise AssertionError("continued task result appeared before its shell execution")
 
-    done_prefixes = page.locator(".sr-prefix", has_text="Done")
-    done_before = done_prefixes.count()
+    reload_answers = page.locator(".msg.asst .body", has_text="reload completed")
+    reload_before = reload_answers.count()
     page.locator("#task").fill("Stay active across one UI reload.")
     page.locator("#send").click()
     expect(page.locator("#stop")).to_be_visible()
@@ -250,11 +287,12 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
     expect(page.locator("#stop")).to_be_visible(timeout=3_000)
     expect(page.locator("#status")).to_contain_text("Running")
     expect(page.locator("#stop")).to_be_hidden(timeout=8_000)
-    expect(page.locator(".sr-prefix", has_text="Done")).to_have_count(done_before + 1)
+    expect(reload_answers).to_have_count(reload_before + 1)
     page.wait_for_timeout(500)
-    expect(page.locator(".sr-prefix", has_text="Done")).to_have_count(done_before + 1)
+    expect(reload_answers).to_have_count(reload_before + 1)
 
-    done_before = done_prefixes.count()
+    delayed_answers = page.locator(".msg.asst .body", has_text="delayed state completed")
+    delayed_before = delayed_answers.count()
     page.locator("#task").fill("Finish while state reconciliation is delayed.")
     page.locator("#send").click()
     expect(page.locator("#stop")).to_be_visible()
@@ -268,7 +306,7 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
     page.reload(wait_until="domcontentloaded")
     expect(page.locator("#stop")).to_be_hidden(timeout=6_000)
     expect(page.locator("#status")).not_to_contain_text("Running")
-    expect(page.locator(".sr-prefix", has_text="Done")).to_have_count(done_before + 1)
+    expect(delayed_answers).to_have_count(delayed_before + 1)
     expect(page.locator("#provider-button")).to_be_enabled()
     page.unroute("**/api/state", delay_state_response)
 
@@ -289,8 +327,11 @@ def _exercise_page(page: Page, base_url: str, project: Path, artifacts: Path) ->
         "ok": True,
         "url": base_url,
         "checks": [
+            "plain New Chat without project tools",
             "project picker",
             "provider selection",
+            "project discussion without file changes",
+            "project answer before changed receipt",
             "SSE task lifecycle",
             "agent edit and test",
             "review status",

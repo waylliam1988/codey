@@ -39,6 +39,26 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(plan.control.kind, "done")
         self.assertEqual(plan.control.body, "finished")
 
+    def test_done_preserves_a_multiline_user_facing_answer(self) -> None:
+        codec = JsonToolCodec()
+        answer = "First recommendation.\n\nSecond recommendation."
+
+        plan = codec.parse(json.dumps({
+            "tool": "done",
+            "args": {"summary": answer},
+        }))
+
+        self.assertIsNotNone(plan.control)
+        self.assertEqual(plan.control.kind, "done")
+        self.assertEqual(plan.control.body, answer)
+
+    def test_contract_tells_read_only_discussion_to_answer_directly(self) -> None:
+        prompt = JsonToolCodec().system_prompt()
+
+        self.assertIn("complete user-facing response", prompt)
+        self.assertIn("answer questions without modifying", prompt)
+        self.assertNotIn("one-line summary", prompt)
+
     def test_parse_read_files_as_multiple_reads(self) -> None:
         codec = JsonToolCodec()
         plan = codec.parse('{"tool":"read_files","args":{"paths":["a.py","b.py"]}}')

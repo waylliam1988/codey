@@ -1,7 +1,32 @@
-# Codey 0.1.15 Test Report
+# Codey 0.1.16 Test Report
 
 Date: 2026-07-04
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.16 Project and Plain Conversations (2026-07-06)
+
+`New Chat` remains a normal model conversation with no project path and never
+enters the local Agent tool loop. A project conversation now supports both
+read-only discussion and coding without a mode switch: the selected model may
+inspect the project and answer directly, but edits only when requested. The
+second model is used for Review only when the current Agent run actually wrote
+a file.
+
+The project answer and optional change receipt are two views of the same
+`task_done` event. This keeps reconnect recovery atomic and deduplicated while
+hiding the unhelpful `No files changed` receipt for discussion-only turns.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 388 passed |
+| Global New Chat route | Direct Provider reply; Agent tool loop not called |
+| Project read-only discussion | Multiline answer preserved; no writes and no Review |
+| Project edit task | Final answer shown before tested change receipt and Diff |
+| Real Edge UI E2E | All 19 checks passed, including plain chat, project discussion, and reconnect recovery |
+| Live DeepSeek project discussion | Passed in 1 turn; no files created or changed |
+| New UI modes or controls | None |
 
 ## 0.1.15 GLM Provider
 

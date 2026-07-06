@@ -176,6 +176,7 @@ class TaskRunner:
             if fresh_chat and can_summarize_current_chat:
                 handoff = conversation.prepare_model_handoff(provider.send)
             prior_snapshot = conversation.snapshot
+            task_changed = False
             conversation.update_snapshot(ConversationSnapshot(
                 mode=mode,
                 goal=prior_snapshot.goal or task,
@@ -215,11 +216,16 @@ class TaskRunner:
                     handoff=handoff,
                     project_facts=verified_facts,
                 )
+                task_changed = result.changed
                 state.set_provider_session(
                     provider_id,
                     None if result.stop_reason == "stopped" else session_id,
                 )
-                if result.stop_reason == "done" and not state.stop_flag.is_set():
+                if (
+                    result.stop_reason == "done"
+                    and task_changed
+                    and not state.stop_flag.is_set()
+                ):
                     task_changes = self.collect_changes(project, tracker)
                     if has_reviewable_changes(task_changes):
                         try:
@@ -270,6 +276,7 @@ class TaskRunner:
                                     provider_id=provider_id,
                                     project_facts=verified_facts,
                                 )
+                                task_changed = task_changed or result.changed
             else:
                 if fresh_chat:
                     provider.new_chat()
@@ -323,8 +330,9 @@ class TaskRunner:
                 "provider": provider_id,
             }
             if receipt is not None:
+                event["changed"] = task_changed
                 event["receipt"] = receipt.to_dict()
-                if task_changes and task_changes.get("ok"):
+                if task_changed and task_changes and task_changes.get("ok"):
                     event["changes"] = {
                         "changed_count": task_changes.get("changed_count", 0),
                         "files": task_changes.get("files", [])[:3],

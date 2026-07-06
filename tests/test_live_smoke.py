@@ -28,6 +28,15 @@ class LiveSmokeTests(unittest.TestCase):
             self.assertIn("LIVE_SMOKE_BUG", (root / "pricing.py").read_text(encoding="utf-8"))
             self.assertTrue((root / "test_pricing.py").exists())
 
+    def test_discussion_fixture_requires_no_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            live_smoke._make_fixture(root, "discussion")
+
+            self.assertTrue(live_smoke._verify_fixture(root, "discussion")["ok"])
+            (root / "unexpected.txt").write_text("changed", encoding="utf-8")
+            self.assertFalse(live_smoke._verify_fixture(root, "discussion")["ok"])
+
     def test_main_supports_json_output_flag(self) -> None:
         with mock.patch.object(live_smoke, "run_smoke", return_value={"ok": True, "summary": "done"}):
             with mock.patch("builtins.print") as print_mock:

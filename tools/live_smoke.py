@@ -34,7 +34,7 @@ def _record_event(events: list[str], event) -> None:
 
 
 def _make_fixture(root: Path, name: str) -> None:
-    if name == "create":
+    if name in {"create", "discussion"}:
         return
     if name == "edit":
         (root / "pricing.py").write_text(
@@ -57,6 +57,17 @@ def _make_fixture(root: Path, name: str) -> None:
 
 def _verify_fixture(root: Path, case: str) -> dict:
     """Verify the result independently of the model's own test command."""
+    if case == "discussion":
+        files = sorted(
+            str(path.relative_to(root))
+            for path in root.rglob("*")
+            if path.is_file()
+        )
+        return {
+            "ok": not files,
+            "exit_code": 0 if not files else 1,
+            "output": "no files changed" if not files else f"unexpected files: {files}",
+        }
     if case == "create":
         assertion = "from math_utils import add; assert add(2, 3) == 5"
     elif case == "edit":
@@ -183,7 +194,13 @@ def run_smoke(
         provider = None
         try:
             provider = connect_provider(provider_id, port=port)
-            if case == "create":
+            if case == "discussion":
+                task = (
+                    "Discuss a good first version of a breathing practice app. "
+                    "Give the user a concrete, concise recommendation without creating "
+                    "or editing files. Finish with done whose summary is the direct answer."
+                )
+            elif case == "create":
                 task = (
                     "Create math_utils.py with add(a, b) returning a + b. "
                     "Create test_math_utils.py with a unittest for add(2, 3) == 5. "
@@ -232,11 +249,17 @@ def run_smoke(
             finally:
                 provider_controls.end_task_context()
         verification = _verify_fixture(root, case)
+        changed = bool(getattr(result, "changed", False))
         return {
-            "ok": final_stop_reason == "done" and verification["ok"],
+            "ok": (
+                final_stop_reason == "done"
+                and verification["ok"]
+                and (case != "discussion" or not changed)
+            ),
             "summary": final_summary,
             "stop_reason": final_stop_reason,
             "turns": result.turns,
+            "changed": changed,
             "review": review_status,
             "verification": verification,
             "events": events,
@@ -271,7 +294,7 @@ def run_matrix(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--provider", choices=(*PROVIDER_IDS, "all"), default="deepseek")
-    ap.add_argument("--case", choices=("create", "edit"), default="create")
+    ap.add_argument("--case", choices=("create", "edit", "discussion"), default="create")
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--max-turns", type=int, default=8)
     ap.add_argument("--reviewer", choices=PROVIDER_IDS)

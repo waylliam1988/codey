@@ -115,8 +115,12 @@ TOOL_SPECS = (
     ToolSpec(
         "done",
         None,
-        examples=('{"tool":"done","args":{"summary":"one-line summary"}}',),
-        description="Finish the task.",
+        examples=('{"tool":"done","args":{"summary":"direct final response to the user"}}',),
+        description=(
+            "Finish the task. summary is the complete user-facing response. "
+            "For discussion, explanation, or read-only analysis, answer directly "
+            "instead of merely saying that the topic was discussed."
+        ),
     ),
     # Compatibility only. New prompts expose edit(content=...) instead.
     ToolSpec("write", "write"),
@@ -193,7 +197,11 @@ Rules:
   - run commands must be simple. No pipes, redirects, chaining, tail/head, or
     shell-only syntax. Never use run/shell to write files; use edit.
   - [tool_result tool=...] means the local tool already ran. Continue from it.
-  - If the task is complete, call done(summary). Do not summarize outside JSON.
+  - Do not edit files unless the user asks for a change. You may inspect the
+    project and answer questions without modifying it.
+  - If the task is complete, call done(summary). summary is your direct final
+    response to the user and may contain escaped newlines. Do not merely report
+    that you discussed or explained something. Do not answer outside JSON.
 """
 
 

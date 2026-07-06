@@ -340,6 +340,25 @@ class DefaultsTests(unittest.TestCase):
 
 
 class RunLoopTests(unittest.TestCase):
+    def test_read_only_project_discussion_returns_direct_answer_without_changes(self) -> None:
+        answer = "Start with one guided breathing rhythm.\n\nAdd customization later."
+        provider = FakeProvider(json.dumps({
+            "tool": "done",
+            "args": {"summary": answer},
+        }))
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Discuss the product first. Do not write code.",
+                on_event=lambda _event: None,
+            )
+
+        self.assertEqual(result.summary, answer)
+        self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.changed)
+
     def test_emits_structured_turn_and_tool_events(self) -> None:
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"app.py"}}',
@@ -358,6 +377,7 @@ class RunLoopTests(unittest.TestCase):
             )
 
         self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.changed)
         run_events = [event for event in events if event.kind in {"turn", "tool"}]
         self.assertEqual([event.kind for event in run_events], ["turn", "tool", "turn"])
         self.assertEqual(run_events[1].call.name, "read")
@@ -725,6 +745,7 @@ class RunLoopTests(unittest.TestCase):
 
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(result.summary, "fixed and tested")
+        self.assertTrue(result.changed)
         self.assertTrue(result.checks_passed)
         self.assertTrue(any("verification" in render_run_event(event).lower() for event in events))
         self.assertTrue(any("python -m unittest" in prompt for prompt in provider.sent))

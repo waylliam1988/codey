@@ -156,6 +156,7 @@ class RunResult:
     stop_reason: str = "done"  # done | stopped | max_turns | no_progress | protocol
     turns: int = 0
     checks_passed: bool = False
+    changed: bool = False
 
 
 def run(
@@ -213,7 +214,7 @@ def run(
         if conversation is not None:
             blocker = "" if stop_reason == "done" else summary
             conversation.update_snapshot(snapshot(summary, blocker))
-        return RunResult(summary, stop_reason, turns, checks_passed)
+        return RunResult(summary, stop_reason, turns, checks_passed, wrote_files)
 
     def open_fresh_chat() -> bool:
         emit(RunEvent.status(f"[agent] opening a fresh {provider.name} conversation"))

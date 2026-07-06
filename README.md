@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.15`
+Version: `0.1.16`
 
 ---
 
@@ -32,7 +32,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 
 ## What It Can Do
 
-- Chat with DeepSeek, MiMo, Qwen, or GLM from a local control panel
+- Use New Chat for normal conversation without granting access to a project
+- Discuss, inspect, and edit inside one project conversation; files change only when requested
 - Let the model read and modify files in a selected project folder
 - Run tests and feed results back to the model
 - Show red/green diffs
@@ -64,6 +65,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.16` keeps `New Chat` as a safe plain conversation with no project access, while project chats can now handle both discussion and coding without a mode switch. Read-only project questions return the selected model's full answer directly and no longer show a `No files changed` receipt. If a task actually writes files, Codey still shows the final answer, test receipt, diff entry, and optional second-model review. The change adds no new UI controls; the release passed 388 tests, all 19 real Edge UI E2E checks, and a live DeepSeek project discussion that completed in one turn without creating files.
 
 Version `0.1.15` adds GLM as the fourth provider without adding a new workflow. Its profile verifies the real non-whitespace send state, reads only the final answer rather than the adjacent thinking panel, and uses the same one-shot submission, cancellation, recovery, and ProfileDoctor boundaries as the other providers. A small GLM-only formatting note keeps JSON quotes as ASCII inside a `json` code block; normal chat is not forced to return JSON. Provider construction and smoke choices now come from one registry, while the existing monochrome picker simply gains one `GLM` row. Qwen now waits for its model bootstrap to finish instead of trusting an input box that appears too early; its real draft-settle and A/B-choice handling remain intact. The release passed 384 tests and all 16 real Edge UI E2E checks. GLM completed the live edit fixture with independent unittest verification, and separately approved a real DeepSeek diff as the read-only reviewer. Two fresh Qwen edit reruns passed in four and five turns.
 
@@ -103,6 +106,10 @@ You do not need to learn a new mode. If you open two supported AI pages in Edge,
 - The reviewer does not touch your files. It only reads the diff and points out concrete problems.
 - If the reviewer approves, Codey finishes.
 - If the reviewer finds a real issue, Codey asks the writer to repair it once more.
+
+The reviewer runs only after the selected model actually changes a file. Project
+questions and read-only analysis return the selected model's answer directly,
+without turning a conversation into a code review.
 
 If only one model page is open, Codey simply works in single-model mode. If the second model is closed, logged out, or fails to answer, Codey quietly falls back to the single-model result.
 
@@ -147,6 +154,9 @@ Create a small Python snake game in one file. Make it runnable with python snake
 ```
 
 Codey will ask the web AI for structured tool calls, apply edits locally, and show what changed.
+
+You can also ask questions in that same project chat before requesting code. If
+you only want a general conversation with no project access, use **New Chat**.
 
 When a task finishes, Codey summarizes the local facts in one quiet line:
 

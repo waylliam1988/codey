@@ -1541,6 +1541,9 @@ function handleServerEvent(data) {
     const summary = (data.summary || '').toString();
     const reason = (data.stop_reason || 'done').toString();
     const terminalKey = runId ? `terminal:${runId}` : '';
+    const answerKey = terminalKey ? `${terminalKey}:answer` : '';
+    const receiptKey = terminalKey ? `${terminalKey}:receipt` : '';
+    const project = sessionProjectPath(sid);
     let shownReceipt = false;
     if (reason === 'error' && data.provider_failure && data.provider_failure.action === 'connect') {
       if (data.provider && PROVIDERS.includes(data.provider)) {
@@ -1560,21 +1563,30 @@ function handleServerEvent(data) {
       addToSession(sid, { type: 'pause', text: 'Paused after several turns without new file writes', sessionId: sid, runId, eventKey: terminalKey });
     } else if (reason === 'approval') {
       // shell approval card is emitted separately
-    } else if (data.receipt && data.receipt.text) {
+    } else if (reason === 'done') {
+      if (project && summary) {
+        addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
+      }
       const changes = data.changes || {};
-      addToSession(sid, {
-        type: 'done',
-        text: data.receipt.text,
-        project: changes.project || sessionProjectPath(sid),
-        changed: !!(data.receipt.changed_count || changes.changed_count),
-        runId,
-        eventKey: terminalKey,
-      });
-      shownReceipt = true;
+      const changed = !!data.changed;
+      const changedCount = Number((data.receipt && data.receipt.changed_count) || changes.changed_count || 0);
+      if (changed && changedCount > 0 && data.receipt && data.receipt.text) {
+        addToSession(sid, {
+          type: 'done',
+          text: data.receipt.text,
+          project: changes.project || project,
+          changed: true,
+          runId,
+          eventKey: receiptKey,
+        });
+        shownReceipt = true;
+      } else if (!project && summary) {
+        addToSession(sid, { type: 'done', text: summary, runId, eventKey: terminalKey });
+      }
     } else if (summary) {
       addToSession(sid, { type: 'done', text: summary, runId, eventKey: terminalKey });
     }
-    if (reason !== 'error' && reason !== 'approval' && !shownReceipt) maybeAddChangesSummary(sid, terminalKey, runId);
+    if (reason !== 'error' && reason !== 'approval' && data.changed && !shownReceipt) maybeAddChangesSummary(sid, terminalKey, runId);
     return;
   }
   if (data.type === 'shell_request') {

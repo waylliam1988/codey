@@ -142,14 +142,17 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("selector", teach_block.lower())
         self.assertNotIn("override", teach_block.lower())
 
-    def test_done_receipt_can_open_changes_without_duplicate_summary(self) -> None:
+    def test_project_completion_separates_answer_from_changed_receipt(self) -> None:
+        self.assertIn("type: 'asst', text: summary", HTML)
+        self.assertIn("const changed = !!data.changed", HTML)
+        self.assertIn("changed && changedCount > 0", HTML)
         self.assertIn("data.receipt && data.receipt.text", HTML)
         self.assertIn("text: data.receipt.text", HTML)
         self.assertIn("label: 'View diff'", HTML)
         self.assertIn("onclick: () => openChangesDrawer(m.project)", HTML)
         self.assertIn("let shownReceipt = false", HTML)
         self.assertIn("shownReceipt = true", HTML)
-        self.assertIn("!shownReceipt) maybeAddChangesSummary(sid, terminalKey, runId)", HTML)
+        self.assertIn("data.changed && !shownReceipt", HTML)
         self.assertIn("type: 'changes'", HTML)
 
     def test_agent_events_are_structured_instead_of_parsed_from_logs(self) -> None:
