@@ -1,7 +1,37 @@
-# Codey 0.1.18 Test Report
+# Codey 0.1.19 Test Report
 
 Date: 2026-07-08
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.19 MiMo Answer-State Completion
+
+This release narrows MiMo's state split: send-button recognition can still use
+the MiMo paper-plane SVG as a provider-specific final guard before clicking,
+but answer completion no longer depends on the send icon returning.
+
+Behavior:
+
+- `_generation_complete()` now locates the newest answer and evaluates answer
+  DOM state instead of composer icon state.
+- Cleaned final text must exist after removing MiMo thinking/deep-thinking
+  blocks.
+- `data-is-typing="true"` rejects completion.
+- A copy button near the newest answer marks the answer complete.
+- If no copy button is available yet, completion requires that MiMo is not in a
+  generating/stop state.
+- SVG matching remains only in the send-button path to avoid upload/stop
+  misclicks.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| MiMo unit suite | 29 passed |
+| Focused provider/protocol/server suite | 211 passed |
+| Full unittest suite | 452 passed |
+| Syntax compile | `python -m compileall -q codey tests tools` passed |
+| Diff whitespace check | `git diff --check` passed with CRLF warnings only |
+| New UI modes or controls | None |
 
 ## 0.1.18 Provider Reliability and Factual Receipts
 

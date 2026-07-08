@@ -308,70 +308,58 @@ class MimoDriverTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
-    def test_generation_complete_requires_mimo_send_icon_not_stop_icon(self) -> None:
+    def test_generation_complete_uses_finished_response_not_send_icon(self) -> None:
         page = mock.Mock()
-        button = mock.Mock()
-        button.is_visible.return_value = True
-        button.is_enabled.return_value = True
-        button.evaluate.return_value = {
-            "disabled": False,
-            "ariaDisabled": "",
-            "trackId": "home_send_btn",
-            "trackName": "home_send_message",
-            "text": "",
-            "aria": "",
-            "title": "",
-            "viewBoxes": ["0 0 24 24"],
-            "rect": {
-                "left": 10,
-                "right": 38,
-                "top": 10,
-                "bottom": 38,
-                "width": 28,
-                "height": 28,
-                "viewportWidth": 1000,
-                "viewportHeight": 800,
-            },
-        }
-        locator = mock.Mock()
-        locator.count.return_value = 1
-        locator.nth.return_value = button
-        page.locator.return_value = locator
+        response = mock.Mock()
+        copy_button = mock.Mock()
 
-        self.assertFalse(mimo._generation_complete(page))
+        with (
+            mock.patch.object(mimo.controls, "locate_response", return_value=response),
+            mock.patch.object(mimo, "_response_text", return_value="final reply"),
+            mock.patch.object(mimo, "_response_is_typing", return_value=False),
+            mock.patch.object(mimo, "_copy_button_after_response", return_value=copy_button),
+        ):
+            self.assertTrue(mimo._generation_complete(page))
 
-    def test_generation_complete_accepts_disabled_idle_send_icon(self) -> None:
+    def test_generation_complete_rejects_typing_response(self) -> None:
         page = mock.Mock()
-        button = mock.Mock()
-        button.is_visible.return_value = True
-        button.is_enabled.return_value = False
-        button.evaluate.return_value = {
-            "disabled": True,
-            "ariaDisabled": "",
-            "trackId": "home_send_btn",
-            "trackName": "home_send_message",
-            "text": "",
-            "aria": "",
-            "title": "",
-            "viewBoxes": ["0 0 19 16"],
-            "rect": {
-                "left": 10,
-                "right": 38,
-                "top": 10,
-                "bottom": 38,
-                "width": 28,
-                "height": 28,
-                "viewportWidth": 1000,
-                "viewportHeight": 800,
-            },
-        }
-        locator = mock.Mock()
-        locator.count.return_value = 1
-        locator.nth.return_value = button
-        page.locator.return_value = locator
+        response = mock.Mock()
 
-        self.assertTrue(mimo._generation_complete(page))
-        self.assertIsNone(mimo._profiled_send_button(page))
+        with (
+            mock.patch.object(mimo.controls, "locate_response", return_value=response),
+            mock.patch.object(mimo, "_response_text", return_value="partial reply"),
+            mock.patch.object(mimo, "_response_is_typing", return_value=True),
+            mock.patch.object(mimo, "_copy_button_after_response") as copy_button,
+        ):
+            self.assertFalse(mimo._generation_complete(page))
+
+        copy_button.assert_not_called()
+
+    def test_generation_complete_accepts_finished_response_without_copy_when_not_generating(self) -> None:
+        page = mock.Mock()
+        response = mock.Mock()
+
+        with (
+            mock.patch.object(mimo.controls, "locate_response", return_value=response),
+            mock.patch.object(mimo, "_response_text", return_value="final reply"),
+            mock.patch.object(mimo, "_response_is_typing", return_value=False),
+            mock.patch.object(mimo, "_copy_button_after_response", return_value=None),
+            mock.patch.object(mimo, "_generation_active", return_value=False),
+        ):
+            self.assertTrue(mimo._generation_complete(page))
+
+    def test_generation_complete_rejects_finished_text_while_generation_active(self) -> None:
+        page = mock.Mock()
+        response = mock.Mock()
+
+        with (
+            mock.patch.object(mimo.controls, "locate_response", return_value=response),
+            mock.patch.object(mimo, "_response_text", return_value="partial reply"),
+            mock.patch.object(mimo, "_response_is_typing", return_value=False),
+            mock.patch.object(mimo, "_copy_button_after_response", return_value=None),
+            mock.patch.object(mimo, "_generation_active", return_value=True),
+        ):
+            self.assertFalse(mimo._generation_complete(page))
 
     def test_uncertain_enter_submission_never_requests_a_second_action(self) -> None:
         page = mock.Mock()

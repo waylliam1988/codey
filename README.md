@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.18`
+Version: `0.1.19`
 
 ---
 
@@ -66,6 +66,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.19` refines MiMo's completion detection without changing the UI. MiMo still uses its paper-plane SVG as a final provider-specific safety check before clicking the send button, but it no longer uses that icon to decide whether an answer is complete. Completion is now based on the newest answer DOM: cleaned final text must exist, `data-is-typing` must not be active, and a nearby copy button immediately marks the answer complete; without a copy button, Codey still requires the page not to be in a generating state. This keeps visual icon matching as a send-button guard instead of a response-state machine. The release passed 452 tests, the focused provider/protocol/server suite, syntax compile, and `git diff --check` with only CRLF warnings.
 
 Version `0.1.18` keeps the UI unchanged while tightening provider reliability and local-result honesty. MiMo now accepts only its explicit paper-plane send button, refuses to submit while a response is still generating, and strips MiMo thinking blocks before reading the final answer, avoiding upload-button misclicks and accidental stop-state submissions. Qwen now uses a stricter local send-button fallback and hidden Review runs suppress manual teaching, so a private repair turn cannot leave the user stuck waiting to click a website control. GLM handles changed answers without a response-count increase and keeps smart-quote normalization scoped to GLM replies. The local JSON protocol now rejects nested tool calls hidden inside `done(summary)` and tells models to use `edit(content=...)` instead of legacy write-style tools. Review follow-up receipts also distinguish whether a repair turn actually ran checks, so a failed check or unfinished repair can no longer inherit an earlier `checks passed` receipt. The release passed 450 tests, compile checks, and `git diff --check`; real MiMo and DeepSeek/MiMo smoke runs confirmed no upload popover, no accidental stop, valid hidden audit, and approved review.
 

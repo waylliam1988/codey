@@ -143,7 +143,30 @@ def _starts_with_thinking_summary(text: str) -> bool:
 
 
 def _generation_complete(page: Page) -> bool:
-    return _mimo_idle_button_visible(page)
+    response = controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
+    if response is None:
+        return False
+    return _response_complete(page, response)
+
+
+def _response_complete(page: Page, response: Locator) -> bool:
+    if not _response_text(response):
+        return False
+    if _response_is_typing(response):
+        return False
+    if _copy_button_after_response(page, response) is not None:
+        return True
+    return not _generation_active(page)
+
+
+def _response_is_typing(response: Locator) -> bool:
+    try:
+        value = response.evaluate("el => el.getAttribute('data-is-typing') || ''")
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
+        return False
+    return str(value or "").strip().lower() == "true"
 
 
 def _copy_button_after_response(page: Page, response: Locator) -> Locator | None:
@@ -151,7 +174,7 @@ def _copy_button_after_response(page: Page, response: Locator) -> Locator | None
         response_box = response.bounding_box()
     except Exception:
         response_box = None
-    if not response_box:
+    if not isinstance(response_box, dict):
         return None
     x_min = max(0.0, float(response_box["x"]) - 8.0)
     y_min = float(response_box["y"] + response_box["height"]) - 8.0
@@ -379,21 +402,6 @@ def _is_mimo_idle_send_state(state: dict[str, object] | None) -> bool:
         and _has_mimo_send_icon(state)
         and not any(word in text for word in ("stop", "停止", "终止"))
     )
-
-
-def _mimo_idle_button_visible(page: Page) -> bool:
-    for selector in PROFILE.selectors("send_button"):
-        try:
-            candidates = page.locator(selector)
-            count = int(candidates.count())
-        except cancellation.TaskCancelled:
-            raise
-        except Exception:
-            continue
-        for index in range(count - 1, -1, -1):
-            if _is_mimo_idle_send_state(_mimo_button_state(candidates.nth(index))):
-                return True
-    return False
 
 
 def _generation_active(page: Page) -> bool:
