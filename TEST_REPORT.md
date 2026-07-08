@@ -52,6 +52,7 @@ Verification:
 | Sibling-tab advisor connection | Hidden consensus and project audit borrow already-open tabs from the active Writer context |
 | GLM split markdown response | One assistant answer split across multiple `.markdown-body` nodes is read as one complete answer wrapper |
 | GLM smart-quote tool JSON | GLM-only normalization repairs smart double quotes around tool JSON without changing the shared JSON codec |
+| Qwen review path contract | Live Qwen review probe returned `game.js`, copied from Changed files, instead of inventing a new test filename |
 | Existing project audit | Private reports are injected into the selected Writer task |
 | Existing project audit failure | Writer continues without the private reports |
 | Empty project plan | Draft-first hidden plan is injected before Writer starts in a fresh chat |

@@ -19,9 +19,11 @@ REVIEW_REPAIR_PROMPT = (
     "Your previous review did not contain a valid JSON object. "
     "Return only the JSON object now, preserving your previous verdict and "
     "concrete findings. No analysis, no explanation, no markdown. "
+    "Every findings[].path must still be copied from the Changed files list; "
+    "do not invent filenames. "
     '{"verdict":"approved","summary":"Looks good","findings":[]} or '
     '{"verdict":"changes_requested","summary":"One issue found","findings":'
-    '[{"path":"relative/file.py","issue":"Concrete problem",'
+    '[{"path":"<copy path from Changed files>","issue":"Concrete problem",'
     '"suggested_fix":"Small fix"}]}'
 )
 
@@ -173,13 +175,17 @@ def render_review_prompt(
         "code change. You are read-only: do not ask to edit files directly.\n\n"
         "Only request changes for concrete correctness, test, integration, or "
         "user-visible issues. Do not request broad rewrites or style-only cleanup.\n\n"
+        "Every findings[].path must be copied from the Changed files list below. "
+        "Do not invent filenames. If the issue is a missing test, missing new file, "
+        "or missing documentation, use the most relevant changed file as path and "
+        "describe the missing file in issue or suggested_fix.\n\n"
         "Return only JSON. No analysis. No explanation. The first character "
         "must be { and the last character must be }.\n"
         "Return exactly one JSON object and no markdown fences:\n"
         '{"verdict":"approved","summary":"Looks good","findings":[]}\n'
         "or\n"
         '{"verdict":"changes_requested","summary":"One issue found","findings":'
-        '[{"path":"relative/file.py","issue":"Concrete problem",'
+        '[{"path":"<copy path from Changed files>","issue":"Concrete problem",'
         '"suggested_fix":"Small fix"}]}\n\n'
         f"Project: {project}\n\n"
         f"Original user task:\n{_clip(task, 6_000)}\n\n"

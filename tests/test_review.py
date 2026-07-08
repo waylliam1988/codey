@@ -49,9 +49,14 @@ class ReviewProtocolTests(unittest.TestCase):
 
         self.assertIn("read-only", prompt)
         self.assertIn("You are a careful code reviewer", prompt)
+        self.assertIn("Every findings[].path must be copied from the Changed files list", prompt)
+        self.assertIn("Do not invent filenames", prompt)
+        self.assertIn("If the issue is a missing test", prompt)
         self.assertIn("Return only JSON. No analysis. No explanation.", prompt)
         self.assertIn("Return exactly one JSON object", prompt)
         self.assertIn("M app.py +1 -1", prompt)
+        self.assertIn("<copy path from Changed files>", prompt)
+        self.assertNotIn("relative/file.py", prompt)
         self.assertIn("exit 0: python -m unittest", prompt)
         self.assertNotIn("Codey's second model", prompt)
 
@@ -79,6 +84,9 @@ class ReviewProtocolTests(unittest.TestCase):
 
         self.assertIn("Return only the JSON object now", prompt)
         self.assertIn("preserving your previous verdict", prompt)
+        self.assertIn("must still be copied from the Changed files list", prompt)
+        self.assertIn("<copy path from Changed files>", prompt)
+        self.assertNotIn("relative/file.py", prompt)
         self.assertIn('"verdict":"approved"', prompt)
         self.assertIn('"verdict":"changes_requested"', prompt)
         self.assertNotIn("Codey", prompt)
