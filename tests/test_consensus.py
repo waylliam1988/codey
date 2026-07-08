@@ -26,7 +26,10 @@ class FakeProvider:
         self.sent.append(text)
         if self.fail:
             raise RuntimeError("offline")
-        return self.replies.pop(0) if self.replies else "reply"
+        reply = self.replies.pop(0) if self.replies else "reply"
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
 
     def close(self) -> None:
         self.closed = True
@@ -112,6 +115,98 @@ class ConsensusTests(unittest.TestCase):
         self.assertEqual(result.answer, "final")
         self.assertEqual(result.advisor_count, 1)
         self.assertIn("glm advice", selected.sent[0])
+
+    def test_draft_first_consensus_uses_owner_draft_before_advisors(self) -> None:
+        selected = FakeProvider(["owner draft", "final answer"])
+        qwen = FakeProvider(["qwen critique"])
+        glm = FakeProvider(["glm critique"])
+        providers = {"qwen": qwen, "glm": glm}
+
+        result = consensus.run_consensus(
+            selected_provider=selected,
+            selected_provider_id="deepseek",
+            task="How should I design a breathing app?",
+            provider_ids=("deepseek", "qwen", "glm"),
+            provider_labels={"qwen": "Qwen", "glm": "GLM"},
+            availability=lambda: {"qwen": True, "glm": True},
+            connect_existing=lambda provider_id: providers[provider_id],
+            draft_first=True,
+            owner_prompt="Answer the user with a plan.",
+        )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.answer, "final answer")
+        self.assertFalse(result.degraded)
+        self.assertEqual(result.advisor_count, 2)
+        self.assertEqual(len(selected.sent), 2)
+        self.assertIn("private first-draft answer", selected.sent[0])
+        self.assertIn("Answer the user with a plan.", selected.sent[0])
+        self.assertIn("owner draft", qwen.sent[0])
+        self.assertIn("owner draft", glm.sent[0])
+        self.assertIn("If the draft is wrong", qwen.sent[0])
+        self.assertNotIn("glm critique", qwen.sent[0])
+        self.assertIn("owner draft", selected.sent[1])
+        self.assertIn("qwen critique", selected.sent[1])
+        self.assertIn("glm critique", selected.sent[1])
+
+    def test_owner_draft_prompt_keeps_current_request_after_long_handoff(self) -> None:
+        marker = "CURRENT_REQUEST_MARKER"
+        prompt = consensus.render_owner_draft_prompt(
+            task=f"Please answer this current request: {marker}",
+            owner_prompt=("handoff detail " * 700) + marker,
+        )
+
+        user_request = prompt.split("User request:", 1)[1].split(
+            "Additional conversation context:",
+            1,
+        )[0]
+        self.assertIn(marker, user_request)
+        self.assertIn("Additional conversation context:", prompt)
+
+    def test_draft_first_consensus_returns_draft_when_all_advisors_fail(self) -> None:
+        selected = FakeProvider(["owner draft"])
+        providers = {"qwen": FakeProvider(fail=True)}
+
+        result = consensus.run_consensus(
+            selected_provider=selected,
+            selected_provider_id="deepseek",
+            task="Compare approaches",
+            provider_ids=("deepseek", "qwen"),
+            provider_labels={"qwen": "Qwen"},
+            availability=lambda: {"qwen": True},
+            connect_existing=lambda provider_id: providers[provider_id],
+            draft_first=True,
+        )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.answer, "owner draft")
+        self.assertEqual(result.advisor_count, 0)
+        self.assertTrue(result.degraded)
+        self.assertEqual(len(selected.sent), 1)
+
+    def test_draft_first_consensus_returns_draft_when_final_synthesis_fails(self) -> None:
+        selected = FakeProvider(["owner draft", RuntimeError("final failed")])
+        providers = {"qwen": FakeProvider(["qwen critique"])}
+
+        result = consensus.run_consensus(
+            selected_provider=selected,
+            selected_provider_id="deepseek",
+            task="Compare approaches",
+            provider_ids=("deepseek", "qwen"),
+            provider_labels={"qwen": "Qwen"},
+            availability=lambda: {"qwen": True},
+            connect_existing=lambda provider_id: providers[provider_id],
+            draft_first=True,
+        )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.answer, "owner draft")
+        self.assertEqual(result.advisor_count, 1)
+        self.assertTrue(result.degraded)
+        self.assertEqual(len(selected.sent), 2)
 
     def test_project_context_removes_local_project_path(self) -> None:
         rendered = consensus.render_project_context(

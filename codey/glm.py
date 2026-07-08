@@ -18,11 +18,17 @@ PROVIDER_ID = "glm"
 PROFILE = get_profile(PROVIDER_ID)
 GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
 FORMAT_HINT = (
-    "GLM page formatting override: when an answer contains JSON, always put "
-    "the single JSON object in one json code block, even if an earlier "
-    "instruction says not to use markdown fences. Inside that block, every "
-    "double quote must be ASCII U+0022. Add no text outside the block."
+    "GLM page formatting override: when your answer is a local-runner JSON "
+    "command, return one raw JSON object with ASCII U+0022 double quotes. "
+    "Do not wrap it in markdown fences and add no other text. If the answer "
+    "is normal prose, ignore this note."
 )
+SMART_TOOL_QUOTE_TRANSLATION = str.maketrans({
+    "“": '"',
+    "”": '"',
+    "„": '"',
+    "‟": '"',
+})
 THINKING_CONTENT = ".text-advance-thinking-content"
 _FINAL_ANSWER_NODE_JS = r"""
 (node, thinkingSelector) => {
@@ -31,6 +37,7 @@ _FINAL_ANSWER_NODE_JS = r"""
     && node.querySelector(thinkingSelector) === null;
 }
 """
+_MARKDOWN_BODY = ".markdown-body"
 
 READY_TIMEOUT = 90.0
 RESPONSE_TIMEOUT_GRACE = 60.0
@@ -40,6 +47,15 @@ SUBMIT_CONFIRM_TIMEOUT = 15.0
 
 def prepare_prompt(text: str) -> str:
     return f"{text}\n\n{FORMAT_HINT}"
+
+
+def normalize_tool_json_reply(text: str) -> str:
+    """Repair GLM's occasional smart double quotes around tool JSON keys."""
+
+    stripped = text.lstrip()
+    if not (stripped.startswith("{“tool”") or stripped.startswith("{”tool”")):
+        return text
+    return text.translate(SMART_TOOL_QUOTE_TRANSLATION)
 
 
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
@@ -114,6 +130,10 @@ def _last_text(page: Page) -> str:
     try:
         if not response.evaluate(_FINAL_ANSWER_NODE_JS, THINKING_CONTENT):
             return ""
+        markdown_parts = response.locator(_MARKDOWN_BODY).all_inner_texts()
+        text = "\n".join(part.strip() for part in markdown_parts if part.strip()).strip()
+        if text:
+            return text
         return response.inner_text().strip()
     except Exception:
         return ""
@@ -292,6 +312,7 @@ def chat(
         if not text.strip():
             raise ValueError("GLM message cannot be blank")
         prompt = prepare_prompt(text)
-        return _chat(page, prompt, response_timeout, stable_ticks, tick, min_wait)
+        reply = _chat(page, prompt, response_timeout, stable_ticks, tick, min_wait)
+        return normalize_tool_json_reply(reply)
     finally:
         controls.stop_response_watch(page, PROVIDER_ID)

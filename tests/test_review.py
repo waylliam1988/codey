@@ -66,6 +66,9 @@ class ReviewProtocolTests(unittest.TestCase):
 
         self.assertIn("Treat the review as advisory", prompt)
         self.assertIn("Continue the task in this same project.", prompt)
+        self.assertIn("Reviewer paths are only clues", prompt)
+        self.assertIn("If a referenced path does not exist", prompt)
+        self.assertIn("do not invent a change", prompt)
         self.assertIn("Original task", prompt)
         self.assertIn("app.py", prompt)
         self.assertIn("Missing test", prompt)

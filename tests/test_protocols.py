@@ -261,6 +261,8 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("written atomically", prompt)
         self.assertIn("JSON strings must escape quotes", prompt)
         self.assertIn("use content with the full", prompt)
+        self.assertIn("Never claim a command, test, build, lint, or shell result", prompt)
+        self.assertIn("[tool_result tool=run]", prompt)
         self.assertIn("No pipes, redirects", prompt)
         self.assertNotIn("You are Codey", prompt)
 

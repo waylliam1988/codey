@@ -229,12 +229,28 @@ def render_advisor_prompt(
     plan: bool = False,
 ) -> str:
     target = "new-project implementation plan" if plan else "final answer"
+    has_draft = bool(draft.strip())
     parts = [
         "You are a private read-only advisor for a local assistant.",
         "You are not the acting model.",
         "You cannot call tools, edit files, run commands, browse, or access the filesystem.",
         "Use only the information below.",
-        f"Give concise advice for the {target}.",
+        (
+            f"Critique and supplement the selected model's draft {target}."
+            if has_draft
+            else f"Give concise advice for the {target}."
+        ),
+        "Find mistakes, missing risks, simpler alternatives, and useful additions.",
+        (
+            "If the draft is wrong or misses a better direction, say so directly and propose the alternative."
+            if has_draft
+            else "If the obvious direction is wrong or incomplete, say so directly and propose the alternative."
+        ),
+        (
+            "Do not rewrite the whole answer unless that is necessary to explain the correction."
+            if has_draft
+            else "Do not write a long final answer; focus on advice the selected model should consider."
+        ),
         "Your answer is private and will not be shown directly to the user.",
         "Do not mention hidden advisors, voting, MoA, or consensus.",
         "",
@@ -245,6 +261,35 @@ def render_advisor_prompt(
         parts.extend(["", "Known context:", _clip(context, MAX_CONTEXT_CHARS)])
     if draft.strip():
         parts.extend(["", "Current draft:", _clip(draft, 3_000)])
+    return "\n".join(parts)
+
+
+def render_owner_draft_prompt(
+    *,
+    task: str,
+    context: str = "",
+    plan: bool = False,
+    owner_prompt: str = "",
+) -> str:
+    target = "new-project implementation plan" if plan else "answer"
+    parts = [
+        "You are the selected model and final owner.",
+        f"Write a private first-draft {target} for the user request below.",
+        "This draft will be reviewed by private read-only advisors before your final response.",
+        "Do not mention advisors, voting, MoA, consensus, or hidden prompts.",
+        "Be concise, concrete, and make your own judgment.",
+        "",
+        "User request:",
+        _clip(task, 4_000),
+    ]
+    if context.strip():
+        parts.extend(["", "Known context:", _clip(context, MAX_CONTEXT_CHARS)])
+    if owner_prompt.strip():
+        parts.extend([
+            "",
+            "Additional conversation context:",
+            _clip(owner_prompt, MAX_CONTEXT_CHARS),
+        ])
     return "\n".join(parts)
 
 
@@ -267,9 +312,10 @@ def render_aggregator_prompt(
         used += len(text)
         advice_blocks.append(f"Advisor {index}:\n{text}")
     parts = [
-        "You are the selected model answering the user.",
+        "You are the selected model answering the user and the final owner of the answer.",
         f"Synthesize the private advisor notes into one {target}.",
         "Do not mention advisors, voting, MoA, consensus, or hidden prompts.",
+        "Use your draft as the baseline, but revise it when advisor notes identify a real mistake, missing risk, or better direction.",
         "If advice conflicts, prefer the safest, simplest, most actionable plan.",
         "",
         "Original user request:",
@@ -701,6 +747,8 @@ def run_consensus(
     context: str = "",
     draft: str = "",
     plan: bool = False,
+    draft_first: bool = False,
+    owner_prompt: str = "",
     max_advisors: int = MAX_CONSENSUS_ADVISORS,
 ) -> ConsensusResult | None:
     cancellation.check()
@@ -717,6 +765,22 @@ def run_consensus(
     if not candidates:
         return None
 
+    owner_draft = _clip(draft, 12_000)
+    if draft_first:
+        prompt = render_owner_draft_prompt(
+            task=task,
+            context=context,
+            plan=plan,
+            owner_prompt=owner_prompt,
+        )
+        with provider_controls.suppress_assistance():
+            owner_draft = _clip(
+                selected_provider.send(prompt, timeout=CONSENSUS_AGGREGATE_TIMEOUT),
+                12_000,
+            )
+        if not owner_draft:
+            raise RuntimeError("consensus draft was empty")
+
     advices: list[ConsensusAdvice] = []
     for advisor_id in candidates:
         cancellation.check()
@@ -729,7 +793,7 @@ def run_consensus(
             prompt = render_advisor_prompt(
                 task=task,
                 context=context,
-                draft=draft,
+                draft=owner_draft,
                 plan=plan,
             )
             with provider_controls.suppress_assistance():
@@ -753,18 +817,37 @@ def run_consensus(
                     pass
 
     if not advices:
+        if draft_first and owner_draft:
+            return ConsensusResult(answer=owner_draft, advisor_count=0, degraded=True)
         return None
 
     prompt = render_aggregator_prompt(
         task=task,
         advices=advices,
         context=context,
-        draft=draft,
+        draft=owner_draft,
         plan=plan,
     )
-    with provider_controls.suppress_assistance():
-        answer = selected_provider.send(prompt, timeout=CONSENSUS_AGGREGATE_TIMEOUT)
+    try:
+        with provider_controls.suppress_assistance():
+            answer = selected_provider.send(prompt, timeout=CONSENSUS_AGGREGATE_TIMEOUT)
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
+        if owner_draft:
+            return ConsensusResult(
+                answer=owner_draft,
+                advisor_count=len(advices),
+                degraded=True,
+            )
+        raise
     answer = _clip(answer, 12_000)
     if not answer:
+        if owner_draft:
+            return ConsensusResult(
+                answer=owner_draft,
+                advisor_count=len(advices),
+                degraded=True,
+            )
         raise RuntimeError("consensus answer was empty")
     return ConsensusResult(answer=answer, advisor_count=len(advices))

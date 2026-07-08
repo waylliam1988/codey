@@ -178,6 +178,8 @@ def _run_consensus(
     context: str = "",
     draft: str = "",
     plan: bool = False,
+    draft_first: bool = False,
+    owner_prompt: str = "",
 ) -> ConsensusResult | None:
     return run_consensus(
         selected_provider=selected_provider,
@@ -194,6 +196,8 @@ def _run_consensus(
         context=context,
         draft=draft,
         plan=plan,
+        draft_first=draft_first,
+        owner_prompt=owner_prompt,
     )
 
 

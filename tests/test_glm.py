@@ -33,15 +33,24 @@ class GlmDriverTests(unittest.TestCase):
         prompt = glm.prepare_prompt("hello")
 
         self.assertTrue(prompt.startswith("hello\n\n"))
-        self.assertIn("always put", prompt)
+        self.assertIn("raw JSON object", prompt)
         self.assertIn("ASCII U+0022", prompt)
-        self.assertIn("even if an earlier instruction", prompt)
+        self.assertIn("Do not wrap it in markdown fences", prompt)
         self.assertNotIn("must answer with JSON", prompt)
+
+    def test_normalize_tool_json_reply_is_glm_scoped(self) -> None:
+        self.assertEqual(
+            glm.normalize_tool_json_reply('{“tool”:“done”,“args”:{“summary”:“ok”}}'),
+            '{"tool":"done","args":{"summary":"ok"}}',
+        )
+        prose = "普通回答：他说“tool”这个词。"
+        self.assertEqual(glm.normalize_tool_json_reply(prose), prose)
 
     def test_last_text_reads_only_profiled_final_answer(self) -> None:
         page = mock.Mock()
         response = mock.Mock()
         response.evaluate.return_value = True
+        response.locator.return_value.all_inner_texts.return_value = []
         response.inner_text.return_value = '{"tool":"done"}'
 
         with mock.patch.object(glm.controls, "locate_response", return_value=response):
@@ -53,6 +62,25 @@ class GlmDriverTests(unittest.TestCase):
             glm.THINKING_CONTENT,
         )
         response.inner_text.assert_called_once_with()
+
+    def test_last_text_joins_split_markdown_segments_inside_one_answer(self) -> None:
+        page = mock.Mock()
+        response = mock.Mock()
+        response.evaluate.return_value = True
+        response.locator.return_value.all_inner_texts.return_value = [
+            '{"tool":"edit","args":{"path":"README.md","content":"Run tests with:',
+            'python -m unittest\\n```\\n"}}',
+        ]
+
+        with mock.patch.object(glm.controls, "locate_response", return_value=response):
+            result = glm._last_text(page)
+
+        self.assertEqual(
+            result,
+            '{"tool":"edit","args":{"path":"README.md","content":"Run tests with:\n'
+            'python -m unittest\\n```\\n"}}',
+        )
+        response.inner_text.assert_not_called()
 
     def test_last_text_rejects_fallback_inside_thinking_area(self) -> None:
         page = mock.Mock()

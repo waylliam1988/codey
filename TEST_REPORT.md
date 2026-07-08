@@ -1,55 +1,66 @@
 # Codey 0.1.17 Test Report
 
-Date: 2026-07-07
+Date: 2026-07-08
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
 
 ## 0.1.17 Hidden MoA Layer
 
 MoA is a hidden consultation layer, not a UI mode. When already-open
-provider pages are available, Codey can use up to two other models as private
-read-only advisors, then ask the selected model to synthesize one result.
-Empty or placeholder-only projects can receive one hidden advisory plan before
-the Writer starts. Existing projects use bounded read-only advisor audits before
-the selected model acts; private audit reports are passed to the selected Writer
-as advisory input.
+provider pages are available, `New Chat` asks the selected model for a private
+draft, lets up to two other models critique or supplement it independently,
+then asks the selected model to produce one final answer. Empty or
+placeholder-only projects use the same owner-first pattern for one hidden
+advisory plan before the Writer starts. Existing projects keep bounded
+read-only advisor audits before the selected model acts; private audit reports
+are passed to the selected Writer as advisory input, and the Writer still
+verifies against real files.
 
 Boundaries:
 
 - Chat advisors cannot use tools, edit files, run commands, browse, or see the full project.
+- Chat and empty-project advisors review the selected model's private draft; they do not see each other's notes.
 - Project audit advisors can only list, grep, and read selected project files.
 - Dotfiles, env files, secret-like paths, excluded dependency/build directories, key/certificate files, lock files, binaries, symlinks, and oversized files are not shared with hidden project audit advisors.
 - Project audit advisors cannot edit, run commands, request shell approval, or access paths outside the project.
 - While a Writer tab is active, hidden advisors are borrowed from already-open sibling tabs instead of opening another CDP connection.
 - Each project audit advisor has a bounded total time budget; unfinished advisors produce no private report.
-- Advisor failures are ignored; the task falls back to the normal single-model path.
-- If the selected model has already started hidden synthesis and that submission fails, Codey does not resend the original prompt.
+- If no advisor is available, the task falls back to the normal single-model path without generating a private draft.
+- If draft-first advisors fail, the selected model's draft is used as the quiet fallback.
+- If final synthesis fails after a private draft, Codey does not resend the original prompt.
 - New Chat emits one ordinary assistant reply.
 - Empty projects can receive one hidden plan before the selected Writer starts.
 - Existing project audits are private reports; the selected Writer still verifies and decides.
 - Project tasks that finish with `changed=False` can still refine the final read-only answer.
 - Review remains a separate post-change acceptance layer over the final Diff.
+- The tool protocol tells the model not to claim command, test, build, lint, or shell results unless they came from a local `run` or `shell` tool result.
 - The web UI adds no buttons, modes, model-vote display, or group chat surface.
 
 Verification:
 
 | Flow | Result |
 |---|---|
-| Full unittest suite | 416 passed |
-| Consensus unit contract | Automatic advisor selection, bounded prompts, failures degrade |
+| Full unittest suite | 424 passed |
+| Consensus unit contract | Automatic advisor selection, owner draft, independent critiques, bounded prompts, failures degrade |
+| Owner draft prompt with long handoff | Current user request remains a separate field and is not clipped away by handoff context |
+| New Chat follow-up consensus context | Handoff is passed once as context; owner prompt stays empty to avoid duplicate handoff text |
 | Server New Chat consensus | Agent loop not called; one `reply` emitted |
-| New Chat synthesis failure | Original prompt is not resent after an uncertain hidden synthesis failure |
+| New Chat draft-first consensus | Selected model draft is sent before advisors; degraded draft result forgets the provider session |
+| New Chat synthesis failure | Original prompt is not resent after an unexpected hidden synthesis failure |
 | Project audit advisor tools | Read-only file inspection works; attempted writes are rejected and files remain unchanged |
 | Project audit secret boundary | `.env`, `prod.env`, credential files, excluded directories, symlinks, and secret search hits are not sent to hidden advisors |
 | Project audit unfinished advisor | No `done(summary)` means no report is passed to the Writer |
 | Sibling-tab advisor connection | Hidden consensus and project audit borrow already-open tabs from the active Writer context |
+| GLM split markdown response | One assistant answer split across multiple `.markdown-body` nodes is read as one complete answer wrapper |
+| GLM smart-quote tool JSON | GLM-only normalization repairs smart double quotes around tool JSON without changing the shared JSON codec |
 | Existing project audit | Private reports are injected into the selected Writer task |
 | Existing project audit failure | Writer continues without the private reports |
-| Empty project plan | Hidden plan is injected before Writer starts in a fresh chat |
+| Empty project plan | Draft-first hidden plan is injected before Writer starts in a fresh chat |
 | Project read-only consensus | Final answer can be refined after a no-change project task; no Review |
 | Project read-only synthesis failure | Writer answer is kept and the provider session is forgotten |
 | Project write task | Writer edits; Review still runs after Diff |
 | Real Edge UI E2E | All 21 checks passed, including hidden consensus and existing restore/reconnect paths |
 | Live Edge MoA project review | Passed with DeepSeek Writer plus MiMo and Qwen hidden audit advisors; two reports collected, no `.env` marker leaked, no files changed |
+| Live Edge snake stress loop | Root cause traced to GLM reading only the last `.markdown-body` fragment of a split answer plus occasional smart quotes; wrapper-based GLM response reading and GLM-scoped smart-quote cleanup were added |
 | New UI modes or controls | None |
 
 ## 0.1.16 Project and Plain Conversations (2026-07-06)

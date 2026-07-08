@@ -197,6 +197,8 @@ Rules:
   - run commands must be simple. No pipes, redirects, chaining, tail/head, or
     shell-only syntax. Never use run/shell to write files; use edit.
   - [tool_result tool=...] means the local tool already ran. Continue from it.
+  - Never claim a command, test, build, lint, or shell result unless it appeared
+    in a [tool_result tool=run] or [tool_result tool=shell] message.
   - Do not edit files unless the user asks for a change. You may inspect the
     project and answer questions without modifying it.
   - If the task is complete, call done(summary). summary is your direct final

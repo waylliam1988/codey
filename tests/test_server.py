@@ -747,6 +747,9 @@ class SessionThreadingTests(unittest.TestCase):
         provider.new_chat.assert_called_once_with()
         provider.send.assert_not_called()
         self.consensus_mock.assert_called_once()
+        consensus_kwargs = self.consensus_mock.call_args.kwargs
+        self.assertTrue(consensus_kwargs["draft_first"])
+        self.assertEqual(consensus_kwargs.get("owner_prompt", ""), "")
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
@@ -778,6 +781,59 @@ class SessionThreadingTests(unittest.TestCase):
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["stop_reason"], "error")
         self.assertIn("aggregate timed out", task_done["summary"])
+
+    def test_plain_chat_degraded_consensus_forgets_provider_session(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
+        self.consensus_mock.return_value = ConsensusResult("Owner draft", 0, True)
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(server, "agent_run") as agent_run,
+        ):
+            server._run_task("session-1", None, "Explain a breathing app", 8, False, "deepseek")
+
+        agent_run.assert_not_called()
+        provider.send.assert_not_called()
+        self.assertNotIn("deepseek", state.provider_sessions)
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        reply = next(event for event in emitted if event["type"] == "reply")
+        self.assertEqual(reply["text"], "Owner draft")
+
+    def test_plain_chat_followup_consensus_uses_context_not_owner_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as state_home:
+            state = server.State(state_home)
+            first = mock.Mock()
+            first.name = "DeepSeek Web"
+            first.location = "https://chat.deepseek.com/"
+            first.send.return_value = "First answer"
+            second = mock.Mock()
+            second.name = "DeepSeek Web"
+            second.location = "https://chat.deepseek.com/"
+            self.consensus_mock.side_effect = [None, ConsensusResult("Combined follow-up", 1)]
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", side_effect=[first, second]),
+                mock.patch.object(server, "agent_run") as agent_run,
+            ):
+                server._run_task("session-1", None, "Choose a database", 8, False, "deepseek")
+                server._run_task("session-1", None, "Add a migration plan", 8, False, "deepseek")
+
+        agent_run.assert_not_called()
+        second.send.assert_not_called()
+        consensus_kwargs = self.consensus_mock.call_args.kwargs
+        self.assertTrue(consensus_kwargs["draft_first"])
+        self.assertEqual(consensus_kwargs.get("owner_prompt", ""), "")
+        self.assertIn("Choose a database", consensus_kwargs["context"])
+        self.assertIn("First answer", consensus_kwargs["context"])
+        self.assertNotIn("Current request:", consensus_kwargs["context"])
 
     def test_plain_chat_model_switch_uses_hidden_handoff(self) -> None:
         state = server.State()
@@ -1162,6 +1218,8 @@ class SessionThreadingTests(unittest.TestCase):
             server._run_task("session-1", td, "Discuss architecture", 8, False, "deepseek")
 
         self.consensus_mock.assert_called_once()
+        consensus_kwargs = self.consensus_mock.call_args.kwargs
+        self.assertFalse(consensus_kwargs.get("draft_first", False))
         self.assertEqual(agent_run.call_args.args[2], "Discuss architecture")
         connect_review.assert_not_called()
         emitted = []
@@ -1341,6 +1399,9 @@ class SessionThreadingTests(unittest.TestCase):
             server._run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek")
 
         self.consensus_mock.assert_called_once()
+        consensus_kwargs = self.consensus_mock.call_args.kwargs
+        self.assertTrue(consensus_kwargs["draft_first"])
+        self.assertTrue(consensus_kwargs["plan"])
         task = agent_run.call_args.args[2]
         self.assertIn("Private new-project advisory plan", task)
         self.assertIn("Start with the smallest useful app.", task)
@@ -1371,6 +1432,9 @@ class SessionThreadingTests(unittest.TestCase):
             server._run_task("session-1", td, "Build a new breathing app", 8, False, "deepseek")
 
         self.consensus_mock.assert_called_once()
+        consensus_kwargs = self.consensus_mock.call_args.kwargs
+        self.assertTrue(consensus_kwargs["draft_first"])
+        self.assertTrue(consensus_kwargs["plan"])
         self.assertEqual(agent_run.call_args.args[2], "Build a new breathing app")
         self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
 

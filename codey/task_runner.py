@@ -270,6 +270,7 @@ class TaskRunner:
                             task=task,
                             context=context,
                             plan=True,
+                            draft_first=True,
                         )
                     except cancellation.TaskCancelled:
                         raise
@@ -351,6 +352,8 @@ class TaskRunner:
                         state.set_provider_session(provider_id, None)
                         consulted = None
                     if consulted is not None:
+                        if consulted.degraded:
+                            state.set_provider_session(provider_id, None)
                         result = replace(result, summary=consulted.answer)
                 if (
                     result.stop_reason == "done"
@@ -424,6 +427,7 @@ class TaskRunner:
                                 if conversation.initialized
                                 else ""
                             ),
+                            draft_first=True,
                         )
                     except cancellation.TaskCancelled:
                         raise
@@ -433,7 +437,12 @@ class TaskRunner:
                 reply = consulted.answer if consulted is not None else provider.send(prompt)
                 if fresh_chat:
                     conversation.begin_window(provider_id, "chat")
-                state.set_provider_session(provider_id, session_id)
+                state.set_provider_session(
+                    provider_id,
+                    None
+                    if consulted is not None and consulted.degraded
+                    else session_id,
+                )
                 conversation.record_exchange(
                     prompt,
                     reply,

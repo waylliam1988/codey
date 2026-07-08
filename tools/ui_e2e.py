@@ -36,6 +36,12 @@ class ScriptedWriter:
 
     def send(self, text: str, timeout: float | None = None) -> str:
         del timeout
+        if "private first-draft answer" in text:
+            if "Explain box breathing without project access" in text:
+                return "Draft box breathing answer from the selected model."
+            return "Draft answer from the selected model."
+        if "private first-draft new-project implementation plan" in text:
+            return "Draft implementation plan from the selected model."
         if "Synthesize the private advisor notes" in text:
             if "The user approved and ran this shell command" in text:
                 return "approval continuation completed"

@@ -44,7 +44,7 @@
         "send_button": ["#search-input-box .enter:has(.enter-icon-container:not(.empty))"],
         "idle_button": ["#search-input-box .enter-icon-container.empty"],
         "question": [".conversation.question[id^=\"row-question-\"]"],
-        "response": [".answer-content-wrap:not(.text-advance-thinking-content) .markdown-body"]
+        "response": [".answer-content-wrap:not(.text-advance-thinking-content)"]
       }
     }
   }
