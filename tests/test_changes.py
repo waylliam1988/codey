@@ -201,7 +201,7 @@ class ChangeTrackerTests(unittest.TestCase):
             )
 
     def test_snapshot_save_failure_prevents_agent_write(self) -> None:
-        write = '{"tool":"write_file","args":{"path":"app.py","content":"new\\n"}}'
+        write = '{"tool":"edit","args":{"path":"app.py","content":"new\\n"}}'
         done = '{"tool":"done","args":{"summary":"finished"}}'
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)

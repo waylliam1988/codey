@@ -24,6 +24,18 @@ class MimoDriverTests(unittest.TestCase):
     def test_ready_timeout_allows_slow_homepage(self) -> None:
         self.assertGreaterEqual(mimo.READY_TIMEOUT, 90)
 
+    def test_wait_ready_does_not_accept_page_while_generating(self) -> None:
+        page = mock.Mock()
+
+        with (
+            mock.patch.object(mimo, "_dismiss_known_notice"),
+            mock.patch.object(mimo, "_message_box", return_value=mock.Mock()),
+            mock.patch.object(mimo, "_generation_active", return_value=True),
+            mock.patch.object(mimo.cancellation, "wait"),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "input did not appear"):
+                mimo.wait_ready(page, timeout=0)
+
     def test_dismisses_only_profiled_announcement_close_button(self) -> None:
         page = mock.Mock()
         button = mock.Mock()
@@ -35,21 +47,58 @@ class MimoDriverTests(unittest.TestCase):
             mock.call(page, mimo.PROFILE.selector("dismiss_notice")),
             mock.call(page, mimo.PROFILE.selector("dismiss_notice")),
         ])
-        button.click.assert_called_once_with()
+        button.click.assert_called_once_with(timeout=2000)
+
+    def test_dismiss_notice_falls_back_to_dom_click_when_outside_viewport(self) -> None:
+        page = mock.Mock()
+        button = mock.Mock()
+        button.click.side_effect = RuntimeError("outside viewport")
+        with mock.patch.object(mimo, "_visible_locator", side_effect=[button, None]):
+            dismissed = mimo._dismiss_known_notice(page)
+
+        self.assertTrue(dismissed)
+        button.click.assert_called_once_with(timeout=2000)
+        button.evaluate.assert_called_once_with("el => el.click()")
+
+    def test_dismiss_notice_failure_is_non_blocking(self) -> None:
+        page = mock.Mock()
+        button = mock.Mock()
+        button.click.side_effect = RuntimeError("outside viewport")
+        button.evaluate.side_effect = RuntimeError("detached")
+        with mock.patch.object(mimo, "_visible_locator", return_value=button):
+            dismissed = mimo._dismiss_known_notice(page)
+
+        self.assertFalse(dismissed)
 
     def test_last_text_reads_latest_markdown_answer(self) -> None:
         page = mock.Mock()
         response = mock.Mock()
-        response.inner_text.return_value = "reply"
+        response.evaluate.return_value = "reply"
 
         with mock.patch.object(mimo.controls, "locate_response", return_value=response):
             self.assertEqual(mimo._last_text(page), "reply")
 
-        response.inner_text.assert_called_once_with()
+        response.evaluate.assert_called_once_with(mimo._RESPONSE_TEXT_JS)
+
+    def test_last_text_removes_mimo_thinking_summary(self) -> None:
+        page = mock.Mock()
+        response = mock.Mock()
+        response.evaluate.return_value = '{"tool":"done","args":{"summary":"ok"}}'
+
+        with mock.patch.object(mimo.controls, "locate_response", return_value=response):
+            self.assertEqual(mimo._last_text(page), '{"tool":"done","args":{"summary":"ok"}}')
+
+    def test_last_text_rejects_thinking_when_dom_extract_fails(self) -> None:
+        page = mock.Mock()
+        response = mock.Mock()
+        response.evaluate.side_effect = RuntimeError("detached")
+        response.inner_text.return_value = "已深度思考（用时 68.4 秒）\n\nLet me analyze..."
+
+        with mock.patch.object(mimo.controls, "locate_response", return_value=response):
+            self.assertEqual(mimo._last_text(page), "")
 
     def test_copy_last_text_uses_first_action_after_latest_answer(self) -> None:
         page = mock.Mock()
-        responses = mock.Mock()
         response = mock.Mock()
         buttons = mock.Mock()
         before_button = mock.Mock()
@@ -65,14 +114,66 @@ class MimoDriverTests(unittest.TestCase):
         copy_button.bounding_box.return_value = {"x": 282, "y": 174, "width": 28, "height": 28}
 
         with (
+            mock.patch.object(mimo, "_generation_complete", return_value=True),
             mock.patch.object(mimo.controls, "locate_response", return_value=response),
+            mock.patch.object(mimo, "_response_text", return_value="raw reply"),
             mock.patch.object(mimo, "copy_action_text", return_value="raw reply") as copy_action,
         ):
             raw = mimo._copy_last_text(page)
 
         self.assertEqual(raw, "raw reply")
         response.scroll_into_view_if_needed.assert_called_once()
+        page.locator.assert_called_once_with(mimo.COPY_BUTTON)
         copy_action.assert_called_once_with(page, copy_button, origin=mimo.MIMO_ORIGIN)
+
+    def test_copy_last_text_returns_visible_answer_when_copy_includes_thinking(self) -> None:
+        page = mock.Mock()
+        response = mock.Mock()
+        buttons = mock.Mock()
+        copy_button = mock.Mock()
+
+        page.locator.return_value = buttons
+        response.bounding_box.return_value = {"x": 280, "y": 100, "width": 600, "height": 80}
+        buttons.count.return_value = 1
+        buttons.nth.return_value = copy_button
+        copy_button.is_visible.return_value = True
+        copy_button.bounding_box.return_value = {"x": 282, "y": 174, "width": 28, "height": 28}
+
+        with (
+            mock.patch.object(mimo, "_generation_complete", return_value=True),
+            mock.patch.object(mimo.controls, "locate_response", return_value=response),
+            mock.patch.object(mimo, "_response_text", return_value='{"tool":"done","args":{"summary":"ok"}}'),
+            mock.patch.object(
+                mimo,
+                "copy_action_text",
+                return_value='已深度思考（用时 1 秒）\n\n{"tool":"done","args":{"summary":"ok"}}',
+            ),
+        ):
+            raw = mimo._copy_last_text(page)
+
+        self.assertEqual(raw, '{"tool":"done","args":{"summary":"ok"}}')
+
+    def test_copy_last_text_waits_for_generation_completion(self) -> None:
+        page = mock.Mock()
+
+        with mock.patch.object(mimo, "_generation_complete", return_value=False):
+            raw = mimo._copy_last_text(page)
+
+        self.assertEqual(raw, "")
+        page.locator.assert_not_called()
+
+    def test_copy_button_lookup_ignores_upload_and_stop_buttons(self) -> None:
+        page = mock.Mock()
+        response = mock.Mock()
+        buttons = mock.Mock()
+        response.bounding_box.return_value = {"x": 280, "y": 100, "width": 600, "height": 80}
+        buttons.count.return_value = 0
+        page.locator.return_value = buttons
+
+        result = mimo._copy_button_after_response(page, response)
+
+        self.assertIsNone(result)
+        page.locator.assert_called_once_with(mimo.COPY_BUTTON)
 
     def test_submit_presses_enter_and_waits_for_new_response(self) -> None:
         page = mock.Mock()
@@ -109,6 +210,26 @@ class MimoDriverTests(unittest.TestCase):
         send = mock.Mock()
         send.is_visible.return_value = True
         send.is_enabled.return_value = True
+        send.evaluate.return_value = {
+            "disabled": False,
+            "ariaDisabled": "",
+            "trackId": "home_send_btn",
+            "trackName": "home_send_message",
+            "text": "",
+            "aria": "",
+            "title": "",
+            "viewBoxes": ["0 0 19 16"],
+            "rect": {
+                "left": 10,
+                "right": 38,
+                "top": 10,
+                "bottom": 38,
+                "width": 28,
+                "height": 28,
+                "viewportWidth": 1000,
+                "viewportHeight": 800,
+            },
+        }
         locator = mock.Mock()
         locator.count.return_value = 1
         locator.nth.return_value = send
@@ -118,6 +239,139 @@ class MimoDriverTests(unittest.TestCase):
 
         self.assertIs(result, send)
         page.locator.assert_any_call(mimo.PROFILE.selector("send_button"))
+
+    def test_profiled_send_button_rejects_upload_button(self) -> None:
+        page = mock.Mock()
+        upload = mock.Mock()
+        upload.is_visible.return_value = True
+        upload.is_enabled.return_value = True
+        upload.evaluate.return_value = {
+            "disabled": False,
+            "ariaDisabled": "",
+            "trackId": "home_upload_btn",
+            "trackName": "home_upload_file",
+            "text": "",
+            "aria": "",
+            "title": "",
+            "viewBoxes": ["0 0 16 16"],
+            "rect": {
+                "left": 10,
+                "right": 38,
+                "top": 10,
+                "bottom": 38,
+                "width": 28,
+                "height": 28,
+                "viewportWidth": 1000,
+                "viewportHeight": 800,
+            },
+        }
+        locator = mock.Mock()
+        locator.count.return_value = 1
+        locator.nth.return_value = upload
+        page.locator.return_value = locator
+
+        result = mimo._profiled_send_button(page)
+
+        self.assertIsNone(result)
+
+    def test_profiled_send_button_rejects_stop_state_with_send_track_ids(self) -> None:
+        page = mock.Mock()
+        stop = mock.Mock()
+        stop.is_visible.return_value = True
+        stop.is_enabled.return_value = True
+        stop.evaluate.return_value = {
+            "disabled": False,
+            "ariaDisabled": "",
+            "trackId": "home_send_btn",
+            "trackName": "home_send_message",
+            "text": "终止回答",
+            "aria": "",
+            "title": "",
+            "viewBoxes": ["0 0 24 24"],
+            "rect": {
+                "left": 10,
+                "right": 38,
+                "top": 10,
+                "bottom": 38,
+                "width": 28,
+                "height": 28,
+                "viewportWidth": 1000,
+                "viewportHeight": 800,
+            },
+        }
+        locator = mock.Mock()
+        locator.count.return_value = 1
+        locator.nth.return_value = stop
+        page.locator.return_value = locator
+
+        result = mimo._profiled_send_button(page)
+
+        self.assertIsNone(result)
+
+    def test_generation_complete_requires_mimo_send_icon_not_stop_icon(self) -> None:
+        page = mock.Mock()
+        button = mock.Mock()
+        button.is_visible.return_value = True
+        button.is_enabled.return_value = True
+        button.evaluate.return_value = {
+            "disabled": False,
+            "ariaDisabled": "",
+            "trackId": "home_send_btn",
+            "trackName": "home_send_message",
+            "text": "",
+            "aria": "",
+            "title": "",
+            "viewBoxes": ["0 0 24 24"],
+            "rect": {
+                "left": 10,
+                "right": 38,
+                "top": 10,
+                "bottom": 38,
+                "width": 28,
+                "height": 28,
+                "viewportWidth": 1000,
+                "viewportHeight": 800,
+            },
+        }
+        locator = mock.Mock()
+        locator.count.return_value = 1
+        locator.nth.return_value = button
+        page.locator.return_value = locator
+
+        self.assertFalse(mimo._generation_complete(page))
+
+    def test_generation_complete_accepts_disabled_idle_send_icon(self) -> None:
+        page = mock.Mock()
+        button = mock.Mock()
+        button.is_visible.return_value = True
+        button.is_enabled.return_value = False
+        button.evaluate.return_value = {
+            "disabled": True,
+            "ariaDisabled": "",
+            "trackId": "home_send_btn",
+            "trackName": "home_send_message",
+            "text": "",
+            "aria": "",
+            "title": "",
+            "viewBoxes": ["0 0 19 16"],
+            "rect": {
+                "left": 10,
+                "right": 38,
+                "top": 10,
+                "bottom": 38,
+                "width": 28,
+                "height": 28,
+                "viewportWidth": 1000,
+                "viewportHeight": 800,
+            },
+        }
+        locator = mock.Mock()
+        locator.count.return_value = 1
+        locator.nth.return_value = button
+        page.locator.return_value = locator
+
+        self.assertTrue(mimo._generation_complete(page))
+        self.assertIsNone(mimo._profiled_send_button(page))
 
     def test_uncertain_enter_submission_never_requests_a_second_action(self) -> None:
         page = mock.Mock()
@@ -134,6 +388,19 @@ class MimoDriverTests(unittest.TestCase):
         teaching.assert_not_called()
         self.assertEqual(attempt.phase, "attempted")
 
+    def test_submit_refuses_enter_while_generation_active(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        with (
+            mock.patch.object(mimo, "_message_box", return_value=textarea),
+            mock.patch.object(mimo, "_send_button", return_value=None),
+            mock.patch.object(mimo, "_generation_active", return_value=True),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "still generating"):
+                mimo._submit(page, baseline=0, submitted_text="hello")
+
+        textarea.press.assert_not_called()
+
     def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
         page = mock.Mock()
         textarea = mock.Mock()
@@ -145,6 +412,7 @@ class MimoDriverTests(unittest.TestCase):
             mock.patch.object(mimo, "_submit", return_value=attempt),
             mock.patch.object(mimo, "_response_count", side_effect=[0, 1]),
             mock.patch.object(mimo, "_last_text", return_value="delayed reply"),
+            mock.patch.object(mimo, "_generation_complete", return_value=True),
             mock.patch.object(mimo, "_final_text", return_value="raw delayed reply"),
             mock.patch.object(mimo.controls, "control_has_text", return_value=True),
             mock.patch.object(mimo.controls, "confirm_control"),
@@ -174,13 +442,26 @@ class MimoDriverTests(unittest.TestCase):
     def test_final_text_falls_back_to_visible_answer(self) -> None:
         with (
             mock.patch.object(mimo, "_copy_last_text", return_value=""),
+            mock.patch.object(mimo, "_generation_complete", return_value=True),
             mock.patch.object(mimo, "_last_text", return_value='{"verdict":"approved"}'),
         ):
             self.assertEqual(mimo._final_text(object()), '{"verdict":"approved"}')
 
+    def test_final_text_refuses_fallback_while_generating(self) -> None:
+        with (
+            mock.patch.object(mimo, "_copy_last_text", return_value=""),
+            mock.patch.object(mimo, "_generation_complete", return_value=False),
+            mock.patch.object(mimo, "_last_text") as last_text,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "still generating"):
+                mimo._final_text(object())
+
+        last_text.assert_not_called()
+
     def test_final_text_rejects_missing_raw_and_visible_response(self) -> None:
         with (
             mock.patch.object(mimo, "_copy_last_text", return_value=""),
+            mock.patch.object(mimo, "_generation_complete", return_value=True),
             mock.patch.object(mimo, "_last_text", return_value=""),
         ):
             with self.assertRaisesRegex(RuntimeError, "raw Xiaomi MiMo response"):

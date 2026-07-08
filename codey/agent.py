@@ -44,7 +44,6 @@ SUPPORTED_TOOL_NAMES = frozenset({
     "run",
     "search",
     "shell",
-    "write",
 })
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
@@ -157,6 +156,7 @@ class RunResult:
     turns: int = 0
     checks_passed: bool = False
     changed: bool = False
+    checks_ran: bool = False
 
 
 def run(
@@ -185,6 +185,7 @@ def run(
     stagnant_count = 0
     wrote_files = False
     checks_passed = False
+    checks_ran = False
     changed_files = set(conversation.snapshot.changed_files if conversation else ())
     verification_required = _task_requests_verification(user_task)
     project_text = str(project)
@@ -214,7 +215,7 @@ def run(
         if conversation is not None:
             blocker = "" if stop_reason == "done" else summary
             conversation.update_snapshot(snapshot(summary, blocker))
-        return RunResult(summary, stop_reason, turns, checks_passed, wrote_files)
+        return RunResult(summary, stop_reason, turns, checks_passed, wrote_files, checks_ran)
 
     def open_fresh_chat() -> bool:
         emit(RunEvent.status(f"[agent] opening a fresh {provider.name} conversation"))
@@ -316,18 +317,7 @@ def run(
         for call in calls:
             path = _call_arg(call, "path", ".")
             try:
-                if call.name == "write":
-                    if change_tracker is not None:
-                        change_tracker.capture_before(path)
-                    outcome = write_file(project, path, _call_arg(call, "content"))
-                    if outcome.ok and outcome.changed:
-                        if change_tracker is not None:
-                            change_tracker.capture_after(path)
-                        made_progress = True
-                        wrote_files = True
-                        checks_passed = False
-                        changed_files.add(path)
-                elif call.name == "edit":
+                if call.name == "edit":
                     if _edit_has_content(call):
                         if change_tracker is not None:
                             change_tracker.capture_before(path)
@@ -356,6 +346,7 @@ def run(
                     outcome = search_files(project, path, _call_arg(call, "query"))
                 elif call.name == "run":
                     outcome = run_command(project, path, _call_arg(call, "command"))
+                    checks_ran = True
                     checks_passed = outcome.ok
                 elif call.name == "shell":
                     command = _call_arg(call, "command").strip()

@@ -418,6 +418,86 @@ class RunLoopTests(unittest.TestCase):
         self.assertIn("Protocol error:", provider.sent[1])
         self.assertIn("read-only", provider.sent[1])
 
+    def test_unknown_write_file_tool_requests_correction_before_writing(self) -> None:
+        invalid_write = json.dumps({
+            "tool": "write_file",
+            "args": {"path": "app.py", "content": "bad\n"},
+        })
+        corrected_edit = json.dumps({
+            "tool": "edit",
+            "args": {"path": "app.py", "content": "good\n"},
+        })
+        done = '{"tool":"done","args":{"summary":"created app.py"}}'
+        provider = FakeProvider(invalid_write, corrected_edit, done)
+        events = []
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            result = agent.run(
+                provider,
+                root,
+                "Create app.py",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+
+            content = (root / "app.py").read_text(encoding="utf-8")
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(content, "good\n")
+        tool_events = [event for event in events if event.kind == "tool"]
+        self.assertEqual(len(tool_events), 1)
+        self.assertEqual(tool_events[0].call.name, "edit")
+        self.assertIn("Protocol error:", provider.sent[1])
+        self.assertIn("unknown tool: write_file", provider.sent[1])
+        self.assertIn("Use edit with content", provider.sent[1])
+
+    def test_nested_tool_call_inside_done_requests_correction(self) -> None:
+        nested_run_done = json.dumps({
+            "tool": "done",
+            "args": {
+                "summary": json.dumps({
+                    "tool": "run",
+                    "args": {"command": "python -m unittest", "path": "."},
+                }),
+            },
+        })
+        real_run = json.dumps({
+            "tool": "run",
+            "args": {"command": "python -m unittest", "path": "."},
+        })
+        done = '{"tool":"done","args":{"summary":"tests passed"}}'
+        provider = FakeProvider(nested_run_done, real_run, done)
+        events = []
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "test_sample.py").write_text(
+                "import unittest\n\n"
+                "class SampleTests(unittest.TestCase):\n"
+                "    def test_ok(self):\n"
+                "        self.assertTrue(True)\n",
+                encoding="utf-8",
+            )
+
+            result = agent.run(
+                provider,
+                root,
+                "Run tests",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        tool_events = [event for event in events if event.kind == "tool"]
+        self.assertEqual(len(tool_events), 1)
+        self.assertEqual(tool_events[0].call.name, "run")
+        self.assertTrue(tool_events[0].outcome.ok)
+        self.assertIn("Protocol error:", provider.sent[1])
+        self.assertIn("done summary", provider.sent[1])
+        self.assertIn("Call the tool directly", provider.sent[1])
+
     def test_read_file_page_arguments_reach_runtime(self) -> None:
         read = (
             '{"tool":"read_file","args":'

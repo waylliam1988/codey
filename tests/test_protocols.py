@@ -52,6 +52,24 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(plan.control.kind, "done")
         self.assertEqual(plan.control.body, answer)
 
+    def test_done_summary_cannot_be_a_nested_tool_call(self) -> None:
+        nested = json.dumps({
+            "tool": "done",
+            "args": {
+                "summary": json.dumps({
+                    "tool": "run",
+                    "args": {"command": "python -m unittest", "path": "."},
+                }),
+            },
+        })
+
+        plan = JsonToolCodec().parse(nested)
+
+        self.assertEqual(plan.calls, [])
+        self.assertIsNone(plan.control)
+        self.assertIn("done summary", plan.protocol_error)
+        self.assertIn("Call the tool directly", plan.protocol_error)
+
     def test_contract_tells_read_only_discussion_to_answer_directly(self) -> None:
         prompt = JsonToolCodec().system_prompt()
 
@@ -290,12 +308,11 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(runtime_names, SUPPORTED_TOOL_NAMES)
         self.assertEqual(set(RESULT_TOOL_NAMES), runtime_names)
 
-    def test_legacy_tool_names_parse_to_supported_runtime_calls(self) -> None:
+    def test_legacy_read_only_tool_names_parse_to_supported_runtime_calls(self) -> None:
         cases = (
             ("ls", {"path": "."}, "ls"),
             ("read", {"path": "app.py"}, "read"),
             ("search", {"path": ".", "query": "needle"}, "search"),
-            ("write", {"path": "app.py", "content": "VALUE = 1\n"}, "write"),
         )
 
         for name, args, runtime_name in cases:
@@ -305,6 +322,20 @@ class JsonToolCodecTests(unittest.TestCase):
                 self.assertEqual(len(plan.calls), 1)
                 self.assertEqual(plan.calls[0].name, runtime_name)
                 self.assertIn(plan.calls[0].name, SUPPORTED_TOOL_NAMES)
+
+    def test_unknown_write_tools_are_protocol_errors_not_compatibility_aliases(self) -> None:
+        for name in ("write", "write_file"):
+            with self.subTest(tool=name):
+                plan = JsonToolCodec().parse(json.dumps({
+                    "tool": name,
+                    "args": {"path": "app.py", "content": "VALUE = 1\n"},
+                }))
+
+                self.assertEqual(plan.calls, [])
+                self.assertIsNone(plan.control)
+                self.assertIn(f"unknown tool: {name}", plan.protocol_error)
+                self.assertIn("Use edit with content", plan.protocol_error)
+                self.assertIn('"tool":"edit"', plan.protocol_error)
 
     def test_repair_prompt_says_website_tool_errors_are_irrelevant(self) -> None:
         prompt = JsonToolCodec().repair_prompt()

@@ -50,10 +50,10 @@ def prepare_prompt(text: str) -> str:
 
 
 def normalize_tool_json_reply(text: str) -> str:
-    """Repair GLM's occasional smart double quotes around tool JSON keys."""
+    """Repair GLM's occasional smart double quotes around JSON object keys."""
 
     stripped = text.lstrip()
-    if not (stripped.startswith("{“tool”") or stripped.startswith("{”tool”")):
+    if not stripped.startswith(("{“", "{”", "{„", "{‟")):
         return text
     return text.translate(SMART_TOOL_QUOTE_TRANSLATION)
 
@@ -152,11 +152,14 @@ def _submission_started(
     response_baseline: int,
     question_baseline: int,
     submitted_text: str,
+    baseline_text: str = "",
 ) -> bool:
     try:
+        current = _last_text(page) if response_baseline else ""
         if (
             _response_count(page) > response_baseline
             or _question_count(page) > question_baseline
+            or (bool(current) and current != baseline_text)
         ):
             return True
         message_box = _message_box(page)
@@ -175,6 +178,7 @@ def _submit(
     response_baseline: int,
     question_baseline: int,
     submitted_text: str,
+    baseline_text: str = "",
 ) -> SendAttempt:
     button = _send_button(page, timeout=SEND_TIMEOUT, teach=True)
     if button is None:
@@ -189,6 +193,7 @@ def _submit(
             response_baseline,
             question_baseline,
             submitted_text,
+            baseline_text,
         ):
             confirm_submission(attempt, PROVIDER_ID)
             break
@@ -200,13 +205,16 @@ def _wait_late_response(
     page: Page,
     baseline: int,
     *,
+    baseline_text: str = "",
     grace: float = RESPONSE_TIMEOUT_GRACE,
     tick: float = 0.8,
 ) -> str:
     deadline = time.time() + max(0.0, grace)
     while time.time() < deadline:
         try:
-            if _response_count(page) > baseline and _generation_complete(page):
+            count = _response_count(page)
+            current = _last_text(page) if count else ""
+            if current and (count > baseline or current != baseline_text) and _generation_complete(page):
                 return _final_text(page)
         except cancellation.TaskCancelled:
             raise
@@ -228,6 +236,7 @@ def _chat(
     wait_ready(page)
 
     response_baseline = _response_count(page)
+    baseline_text = _last_text(page) if response_baseline else ""
     question_baseline = _question_count(page)
     controls.start_response_watch(page, PROVIDER_ID)
 
@@ -246,6 +255,7 @@ def _chat(
         response_baseline,
         question_baseline,
         text,
+        baseline_text,
     )
     sent_at = time.time()
     deadline = sent_at + response_timeout
@@ -259,7 +269,7 @@ def _chat(
             raise RuntimeError("GLM page submitted the message more than once")
         count = _response_count(page)
         current = _last_text(page) if count else ""
-        if count <= response_baseline:
+        if count <= response_baseline and current == baseline_text:
             continue
         confirm_submission(attempt, PROVIDER_ID)
         appeared = True
@@ -281,6 +291,7 @@ def _chat(
     late = _wait_late_response(
         page,
         response_baseline,
+        baseline_text=baseline_text,
         grace=RESPONSE_TIMEOUT_GRACE,
         tick=tick,
     )

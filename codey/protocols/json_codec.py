@@ -122,8 +122,6 @@ TOOL_SPECS = (
             "instead of merely saying that the topic was discussed."
         ),
     ),
-    # Compatibility only. New prompts expose edit(content=...) instead.
-    ToolSpec("write", "write"),
 )
 
 
@@ -143,7 +141,6 @@ RESULT_TOOL_NAMES = {
     for spec in TOOL_SPECS
     if spec.runtime_name is not None and spec.examples
 }
-RESULT_TOOL_NAMES["write"] = "edit"
 
 
 def _render_tool_contract() -> str:
@@ -273,6 +270,17 @@ def _summary_from_args(args: dict[str, Any]) -> str:
     return "done"
 
 
+def _summary_is_tool_call(summary: str) -> bool:
+    try:
+        value = json.loads(summary)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(value, dict):
+        return False
+    tool = str(value.get("tool") or value.get("name") or "").strip()
+    return bool(tool)
+
+
 class ProtocolValidationError(ValueError):
     pass
 
@@ -358,7 +366,13 @@ class JsonToolCodec:
 
         normalized = tool.lower().strip()
         if normalized == "done":
-            return ToolPlan(calls=[], control=Control(kind="done", body=_summary_from_args(args)))
+            summary = _summary_from_args(args)
+            if _summary_is_tool_call(summary):
+                raise ProtocolValidationError(
+                    "done summary must be the final user-facing answer, not another "
+                    "tool call. Call the tool directly instead."
+                )
+            return ToolPlan(calls=[], control=Control(kind="done", body=summary))
         if normalized == "continue":
             return ToolPlan(calls=[], control=Control(kind="continue", body=_summary_from_args(args)))
         if normalized == "read_files":
@@ -369,6 +383,12 @@ class JsonToolCodec:
             calls = self._parallel(args)
             control = Control(kind="continue", body="Need tool results") if calls else None
             return ToolPlan(calls=calls, control=control)
+
+        if normalized and normalized not in TOOL_SPEC_BY_NAME:
+            raise ProtocolValidationError(
+                f"unknown tool: {tool}. Use edit with content to create or replace a file, "
+                'for example {"tool":"edit","args":{"path":"app.py","content":"..."}}.'
+            )
 
         call = self._tool_call(tool, args)
         if call is None:
@@ -489,10 +509,6 @@ class JsonToolCodec:
                         "edit requires non-empty old_string and a new_string"
                     )
                 call_args["replacements"] = [{"search": _text(old), "replace": _text(new)}]
-        elif normalized == "write":
-            if "content" not in args:
-                raise ProtocolValidationError("write requires content")
-            call_args["content"] = _text(args.get("content"))
         elif normalized == "read":
             if "offset" in args:
                 call_args["offset"] = _positive_int_arg(args, "offset", 1)

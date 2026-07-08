@@ -389,6 +389,7 @@ class TaskRunner:
                         if reviewed is not None:
                             _reviewer_id, review = reviewed
                             if not review.approved:
+                                checks_before_review_followup = result.checks_passed
                                 followup = render_writer_followup(task, review)
                                 provider = state.get_provider(provider_id)
                                 verified_facts = (
@@ -410,6 +411,13 @@ class TaskRunner:
                                     provider_id=provider_id,
                                     project_facts=verified_facts,
                                 )
+                                if (
+                                    result.stop_reason == "done"
+                                    and not result.changed
+                                    and checks_before_review_followup
+                                    and not result.checks_ran
+                                ):
+                                    result = replace(result, checks_passed=True)
                                 task_changed = task_changed or result.changed
             else:
                 if fresh_chat:

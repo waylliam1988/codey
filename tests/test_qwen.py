@@ -117,6 +117,48 @@ class QwenDriverTests(unittest.TestCase):
 
         send.click.assert_called_once_with()
 
+    def test_send_button_uses_strict_qwen_fallback_before_teaching(self) -> None:
+        page = mock.Mock()
+        button_list = mock.Mock()
+        button = mock.Mock()
+        button_list.count.return_value = 1
+        button_list.nth.return_value = button
+        button.is_visible.return_value = True
+        button.is_enabled.return_value = True
+        button.evaluate.return_value = {
+            "disabled": False,
+            "ariaDisabled": "",
+            "className": "send-button  ",
+        }
+        page.locator.return_value = button_list
+
+        with (
+            mock.patch.object(qwen, "_message_box", return_value=mock.Mock()),
+            mock.patch.object(qwen.controls, "locate_control", return_value=None) as locate,
+        ):
+            found = qwen._send_button(page, teach=True)
+
+        self.assertIs(found, button)
+        locate.assert_called_once()
+        page.locator.assert_called_once_with("button.send-button")
+
+    def test_strict_qwen_send_fallback_rejects_disabled_class(self) -> None:
+        page = mock.Mock()
+        button_list = mock.Mock()
+        button = mock.Mock()
+        button_list.count.return_value = 1
+        button_list.nth.return_value = button
+        button.is_visible.return_value = True
+        button.is_enabled.return_value = True
+        button.evaluate.return_value = {
+            "disabled": False,
+            "ariaDisabled": "",
+            "className": "send-button disabled ",
+        }
+        page.locator.return_value = button_list
+
+        self.assertIsNone(qwen._qwen_enabled_send_button(page))
+
     def test_submit_never_clicks_twice_while_waiting_for_confirmation(self) -> None:
         page = mock.Mock()
         send = mock.Mock()

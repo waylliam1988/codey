@@ -132,11 +132,12 @@ def _run_review(
                 changes=changes,
                 recent_log=recent_log,
             )
-            reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
-            review = parse_review_with_repair(
-                reply,
-                lambda repair: reviewer.send(repair, timeout=REVIEW_TIMEOUT),
-            )
+            with provider_controls.suppress_assistance():
+                reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
+                review = parse_review_with_repair(
+                    reply,
+                    lambda repair: reviewer.send(repair, timeout=REVIEW_TIMEOUT),
+                )
             label = review_label(reviewer_id)
             if review.approved:
                 _emit_review(session_id, f"{label} approved")

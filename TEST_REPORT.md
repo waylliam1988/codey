@@ -1,7 +1,51 @@
-# Codey 0.1.17 Test Report
+# Codey 0.1.18 Test Report
 
 Date: 2026-07-08
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.18 Provider Reliability and Factual Receipts
+
+This release keeps the visible UI unchanged and tightens the provider and
+review boundaries underneath it.
+
+Changes:
+
+- MiMo accepts only its explicit paper-plane send button and rejects nearby
+  upload controls.
+- MiMo treats the page as busy while the stop/generating state is active and
+  refuses to submit another message during that state.
+- MiMo removes thinking/deep-thinking blocks before reading the final answer
+  and does not fall back to visible answer text while generation is active.
+- Qwen uses a strict local `button.send-button` fallback before teaching, and
+  hidden Review runs suppress manual teaching and ProfileDoctor assistance.
+- GLM can detect a replaced answer when the response count does not increase,
+  and GLM-only smart-quote normalization also covers review JSON.
+- The shared JSON protocol rejects nested tool calls hidden inside
+  `done(summary)` and directs models to call the tool directly.
+- Legacy write-style tool names are no longer accepted; models must use
+  `edit(content=...)` for creating or replacing a file.
+- Review repair follow-up tracks whether the repair turn actually ran checks,
+  so failed checks or unfinished repair turns no longer inherit a previous
+  `checks passed` receipt.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Full unittest suite | 450 passed |
+| Focused provider/protocol/server suite | 209 passed |
+| Agent and server regression suite | 116 passed |
+| Syntax compile | `python -m compileall -q codey tests tools` passed |
+| Diff whitespace check | `git diff --check` passed with CRLF warnings only |
+| MiMo unit contract | 27 tests passed; send button, upload rejection, stop-state rejection, thinking cleanup, and generation gating covered |
+| Qwen unit contract | Strict local send fallback covered before teaching |
+| GLM unit contract | Smart-quote review JSON and replaced-answer detection covered |
+| Protocol contract | Nested tool calls inside `done(summary)` rejected; write-style tools rejected |
+| Review receipt regression | Failed repair checks and no-progress repair turns do not inherit `checks passed` |
+| Real MiMo single-send smoke | Final answer returned; no upload popover and no stopped-response state |
+| Real DeepSeek + MiMo project audit smoke | MiMo returned a valid hidden audit report |
+| Real DeepSeek write + MiMo review smoke | Review completed with `ok: true` and `approved` |
+| New UI modes or controls | None |
 
 ## 0.1.17 Hidden MoA Layer
 

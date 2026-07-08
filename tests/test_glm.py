@@ -43,6 +43,10 @@ class GlmDriverTests(unittest.TestCase):
             glm.normalize_tool_json_reply('{“tool”:“done”,“args”:{“summary”:“ok”}}'),
             '{"tool":"done","args":{"summary":"ok"}}',
         )
+        self.assertEqual(
+            glm.normalize_tool_json_reply('{“verdict”:“approved”,“findings”:[]}'),
+            '{"verdict":"approved","findings":[]}',
+        )
         prose = "普通回答：他说“tool”这个词。"
         self.assertEqual(glm.normalize_tool_json_reply(prose), prose)
 
@@ -134,6 +138,39 @@ class GlmDriverTests(unittest.TestCase):
             started = glm._submission_started(object(), 0, 1, "hello")
 
         self.assertTrue(started)
+
+    def test_submission_started_accepts_changed_text_without_count_increase(self) -> None:
+        with (
+            mock.patch.object(glm, "_response_count", return_value=1),
+            mock.patch.object(glm, "_question_count", return_value=1),
+            mock.patch.object(glm, "_last_text", return_value='{"verdict":"approved"}'),
+        ):
+            started = glm._submission_started(
+                object(),
+                1,
+                1,
+                "hello",
+                baseline_text="previous response",
+            )
+
+        self.assertTrue(started)
+
+    def test_wait_late_response_accepts_replaced_answer_without_count_increase(self) -> None:
+        with (
+            mock.patch.object(glm, "_response_count", return_value=1),
+            mock.patch.object(glm, "_last_text", return_value='{"verdict":"approved"}'),
+            mock.patch.object(glm, "_generation_complete", return_value=True),
+            mock.patch.object(glm, "_final_text", return_value='{"verdict":"approved"}'),
+        ):
+            reply = glm._wait_late_response(
+                object(),
+                1,
+                baseline_text="previous response",
+                grace=0.01,
+                tick=0,
+            )
+
+        self.assertEqual(reply, '{"verdict":"approved"}')
 
     def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
         page = mock.Mock()

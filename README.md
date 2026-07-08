@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.17`
+Version: `0.1.18`
 
 ---
 
@@ -66,6 +66,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.18` keeps the UI unchanged while tightening provider reliability and local-result honesty. MiMo now accepts only its explicit paper-plane send button, refuses to submit while a response is still generating, and strips MiMo thinking blocks before reading the final answer, avoiding upload-button misclicks and accidental stop-state submissions. Qwen now uses a stricter local send-button fallback and hidden Review runs suppress manual teaching, so a private repair turn cannot leave the user stuck waiting to click a website control. GLM handles changed answers without a response-count increase and keeps smart-quote normalization scoped to GLM replies. The local JSON protocol now rejects nested tool calls hidden inside `done(summary)` and tells models to use `edit(content=...)` instead of legacy write-style tools. Review follow-up receipts also distinguish whether a repair turn actually ran checks, so a failed check or unfinished repair can no longer inherit an earlier `checks passed` receipt. The release passed 450 tests, compile checks, and `git diff --check`; real MiMo and DeepSeek/MiMo smoke runs confirmed no upload popover, no accidental stop, valid hidden audit, and approved review.
 
 Version `0.1.17` adds a hidden MoA layer without adding UI controls. When another supported model page is already open, `New Chat` first asks the selected model for a private draft, lets up to two other models critique or supplement that draft, and then asks the selected model to produce the single final answer. Empty or placeholder-only projects use the same owner-first pattern for one hidden advisory plan before the Writer starts, which helps new-project brainstorming without making the selected model a secretary for other models. Existing projects keep a different boundary: advisors do bounded read-only audits before the selected Writer acts, while the Writer still reads real files and verifies their reports. Project audit advisors may list, grep, and read selected non-sensitive files, but cannot edit, run commands, request shell approval, or see anything outside the project. Dotfiles, env files, secret-like paths, excluded dependency/build directories, key/certificate files, lock files, binaries, symlinks, and oversized files are not shared with hidden project audit advisors. If a draft-first advisor fails, the selected model's draft is used as the quiet fallback; if final synthesis fails after a draft, Codey does not resend the original prompt. Review remains separate: it still runs only after real file changes and still reviews the final Diff. The deterministic UI E2E flow now covers plain-chat consensus, project audit consensus, empty-project planning, and the existing write/test/review/restore path with no new visible modes.
 

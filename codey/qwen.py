@@ -104,16 +104,70 @@ def _send_button(
     teach: bool = False,
 ) -> Locator | None:
     message_box = _message_box(page)
-    return controls.locate_control(
+    control = controls.locate_control(
         page,
         PROVIDER_ID,
         controls.CONTROL_SEND_BUTTON,
         PROFILE.selectors("send_button"),
         timeout=timeout,
         require_enabled=require_enabled,
-        teach=teach,
+        teach=False,
         anchor=message_box,
     )
+    if control is not None:
+        return control
+    if require_enabled:
+        control = _qwen_enabled_send_button(page)
+        if control is not None:
+            return control
+    if teach:
+        return controls.locate_control(
+            page,
+            PROVIDER_ID,
+            controls.CONTROL_SEND_BUTTON,
+            PROFILE.selectors("send_button"),
+            timeout=0.0,
+            require_enabled=require_enabled,
+            teach=True,
+            anchor=message_box,
+        )
+    return None
+
+
+def _qwen_enabled_send_button(page: Page) -> Locator | None:
+    """Return Qwen's visible enabled send button without broad discovery."""
+    try:
+        buttons = page.locator("button.send-button")
+        count = int(buttons.count())
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
+        return None
+    for index in range(count - 1, -1, -1):
+        candidate = buttons.nth(index)
+        try:
+            if not candidate.is_visible() or not candidate.is_enabled():
+                continue
+            state = candidate.evaluate(
+                """el => ({
+                    disabled: !!el.disabled,
+                    ariaDisabled: el.getAttribute('aria-disabled') || '',
+                    className: String(el.className || '')
+                })"""
+            )
+        except cancellation.TaskCancelled:
+            raise
+        except Exception:
+            continue
+        class_name = str((state or {}).get("className") or "")
+        aria_disabled = str((state or {}).get("ariaDisabled") or "").lower()
+        if (
+            not (state or {}).get("disabled")
+            and aria_disabled != "true"
+            and "disabled" not in class_name.split()
+        ):
+            return candidate
+    return None
 
 
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
