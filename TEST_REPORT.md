@@ -1,7 +1,37 @@
-# Codey 0.1.19 Test Report
+# Codey 0.1.20 Test Report
 
-Date: 2026-07-08
+Date: 2026-07-09
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.20 Quiet Chat Controls
+
+This release makes existing chat content easier to reuse while keeping the UI
+small and local-only.
+
+Behavior:
+
+- User messages, assistant replies, Review receipts, and Done receipts expose a
+  per-message copy button.
+- Copy uses the browser Clipboard API with an `execCommand("copy")` fallback.
+- The copy control stays subdued by default and becomes clear on hover or
+  keyboard focus.
+- Chat sessions, titles, and messages remain stored in the existing browser
+  `localStorage` session data; no export button or backend chat database was
+  added.
+- Send and Stop now share one composer action slot.
+- Idle state shows `Enter` plus the send arrow.
+- Running state shows `Stop` plus the square stop icon.
+- `updateSend()` is the single path that switches send, stop, and hint state.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| UI unit suite | 28 passed |
+| Full unittest suite | 455 passed |
+| Syntax compile | `python -m compileall -q codey tests tools` passed |
+| Diff whitespace check | `git diff --check` passed with CRLF warnings only |
+| Backend chat export/database changes | None |
 
 ## 0.1.19 MiMo Answer-State Completion
 

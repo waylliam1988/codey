@@ -236,6 +236,21 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('class="provider-menu"', HTML)
         self.assertIn('class="provider-item"', HTML)
 
+    def test_send_and_stop_share_one_action_slot(self) -> None:
+        self.assertIn('class="action-slot"', HTML)
+        slot_start = HTML.index('<div class="action-slot">')
+        slot_end = HTML.index('</div>', slot_start)
+        slot = HTML[slot_start:slot_end]
+        self.assertIn('id="stop"', slot)
+        self.assertIn('id="send"', slot)
+        update_start = HTML.index("function updateSend()")
+        update_end = HTML.index("$('task').addEventListener", update_start)
+        update_block = HTML[update_start:update_end]
+        self.assertIn("$('send').style.display = running ? 'none' : ''", update_block)
+        self.assertIn("$('stop').style.display = running ? '' : 'none'", update_block)
+        self.assertIn("$('send-hint').textContent = running ? 'Stop' : 'Enter'", update_block)
+        self.assertNotIn("$('send-hint').style.display", update_block)
+
     def test_welcome_keeps_status_copy_without_example_cards(self) -> None:
         self.assertIn("Send a message to start.", HTML)
         self.assertIn("<h1>Codey</h1>", HTML)
@@ -243,6 +258,29 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("生成 snake.py", HTML)
         self.assertNotIn("写 README", HTML)
         self.assertNotIn("找 bug", HTML)
+
+    def test_chat_messages_have_quiet_copy_button(self) -> None:
+        self.assertIn("function addMessageCopyButton(div, text)", HTML)
+        self.assertIn("function copyText(text)", HTML)
+        self.assertIn("navigator.clipboard.writeText(value)", HTML)
+        self.assertIn("document.execCommand('copy')", HTML)
+        self.assertIn("className = 'msg-copy'", HTML)
+        self.assertIn("opacity: .45", HTML)
+        self.assertIn(".msg:hover .msg-copy", HTML)
+        self.assertIn(".msg:focus-within .msg-copy", HTML)
+        self.assertIn("aria-label', 'Copy message'", HTML)
+        self.assertIn("addMessageCopyButton(div, messageCopyText(m))", HTML)
+        self.assertIn("copyText: text", HTML)
+        self.assertNotIn("Export chat", HTML)
+
+    def test_chat_messages_and_titles_remain_local_persistent(self) -> None:
+        self.assertIn("const LS_SESSIONS = 'codey:sessions';", HTML)
+        self.assertIn("messages: Array.isArray(s.messages) ? s.messages : []", HTML)
+        self.assertIn("title: s.title || 'New chat'", HTML)
+        self.assertIn("function saveSessions(arr)", HTML)
+        self.assertIn("localStorage.setItem(LS_SESSIONS, JSON.stringify(arr))", HTML)
+        self.assertIn("s.title = m.text.slice(0, 28)", HTML)
+        self.assertIn("s.title = title.slice(0, 80)", HTML)
 
 
 if __name__ == "__main__":

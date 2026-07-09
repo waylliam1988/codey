@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.19`
+Version: `0.1.20`
 
 ---
 
@@ -66,6 +66,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.20` makes the chat surface easier to reuse without adding an export workflow. User messages, assistant replies, Review receipts, and Done receipts now have a quiet per-message copy control that stays visually subdued until hover or keyboard focus, while chat history and titles continue to live in the browser's existing `localStorage` session store. The composer also keeps Send and Stop in the same right-side action slot: idle shows `Enter` plus the send arrow, running shows `Stop` plus the square stop icon, and completion returns to the send state through one `updateSend()` path. The release passed 455 tests, syntax compile, and `git diff --check` with only CRLF warnings.
 
 Version `0.1.19` refines MiMo's completion detection without changing the UI. MiMo still uses its paper-plane SVG as a final provider-specific safety check before clicking the send button, but it no longer uses that icon to decide whether an answer is complete. Completion is now based on the newest answer DOM: cleaned final text must exist, `data-is-typing` must not be active, and a nearby copy button immediately marks the answer complete; without a copy button, Codey still requires the page not to be in a generating state. This keeps visual icon matching as a send-button guard instead of a response-state machine. The release passed 452 tests, the focused provider/protocol/server suite, syntax compile, and `git diff --check` with only CRLF warnings.
 

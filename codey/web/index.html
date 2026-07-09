@@ -287,6 +287,22 @@
     user-select: none;
   }
   .msg.asst .toggle:hover { color: var(--text); }
+  .msg-copy {
+    width: 22px; height: 22px; margin-top: 6px; padding: 0;
+    border: 0; border-radius: 4px; background: transparent;
+    color: var(--muted); cursor: pointer;
+    display: grid; place-items: center;
+    opacity: .45;
+    transition: background .12s, color .12s, opacity .12s;
+  }
+  .msg:hover .msg-copy,
+  .msg:focus-within .msg-copy { opacity: 1; }
+  .msg-copy:hover,
+  .msg-copy:focus-visible { background: var(--hover); color: var(--text-dim); opacity: 1; }
+  .msg-copy.copied { color: var(--text); }
+  .msg-copy svg {
+    width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8;
+  }
 
   /* ---------- tool line ---------- */
   .tool-line {
@@ -562,8 +578,11 @@
   }
 
   /* send / stop — square icon buttons, no color */
+  .action-slot {
+    width: 30px; height: 28px;
+    display: grid; place-items: center;
+  }
   .icon-btn {
-    margin-left: auto;
     background: transparent; color: var(--text-dim); border: 0;
     width: 30px; height: 28px; border-radius: 6px;
     cursor: pointer; display: inline-grid; place-items: center;
@@ -744,12 +763,14 @@
           </div>
         </div>
         <span class="send-hint" id="send-hint">Enter</span>
-        <button class="icon-btn" id="stop" style="display:none" title="Stop">
-          <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none"/></svg>
-        </button>
-        <button class="icon-btn send" id="send" disabled title="Send">
-          <svg viewBox="0 0 24 24"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg>
-        </button>
+        <div class="action-slot">
+          <button class="icon-btn" id="stop" style="display:none" title="Stop">
+            <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" stroke="none"/></svg>
+          </button>
+          <button class="icon-btn send" id="send" disabled title="Send">
+            <svg viewBox="0 0 24 24"><path d="M3 11 21 3l-7 18-3-8-8-2Z"/></svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -1070,7 +1091,56 @@ function statusRow(prefix, text, opts = {}) {
     row.appendChild(btn);
   }
   div.appendChild(row);
+  if (opts.copyText) addMessageCopyButton(div, opts.copyText);
   return div;
+}
+
+function messageCopyText(m) {
+  return m && typeof m.text === 'string' ? m.text : '';
+}
+async function copyText(text) {
+  const value = String(text || '');
+  if (!value) return false;
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {}
+  const area = document.createElement('textarea');
+  area.value = value;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.top = '-1000px';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    area.remove();
+  }
+}
+function addMessageCopyButton(div, text) {
+  const value = String(text || '');
+  if (!value) return;
+  const btn = document.createElement('button');
+  btn.className = 'msg-copy';
+  btn.type = 'button';
+  btn.title = 'Copy';
+  btn.setAttribute('aria-label', 'Copy message');
+  btn.innerHTML = '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 15V7a2 2 0 0 1 2-2h8"/></svg>';
+  btn.onclick = async (e) => {
+    e.stopPropagation();
+    const ok = await copyText(value);
+    btn.classList.toggle('copied', ok);
+    btn.title = ok ? 'Copied' : 'Could not copy';
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.title = 'Copy';
+    }, 1200);
+  };
+  div.appendChild(btn);
 }
 
 function appendMessageNode(chat, m) {
@@ -1079,6 +1149,7 @@ function appendMessageNode(chat, m) {
     div.className = 'msg user';
     div.innerHTML = `<div class="msg-label">You</div><div class="body"></div>`;
     div.querySelector('.body').textContent = m.text;
+    addMessageCopyButton(div, messageCopyText(m));
     chat.appendChild(div);
   } else if (m.type === 'turn') {
     const div = document.createElement('div');
@@ -1107,6 +1178,7 @@ function appendMessageNode(chat, m) {
     } else {
       body.classList.remove('collapsed');
     }
+    addMessageCopyButton(div, messageCopyText(m));
     chat.appendChild(div);
   } else if (m.type === 'tool') {
     const div = document.createElement('div');
@@ -1126,9 +1198,11 @@ function appendMessageNode(chat, m) {
       label: 'View diff',
       onclick: () => openChangesDrawer(m.project),
     } : null;
-    chat.appendChild(statusRow('Done', m.text || 'Task complete', { kind: 'done', action }));
+    const text = m.text || 'Task complete';
+    chat.appendChild(statusRow('Done', text, { kind: 'done', action, copyText: text }));
   } else if (m.type === 'review') {
-    chat.appendChild(statusRow('Review', m.text || 'Complete', { kind: 'review' }));
+    const text = m.text || 'Complete';
+    chat.appendChild(statusRow('Review', text, { kind: 'review', copyText: text }));
   } else if (m.type === 'changes') {
     const div = document.createElement('div');
     div.className = 'msg changes';
@@ -1524,7 +1598,7 @@ function handleServerEvent(data) {
     setStatus('Running', 'run');
     $('send').disabled = true;
     $('provider-button').disabled = true;
-    $('stop').style.display = '';
+    updateSend();
     return;
   }
   if (data.type === 'task_done') {
@@ -1533,7 +1607,6 @@ function handleServerEvent(data) {
       runningRunId = null;
       runningSessionId = null;
       setStatus('', 'ok');
-      $('stop').style.display = 'none';
       $('provider-button').disabled = false;
       updateSend();
     }
@@ -1654,7 +1727,6 @@ function applyRunState(data) {
   } else {
     setStatus('', 'ok');
   }
-  $('stop').style.display = busy ? '' : 'none';
   $('provider-button').disabled = busy;
   updateSend();
 }
@@ -1694,7 +1766,6 @@ async function acceptRunResponse(response, sessionId) {
   runningSessionId = runningRunId ? sessionId : null;
   if (runningRunId) {
     setStatus('Running', 'run');
-    $('stop').style.display = '';
     $('provider-button').disabled = true;
     updateSend();
   }
@@ -2012,7 +2083,11 @@ function resizeTask() {
 }
 function updateSend() {
   const has = $('task').value.trim();
-  $('send').disabled = !has || runningSessionId;
+  const running = !!runningSessionId;
+  $('send').disabled = !has || running;
+  $('send').style.display = running ? 'none' : '';
+  $('stop').style.display = running ? '' : 'none';
+  $('send-hint').textContent = running ? 'Stop' : 'Enter';
 }
 $('task').addEventListener('input', () => { resizeTask(); updateSend(); });
 $('task').addEventListener('keydown', (e) => {
