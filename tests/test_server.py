@@ -1965,6 +1965,30 @@ class UiLaunchTests(unittest.TestCase):
         self.assertEqual(kwargs["storage_path"], str(server.DEFAULT_STATE_HOME / "webview"))
         httpd.shutdown.assert_called_once()
 
+    def test_serve_keeps_http_server_available_when_webview_fails(self) -> None:
+        fake_webview = mock.Mock()
+        fake_webview.start.side_effect = RuntimeError("missing webview runtime")
+
+        with (
+            mock.patch.dict("sys.modules", {"webview": fake_webview}),
+            mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
+            mock.patch.object(server, "_wait_for_manual_browser", side_effect=KeyboardInterrupt) as fallback,
+            mock.patch("builtins.print") as printed,
+        ):
+            httpd = mock.Mock()
+            httpd.server_address = ("127.0.0.1", 43210)
+            httpd_cls.return_value = httpd
+
+            server.serve(port=0)
+
+        fake_webview.create_window.assert_called_once()
+        fake_webview.start.assert_called_once()
+        fallback.assert_called_once()
+        self.assertEqual(fallback.call_args.args[0], "http://127.0.0.1:43210/")
+        self.assertIn("missing webview runtime", str(fallback.call_args.args[1]))
+        printed.assert_any_call("\n[codey] shutting down")
+        httpd.shutdown.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

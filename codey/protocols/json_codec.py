@@ -338,7 +338,18 @@ class JsonToolCodec:
                 attrs = f" tool={tool}"
                 if path:
                     attrs += f" path={path}"
-                chunks.append(f"[tool_result{attrs}]\n---\n{result.output}\n---")
+                if result.truncated:
+                    attrs += " truncated=true"
+                output = result.output
+                if result.truncated:
+                    output = (
+                        f"{output}\n"
+                        "[truncated result: omitted content may contain relevant "
+                        "errors or code. Do not assume omitted content is clean. "
+                        "Use narrower grep/read_file offsets or rerun a narrower "
+                        "command if needed.]"
+                    )
+                chunks.append(f"[tool_result{attrs}]\n---\n{output}\n---")
             formatted = "\n\n".join(chunks)
         return (
             f"{formatted}\n\n"

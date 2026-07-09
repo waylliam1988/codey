@@ -265,6 +265,15 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("not native website tools", prompt)
         self.assertIn("valid JSON tool call", codec.repair_prompt())
 
+    def test_format_results_marks_truncated_results_explicitly(self) -> None:
+        codec = JsonToolCodec()
+        call = ToolCall("run", {"path": ".", "command": "python -m unittest"})
+        prompt = codec.format_results([ToolResult(call, "HEAD\nTAIL", truncated=True)])
+
+        self.assertIn("[tool_result tool=run path=. truncated=true]", prompt)
+        self.assertIn("omitted content may contain relevant errors or code", prompt)
+        self.assertIn("Do not assume omitted content is clean", prompt)
+
     def test_system_prompt_does_not_claim_model_is_codey(self) -> None:
         prompt = JsonToolCodec().system_prompt()
 

@@ -60,6 +60,21 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("exit 0: python -m unittest", prompt)
         self.assertNotIn("Codey's second model", prompt)
 
+    def test_render_review_prompt_warns_when_diff_is_truncated(self) -> None:
+        prompt = review.render_review_prompt(
+            project="E:/demo",
+            task="Fix the bug",
+            writer_summary="done",
+            changes={
+                "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
+                "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+                "truncated": True,
+            },
+        )
+
+        self.assertIn("Diff truncation note", prompt)
+        self.assertIn("avoid assuming omitted hunks are clean", prompt)
+
     def test_render_writer_followup_keeps_reviewer_advisory(self) -> None:
         result = review.ReviewResult(
             verdict="changes_requested",

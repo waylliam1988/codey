@@ -1656,7 +1656,7 @@ function handleServerEvent(data) {
   const mayOutliveRun = ['task_start', 'task_done', 'shell_request', 'shell_result', 'teach_request'];
   if (runId && runningRunId && !mayOutliveRun.includes(data.type) && runId !== runningRunId) return;
   if (data.type === 'status') {
-    setStatus(data.status === 'connecting' ? 'Connecting to Edge…' : data.status, 'warn');
+    setStatus(data.status === 'connecting' ? 'Connecting to browser…' : data.status, 'warn');
     return;
   }
   if (data.type === 'providers') {
@@ -1822,7 +1822,7 @@ function applyRunState(data) {
   runningSessionId = busy ? data.session_id : null;
   if (busy) {
     const connecting = data.run_status === 'connecting';
-    setStatus(connecting ? 'Connecting to Edge…' : 'Running', connecting ? 'warn' : 'run');
+    setStatus(connecting ? 'Connecting to browser…' : 'Running', connecting ? 'warn' : 'run');
   } else {
     setStatus('', 'ok');
   }

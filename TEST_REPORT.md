@@ -1,7 +1,47 @@
-# Codey 0.1.22 Test Report
+# Codey 0.1.23 Test Report
 
 Date: 2026-07-09
-Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+Environment: Windows / Edge or Chrome CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.23 Browser Launch Robustness and Explicit Truncation Guidance
+
+This release keeps the UI unchanged while making browser startup failures
+actionable and local truncation visible to the model.
+
+Behavior:
+
+- Browser auto-launch honors `CODEY_BROWSER_PATH` when it points to an existing
+  executable.
+- If no explicit path is configured, Codey still prefers Edge default install
+  paths and falls back to system or per-user Chrome install paths.
+- Auto-launched Edge and Chrome use separate profiles:
+  `~/.codey/edge-profile` and `~/.codey/chrome-profile`.
+- Missing browser startup now reports a clear Edge/Chrome/CODEY_BROWSER_PATH
+  error.
+- If `webview.start()` fails, Codey prints the local URL, explains that the
+  native window could not open, and keeps the HTTP server available until
+  Ctrl+C.
+- `ToolResult` now carries `truncated`.
+- Model-facing tool results mark truncated output with `truncated=true` and
+  explicitly say omitted content may still contain relevant errors or code.
+- Approved Shell continuation also tells the writer when Shell output was
+  truncated.
+- Review prompts warn when the diff was truncated and instruct the reviewer not
+  to assume omitted hunks are clean.
+- No read/run/diff size limits were increased, no full output replay was added,
+  and no UI was added.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Browser/protocol/review/server focused suite | 130 passed |
+| Full unittest suite | 478 passed |
+| Syntax compile | `python -m compileall -q codey tests tools` passed |
+| Diff whitespace check | `git diff --check` passed with CRLF warnings only |
+| Browser fallback | `CODEY_BROWSER_PATH`; Edge first; system/per-user Chrome fallback; separate profiles |
+| WebView fallback | HTTP server remains available with manual URL after native-window failure |
+| Truncation guidance | `truncated=true` tool results and diff truncation review note |
 
 ## 0.1.22 Durable Conversation Handoff
 

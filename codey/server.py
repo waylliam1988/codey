@@ -27,6 +27,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass, replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1041,10 +1042,17 @@ class Handler(BaseHTTPRequestHandler):
                 "output": result.get("output") or result.get("error") or "",
                 "exit_code": result.get("exit_code"),
                 "ok": result.get("ok"),
+                "truncated": bool(result.get("truncated")),
             }
             STATE.record_shell_result(event)
             continued = False
             if pending.get("continue_after"):
+                truncation_note = (
+                    "\nShell output was truncated. Do not assume omitted content "
+                    "is clean; inspect narrower output if needed.\n"
+                    if result.get("truncated")
+                    else ""
+                )
                 continuation = (
                     "Continue the interrupted task in this same conversation.\n"
                     "The user approved and ran this shell command:\n"
@@ -1052,6 +1060,7 @@ class Handler(BaseHTTPRequestHandler):
                     f"Exit code: {result.get('exit_code')}\n"
                     "Output:\n"
                     f"{result.get('output') or result.get('error') or '(no output)'}\n\n"
+                    f"{truncation_note}"
                     "Use this result to continue the original task. If the task is complete,"
                     " reply with a JSON done tool call."
                 )
@@ -1130,6 +1139,16 @@ class Handler(BaseHTTPRequestHandler):
             STATE.unsubscribe(q)
 
 
+def _wait_for_manual_browser(url: str, exc: Exception) -> None:
+    print(f"[codey] Could not open native window: {exc}")
+    print(f"[codey] Open this URL in your browser instead: {url}")
+    if sys.platform == "win32":
+        print("[codey] If needed, install Microsoft Edge WebView2 Runtime.")
+    print("[codey] Press Ctrl+C to stop.")
+    while True:
+        time.sleep(3600)
+
+
 def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
     httpd = CodeyHTTPServer((host, port), Handler)
     actual_port = httpd.server_address[1]
@@ -1161,5 +1180,10 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
         _run_webview()
     except KeyboardInterrupt:
         print("\n[codey] shutting down")
+    except Exception as exc:
+        try:
+            _wait_for_manual_browser(url, exc)
+        except KeyboardInterrupt:
+            print("\n[codey] shutting down")
     finally:
         httpd.shutdown()

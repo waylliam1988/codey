@@ -656,7 +656,11 @@ def run_project_audit_advisor(
                         raise
                     except Exception as exc:
                         outcome = ToolOutcome.error(str(exc))
-                results.append(ToolResult(call=call, output=outcome.output))
+                results.append(ToolResult(
+                    call=call,
+                    output=outcome.output,
+                    truncated=outcome.truncated,
+                ))
             next_prompt = READ_ONLY_CODEC.format_results(results)
             if rejected:
                 next_prompt += (

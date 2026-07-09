@@ -1,14 +1,15 @@
-"""Attach to long-lived Edge CDP tabs for supported web chat providers.
+"""Attach to long-lived Chromium CDP tabs for supported web chat providers.
 
 Codey treats the model browser as durable user state: closing or restarting the
-local UI must not close Edge. Provider connections first reuse an existing CDP
-browser and tab, then open a missing tab, and only launch Edge when no usable
-CDP browser is available.
+local UI must not close the model browser. Provider connections first reuse an
+existing CDP browser and tab, then open a missing tab, and only launch Edge or
+Chrome when no usable CDP browser is available.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -27,7 +28,9 @@ QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
 DEFAULT_PORT = 9222
-DEFAULT_PROFILE = DEFAULT_STATE_HOME / "edge-profile"
+EDGE_PROFILE = DEFAULT_STATE_HOME / "edge-profile"
+CHROME_PROFILE = DEFAULT_STATE_HOME / "chrome-profile"
+DEFAULT_PROFILE = EDGE_PROFILE
 CDP_PORT_CANDIDATES = tuple(range(DEFAULT_PORT, DEFAULT_PORT + 17))
 CDP_STATE_FILE = DEFAULT_STATE_HOME / "cdp-port.json"
 PROVIDER_URL_CONTAINS = {
@@ -41,15 +44,54 @@ EDGE_PATHS = [
     r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
 ]
+CHROME_PATHS = [
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+]
+CODEY_BROWSER_PATH_ENV = "CODEY_BROWSER_PATH"
 
 _active_cdp_port: int | None = None
 
 
-def _find_edge() -> Path:
+@dataclass(frozen=True)
+class BrowserExecutable:
+    path: Path
+    kind: str
+    profile: Path
+
+
+def _browser_profile(kind: str) -> Path:
+    return CHROME_PROFILE if kind == "chrome" else EDGE_PROFILE
+
+
+def _find_browser() -> BrowserExecutable:
+    configured = os.environ.get(CODEY_BROWSER_PATH_ENV, "").strip().strip('"')
+    if configured:
+        path = Path(configured)
+        if path.is_file():
+            name = path.name.lower()
+            kind = "chrome" if "chrome" in name and "edge" not in name else "edge"
+            return BrowserExecutable(path, kind, _browser_profile(kind))
+        raise FileNotFoundError(
+            f"{CODEY_BROWSER_PATH_ENV} points to a missing browser executable: {configured}"
+        )
     for p in EDGE_PATHS:
-        if Path(p).is_file():
-            return Path(p)
-    raise FileNotFoundError("msedge.exe not found in default locations")
+        path = Path(p)
+        if path.is_file():
+            return BrowserExecutable(path, "edge", EDGE_PROFILE)
+    for p in CHROME_PATHS:
+        path = Path(p)
+        if path.is_file():
+            return BrowserExecutable(path, "chrome", CHROME_PROFILE)
+    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+    if local_app_data:
+        path = Path(local_app_data) / "Google" / "Chrome" / "Application" / "chrome.exe"
+        if path.is_file():
+            return BrowserExecutable(path, "chrome", CHROME_PROFILE)
+    raise FileNotFoundError(
+        "Could not find Microsoft Edge or Google Chrome. Install one of them, "
+        f"or set {CODEY_BROWSER_PATH_ENV} to the browser executable."
+    )
 
 
 def _port_open(port: int, host: str = "127.0.0.1") -> bool:
@@ -60,13 +102,18 @@ def _port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def _launch_edge(port: int, profile: Path, start_url: str) -> subprocess.Popen:
-    exe = _find_edge()
-    profile.mkdir(parents=True, exist_ok=True)
+def _launch_browser(port: int, profile: Path | None, start_url: str) -> subprocess.Popen:
+    browser = _find_browser()
+    profile_path = (
+        browser.profile
+        if profile is None or Path(profile) == DEFAULT_PROFILE
+        else Path(profile)
+    )
+    profile_path.mkdir(parents=True, exist_ok=True)
     args = [
-        str(exe),
+        str(browser.path),
         f"--remote-debugging-port={port}",
-        f"--user-data-dir={profile}",
+        f"--user-data-dir={profile_path}",
         "--no-first-run",
         "--no-default-browser-check",
         start_url,
@@ -132,7 +179,7 @@ def _cdp_available(port: int = DEFAULT_PORT) -> bool:
 
 
 def list_cdp_targets(port: int = DEFAULT_PORT, timeout: float = 1.0) -> list[dict]:
-    """Read Edge CDP targets without starting Playwright or opening pages."""
+    """Read Chromium CDP targets without starting Playwright or opening pages."""
     data = _read_cdp_json(port, "/json/list", timeout=timeout)
     if not isinstance(data, list):
         return []
@@ -205,7 +252,7 @@ def _ensure_cdp_port(
         raise RuntimeError(f"CDP port {preferred} is not open")
 
     cdp_port = _find_free_cdp_port(preferred)
-    _launch_edge(cdp_port, profile, start_url)
+    _launch_browser(cdp_port, profile, start_url)
     _wait_port(cdp_port)
     return _remember_cdp_port(cdp_port)
 
@@ -232,7 +279,7 @@ def _start_playwright_with_retry() -> Playwright:
             last_error = exc
             cancellation.wait(0.25 * (attempt + 1))
     raise RuntimeError(
-        "Playwright failed to initialize. Close stale Codey/Edge automation "
+        "Playwright failed to initialize. Close stale Codey browser automation "
         "sessions and try again."
     ) from last_error
 

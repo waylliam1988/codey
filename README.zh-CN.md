@@ -8,9 +8,9 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 它是一个本地优先、低成本、多网页模型兼容的 AI 编程工作台。
 
-不需要 API key，不需要充值 API 额度。你只要能在 Edge 里登录网页 AI，就可以用 Codey 开始写代码。
+不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.22`
+版本：`0.1.23`
 
 ---
 
@@ -53,6 +53,7 @@ Codey 想解决的是一个很朴素的问题：
 - UI 重连后自动恢复运行状态、审批或人工教学
 - 网页提交结果不确定时绝不重复发送
 - 底层记录很小的失败诊断信息，方便网页改版后定位问题
+- 默认启动 Edge，必要时回退 Chrome；原生 WebView 打不开时仍保留本地 HTTP UI
 
 ---
 
@@ -66,6 +67,8 @@ Codey 想解决的是一个很朴素的问题：
 | GLM | 已实机测试 |
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
+
+`0.1.23` 提升启动健壮性和截断结果的诚实度，但不增加 UI。浏览器自动启动现在会先看 `CODEY_BROWSER_PATH`，默认优先 Edge，找不到时回退系统级或用户级 Chrome，并分别使用 `~/.codey/edge-profile` 和 `~/.codey/chrome-profile`，避免 profile 混用。原生 WebView 窗口打不开时，Codey 会打印明确错误和可手动打开的本地 URL，并保持 HTTP 服务运行直到 Ctrl+C。工具结果如果被截断，会在模型可见的结果里标出 `truncated=true`，并明确提醒省略内容仍可能包含相关错误或代码；Review prompt 在 diff 截断时也会提醒 Reviewer 不要假设省略 hunks 没问题。本版没有扩大上限，没有自动回放完整输出，也没有新增 UI；通过 478 项测试、语法编译和 `git diff --check`，只有 CRLF warning。
 
 `0.1.22` 让重启或切换模型后的对话不只停留在“侧边栏看得见”。当网页模型上下文不可信时，Codey 会复用已有的 compact handoff，并从保存下来的可见聊天里补一段有上限的最近上下文：只包含最近的用户消息、AI 回答、Review、Done 和 Changes，跳过工具输出、Shell 输出、turn 噪声和当前请求。当前选中的主模型会收到这份恢复 handoff，因此明天继续聊或换模型继续聊时更不容易失忆；隐藏 MoA 顾问仍然只拿 compact factual snapshot，不会自动看到完整可见聊天历史。本版不重放完整 transcript，不增加 UI，不增加导出或训练流程；通过 469 项测试、语法编译和 `git diff --check`，只有 CRLF warning。
 
@@ -109,7 +112,7 @@ Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当�
 
 一个 AI 可以写代码，但它也可能漏掉小错误。两个 AI 的意义不是把界面变复杂，而是让流程更稳：一个模型专心写，另一个模型像第二双眼睛一样帮你检查刚改过的代码。
 
-你不需要学习一个新模式。只要你在 Edge 里打开两个支持的网页 AI，Codey 就可以自动把它们配合起来：
+你不需要学习一个新模式。只要你在 Codey 的浏览器窗口里打开两个支持的网页 AI，Codey 就可以自动把它们配合起来：
 
 - 你在 Codey 里选择的模型，负责写代码。
 - 另一个已经打开的支持模型，自动负责检查。
@@ -151,17 +154,18 @@ Codey 会打开一个本地控制面板。
 
 ### 3. 第一次登录网页 AI
 
-第一次运行任务时，Codey 会打开一个专用 Edge 窗口。你需要在里面手动登录所选模型。
+第一次运行任务时，Codey 会打开一个专用浏览器窗口。你需要在里面手动登录所选模型。
 
-这个 Edge profile 和你日常用的 Edge 是分开的：
+这个浏览器 profile 和你日常用的浏览器 profile 是分开的：
 
 ```text
 C:\Users\<你>\.codey\edge-profile
+C:\Users\<你>\.codey\chrome-profile
 ```
 
 登录一次后，后面通常不用重复登录。
 
-这个模型 Edge 窗口可以一直留着。你关闭再重启 Codey UI 时，Codey 会尽量安静地连回已经打开的 CDP 浏览器和模型标签页。
+这个模型浏览器窗口可以一直留着。你关闭再重启 Codey UI 时，Codey 会尽量安静地连回已经打开的 CDP 浏览器和模型标签页。
 
 ### 4. 选择项目，然后用人话描述任务
 
@@ -316,7 +320,7 @@ codey/
   text_budget.py            有上限的命令输出头尾截取
   tool_runtime.py           本地工具和结构化执行结果
   task_runner.py            任务、会话、review 和收据编排
-  browser.py                Edge/CDP 连接
+  browser.py                Chromium CDP 连接
   browser_worker.py         Playwright 线程调度
   changes.py                Git 与 snapshot diff / restore
   local_store.py            共享本地数据根目录和原子 JSON 写入

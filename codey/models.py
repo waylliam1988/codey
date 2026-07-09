@@ -27,3 +27,4 @@ class ToolPlan:
 class ToolResult:
     call: ToolCall
     output: str
+    truncated: bool = False

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -8,6 +9,94 @@ from codey import browser
 
 
 class BrowserProviderWrapperTests(unittest.TestCase):
+    def test_find_browser_prefers_configured_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            chrome = Path(td) / "chrome.exe"
+            chrome.write_text("", encoding="utf-8")
+
+            with mock.patch.dict(
+                browser.os.environ,
+                {browser.CODEY_BROWSER_PATH_ENV: str(chrome)},
+            ):
+                found = browser._find_browser()
+
+        self.assertEqual(found.path, chrome)
+        self.assertEqual(found.kind, "chrome")
+        self.assertEqual(found.profile, browser.CHROME_PROFILE)
+
+    def test_find_browser_prefers_edge_then_chrome_defaults(self) -> None:
+        edge = Path(r"C:\Program Files\Microsoft\Edge\Application\msedge.exe")
+        chrome = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+
+        def exists(self: Path) -> bool:
+            return self == edge or self == chrome
+
+        with (
+            mock.patch.dict(browser.os.environ, {}, clear=True),
+            mock.patch.object(Path, "is_file", exists),
+        ):
+            found = browser._find_browser()
+
+        self.assertEqual(found.path, edge)
+        self.assertEqual(found.kind, "edge")
+        self.assertEqual(found.profile, browser.EDGE_PROFILE)
+
+    def test_find_browser_falls_back_to_chrome_profile(self) -> None:
+        chrome = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+
+        def exists(self: Path) -> bool:
+            return self == chrome
+
+        with (
+            mock.patch.dict(browser.os.environ, {}, clear=True),
+            mock.patch.object(Path, "is_file", exists),
+        ):
+            found = browser._find_browser()
+
+        self.assertEqual(found.path, chrome)
+        self.assertEqual(found.kind, "chrome")
+        self.assertEqual(found.profile, browser.CHROME_PROFILE)
+
+    def test_find_browser_falls_back_to_user_chrome_profile(self) -> None:
+        chrome = Path(r"C:\Users\Ada\AppData\Local\Google\Chrome\Application\chrome.exe")
+
+        def exists(self: Path) -> bool:
+            return self == chrome
+
+        with (
+            mock.patch.dict(browser.os.environ, {"LOCALAPPDATA": r"C:\Users\Ada\AppData\Local"}, clear=True),
+            mock.patch.object(Path, "is_file", exists),
+        ):
+            found = browser._find_browser()
+
+        self.assertEqual(found.path, chrome)
+        self.assertEqual(found.kind, "chrome")
+        self.assertEqual(found.profile, browser.CHROME_PROFILE)
+
+    def test_find_browser_reports_clear_missing_browser_error(self) -> None:
+        with (
+            mock.patch.dict(browser.os.environ, {}, clear=True),
+            mock.patch.object(Path, "is_file", return_value=False),
+        ):
+            with self.assertRaisesRegex(FileNotFoundError, "Edge or Google Chrome"):
+                browser._find_browser()
+
+    def test_launch_browser_uses_detected_chrome_profile_for_default_profile(self) -> None:
+        exe = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+        found = browser.BrowserExecutable(exe, "chrome", browser.CHROME_PROFILE)
+
+        with (
+            mock.patch.object(browser, "_find_browser", return_value=found),
+            mock.patch.object(Path, "mkdir") as mkdir,
+            mock.patch.object(browser.subprocess, "Popen") as popen,
+        ):
+            browser._launch_browser(9333, browser.DEFAULT_PROFILE, "https://chat.qwen.ai/")
+
+        mkdir.assert_called_once_with(parents=True, exist_ok=True)
+        args = popen.call_args.args[0]
+        self.assertEqual(args[0], str(exe))
+        self.assertIn(f"--user-data-dir={browser.CHROME_PROFILE}", args)
+
     def test_deepseek_wrapper_uses_generic_chat_page(self) -> None:
         session = object()
         profile = Path("deepseek-profile")
@@ -198,7 +287,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             mock.patch.object(browser, "_find_existing_cdp_port", return_value=None),
             mock.patch.object(browser, "_load_saved_cdp_port", return_value=None),
             mock.patch.object(browser, "_port_open", side_effect=port_open),
-            mock.patch.object(browser, "_launch_edge") as launch,
+            mock.patch.object(browser, "_launch_browser") as launch,
             mock.patch.object(browser, "_wait_port") as wait_port,
             mock.patch.object(browser, "_save_cdp_port"),
         ):
@@ -218,7 +307,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         with (
             mock.patch.object(browser, "_find_cdp_port_with_target", return_value=None),
             mock.patch.object(browser, "_find_existing_cdp_port", return_value=9333),
-            mock.patch.object(browser, "_launch_edge") as launch,
+            mock.patch.object(browser, "_launch_browser") as launch,
         ):
             port = browser._ensure_cdp_port(
                 preferred=9222,

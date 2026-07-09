@@ -8,9 +8,9 @@ Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, Xiao
 
 It is a local-first, low-cost AI coding workspace built for multiple web models.
 
-No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
+No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.22`
+Version: `0.1.23`
 
 ---
 
@@ -54,6 +54,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Recover the active run, approval, or teaching prompt after a UI reconnect
 - Prevent uncertain provider submissions from being sent twice
 - Record compact provider failure diagnostics for debugging web-page breakage
+- Launch Edge by default, fall back to Chrome when needed, and keep the local
+  HTTP UI available if the native WebView window cannot open
 
 ---
 
@@ -67,6 +69,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.23` improves startup failure handling and truncation honesty without adding UI. Browser auto-launch now honors `CODEY_BROWSER_PATH`, prefers Edge, falls back to system or per-user Chrome, and keeps separate browser profiles under `~/.codey/edge-profile` and `~/.codey/chrome-profile`. If the native WebView window cannot open, Codey prints a clear error plus the local URL to open manually and keeps the HTTP server alive until Ctrl+C. Tool results now carry a `truncated=true` marker when local output was clipped, and the model-facing result explicitly says omitted content may still contain relevant errors or code. Review prompts also warn when a diff was truncated, so the reviewer does not assume omitted hunks are clean. No limits were increased, no full output replay was added, and no new UI was introduced. The release passed 478 tests, syntax compile, and `git diff --check` with only CRLF warnings.
 
 Version `0.1.22` makes restarted or model-switched conversations remember more than the visible sidebar. When a web-model context is not trusted, Codey now reuses the existing compact handoff and adds a bounded excerpt from the saved visible chat: recent user/assistant/review/done/change messages only, skipping tool output, shell output, turn noise, and the current request. The selected model receives this recovered handoff so it can continue naturally after restart or model switch; hidden MoA advisors still receive only the compact factual snapshot, so full visible chat history is not automatically spread to other web models. This does not replay the full transcript, add UI, add export, or create a training pipeline. The release passed 469 tests, syntax compile, and `git diff --check` with only CRLF warnings.
 
@@ -110,7 +114,7 @@ If a provider page changes, Codey first attempts the bounded recovery above. Whe
 
 One AI model can write code, but it can also miss small mistakes. Two models make the loop steadier: one model focuses on building, and another model looks over the changed code like a second pair of eyes.
 
-You do not need to learn a new mode. If you open two supported AI pages in Edge, Codey can automatically use them together:
+You do not need to learn a new mode. If you open two supported AI pages in the Codey browser, Codey can automatically use them together:
 
 - The model you select in Codey is the writer.
 - Another open supported model becomes the reviewer.
@@ -147,15 +151,16 @@ Codey opens a local UI at `http://127.0.0.1:<port>/`.
 
 ### 3. Log in once
 
-When Codey opens the selected AI website in a dedicated Edge profile, log in manually once.
+When Codey opens the selected AI website in a dedicated browser profile, log in manually once.
 
-The browser profile is separate from your normal Edge profile:
+The browser profile is separate from your normal daily browser profile:
 
 ```text
 C:\Users\<you>\.codey\edge-profile
+C:\Users\<you>\.codey\chrome-profile
 ```
 
-You can leave that model Edge window open. Restarting the Codey UI does not close it; the next run will quietly reconnect to the existing CDP browser and tab when possible.
+You can leave that model browser window open. Restarting the Codey UI does not close it; the next run will quietly reconnect to the existing CDP browser and tab when possible.
 
 ### 4. Pick a project and ask
 
@@ -313,7 +318,7 @@ codey/
   text_budget.py            bounded head-and-tail output clipping
   tool_runtime.py           local tools and structured outcomes
   task_runner.py            task, conversation, review, and receipt orchestration
-  browser.py                Edge/CDP connection helpers
+  browser.py                Chromium CDP connection helpers
   browser_worker.py         Playwright thread scheduler
   changes.py                Git and snapshot diff / restore support
   local_store.py            shared local data root and atomic JSON writes

@@ -366,7 +366,7 @@ def run(
                 outcome = ToolOutcome.error(str(exc))
             out = outcome.output
             emit(RunEvent.tool_finished(turn, call, outcome))
-            results.append(ToolResult(call=call, output=out))
+            results.append(ToolResult(call=call, output=out, truncated=outcome.truncated))
             produced_information = outcome.ok or outcome.exit_code is not None
             if call.name in ("read", "ls", "search", "run", "shell") and produced_information:
                 sig = (call.name, path, out)

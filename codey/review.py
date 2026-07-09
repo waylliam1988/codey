@@ -167,7 +167,15 @@ def render_review_prompt(
         deletions = int(file.get("deletions") or 0)
         file_lines.append(f"- {status} {path} +{additions} -{deletions}")
     changed_files = "\n".join(file_lines) if file_lines else "(not listed)"
-    diff = _clip(changes.get("diff"), MAX_REVIEW_DIFF_CHARS)
+    raw_diff = "" if changes.get("diff") is None else str(changes.get("diff"))
+    diff_was_truncated = bool(changes.get("truncated")) or len(raw_diff) > MAX_REVIEW_DIFF_CHARS
+    diff = _clip(raw_diff, MAX_REVIEW_DIFF_CHARS)
+    diff_note = (
+        "Diff truncation note: the diff was truncated before review. Review only "
+        "the visible diff and explicitly avoid assuming omitted hunks are clean.\n\n"
+        if diff_was_truncated
+        else ""
+    )
     log = _clip(recent_log, MAX_REVIEW_LOG_CHARS) or "(no recent tool log)"
 
     return (
@@ -192,6 +200,7 @@ def render_review_prompt(
         f"Writer summary:\n{_clip(writer_summary, 2_000)}\n\n"
         f"Changed files:\n{changed_files}\n\n"
         f"Recent tool log:\n{log}\n\n"
+        f"{diff_note}"
         f"Diff:\n{diff}\n"
     )
 
