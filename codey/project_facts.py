@@ -6,6 +6,7 @@ import re
 import shlex
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Sequence
 
 from codey.local_store import (
     DEFAULT_STATE_HOME,
@@ -17,7 +18,10 @@ from codey.local_store import (
 
 SCHEMA_VERSION = 1
 MAX_VERIFIED_COMMANDS = 8
+MAX_SUCCESSFUL_CHANGES = 6
 MAX_COMMAND_CHARS = 300
+MAX_TASK_EXCERPT_CHARS = 240
+MAX_CHANGE_FILES = 12
 SENSITIVE_COMMAND_RE = re.compile(
     r"(?i)(api[-_]?key|authorization|cookie|passwd|password|secret|token)"
 )
@@ -50,8 +54,27 @@ class VerifiedCommand:
 
 
 @dataclass(frozen=True)
+class SuccessfulChange:
+    task: str
+    files: tuple[str, ...] = ()
+    checks: tuple[str, ...] = ()
+    receipt: str = ""
+
+    def to_payload(self) -> dict:
+        payload = {
+            "task": self.task,
+            "files": list(self.files),
+            "checks": list(self.checks),
+        }
+        if self.receipt:
+            payload["receipt"] = self.receipt
+        return payload
+
+
+@dataclass(frozen=True)
 class ProjectFacts:
     commands: tuple[VerifiedCommand, ...] = ()
+    successful_changes: tuple[SuccessfulChange, ...] = ()
 
 
 def _safe_cwd(value: str) -> str | None:
@@ -93,6 +116,78 @@ def _verified_command(command: str, cwd: str) -> VerifiedCommand | None:
     return VerifiedCommand(text, safe_cwd, kind, entry_file)
 
 
+def _safe_task_excerpt(value: object) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = " ".join(line.strip() for line in text.splitlines() if line.strip())
+    if len(text) > MAX_TASK_EXCERPT_CHARS:
+        text = text[:MAX_TASK_EXCERPT_CHARS].rstrip() + "..."
+    return text
+
+
+def _safe_rel_path(value: object) -> str | None:
+    text = str(value or "").strip().replace("\\", "/")
+    if not text or len(text) > 240:
+        return None
+    path = PurePosixPath(text)
+    if path.is_absolute() or ".." in path.parts:
+        return None
+    return path.as_posix()
+
+
+def _safe_receipt(value: object) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    text = " ".join(line.strip() for line in text.splitlines() if line.strip())
+    return text[:240].rstrip()
+
+
+def _successful_change(
+    *,
+    task: object,
+    files: Sequence[object],
+    checks: Sequence[VerifiedCommand],
+    receipt: object = "",
+) -> SuccessfulChange | None:
+    task_excerpt = _safe_task_excerpt(task)
+    if not task_excerpt:
+        return None
+    safe_files = tuple(
+        path
+        for path in (_safe_rel_path(item) for item in files)
+        if path is not None
+    )[:MAX_CHANGE_FILES]
+    check_commands = tuple(item.command for item in checks if item.kind == "check")[:MAX_VERIFIED_COMMANDS]
+    if not safe_files or not check_commands:
+        return None
+    return SuccessfulChange(
+        task=task_excerpt,
+        files=safe_files,
+        checks=check_commands,
+        receipt=_safe_receipt(receipt),
+    )
+
+
+def _check_facts_from_payload(value: object) -> tuple[VerifiedCommand, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    facts = []
+    for command in value:
+        fact = _verified_command(str(command or ""), ".")
+        if fact is not None and fact.kind == "check":
+            facts.append(fact)
+    return tuple(facts)
+
+
+def _successful_change_from_payload(value: object) -> SuccessfulChange | None:
+    if not isinstance(value, dict):
+        return None
+    return _successful_change(
+        task=value.get("task"),
+        files=value.get("files") if isinstance(value.get("files"), (list, tuple)) else (),
+        checks=_check_facts_from_payload(value.get("checks")),
+        receipt=value.get("receipt", ""),
+    )
+
+
 class ProjectFactsStore:
     """Keep one small, overwritable set of verified facts per project."""
 
@@ -114,7 +209,15 @@ class ProjectFactsStore:
             if fact is None:
                 continue
             commands.append(fact)
-        return ProjectFacts(tuple(commands[-MAX_VERIFIED_COMMANDS:]))
+        successful_changes: list[SuccessfulChange] = []
+        for item in payload.get("successful_changes") or []:
+            change = _successful_change_from_payload(item)
+            if change is not None:
+                successful_changes.append(change)
+        return ProjectFacts(
+            tuple(commands[-MAX_VERIFIED_COMMANDS:]),
+            tuple(successful_changes[-MAX_SUCCESSFUL_CHANGES:]),
+        )
 
     def record_success(self, project: str | Path, cwd: str, command: str) -> bool:
         fact = _verified_command(command, cwd)
@@ -133,6 +236,51 @@ class ProjectFactsStore:
             {
                 "schema_version": SCHEMA_VERSION,
                 "commands": [item.to_payload() for item in commands],
+                "successful_changes": [
+                    item.to_payload()
+                    for item in facts.successful_changes[-MAX_SUCCESSFUL_CHANGES:]
+                ],
+            },
+        )
+        return True
+
+    def record_successful_change(
+        self,
+        project: str | Path,
+        *,
+        task: object,
+        files: Sequence[object],
+        check_commands: Sequence[object],
+        receipt: object = "",
+    ) -> bool:
+        checks = [
+            fact
+            for command in check_commands
+            if (fact := _verified_command(str(command or ""), ".")) is not None
+            and fact.kind == "check"
+        ]
+        change = _successful_change(
+            task=task,
+            files=files,
+            checks=checks,
+            receipt=receipt,
+        )
+        if change is None:
+            return False
+        facts = self.load(project)
+        changes = [
+            item
+            for item in facts.successful_changes
+            if (item.task, item.files, item.checks) != (change.task, change.files, change.checks)
+        ]
+        changes.append(change)
+        changes = changes[-MAX_SUCCESSFUL_CHANGES:]
+        write_json_atomic(
+            self.path_for(project),
+            {
+                "schema_version": SCHEMA_VERSION,
+                "commands": [item.to_payload() for item in facts.commands[-MAX_VERIFIED_COMMANDS:]],
+                "successful_changes": [item.to_payload() for item in changes],
             },
         )
         return True
@@ -149,4 +297,13 @@ class ProjectFactsStore:
             label = "successful check" if fact.kind == "check" else "successful run"
             suffix = f" from {fact.cwd}" if fact.cwd != "." else ""
             lines.append(f"- {label}{suffix}: {fact.command}")
+        for change in facts.successful_changes:
+            files = ", ".join(change.files[:4])
+            if len(change.files) > 4:
+                files += ", ..."
+            checks = "; ".join(change.checks[:2])
+            receipt = f" ({change.receipt})" if change.receipt else ""
+            lines.append(
+                f"- successful change: {change.task}; files: {files}; checks: {checks}{receipt}"
+            )
         return "\n".join(lines)

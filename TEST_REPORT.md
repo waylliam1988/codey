@@ -1,7 +1,43 @@
-# Codey 0.1.23 Test Report
+# Codey 0.1.24 Test Report
 
 Date: 2026-07-09
 Environment: Windows / Edge or Chrome CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.24 Hidden ChangeBrief and Plan-Aware Review
+
+This release borrows the smallest useful part of lightweight spec workflows:
+existing exploration output is converted into a hidden, bounded task brief.
+No visible spec UI, project artifact, storage migration, command syntax, or
+confirmation gate was added.
+
+Behavior:
+
+- Empty-project hidden planning now becomes a private `ChangeBrief` before the
+  Writer starts.
+- Existing-project read-only audit reports now become the same private
+  `ChangeBrief` format.
+- The Writer receives the `ChangeBrief` instead of loose advisory prose.
+- The Reviewer receives the same `ChangeBrief` and checks intent satisfaction,
+  acceptance checks, non-goals, and risks in addition to diff correctness.
+- Simple direct write tasks that do not have hidden planning or audit context do
+  not receive a `ChangeBrief`.
+- Successful project facts now include recent verified changes, but only after
+  a task finishes with real file changes and a passing local check.
+- Successful-change facts store only task excerpt, changed files, successful
+  check commands, and the task receipt. Model-authored behavior summaries are
+  not persisted.
+- Existing `facts.json` command-only state remains valid; a missing
+  `successful_changes` field is treated as empty.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| ChangeBrief/review/project-facts/server focused suite | 97 passed |
+| Full unittest suite | 485 passed |
+| UI browser E2E | Included in full unittest; hidden project consensus updated for `ChangeBrief` |
+| Syntax compile | `python -m compileall -q codey tests tools` passed |
+| Diff whitespace check | `git diff --check` passed with CRLF warnings only |
 
 ## 0.1.23 Browser Launch Robustness and Explicit Truncation Guidance
 

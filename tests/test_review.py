@@ -75,6 +75,31 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("Diff truncation note", prompt)
         self.assertIn("avoid assuming omitted hunks are clean", prompt)
 
+    def test_render_review_prompt_includes_change_brief_for_intent_review(self) -> None:
+        prompt = review.render_review_prompt(
+            project="E:/demo",
+            task="Build a snake game",
+            writer_summary="done",
+            changes={
+                "files": [{"path": "app.py", "status": "A", "additions": 10, "deletions": 0}],
+                "diff": "diff --git a/app.py b/app.py\n+print('snake')\n",
+            },
+            change_brief=(
+                "Private ChangeBrief:\n"
+                "- User intent: runnable snake game\n"
+                "Acceptance checks:\n"
+                "- run python app.py"
+            ),
+        )
+
+        self.assertIn("Private ChangeBrief", prompt)
+        self.assertEqual(prompt.count("Private ChangeBrief"), 1)
+        self.assertIn("runnable snake game", prompt)
+        self.assertIn("intent is satisfied", prompt)
+        self.assertIn("acceptance checks are covered", prompt)
+        self.assertIn("non-goals were not violated", prompt)
+        self.assertIn("risks were addressed or explicitly deferred", prompt)
+
     def test_render_writer_followup_keeps_reviewer_advisory(self) -> None:
         result = review.ReviewResult(
             verdict="changes_requested",
@@ -93,6 +118,23 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("app.py", prompt)
         self.assertIn("Missing test", prompt)
         self.assertNotIn("Continue the Codey task", prompt)
+
+    def test_render_writer_followup_keeps_change_brief_when_present(self) -> None:
+        result = review.ReviewResult(
+            verdict="changes_requested",
+            summary="Fix scope issue",
+            findings=[review.ReviewFinding("app.py", "Intent not satisfied")],
+        )
+
+        prompt = review.render_writer_followup(
+            "Original task",
+            result,
+            change_brief="Private ChangeBrief:\n- User intent: keep CLI behavior",
+        )
+
+        self.assertIn("Private ChangeBrief", prompt)
+        self.assertEqual(prompt.count("Private ChangeBrief"), 1)
+        self.assertIn("keep CLI behavior", prompt)
 
     def test_review_repair_prompt_is_json_only(self) -> None:
         prompt = review.review_repair_prompt()

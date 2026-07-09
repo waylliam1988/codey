@@ -1505,7 +1505,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.project_audit_mock.assert_called_once()
         self.consensus_mock.assert_not_called()
         task = agent_run.call_args.args[2]
-        self.assertIn("Private read-only project audit reports", task)
+        self.assertIn("Private ChangeBrief", task)
+        self.assertIn("read-only project audit", task)
         self.assertIn("Possible bug in app.py.", task)
         emitted = []
         while not events.empty():
@@ -1611,7 +1612,9 @@ class SessionThreadingTests(unittest.TestCase):
 
         self.consensus_mock.assert_not_called()
         self.assertEqual(agent_run.call_args.args[2], "Build the feature")
+        self.assertNotIn("Private ChangeBrief", agent_run.call_args.args[2])
         review_connect.assert_called_once_with("mimo")
+        self.assertNotIn("Private ChangeBrief", reviewer.send.call_args.args[0])
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
@@ -1648,9 +1651,49 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertTrue(consensus_kwargs["draft_first"])
         self.assertTrue(consensus_kwargs["plan"])
         task = agent_run.call_args.args[2]
-        self.assertIn("Private new-project advisory plan", task)
+        self.assertIn("Private ChangeBrief", task)
+        self.assertIn("new-project planning", task)
         self.assertIn("Start with the smallest useful app.", task)
         self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
+
+    def test_empty_project_change_brief_reaches_writer_and_reviewer(self) -> None:
+        state = server.State()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        reviewer = mock.Mock()
+        reviewer.name = "Xiaomi MiMo Chat"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        self.consensus_mock.return_value = ConsensusResult("Use app.py and add a smoke test.", 2)
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "A", "additions": 10, "deletions": 0}],
+            "diff": "diff --git a/app.py b/app.py\n+print('ok')\n",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("implemented", "done", 2, True, True, True),
+            ) as agent_run,
+            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+        ):
+            server._run_task("session-1", td, "Build a tiny app", 8, False, "deepseek")
+
+        writer_task = agent_run.call_args.args[2]
+        review_prompt = reviewer.send.call_args.args[0]
+        self.assertIn("Private ChangeBrief", writer_task)
+        self.assertIn("Use app.py and add a smoke test.", writer_task)
+        self.assertIn("Private ChangeBrief", review_prompt)
+        self.assertIn("intent is satisfied", review_prompt)
+        self.assertIn("Use app.py and add a smoke test.", review_prompt)
 
     def test_empty_project_plan_failure_opens_fresh_writer_chat(self) -> None:
         state = server.State()

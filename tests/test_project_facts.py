@@ -72,6 +72,48 @@ class ProjectFactsTests(unittest.TestCase):
         self.assertEqual(len(facts.commands), MAX_VERIFIED_COMMANDS)
         self.assertEqual(facts.commands[-1].cwd, f"pkg{MAX_VERIFIED_COMMANDS + 1}")
 
+    def test_missing_successful_changes_field_keeps_existing_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            store = ProjectFactsStore(state_td)
+            path = store.path_for(td)
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                '{"schema_version":1,"commands":[{"command":"python -m unittest","cwd":".","kind":"check"}]}',
+                encoding="utf-8",
+            )
+
+            facts = store.load(td)
+
+        self.assertEqual([item.command for item in facts.commands], ["python -m unittest"])
+        self.assertEqual(facts.successful_changes, ())
+
+    def test_records_successful_change_only_from_verified_local_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            store = ProjectFactsStore(state_td)
+
+            self.assertFalse(store.record_successful_change(
+                td,
+                task="Implement feature",
+                files=["app.py"],
+                check_commands=["python app.py"],
+            ))
+            self.assertTrue(store.record_successful_change(
+                td,
+                task="Implement feature",
+                files=["app.py", "../secret.py", "tests/test_app.py"],
+                check_commands=["python -m unittest", "python app.py"],
+                receipt="2 files changed · checks passed",
+            ))
+
+            rendered = store.render(td)
+            facts = store.load(td)
+
+        self.assertEqual(len(facts.successful_changes), 1)
+        self.assertIn("successful change: Implement feature", rendered)
+        self.assertIn("files: app.py, tests/test_app.py", rendered)
+        self.assertIn("checks: python -m unittest", rendered)
+        self.assertNotIn("../secret.py", rendered)
+
     def test_projects_are_isolated_and_invalid_state_is_ignored(self) -> None:
         with (
             tempfile.TemporaryDirectory() as first,

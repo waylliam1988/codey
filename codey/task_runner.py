@@ -9,9 +9,12 @@ from typing import Callable
 
 from codey import cancellation, provider_controls
 from codey.agent import RunResult
+from codey.change_brief import (
+    ChangeBrief,
+    new_project_change_brief,
+    project_audit_change_brief,
+)
 from codey.consensus import (
-    apply_new_project_plan_to_task,
-    apply_project_audit_to_task,
     render_project_context,
 )
 from codey.events import RunEvent, render_run_event
@@ -159,6 +162,7 @@ class TaskRunner:
 
         recent_events: list[str] = []
         task_changes: dict | None = None
+        successful_check_commands: list[str] = []
 
         def on_event(event: RunEvent) -> None:
             message = render_run_event(event)
@@ -178,11 +182,14 @@ class TaskRunner:
                 and event.outcome.ok
                 and event.outcome.exit_code == 0
             ):
+                command = str(event.call.args.get("command") or "")
+                if command and command not in successful_check_commands:
+                    successful_check_commands.append(command)
                 try:
                     self.project_facts.record_success(
                         project,
                         str(event.call.args.get("path") or "."),
-                        str(event.call.args.get("command") or ""),
+                        command,
                     )
                 except (OSError, ValueError):
                     pass
@@ -277,6 +284,7 @@ class TaskRunner:
                     else ""
                 )
                 agent_task = task
+                change_brief: ChangeBrief | None = None
                 agent_fresh_chat = fresh_chat
                 has_user_files = _project_has_user_files(project)
                 used_project_audit = False
@@ -301,7 +309,8 @@ class TaskRunner:
                         agent_fresh_chat = True
                         planned = None
                     if planned is not None:
-                        agent_task = apply_new_project_plan_to_task(task, planned.answer)
+                        change_brief = new_project_change_brief(task, planned.answer)
+                        agent_task = change_brief.apply_to_task(task)
                         agent_fresh_chat = True
                 elif self.run_project_audit is not None and has_user_files:
                     context = render_project_context(
@@ -321,7 +330,8 @@ class TaskRunner:
                     except Exception:
                         reports = ()
                     if reports:
-                        agent_task = apply_project_audit_to_task(task, reports)
+                        change_brief = project_audit_change_brief(task, reports)
+                        agent_task = change_brief.apply_to_task(task)
                         used_project_audit = True
                 key = str(Path(project).expanduser().resolve())
                 tracker = state.change_tracker_for(
@@ -384,6 +394,11 @@ class TaskRunner:
                 ):
                     task_changes = self.collect_changes(project, tracker)
                     if has_reviewable_changes(task_changes):
+                        rendered_change_brief = (
+                            change_brief.render(audience="reviewer")
+                            if change_brief is not None
+                            else ""
+                        )
                         try:
                             provider.close()
                         except Exception:
@@ -398,6 +413,7 @@ class TaskRunner:
                                 changes=task_changes,
                                 recent_log="\n".join(recent_events[-self.review_log_lines:]),
                                 writer_id=provider_id,
+                                change_brief=rendered_change_brief,
                             )
                         except cancellation.TaskCancelled:
                             raise
@@ -412,7 +428,11 @@ class TaskRunner:
                             _reviewer_id, review = reviewed
                             if not review.approved:
                                 checks_before_review_followup = result.checks_passed
-                                followup = render_writer_followup(task, review)
+                                followup = render_writer_followup(
+                                    task,
+                                    review,
+                                    change_brief=rendered_change_brief,
+                                )
                                 provider = state.get_provider(provider_id)
                                 verified_facts = (
                                     self.project_facts.render(project)
@@ -503,6 +523,24 @@ class TaskRunner:
                     for item in (task_changes.get("files") or [])
                     if item.get("path")
                 )
+                if (
+                    self.project_facts is not None
+                    and result.stop_reason == "done"
+                    and task_changed
+                    and result.checks_passed
+                    and successful_check_commands
+                    and files
+                ):
+                    try:
+                        self.project_facts.record_successful_change(
+                            project,
+                            task=task,
+                            files=files,
+                            check_commands=successful_check_commands,
+                            receipt=receipt.text,
+                        )
+                    except (OSError, ValueError):
+                        pass
                 conversation.update_snapshot(replace(
                     conversation.snapshot,
                     provider_id=provider_id,

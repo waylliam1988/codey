@@ -54,6 +54,15 @@ def _clip(text: object, limit: int = MAX_FIELD_CHARS) -> str:
     return value[:limit].rstrip() + "\n[truncated]"
 
 
+def _change_brief_section(change_brief: str) -> str:
+    brief = _clip(change_brief, 8_000)
+    if not brief:
+        return ""
+    if brief.lower().startswith("private changebrief"):
+        return brief
+    return f"Private ChangeBrief:\n{brief}"
+
+
 def _json_objects(text: str) -> list[dict[str, Any]]:
     decoder = json.JSONDecoder()
     objects: list[dict[str, Any]] = []
@@ -155,6 +164,7 @@ def render_review_prompt(
     writer_summary: str,
     changes: dict,
     recent_log: str = "",
+    change_brief: str = "",
 ) -> str:
     files = changes.get("files") if isinstance(changes.get("files"), list) else []
     file_lines = []
@@ -177,12 +187,27 @@ def render_review_prompt(
         else ""
     )
     log = _clip(recent_log, MAX_REVIEW_LOG_CHARS) or "(no recent tool log)"
+    brief_section = _change_brief_section(change_brief)
+    brief_block = f"{brief_section}\n\n" if brief_section else ""
+    intent_guidance = (
+        "Review the change against the Original user task and the private task brief below: "
+        "check whether the user intent is satisfied, acceptance checks are covered, "
+        "non-goals were not violated, and listed risks were addressed or explicitly "
+        "deferred. If one of those fails in a user-visible way, return a concrete "
+        "finding tied to the most relevant changed file.\n\n"
+        if brief_section
+        else
+        "Review whether the change satisfies the Original user task. If the task "
+        "is incomplete in a user-visible way, return a concrete finding tied to "
+        "the most relevant changed file.\n\n"
+    )
 
     return (
         "You are a careful code reviewer. Review the writer model's completed "
         "code change. You are read-only: do not ask to edit files directly.\n\n"
         "Only request changes for concrete correctness, test, integration, or "
         "user-visible issues. Do not request broad rewrites or style-only cleanup.\n\n"
+        f"{intent_guidance}"
         "Every findings[].path must be copied from the Changed files list below. "
         "Do not invent filenames. If the issue is a missing test, missing new file, "
         "or missing documentation, use the most relevant changed file as path and "
@@ -197,6 +222,7 @@ def render_review_prompt(
         '"suggested_fix":"Small fix"}]}\n\n'
         f"Project: {project}\n\n"
         f"Original user task:\n{_clip(task, 6_000)}\n\n"
+        f"{brief_block}"
         f"Writer summary:\n{_clip(writer_summary, 2_000)}\n\n"
         f"Changed files:\n{changed_files}\n\n"
         f"Recent tool log:\n{log}\n\n"
@@ -205,7 +231,12 @@ def render_review_prompt(
     )
 
 
-def render_writer_followup(task: str, review: ReviewResult) -> str:
+def render_writer_followup(
+    task: str,
+    review: ReviewResult,
+    *,
+    change_brief: str = "",
+) -> str:
     lines = [
         "Continue the task in this same project.",
         "A second model reviewed the current diff and found concrete issues.",
@@ -215,12 +246,20 @@ def render_writer_followup(task: str, review: ReviewResult) -> str:
         "",
         "Original user task:",
         _clip(task, 6_000),
+    ]
+    brief_section = _change_brief_section(change_brief)
+    if brief_section:
+        lines.extend([
+            "",
+            brief_section,
+        ])
+    lines.extend([
         "",
         "Review summary:",
         review.summary,
         "",
         "Review findings:",
-    ]
+    ])
     if review.findings:
         for index, finding in enumerate(review.findings, start=1):
             lines.append(f"{index}. {finding.path or '(unknown path)'}")

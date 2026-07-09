@@ -120,6 +120,7 @@ def _run_review(
     changes: dict,
     recent_log: str,
     writer_id: str,
+    change_brief: str = "",
 ) -> tuple[str, ReviewResult] | None:
     cancellation.check()
     last_error: Exception | None = None
@@ -136,6 +137,7 @@ def _run_review(
                 writer_summary=writer_summary,
                 changes=changes,
                 recent_log=recent_log,
+                change_brief=change_brief,
             )
             with provider_controls.suppress_assistance():
                 reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)

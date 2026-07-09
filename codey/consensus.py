@@ -329,37 +329,6 @@ def render_aggregator_prompt(
     return "\n".join(parts)
 
 
-def apply_new_project_plan_to_task(task: str, plan: str) -> str:
-    return (
-        f"{task.strip()}\n\n"
-        "Private new-project advisory plan, for guidance only:\n"
-        f"{_clip(plan, 4_000)}\n\n"
-        "Use this plan as advisory context. Verify it against the actual files. "
-        "You are still the only Writer that may inspect, edit, and test the project."
-    )
-
-
-def apply_project_audit_to_task(task: str, reports: Sequence[ConsensusAdvice]) -> str:
-    blocks = []
-    used = 0
-    for index, report in enumerate(reports, start=1):
-        remaining = max(0, MAX_COMBINED_ADVICE_CHARS - used)
-        if remaining <= 0:
-            break
-        text = _clip(report.text, min(PROJECT_AUDIT_MAX_REPORT_CHARS, remaining))
-        used += len(text)
-        blocks.append(f"Read-only project review {index}:\n{text}")
-    combined = "\n".join(blocks)
-    return (
-        f"{task.strip()}\n\n"
-        "Private read-only project audit reports, for guidance only:\n"
-        f"{_clip(combined, MAX_COMBINED_ADVICE_CHARS)}\n\n"
-        "Use these reports as advisory input. Verify them against the actual files. "
-        "You are still the only Writer that may edit or run checks. If the user asked "
-        "only for review, produce a clear review report and do not modify files."
-    )
-
-
 def render_project_audit_prompt(
     *,
     task: str,

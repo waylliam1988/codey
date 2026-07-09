@@ -79,7 +79,7 @@ class ScriptedWriter:
         if "The user approved and ran this shell command" in text:
             return '{"tool":"done","args":{"summary":"approval continuation completed"}}'
         if "Discuss a breathing app without changing files" in text:
-            if "Private read-only project audit reports" in text:
+            if "Private ChangeBrief" in text and "read-only project audit" in text:
                 return (
                     '{"tool":"done","args":{"summary":"Combined project breathing '
                     'answer without file changes."}}'

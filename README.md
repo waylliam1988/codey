@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.23`
+Version: `0.1.24`
 
 ---
 
@@ -43,8 +43,10 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Retry with another model when one model fails
 - Use already-open models as hidden advisors for chat, empty-project planning, and read-only project audits
 - Use two open web models together: one writes, the other reviews
+- Use hidden task briefs so Writer and Reviewer share the same bounded intent
 - Continue long conversations quietly with an automatic factual summary and fresh model chat
 - Reuse project commands that have already succeeded locally
+- Remember recent successful changes only from verified local checks
 - Resume the same chat after a Codey restart or model switch from one bounded
   factual handoff plus recent visible conversation context
 - Keep non-Git diff and restore available across Codey restarts
@@ -69,6 +71,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.24` borrows the useful part of lightweight spec workflows without adding a visible spec system. Existing hidden new-project plans and read-only project audits are now wrapped into a private `ChangeBrief` that is not persisted, not shown in the UI, and not written into the project. The Writer receives that brief instead of loose advisory prose, and the Reviewer receives the same brief so review checks intent satisfaction, acceptance checks, non-goals, and risks instead of only diff correctness. After a task succeeds with real file changes and a passing local check, Codey stores only bounded verified facts: task excerpt, changed files, successful check commands, and the task receipt. It does not store model-authored behavior claims. The release passed 485 tests, syntax compile, and `git diff --check` with only CRLF warnings.
 
 Version `0.1.23` improves startup failure handling and truncation honesty without adding UI. Browser auto-launch now honors `CODEY_BROWSER_PATH`, prefers Edge, falls back to system or per-user Chrome, and keeps separate browser profiles under `~/.codey/edge-profile` and `~/.codey/chrome-profile`. If the native WebView window cannot open, Codey prints a clear error plus the local URL to open manually and keeps the HTTP server alive until Ctrl+C. Tool results now carry a `truncated=true` marker when local output was clipped, and the model-facing result explicitly says omitted content may still contain relevant errors or code. Review prompts also warn when a diff was truncated, so the reviewer does not assume omitted hunks are clean. No limits were increased, no full output replay was added, and no new UI was introduced. The release passed 478 tests, syntax compile, and `git diff --check` with only CRLF warnings.
 
