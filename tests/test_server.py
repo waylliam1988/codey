@@ -1864,6 +1864,29 @@ class SessionThreadingTests(unittest.TestCase):
 
 
 class UiLaunchTests(unittest.TestCase):
+    def test_state_persists_ui_state_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            payload = {
+                "active_id": "chat-1",
+                "updated_at": 123,
+                "revision": 1,
+                "sessions": [{
+                    "id": "chat-1",
+                    "title": "你好",
+                    "messages": [],
+                    "terminalRuns": [],
+                    "createdAt": 0,
+                    "projectId": None,
+                    "provider": "deepseek",
+                }],
+                "projects": [],
+            }
+
+            state.save_ui_state(payload)
+
+            self.assertEqual(state.load_ui_state(), payload)
+
     def test_serve_launches_pywebview_window(self) -> None:
         fake_webview = mock.Mock()
 
@@ -1884,6 +1907,9 @@ class UiLaunchTests(unittest.TestCase):
 
         fake_webview.create_window.assert_called_once()
         fake_webview.start.assert_called_once()
+        _, kwargs = fake_webview.start.call_args
+        self.assertFalse(kwargs["private_mode"])
+        self.assertEqual(kwargs["storage_path"], str(server.DEFAULT_STATE_HOME / "webview"))
         httpd.shutdown.assert_called_once()
 
 

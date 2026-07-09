@@ -6,6 +6,8 @@ Requires pywebview in addition to the standard library plus Playwright
 Endpoints
     GET  /                serves codey/web/index.html
     GET  /api/state       returns current run state as JSON
+    GET  /api/ui_state    returns durable sidebar/chat UI state
+    POST /api/ui_state    stores durable sidebar/chat UI state
     POST /api/run         body {project, task, provider, max_turns} → starts agent in
                           a background thread, returns {ok:true, run_id}
     GET  /api/changes     query {project} → returns git status + diff
@@ -45,6 +47,7 @@ from codey.changes import (
 from codey.conversation_store import ConversationStore
 from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.handoff import ConversationContext
+from codey.local_store import DEFAULT_STATE_HOME
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
@@ -62,6 +65,7 @@ from codey.review import (
 )
 from codey.task_runner import TaskRequest, TaskRunner
 from codey.text_budget import clip_middle
+from codey.ui_state_store import UiStateStore
 
 WEB_DIR = Path(__file__).parent / "web"
 FOLDER_DIALOG_LOCK = threading.Lock()
@@ -333,6 +337,7 @@ class State:
         self.conversations: dict[str, ConversationContext] = {}
         self.conversation_tokens: dict[str, object] = {}
         self.conversation_store_lock = threading.Lock()
+        self.ui_state_store_lock = threading.Lock()
         self.provider_sessions: dict[str, str] = {}
         self.active_run: RunSnapshot | None = None
         self.last_terminal_event: dict | None = None
@@ -346,6 +351,17 @@ class State:
         self.snapshot_store = (
             SnapshotStore(state_home) if state_home else SnapshotStore()
         )
+        self.ui_state_store = (
+            UiStateStore(state_home) if state_home else UiStateStore()
+        )
+
+    def load_ui_state(self) -> dict:
+        with self.ui_state_store_lock:
+            return self.ui_state_store.load()
+
+    def save_ui_state(self, state: object) -> None:
+        with self.ui_state_store_lock:
+            self.ui_state_store.save(state)
 
     def _save_conversation(
         self,
@@ -843,6 +859,9 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/state":
             self._send_json(200, STATE.run_state_payload())
             return
+        if url.path == "/api/ui_state":
+            self._send_json(200, {"ok": True, "state": STATE.load_ui_state()})
+            return
         if url.path == "/api/providers":
             try:
                 statuses = provider_availability()
@@ -881,6 +900,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "invalid json"})
             return
 
+        if url.path == "/api/ui_state":
+            state = body.get("state") if isinstance(body, dict) else None
+            try:
+                STATE.save_ui_state(state)
+            except ValueError as exc:
+                self._send_json(400, {"ok": False, "error": str(exc)})
+                return
+            except OSError as exc:
+                self._send_json(500, {"ok": False, "error": str(exc)})
+                return
+            self._send_json(200, {"ok": True})
+            return
         if url.path == "/api/run":
             session_id = str(body.get("session_id") or "").strip() or "default"
             project = (body.get("project") or "").strip() or None
@@ -1111,10 +1142,13 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
 
         icon = WEB_DIR / "icon.ico"
         webview.create_window("Codey", url, width=1380, height=900)
+        start_kwargs = {
+            "private_mode": False,
+            "storage_path": str(DEFAULT_STATE_HOME / "webview"),
+        }
         if icon.is_file():
-            webview.start(icon=str(icon))
-        else:
-            webview.start()
+            start_kwargs["icon"] = str(icon)
+        webview.start(**start_kwargs)
 
     try:
         _run_webview()

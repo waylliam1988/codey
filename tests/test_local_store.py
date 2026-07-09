@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey import browser, local_store, provider_controls
+from codey.ui_state_store import UiStateStore
 
 
 class LocalStoreTests(unittest.TestCase):
@@ -16,6 +17,7 @@ class LocalStoreTests(unittest.TestCase):
             provider_controls.CONTROL_STORE,
             local_store.DEFAULT_STATE_HOME / "provider-controls.json",
         )
+        self.assertEqual(UiStateStore().path, local_store.DEFAULT_STATE_HOME / "ui-state.json")
 
     def test_atomic_json_round_trip_replaces_previous_value(self) -> None:
         with tempfile.TemporaryDirectory() as td:

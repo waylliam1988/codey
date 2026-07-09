@@ -1,12 +1,13 @@
-# Codey 0.1.20 Test Report
+# Codey 0.1.21 Test Report
 
 Date: 2026-07-09
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
 
-## 0.1.20 Quiet Chat Controls
+## 0.1.21 Durable Chat State and Quiet Controls
 
-This release makes existing chat content easier to reuse while keeping the UI
-small and local-only.
+This release makes visible chat state durable while keeping the UI small and
+local-only. It also keeps the quiet per-message copy control and the shared
+Send/Stop action slot.
 
 Behavior:
 
@@ -15,23 +16,36 @@ Behavior:
 - Copy uses the browser Clipboard API with an `execCommand("copy")` fallback.
 - The copy control stays subdued by default and becomes clear on hover or
   keyboard focus.
-- Chat sessions, titles, and messages remain stored in the existing browser
-  `localStorage` session data; no export button or backend chat database was
-  added.
 - Send and Stop now share one composer action slot.
 - Idle state shows `Enter` plus the send arrow.
 - Running state shows `Stop` plus the square stop icon.
 - `updateSend()` is the single path that switches send, stop, and hint state.
+- The native WebView runs with `private_mode=False` and persistent storage at
+  `~/.codey/webview`.
+- Chat sessions, titles, messages, terminal receipts, active chat, and sidebar
+  projects are stored as one bounded backend snapshot at
+  `~/.codey/ui-state.json`.
+- Browser `localStorage` remains a fast cache; `/api/ui_state` is the durable
+  recovery source.
+- UI state recovery runs before opening the SSE event stream, so reconnect or
+  task events are not dropped while restored sessions are still loading.
+- UI state writes use `(updated_at, revision)` ordering so same-millisecond
+  async saves cannot overwrite newer state.
+- The backend snapshot keeps only the UI schema fields Codey renders, with
+  bounded sessions, projects, messages, terminal runs, and string lengths.
+- No export button, training pipeline, or chat database workflow was added.
 
 Verification:
 
 | Flow | Result |
 |---|---|
-| UI unit suite | 28 passed |
-| Full unittest suite | 455 passed |
+| Focused UI-state suite | 43 passed |
+| Full unittest suite | 464 passed |
 | Syntax compile | `python -m compileall -q codey tests tools` passed |
 | Diff whitespace check | `git diff --check` passed with CRLF warnings only |
-| Backend chat export/database changes | None |
+| WebView persistence contract | `private_mode=False`; `storage_path=~/.codey/webview` |
+| Backend UI snapshot | `~/.codey/ui-state.json` |
+| Export/training UI | None |
 
 ## 0.1.19 MiMo Answer-State Completion
 

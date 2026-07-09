@@ -282,6 +282,27 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("s.title = m.text.slice(0, 28)", HTML)
         self.assertIn("s.title = title.slice(0, 80)", HTML)
 
+    def test_chat_state_uses_backend_snapshot_with_local_cache(self) -> None:
+        self.assertIn("function currentUiState()", HTML)
+        self.assertIn("function cacheUiState()", HTML)
+        self.assertIn("function saveUiStateToServer()", HTML)
+        self.assertIn("async function restoreUiStateFromServer()", HTML)
+        self.assertIn("const LS_UI_REVISION = 'codey:ui-revision';", HTML)
+        self.assertIn("revision: uiStateRevision", HTML)
+        self.assertIn("function isUiStateNewer(a, b)", HTML)
+        self.assertIn("uiStateRevision += 1", HTML)
+        self.assertIn("function hasMeaningfulUiState(state)", HTML)
+        self.assertIn("const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState)", HTML)
+        self.assertIn("fetch('/api/ui_state'", HTML)
+        self.assertIn("method: 'POST'", HTML)
+        self.assertIn("body: JSON.stringify({ state: currentUiState() })", HTML)
+        self.assertIn("navigator.sendBeacon('/api/ui_state'", HTML)
+        self.assertIn("function connectEvents()", HTML)
+        self.assertIn("await restoreUiStateFromServer();", HTML)
+        self.assertIn("connectEvents();", HTML)
+        self.assertLess(HTML.index("await restoreUiStateFromServer();"), HTML.index("connectEvents();"))
+        self.assertIn("persistActive();", HTML[HTML.index("function ensureProject"):HTML.index("async function pickProject")])
+
 
 if __name__ == "__main__":
     unittest.main()

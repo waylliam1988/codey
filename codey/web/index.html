@@ -812,6 +812,8 @@ const $ = (id) => document.getElementById(id);
 const LS_SESSIONS = 'codey:sessions';
 const LS_ACTIVE   = 'codey:active';
 const LS_PROJECTS = 'codey:projects';
+const LS_UI_UPDATED = 'codey:ui-updated';
+const LS_UI_REVISION = 'codey:ui-revision';
 const LS_LEGACY_PROJECT = 'codey:project';
 const DEFAULT_PROVIDER = 'deepseek';
 const PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', qwen: 'Qwen', glm: 'GLM' };
@@ -823,6 +825,9 @@ function loadJson(key, fallback) {
 }
 function saveSessions(arr) { localStorage.setItem(LS_SESSIONS, JSON.stringify(arr)); }
 function saveProjects(arr) { localStorage.setItem(LS_PROJECTS, JSON.stringify(arr)); }
+function defaultSession(projectId = null, provider = DEFAULT_PROVIDER) {
+  return { id: uid(), title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), projectId, provider };
+}
 function pathName(path) {
   const trimmed = (path || '').replace(/[\\\/]+$/, '');
   return trimmed.split(/[\\\/]/).pop() || trimmed || 'project';
@@ -834,25 +839,126 @@ function escapeHtml(text) {
   }[ch]));
 }
 
-let sessions = loadJson(LS_SESSIONS, []).map(s => ({
-  id: s.id || uid(),
-  title: s.title || 'New chat',
-  messages: Array.isArray(s.messages) ? s.messages : [],
-  terminalRuns: Array.isArray(s.terminalRuns) ? s.terminalRuns.slice(-32) : [],
-  createdAt: s.createdAt || Date.now(),
-  projectId: s.projectId || null,
-  provider: PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER,
-}));
-let projects = loadJson(LS_PROJECTS, []).map(p => ({
-  id: p.id || uid(),
-  name: p.name || pathName(p.path),
-  path: p.path || '',
-  expanded: p.expanded !== false,
-  createdAt: p.createdAt || Date.now(),
-})).filter(p => p.path);
+function normalizeSessions(value) {
+  return (Array.isArray(value) ? value : []).map(s => ({
+    id: s.id || uid(),
+    title: s.title || 'New chat',
+    messages: Array.isArray(s.messages) ? s.messages : [],
+    terminalRuns: Array.isArray(s.terminalRuns) ? s.terminalRuns.slice(-32) : [],
+    createdAt: s.createdAt || Date.now(),
+    projectId: s.projectId || null,
+    provider: PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER,
+  }));
+}
+function normalizeProjects(value) {
+  return (Array.isArray(value) ? value : []).map(p => ({
+    id: p.id || uid(),
+    name: p.name || pathName(p.path),
+    path: p.path || '',
+    expanded: p.expanded !== false,
+    createdAt: p.createdAt || Date.now(),
+  })).filter(p => p.path);
+}
+function applyUiState(state) {
+  sessions = normalizeSessions(state && state.sessions);
+  projects = normalizeProjects(state && state.projects);
+  activeId = state && state.active_id ? String(state.active_id) : '';
+  uiStateUpdatedAt = Number(state && state.updated_at || 0) || 0;
+  uiStateRevision = Number(state && state.revision || 0) || 0;
+  if (!sessions.length) {
+    const s = defaultSession();
+    sessions = [s];
+    activeId = s.id;
+  }
+  if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
+}
+function currentUiState() {
+  return { active_id: activeId, sessions, projects, updated_at: uiStateUpdatedAt, revision: uiStateRevision };
+}
+function cacheUiState() {
+  saveSessions(sessions);
+  saveProjects(projects);
+  localStorage.setItem(LS_ACTIVE, activeId);
+  localStorage.setItem(LS_UI_UPDATED, String(uiStateUpdatedAt));
+  localStorage.setItem(LS_UI_REVISION, String(uiStateRevision));
+}
+function cachedUiState() {
+  return {
+    active_id: localStorage.getItem(LS_ACTIVE) || '',
+    sessions: loadJson(LS_SESSIONS, []),
+    projects: loadJson(LS_PROJECTS, []),
+    updated_at: Number(localStorage.getItem(LS_UI_UPDATED) || 0) || 0,
+    revision: Number(localStorage.getItem(LS_UI_REVISION) || 0) || 0,
+  };
+}
+function uiStateVersion(state) {
+  return [
+    Number(state && state.updated_at || 0) || 0,
+    Number(state && state.revision || 0) || 0,
+  ];
+}
+function isUiStateNewer(a, b) {
+  const av = uiStateVersion(a);
+  const bv = uiStateVersion(b);
+  return av[0] > bv[0] || (av[0] === bv[0] && av[1] > bv[1]);
+}
+function hasStoredUiState(state) {
+  return !!(
+    state &&
+    ((Array.isArray(state.sessions) && state.sessions.length) ||
+      (Array.isArray(state.projects) && state.projects.length) ||
+      state.active_id)
+  );
+}
+function hasMeaningfulUiState(state) {
+  if (!state) return false;
+  if (Array.isArray(state.projects) && state.projects.length) return true;
+  if (!Array.isArray(state.sessions)) return false;
+  return state.sessions.some(s =>
+    (Array.isArray(s.messages) && s.messages.length) ||
+    (Array.isArray(s.terminalRuns) && s.terminalRuns.length) ||
+    (s.title && s.title !== 'New chat')
+  );
+}
+function saveUiStateToServer() {
+  fetch('/api/ui_state', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state: currentUiState() }),
+  }).catch(() => {});
+}
+async function restoreUiStateFromServer() {
+  try {
+    const r = await fetch('/api/ui_state', { cache: 'no-store' });
+    if (!r.ok) return;
+    const data = await r.json();
+    if (!hasStoredUiState(data.state)) {
+      saveUiStateToServer();
+      return;
+    }
+    if ((bootHadMeaningfulUiState || uiStateDirtySinceBoot) && isUiStateNewer(currentUiState(), data.state)) {
+      saveUiStateToServer();
+      return;
+    }
+    applyUiState(data.state);
+    cacheUiState();
+    renderSidebar();
+    renderChat();
+    updateComposerContext();
+    syncProviderUI(currentProviderId());
+  } catch {}
+}
 
-let activeId = localStorage.getItem(LS_ACTIVE) || '';
+let sessions = [];
+let projects = [];
+let activeId = '';
+let uiStateUpdatedAt = 0;
+let uiStateRevision = 0;
+let uiStateDirtySinceBoot = false;
 
+const bootCachedState = cachedUiState();
+const bootHadMeaningfulUiState = hasMeaningfulUiState(bootCachedState);
+applyUiState(bootCachedState);
 const legacyProject = (localStorage.getItem(LS_LEGACY_PROJECT) || '').trim();
 if (legacyProject && !projects.some(p => pathKey(p.path) === pathKey(legacyProject))) {
   projects.unshift({
@@ -862,18 +968,9 @@ if (legacyProject && !projects.some(p => pathKey(p.path) === pathKey(legacyProje
     expanded: true,
     createdAt: Date.now(),
   });
-  saveProjects(projects);
 }
 localStorage.removeItem(LS_LEGACY_PROJECT);
-
-if (!sessions.length) {
-  const s = { id: uid(), title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER };
-  sessions = [s]; activeId = s.id; saveSessions(sessions);
-  localStorage.setItem(LS_ACTIVE, activeId);
-}
-if (!sessions.find(s => s.id === activeId)) {
-  activeId = sessions[0].id; localStorage.setItem(LS_ACTIVE, activeId);
-}
+cacheUiState();
 
 // ============================ helpers ============================
 function activeSession() { return sessions.find(s => s.id === activeId); }
@@ -921,9 +1018,11 @@ async function refreshProviderStatus() {
   } catch {}
 }
 function persistActive() {
-  saveSessions(sessions);
-  saveProjects(projects);
-  localStorage.setItem(LS_ACTIVE, activeId);
+  uiStateUpdatedAt = Math.max(Date.now(), uiStateUpdatedAt);
+  uiStateRevision += 1;
+  uiStateDirtySinceBoot = true;
+  cacheUiState();
+  saveUiStateToServer();
 }
 function updateComposerContext() {
   const el = $('composer-context');
@@ -1412,7 +1511,7 @@ function ensureProject(path, name) {
     createdAt: Date.now(),
   };
   projects.unshift(p);
-  saveProjects(projects);
+  persistActive();
   return p;
 }
 async function pickProject() {
@@ -1709,7 +1808,7 @@ function scheduleReconnectStatus() {
   if (reconnectTimer !== null) return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
-    if (evtSrc.readyState !== EventSource.OPEN) setStatus('Reconnecting…', 'warn');
+    if (evtSrc && evtSrc.readyState !== EventSource.OPEN) setStatus('Reconnecting…', 'warn');
   }, 5000);
 }
 
@@ -1772,18 +1871,22 @@ async function acceptRunResponse(response, sessionId) {
   await reconcileRunState();
 }
 
-const evtSrc = new EventSource('/api/events');
-evtSrc.onmessage = (e) => {
-  let data; try { data = JSON.parse(e.data); } catch { return; }
-  if (data.type === 'hello') {
-    clearReconnectTimer();
-    reconcileRunState();
-    refreshProviderStatus();
-    return;
-  }
-  ingestServerEvent(data);
-};
-evtSrc.onerror = scheduleReconnectStatus;
+let evtSrc = null;
+function connectEvents() {
+  if (evtSrc) return;
+  evtSrc = new EventSource('/api/events');
+  evtSrc.onmessage = (e) => {
+    let data; try { data = JSON.parse(e.data); } catch { return; }
+    if (data.type === 'hello') {
+      clearReconnectTimer();
+      reconcileRunState();
+      refreshProviderStatus();
+      return;
+    }
+    ingestServerEvent(data);
+  };
+  evtSrc.onerror = scheduleReconnectStatus;
+}
 
 function addToSession(sid, m) {
   const s = sessions.find(x => x.id === sid);
@@ -2243,15 +2346,30 @@ document.addEventListener('keydown', (e) => {
     newSession(p ? p.id : null);
   }
 });
+window.addEventListener('pagehide', () => {
+  const payload = JSON.stringify({ state: currentUiState() });
+  try {
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/ui_state', new Blob([payload], { type: 'application/json' }));
+      return;
+    }
+  } catch {}
+  saveUiStateToServer();
+});
 
 // ============================ boot ============================
-renderSidebar();
-renderChat();
-resizeTask();
-updateSend();
-syncProviderUI(currentProviderId());
-$('provider-button').disabled = false;
-setStatus('', 'ok');
+async function boot() {
+  renderSidebar();
+  renderChat();
+  resizeTask();
+  updateSend();
+  syncProviderUI(currentProviderId());
+  $('provider-button').disabled = false;
+  setStatus('', 'ok');
+  await restoreUiStateFromServer();
+  connectEvents();
+}
+boot();
 </script>
 </body>
 </html>

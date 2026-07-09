@@ -10,7 +10,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.20`
+版本：`0.1.21`
 
 ---
 
@@ -67,7 +67,7 @@ Codey 想解决的是一个很朴素的问题：
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
 
-`0.1.20` 让聊天内容更容易复用，但不增加导出流程。用户消息、AI 回答、Review 收据和 Done 收据现在都有一个安静的单条复制按钮，平时保持低存在感，鼠标悬停或键盘 focus 时才变清晰；聊天记录和标题仍然沿用浏览器 `localStorage` 里的现有 session 保存方式。输入区也把 Send 和 Stop 固定在同一个右侧操作位：空闲时显示 `Enter` 和发送箭头，运行中显示 `Stop` 和方块停止图标，完成后通过同一个 `updateSend()` 路径恢复为发送状态。本版通过 455 项测试、语法编译和 `git diff --check`，只有 CRLF warning。
+`0.1.21` 让聊天记录真正可持久恢复，但不增加导出流程或新 UI 模式。用户消息、AI 回答、Review 收据和 Done 收据现在都有一个安静的单条复制按钮，平时保持低存在感，鼠标悬停或键盘 focus 时才变清晰。输入区也把 Send 和 Stop 固定在同一个右侧操作位：空闲时显示 `Enter` 和发送箭头，运行中显示 `Stop` 和方块停止图标，完成后通过同一个 `updateSend()` 路径恢复为发送状态。原生 WebView 现在使用 `~/.codey/webview` 作为持久存储，不再用 private storage；可见的侧边栏和聊天状态也会保存为一份有上限的后端快照 `~/.codey/ui-state.json`。前端仍然把 `localStorage` 当快速缓存，但 `/api/ui_state` 是重启恢复源；时间戳和 revision 会阻止较旧的异步保存覆盖新聊天，空白默认聊天不能替换已有真实聊天，SSE 事件也会等 UI state 恢复完成后再连接。本版没有增加导出按钮或训练流程；通过 464 项测试、语法编译和 `git diff --check`，只有 CRLF warning。
 
 `0.1.19` 继续细化 MiMo 的完成判断，前端不变。MiMo 仍然把纸飞机 SVG 作为点击发送前的最后一道 provider-specific 防误点保险，但不再用这个图标判断回答是否已经完成。回答完成现在看最新答案 DOM：清理思考区后必须有最终文本，`data-is-typing` 不能处于活跃状态；如果答案附近已经出现 copy 按钮，就直接认为完成；如果没有 copy 按钮，则仍要求页面不在生成状态。这样 SVG 只负责“能不能点发送”，不再承担回答状态机。本版通过 452 项测试、聚焦 provider/protocol/server 回归、语法编译和 `git diff --check`，只有 CRLF warning。
 
