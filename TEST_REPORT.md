@@ -1,7 +1,47 @@
-# Codey 0.1.21 Test Report
+# Codey 0.1.22 Test Report
 
 Date: 2026-07-09
 Environment: Windows / Edge CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.22 Durable Conversation Handoff
+
+This release connects durable visible chat history to the existing compact
+conversation handoff. The goal is to reduce model "amnesia" after a Codey
+restart or model switch without replaying the full transcript or adding UI.
+
+Behavior:
+
+- `UiStateStore` can extract a bounded visible excerpt for one saved session.
+- The excerpt includes only recent user messages, assistant replies, Review
+  receipts, Done receipts, and compact Changes receipts.
+- Tool events, turn markers, Shell output, teaching cards, and other local
+  execution noise are skipped.
+- The current user request is skipped so continuation prompts do not duplicate
+  the active message.
+- Fresh web-model chats after restart, model switch, or provider-session loss
+  merge the compact factual snapshot with the bounded visible excerpt.
+- The selected model receives the recovered handoff and can continue the
+  conversation naturally.
+- Hidden MoA advisors still receive only the compact factual snapshot; the
+  recovered visible chat excerpt is not automatically spread to other web
+  models.
+- If no visible excerpt exists, normal MoA chat keeps using the previous compact
+  context path and does not create an owner-only recovered prompt.
+- No full transcript replay, export button, training pipeline, or new UI mode
+  was added.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Focused recovered-handoff suite | 72 passed |
+| Full unittest suite | 469 passed |
+| Syntax compile | `python -m compileall -q codey tests tools` passed |
+| Diff whitespace check | `git diff --check` passed with CRLF warnings only |
+| Recovered owner prompt | Selected model gets compact snapshot plus bounded visible excerpt |
+| Hidden advisor context | MoA advisors keep compact factual snapshot only |
+| Current request duplication | Current user request is skipped from recovered visible excerpt |
+| Export/training UI | None |
 
 ## 0.1.21 Durable Chat State and Quiet Controls
 

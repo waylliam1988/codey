@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge, pick a local project folder, and start building.
 
-Version: `0.1.21`
+Version: `0.1.22`
 
 ---
 
@@ -45,7 +45,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Use two open web models together: one writes, the other reviews
 - Continue long conversations quietly with an automatic factual summary and fresh model chat
 - Reuse project commands that have already succeeded locally
-- Resume the same chat after a Codey restart from one bounded factual snapshot
+- Resume the same chat after a Codey restart or model switch from one bounded
+  factual handoff plus recent visible conversation context
 - Keep non-Git diff and restore available across Codey restarts
 - Recover from small provider-page DOM changes with bounded, verified discovery
 - Stop a running provider wait, review, recovery, or test command promptly
@@ -66,6 +67,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.22` makes restarted or model-switched conversations remember more than the visible sidebar. When a web-model context is not trusted, Codey now reuses the existing compact handoff and adds a bounded excerpt from the saved visible chat: recent user/assistant/review/done/change messages only, skipping tool output, shell output, turn noise, and the current request. The selected model receives this recovered handoff so it can continue naturally after restart or model switch; hidden MoA advisors still receive only the compact factual snapshot, so full visible chat history is not automatically spread to other web models. This does not replay the full transcript, add UI, add export, or create a training pipeline. The release passed 469 tests, syntax compile, and `git diff --check` with only CRLF warnings.
 
 Version `0.1.21` makes chat history durable without adding an export workflow or a new UI mode. User messages, assistant replies, Review receipts, and Done receipts have a quiet per-message copy control that stays subdued until hover or keyboard focus. The composer keeps Send and Stop in the same right-side action slot: idle shows `Enter` plus the send arrow, running shows `Stop` plus the square stop icon, and completion returns through one `updateSend()` path. The native WebView now runs with persistent storage at `~/.codey/webview` instead of private storage, and the visible sidebar/chat state is also saved as one bounded backend snapshot at `~/.codey/ui-state.json`. The frontend still uses `localStorage` as a fast cache, but `/api/ui_state` is the durable recovery source; timestamp and revision checks keep stale async writes from overwriting newer chat state, an empty default chat cannot replace a meaningful saved chat, and server events are connected only after UI state recovery. No export button or training pipeline was added. The release passed 464 tests, syntax compile, and `git diff --check` with only CRLF warnings.
 

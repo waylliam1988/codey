@@ -15,6 +15,9 @@ MAX_PROJECTS = 100
 MAX_MESSAGES_PER_SESSION = 500
 MAX_FILES_PER_MESSAGE = 20
 MAX_STRING = 200_000
+MAX_VISIBLE_EXCERPT_CHARS = 12_000
+MAX_VISIBLE_EXCERPT_MESSAGES = 20
+MAX_EXCERPT_TEXT_CHARS = 1_500
 MAX_SHORT_STRING = 1_000
 MAX_TITLE = 160
 MESSAGE_KEYS = {
@@ -179,6 +182,38 @@ def _clean_payload(payload: object) -> dict[str, Any]:
     }
 
 
+def _message_excerpt(message: dict[str, Any]) -> str:
+    kind = str(message.get("type") or "")
+    if kind == "user":
+        label = "User"
+        text = str(message.get("text") or "")
+    elif kind == "asst":
+        label = "Assistant"
+        text = str(message.get("text") or "")
+    elif kind == "review":
+        label = "Review"
+        text = str(message.get("text") or "")
+    elif kind == "done":
+        label = "Done"
+        text = str(message.get("text") or "")
+    elif kind == "changes":
+        count = _int(message.get("count"))
+        files = message.get("files")
+        paths = []
+        if isinstance(files, list):
+            paths = [
+                str(item.get("path") or "")
+                for item in files
+                if isinstance(item, dict) and item.get("path")
+            ][:3]
+        suffix = f": {', '.join(paths)}" if paths else ""
+        return f"Changes: {count} file{'s' if count != 1 else ''}{suffix}"
+    else:
+        return ""
+    text = _str(text, MAX_EXCERPT_TEXT_CHARS).strip()
+    return f"{label}: {text}" if text else ""
+
+
 class UiStateStore:
     """Persist the current visible UI state as one bounded local snapshot."""
 
@@ -206,3 +241,44 @@ class UiStateStore:
             },
             max_bytes=MAX_UI_STATE_BYTES,
         )
+
+    def visible_session_excerpt(
+        self,
+        session_id: str,
+        *,
+        current_request: str = "",
+        limit: int = MAX_VISIBLE_EXCERPT_CHARS,
+    ) -> str:
+        target = str(session_id or "")
+        if not target:
+            return ""
+        current = str(current_request or "").strip()
+        for session in self.load().get("sessions", []):
+            if not isinstance(session, dict) or str(session.get("id") or "") != target:
+                continue
+            messages = session.get("messages")
+            if not isinstance(messages, list):
+                return ""
+            lines: list[str] = []
+            title = str(session.get("title") or "").strip()
+            if title and title != "New chat":
+                lines.append(_str(f"Title: {title}", MAX_EXCERPT_TEXT_CHARS))
+            visible_lines: list[str] = []
+            for message in reversed(messages):
+                if not isinstance(message, dict):
+                    continue
+                if (
+                    current
+                    and message.get("type") == "user"
+                    and str(message.get("text") or "").strip() == current
+                ):
+                    continue
+                line = _message_excerpt(message)
+                if line:
+                    visible_lines.append(line)
+                    if len(visible_lines) >= MAX_VISIBLE_EXCERPT_MESSAGES:
+                        break
+            lines.extend(reversed(visible_lines))
+            excerpt = "\n".join(lines).strip()
+            return _str(excerpt, max(0, limit))
+        return ""

@@ -15,7 +15,12 @@ from codey.consensus import (
     render_project_context,
 )
 from codey.events import RunEvent, render_run_event
-from codey.handoff import ConversationSnapshot, render_continuation_prompt, render_handoff
+from codey.handoff import (
+    ConversationSnapshot,
+    render_continuation_prompt,
+    render_handoff,
+    render_recovered_handoff,
+)
 from codey.project_facts import ProjectFactsStore
 from codey.providers import PROVIDER_LABELS
 from codey.receipt import build_task_receipt
@@ -234,6 +239,7 @@ class TaskRunner:
             if fresh_chat and can_summarize_current_chat:
                 handoff = conversation.prepare_model_handoff(provider.send)
             prior_snapshot = conversation.snapshot
+            recovered_owner_prompt = ""
             task_changed = False
             conversation.update_snapshot(ConversationSnapshot(
                 mode=mode,
@@ -248,6 +254,22 @@ class TaskRunner:
                 latest_reply=prior_snapshot.latest_reply if mode == "chat" else "",
                 conversation_summary=prior_snapshot.conversation_summary,
             ))
+            if fresh_chat:
+                visible_excerpt = ""
+                try:
+                    visible_excerpt = state.visible_session_excerpt(
+                        session_id,
+                        current_request=task,
+                    )
+                except Exception:
+                    visible_excerpt = ""
+                if handoff or visible_excerpt:
+                    handoff = render_recovered_handoff(
+                        prior_snapshot,
+                        visible_excerpt,
+                    )
+                if visible_excerpt:
+                    recovered_owner_prompt = handoff
             if project:
                 verified_facts = (
                     self.project_facts.render(project)
@@ -425,17 +447,23 @@ class TaskRunner:
                 prompt = render_continuation_prompt(handoff, task) if handoff else task
                 consulted = None
                 if self.run_consensus is not None:
+                    compact_context = (
+                        render_handoff(prior_snapshot)
+                        if fresh_chat and handoff
+                        else (
+                            render_handoff(conversation.snapshot)
+                            if conversation.initialized
+                            else ""
+                        )
+                    )
                     try:
                         consulted = self.run_consensus(
                             selected_provider=provider,
                             selected_provider_id=provider_id,
                             task=task,
-                            context=handoff or (
-                                render_handoff(conversation.snapshot)
-                                if conversation.initialized
-                                else ""
-                            ),
+                            context=compact_context,
                             draft_first=True,
+                            owner_prompt=recovered_owner_prompt,
                         )
                     except cancellation.TaskCancelled:
                         raise

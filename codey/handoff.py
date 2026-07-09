@@ -14,6 +14,7 @@ SOFT_CONTEXT_DENOMINATOR = 4
 MAX_HANDOFF_TEXT_CHARS = 2_000
 MAX_HANDOFF_FILES = 20
 MAX_MODEL_SUMMARY_CHARS = 6_000
+MAX_RECOVERED_HANDOFF_CHARS = 12_000
 MAX_SUMMARY_LIST_ITEMS = 12
 SUMMARY_KEYS = (
     "goal",
@@ -130,6 +131,21 @@ def render_handoff(snapshot: ConversationSnapshot) -> str:
     """Serialize only the latest factual snapshot, never prior handoffs."""
 
     return json.dumps(snapshot.to_payload(), ensure_ascii=False, indent=2)
+
+
+def render_recovered_handoff(
+    snapshot: ConversationSnapshot,
+    recent_visible_conversation: str = "",
+) -> str:
+    """Merge compact facts with bounded visible chat history after a lost web context."""
+
+    payload = snapshot.to_payload()
+    if recent_visible_conversation.strip():
+        payload["recent_visible_conversation"] = compact_text(
+            recent_visible_conversation,
+            MAX_RECOVERED_HANDOFF_CHARS,
+        )
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def render_continuation_prompt(handoff: str, current_request: str) -> str:

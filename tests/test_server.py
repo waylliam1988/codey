@@ -13,6 +13,7 @@ from codey import server
 from codey.agent import RunResult
 from codey.changes import ChangeTracker
 from codey.consensus import ConsensusAdvice, ConsensusResult
+from codey.handoff import ConversationSnapshot
 from codey.provider_diagnostics import ProviderFailure
 from codey.provider_discovery import Discovery
 from codey.task_runner import _project_has_user_files
@@ -834,6 +835,58 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Choose a database", consensus_kwargs["context"])
         self.assertIn("First answer", consensus_kwargs["context"])
         self.assertNotIn("Current request:", consensus_kwargs["context"])
+
+    def test_recovered_chat_handoff_goes_to_owner_not_advisor_context(self) -> None:
+        with tempfile.TemporaryDirectory() as state_home:
+            state = server.State(state_home)
+            context = state.conversation_for("session-1")
+            context.begin_window("deepseek", "chat")
+            context.update_snapshot(ConversationSnapshot(
+                mode="chat",
+                goal="Choose a database",
+                provider_id="deepseek",
+                latest_user="Choose a database",
+                latest_reply="SQLite is enough.",
+            ))
+            state.save_ui_state({
+                "active_id": "session-1",
+                "updated_at": 1,
+                "revision": 1,
+                "sessions": [{
+                    "id": "session-1",
+                    "title": "Database plan",
+                    "messages": [
+                        {"type": "user", "text": "Earlier UI detail"},
+                        {"type": "asst", "text": "Keep UI-HISTORY-MARKER"},
+                        {"type": "user", "text": "Add a migration plan"},
+                    ],
+                    "terminalRuns": [],
+                    "createdAt": 0,
+                    "projectId": None,
+                    "provider": "deepseek",
+                }],
+                "projects": [],
+            })
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            self.consensus_mock.return_value = ConsensusResult("Combined answer", 1)
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run") as agent_run,
+            ):
+                server._run_task("session-1", None, "Add a migration plan", 8, False, "deepseek")
+
+        agent_run.assert_not_called()
+        consensus_kwargs = self.consensus_mock.call_args.kwargs
+        self.assertTrue(consensus_kwargs["draft_first"])
+        self.assertIn("Choose a database", consensus_kwargs["context"])
+        self.assertNotIn("UI-HISTORY-MARKER", consensus_kwargs["context"])
+        self.assertIn("recent_visible_conversation", consensus_kwargs["owner_prompt"])
+        self.assertIn("UI-HISTORY-MARKER", consensus_kwargs["owner_prompt"])
+        self.assertNotIn("User: Add a migration plan", consensus_kwargs["owner_prompt"])
 
     def test_plain_chat_model_switch_uses_hidden_handoff(self) -> None:
         state = server.State()

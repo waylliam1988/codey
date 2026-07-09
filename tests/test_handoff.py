@@ -9,6 +9,7 @@ from codey.handoff import (
     estimate_tokens,
     render_continuation_prompt,
     render_handoff,
+    render_recovered_handoff,
 )
 
 
@@ -38,6 +39,24 @@ class HandoffTests(unittest.TestCase):
         self.assertEqual(payload["checks"], "passed")
         self.assertLess(len(payload["latest_model_reply"]), 2100)
         self.assertNotIn("handoff_summary", payload)
+
+    def test_recovered_handoff_adds_bounded_visible_conversation(self) -> None:
+        snapshot = ConversationSnapshot(
+            mode="chat",
+            goal="Discuss app design",
+            provider_id="deepseek",
+            latest_user="Earlier question",
+            latest_reply="Earlier answer",
+        )
+
+        payload = json.loads(render_recovered_handoff(
+            snapshot,
+            "User: Discuss breathing app\nAssistant: Use a calm timer\n" + "x" * 20_000,
+        ))
+
+        self.assertEqual(payload["goal"], "Discuss app design")
+        self.assertIn("User: Discuss breathing app", payload["recent_visible_conversation"])
+        self.assertLessEqual(len(payload["recent_visible_conversation"]), 12_020)
 
     def test_soft_limit_prepares_one_overwritable_handoff(self) -> None:
         context = ConversationContext(hard_limit=100)

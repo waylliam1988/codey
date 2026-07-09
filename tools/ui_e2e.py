@@ -24,6 +24,11 @@ TASK = (
 )
 
 
+def _close_event_stream(page: Page) -> None:
+    page.wait_for_function("typeof evtSrc !== 'undefined' && evtSrc !== null")
+    page.evaluate("evtSrc.close()")
+
+
 class ScriptedWriter:
     name = "Browser E2E Writer"
     location = "scripted://writer"
@@ -242,7 +247,7 @@ def _exercise_page(
     expect(page.locator("#chat")).to_contain_text("Command approval")
     deny = page.get_by_role("button", name="Deny", exact=True)
     expect(deny).to_be_visible()
-    page.evaluate("evtSrc.close()")
+    _close_event_stream(page)
     deny.click()
     expect(page.locator("#chat")).to_contain_text("Denied")
     expect(page.locator("#chat")).to_contain_text("git status --short")
@@ -262,7 +267,7 @@ def _exercise_page(
     expect(page.locator("#chat")).to_contain_text("Command approval")
     deny = page.get_by_role("button", name="Deny", exact=True)
     expect(deny).to_be_visible()
-    page.evaluate("evtSrc.close()")
+    _close_event_stream(page)
     page.route("**/api/shell_approval", drop_approval_response)
     deny.click()
     expect(deny).to_be_enabled()
@@ -279,7 +284,7 @@ def _exercise_page(
     expect(page.locator("#chat")).to_contain_text("Command approval")
     allow = page.get_by_role("button", name="Allow", exact=True)
     expect(allow).to_be_visible()
-    page.evaluate("evtSrc.close()")
+    _close_event_stream(page)
     page.route("**/api/shell_approval", drop_approval_response)
     allow.click()
 

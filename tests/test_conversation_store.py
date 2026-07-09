@@ -184,6 +184,25 @@ class ConversationStoreTests(unittest.TestCase):
                     latest_reply="I will remember it",
                 ),
             )
+            first.save_ui_state({
+                "active_id": "chat-1",
+                "updated_at": 1,
+                "revision": 1,
+                "sessions": [{
+                    "id": "chat-1",
+                    "title": "Memory test",
+                    "messages": [
+                        {"type": "user", "text": "Earlier UI-only detail"},
+                        {"type": "asst", "text": "Keep EARLY-UI-MARKER"},
+                        {"type": "user", "text": "Continue"},
+                    ],
+                    "terminalRuns": [],
+                    "createdAt": 0,
+                    "projectId": None,
+                    "provider": "deepseek",
+                }],
+                "projects": [],
+            })
 
             restarted = server.State(td)
             events = restarted.subscribe()
@@ -205,6 +224,9 @@ class ConversationStoreTests(unittest.TestCase):
         provider.new_chat.assert_called_once_with()
         self.assertIn("Factual handoff", prompt)
         self.assertIn("ORANGE-417", prompt)
+        self.assertIn("recent_visible_conversation", prompt)
+        self.assertIn("EARLY-UI-MARKER", prompt)
+        self.assertNotIn("User: Continue", prompt)
         self.assertFalse(any(event.get("type") == "info" for event in emitted))
 
     def test_persistence_failure_does_not_break_live_conversation(self) -> None:

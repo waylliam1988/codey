@@ -200,6 +200,107 @@ class UiStateStoreTests(unittest.TestCase):
                 "createdAt": 2,
             })
 
+    def test_visible_session_excerpt_uses_recent_visible_chat_only(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            store.save({
+                "active_id": "chat-1",
+                "updated_at": 1,
+                "revision": 1,
+                "sessions": [{
+                    "id": "chat-1",
+                    "title": "Breathing app",
+                    "messages": [
+                        {"type": "turn", "n": 1},
+                        {"type": "tool", "kind": "read_file", "result": "secret tool output"},
+                        {"type": "shell_result", "output": "long shell output"},
+                        {"type": "user", "text": "Yesterday question"},
+                        {"type": "asst", "text": "Yesterday answer"},
+                        {"type": "review", "text": "Review approved"},
+                        {"type": "done", "text": "DONE · checks passed"},
+                        {"type": "changes", "count": 2, "files": [{"path": "app.py"}, {"path": "test_app.py"}]},
+                        {"type": "user", "text": "Continue today"},
+                    ],
+                    "terminalRuns": [],
+                    "createdAt": 0,
+                    "projectId": None,
+                    "provider": "deepseek",
+                }],
+                "projects": [],
+            })
+
+            excerpt = store.visible_session_excerpt("chat-1", current_request="Continue today")
+
+            self.assertIn("Title: Breathing app", excerpt)
+            self.assertIn("User: Yesterday question", excerpt)
+            self.assertIn("Assistant: Yesterday answer", excerpt)
+            self.assertIn("Review: Review approved", excerpt)
+            self.assertIn("Done: DONE · checks passed", excerpt)
+            self.assertIn("Changes: 2 files: app.py, test_app.py", excerpt)
+            self.assertNotIn("Continue today", excerpt)
+            self.assertNotIn("secret tool output", excerpt)
+            self.assertNotIn("long shell output", excerpt)
+
+    def test_visible_session_excerpt_is_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            store.save({
+                "active_id": "chat-1",
+                "updated_at": 1,
+                "revision": 1,
+                "sessions": [{
+                    "id": "chat-1",
+                    "title": "New chat",
+                    "messages": [
+                        {"type": "user", "text": "x" * 10_000},
+                        {"type": "asst", "text": "y" * 10_000},
+                    ],
+                    "terminalRuns": [],
+                    "createdAt": 0,
+                    "projectId": None,
+                    "provider": "deepseek",
+                }],
+                "projects": [],
+            })
+
+            excerpt = store.visible_session_excerpt("chat-1", limit=2_000)
+
+            self.assertLessEqual(len(excerpt), 2_000)
+
+    def test_visible_session_excerpt_counts_visible_messages_after_filtering(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            store.save({
+                "active_id": "chat-1",
+                "updated_at": 1,
+                "revision": 1,
+                "sessions": [{
+                    "id": "chat-1",
+                    "title": "Project review",
+                    "messages": [
+                        {"type": "user", "text": "Find project bugs"},
+                        {"type": "asst", "text": "Keep VISIBLE-BEFORE-NOISE"},
+                        *[
+                            {"type": "tool", "kind": "read_file", "result": f"noise {index}"}
+                            for index in range(30)
+                        ],
+                        {"type": "user", "text": "Continue"},
+                    ],
+                    "terminalRuns": [],
+                    "createdAt": 0,
+                    "projectId": None,
+                    "provider": "deepseek",
+                }],
+                "projects": [],
+            })
+
+            excerpt = store.visible_session_excerpt("chat-1", current_request="Continue")
+
+            self.assertIn("User: Find project bugs", excerpt)
+            self.assertIn("Assistant: Keep VISIBLE-BEFORE-NOISE", excerpt)
+            self.assertNotIn("noise 29", excerpt)
+            self.assertNotIn("User: Continue", excerpt)
+
 
 if __name__ == "__main__":
     unittest.main()

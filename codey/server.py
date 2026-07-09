@@ -363,6 +363,13 @@ class State:
         with self.ui_state_store_lock:
             self.ui_state_store.save(state)
 
+    def visible_session_excerpt(self, session_id: str, current_request: str = "") -> str:
+        with self.ui_state_store_lock:
+            return self.ui_state_store.visible_session_excerpt(
+                session_id,
+                current_request=current_request,
+            )
+
     def _save_conversation(
         self,
         session_id: str,
