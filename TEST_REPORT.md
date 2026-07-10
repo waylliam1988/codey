@@ -1,7 +1,42 @@
-# Codey 0.1.25 Test Report
+# Codey 0.1.26 Test Report
 
 Date: 2026-07-10
 Environment: Windows / Edge or Chrome CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.26 Outline File Tool
+
+This release adds `outline_file`, a read-only navigation tool for inspecting
+the shape of one source file before spending context on full file pages. It does
+not add UI, cache, indexing, RAG, persistence, or a reviewer tool.
+
+Behavior:
+
+- `outline_file` is exposed in the JSON tool contract and runs as local runtime
+  tool `outline`.
+- The tool returns shallow navigation facts only: imports, functions, classes,
+  methods, tests, exports, arrow functions, and common JS/TS route declarations
+  with line-number hints.
+- The output explicitly says it is not source content and that `read_file` must
+  be used before editing.
+- `outline_file` is not `parallel_safe`; `parallel` still accepts only
+  `list_dir`, `read_file`, and `grep`.
+- Local runtime enforces project-root safety, UTF-8 text, file-only input, and a
+  bounded outline file size.
+- Hidden project-audit advisors may use `outline_file`, but only through the
+  same sensitive path, symlink, binary, excluded-directory, and size checks used
+  by audit reads.
+- Reviewer still receives diff/log/brief/map context only; no reviewer-side tool
+  access was added.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Tool runtime / protocol / agent / consensus focused suite | 113 passed |
+| Full unittest suite | 510 passed |
+| Full pytest suite | 510 passed |
+| Syntax compile | `python -m compileall -q codey tests tools` passed |
+| Diff whitespace check | `git diff --check` passed with no output |
 
 ## 0.1.25 Hidden Project Map
 

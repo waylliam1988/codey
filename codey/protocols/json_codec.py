@@ -61,6 +61,17 @@ TOOL_SPECS = (
         ),
     ),
     ToolSpec(
+        "outline_file",
+        "outline",
+        aliases=("outline",),
+        read_only=True,
+        examples=('{"tool":"outline_file","args":{"path":"src/router.ts"}}',),
+        description=(
+            "Show a shallow file outline for navigation. It is not source "
+            "content; use read_file before editing."
+        ),
+    ),
+    ToolSpec(
         "grep",
         "search",
         aliases=("search",),
@@ -180,6 +191,8 @@ Rules:
     It never accepts edit, run, shell, done, read_files, or nested parallel.
   - A trailing [read_file page: ...] line is metadata, not file content. Never
     include it in old_string. Continue with the stated offset when needed.
+  - outline_file output is only navigation metadata. Never use it as
+    old_string. Use read_file with line offsets before editing.
   - Use edit for all file changes. Use old_string/new_string for one small edit,
     replacements for multiple edits in one file, and content only for creation
     or a substantial rewrite. Never mix these edit modes.

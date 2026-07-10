@@ -21,6 +21,7 @@ from codey.tool_runtime import (
     READ_MAX_CHARS,
     SEARCH_MAX_RESULTS,
     ToolOutcome,
+    outline_file,
     read_file,
     safe_join,
 )
@@ -36,7 +37,7 @@ PROJECT_AUDIT_MAX_TURNS = 4
 PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT = 180.0
 PROJECT_AUDIT_MAX_REPORT_CHARS = 4_000
 PROJECT_AUDIT_MAX_FILE_BYTES = 256 * 1024
-READ_ONLY_TOOL_NAMES = frozenset({"ls", "read", "search"})
+READ_ONLY_TOOL_NAMES = frozenset({"ls", "read", "outline", "search"})
 READ_ONLY_CODEC = JsonToolCodec()
 AUDIT_EXCLUDED_DIRS = {
     ".git",
@@ -142,6 +143,10 @@ Available read-only tools:
   {"tool":"read_files","args":{"paths":["a.py","b.py"]}}
     Read up to 8 files in one step. Do not nest it inside parallel.
 
+  {"tool":"outline_file","args":{"path":"src/router.ts"}}
+    Show a shallow file outline for navigation. It is not source content; use
+    read_file before editing or citing exact code.
+
   {"tool":"grep","args":{"pattern":"login","path":"."}}
     Search file contents before reading when the location is unknown.
 
@@ -152,8 +157,9 @@ Available read-only tools:
     Finish your private review.
 
 Rules:
-  - Use only list_dir, read_file, read_files, grep, parallel, or done.
+  - Use only list_dir, read_file, read_files, outline_file, grep, parallel, or done.
   - Never call edit, write, run, shell, restore, approve, or any native website tool.
+  - outline_file output is only navigation metadata. Do not quote it as source code.
   - Inspect only files that seem relevant. Keep the review bounded.
   - Report concrete bug risks, architecture concerns, and useful improvement ideas.
   - Include paths as evidence when possible.
@@ -478,6 +484,23 @@ def _audit_read_file(root: Path, rel: str, **options) -> ToolOutcome:
     return read_file(root, rel, **options)
 
 
+def _audit_outline_file(root: Path, rel: str) -> ToolOutcome:
+    reason = _audit_path_block_reason(rel)
+    if reason:
+        return ToolOutcome.error(reason)
+    reason = _audit_raw_symlink_reason(root, rel)
+    if reason:
+        return ToolOutcome.error(reason)
+    try:
+        path = safe_join(root, rel)
+    except ValueError as exc:
+        return ToolOutcome.error(str(exc))
+    allowed, reason = _audit_file_allowed(path, root)
+    if not allowed:
+        return ToolOutcome.error(reason)
+    return outline_file(root, rel)
+
+
 def _audit_searchable_files(root: Path, start: Path) -> list[Path]:
     if start.is_file():
         return [start] if _audit_file_allowed(start, root)[0] else []
@@ -573,10 +596,12 @@ def _execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
             if name in call.args
         }
         return _audit_read_file(project, path, **read_options)
+    if call.name == "outline":
+        return _audit_outline_file(project, path)
     if call.name == "search":
         return _audit_search_files(project, path, str(call.args.get("query") or ""))
     return ToolOutcome.error(
-        "project audit advisors may only use read-only list_dir, read_file, and grep"
+        "project audit advisors may only use read-only list_dir, read_file, outline_file, and grep"
     )
 
 

@@ -400,6 +400,35 @@ class RunLoopTests(unittest.TestCase):
         self.assertTrue(run_events[1].outcome.ok)
         self.assertEqual(run_events[1].outcome.output, "VALUE = 1\n")
 
+    def test_outline_tool_returns_navigation_before_done(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"outline_file","args":{"path":"app.py"}}',
+            '{"tool":"done","args":{"summary":"outlined"}}',
+        )
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text(
+                "def main():\n    return 'BODY_SECRET'\n",
+                encoding="utf-8",
+            )
+
+            result = agent.run(
+                provider,
+                root,
+                "Outline app.py",
+                on_event=events.append,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.changed)
+        tool_events = [event for event in events if event.kind == "tool"]
+        self.assertEqual(tool_events[0].call.name, "outline")
+        self.assertIn("function main() line 1", tool_events[0].outcome.output)
+        self.assertNotIn("BODY_SECRET", tool_events[0].outcome.output)
+        self.assertIn("[tool_result tool=outline_file path=app.py]", provider.sent[1])
+        self.assertIn("use read_file before editing", provider.sent[1])
+
     def test_invalid_parallel_batch_executes_nothing_and_requests_correction(self) -> None:
         invalid = json.dumps({
             "tool": "parallel",

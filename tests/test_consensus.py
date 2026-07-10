@@ -247,6 +247,28 @@ class ConsensusTests(unittest.TestCase):
         self.assertIn("[tool_result tool=read_file path=app.py]", advisor.sent[1])
         self.assertIn("print('hello')", advisor.sent[1])
 
+    def test_project_audit_advisor_can_outline_project_file(self) -> None:
+        advisor = FakeProvider([
+            '{"tool":"outline_file","args":{"path":"app.py"}}',
+            '{"tool":"done","args":{"summary":"app.py has a main function."}}',
+        ])
+
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, "app.py").write_text(
+                "def main():\n    return 'AUDIT_BODY_SECRET'\n",
+                encoding="utf-8",
+            )
+            report = consensus.run_project_audit_advisor(
+                advisor,
+                td,
+                "Review this project for bugs",
+            )
+
+        self.assertIn("main function", report)
+        self.assertIn("[tool_result tool=outline_file path=app.py]", advisor.sent[1])
+        self.assertIn("function main() line 1", advisor.sent[1])
+        self.assertNotIn("AUDIT_BODY_SECRET", "\n".join(advisor.sent))
+
     def test_project_audit_rejects_write_tools(self) -> None:
         advisor = FakeProvider([
             '{"tool":"edit","args":{"path":"app.py","content":"bad"}}',
@@ -309,6 +331,25 @@ class ConsensusTests(unittest.TestCase):
         self.assertEqual(report, "env file was not read")
         self.assertIn("app.py", advisor.sent[0])
         self.assertNotIn("prod.env", advisor.sent[0])
+        self.assertIn("not shared with project audit advisors", advisor.sent[1])
+        self.assertNotIn("ENV_SECRET_MARKER", "\n".join(advisor.sent))
+
+    def test_project_audit_blocks_outline_of_secret_files(self) -> None:
+        advisor = FakeProvider([
+            '{"tool":"outline_file","args":{"path":"prod.env"}}',
+            '{"tool":"done","args":{"summary":"env outline was not read"}}',
+        ])
+
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, "prod.env").write_text("ENV_SECRET_MARKER=orange\n", encoding="utf-8")
+            Path(td, "app.py").write_text("def main():\n    pass\n", encoding="utf-8")
+            report = consensus.run_project_audit_advisor(
+                advisor,
+                td,
+                "Review this project for bugs",
+            )
+
+        self.assertEqual(report, "env outline was not read")
         self.assertIn("not shared with project audit advisors", advisor.sent[1])
         self.assertNotIn("ENV_SECRET_MARKER", "\n".join(advisor.sent))
 

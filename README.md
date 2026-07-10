@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.25`
+Version: `0.1.26`
 
 ---
 
@@ -46,6 +46,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Use hidden task briefs so Writer and Reviewer share the same bounded intent
 - Give Writer, hidden advisors, and Reviewer a bounded local Project Map before
   they inspect files
+- Let the model request a shallow file outline before reading large source files
 - Continue long conversations quietly with an automatic factual summary and fresh model chat
 - Reuse project commands that have already succeeded locally
 - Remember recent successful changes only from verified local checks
@@ -73,6 +74,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.26` adds `outline_file`, a small read-only navigation tool for large source files. After Project Map tells the model where important files are, `outline_file` can show a shallow outline of one target file: imports, functions, classes, methods, tests, exports, arrow functions, and common JS/TS route declarations with line-number hints. It does not return function bodies, is not source content, and the tool contract explicitly says never to use outline output as `old_string`; the model must still call `read_file` with line offsets before editing. The tool is not allowed inside `parallel`, is available to hidden project-audit advisors through the same sensitive-path checks, and is not added to Review as a tool. No UI, cache, index, RAG, or persistence was added. The release passed 510 unittest tests, 510 pytest tests, syntax compile, and `git diff --check` with no output.
 
 Version `0.1.25` adds a hidden Project Map for larger projects without adding UI, storage, indexing, or a RAG layer. Before the Writer starts, Codey now performs a bounded local scan of the selected project and shares only safe relative-path facts: source/test roots, key manifests and docs, useful top-level files, observed successful checks, and clearly marked candidate commands. It does not read source file contents, does not follow symlinks, skips secret-like files, dotfiles, lock files, dependency/build directories, and stops scanning at a strict entry budget. The same Project Map is reused for hidden advisors and refreshed before Review so the Reviewer sees files added by the Writer, while the existing rule remains: review findings may only point to changed files. This makes the first turn less blind in medium or larger projects while keeping Codey small and local. The release passed 501 unittest tests, 501 pytest tests, syntax compile, and `git diff --check` with only CRLF warnings.
 

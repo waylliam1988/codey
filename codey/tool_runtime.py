@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codey import cancellation
+from codey.file_outline import OUTLINE_MAX_FILE_BYTES, build_file_outline
 from codey.text_budget import clip_middle
 
 
@@ -237,6 +238,26 @@ def read_file(
         _append_page_metadata(content, metadata),
         True,
         truncated=True,
+    )
+
+
+def outline_file(root: Path, rel: str) -> ToolOutcome:
+    path = safe_join(root, rel)
+    if not path.is_file():
+        return ToolOutcome.error(f"not a file: {rel}")
+    try:
+        if path.stat().st_size > OUTLINE_MAX_FILE_BYTES:
+            return ToolOutcome.error(f"file too large to outline: {rel}")
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return ToolOutcome.error(f"not utf-8 text: {rel}")
+    except OSError as exc:
+        return ToolOutcome.error(str(exc))
+    outline = build_file_outline(text, rel)
+    return ToolOutcome(
+        outline,
+        True,
+        truncated="outline truncated" in outline,
     )
 
 

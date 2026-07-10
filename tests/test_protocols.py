@@ -265,6 +265,35 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("not native website tools", prompt)
         self.assertIn("valid JSON tool call", codec.repair_prompt())
 
+    def test_outline_file_parses_and_formats_with_public_name(self) -> None:
+        codec = JsonToolCodec()
+        plan = codec.parse('{"tool":"outline_file","args":{"path":"src/router.ts"}}')
+
+        self.assertEqual(plan.protocol_error, "")
+        self.assertEqual(len(plan.calls), 1)
+        self.assertEqual(plan.calls[0].name, "outline")
+        self.assertEqual(plan.calls[0].args["path"], "src/router.ts")
+
+        prompt = codec.format_results([
+            ToolResult(plan.calls[0], "File outline: src/router.ts\n- function main line 1")
+        ])
+
+        self.assertIn("[tool_result tool=outline_file path=src/router.ts]", prompt)
+
+    def test_parallel_rejects_outline_file(self) -> None:
+        plan = JsonToolCodec().parse(json.dumps({
+            "tool": "parallel",
+            "args": {
+                "calls": [
+                    {"tool": "outline_file", "args": {"path": "app.py"}},
+                    {"tool": "list_dir", "args": {"path": "."}},
+                ]
+            },
+        }))
+
+        self.assertEqual(plan.calls, [])
+        self.assertIn("parallel accepts read-only list_dir, read_file, and grep", plan.protocol_error)
+
     def test_format_results_marks_truncated_results_explicitly(self) -> None:
         codec = JsonToolCodec()
         call = ToolCall("run", {"path": ".", "command": "python -m unittest"})
@@ -285,6 +314,8 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("Output exactly one JSON object", prompt)
         self.assertIn("It never accepts edit, run, shell", prompt)
         self.assertIn("read_file page:", prompt)
+        self.assertIn("outline_file output is only navigation metadata", prompt)
+        self.assertIn("Never use it as\n    old_string", prompt)
         self.assertIn("written atomically", prompt)
         self.assertIn("JSON strings must escape quotes", prompt)
         self.assertIn("use content with the full", prompt)
@@ -321,6 +352,7 @@ class JsonToolCodecTests(unittest.TestCase):
         cases = (
             ("ls", {"path": "."}, "ls"),
             ("read", {"path": "app.py"}, "read"),
+            ("outline", {"path": "app.py"}, "outline"),
             ("search", {"path": ".", "query": "needle"}, "search"),
         )
 

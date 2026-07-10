@@ -28,6 +28,7 @@ from codey.tool_runtime import (
     ToolOutcome,
     edit_file,
     list_directory,
+    outline_file,
     read_file,
     run_command,
     safe_join,
@@ -40,11 +41,13 @@ DEFAULT_STAGNANT_TURNS = 4
 SUPPORTED_TOOL_NAMES = frozenset({
     "edit",
     "ls",
+    "outline",
     "read",
     "run",
     "search",
     "shell",
 })
+INFORMATION_TOOL_NAMES = frozenset({"ls", "outline", "read", "run", "search", "shell"})
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
 VERIFICATION_REQUEST_RE = re.compile(
@@ -347,6 +350,8 @@ def run(
                         if name in call.args
                     }
                     outcome = read_file(project, path, **read_options)
+                elif call.name == "outline":
+                    outcome = outline_file(project, path)
                 elif call.name == "ls":
                     outcome = list_directory(project, path)
                 elif call.name == "search":
@@ -375,7 +380,7 @@ def run(
             emit(RunEvent.tool_finished(turn, call, outcome))
             results.append(ToolResult(call=call, output=out, truncated=outcome.truncated))
             produced_information = outcome.ok or outcome.exit_code is not None
-            if call.name in ("read", "ls", "search", "run", "shell") and produced_information:
+            if call.name in INFORMATION_TOOL_NAMES and produced_information:
                 sig = (call.name, path, out)
                 if sig not in seen_info:
                     seen_info.add(sig)
@@ -405,7 +410,7 @@ def run(
         if control.kind == "done":
             # Safety net: if the model said `done` but also asked for info,
             # treat it as `continue` — it almost certainly needs the result.
-            needs_followup = any(call.name in ("read", "ls", "search", "run", "shell") for call in calls)
+            needs_followup = any(call.name in INFORMATION_TOOL_NAMES for call in calls)
             if needs_followup:
                 emit(RunEvent.status(
                     "[agent] `done` came with info action — treating as continue."
