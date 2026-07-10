@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.26`
+Version: `0.1.27`
 
 ---
 
@@ -47,6 +47,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Give Writer, hidden advisors, and Reviewer a bounded local Project Map before
   they inspect files
 - Let the model request a shallow file outline before reading large source files
+- Let the model request bounded lexical reference hints before changing a symbol
 - Continue long conversations quietly with an automatic factual summary and fresh model chat
 - Reuse project commands that have already succeeded locally
 - Remember recent successful changes only from verified local checks
@@ -74,6 +75,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.27` adds `find_references`, a bounded lexical reference-hints tool for larger edits. It helps the model ask “where else is this symbol mentioned?” before changing a function, class, or local API. The tool deliberately does not claim semantic accuracy: it is not LSP, not a call graph, not an index, and not a rename engine. It accepts only simple symbols, skips dependency/build/cache directories, large files, unreadable files, and symlinked paths, returns at most 80 stable path/line hints, and clearly tells the model to use `read_file` before editing. Direct symlink start paths are rejected before resolution, so project-local links cannot silently redirect the scan; direct dependency/build/cache start directories are skipped case-insensitively as well, while a selected project root named `build`, `dist`, or `target` still scans normally. `find_references`, normal `grep`, and hidden project-audit search/reference scans now share the same streaming bounded scanner, so they no longer collect and sort every candidate file before starting work; if a scan budget is reached, the tool says omitted files may still contain matches. `find_references` is not allowed inside `parallel`; hidden project-audit advisors still use the stricter audit filters; Reviewer still receives context only and no tool access. `edit` also gives clearer single-file/path errors and can safely recover one unique leading-indentation mismatch, which helps web models that collapse code indentation. No UI, cache, persistence, indexing, or semantic resolver was added. The release passed 542 pytest tests, the focused runtime/protocol/agent/consensus/live-smoke suite, syntax compile, `git diff --check` with no output, and live `find_references` smoke runs on DeepSeek, GLM, Qwen, and MiMo.
 
 Version `0.1.26` adds `outline_file`, a small read-only navigation tool for large source files. After Project Map tells the model where important files are, `outline_file` can show a shallow outline of one target file: imports, functions, classes, methods, tests, exports, arrow functions, and common JS/TS route declarations with line-number hints. It does not return function bodies, is not source content, and the tool contract explicitly says never to use outline output as `old_string`; the model must still call `read_file` with line offsets before editing. The tool is not allowed inside `parallel`, is available to hidden project-audit advisors through the same sensitive-path checks, and is not added to Review as a tool. No UI, cache, index, RAG, or persistence was added. The release passed 510 unittest tests, 510 pytest tests, syntax compile, and `git diff --check` with no output.
 
@@ -335,7 +338,12 @@ codey/
   cancellation.py           shared task-local cancellation and process cleanup
   events.py                 structured run events and log rendering
   text_budget.py            bounded head-and-tail output clipping
+  bounded_scan.py           shared bounded local file traversal
   tool_runtime.py           local tools and structured outcomes
+  file_outline.py           shallow source outline builder
+  references.py             bounded lexical reference hints
+  project_map.py            deterministic bounded project orientation
+  change_brief.py           hidden task intent brief
   task_runner.py            task, conversation, review, and receipt orchestration
   browser.py                Chromium CDP connection helpers
   browser_worker.py         Playwright thread scheduler

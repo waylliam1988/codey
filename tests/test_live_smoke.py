@@ -28,6 +28,21 @@ class LiveSmokeTests(unittest.TestCase):
             self.assertIn("LIVE_SMOKE_BUG", (root / "pricing.py").read_text(encoding="utf-8"))
             self.assertTrue((root / "test_pricing.py").exists())
 
+    def test_references_fixture_requires_reference_update(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            live_smoke._make_fixture(root, "references")
+
+            self.assertIn(
+                "LIVE_SMOKE_REFERENCE_TARGET",
+                (root / "pricing.py").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "discounted_checkout_total",
+                (root / "checkout.py").read_text(encoding="utf-8"),
+            )
+            self.assertFalse(live_smoke._verify_fixture(root, "references")["ok"])
+
     def test_discussion_fixture_requires_no_files(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

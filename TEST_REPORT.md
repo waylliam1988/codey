@@ -1,7 +1,59 @@
-# Codey 0.1.26 Test Report
+# Codey 0.1.27 Test Report
 
-Date: 2026-07-10
+Date: 2026-07-11
 Environment: Windows / Edge or Chrome CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.27 Find References Tool
+
+This release adds `find_references`, a bounded lexical reference-hints tool for
+inspecting likely impact sites before changing a symbol. It does not add UI,
+cache, indexing, LSP, semantic resolution, persistence, or a reviewer tool.
+
+Behavior:
+
+- `find_references` is exposed in the JSON tool contract and runs as local
+  runtime tool `references`.
+- The tool accepts only simple symbols such as `createRouter`,
+  `SessionStore`, `login_user`, or `$state`; complex expressions should use
+  `grep`.
+- Results are explicitly labeled as lexical hints only, not semantic resolution
+  or a complete call graph.
+- Output is stable, path/line based, and capped at 80 matches with precise
+  truncation metadata.
+- The scanner skips dependency/build/cache directories, large files, unreadable
+  files, non-UTF-8 files, and symlinked paths.
+- Direct dependency/build/cache start directories are skipped case-insensitively
+  instead of being scanned as a special case.
+- A selected project root named like an excluded directory, such as `build`,
+  `dist`, or `target`, still scans normally.
+- Direct symlink start paths are rejected before resolving, so a project-local
+  link cannot silently redirect the scan to its target.
+- `find_references`, normal `grep`, and hidden project-audit search/reference
+  scans share the same streaming bounded scanner; none of them collects and
+  sorts every candidate file before starting work.
+- When the shared scanner reaches a file, directory, or per-directory entry
+  budget, the tool result explicitly says omitted files may contain more
+  matches.
+- `find_references` is not `parallel_safe`; `parallel` still accepts only
+  `list_dir`, `read_file`, and `grep`.
+- Hidden project-audit advisors may use `find_references`, but only through the
+  same sensitive path, symlink, binary, excluded-directory, and size checks used
+  by audit reads.
+- Reviewer still receives diff/log/brief/map context only; no reviewer-side tool
+  access was added.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Runtime / protocol / agent / consensus / live-smoke focused suite | 160 passed |
+| Full pytest suite | 542 passed |
+| Syntax compile | `python -m compileall -q codey tests tools` passed |
+| Diff whitespace check | `git diff --check` passed with no output |
+| DeepSeek live `find_references` smoke | passed in 8 turns |
+| GLM live `find_references` smoke | passed in 7 turns; unique indentation recovery exercised |
+| Qwen live `find_references` smoke | passed in 7 turns |
+| MiMo live `find_references` smoke | passed in 8 turns; edit path protocol correction exercised |
 
 ## 0.1.26 Outline File Tool
 

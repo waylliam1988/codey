@@ -10,7 +10,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.26`
+版本：`0.1.27`
 
 ---
 
@@ -46,6 +46,7 @@ Codey 想解决的是一个很朴素的问题：
 - 用隐藏任务 brief 让 Writer 和 Reviewer 共享同一份有边界的意图
 - 在模型真正读文件前，给 Writer、隐藏顾问和 Reviewer 一份有边界的本地项目地图
 - 让模型在读取大文件前，先请求一个浅层文件大纲来定位代码
+- 让模型在改某个符号前，先请求有边界的文本引用提示
 - 长对话接近上限时，自动总结事实并在新对话里无感继续
 - 记住真实运行成功的项目命令，后续任务不必重新猜测
 - 只从通过本地检查的成功改动里沉淀最近变更事实
@@ -71,6 +72,8 @@ Codey 想解决的是一个很朴素的问题：
 | GLM | 已实机测试 |
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
+
+`0.1.27` 增加 `find_references`，这是一个有边界的“文本引用提示”工具，适合稍大的改动：模型可以先问“这个函数、类或本地 API 还在哪里被提到”，再决定要读哪些调用方。它故意不承诺语义精确：不是 LSP、不是调用图、不是索引，也不是重命名引擎。它只接受简单 symbol，跳过依赖 / 构建 / 缓存目录、大文件、不可读文件和 symlink 路径，最多返回 80 条稳定的路径 / 行号提示，并明确要求模型编辑前必须再用 `read_file` 读取真实源码。直接把起始路径指向 symlink 时会在解析前拒绝，所以项目内链接不会静默把扫描重定向到目标文件；直接把起始路径指向依赖 / 构建 / 缓存目录时也会按大小写不敏感规则跳过，但如果用户选择的项目根目录本身叫 `build`、`dist` 或 `target`，仍然会正常扫描。`find_references`、普通 `grep`、隐藏项目审查顾问的搜索和引用扫描现在共用同一个流式 bounded scanner，不再先收集并排序所有候选文件；如果扫描预算耗尽，工具会明确提示省略文件里仍可能有匹配。这个工具不能放进 `parallel`；隐藏项目审查顾问仍然经过更严格的 audit 过滤；Reviewer 仍然没有工具权限，只看上下文。`edit` 也会给出更清楚的单文件 / path 协议错误，并且能安全恢复唯一的行首缩进丢失，适配部分网页模型把代码缩进压缩掉的情况。本版没有新增 UI、缓存、持久化、索引或语义解析器；通过 542 项 pytest、聚焦 runtime / protocol / agent / consensus / live-smoke 套件、语法编译、`git diff --check` 无输出，以及 DeepSeek、GLM、Qwen、MiMo 四个网页模型的 `find_references` 实机 smoke。
 
 `0.1.26` 增加 `outline_file`，这是一个很小的只读导航工具，用来帮助模型面对大源码文件时少读无关内容。Project Map 先告诉模型项目里有哪些重要文件；如果模型锁定了某个目标文件，就可以调用 `outline_file` 看这个文件的浅层结构：imports、函数、类、方法、测试、exports、箭头函数，以及常见 JS / TS 路由声明和行号提示。它不会返回函数体，不是源码内容，协议里明确要求不能把 outline 输出当作 `old_string`；编辑前仍然必须用 `read_file` 按行号读取真实源码。这个工具不能放进 `parallel`，隐藏项目审查顾问可以使用它，但仍走同一套敏感路径过滤；Reviewer 没有新增工具。没有新增 UI、缓存、索引、RAG 或持久化。本版通过 510 项 unittest、510 项 pytest、语法编译和 `git diff --check` 无输出。
 
@@ -334,7 +337,12 @@ codey/
   cancellation.py           共享的任务级取消和进程清理
   events.py                 结构化运行事件和日志渲染
   text_budget.py            有上限的命令输出头尾截取
+  bounded_scan.py           共享的有边界本地文件遍历
   tool_runtime.py           本地工具和结构化执行结果
+  file_outline.py           浅层源码大纲生成
+  references.py             有边界的文本引用提示
+  project_map.py            确定性的有边界项目地图
+  change_brief.py           隐藏任务意图 brief
   task_runner.py            任务、会话、review 和收据编排
   browser.py                Chromium CDP 连接
   browser_worker.py         Playwright 线程调度

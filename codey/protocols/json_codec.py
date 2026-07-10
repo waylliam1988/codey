@@ -83,6 +83,19 @@ TOOL_SPECS = (
         description="Search file contents before reading when the location is unknown.",
     ),
     ToolSpec(
+        "find_references",
+        "references",
+        aliases=("references",),
+        read_only=True,
+        examples=(
+            '{"tool":"find_references","args":{"symbol":"createRouter","path":"."}}',
+        ),
+        description=(
+            "Find bounded lexical reference hints for a simple symbol. "
+            "This is not semantic resolution; use read_file before editing."
+        ),
+    ),
+    ToolSpec(
         "parallel",
         None,
         read_only=True,
@@ -193,6 +206,8 @@ Rules:
     include it in old_string. Continue with the stated offset when needed.
   - outline_file output is only navigation metadata. Never use it as
     old_string. Use read_file with line offsets before editing.
+  - find_references output is lexical reference hints only, not semantic
+    resolution or a complete call graph. Use read_file before editing.
   - Use edit for all file changes. Use old_string/new_string for one small edit,
     replacements for multiple edits in one file, and content only for creation
     or a substantial rewrite. Never mix these edit modes.
@@ -475,6 +490,10 @@ class JsonToolCodec:
         call_args: dict[str, Any] = {"path": path}
 
         if normalized == "edit":
+            if "path" not in args and "cwd" not in args:
+                raise ProtocolValidationError(
+                    "edit requires a top-level path and can only edit one file"
+                )
             has_content = "content" in args
             has_replacements = "replacements" in args
             has_single = any(
@@ -503,6 +522,11 @@ class JsonToolCodec:
                     if not isinstance(item, dict):
                         raise ProtocolValidationError(
                             "every edit replacement must be an object"
+                        )
+                    if "path" in item or "cwd" in item:
+                        raise ProtocolValidationError(
+                            "edit replacements apply to the top-level path only; "
+                            "use separate edit calls for different files"
                         )
                     old = item.get("old_string", item.get("search"))
                     if "new_string" in item:
@@ -548,6 +572,11 @@ class JsonToolCodec:
             if not pattern:
                 raise ProtocolValidationError("grep requires a pattern")
             call_args["query"] = _text(pattern)
+        elif normalized == "references":
+            symbol = args.get("symbol", args.get("name"))
+            if not symbol:
+                raise ProtocolValidationError("find_references requires a symbol")
+            call_args["symbol"] = _text(symbol).strip()
         elif normalized in {"run", "shell"}:
             command = args.get("command", args.get("cmd"))
             if not command:

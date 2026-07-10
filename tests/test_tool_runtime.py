@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey import cancellation
+from codey.references import find_reference_hints
 from codey.tool_runtime import (
     EditBlock,
     LONG_LINE_MARKER,
@@ -15,6 +16,7 @@ from codey.tool_runtime import (
     READ_MAX_CHARS,
     READ_MAX_LINES,
     edit_file,
+    find_references,
     outline_file,
     read_file,
     run_command,
@@ -271,6 +273,236 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIn("not utf-8 text", non_utf8.output)
         self.assertFalse(large.ok)
         self.assertIn("file too large to outline", large.output)
+
+    def test_find_references_returns_python_reference_hints(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            Path(root, "pricing.py").write_text(
+                "def calculate_total(amount, tax_rate):\n"
+                "    return amount * (1 + tax_rate)\n\n"
+                "class calculate_totalMock:\n"
+                "    pass\n",
+                encoding="utf-8",
+            )
+            Path(root, "checkout.py").write_text(
+                "from pricing import calculate_total\n\n"
+                "def checkout():\n"
+                "    return calculate_total(100, 0.2)\n",
+                encoding="utf-8",
+            )
+
+            outcome = find_references(root, ".", "calculate_total")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("References for calculate_total under .", outcome.output)
+        self.assertIn("lexical scan, not semantic resolution", outcome.output)
+        self.assertIn("definition pricing.py:1: def calculate_total", outcome.output)
+        self.assertIn("import checkout.py:1: from pricing import calculate_total", outcome.output)
+        self.assertIn("call checkout.py:4: return calculate_total(100, 0.2)", outcome.output)
+        self.assertNotIn("calculate_totalMock", outcome.output)
+
+    def test_find_references_returns_typescript_reference_hints(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            src = root / "src"
+            src.mkdir()
+            Path(src, "router.ts").write_text(
+                "export function createRouter() {\n"
+                "  return router;\n"
+                "}\n"
+                "const createRouterMock = () => null;\n",
+                encoding="utf-8",
+            )
+            Path(src, "server.ts").write_text(
+                "import { createRouter } from './router';\n"
+                "app.use(createRouter());\n",
+                encoding="utf-8",
+            )
+
+            outcome = find_references(root, "src", "createRouter")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("export src/router.ts:1: export function createRouter()", outcome.output)
+        self.assertIn("import src/server.ts:1: import { createRouter }", outcome.output)
+        self.assertIn("call src/server.ts:2: app.use(createRouter())", outcome.output)
+        self.assertNotIn("createRouterMock", outcome.output)
+
+    def test_find_references_is_bounded_and_skips_excluded_and_unreadable_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for index in range(80):
+                Path(root, f"use_{index:02}.py").write_text(
+                    "target_symbol()\n",
+                    encoding="utf-8",
+                )
+            Path(root, "z_over.py").write_text("target_symbol()\n", encoding="utf-8")
+            node = root / "node_modules"
+            node.mkdir()
+            Path(node, "pkg.py").write_text("target_symbol()\n", encoding="utf-8")
+            Path(root, "bad.py").write_bytes(b"\xff\xfe target_symbol")
+
+            outcome = find_references(root, ".", "target_symbol")
+
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.truncated)
+        self.assertIn("references truncated after 80 matches", outcome.output)
+        self.assertNotIn("node_modules", outcome.output)
+        self.assertNotIn("bad.py", outcome.output)
+        self.assertNotIn("z_over.py", outcome.output)
+
+    def test_find_references_skips_direct_excluded_start_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            node = root / "node_modules"
+            node.mkdir()
+            Path(node, "pkg.py").write_text("target_symbol()\n", encoding="utf-8")
+
+            outcome = find_references(root, "node_modules", "target_symbol")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("no lexical matches found", outcome.output)
+        self.assertNotIn("pkg.py", outcome.output)
+        self.assertFalse(outcome.truncated)
+
+    def test_find_references_skips_excluded_directories_case_insensitively(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            build = root / "Build"
+            build.mkdir()
+            Path(build, "out.py").write_text("target_symbol()\n", encoding="utf-8")
+
+            outcome = find_references(root, ".", "target_symbol")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("no lexical matches found", outcome.output)
+        self.assertNotIn("out.py", outcome.output)
+
+    def test_find_references_skips_direct_excluded_start_directory_case_insensitively(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            node = root / "Node_Modules"
+            node.mkdir()
+            Path(node, "pkg.py").write_text("target_symbol()\n", encoding="utf-8")
+
+            outcome = find_references(root, "Node_Modules", "target_symbol")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("no lexical matches found", outcome.output)
+        self.assertNotIn("pkg.py", outcome.output)
+        self.assertFalse(outcome.truncated)
+
+    def test_find_references_does_not_skip_project_root_named_like_excluded_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "build"
+            root.mkdir()
+            Path(root, "app.py").write_text("target_symbol()\n", encoding="utf-8")
+
+            outcome = find_references(root, ".", "target_symbol")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("call app.py:1: target_symbol()", outcome.output)
+
+    def test_find_references_marks_truncated_only_after_limit_is_exceeded(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for index in range(80):
+                Path(root, f"use_{index:02}.py").write_text(
+                    "target_symbol()\n",
+                    encoding="utf-8",
+                )
+
+            exact = find_references(root, ".", "target_symbol")
+            Path(root, "z_over.py").write_text("target_symbol()\n", encoding="utf-8")
+            over = find_references(root, ".", "target_symbol")
+
+        self.assertTrue(exact.ok)
+        self.assertFalse(exact.truncated)
+        self.assertNotIn("references truncated", exact.output)
+        self.assertTrue(over.ok)
+        self.assertTrue(over.truncated)
+        self.assertIn("references truncated after 80 matches", over.output)
+
+    def test_find_references_reports_scan_budget_without_collecting_every_file(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            Path(root, "a.py").write_text("pass\n", encoding="utf-8")
+            Path(root, "b.py").write_text("pass\n", encoding="utf-8")
+            Path(root, "c.py").write_text("target_symbol()\n", encoding="utf-8")
+
+            scan = find_reference_hints(
+                root,
+                root,
+                "target_symbol",
+                max_scan_files=2,
+            )
+
+        self.assertTrue(scan.truncated)
+        self.assertIn("no lexical matches found", scan.output)
+        self.assertIn("reference scan stopped after 2 files", scan.output)
+        self.assertIn("file budget 2", scan.output)
+        self.assertIn("omitted files may contain more matches", scan.output)
+        self.assertNotIn("c.py:1", scan.output)
+
+    def test_find_references_does_not_follow_symlinked_dirs(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td, "project")
+            outside = Path(td, "outside")
+            root.mkdir()
+            outside.mkdir()
+            Path(outside, "leak.py").write_text("target_symbol()\n", encoding="utf-8")
+            link = root / "linked"
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"directory symlink unavailable: {exc}")
+
+            outcome = find_references(root, ".", "target_symbol")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("no lexical matches found", outcome.output)
+        self.assertNotIn("leak.py", outcome.output)
+
+    def test_find_references_rejects_direct_symlink_file(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target.py"
+            target.write_text("target_symbol()\n", encoding="utf-8")
+            link = root / "link.py"
+            try:
+                link.symlink_to(target)
+            except OSError as exc:
+                self.skipTest(f"file symlink unavailable: {exc}")
+
+            outcome = find_references(root, "link.py", "target_symbol")
+
+        self.assertFalse(outcome.ok)
+        self.assertIn("symlink paths are not supported", outcome.output)
+        self.assertNotIn("target.py:1", outcome.output)
+
+    def test_find_references_rejects_direct_symlink_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target_dir = root / "src"
+            target_dir.mkdir()
+            (target_dir / "target.py").write_text("target_symbol()\n", encoding="utf-8")
+            link = root / "linked"
+            try:
+                link.symlink_to(target_dir, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"directory symlink unavailable: {exc}")
+
+            outcome = find_references(root, "linked", "target_symbol")
+
+        self.assertFalse(outcome.ok)
+        self.assertIn("symlink paths are not supported", outcome.output)
+        self.assertNotIn("target.py:1", outcome.output)
+
+    def test_find_references_validates_simple_symbol(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            outcome = find_references(Path(td), ".", "foo.bar")
+
+        self.assertFalse(outcome.ok)
+        self.assertIn("requires a simple symbol", outcome.output)
 
     def test_write_and_edit_reject_oversized_result_without_changing_file(self) -> None:
         with tempfile.TemporaryDirectory() as td:

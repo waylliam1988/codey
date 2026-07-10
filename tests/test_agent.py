@@ -206,6 +206,99 @@ class ToolTests(unittest.TestCase):
 
             self.assertEqual(tool_runtime.search_files(root, ".", "login_handler").output, "(no matches)")
 
+    def test_search_skips_excluded_directories_case_insensitively(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "Build").mkdir()
+            (root / "Build" / "out.py").write_text("login_handler\n", encoding="utf-8")
+
+            self.assertEqual(tool_runtime.search_files(root, ".", "login_handler").output, "(no matches)")
+
+    def test_search_skips_direct_excluded_start_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "node_modules").mkdir()
+            (root / "node_modules" / "lib.js").write_text("login_handler\n", encoding="utf-8")
+
+            outcome = tool_runtime.search_files(root, "node_modules", "login_handler")
+
+        self.assertTrue(outcome.ok)
+        self.assertEqual(outcome.output, "(no matches)")
+
+    def test_search_skips_direct_excluded_start_directory_case_insensitively(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "Node_Modules").mkdir()
+            (root / "Node_Modules" / "lib.js").write_text("login_handler\n", encoding="utf-8")
+
+            outcome = tool_runtime.search_files(root, "Node_Modules", "login_handler")
+
+        self.assertTrue(outcome.ok)
+        self.assertEqual(outcome.output, "(no matches)")
+
+    def test_search_does_not_skip_project_root_named_like_excluded_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "build"
+            root.mkdir()
+            (root / "app.py").write_text("login_handler\n", encoding="utf-8")
+
+            outcome = tool_runtime.search_files(root, ".", "login_handler")
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("app.py:1: login_handler", outcome.output)
+
+    def test_search_reports_scan_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.py").write_text("pass\n", encoding="utf-8")
+            (root / "b.py").write_text("pass\n", encoding="utf-8")
+            (root / "c.py").write_text("login_handler\n", encoding="utf-8")
+
+            with mock.patch("codey.tool_runtime.SEARCH_MAX_SCAN_FILES", 2):
+                outcome = tool_runtime.search_files(root, ".", "login_handler")
+
+        self.assertTrue(outcome.truncated)
+        self.assertIn("(no matches)", outcome.output)
+        self.assertIn("search scan stopped after 2 files", outcome.output)
+        self.assertIn("file budget 2", outcome.output)
+        self.assertIn("omitted files may contain more matches", outcome.output)
+        self.assertNotIn("c.py:1", outcome.output)
+
+    def test_search_rejects_direct_symlink_start_path(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "target.py"
+            target.write_text("login_handler\n", encoding="utf-8")
+            link = root / "link.py"
+            try:
+                link.symlink_to(target)
+            except OSError as exc:
+                self.skipTest(f"file symlink unavailable: {exc}")
+
+            outcome = tool_runtime.search_files(root, "link.py", "login_handler")
+
+        self.assertFalse(outcome.ok)
+        self.assertIn("symlink paths are not supported for grep", outcome.output)
+        self.assertNotIn("target.py:1", outcome.output)
+
+    def test_search_rejects_direct_symlink_start_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target_dir = root / "src"
+            target_dir.mkdir()
+            (target_dir / "target.py").write_text("login_handler\n", encoding="utf-8")
+            link = root / "linked"
+            try:
+                link.symlink_to(target_dir, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"directory symlink unavailable: {exc}")
+
+            outcome = tool_runtime.search_files(root, "linked", "login_handler")
+
+        self.assertFalse(outcome.ok)
+        self.assertIn("symlink paths are not supported for grep", outcome.output)
+        self.assertNotIn("target.py:1", outcome.output)
+
     def test_search_requires_query(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(
@@ -243,7 +336,74 @@ class ToolTests(unittest.TestCase):
 
             self.assertEqual(
                 tool_runtime.edit_file(root, "app.py", blocks).output,
-                "ERROR: SEARCH text not found in app.py",
+                "ERROR: SEARCH text not found in app.py; old_string must match exact file text "
+                "including indentation and whitespace. Use read_file and copy exact complete lines.",
+            )
+
+    def test_edit_recovers_unique_leading_indentation_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(
+                "def total():\n"
+                "    # target\n"
+                "    return amount * rate\n",
+                encoding="utf-8",
+            )
+            blocks = [
+                tool_runtime.EditBlock(
+                    "def total():\n"
+                    " # target\n"
+                    " return amount * rate",
+                    "def total():\n"
+                    " # target\n"
+                    " return (amount - discount) * rate",
+                )
+            ]
+
+            result = tool_runtime.edit_file(root, "app.py", blocks).output
+
+            self.assertEqual(
+                result,
+                "edited app.py (1 replacement; indentation recovered)",
+            )
+            self.assertEqual(
+                path.read_text(encoding="utf-8"),
+                "def total():\n"
+                "    # target\n"
+                "    return (amount - discount) * rate\n",
+            )
+
+    def test_edit_rejects_ambiguous_indentation_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(
+                "def one():\n"
+                "    return amount * rate\n\n"
+                "def two():\n"
+                "    return amount * rate\n",
+                encoding="utf-8",
+            )
+            blocks = [
+                tool_runtime.EditBlock(
+                    " return amount * rate",
+                    " return (amount - discount) * rate",
+                )
+            ]
+
+            result = tool_runtime.edit_file(root, "app.py", blocks).output
+
+            self.assertEqual(
+                result,
+                "ERROR: SEARCH text matched 2 times in app.py; make it unique",
+            )
+            self.assertEqual(
+                path.read_text(encoding="utf-8"),
+                "def one():\n"
+                "    return amount * rate\n\n"
+                "def two():\n"
+                "    return amount * rate\n",
             )
 
     def test_run_allows_py_compile(self) -> None:
@@ -428,6 +588,39 @@ class RunLoopTests(unittest.TestCase):
         self.assertNotIn("BODY_SECRET", tool_events[0].outcome.output)
         self.assertIn("[tool_result tool=outline_file path=app.py]", provider.sent[1])
         self.assertIn("use read_file before editing", provider.sent[1])
+
+    def test_references_tool_returns_navigation_before_done(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"find_references","args":{"symbol":"calculate_total","path":"."}}',
+            '{"tool":"done","args":{"summary":"references checked"}}',
+        )
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "pricing.py").write_text(
+                "def calculate_total(amount):\n    return amount\n",
+                encoding="utf-8",
+            )
+            (root / "checkout.py").write_text(
+                "from pricing import calculate_total\n"
+                "total = calculate_total(10)\n",
+                encoding="utf-8",
+            )
+
+            result = agent.run(
+                provider,
+                root,
+                "Find calculate_total references",
+                on_event=events.append,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.changed)
+        tool_events = [event for event in events if event.kind == "tool"]
+        self.assertEqual(tool_events[0].call.name, "references")
+        self.assertIn("definition pricing.py:1", tool_events[0].outcome.output)
+        self.assertIn("[tool_result tool=find_references path=.]", provider.sent[1])
+        self.assertIn("lexical scan, not semantic resolution", provider.sent[1])
 
     def test_invalid_parallel_batch_executes_nothing_and_requests_correction(self) -> None:
         invalid = json.dumps({

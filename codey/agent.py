@@ -27,6 +27,7 @@ from codey.tool_runtime import (
     EditBlock,
     ToolOutcome,
     edit_file,
+    find_references,
     list_directory,
     outline_file,
     read_file,
@@ -43,11 +44,20 @@ SUPPORTED_TOOL_NAMES = frozenset({
     "ls",
     "outline",
     "read",
+    "references",
     "run",
     "search",
     "shell",
 })
-INFORMATION_TOOL_NAMES = frozenset({"ls", "outline", "read", "run", "search", "shell"})
+INFORMATION_TOOL_NAMES = frozenset({
+    "ls",
+    "outline",
+    "read",
+    "references",
+    "run",
+    "search",
+    "shell",
+})
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
 VERIFICATION_REQUEST_RE = re.compile(
@@ -356,6 +366,8 @@ def run(
                     outcome = list_directory(project, path)
                 elif call.name == "search":
                     outcome = search_files(project, path, _call_arg(call, "query"))
+                elif call.name == "references":
+                    outcome = find_references(project, path, _call_arg(call, "symbol"))
                 elif call.name == "run":
                     outcome = run_command(project, path, _call_arg(call, "command"))
                     checks_ran = True

@@ -225,6 +225,29 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn(f"at most {MAX_REPLACEMENTS}", too_many.protocol_error)
         self.assertIn("exactly one mode", mixed.protocol_error)
 
+    def test_edit_requires_top_level_path_and_single_file_replacements(self) -> None:
+        codec = JsonToolCodec()
+        missing_path = codec.parse(json.dumps({
+            "tool": "edit",
+            "args": {"content": "new"},
+        }))
+        cross_file = codec.parse(json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "pricing.py",
+                "replacements": [
+                    {
+                        "path": "checkout.py",
+                        "old_string": "old",
+                        "new_string": "new",
+                    }
+                ],
+            },
+        }))
+
+        self.assertIn("top-level path", missing_path.protocol_error)
+        self.assertIn("top-level path only", cross_file.protocol_error)
+
     def test_extracts_json_from_web_reply_noise(self) -> None:
         codec = JsonToolCodec()
         plan = codec.parse(
@@ -294,6 +317,44 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(plan.calls, [])
         self.assertIn("parallel accepts read-only list_dir, read_file, and grep", plan.protocol_error)
 
+    def test_find_references_parses_symbol_and_formats_public_name(self) -> None:
+        codec = JsonToolCodec()
+        plan = codec.parse(json.dumps({
+            "tool": "find_references",
+            "args": {"symbol": "createRouter", "path": "src"},
+        }))
+
+        self.assertEqual(plan.protocol_error, "")
+        self.assertEqual(len(plan.calls), 1)
+        self.assertEqual(plan.calls[0].name, "references")
+        self.assertEqual(plan.calls[0].args["path"], "src")
+        self.assertEqual(plan.calls[0].args["symbol"], "createRouter")
+
+        prompt = codec.format_results([
+            ToolResult(plan.calls[0], "References for createRouter under src:")
+        ])
+
+        self.assertIn("[tool_result tool=find_references path=src]", prompt)
+
+    def test_find_references_requires_symbol_and_is_not_parallel_safe(self) -> None:
+        missing = JsonToolCodec().parse(json.dumps({
+            "tool": "find_references",
+            "args": {"path": "."},
+        }))
+        parallel = JsonToolCodec().parse(json.dumps({
+            "tool": "parallel",
+            "args": {
+                "calls": [
+                    {"tool": "find_references", "args": {"symbol": "main", "path": "."}},
+                    {"tool": "list_dir", "args": {"path": "."}},
+                ]
+            },
+        }))
+
+        self.assertIn("requires a symbol", missing.protocol_error)
+        self.assertEqual(parallel.calls, [])
+        self.assertIn("parallel accepts read-only list_dir, read_file, and grep", parallel.protocol_error)
+
     def test_format_results_marks_truncated_results_explicitly(self) -> None:
         codec = JsonToolCodec()
         call = ToolCall("run", {"path": ".", "command": "python -m unittest"})
@@ -316,6 +377,8 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("read_file page:", prompt)
         self.assertIn("outline_file output is only navigation metadata", prompt)
         self.assertIn("Never use it as\n    old_string", prompt)
+        self.assertIn("find_references output is lexical reference hints only", prompt)
+        self.assertIn("not semantic\n    resolution", prompt)
         self.assertIn("written atomically", prompt)
         self.assertIn("JSON strings must escape quotes", prompt)
         self.assertIn("use content with the full", prompt)
@@ -353,6 +416,7 @@ class JsonToolCodecTests(unittest.TestCase):
             ("ls", {"path": "."}, "ls"),
             ("read", {"path": "app.py"}, "read"),
             ("outline", {"path": "app.py"}, "outline"),
+            ("references", {"path": ".", "symbol": "main"}, "references"),
             ("search", {"path": ".", "query": "needle"}, "search"),
         )
 

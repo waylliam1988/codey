@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from codey import consensus
 from codey.handoff import ConversationSnapshot
@@ -269,6 +270,34 @@ class ConsensusTests(unittest.TestCase):
         self.assertIn("function main() line 1", advisor.sent[1])
         self.assertNotIn("AUDIT_BODY_SECRET", "\n".join(advisor.sent))
 
+    def test_project_audit_advisor_can_find_references(self) -> None:
+        advisor = FakeProvider([
+            '{"tool":"find_references","args":{"symbol":"create_app","path":"."}}',
+            '{"tool":"done","args":{"summary":"create_app has one caller."}}',
+        ])
+
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, "app.py").write_text(
+                "def create_app():\n    return object()\n",
+                encoding="utf-8",
+            )
+            Path(td, "server.py").write_text(
+                "from app import create_app\n"
+                "application = create_app()\n",
+                encoding="utf-8",
+            )
+            report = consensus.run_project_audit_advisor(
+                advisor,
+                td,
+                "Review this project for bugs",
+            )
+
+        self.assertIn("one caller", report)
+        self.assertIn("[tool_result tool=find_references path=.]", advisor.sent[1])
+        self.assertIn("definition app.py:1", advisor.sent[1])
+        self.assertIn("call server.py:2", advisor.sent[1])
+        self.assertIn("lexical scan, not semantic resolution", advisor.sent[1])
+
     def test_project_audit_rejects_write_tools(self) -> None:
         advisor = FakeProvider([
             '{"tool":"edit","args":{"path":"app.py","content":"bad"}}',
@@ -352,6 +381,96 @@ class ConsensusTests(unittest.TestCase):
         self.assertEqual(report, "env outline was not read")
         self.assertIn("not shared with project audit advisors", advisor.sent[1])
         self.assertNotIn("ENV_SECRET_MARKER", "\n".join(advisor.sent))
+
+    def test_project_audit_references_skip_secret_and_excluded_files(self) -> None:
+        advisor = FakeProvider([
+            '{"tool":"find_references","args":{"symbol":"SECRET_MARKER","path":"."}}',
+            '{"tool":"done","args":{"summary":"secret references were not shared"}}',
+        ])
+
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, ".env").write_text("SECRET_MARKER=orange\n", encoding="utf-8")
+            pkg = Path(td, "node_modules", "pkg")
+            pkg.mkdir(parents=True)
+            Path(pkg, "index.js").write_text("SECRET_MARKER()\n", encoding="utf-8")
+            Path(td, "app.py").write_text("def safe():\n    pass\n", encoding="utf-8")
+            report = consensus.run_project_audit_advisor(
+                advisor,
+                td,
+                "Review this project for bugs",
+            )
+
+        self.assertEqual(report, "secret references were not shared")
+        self.assertIn("no lexical matches found", advisor.sent[1])
+        self.assertNotIn("SECRET_MARKER=orange", "\n".join(advisor.sent))
+        self.assertNotIn("node_modules", "\n".join(advisor.sent))
+
+    def test_project_audit_search_reports_scan_budget(self) -> None:
+        advisor = FakeProvider([
+            '{"tool":"grep","args":{"pattern":"late_marker","path":"."}}',
+            '{"tool":"done","args":{"summary":"audit search stayed bounded"}}',
+        ])
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            Path(root, "a.py").write_text("pass\n", encoding="utf-8")
+            Path(root, "b.py").write_text("pass\n", encoding="utf-8")
+            Path(root, "c.py").write_text("late_marker\n", encoding="utf-8")
+            with mock.patch("codey.consensus.PROJECT_AUDIT_MAX_SCAN_FILES", 2):
+                report = consensus.run_project_audit_advisor(
+                    advisor,
+                    td,
+                    "Review this project for bugs",
+                )
+
+        self.assertEqual(report, "audit search stayed bounded")
+        self.assertIn("no matches", advisor.sent[1])
+        self.assertIn("project audit search scan stopped after 2 files", advisor.sent[1])
+        self.assertIn("file budget 2", advisor.sent[1])
+        self.assertNotIn("c.py:1", advisor.sent[1])
+
+    def test_project_audit_search_does_not_skip_project_root_named_like_excluded_dir(self) -> None:
+        advisor = FakeProvider([
+            '{"tool":"grep","args":{"pattern":"late_marker","path":"."}}',
+            '{"tool":"done","args":{"summary":"audit searched root"}}',
+        ])
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "build"
+            root.mkdir()
+            Path(root, "app.py").write_text("late_marker\n", encoding="utf-8")
+            report = consensus.run_project_audit_advisor(
+                advisor,
+                root,
+                "Review this project for bugs",
+            )
+
+        self.assertEqual(report, "audit searched root")
+        self.assertIn("app.py:1: late_marker", advisor.sent[1])
+
+    def test_project_audit_references_report_scan_budget(self) -> None:
+        advisor = FakeProvider([
+            '{"tool":"find_references","args":{"symbol":"late_marker","path":"."}}',
+            '{"tool":"done","args":{"summary":"audit references stayed bounded"}}',
+        ])
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            Path(root, "a.py").write_text("pass\n", encoding="utf-8")
+            Path(root, "b.py").write_text("pass\n", encoding="utf-8")
+            Path(root, "c.py").write_text("late_marker()\n", encoding="utf-8")
+            with mock.patch("codey.consensus.PROJECT_AUDIT_MAX_SCAN_FILES", 2):
+                report = consensus.run_project_audit_advisor(
+                    advisor,
+                    td,
+                    "Review this project for bugs",
+                )
+
+        self.assertEqual(report, "audit references stayed bounded")
+        self.assertIn("no lexical matches found", advisor.sent[1])
+        self.assertIn("reference scan stopped after 2 files", advisor.sent[1])
+        self.assertIn("file budget 2", advisor.sent[1])
+        self.assertNotIn("c.py:1", advisor.sent[1])
 
     def test_project_audit_blocks_direct_reads_under_excluded_dirs(self) -> None:
         advisor = FakeProvider([

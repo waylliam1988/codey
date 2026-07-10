@@ -52,6 +52,37 @@ def _make_fixture(root: Path, name: str) -> None:
             encoding="utf-8",
         )
         return
+    if name == "references":
+        (root / "pricing.py").write_text(
+            "\n".join(f"# filler {index}" for index in range(360))
+            + "\n\n"
+            "def calculate_total(amount, tax_rate, discount=0):\n"
+            "    # LIVE_SMOKE_REFERENCE_TARGET\n"
+            "    return amount * (1 + tax_rate)\n",
+            encoding="utf-8",
+        )
+        (root / "checkout.py").write_text(
+            "from pricing import calculate_total\n\n\n"
+            "def checkout_total():\n"
+            "    return calculate_total(100, 0.2)\n\n\n"
+            "def discounted_checkout_total():\n"
+            "    return calculate_total(100, 0.2)\n",
+            encoding="utf-8",
+        )
+        (root / "test_checkout.py").write_text(
+            "import unittest\n\n"
+            "from checkout import checkout_total, discounted_checkout_total\n"
+            "from pricing import calculate_total\n\n\n"
+            "class CheckoutTests(unittest.TestCase):\n"
+            "    def test_existing_total_still_works(self):\n"
+            "        self.assertEqual(checkout_total(), 120)\n\n"
+            "    def test_discount_argument_affects_total(self):\n"
+            "        self.assertEqual(calculate_total(100, 0.2, discount=10), 108)\n\n"
+            "    def test_discounted_checkout_uses_discount(self):\n"
+            "        self.assertEqual(discounted_checkout_total(), 108)\n",
+            encoding="utf-8",
+        )
+        return
     raise ValueError(f"unknown fixture: {name}")
 
 
@@ -74,6 +105,14 @@ def _verify_fixture(root: Path, case: str) -> dict:
         assertion = (
             "from pricing import discounted_price; "
             "assert discounted_price(100, 20) == 80"
+        )
+    elif case == "references":
+        assertion = (
+            "from checkout import checkout_total, discounted_checkout_total; "
+            "from pricing import calculate_total; "
+            "assert checkout_total() == 120; "
+            "assert calculate_total(100, 0.2, discount=10) == 108; "
+            "assert discounted_checkout_total() == 108"
         )
     else:
         raise ValueError(f"unknown fixture: {case}")
@@ -207,6 +246,14 @@ def run_smoke(
                     "Use edit with content to create the files, then run python -m unittest "
                     "and finish with done."
                 )
+            elif case == "references":
+                task = (
+                    "Update calculate_total(amount, tax_rate, discount=0) so it subtracts "
+                    "discount before tax, i.e. (amount - discount) * (1 + tax_rate). "
+                    "Update all callers that should use the discount. Before editing, use "
+                    "find_references for calculate_total, then read_file for the real source "
+                    "near each affected location. Run python -m unittest and finish."
+                )
             else:
                 task = (
                     "Fix the LIVE_SMOKE_BUG in pricing.py by using search, read, edit, "
@@ -294,7 +341,11 @@ def run_matrix(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--provider", choices=(*PROVIDER_IDS, "all"), default="deepseek")
-    ap.add_argument("--case", choices=("create", "edit", "discussion"), default="create")
+    ap.add_argument(
+        "--case",
+        choices=("create", "edit", "discussion", "references"),
+        default="create",
+    )
     ap.add_argument("--port", type=int, default=9222)
     ap.add_argument("--max-turns", type=int, default=8)
     ap.add_argument("--reviewer", choices=PROVIDER_IDS)

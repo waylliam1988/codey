@@ -9,7 +9,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codey import cancellation
+from codey.bounded_scan import (
+    DEFAULT_MAX_DIR_ENTRIES,
+    DEFAULT_MAX_SCAN_DIRS,
+    DEFAULT_MAX_SCAN_FILES,
+    BoundedScanBudget,
+    iter_bounded_files,
+)
 from codey.file_outline import OUTLINE_MAX_FILE_BYTES, build_file_outline
+from codey.references import find_reference_hints
 from codey.text_budget import clip_middle
 
 
@@ -29,6 +37,9 @@ SEARCH_EXCLUDED_DIRS = {
 }
 SEARCH_MAX_RESULTS = 80
 SEARCH_MAX_FILE_BYTES = 512 * 1024
+SEARCH_MAX_SCAN_FILES = DEFAULT_MAX_SCAN_FILES
+SEARCH_MAX_SCAN_DIRS = DEFAULT_MAX_SCAN_DIRS
+SEARCH_MAX_DIR_ENTRIES = DEFAULT_MAX_DIR_ENTRIES
 WRITE_MAX_FILE_BYTES = 512 * 1024
 READ_DEFAULT_LINES = 300
 READ_MAX_LINES = 600
@@ -102,6 +113,92 @@ def _replace_unique(content: str, search: str, replace: str) -> tuple[str, bool]
     return content, False
 
 
+def _line_body_without_eol(line: str) -> str:
+    return line.removesuffix("\n").removesuffix("\r")
+
+
+def _line_eol(line: str) -> str:
+    if line.endswith("\r\n"):
+        return "\r\n"
+    if line.endswith("\n"):
+        return "\n"
+    return ""
+
+
+def _leading_whitespace(line: str) -> str:
+    body = _line_body_without_eol(line)
+    return body[: len(body) - len(body.lstrip(" \t"))]
+
+
+def _has_indented_line(lines: list[str]) -> bool:
+    return any(_line_body_without_eol(line).startswith((" ", "\t")) for line in lines)
+
+
+def _replace_unique_indentation_recovery(
+    content: str,
+    search: str,
+    replace: str,
+) -> tuple[str, int]:
+    search_lines = search.splitlines(keepends=True)
+    replace_lines = replace.splitlines(keepends=True)
+    if (
+        not search_lines
+        or len(search_lines) != len(replace_lines)
+        or not _has_indented_line(search_lines)
+    ):
+        return content, 0
+
+    content_lines = content.splitlines(keepends=True)
+    match_starts: list[int] = []
+    search_bodies = [
+        _line_body_without_eol(line).lstrip(" \t")
+        for line in search_lines
+    ]
+    width = len(search_lines)
+    for index in range(0, len(content_lines) - width + 1):
+        candidate = content_lines[index : index + width]
+        candidate_bodies = [
+            _line_body_without_eol(line).lstrip(" \t")
+            for line in candidate
+        ]
+        if candidate_bodies == search_bodies:
+            match_starts.append(index)
+            if len(match_starts) > 1:
+                return content, len(match_starts)
+
+    if len(match_starts) != 1:
+        return content, len(match_starts)
+
+    start = match_starts[0]
+    candidate = content_lines[start : start + width]
+    aligned: list[str] = []
+    for candidate_line, replacement_line in zip(candidate, replace_lines, strict=True):
+        body = _line_body_without_eol(replacement_line)
+        eol = _line_eol(candidate_line)
+        if body.strip():
+            stripped_body = body.lstrip(" \t")
+            aligned.append(
+                f"{_leading_whitespace(candidate_line)}"
+                f"{stripped_body}{eol}"
+            )
+        else:
+            aligned.append(eol)
+    updated_lines = [
+        *content_lines[:start],
+        *aligned,
+        *content_lines[start + width :],
+    ]
+    return "".join(updated_lines), 1
+
+
+def _search_not_found(rel: str) -> ToolOutcome:
+    return ToolOutcome.error(
+        f"SEARCH text not found in {rel}; old_string must match exact file text "
+        "including indentation and whitespace. Use read_file and copy exact "
+        "complete lines."
+    )
+
+
 def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     if not blocks:
         return ToolOutcome.error("edit requires at least one replacement")
@@ -121,21 +218,34 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
 
     updated = content
+    indentation_recovered = False
     for block in blocks:
         exact_count = updated.count(block.search)
         crlf_count = 0
         if exact_count == 0 and "\r\n" in updated and "\r\n" not in block.search:
             crlf_count = updated.count(block.search.replace("\n", "\r\n"))
-        total = exact_count or crlf_count
+        recovered_updated = updated
+        recovered_count = 0
+        if exact_count == 0 and crlf_count == 0:
+            recovered_updated, recovered_count = _replace_unique_indentation_recovery(
+                updated,
+                block.search,
+                block.replace,
+            )
+        total = exact_count or crlf_count or recovered_count
         if total == 0:
-            return ToolOutcome.error(f"SEARCH text not found in {rel}")
+            return _search_not_found(rel)
         if total > 1:
             return ToolOutcome.error(
                 f"SEARCH text matched {total} times in {rel}; make it unique"
             )
-        updated, replaced = _replace_unique(updated, block.search, block.replace)
-        if not replaced:
-            return ToolOutcome.error(f"SEARCH text not found in {rel}")
+        if recovered_count == 1:
+            updated = recovered_updated
+            indentation_recovered = True
+        else:
+            updated, replaced = _replace_unique(updated, block.search, block.replace)
+            if not replaced:
+                return _search_not_found(rel)
 
     if updated == content:
         return ToolOutcome(f"edited {rel} (no changes)", True)
@@ -144,7 +254,8 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     path.write_text(updated, encoding="utf-8")
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"
-    return ToolOutcome(f"edited {rel} ({count} {label})", True, changed=True)
+    note = "; indentation recovered" if indentation_recovered else ""
+    return ToolOutcome(f"edited {rel} ({count} {label}{note})", True, changed=True)
 
 
 def bounded_positive_int(
@@ -281,27 +392,6 @@ def list_directory(root: Path, rel: str) -> ToolOutcome:
     return ToolOutcome("\n".join(lines) if lines else "(empty)", True)
 
 
-def _searchable_files(start: Path) -> list[Path]:
-    if start.is_file():
-        return [start]
-    files: list[Path] = []
-    stack = [start]
-    while stack:
-        current = stack.pop()
-        try:
-            entries = sorted(current.iterdir())
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.is_dir():
-                if entry.name in SEARCH_EXCLUDED_DIRS:
-                    continue
-                stack.append(entry)
-            elif entry.is_file():
-                files.append(entry)
-    return files
-
-
 def search_files(
     root: Path,
     rel: str,
@@ -313,13 +403,26 @@ def search_files(
     if not query:
         return ToolOutcome.error("search query required")
     start = safe_join(root, rel or ".")
+    symlink_reason = _raw_path_symlink_reason(root, rel or ".", tool="grep")
+    if symlink_reason:
+        return ToolOutcome.error(symlink_reason)
     if not start.exists():
         return ToolOutcome.error(f"path not found: {rel}")
     needle = query.lower()
     matches: list[str] = []
-    truncated = False
+    result_limited = False
     resolved_root = root.resolve()
-    for path in _searchable_files(start):
+    budget = BoundedScanBudget(
+        max_files=SEARCH_MAX_SCAN_FILES,
+        max_dirs=SEARCH_MAX_SCAN_DIRS,
+        max_dir_entries=SEARCH_MAX_DIR_ENTRIES,
+    )
+    for path in iter_bounded_files(
+        start,
+        excluded_dirs=SEARCH_EXCLUDED_DIRS,
+        budget=budget,
+        skip_start_if_excluded=start.resolve() != resolved_root,
+    ):
         try:
             if path.stat().st_size > SEARCH_MAX_FILE_BYTES:
                 continue
@@ -335,15 +438,58 @@ def search_files(
                 clean = clean[:237] + "..."
             matches.append(f"{rel_path}:{line_no}: {clean}")
             if len(matches) >= max_results:
-                truncated = True
+                result_limited = True
                 break
-        if truncated:
+        if result_limited:
             break
     if not matches:
-        return ToolOutcome("(no matches)", True)
-    if truncated:
+        matches.append("(no matches)")
+    if result_limited:
         matches.append(f"... truncated after {max_results} matches")
+    if budget.limited:
+        matches.append(budget.stop_message("search scan"))
+    truncated = result_limited or budget.limited
     return ToolOutcome("\n".join(matches), True, truncated=truncated)
+
+
+def find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
+    symbol = str(symbol or "").strip()
+    if not symbol:
+        return ToolOutcome.error("symbol required")
+    try:
+        start = safe_join(root, rel or ".")
+        symlink_reason = _raw_path_symlink_reason(
+            root,
+            rel or ".",
+            tool="find_references",
+        )
+        if symlink_reason:
+            return ToolOutcome.error(symlink_reason)
+        if not start.exists():
+            return ToolOutcome.error(f"path not found: {rel}")
+        scan = find_reference_hints(root, start, symbol)
+    except ValueError as exc:
+        return ToolOutcome.error(str(exc))
+    return ToolOutcome(scan.output, True, truncated=scan.truncated)
+
+
+def _raw_path_symlink_reason(root: Path, rel: str, *, tool: str) -> str:
+    raw = Path(str(rel or "."))
+    try:
+        parts = raw.relative_to(root).parts if raw.is_absolute() else raw.parts
+    except ValueError:
+        return ""
+    current = root
+    for part in parts:
+        if part in {"", "."}:
+            continue
+        current = current / part
+        try:
+            if current.is_symlink():
+                return f"symlink paths are not supported for {tool}: {rel}"
+        except OSError:
+            return ""
+    return ""
 
 
 def _command_has_forbidden_tokens(argv: list[str]) -> bool:
