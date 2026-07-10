@@ -10,7 +10,7 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.24`
+Version: `0.1.25`
 
 ---
 
@@ -44,6 +44,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 - Use already-open models as hidden advisors for chat, empty-project planning, and read-only project audits
 - Use two open web models together: one writes, the other reviews
 - Use hidden task briefs so Writer and Reviewer share the same bounded intent
+- Give Writer, hidden advisors, and Reviewer a bounded local Project Map before
+  they inspect files
 - Continue long conversations quietly with an automatic factual summary and fresh model chat
 - Reuse project commands that have already succeeded locally
 - Remember recent successful changes only from verified local checks
@@ -71,6 +73,8 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 | GLM | Tested |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
+
+Version `0.1.25` adds a hidden Project Map for larger projects without adding UI, storage, indexing, or a RAG layer. Before the Writer starts, Codey now performs a bounded local scan of the selected project and shares only safe relative-path facts: source/test roots, key manifests and docs, useful top-level files, observed successful checks, and clearly marked candidate commands. It does not read source file contents, does not follow symlinks, skips secret-like files, dotfiles, lock files, dependency/build directories, and stops scanning at a strict entry budget. The same Project Map is reused for hidden advisors and refreshed before Review so the Reviewer sees files added by the Writer, while the existing rule remains: review findings may only point to changed files. This makes the first turn less blind in medium or larger projects while keeping Codey small and local. The release passed 501 unittest tests, 501 pytest tests, syntax compile, and `git diff --check` with only CRLF warnings.
 
 Version `0.1.24` borrows the useful part of lightweight spec workflows without adding a visible spec system. Existing hidden new-project plans and read-only project audits are now wrapped into a private `ChangeBrief` that is not persisted, not shown in the UI, and not written into the project. The Writer receives that brief instead of loose advisory prose, and the Reviewer receives the same brief so review checks intent satisfaction, acceptance checks, non-goals, and risks instead of only diff correctness. After a task succeeds with real file changes and a passing local check, Codey stores only bounded verified facts: task excerpt, changed files, successful check commands, and the task receipt. It does not store model-authored behavior claims. The release passed 491 tests, syntax compile, and `git diff --check` with only CRLF warnings. A real MoA snake flow also passed with DeepSeek writing, GLM/MiMo/Qwen reviewing and auditing, and a final 12-test verification in `E:\snake`.
 

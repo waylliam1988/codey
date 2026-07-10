@@ -25,6 +25,7 @@ from codey.handoff import (
     render_recovered_handoff,
 )
 from codey.project_facts import ProjectFactsStore
+from codey.project_map import render_project_map
 from codey.providers import PROVIDER_LABELS
 from codey.receipt import build_task_receipt
 from codey.review import has_reviewable_changes, render_writer_followup
@@ -88,6 +89,13 @@ def _project_has_user_files(project: str | Path) -> bool:
             except OSError:
                 continue
     return False
+
+
+def _safe_project_map(project: str | Path, verified_facts: str) -> str:
+    try:
+        return render_project_map(project, verified_facts)
+    except Exception:
+        return ""
 
 
 class TaskRunner:
@@ -283,6 +291,7 @@ class TaskRunner:
                     if self.project_facts is not None
                     else ""
                 )
+                project_map = _safe_project_map(project, verified_facts)
                 agent_task = task
                 change_brief: ChangeBrief | None = None
                 agent_fresh_chat = fresh_chat
@@ -292,6 +301,7 @@ class TaskRunner:
                     context = render_project_context(
                         conversation.snapshot,
                         verified_facts,
+                        project_map=project_map,
                     )
                     try:
                         planned = self.run_consensus(
@@ -316,6 +326,7 @@ class TaskRunner:
                     context = render_project_context(
                         conversation.snapshot,
                         verified_facts,
+                        project_map=project_map,
                     )
                     try:
                         reports = self.run_project_audit(
@@ -352,6 +363,7 @@ class TaskRunner:
                     provider_id=provider_id,
                     handoff=handoff,
                     project_facts=verified_facts,
+                    project_map=project_map,
                 )
                 task_changed = result.changed
                 state.set_provider_session(
@@ -369,6 +381,7 @@ class TaskRunner:
                         conversation.snapshot,
                         verified_facts,
                         draft=result.summary,
+                        project_map=project_map,
                     )
                     try:
                         consulted = self.run_consensus(
@@ -393,6 +406,12 @@ class TaskRunner:
                     and not state.stop_flag.is_set()
                 ):
                     task_changes = self.collect_changes(project, tracker)
+                    verified_facts = (
+                        self.project_facts.render(project)
+                        if self.project_facts is not None
+                        else ""
+                    )
+                    project_map = _safe_project_map(project, verified_facts)
                     if has_reviewable_changes(task_changes):
                         rendered_change_brief = (
                             change_brief.render(audience="reviewer")
@@ -414,6 +433,7 @@ class TaskRunner:
                                 recent_log="\n".join(recent_events[-self.review_log_lines:]),
                                 writer_id=provider_id,
                                 change_brief=rendered_change_brief,
+                                project_map=project_map,
                             )
                         except cancellation.TaskCancelled:
                             raise
@@ -439,6 +459,7 @@ class TaskRunner:
                                     if self.project_facts is not None
                                     else ""
                                 )
+                                project_map = _safe_project_map(project, verified_facts)
                                 result = self.agent_run(
                                     provider,
                                     Path(project),
@@ -452,6 +473,7 @@ class TaskRunner:
                                     conversation=conversation,
                                     provider_id=provider_id,
                                     project_facts=verified_facts,
+                                    project_map=project_map,
                                 )
                                 if (
                                     result.stop_reason == "done"

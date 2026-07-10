@@ -100,6 +100,28 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("non-goals were not violated", prompt)
         self.assertIn("risks were addressed or explicitly deferred", prompt)
 
+    def test_render_review_prompt_includes_project_map_without_relaxing_path_rule(self) -> None:
+        prompt = review.render_review_prompt(
+            project="E:/demo",
+            task="Update auth flow",
+            writer_summary="done",
+            changes={
+                "files": [{"path": "src/session.py", "status": "M", "additions": 3, "deletions": 1}],
+                "diff": "diff --git a/src/session.py b/src/session.py\n+TOKEN_TTL = 60\n",
+            },
+            project_map=(
+                "Project Map (bounded local scan; relative paths only):\n"
+                "Source/test roots:\n- src/\n- tests/\n"
+                "Key files:\n- tests/test_session.py"
+            ),
+        )
+
+        self.assertIn("Project Map", prompt)
+        self.assertIn("tests/test_session.py", prompt)
+        self.assertIn("never use a path from the Project Map as findings[].path", prompt)
+        self.assertIn("Every findings[].path must be copied from the Changed files list", prompt)
+        self.assertIn("M src/session.py +3 -1", prompt)
+
     def test_render_writer_followup_keeps_reviewer_advisory(self) -> None:
         result = review.ReviewResult(
             verdict="changes_requested",

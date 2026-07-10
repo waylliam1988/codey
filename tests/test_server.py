@@ -1465,7 +1465,11 @@ class SessionThreadingTests(unittest.TestCase):
         self.consensus_mock.assert_called_once()
         consensus_kwargs = self.consensus_mock.call_args.kwargs
         self.assertFalse(consensus_kwargs.get("draft_first", False))
+        self.assertIn("Project Map", consensus_kwargs["context"])
+        self.assertIn("app.py", consensus_kwargs["context"])
         self.assertEqual(agent_run.call_args.args[2], "Discuss architecture")
+        self.assertIn("Project Map", agent_run.call_args.kwargs["project_map"])
+        self.assertIn("app.py", agent_run.call_args.kwargs["project_map"])
         connect_review.assert_not_called()
         emitted = []
         while not events.empty():
@@ -1503,6 +1507,8 @@ class SessionThreadingTests(unittest.TestCase):
             server._run_task("session-1", td, "Review this project for bugs", 8, False, "deepseek")
 
         self.project_audit_mock.assert_called_once()
+        self.assertIn("Project Map", self.project_audit_mock.call_args.kwargs["context"])
+        self.assertIn("app.py", self.project_audit_mock.call_args.kwargs["context"])
         self.consensus_mock.assert_not_called()
         task = agent_run.call_args.args[2]
         self.assertIn("Private ChangeBrief", task)
@@ -1595,6 +1601,15 @@ class SessionThreadingTests(unittest.TestCase):
             "diff": "diff --git a/app.py b/app.py\n+new\n",
         }
 
+        def write_and_finish(*args, **kwargs):
+            project_root = Path(args[1])
+            (project_root / "tests").mkdir()
+            (project_root / "tests" / "test_app.py").write_text(
+                "def test_ok():\n    assert True\n",
+                encoding="utf-8",
+            )
+            return RunResult("implemented", "done", 2, True, True)
+
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "STATE", state),
@@ -1602,7 +1617,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=RunResult("implemented", "done", 2, True, True),
+                side_effect=write_and_finish,
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer) as review_connect,
@@ -1613,8 +1628,13 @@ class SessionThreadingTests(unittest.TestCase):
         self.consensus_mock.assert_not_called()
         self.assertEqual(agent_run.call_args.args[2], "Build the feature")
         self.assertNotIn("Private ChangeBrief", agent_run.call_args.args[2])
+        self.assertIn("Project Map", agent_run.call_args.kwargs["project_map"])
+        self.assertIn("app.py", agent_run.call_args.kwargs["project_map"])
         review_connect.assert_called_once_with("mimo")
         self.assertNotIn("Private ChangeBrief", reviewer.send.call_args.args[0])
+        self.assertIn("Project Map", reviewer.send.call_args.args[0])
+        self.assertIn("tests/test_app.py", reviewer.send.call_args.args[0])
+        self.assertIn("never use a path from the Project Map", reviewer.send.call_args.args[0])
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
@@ -1650,6 +1670,7 @@ class SessionThreadingTests(unittest.TestCase):
         consensus_kwargs = self.consensus_mock.call_args.kwargs
         self.assertTrue(consensus_kwargs["draft_first"])
         self.assertTrue(consensus_kwargs["plan"])
+        self.assertIn("Project Map", consensus_kwargs["context"])
         task = agent_run.call_args.args[2]
         self.assertIn("Private ChangeBrief", task)
         self.assertIn("new-project planning", task)
@@ -1692,6 +1713,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Private ChangeBrief", writer_task)
         self.assertIn("Use app.py and add a smoke test.", writer_task)
         self.assertIn("Private ChangeBrief", review_prompt)
+        self.assertIn("Project Map", review_prompt)
         self.assertIn("intent is satisfied", review_prompt)
         self.assertIn("Use app.py and add a smoke test.", review_prompt)
 

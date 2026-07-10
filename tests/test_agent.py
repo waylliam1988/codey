@@ -359,6 +359,22 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertFalse(result.changed)
 
+    def test_project_intro_includes_project_map_when_provided(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Review project structure",
+                on_event=lambda _event: None,
+                project_map="Project Map (bounded local scan; relative paths only):\nManifests:\n- package.json",
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Project Map", provider.sent[0])
+        self.assertIn("package.json", provider.sent[0])
+
     def test_emits_structured_turn_and_tool_events(self) -> None:
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"app.py"}}',

@@ -209,6 +209,7 @@ def render_project_context(
     project_facts: str = "",
     *,
     draft: str = "",
+    project_map: str = "",
 ) -> str:
     """Render bounded project facts without exposing the local project path."""
 
@@ -216,6 +217,8 @@ def render_project_context(
     payload.pop("project", None)
     if project_facts.strip():
         payload["verified_project_facts"] = _clip(project_facts, 2_000)
+    if project_map.strip():
+        payload["project_map"] = _clip(project_map, 4_000)
     if draft.strip():
         payload["current_draft_answer"] = _clip(draft, 3_000)
     return _clip(json.dumps(payload, ensure_ascii=False, indent=2), MAX_CONTEXT_CHARS)

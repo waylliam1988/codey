@@ -176,6 +176,7 @@ def run(
     provider_id: str = "",
     handoff: str = "",
     project_facts: str = "",
+    project_map: str = "",
 ) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
@@ -246,11 +247,17 @@ def run(
             if project_facts
             else ""
         )
+        map_block = (
+            f"{project_map}\n\n"
+            if project_map
+            else ""
+        )
         return (
             f"{codec.system_prompt()}\n\n"
             f"Project root: {project}\n"
             f"Project instructions:\n{format_project_instructions(project_instructions)}\n\n"
             f"{facts}"
+            f"{map_block}"
             f"Initial listing:\n{list_directory(project, '.').output}\n\n"
             f"User task:\n{current}"
         )

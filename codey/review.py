@@ -63,6 +63,13 @@ def _change_brief_section(change_brief: str) -> str:
     return f"Private ChangeBrief:\n{brief}"
 
 
+def _project_map_section(project_map: str) -> str:
+    text = _clip(project_map, 5_000)
+    if not text:
+        return ""
+    return text
+
+
 def _json_objects(text: str) -> list[dict[str, Any]]:
     decoder = json.JSONDecoder()
     objects: list[dict[str, Any]] = []
@@ -165,6 +172,7 @@ def render_review_prompt(
     changes: dict,
     recent_log: str = "",
     change_brief: str = "",
+    project_map: str = "",
 ) -> str:
     files = changes.get("files") if isinstance(changes.get("files"), list) else []
     file_lines = []
@@ -189,6 +197,8 @@ def render_review_prompt(
     log = _clip(recent_log, MAX_REVIEW_LOG_CHARS) or "(no recent tool log)"
     brief_section = _change_brief_section(change_brief)
     brief_block = f"{brief_section}\n\n" if brief_section else ""
+    map_section = _project_map_section(project_map)
+    map_block = f"{map_section}\n\n" if map_section else ""
     intent_guidance = (
         "Review the change against the Original user task and the private task brief below: "
         "check whether the user intent is satisfied, acceptance checks are covered, "
@@ -209,9 +219,12 @@ def render_review_prompt(
         "user-visible issues. Do not request broad rewrites or style-only cleanup.\n\n"
         f"{intent_guidance}"
         "Every findings[].path must be copied from the Changed files list below. "
-        "Do not invent filenames. If the issue is a missing test, missing new file, "
-        "or missing documentation, use the most relevant changed file as path and "
-        "describe the missing file in issue or suggested_fix.\n\n"
+        "Do not invent filenames. The Project Map is only context for coverage "
+        "and integration judgment; never use a path from the Project Map as "
+        "findings[].path unless it also appears in Changed files. If the issue "
+        "is a missing test, missing new file, or missing documentation, use the "
+        "most relevant changed file as path and describe the missing file in "
+        "issue or suggested_fix.\n\n"
         "Return only JSON. No analysis. No explanation. The first character "
         "must be { and the last character must be }.\n"
         "Return exactly one JSON object and no markdown fences:\n"
@@ -223,6 +236,7 @@ def render_review_prompt(
         f"Project: {project}\n\n"
         f"Original user task:\n{_clip(task, 6_000)}\n\n"
         f"{brief_block}"
+        f"{map_block}"
         f"Writer summary:\n{_clip(writer_summary, 2_000)}\n\n"
         f"Changed files:\n{changed_files}\n\n"
         f"Recent tool log:\n{log}\n\n"

@@ -219,10 +219,12 @@ class ConsensusTests(unittest.TestCase):
             ),
             "- successful check: python -m unittest",
             draft="Draft answer",
+            project_map="Project Map:\nManifests:\n- package.json",
         )
 
         self.assertIn("Discuss architecture", rendered)
         self.assertIn("python -m unittest", rendered)
+        self.assertIn("package.json", rendered)
         self.assertIn("Draft answer", rendered)
         self.assertNotIn("E:/private/project", rendered)
 

@@ -1,7 +1,42 @@
-# Codey 0.1.24 Test Report
+# Codey 0.1.25 Test Report
 
 Date: 2026-07-10
 Environment: Windows / Edge or Chrome CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.25 Hidden Project Map
+
+This release adds a deterministic, bounded Project Map as a hidden first-turn
+orientation layer. It does not add UI, storage, indexing, RAG, or another model
+call.
+
+Behavior:
+
+- Before project tasks, Codey builds one bounded local Project Map and passes it
+  to the Writer.
+- The same Project Map is shared with hidden consensus/project-audit advisors so
+  advisors start from the same safe local structure.
+- Review receives a refreshed Project Map after Writer changes are collected, so
+  newly added files such as tests or manifests are visible to the Reviewer.
+- Review path rules remain strict: Project Map is only context for coverage and
+  integration judgment; findings still must point to changed files.
+- The map includes only relative-path facts: source/test roots, manifests, docs,
+  key directories/files, observed successful checks, and candidate commands.
+- Candidate commands are explicitly marked as candidates, and nested manifests
+  carry their working directory, for example `web/: npm test`.
+- The scanner does not read source contents, does not follow symlinks, skips
+  dotfiles, secret-like files, env/key/certificate files, lock files,
+  dependency/build/cache directories, and uses a strict directory-entry budget.
+
+Verification:
+
+| Flow | Result |
+|---|---|
+| Project Map unit tests | 8 passed |
+| Project Map / Writer / consensus / Review / server focused suite | 160 passed |
+| Full unittest suite | 501 passed |
+| Full pytest suite | 501 passed |
+| Syntax compile | `python -m compileall -q codey tests tools` passed |
+| Diff whitespace check | `git diff --check` passed with CRLF warnings only |
 
 ## 0.1.24 Hidden ChangeBrief and Plan-Aware Review
 
