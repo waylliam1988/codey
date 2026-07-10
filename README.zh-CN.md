@@ -70,7 +70,7 @@ Codey 想解决的是一个很朴素的问题：
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
 
-`0.1.24` 借鉴轻量 spec 工作流里有用的部分，但不增加可见 spec 系统。已有的空项目隐藏规划和项目只读审查，现在会被包装成一份私有 `ChangeBrief`：不持久化、不显示在 UI、不写入项目。Writer 收到的是这份结构化 brief，而不是松散 advisory prose；Reviewer 也收到同一份 brief，因此 Review 会检查用户意图是否满足、验收检查是否覆盖、non-goals 是否未被破坏、风险是否处理或明确延后，而不只是看 diff 是否正确。任务成功、确实改了文件、并且本地检查通过后，Codey 只沉淀有边界的验证事实：任务摘录、改动文件、成功检查命令和任务收据；不会记录模型自由总结的行为事实。本版通过 485 项测试、语法编译和 `git diff --check`，只有 CRLF warning。
+`0.1.24` 借鉴轻量 spec 工作流里有用的部分，但不增加可见 spec 系统。已有的空项目隐藏规划和项目只读审查，现在会被包装成一份私有 `ChangeBrief`：不持久化、不显示在 UI、不写入项目。Writer 收到的是这份结构化 brief，而不是松散 advisory prose；Reviewer 也收到同一份 brief，因此 Review 会检查用户意图是否满足、验收检查是否覆盖、non-goals 是否未被破坏、风险是否处理或明确延后，而不只是看 diff 是否正确。任务成功、确实改了文件、并且本地检查通过后，Codey 只沉淀有边界的验证事实：任务摘录、改动文件、成功检查命令和任务收据；不会记录模型自由总结的行为事实。本版通过 491 项测试、语法编译和 `git diff --check`，只有 CRLF warning。真实 MoA 贪吃蛇 flow 也已通过：DeepSeek 主写，GLM / MiMo / Qwen 参与 review 和项目审查，最终 `E:\snake` 通过 12 项本地测试。
 
 `0.1.23` 提升启动健壮性和截断结果的诚实度，但不增加 UI。浏览器自动启动现在会先看 `CODEY_BROWSER_PATH`，默认优先 Edge，找不到时回退系统级或用户级 Chrome，并分别使用 `~/.codey/edge-profile` 和 `~/.codey/chrome-profile`，避免 profile 混用。原生 WebView 窗口打不开时，Codey 会打印明确错误和可手动打开的本地 URL，并保持 HTTP 服务运行直到 Ctrl+C。工具结果如果被截断，会在模型可见的结果里标出 `truncated=true`，并明确提醒省略内容仍可能包含相关错误或代码；Review prompt 在 diff 截断时也会提醒 Reviewer 不要假设省略 hunks 没问题。本版没有扩大上限，没有自动回放完整输出，也没有新增 UI；通过 478 项测试、语法编译和 `git diff --check`，只有 CRLF warning。
 
@@ -238,7 +238,7 @@ Codey 已经测试过用 DeepSeek、MiMo 和 Qwen 修复被故意弄坏的 Codey
 
 见 [BOOTSTRAP_PROOF.md](BOOTSTRAP_PROOF.md)。
 
-当前版本还包含 [TEST_REPORT.md](TEST_REPORT.md)，记录最近一次单模型、双模型和自举 smoke 的实机结果。
+当前版本还包含 [TEST_REPORT.md](TEST_REPORT.md)，记录最近一次单模型、双模型、MoA 和自举 smoke 的实机结果。
 
 这不代表 Codey 永远不会坏。它证明的是：当 Codey 出现可测试、可定位的问题时，它已经有机会依靠接入的网页 AI、本地工具、diff、restore 和测试，把自己修回来。
 
@@ -254,6 +254,12 @@ python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
 
 ```powershell
 python -B tools/live_smoke.py --provider all --case edit --port 9222 --max-turns 10 --json
+```
+
+显式 MoA 贪吃蛇 flow 放在 `tests/` 下，因为它是真实 smoke 测试，不是通用工具。它会把断点和耗时日志写到目标项目自己的 `.codey/smoke/moa-snake-flow` 目录：
+
+```powershell
+python -B tests\moa_snake_flow.py --project E:\snake --reset --json
 ```
 
 ---

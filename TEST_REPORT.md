@@ -1,6 +1,6 @@
 # Codey 0.1.24 Test Report
 
-Date: 2026-07-09
+Date: 2026-07-10
 Environment: Windows / Edge or Chrome CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
 
 ## 0.1.24 Hidden ChangeBrief and Plan-Aware Review
@@ -34,10 +34,33 @@ Verification:
 | Flow | Result |
 |---|---|
 | ChangeBrief/review/project-facts/server focused suite | 97 passed |
-| Full unittest suite | 485 passed |
+| MoA snake flow script unit tests | 6 passed |
+| Full unittest suite | 491 passed |
 | UI browser E2E | Included in full unittest; hidden project consensus updated for `ChangeBrief` |
 | Syntax compile | `python -m compileall -q codey tests tools` passed |
 | Diff whitespace check | `git diff --check` passed with CRLF warnings only |
+
+Live MoA snake flow:
+
+```powershell
+python -B tests\moa_snake_flow.py --project E:\snake --reset --json
+```
+
+Result:
+
+- Passed on 2026-07-10 with DeepSeek as Writer and GLM, MiMo, and Qwen as
+  advisors/reviewers.
+- The flow covered New Chat MoA discussion, empty-project implementation,
+  independent local verification, explicit diff review across GLM/MiMo/Qwen,
+  explicit read-only project audit across GLM/MiMo/Qwen, Writer follow-up, and
+  final independent verification.
+- The generated `E:\snake` project passed `python -B -m unittest` with 12 tests.
+- Smoke artifacts are written under the target project at
+  `E:\snake\.codey\smoke\moa-snake-flow`, not under the Codey repository.
+- The second full run reported no provider errors and no single provider send
+  above the 120-second slow threshold. The first probe exposed one transient
+  Qwen textarea click timeout during a borrowed-advisor follow-up; it did not
+  reproduce in the clean rerun, so no provider-specific workaround was added.
 
 ## 0.1.23 Browser Launch Robustness and Explicit Truncation Guidance
 

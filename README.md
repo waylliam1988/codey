@@ -72,7 +72,7 @@ The goal is not magic. The goal is a small, usable bridge from idea to working c
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
 
-Version `0.1.24` borrows the useful part of lightweight spec workflows without adding a visible spec system. Existing hidden new-project plans and read-only project audits are now wrapped into a private `ChangeBrief` that is not persisted, not shown in the UI, and not written into the project. The Writer receives that brief instead of loose advisory prose, and the Reviewer receives the same brief so review checks intent satisfaction, acceptance checks, non-goals, and risks instead of only diff correctness. After a task succeeds with real file changes and a passing local check, Codey stores only bounded verified facts: task excerpt, changed files, successful check commands, and the task receipt. It does not store model-authored behavior claims. The release passed 485 tests, syntax compile, and `git diff --check` with only CRLF warnings.
+Version `0.1.24` borrows the useful part of lightweight spec workflows without adding a visible spec system. Existing hidden new-project plans and read-only project audits are now wrapped into a private `ChangeBrief` that is not persisted, not shown in the UI, and not written into the project. The Writer receives that brief instead of loose advisory prose, and the Reviewer receives the same brief so review checks intent satisfaction, acceptance checks, non-goals, and risks instead of only diff correctness. After a task succeeds with real file changes and a passing local check, Codey stores only bounded verified facts: task excerpt, changed files, successful check commands, and the task receipt. It does not store model-authored behavior claims. The release passed 491 tests, syntax compile, and `git diff --check` with only CRLF warnings. A real MoA snake flow also passed with DeepSeek writing, GLM/MiMo/Qwen reviewing and auditing, and a final 12-test verification in `E:\snake`.
 
 Version `0.1.23` improves startup failure handling and truncation honesty without adding UI. Browser auto-launch now honors `CODEY_BROWSER_PATH`, prefers Edge, falls back to system or per-user Chrome, and keeps separate browser profiles under `~/.codey/edge-profile` and `~/.codey/chrome-profile`. If the native WebView window cannot open, Codey prints a clear error plus the local URL to open manually and keeps the HTTP server alive until Ctrl+C. Tool results now carry a `truncated=true` marker when local output was clipped, and the model-facing result explicitly says omitted content may still contain relevant errors or code. Review prompts also warn when a diff was truncated, so the reviewer does not assume omitted hunks are clean. No limits were increased, no full output replay was added, and no new UI was introduced. The release passed 478 tests, syntax compile, and `git diff --check` with only CRLF warnings.
 
@@ -232,7 +232,7 @@ Each model:
 
 See [BOOTSTRAP_PROOF.md](BOOTSTRAP_PROOF.md).
 
-The current release also includes [TEST_REPORT.md](TEST_REPORT.md), which records the latest single-model, two-model, and self-bootstrap smoke results.
+The current release also includes [TEST_REPORT.md](TEST_REPORT.md), which records the latest single-model, two-model, MoA, and self-bootstrap smoke results.
 
 This does not prove Codey will never break. It proves the core repair loop exists: when Codey breaks in a testable way, it can use connected web AI, local tools, diff, restore, and tests to help repair itself.
 
@@ -252,6 +252,14 @@ assertion and unittest after the agent finishes:
 
 ```powershell
 python -B tools/live_smoke.py --provider all --case edit --port 9222 --max-turns 10 --json
+```
+
+The explicit MoA snake flow is kept under `tests/` because it is a real smoke
+test, not a general tool. It writes its checkpoints and timing log inside the
+target project under `.codey/smoke/moa-snake-flow`:
+
+```powershell
+python -B tests\moa_snake_flow.py --project E:\snake --reset --json
 ```
 
 ---
