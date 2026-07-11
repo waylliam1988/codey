@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 from playwright.sync_api import Locator, Page
@@ -20,14 +21,17 @@ GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
 FORMAT_HINT = (
     "GLM page formatting override: when your answer is a local-runner JSON "
     "command, return one raw JSON object with ASCII U+0022 double quotes. "
-    "Do not wrap it in markdown fences and add no other text. If the answer "
-    "is normal prose, ignore this note."
+    "Preserve source-code punctuation exactly and never use typographic smart "
+    "quotes in code. Do not wrap the JSON in markdown fences and add no other "
+    "text. If the answer is normal prose, ignore this note."
 )
-SMART_TOOL_QUOTE_TRANSLATION = str.maketrans({
+SMART_TOOL_QUOTES = frozenset({"“", "”", "„", "‟"})
+SMART_SOURCE_QUOTES = frozenset({"‘", "’", "“", "”"})
+SMART_SOURCE_QUOTE_TRANSLATION = str.maketrans({
+    "‘": "'",
+    "’": "'",
     "“": '"',
     "”": '"',
-    "„": '"',
-    "‟": '"',
 })
 THINKING_CONTENT = ".text-advance-thinking-content"
 _FINAL_ANSWER_NODE_JS = r"""
@@ -50,12 +54,70 @@ def prepare_prompt(text: str) -> str:
 
 
 def normalize_tool_json_reply(text: str) -> str:
-    """Repair GLM's occasional smart double quotes around JSON object keys."""
+    """Repair structural smart quotes without changing quotes inside values."""
 
     stripped = text.lstrip()
     if not stripped.startswith(("{“", "{”", "{„", "{‟")):
+        return _normalize_python_content(text)
+
+    chars: list[str] = []
+    in_string = False
+    escaped = False
+    for index, char in enumerate(text):
+        if not in_string:
+            if char in SMART_TOOL_QUOTES:
+                chars.append('"')
+                in_string = True
+            else:
+                chars.append(char)
+            continue
+
+        if escaped:
+            chars.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            chars.append(char)
+            escaped = True
+            continue
+        if char == '"':
+            chars.append(char)
+            in_string = False
+            continue
+        if char in SMART_TOOL_QUOTES:
+            following = text[index + 1:].lstrip()[:1]
+            if following in {":", ",", "}", "]"}:
+                chars.append('"')
+                in_string = False
+                continue
+        chars.append(char)
+    return _normalize_python_content("".join(chars))
+
+
+def _normalize_python_content(text: str) -> str:
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError):
         return text
-    return text.translate(SMART_TOOL_QUOTE_TRANSLATION)
+    if not isinstance(payload, dict) or payload.get("tool") != "edit":
+        return text
+    args = payload.get("args")
+    if not isinstance(args, dict) or not str(args.get("path") or "").lower().endswith(".py"):
+        return text
+    content = args.get("content")
+    if not isinstance(content, str) or not any(char in content for char in SMART_SOURCE_QUOTES):
+        return text
+    try:
+        compile(content, "<glm-edit>", "exec")
+        return text
+    except SyntaxError:
+        candidate = content.translate(SMART_SOURCE_QUOTE_TRANSLATION)
+    try:
+        compile(candidate, "<glm-edit>", "exec")
+    except SyntaxError:
+        return text
+    args["content"] = candidate
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:

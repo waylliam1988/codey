@@ -88,7 +88,6 @@ class DeepSeekTimeoutTests(unittest.TestCase):
 
     def test_copy_last_text_uses_first_answer_action(self) -> None:
         page = mock.Mock()
-        responses = mock.Mock()
         response = mock.Mock()
         container = mock.Mock()
         actions = mock.Mock()

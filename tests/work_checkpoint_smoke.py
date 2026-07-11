@@ -21,7 +21,11 @@ from codey.agent import run
 from codey.changes import ChangeTracker, collect_changes
 from codey.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
-from codey.review import parse_review_with_repair, render_review_prompt
+from codey.review import (
+    parse_review_with_repair,
+    render_review_prompt,
+    render_writer_followup,
+)
 from codey.verification_map import render_verification_map
 from codey.work_checkpoint import WorkCheckpointStore, render_work_checkpoint
 
@@ -128,7 +132,40 @@ def run_smoke(writer_id: str, reviewer_id: str, port: int) -> dict:
         finally:
             reviewer.close()
 
-        ok = second.stop_reason == "done" and verification.returncode == 0 and review.approved
+        followup = None
+        if not review.approved:
+            checkpoint = store.set_status(checkpoint, "fixing_review", "")
+            writer = connect_provider(writer_id, port=port)
+            try:
+                followup = run(
+                    writer,
+                    root,
+                    render_writer_followup(
+                        "Create and verify the greeting module",
+                        review,
+                    ),
+                    max_turns=8,
+                    fresh_chat=True,
+                    change_tracker=tracker,
+                    work_checkpoint=render_work_checkpoint(checkpoint),
+                    on_event=on_event,
+                )
+            finally:
+                writer.close()
+            verification = subprocess.run(
+                [sys.executable, "-B", "-m", "unittest"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+
+        ok = (
+            second.stop_reason == "done"
+            and (followup is None or followup.stop_reason == "done")
+            and verification.returncode == 0
+        )
         if ok:
             store.delete(session_id)
         return {
@@ -139,6 +176,9 @@ def run_smoke(writer_id: str, reviewer_id: str, port: int) -> dict:
             "second_stop_reason": second.stop_reason,
             "independent_check": verification.returncode,
             "review_approved": review.approved,
+            "review_followup_stop_reason": (
+                followup.stop_reason if followup is not None else "not_needed"
+            ),
             "review_summary": review.summary,
             "review_findings": [
                 {

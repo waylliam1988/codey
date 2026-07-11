@@ -73,7 +73,7 @@ need files
         self.assertIsNone(plan.control)
 
     def test_parse_search_action_uses_body_as_query(self) -> None:
-        text = '{"tool":"grep","args":{"path":"src","pattern":"login handler"}}'
+        text = '{"tool":"grep","args":{"path":"src","query":"login handler"}}'
         plan = agent.parse_reply(text)
         calls = plan.calls
         control = plan.control
@@ -87,7 +87,7 @@ need files
 
     def test_parse_json_with_web_noise_around_object(self) -> None:
         text = """已深度思考（用时 1 秒）
-{"tool":"grep","args":{"path":".","pattern":"LEGACY_BUG"}}
+{"tool":"grep","args":{"path":".","query":"LEGACY_BUG"}}
 """
         plan = agent.parse_reply(text)
         calls = plan.calls
@@ -198,13 +198,69 @@ class ToolTests(unittest.TestCase):
 
             self.assertIn("src/app.py:1: def login_handler():", output)
 
+    def test_search_explains_that_regex_syntax_is_literal(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("def login_mask():\n", encoding="utf-8")
+
+            outcome = tool_runtime.search_files(root, ".", "def .*mask")
+
+        self.assertTrue(outcome.ok)
+        self.assertEqual(
+            outcome.output,
+            "(no literal matches; regex is not supported)",
+        )
+
+    def test_search_reads_large_source_files_within_the_bounded_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            padding = "# padding\n" * 60_000
+            (root / "large.py").write_text(
+                padding + "def target_after_old_limit():\n    pass\n",
+                encoding="utf-8",
+            )
+
+            outcome = tool_runtime.search_files(root, "large.py", "target_after_old_limit")
+
+        self.assertTrue(outcome.ok)
+        self.assertFalse(outcome.truncated)
+        self.assertIn("large.py:60001: def target_after_old_limit():", outcome.output)
+
+    def test_search_reports_oversized_files_instead_of_clean_no_matches(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "huge.py").write_text("x" * 33, encoding="utf-8")
+            with mock.patch("codey.tool_runtime.SEARCH_MAX_FILE_BYTES", 32):
+                outcome = tool_runtime.search_files(root, "huge.py", "target")
+
+        self.assertTrue(outcome.truncated)
+        self.assertIn("no literal matches", outcome.output)
+        self.assertIn("skipped 1 file(s) larger than 32 bytes", outcome.output)
+        self.assertIn("omitted files may contain more matches", outcome.output)
+
+    def test_search_counts_non_utf8_files_toward_the_total_read_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.py").write_bytes(b"\xff" * 8)
+            (root / "b.py").write_text("target\n", encoding="utf-8")
+            with mock.patch("codey.tool_runtime.SEARCH_MAX_SCAN_BYTES", 8):
+                outcome = tool_runtime.search_files(root, ".", "target")
+
+        self.assertTrue(outcome.truncated)
+        self.assertIn("no literal matches", outcome.output)
+        self.assertIn("search scan stopped at 8 bytes read budget", outcome.output)
+        self.assertNotIn("b.py", outcome.output)
+
     def test_search_skips_excluded_directories(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "node_modules").mkdir()
             (root / "node_modules" / "lib.js").write_text("login_handler\n", encoding="utf-8")
 
-            self.assertEqual(tool_runtime.search_files(root, ".", "login_handler").output, "(no matches)")
+            self.assertEqual(
+                tool_runtime.search_files(root, ".", "login_handler").output,
+                "(no literal matches; regex is not supported)",
+            )
 
     def test_search_skips_excluded_directories_case_insensitively(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -212,7 +268,10 @@ class ToolTests(unittest.TestCase):
             (root / "Build").mkdir()
             (root / "Build" / "out.py").write_text("login_handler\n", encoding="utf-8")
 
-            self.assertEqual(tool_runtime.search_files(root, ".", "login_handler").output, "(no matches)")
+            self.assertEqual(
+                tool_runtime.search_files(root, ".", "login_handler").output,
+                "(no literal matches; regex is not supported)",
+            )
 
     def test_search_skips_direct_excluded_start_directory(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -223,7 +282,7 @@ class ToolTests(unittest.TestCase):
             outcome = tool_runtime.search_files(root, "node_modules", "login_handler")
 
         self.assertTrue(outcome.ok)
-        self.assertEqual(outcome.output, "(no matches)")
+        self.assertEqual(outcome.output, "(no literal matches; regex is not supported)")
 
     def test_search_skips_direct_excluded_start_directory_case_insensitively(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -234,7 +293,7 @@ class ToolTests(unittest.TestCase):
             outcome = tool_runtime.search_files(root, "Node_Modules", "login_handler")
 
         self.assertTrue(outcome.ok)
-        self.assertEqual(outcome.output, "(no matches)")
+        self.assertEqual(outcome.output, "(no literal matches; regex is not supported)")
 
     def test_search_does_not_skip_project_root_named_like_excluded_dir(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -258,7 +317,7 @@ class ToolTests(unittest.TestCase):
                 outcome = tool_runtime.search_files(root, ".", "login_handler")
 
         self.assertTrue(outcome.truncated)
-        self.assertIn("(no matches)", outcome.output)
+        self.assertIn("(no literal matches; regex is not supported)", outcome.output)
         self.assertIn("search scan stopped after 2 files", outcome.output)
         self.assertIn("file budget 2", outcome.output)
         self.assertIn("omitted files may contain more matches", outcome.output)
@@ -577,35 +636,6 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(run_events[1].call.name, "read")
         self.assertTrue(run_events[1].outcome.ok)
         self.assertEqual(run_events[1].outcome.output, "VALUE = 1\n")
-
-    def test_outline_tool_returns_navigation_before_done(self) -> None:
-        provider = FakeProvider(
-            '{"tool":"outline_file","args":{"path":"app.py"}}',
-            '{"tool":"done","args":{"summary":"outlined"}}',
-        )
-        events = []
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            (root / "app.py").write_text(
-                "def main():\n    return 'BODY_SECRET'\n",
-                encoding="utf-8",
-            )
-
-            result = agent.run(
-                provider,
-                root,
-                "Outline app.py",
-                on_event=events.append,
-            )
-
-        self.assertEqual(result.stop_reason, "done")
-        self.assertFalse(result.changed)
-        tool_events = [event for event in events if event.kind == "tool"]
-        self.assertEqual(tool_events[0].call.name, "outline")
-        self.assertIn("function main() line 1", tool_events[0].outcome.output)
-        self.assertNotIn("BODY_SECRET", tool_events[0].outcome.output)
-        self.assertIn("[tool_result tool=outline_file path=app.py]", provider.sent[1])
-        self.assertIn("use read_file before editing", provider.sent[1])
 
     def test_references_tool_returns_navigation_before_done(self) -> None:
         provider = FakeProvider(

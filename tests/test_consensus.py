@@ -248,28 +248,6 @@ class ConsensusTests(unittest.TestCase):
         self.assertIn("[tool_result tool=read_file path=app.py]", advisor.sent[1])
         self.assertIn("print('hello')", advisor.sent[1])
 
-    def test_project_audit_advisor_can_outline_project_file(self) -> None:
-        advisor = FakeProvider([
-            '{"tool":"outline_file","args":{"path":"app.py"}}',
-            '{"tool":"done","args":{"summary":"app.py has a main function."}}',
-        ])
-
-        with tempfile.TemporaryDirectory() as td:
-            Path(td, "app.py").write_text(
-                "def main():\n    return 'AUDIT_BODY_SECRET'\n",
-                encoding="utf-8",
-            )
-            report = consensus.run_project_audit_advisor(
-                advisor,
-                td,
-                "Review this project for bugs",
-            )
-
-        self.assertIn("main function", report)
-        self.assertIn("[tool_result tool=outline_file path=app.py]", advisor.sent[1])
-        self.assertIn("function main() line 1", advisor.sent[1])
-        self.assertNotIn("AUDIT_BODY_SECRET", "\n".join(advisor.sent))
-
     def test_project_audit_advisor_can_find_references(self) -> None:
         advisor = FakeProvider([
             '{"tool":"find_references","args":{"symbol":"create_app","path":"."}}',
@@ -363,25 +341,6 @@ class ConsensusTests(unittest.TestCase):
         self.assertIn("not shared with project audit advisors", advisor.sent[1])
         self.assertNotIn("ENV_SECRET_MARKER", "\n".join(advisor.sent))
 
-    def test_project_audit_blocks_outline_of_secret_files(self) -> None:
-        advisor = FakeProvider([
-            '{"tool":"outline_file","args":{"path":"prod.env"}}',
-            '{"tool":"done","args":{"summary":"env outline was not read"}}',
-        ])
-
-        with tempfile.TemporaryDirectory() as td:
-            Path(td, "prod.env").write_text("ENV_SECRET_MARKER=orange\n", encoding="utf-8")
-            Path(td, "app.py").write_text("def main():\n    pass\n", encoding="utf-8")
-            report = consensus.run_project_audit_advisor(
-                advisor,
-                td,
-                "Review this project for bugs",
-            )
-
-        self.assertEqual(report, "env outline was not read")
-        self.assertIn("not shared with project audit advisors", advisor.sent[1])
-        self.assertNotIn("ENV_SECRET_MARKER", "\n".join(advisor.sent))
-
     def test_project_audit_references_skip_secret_and_excluded_files(self) -> None:
         advisor = FakeProvider([
             '{"tool":"find_references","args":{"symbol":"SECRET_MARKER","path":"."}}',
@@ -424,7 +383,7 @@ class ConsensusTests(unittest.TestCase):
                 )
 
         self.assertEqual(report, "audit search stayed bounded")
-        self.assertIn("no matches", advisor.sent[1])
+        self.assertIn("no literal matches", advisor.sent[1])
         self.assertIn("project audit search scan stopped after 2 files", advisor.sent[1])
         self.assertIn("file budget 2", advisor.sent[1])
         self.assertNotIn("c.py:1", advisor.sent[1])
@@ -447,6 +406,28 @@ class ConsensusTests(unittest.TestCase):
 
         self.assertEqual(report, "audit searched root")
         self.assertIn("app.py:1: late_marker", advisor.sent[1])
+
+    def test_project_audit_can_search_but_not_directly_read_a_large_source_file(self) -> None:
+        advisor = FakeProvider([
+            '{"tool":"grep","args":{"query":"LARGE_SEARCH_MARKER","path":"large.py"}}',
+            '{"tool":"read_file","args":{"path":"large.py"}}',
+            '{"tool":"done","args":{"summary":"large source stayed bounded"}}',
+        ])
+
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, "large.py").write_text(
+                "# padding\n" * 30_000 + "LARGE_SEARCH_MARKER = True\n",
+                encoding="utf-8",
+            )
+            report = consensus.run_project_audit_advisor(
+                advisor,
+                td,
+                "Review this project for bugs",
+            )
+
+        self.assertEqual(report, "large source stayed bounded")
+        self.assertIn("large.py:30001: LARGE_SEARCH_MARKER = True", advisor.sent[1])
+        self.assertIn("file too large for project audit advisors", advisor.sent[2])
 
     def test_project_audit_references_report_scan_budget(self) -> None:
         advisor = FakeProvider([
@@ -537,7 +518,7 @@ class ConsensusTests(unittest.TestCase):
             )
 
         self.assertEqual(report, "secret search produced no result")
-        self.assertIn("(no matches)", advisor.sent[1])
+        self.assertIn("(no literal matches; regex is not supported)", advisor.sent[1])
         self.assertNotIn("SUPER_SECRET=orange", "\n".join(advisor.sent))
 
     def test_project_audit_without_done_returns_no_report(self) -> None:

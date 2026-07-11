@@ -17,10 +17,17 @@ from codey.tool_runtime import MAX_REPLACEMENTS, READ_MAX_LINES
 
 
 class JsonToolCodecTests(unittest.TestCase):
+    def test_system_prompt_describes_grep_as_literal_search(self) -> None:
+        prompt = JsonToolCodec().system_prompt()
+
+        self.assertIn('{"tool":"grep","args":{"query":"login handler"', prompt)
+        self.assertIn("Matching is case-insensitive; regex is not supported.", prompt)
+        self.assertNotIn('{"tool":"grep","args":{"pattern":', prompt)
+
     def test_parse_json_tool_call(self) -> None:
         codec = JsonToolCodec()
         plan = codec.parse(
-            '{"tool":"grep","args":{"path":".","pattern":"LOGIN_BUG"}}'
+            '{"tool":"grep","args":{"path":".","query":"LOGIN_BUG"}}'
         )
 
         self.assertEqual(len(plan.calls), 1)
@@ -107,7 +114,7 @@ class JsonToolCodecTests(unittest.TestCase):
         codec = JsonToolCodec()
         plan = codec.parse(
             '{"tool":"parallel","args":{"calls":['
-            '{"tool":"grep","args":{"pattern":"login","path":"."}},'
+            '{"tool":"grep","args":{"query":"login","path":"."}},'
             '{"tool":"list_dir","args":{"path":"src"}}'
             ']}}'
         )
@@ -288,35 +295,6 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("not native website tools", prompt)
         self.assertIn("valid JSON tool call", codec.repair_prompt())
 
-    def test_outline_file_parses_and_formats_with_public_name(self) -> None:
-        codec = JsonToolCodec()
-        plan = codec.parse('{"tool":"outline_file","args":{"path":"src/router.ts"}}')
-
-        self.assertEqual(plan.protocol_error, "")
-        self.assertEqual(len(plan.calls), 1)
-        self.assertEqual(plan.calls[0].name, "outline")
-        self.assertEqual(plan.calls[0].args["path"], "src/router.ts")
-
-        prompt = codec.format_results([
-            ToolResult(plan.calls[0], "File outline: src/router.ts\n- function main line 1")
-        ])
-
-        self.assertIn("[tool_result tool=outline_file path=src/router.ts]", prompt)
-
-    def test_parallel_rejects_outline_file(self) -> None:
-        plan = JsonToolCodec().parse(json.dumps({
-            "tool": "parallel",
-            "args": {
-                "calls": [
-                    {"tool": "outline_file", "args": {"path": "app.py"}},
-                    {"tool": "list_dir", "args": {"path": "."}},
-                ]
-            },
-        }))
-
-        self.assertEqual(plan.calls, [])
-        self.assertIn("parallel accepts read-only list_dir, read_file, and grep", plan.protocol_error)
-
     def test_find_references_parses_symbol_and_formats_public_name(self) -> None:
         codec = JsonToolCodec()
         plan = codec.parse(json.dumps({
@@ -375,8 +353,6 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("Output exactly one JSON object", prompt)
         self.assertIn("It never accepts edit, run, shell", prompt)
         self.assertIn("read_file page:", prompt)
-        self.assertIn("outline_file output is only navigation metadata", prompt)
-        self.assertIn("Never use it as\n    old_string", prompt)
         self.assertIn("find_references output is lexical reference hints only", prompt)
         self.assertIn("not semantic\n    resolution", prompt)
         self.assertIn("written atomically", prompt)
@@ -415,7 +391,6 @@ class JsonToolCodecTests(unittest.TestCase):
         cases = (
             ("ls", {"path": "."}, "ls"),
             ("read", {"path": "app.py"}, "read"),
-            ("outline", {"path": "app.py"}, "outline"),
             ("references", {"path": ".", "symbol": "main"}, "references"),
             ("search", {"path": ".", "query": "needle"}, "search"),
         )

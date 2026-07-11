@@ -17,7 +17,6 @@ from codey.tool_runtime import (
     READ_MAX_LINES,
     edit_file,
     find_references,
-    outline_file,
     read_file,
     run_command,
     write_file,
@@ -177,102 +176,6 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIn("positive integer", zero.output)
         self.assertIn("positive integer", fractional.output)
         self.assertIn(f"at most {READ_MAX_LINES}", oversized.output)
-
-    def test_outline_file_returns_python_navigation_without_body_text(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            Path(root, "app.py").write_text(
-                "import os\n"
-                "from pathlib import Path\n\n"
-                "def helper(value):\n"
-                "    return 'BODY_SECRET'\n\n"
-                "class Service:\n"
-                "    def handle(self, request):\n"
-                "        return request\n\n"
-                "def test_service():\n"
-                "    assert True\n",
-                encoding="utf-8",
-            )
-
-            outcome = outline_file(root, "app.py")
-
-        self.assertTrue(outcome.ok)
-        self.assertIn("File outline: app.py", outcome.output)
-        self.assertIn("import os line 1", outcome.output)
-        self.assertIn("function helper(value) line 4", outcome.output)
-        self.assertIn("class Service line 7", outcome.output)
-        self.assertIn("method Service.handle(self, request) line 8", outcome.output)
-        self.assertIn("function test_service() line 11", outcome.output)
-        self.assertIn("use read_file before editing", outcome.output)
-        self.assertNotIn("BODY_SECRET", outcome.output)
-
-    def test_outline_file_returns_typescript_routes(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            Path(root, "src").mkdir()
-            Path(root, "src", "router.ts").write_text(
-                "import express from 'express';\n"
-                "const router = express.Router();\n"
-                "export function createRouter() {\n"
-                "  router.get('/health', handler);\n"
-                "  app.post('/login', loginHandler);\n"
-                "}\n"
-                "const makeSession = () => ({ ok: true });\n",
-                encoding="utf-8",
-            )
-
-            outcome = outline_file(root, "src/router.ts")
-
-        self.assertTrue(outcome.ok)
-        self.assertIn("import express line 1", outcome.output)
-        self.assertIn("export createRouter line 3", outcome.output)
-        self.assertIn("route router.GET /health line 4", outcome.output)
-        self.assertIn("route app.POST /login line 5", outcome.output)
-        self.assertIn("arrow makeSession line 7", outcome.output)
-        self.assertNotIn("ok: true", outcome.output)
-
-    def test_outline_file_marks_javascript_truncated_only_after_limit_is_exceeded(self) -> None:
-        exact_limit = "\n".join(
-            f"function item{index}() {{ return {index}; }}"
-            for index in range(80)
-        )
-        over_limit = exact_limit + "\nfunction item80() { return 80; }\n"
-
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            Path(root, "exact.js").write_text(exact_limit, encoding="utf-8")
-            Path(root, "over.js").write_text(over_limit, encoding="utf-8")
-
-            exact = outline_file(root, "exact.js")
-            over = outline_file(root, "over.js")
-
-        self.assertTrue(exact.ok)
-        self.assertFalse(exact.truncated)
-        self.assertNotIn("outline truncated", exact.output)
-        self.assertIn("function item79 line 80", exact.output)
-        self.assertTrue(over.ok)
-        self.assertTrue(over.truncated)
-        self.assertIn("outline truncated", over.output)
-        self.assertNotIn("item80", over.output)
-
-    def test_outline_file_handles_unsupported_large_and_non_utf8_files(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            Path(root, "notes.txt").write_text("hello\n", encoding="utf-8")
-            Path(root, "bad.py").write_bytes(b"\xff\xfe")
-            Path(root, "large.py").write_text("x" * 32, encoding="utf-8")
-
-            unsupported = outline_file(root, "notes.txt")
-            non_utf8 = outline_file(root, "bad.py")
-            with mock.patch("codey.tool_runtime.OUTLINE_MAX_FILE_BYTES", 8):
-                large = outline_file(root, "large.py")
-
-        self.assertTrue(unsupported.ok)
-        self.assertIn("outline unavailable", unsupported.output)
-        self.assertFalse(non_utf8.ok)
-        self.assertIn("not utf-8 text", non_utf8.output)
-        self.assertFalse(large.ok)
-        self.assertIn("file too large to outline", large.output)
 
     def test_find_references_returns_python_reference_hints(self) -> None:
         with tempfile.TemporaryDirectory() as td:

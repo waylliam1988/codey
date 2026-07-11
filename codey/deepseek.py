@@ -250,12 +250,10 @@ def _wait_late_response(
     a usable response has already appeared in the page.
     """
     deadline = time.time() + max(0.0, grace)
-    last = ""
     while time.time() < deadline:
         try:
             current = _last_text(page) if _response_count(page) else ""
             if current and (_response_count(page) > baseline or current != baseline_text):
-                last = current
                 try:
                     return _final_text(page)
                 except RuntimeError:

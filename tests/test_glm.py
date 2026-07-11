@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import unittest
 from unittest import mock
@@ -35,7 +36,9 @@ class GlmDriverTests(unittest.TestCase):
         self.assertTrue(prompt.startswith("hello\n\n"))
         self.assertIn("raw JSON object", prompt)
         self.assertIn("ASCII U+0022", prompt)
-        self.assertIn("Do not wrap it in markdown fences", prompt)
+        self.assertIn("Preserve source-code punctuation exactly", prompt)
+        self.assertIn("never use typographic smart quotes", prompt)
+        self.assertIn("Do not wrap the JSON in markdown fences", prompt)
         self.assertNotIn("must answer with JSON", prompt)
 
     def test_normalize_tool_json_reply_is_glm_scoped(self) -> None:
@@ -49,6 +52,44 @@ class GlmDriverTests(unittest.TestCase):
         )
         prose = "普通回答：他说“tool”这个词。"
         self.assertEqual(glm.normalize_tool_json_reply(prose), prose)
+
+    def test_normalize_tool_json_reply_preserves_smart_quotes_inside_summary(self) -> None:
+        reply = '{“tool”:“done”,“args”:{“summary”:“构建“入场”掩码，并返回“安全”结果。”}}'
+
+        normalized = glm.normalize_tool_json_reply(reply)
+
+        self.assertEqual(
+            json.loads(normalized),
+            {
+                "tool": "done",
+                "args": {"summary": "构建“入场”掩码，并返回“安全”结果。"},
+            },
+        )
+
+    def test_normalize_tool_json_reply_repairs_only_ast_valid_python_content(self) -> None:
+        reply = '{“tool”:“edit”,“args”:{“path”:“app.py”,“content”:“def greeting():\\n return ‘hello’\\n”}}'
+
+        normalized = glm.normalize_tool_json_reply(reply)
+
+        self.assertEqual(
+            json.loads(normalized)["args"]["content"],
+            "def greeting():\n return 'hello'\n",
+        )
+        ascii_outer = json.dumps({
+            "tool": "edit",
+            "args": {"path": "app.py", "content": "def greeting():\n return ‘hello’\n"},
+        }, ensure_ascii=False)
+        self.assertEqual(
+            json.loads(glm.normalize_tool_json_reply(ascii_outer))["args"]["content"],
+            "def greeting():\n return 'hello'\n",
+        )
+
+    def test_normalize_tool_json_reply_does_not_guess_invalid_or_non_python_content(self) -> None:
+        invalid = '{“tool”:“edit”,“args”:{“path”:“app.py”,“content”:“return ‘hello’”}}'
+        javascript = '{“tool”:“edit”,“args”:{“path”:“app.js”,“content”:“const x = ‘hello’;”}}'
+
+        self.assertIn("‘hello’", glm.normalize_tool_json_reply(invalid))
+        self.assertIn("‘hello’", glm.normalize_tool_json_reply(javascript))
 
     def test_last_text_reads_only_profiled_final_answer(self) -> None:
         page = mock.Mock()

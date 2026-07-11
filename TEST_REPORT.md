@@ -1,4 +1,35 @@
-# Codey 0.1.29 Test Report
+# Codey 0.1.30 Test Report
+
+## Post-0.1.29 Four-Provider Capability Audit
+
+A repeated live Edge/CDP audit evaluated the distinct capabilities introduced
+from `0.1.25` through `0.1.29` instead of treating one read-only task as proof
+for every release. DeepSeek, GLM, Qwen, and MiMo were exercised on bounded
+navigation, reference-aware modification, interrupted-task recovery, and
+Verification Map review. The detailed methodology and results are recorded in
+`tests/manual/POST_0_1_29_CAPABILITY_AUDIT.md`.
+
+The audit exposed and fixed three concrete reliability problems: literal grep
+silently skipped source files larger than 512 KiB, GLM smart quotes could
+corrupt Python source embedded in an edit command, and the manual benchmark
+could fail while printing Unicode through a GBK Windows console. Search now has
+an explicit 8 MiB per-file and 16 MiB total read budget, GLM Python content is
+repaired only when the original fails compilation and the quote-normalized
+candidate compiles, and manual benchmark output is UTF-8.
+
+Current validation: `575 passed`, `31 subtests passed`, changed-file Ruff,
+`compileall`, and `git diff --check`.
+
+## 0.1.30 Outline Tool Withdrawal
+
+The `outline_file` capability introduced briefly in 0.1.26 is now removed from
+the public contract, Agent dispatch, hidden audit, runtime, parser, and tests.
+Natural tasks consistently selected literal grep or lexical references followed
+by offset reads. There is no compatibility alias. The supported navigation chain
+is Project Map, grep or find references, then `read_file(offset=...)`.
+
+Validation: `575 passed`, `31 subtests passed`, Ruff, `compileall`, and
+`git diff --check` all pass.
 
 Date: 2026-07-11
 Environment: Windows / Edge or Chrome CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
@@ -128,30 +159,14 @@ Verification:
 | Qwen live `find_references` smoke | passed in 7 turns |
 | MiMo live `find_references` smoke | passed in 8 turns; edit path protocol correction exercised |
 
-## 0.1.26 Outline File Tool
+## 0.1.26 Outline File Tool (withdrawn)
 
-This release adds `outline_file`, a read-only navigation tool for inspecting
-the shape of one source file before spending context on full file pages. It does
-not add UI, cache, indexing, RAG, persistence, or a reviewer tool.
-
-Behavior:
-
-- `outline_file` is exposed in the JSON tool contract and runs as local runtime
-  tool `outline`.
-- The tool returns shallow navigation facts only: imports, functions, classes,
-  methods, tests, exports, arrow functions, and common JS/TS route declarations
-  with line-number hints.
-- The output explicitly says it is not source content and that `read_file` must
-  be used before editing.
-- `outline_file` is not `parallel_safe`; `parallel` still accepts only
-  `list_dir`, `read_file`, and `grep`.
-- Local runtime enforces project-root safety, UTF-8 text, file-only input, and a
-  bounded outline file size.
-- Hidden project-audit advisors may use `outline_file`, but only through the
-  same sensitive path, symlink, binary, excluded-directory, and size checks used
-  by audit reads.
-- Reviewer still receives diff/log/brief/map context only; no reviewer-side tool
-  access was added.
+`outline_file` was removed after the natural-use audit. Controlled prompts could
+make providers use it, but normal tasks consistently preferred literal `grep`
+followed by offset `read_file`. Removing the tool also removes its public/runtime
+contract, hidden-audit branch, Python/JS/TS outline parser, and maintenance tests.
+There is no compatibility alias. The supported navigation chain is now Project
+Map, literal grep or lexical references, then offset source reads.
 
 Verification:
 

@@ -61,26 +61,18 @@ TOOL_SPECS = (
         ),
     ),
     ToolSpec(
-        "outline_file",
-        "outline",
-        aliases=("outline",),
-        read_only=True,
-        examples=('{"tool":"outline_file","args":{"path":"src/router.ts"}}',),
-        description=(
-            "Show a shallow file outline for navigation. It is not source "
-            "content; use read_file before editing."
-        ),
-    ),
-    ToolSpec(
         "grep",
         "search",
         aliases=("search",),
         read_only=True,
         parallel_safe=True,
         examples=(
-            '{"tool":"grep","args":{"pattern":"login handler","path":"."}}',
+            '{"tool":"grep","args":{"query":"login handler","path":"."}}',
         ),
-        description="Search file contents before reading when the location is unknown.",
+        description=(
+            "Search file contents for literal text before reading when the location "
+            "is unknown. Matching is case-insensitive; regex is not supported."
+        ),
     ),
     ToolSpec(
         "find_references",
@@ -100,7 +92,7 @@ TOOL_SPECS = (
         None,
         read_only=True,
         examples=(
-            '{"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"pattern":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}',
+            '{"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}',
         ),
         description=(
             f"Batch at most {MAX_PARALLEL_CALLS} independent read-only list_dir, "
@@ -204,8 +196,6 @@ Rules:
     It never accepts edit, run, shell, done, read_files, or nested parallel.
   - A trailing [read_file page: ...] line is metadata, not file content. Never
     include it in old_string. Continue with the stated offset when needed.
-  - outline_file output is only navigation metadata. Never use it as
-    old_string. Use read_file with line offsets before editing.
   - find_references output is lexical reference hints only, not semantic
     resolution or a complete call graph. Use read_file before editing.
   - Use edit for all file changes. Use old_string/new_string for one small edit,
@@ -568,10 +558,10 @@ class JsonToolCodec:
                     READ_MAX_LINES,
                 )
         elif normalized == "search":
-            pattern = args.get("pattern", args.get("query"))
-            if not pattern:
-                raise ProtocolValidationError("grep requires a pattern")
-            call_args["query"] = _text(pattern)
+            query = args.get("query", args.get("pattern"))
+            if not query:
+                raise ProtocolValidationError("grep requires a query")
+            call_args["query"] = _text(query)
         elif normalized == "references":
             symbol = args.get("symbol", args.get("name"))
             if not symbol:

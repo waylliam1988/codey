@@ -21,9 +21,10 @@ from codey.protocols import JsonToolCodec
 from codey.references import find_reference_hints
 from codey.tool_runtime import (
     READ_MAX_CHARS,
+    SEARCH_MAX_FILE_BYTES,
     SEARCH_MAX_RESULTS,
+    SEARCH_MAX_SCAN_BYTES,
     ToolOutcome,
-    outline_file,
     read_file,
     safe_join,
 )
@@ -42,7 +43,7 @@ PROJECT_AUDIT_MAX_FILE_BYTES = 256 * 1024
 PROJECT_AUDIT_MAX_SCAN_FILES = 1_000
 PROJECT_AUDIT_MAX_SCAN_DIRS = 250
 PROJECT_AUDIT_MAX_DIR_ENTRIES = 1_000
-READ_ONLY_TOOL_NAMES = frozenset({"ls", "read", "outline", "search", "references"})
+READ_ONLY_TOOL_NAMES = frozenset({"ls", "read", "search", "references"})
 READ_ONLY_CODEC = JsonToolCodec()
 AUDIT_EXCLUDED_DIRS = {
     ".git",
@@ -148,27 +149,23 @@ Available read-only tools:
   {"tool":"read_files","args":{"paths":["a.py","b.py"]}}
     Read up to 8 files in one step. Do not nest it inside parallel.
 
-  {"tool":"outline_file","args":{"path":"src/router.ts"}}
-    Show a shallow file outline for navigation. It is not source content; use
-    read_file before editing or citing exact code.
-
-  {"tool":"grep","args":{"pattern":"login","path":"."}}
-    Search file contents before reading when the location is unknown.
+  {"tool":"grep","args":{"query":"login","path":"."}}
+    Search file contents for case-insensitive literal text before reading when
+    the location is unknown. Regex is not supported.
 
   {"tool":"find_references","args":{"symbol":"createRouter","path":"."}}
     Find bounded lexical reference hints. This is not semantic resolution; use
     read_file before editing or citing exact code.
 
-  {"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"pattern":"TODO","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}
+  {"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"TODO","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}
     Batch at most 4 independent read-only list_dir, read_file, or grep calls.
 
   {"tool":"done","args":{"summary":"structured project review findings"}}
     Finish your private review.
 
 Rules:
-  - Use only list_dir, read_file, read_files, outline_file, grep, find_references, parallel, or done.
+  - Use only list_dir, read_file, read_files, grep, find_references, parallel, or done.
   - Never call edit, write, run, shell, restore, approve, or any native website tool.
-  - outline_file output is only navigation metadata. Do not quote it as source code.
   - find_references output is lexical reference hints only, not semantic resolution.
   - Inspect only files that seem relevant. Keep the review bounded.
   - Report concrete bug risks, architecture concerns, and useful improvement ideas.
@@ -429,6 +426,19 @@ def _audit_file_allowed(path: Path, root: Path) -> tuple[bool, str]:
     return True, ""
 
 
+def _audit_scannable_file_allowed(path: Path, root: Path) -> bool:
+    try:
+        rel = path.relative_to(root).as_posix()
+    except ValueError:
+        return False
+    if _audit_path_block_reason(rel):
+        return False
+    try:
+        return path.is_file() and not path.is_symlink()
+    except OSError:
+        return False
+
+
 def _audit_visible_entries(root: Path, rel: str) -> ToolOutcome:
     reason = _audit_path_block_reason(rel)
     if reason:
@@ -494,23 +504,6 @@ def _audit_read_file(root: Path, rel: str, **options) -> ToolOutcome:
     return read_file(root, rel, **options)
 
 
-def _audit_outline_file(root: Path, rel: str) -> ToolOutcome:
-    reason = _audit_path_block_reason(rel)
-    if reason:
-        return ToolOutcome.error(reason)
-    reason = _audit_raw_symlink_reason(root, rel)
-    if reason:
-        return ToolOutcome.error(reason)
-    try:
-        path = safe_join(root, rel)
-    except ValueError as exc:
-        return ToolOutcome.error(str(exc))
-    allowed, reason = _audit_file_allowed(path, root)
-    if not allowed:
-        return ToolOutcome.error(reason)
-    return outline_file(root, rel)
-
-
 def _audit_dir_allowed(path: Path, root: Path) -> bool:
     try:
         rel = path.relative_to(root).as_posix()
@@ -534,7 +527,7 @@ def _audit_searchable_files(root: Path, start: Path, budget: BoundedScanBudget):
         excluded_dirs=AUDIT_EXCLUDED_DIRS,
         budget=budget,
         allow_dir=lambda path: _audit_dir_allowed(path, root),
-        allow_file=lambda path: _audit_file_allowed(path, root)[0],
+        allow_file=lambda path: _audit_scannable_file_allowed(path, root),
         skip_start_if_excluded=start.resolve() != resolved_root,
     )
 
@@ -564,9 +557,20 @@ def _audit_search_files(
     needle = query.lower()
     matches: list[str] = []
     result_limited = False
+    bytes_read = 0
+    byte_limited = False
+    oversized_files = 0
     budget = _audit_scan_budget()
     for path in _audit_searchable_files(root, start, budget):
         try:
+            size = path.stat().st_size
+            if size > SEARCH_MAX_FILE_BYTES:
+                oversized_files += 1
+                continue
+            if bytes_read + size > SEARCH_MAX_SCAN_BYTES:
+                byte_limited = True
+                break
+            bytes_read += size
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
@@ -584,13 +588,23 @@ def _audit_search_files(
         if result_limited:
             break
     if not matches:
-        matches.append("(no matches)")
+        matches.append("(no literal matches; regex is not supported)")
     if result_limited:
         matches.append(f"... truncated after {max_results} matches")
+    if oversized_files:
+        matches.append(
+            f"... skipped {oversized_files} oversized file(s); omitted files may "
+            "contain more matches"
+        )
+    if byte_limited:
+        matches.append(
+            "... project audit search reached its read budget; omitted files may "
+            "contain more matches"
+        )
     if budget.limited:
         matches.append(budget.stop_message("project audit search scan"))
     output = "\n".join(matches)
-    truncated = result_limited or budget.limited
+    truncated = result_limited or budget.limited or byte_limited or bool(oversized_files)
     if len(output) > READ_MAX_CHARS:
         output = output[:READ_MAX_CHARS].rstrip() + "\n... truncated"
         truncated = True
@@ -636,14 +650,12 @@ def _execute_read_only_call(project: Path, call: ToolCall) -> ToolOutcome:
             if name in call.args
         }
         return _audit_read_file(project, path, **read_options)
-    if call.name == "outline":
-        return _audit_outline_file(project, path)
     if call.name == "search":
         return _audit_search_files(project, path, str(call.args.get("query") or ""))
     if call.name == "references":
         return _audit_find_references(project, path, str(call.args.get("symbol") or ""))
     return ToolOutcome.error(
-        "project audit advisors may only use read-only list_dir, read_file, outline_file, grep, and find_references"
+        "project audit advisors may only use read-only list_dir, read_file, grep, and find_references"
     )
 
 

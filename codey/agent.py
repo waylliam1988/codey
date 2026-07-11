@@ -29,7 +29,6 @@ from codey.tool_runtime import (
     edit_file,
     find_references,
     list_directory,
-    outline_file,
     read_file,
     run_command,
     safe_join,
@@ -42,7 +41,6 @@ DEFAULT_STAGNANT_TURNS = 4
 SUPPORTED_TOOL_NAMES = frozenset({
     "edit",
     "ls",
-    "outline",
     "read",
     "references",
     "run",
@@ -51,7 +49,6 @@ SUPPORTED_TOOL_NAMES = frozenset({
 })
 INFORMATION_TOOL_NAMES = frozenset({
     "ls",
-    "outline",
     "read",
     "references",
     "run",
@@ -367,8 +364,6 @@ def run(
                         if name in call.args
                     }
                     outcome = read_file(project, path, **read_options)
-                elif call.name == "outline":
-                    outcome = outline_file(project, path)
                 elif call.name == "ls":
                     outcome = list_directory(project, path)
                 elif call.name == "search":

@@ -16,7 +16,6 @@ from codey.bounded_scan import (
     BoundedScanBudget,
     iter_bounded_files,
 )
-from codey.file_outline import OUTLINE_MAX_FILE_BYTES, build_file_outline
 from codey.references import find_reference_hints
 from codey.text_budget import clip_middle
 
@@ -36,7 +35,8 @@ SEARCH_EXCLUDED_DIRS = {
     "target",
 }
 SEARCH_MAX_RESULTS = 80
-SEARCH_MAX_FILE_BYTES = 512 * 1024
+SEARCH_MAX_FILE_BYTES = 8 * 1024 * 1024
+SEARCH_MAX_SCAN_BYTES = 16 * 1024 * 1024
 SEARCH_MAX_SCAN_FILES = DEFAULT_MAX_SCAN_FILES
 SEARCH_MAX_SCAN_DIRS = DEFAULT_MAX_SCAN_DIRS
 SEARCH_MAX_DIR_ENTRIES = DEFAULT_MAX_DIR_ENTRIES
@@ -69,6 +69,14 @@ class ToolOutcome:
     def first_line(self, limit: int) -> str:
         """Return a display-safe first line, including for empty output."""
         return next(iter(self.output.splitlines()), "")[:limit]
+
+
+def _byte_limit_label(value: int) -> str:
+    if value >= 1024 * 1024:
+        return f"{value // (1024 * 1024)} MiB"
+    if value >= 1024:
+        return f"{value // 1024} KiB"
+    return f"{value} bytes"
 
 
 @dataclass(frozen=True)
@@ -352,26 +360,6 @@ def read_file(
     )
 
 
-def outline_file(root: Path, rel: str) -> ToolOutcome:
-    path = safe_join(root, rel)
-    if not path.is_file():
-        return ToolOutcome.error(f"not a file: {rel}")
-    try:
-        if path.stat().st_size > OUTLINE_MAX_FILE_BYTES:
-            return ToolOutcome.error(f"file too large to outline: {rel}")
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return ToolOutcome.error(f"not utf-8 text: {rel}")
-    except OSError as exc:
-        return ToolOutcome.error(str(exc))
-    outline = build_file_outline(text, rel)
-    return ToolOutcome(
-        outline,
-        True,
-        truncated="outline truncated" in outline,
-    )
-
-
 def list_directory(root: Path, rel: str) -> ToolOutcome:
     path = safe_join(root, rel)
     if not path.is_dir():
@@ -411,6 +399,9 @@ def search_files(
     needle = query.lower()
     matches: list[str] = []
     result_limited = False
+    bytes_read = 0
+    byte_limited = False
+    oversized_files = 0
     resolved_root = root.resolve()
     budget = BoundedScanBudget(
         max_files=SEARCH_MAX_SCAN_FILES,
@@ -424,8 +415,14 @@ def search_files(
         skip_start_if_excluded=start.resolve() != resolved_root,
     ):
         try:
-            if path.stat().st_size > SEARCH_MAX_FILE_BYTES:
+            size = path.stat().st_size
+            if size > SEARCH_MAX_FILE_BYTES:
+                oversized_files += 1
                 continue
+            if bytes_read + size > SEARCH_MAX_SCAN_BYTES:
+                byte_limited = True
+                break
+            bytes_read += size
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
@@ -443,12 +440,23 @@ def search_files(
         if result_limited:
             break
     if not matches:
-        matches.append("(no matches)")
+        matches.append("(no literal matches; regex is not supported)")
     if result_limited:
         matches.append(f"... truncated after {max_results} matches")
+    if oversized_files:
+        matches.append(
+            f"... skipped {oversized_files} file(s) larger than "
+            f"{_byte_limit_label(SEARCH_MAX_FILE_BYTES)}; omitted files may "
+            "contain more matches"
+        )
+    if byte_limited:
+        matches.append(
+            f"... search scan stopped at {_byte_limit_label(SEARCH_MAX_SCAN_BYTES)} "
+            "read budget; omitted files may contain more matches"
+        )
     if budget.limited:
         matches.append(budget.stop_message("search scan"))
-    truncated = result_limited or budget.limited
+    truncated = result_limited or budget.limited or byte_limited or bool(oversized_files)
     return ToolOutcome("\n".join(matches), True, truncated=truncated)
 
 
