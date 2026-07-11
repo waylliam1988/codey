@@ -29,7 +29,9 @@ from codey.project_map import render_project_map
 from codey.providers import PROVIDER_LABELS
 from codey.receipt import build_task_receipt
 from codey.review import has_reviewable_changes, render_writer_followup
+from codey.verification_map import render_verification_map
 from codey.work_checkpoint import (
+    CheckpointCheck,
     WorkCheckpoint,
     WorkCheckpointStore,
     render_work_checkpoint,
@@ -99,6 +101,23 @@ def _project_has_user_files(project: str | Path) -> bool:
 def _safe_project_map(project: str | Path, verified_facts: str) -> str:
     try:
         return render_project_map(project, verified_facts)
+    except Exception:
+        return ""
+
+
+def _safe_verification_map(
+    project: str | Path,
+    changes: dict,
+    checks: tuple[CheckpointCheck, ...],
+    project_map: str,
+) -> str:
+    try:
+        return render_verification_map(
+            project,
+            changes,
+            checks_after_last_change=checks,
+            project_map=project_map,
+        )
     except Exception:
         return ""
 
@@ -177,7 +196,7 @@ class TaskRunner:
 
         recent_events: list[str] = []
         task_changes: dict | None = None
-        successful_check_commands: list[str] = []
+        checks_after_last_change: list[CheckpointCheck] = []
         work_checkpoint: WorkCheckpoint | None = None
         resumed_checkpoint = False
 
@@ -211,8 +230,6 @@ class TaskRunner:
                 and event.outcome.exit_code == 0
             ):
                 command = str(event.call.args.get("command") or "")
-                if command and command not in successful_check_commands:
-                    successful_check_commands.append(command)
                 try:
                     self.project_facts.record_success(
                         project,
@@ -228,12 +245,21 @@ class TaskRunner:
                 and event.outcome is not None
             ):
                 if event.call.name == "edit" and event.outcome.ok and event.outcome.changed:
+                    checks_after_last_change.clear()
                     rel = str(event.call.args.get("path") or "")
                     update_checkpoint(lambda store, item: store.record_edit(item, rel))
                 elif event.call.name == "run":
                     command = str(event.call.args.get("command") or "")
                     cwd = str(event.call.args.get("path") or ".")
                     ok = event.outcome.ok and event.outcome.exit_code == 0
+                    if ok and command:
+                        check = CheckpointCheck(command, cwd)
+                        checks_after_last_change[:] = [
+                            item for item in checks_after_last_change if item != check
+                        ]
+                        checks_after_last_change.append(check)
+                    elif not ok:
+                        checks_after_last_change.clear()
                     update_checkpoint(
                         lambda store, item: store.record_run(
                             item,
@@ -348,6 +374,9 @@ class TaskRunner:
                         )
                         if same_project and resume_requested and (continue_task or same_task):
                             work_checkpoint = self.work_checkpoints.reconcile(previous)
+                            checks_after_last_change.extend(
+                                work_checkpoint.successful_checks_after_last_change
+                            )
                             checkpoint_prompt = render_work_checkpoint(work_checkpoint)
                             resumed_checkpoint = True
                         else:
@@ -438,14 +467,9 @@ class TaskRunner:
                     and work_checkpoint is not None
                     and not result.changed
                     and not result.checks_ran
-                    and work_checkpoint.successful_checks_after_last_change
+                    and checks_after_last_change
                 ):
                     result = replace(result, checks_passed=True)
-                    successful_check_commands.extend(
-                        item.command
-                        for item in work_checkpoint.successful_checks_after_last_change
-                        if item.command not in successful_check_commands
-                    )
                 task_changed = result.changed or bool(
                     resumed_checkpoint
                     and work_checkpoint is not None
@@ -502,6 +526,12 @@ class TaskRunner:
                     )
                     project_map = _safe_project_map(project, verified_facts)
                     if has_reviewable_changes(task_changes):
+                        verification_map = _safe_verification_map(
+                            project,
+                            task_changes,
+                            tuple(checks_after_last_change),
+                            project_map,
+                        )
                         rendered_change_brief = (
                             change_brief.render(audience="reviewer")
                             if change_brief is not None
@@ -523,6 +553,7 @@ class TaskRunner:
                                 writer_id=provider_id,
                                 change_brief=rendered_change_brief,
                                 project_map=project_map,
+                                verification_map=verification_map,
                             )
                         except cancellation.TaskCancelled:
                             raise
@@ -652,7 +683,7 @@ class TaskRunner:
                     and result.stop_reason == "done"
                     and task_changed
                     and result.checks_passed
-                    and successful_check_commands
+                    and checks_after_last_change
                     and files
                 )
                 facts_write_succeeded = not facts_write_required
@@ -668,7 +699,9 @@ class TaskRunner:
                                 project,
                                 task=fact_task,
                                 files=files,
-                                check_commands=successful_check_commands,
+                                check_commands=[
+                                    item.command for item in checks_after_last_change
+                                ],
                                 receipt=receipt.text,
                             )
                         )

@@ -121,6 +121,30 @@ class WorkCheckpointStoreTests(unittest.TestCase):
             self.assertFalse(item.last_action.ok)
             self.assertNotIn("output", store.path_for("s").read_text(encoding="utf-8"))
 
+    def test_failed_run_clears_earlier_success_on_same_code_state(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            project.mkdir()
+            store = WorkCheckpointStore(Path(td) / "state")
+            item = store.start(run_id="r", session_id="s", project=project, task="task")
+            item = store.record_run(
+                item,
+                command="python -m pytest tests/test_app.py",
+                cwd=".",
+                ok=True,
+            )
+
+            item = store.record_run(
+                item,
+                command="python -m pytest",
+                cwd=".",
+                ok=False,
+            )
+
+            self.assertEqual(item.successful_checks_after_last_change, ())
+            self.assertFalse(item.last_action.ok)
+            self.assertEqual(store.load("s").successful_checks_after_last_change, ())
+
     def test_reconcile_invalidates_checks_when_file_hash_changed(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             project = Path(td) / "project"

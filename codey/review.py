@@ -70,6 +70,10 @@ def _project_map_section(project_map: str) -> str:
     return text
 
 
+def _verification_map_section(verification_map: str) -> str:
+    return _clip(verification_map, 5_000)
+
+
 def _json_objects(text: str) -> list[dict[str, Any]]:
     decoder = json.JSONDecoder()
     objects: list[dict[str, Any]] = []
@@ -173,6 +177,7 @@ def render_review_prompt(
     recent_log: str = "",
     change_brief: str = "",
     project_map: str = "",
+    verification_map: str = "",
 ) -> str:
     files = changes.get("files") if isinstance(changes.get("files"), list) else []
     file_lines = []
@@ -199,6 +204,10 @@ def render_review_prompt(
     brief_block = f"{brief_section}\n\n" if brief_section else ""
     map_section = _project_map_section(project_map)
     map_block = f"{map_section}\n\n" if map_section else ""
+    verification_section = _verification_map_section(verification_map)
+    verification_block = (
+        f"{verification_section}\n\n" if verification_section else ""
+    )
     intent_guidance = (
         "Review the change against the Original user task and the private task brief below: "
         "check whether the user intent is satisfied, acceptance checks are covered, "
@@ -225,6 +234,14 @@ def render_review_prompt(
         "is a missing test, missing new file, or missing documentation, use the "
         "most relevant changed file as path and describe the missing file in "
         "issue or suggested_fix.\n\n"
+        "The Verification Map contains bounded candidates, not proof of impact "
+        "or coverage. Do not request a test merely because it appears as a "
+        "candidate. Request changes only when a candidate is materially relevant "
+        "to the diff and the observed checks leave a concrete regression risk "
+        "unverified. A listed test candidate was observed as an existing readable "
+        "local file; absence from Changed files means it was not modified, not "
+        "that it is missing. Paths from the Verification Map do not relax the "
+        "Changed-files-only findings rule.\n\n"
         "Return only JSON. No analysis. No explanation. The first character "
         "must be { and the last character must be }.\n"
         "Return exactly one JSON object and no markdown fences:\n"
@@ -239,6 +256,7 @@ def render_review_prompt(
         f"{map_block}"
         f"Writer summary:\n{_clip(writer_summary, 2_000)}\n\n"
         f"Changed files:\n{changed_files}\n\n"
+        f"{verification_block}"
         f"Recent tool log:\n{log}\n\n"
         f"{diff_note}"
         f"Diff:\n{diff}\n"

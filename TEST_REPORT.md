@@ -1,7 +1,46 @@
-# Codey 0.1.28 Test Report
+# Codey 0.1.29 Test Report
 
 Date: 2026-07-11
 Environment: Windows / Edge or Chrome CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.29 Verification Map
+
+This release adds bounded, evidence-labeled verification candidates to Review.
+It does not claim affected tests, dependency impact, or coverage.
+
+Behavior:
+
+- changed tests are listed directly;
+- Python and JS/TS tests can be candidates through strong filename relations;
+- Python direct imports use `ast`; relative JS/TS imports use bounded lexical parsing;
+- only a small set of declarations added by the diff may produce reference hints;
+- successful checks are taken only from after the latest real edit;
+- manifest and previously successful project checks are separate broader candidates;
+- one bounded traversal scans test files instead of rescanning per symbol;
+- excluded directories, symlinks, non-UTF-8/binary, secret-like, and oversized
+  files are skipped;
+- scan, candidate, result, changed-file, check, and command budgets are explicit;
+- attempted test content is capped at 16MB in addition to the 512KB per-file
+  limit; non-UTF-8 files consume budget before decoding and cannot bypass it;
+- a truncated diff or scan produces an explicit incomplete-discovery warning;
+- no candidates renders `(none found)` without suggesting that testing is unnecessary;
+- Reviewer is told that candidates are not coverage proof and candidate paths do
+  not relax the changed-file-only finding contract;
+- construction failure degrades to normal Review with an empty map;
+- a later edit or failed verification run clears prior green checks in both
+  memory and the durable checkpoint, keeping Review, recovery receipts, and
+  successful ProjectFacts semantics aligned.
+
+Live Edge/CDP verification used DeepSeek as Writer and GLM, Qwen, and MiMo as
+Reviewers. The map identified `test_app.py` through naming evidence and reported
+only the post-edit `python -m unittest`. Qwen initially misread an unchanged
+candidate as a missing file; the map now states that candidates are existing
+readable local files and absence from Changed files means unchanged. After that
+root fix, all three reviewers approved the independently verified change without
+a noisy follow-up, and checkpoint recovery remained successful.
+
+Regression result: `573 passed, 33 subtests passed`; changed-file Ruff,
+`compileall`, and `git diff --check` passed.
 
 ## 0.1.28 Durable Execution Checkpoint
 

@@ -22,6 +22,7 @@ from codey.changes import ChangeTracker, collect_changes
 from codey.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
 from codey.review import parse_review_with_repair, render_review_prompt
+from codey.verification_map import render_verification_map
 from codey.work_checkpoint import WorkCheckpointStore, render_work_checkpoint
 
 
@@ -108,6 +109,11 @@ def run_smoke(writer_id: str, reviewer_id: str, port: int) -> dict:
             check=False,
         )
         changes = collect_changes(root, tracker)
+        verification_map = render_verification_map(
+            root,
+            changes,
+            checks_after_last_change=checkpoint.successful_checks_after_last_change,
+        )
         reviewer = connect_provider(reviewer_id, port=port, open_if_missing=False)
         try:
             review_reply = reviewer.send(render_review_prompt(
@@ -116,6 +122,7 @@ def run_smoke(writer_id: str, reviewer_id: str, port: int) -> dict:
                 writer_summary=second.summary,
                 changes=changes,
                 recent_log="\n".join(events[-80:]),
+                verification_map=verification_map,
             ))
             review = parse_review_with_repair(review_reply, reviewer.send)
         finally:
@@ -132,6 +139,16 @@ def run_smoke(writer_id: str, reviewer_id: str, port: int) -> dict:
             "second_stop_reason": second.stop_reason,
             "independent_check": verification.returncode,
             "review_approved": review.approved,
+            "review_summary": review.summary,
+            "review_findings": [
+                {
+                    "path": item.path,
+                    "issue": item.issue,
+                    "suggested_fix": item.suggested_fix,
+                }
+                for item in review.findings
+            ],
+            "verification_map": verification_map,
             "checkpoint_deleted": store.load(session_id) is None,
             "events": events,
         }

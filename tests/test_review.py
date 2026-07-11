@@ -122,6 +122,29 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("Every findings[].path must be copied from the Changed files list", prompt)
         self.assertIn("M src/session.py +3 -1", prompt)
 
+    def test_render_review_prompt_treats_verification_map_as_candidates_only(self) -> None:
+        prompt = review.render_review_prompt(
+            project="E:/demo",
+            task="Fix auth",
+            writer_summary="done",
+            changes={
+                "files": [{"path": "src/auth.py", "status": "M"}],
+                "diff": "diff --git a/src/auth.py b/src/auth.py\n+fixed\n",
+            },
+            verification_map=(
+                "Verification Map (bounded candidates; not coverage proof):\n"
+                "Existing test candidates found locally (not necessarily changed):\n"
+                "- tests/test_auth.py: directly imports changed module [evidence: import]"
+            ),
+        )
+
+        self.assertIn("Verification Map (bounded candidates", prompt)
+        self.assertIn("not proof of impact or coverage", prompt)
+        self.assertIn("Do not request a test merely because", prompt)
+        self.assertIn("existing readable local file", prompt)
+        self.assertIn("not modified, not that it is missing", prompt)
+        self.assertIn("do not relax the Changed-files-only", prompt)
+
     def test_render_writer_followup_keeps_reviewer_advisory(self) -> None:
         result = review.ReviewResult(
             verdict="changes_requested",

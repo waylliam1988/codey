@@ -245,6 +245,8 @@ class WorkCheckpointStore:
             check = CheckpointCheck(safe_command, safe_cwd)
             checks = [item for item in checks if item != check]
             checks.append(check)
+        elif not ok:
+            checks.clear()
         updated = replace(
             checkpoint,
             updated_at=_now(),

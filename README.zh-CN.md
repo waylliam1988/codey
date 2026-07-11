@@ -73,6 +73,8 @@ Codey 想解决的是一个很朴素的问题：
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
 
+`0.1.29` 增加隐藏的 Verification Map，只在 Review 阶段使用。它明确是一份有边界的验证候选图，不是 affected-test 分析、impact radius 或覆盖证明。Writer 完成且最终 Diff 已确定后，Codey 只扫描一次可能的测试文件，向 Reviewer 提供可解释证据：本次改动的测试、Python / JS / TS 强命名关系、Python AST 或 JS / TS 相对路径直接 import、本次 Diff 新增的少量声明在测试中的明确引用、最后一次 edit 后真实成功的检查，以及 manifest 或项目历史中更宽的候选命令。扫描最多处理 400 个测试文件、累计尝试读取 16MB 测试内容、单文件 512KB、12 个候选、20 个 changed files、8 条已观察检查、6 条 broader commands，最终文本最多 5,000 字符；依赖 / 构建 / 缓存目录、symlink、二进制、非 UTF-8、secret-like 和超大文件会跳过，非 UTF-8 文件的读取尝试同样消耗字节预算，截断会明确提示。Reviewer 被要求不能只因为某个测试出现在候选里就提出修改；候选明确表示本地已经存在且可读的测试文件，不在 changed files 只代表本轮未修改；`findings[].path` 仍只能来自 changed files。TaskRunner 内存状态和持久 checkpoint 都会在每次真实 edit 后、以及后续任一验证 run 失败后清空绿色检查，因此 Verification Map、恢复 receipt 和最终 ProjectFacts 不会继承过期成功结论。本版没有新增工具、UI、持久化、模型调用、自动执行命令、依赖图或传递影响声明；通过 573 项 pytest、33 项 subtest、本次改动 Ruff、语法编译和 `git diff --check`。真实 Edge/CDP 流程使用 DeepSeek Writer，GLM、Qwen、MiMo 分别担任 Reviewer；在明确候选存在性后，三者都批准了独立验证通过的改动，没有产生无意义补测要求。
+
 `0.1.28` 增加隐藏的 Durable Execution Checkpoint，用来恢复尚未完成的项目任务。真实 edit 成功后，Codey 只在 `~/.codey` 原子保存有边界的本地事实：带内容 hash 的相对改动路径、最后一次记录修改之后成功的检查命令、最后一个 edit/run 动作和中断原因；不保存源码、diff、工具输出、prompt、模型计划或“剩余步骤”自述。新的 edit 即使路径无法记录也会立即使旧检查失效；运行时已接受的路径会先在项目根目录下规范化，再按与重新加载相同的长度边界记录 hash。恢复时还会重新核对当前文件 hash，工作区若在 checkpoint 后发生变化，旧检查会被清空。checkpoint 只在同一 session / project 被明确继续，或同一任务的网页 Provider 上下文丢失时注入；stop、error、max-turn、no-progress 后都会保留，恢复完成后仍进入正常 Diff / Review，最终正常完成并写好必要的 ProjectFacts 后才删除。本版没有新增 UI、工作流引擎、任务拆分、提前 Review 或额外模型调用；通过 555 项 pytest、33 项 subtest、语法编译、本次改动 Ruff 和 `git diff --check`。真实 Edge/CDP smoke 刻意让 DeepSeek 在一次 edit 后中断，随后打开全新模型对话从 checkpoint 继续，独立 `unittest` 通过、GLM Review 批准，并确认完成后的 checkpoint 已删除。
 
 `0.1.27` 增加 `find_references`，这是一个有边界的“文本引用提示”工具，适合稍大的改动：模型可以先问“这个函数、类或本地 API 还在哪里被提到”，再决定要读哪些调用方。它故意不承诺语义精确：不是 LSP、不是调用图、不是索引，也不是重命名引擎。它只接受简单 symbol，跳过依赖 / 构建 / 缓存目录、大文件、不可读文件和 symlink 路径，最多返回 80 条稳定的路径 / 行号提示，并明确要求模型编辑前必须再用 `read_file` 读取真实源码。直接把起始路径指向 symlink 时会在解析前拒绝，所以项目内链接不会静默把扫描重定向到目标文件；直接把起始路径指向依赖 / 构建 / 缓存目录时也会按大小写不敏感规则跳过，但如果用户选择的项目根目录本身叫 `build`、`dist` 或 `target`，仍然会正常扫描。`find_references`、普通 `grep`、隐藏项目审查顾问的搜索和引用扫描现在共用同一个流式 bounded scanner，不再先收集并排序所有候选文件；如果扫描预算耗尽，工具会明确提示省略文件里仍可能有匹配。这个工具不能放进 `parallel`；隐藏项目审查顾问仍然经过更严格的 audit 过滤；Reviewer 仍然没有工具权限，只看上下文。`edit` 也会给出更清楚的单文件 / path 协议错误，并且能安全恢复唯一的行首缩进丢失，适配部分网页模型把代码缩进压缩掉的情况。本版没有新增 UI、缓存、持久化、索引或语义解析器；通过 542 项 pytest、聚焦 runtime / protocol / agent / consensus / live-smoke 套件、语法编译、`git diff --check` 无输出，以及 DeepSeek、GLM、Qwen、MiMo 四个网页模型的 `find_references` 实机 smoke。
@@ -344,6 +346,7 @@ codey/
   file_outline.py           浅层源码大纲生成
   references.py             有边界的文本引用提示
   project_map.py            确定性的有边界项目地图
+  verification_map.py       Review 阶段的有边界验证候选
   change_brief.py           隐藏任务意图 brief
   task_runner.py            任务、会话、review 和收据编排
   browser.py                Chromium CDP 连接
