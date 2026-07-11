@@ -2,17 +2,31 @@
 
 **让网页版 AI 成为本地编程助手。**
 
+[![版本](https://img.shields.io/badge/version-0.1.31-blue)](CHANGELOG.zh-CN.md)
+[![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
+[![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
+
 [English](README.md)
 
-Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小米 MiMo 和 GLM，然后给它们一个受控的本地工具循环：读文件、改文件、跑测试、看 diff、恢复改动。
+Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小米 MiMo 和 GLM，然后给它们一个受控的本地编程循环：读文件、改文件、跑测试、看 diff、审查改动、必要时恢复。
 
-它是一个本地优先、低成本、多网页模型兼容的 AI 编程工作台。
+它是一个本地优先、低成本、多网页模型兼容的 AI 编程工作台，适合不想为每个项目接入付费模型 API 的用户。
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
 版本：`0.1.31`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
+
+---
+
+## 一眼看懂
+
+- **使用你已经登录的网页 AI**：支持 DeepSeek、Qwen、小米 MiMo 和 GLM。
+- **代码留在本机**：模型只能访问你选择的项目目录。
+- **受控工具循环**：读取、编辑、测试、diff、Review 和 Restore 都有边界。
+- **需要时多模型协作**：一个模型写代码，另一个模型审查最终 diff。
+- **对新手友好**：有 Git 会增强体验，但没有 Git 也能开始。
 
 ---
 
@@ -360,3 +374,10 @@ codey/
 - 网页模型有时会写得啰嗦或不够干净。
 - Codey 是本地开发工具，不是安全沙箱。
 - 生成代码仍然需要你检查 diff 后再保留。
+
+---
+
+## 许可证
+
+Codey 使用 GNU General Public License version 2 only（`GPL-2.0-only`）
+发布。详见 [LICENSE](LICENSE)。

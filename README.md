@@ -2,17 +2,31 @@
 
 **Use web AI models as a local coding assistant.**
 
+[![Version](https://img.shields.io/badge/version-0.1.31-blue)](CHANGELOG.md)
+[![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
+[![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
+
 [中文说明](README.zh-CN.md)
 
-Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, Xiaomi MiMo, and GLM, and gives them a controlled local tool loop: read files, edit files, run tests, show diffs, and restore changes.
+Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, Xiaomi MiMo, and GLM, then gives them a controlled local coding loop: read files, edit files, run tests, show diffs, review changes, and restore safely.
 
-It is a local-first, low-cost AI coding workspace built for multiple web models.
+It is a local-first, low-cost AI coding workspace for people who want useful coding help without wiring paid model APIs into every project.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
 Version: `0.1.31`
 
 [Version history](CHANGELOG.md)
+
+---
+
+## At a Glance
+
+- **Use web AI accounts you already have**: DeepSeek, Qwen, Xiaomi MiMo, and GLM are supported.
+- **Keep code local**: models access only the project folder you choose.
+- **Controlled tool loop**: read, edit, test, diff, review, and restore.
+- **Multi-model when useful**: one model can write while another reviews the final diff.
+- **Beginner-friendly by design**: Git helps, but it is not required.
 
 ---
 
@@ -361,3 +375,10 @@ codey/
 - Web models may produce verbose or imperfect code.
 - Codey is a local developer tool, not a security sandbox.
 - You still need to review changes before keeping them.
+
+---
+
+## License
+
+Codey is released under the GNU General Public License version 2 only
+(`GPL-2.0-only`). See [LICENSE](LICENSE).
