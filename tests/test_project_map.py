@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from codey import project_map
 
@@ -120,6 +121,72 @@ class ProjectMapTests(unittest.TestCase):
 
         self.assertEqual(rendered, "Project Map (bounded local scan; relative paths only):")
         self.assertNotIn("Candidate commands", rendered)
+        self.assertNotIn("Symbol overview", rendered)
+
+    def test_symbol_overview_is_task_aware_navigation_only(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "codey").mkdir()
+            (root / "tests").mkdir()
+            (root / "codey" / "json_codec.py").write_text(
+                "TOOL_SPECS = {}\n\n"
+                "class JsonToolCodec:\n"
+                "    def parse_tool_calls(self, payload, context):\n"
+                "        return 'BODY_SHOULD_NOT_APPEAR'\n\n"
+                "def render_tool_results(results):\n"
+                "    return []\n",
+                encoding="utf-8",
+            )
+            (root / "codey" / "unrelated.py").write_text(
+                "def paint_screen(canvas):\n"
+                "    return canvas\n",
+                encoding="utf-8",
+            )
+            (root / "tests" / "test_json_codec.py").write_text(
+                "def test_parse_tool_calls():\n"
+                "    assert True\n",
+                encoding="utf-8",
+            )
+
+            rendered = project_map.render_project_map(
+                root,
+                task="change JSON tool call parsing and verification tests",
+            )
+
+        self.assertIn("Symbol overview", rendered)
+        self.assertIn("read files before editing", rendered)
+        self.assertIn("codey/json_codec.py", rendered)
+        self.assertIn("class JsonToolCodec", rendered)
+        self.assertIn("def JsonToolCodec.parse_tool_calls(self, payload, context)", rendered)
+        self.assertIn("tests/test_json_codec.py", rendered)
+        self.assertLess(
+            rendered.index("codey/json_codec.py"),
+            rendered.index("codey/unrelated.py"),
+        )
+        self.assertNotIn("BODY_SHOULD_NOT_APPEAR", rendered)
+        self.assertNotIn("return []", rendered)
+
+    def test_symbol_overview_includes_lightweight_js_ts_symbols(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "src").mkdir()
+            (root / "src" / "router.ts").write_text(
+                "export interface RouteConfig { path: string }\n"
+                "export type RouteMode = 'hash'\n"
+                "export class Router {}\n"
+                "export function buildRouter(config: RouteConfig, mode: RouteMode) { return {} }\n"
+                "export const ROUTE_TABLE = []\n",
+                encoding="utf-8",
+            )
+
+            rendered = project_map.render_project_map(root, task="router config")
+
+        self.assertIn("src/router.ts", rendered)
+        self.assertIn("interface RouteConfig", rendered)
+        self.assertIn("type RouteMode", rendered)
+        self.assertIn("class Router", rendered)
+        self.assertIn("function buildRouter(config, mode)", rendered)
+        self.assertIn("const ROUTE_TABLE", rendered)
 
     def test_map_skips_secret_excluded_lock_and_symlink_paths(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -147,6 +214,77 @@ class ProjectMapTests(unittest.TestCase):
         self.assertNotIn("node_modules", rendered)
         if link is not None:
             self.assertNotIn("linked.py", rendered)
+
+    def test_symbol_overview_skips_secret_dot_symlink_large_and_non_utf8_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "src").mkdir()
+            (root / ".hidden").mkdir()
+            (root / "src" / "visible.py").write_text(
+                "def visible_router():\n    return True\n",
+                encoding="utf-8",
+            )
+            (root / ".hidden" / "hidden.py").write_text(
+                "def hidden_router():\n    pass\n",
+                encoding="utf-8",
+            )
+            (root / "token_helper.py").write_text(
+                "def token_router():\n    pass\n",
+                encoding="utf-8",
+            )
+            (root / "src" / "big.py").write_text(
+                "def big_router():\n    pass\n" + ("#" * (project_map.MAX_SYMBOL_FILE_BYTES + 1)),
+                encoding="utf-8",
+            )
+            (root / "src" / "binary.py").write_bytes(b"\xff\xfe\x00\x00")
+            link = root / "src" / "linked.py"
+            try:
+                link.symlink_to(root / "src" / "visible.py")
+            except OSError:
+                link = None
+
+            rendered = project_map.build_symbol_overview(root, task="router")
+
+        self.assertIn("visible_router", rendered)
+        self.assertNotIn("hidden_router", rendered)
+        self.assertNotIn("token_router", rendered)
+        self.assertNotIn("big_router", rendered)
+        self.assertNotIn("binary.py", rendered)
+        if link is not None:
+            self.assertNotIn("linked.py", rendered)
+
+    def test_symbol_overview_is_bounded_and_marks_truncation(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "src").mkdir()
+            for index in range(30):
+                (root / "src" / f"router_{index:02}.py").write_text(
+                    f"def router_{index:02}_dispatch(alpha, beta, gamma):\n"
+                    "    return alpha\n",
+                    encoding="utf-8",
+                )
+
+            overview = project_map.build_symbol_overview(root, "router dispatch", max_chars=180)
+
+        self.assertIn("symbol overview truncated", overview)
+        self.assertLessEqual(len(overview), 260)
+
+    def test_symbol_overview_has_directory_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for index in range(5):
+                folder = root / f"module_{index}"
+                folder.mkdir()
+                (folder / "router.py").write_text(
+                    f"def router_{index}():\n    return True\n",
+                    encoding="utf-8",
+                )
+
+            with mock.patch.object(project_map, "MAX_SYMBOL_DIRECTORIES", 2):
+                overview = project_map.build_symbol_overview(root, "router")
+
+        self.assertIn("module_0/router.py", overview)
+        self.assertNotIn("module_4/router.py", overview)
 
     def test_large_directory_is_bounded_and_marked_truncated(self) -> None:
         with tempfile.TemporaryDirectory() as td:

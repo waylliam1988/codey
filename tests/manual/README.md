@@ -1,5 +1,30 @@
 # Manual live benchmarks
 
+`project_map_symbol_ab.py` compares first-file selection with only the initial
+listing, with the current Project Map, and with Project Map plus the
+task-aware Symbol overview:
+
+```powershell
+python -B tests\manual\project_map_symbol_ab.py `
+  --provider deepseek `
+  --port 9222 `
+  --out .repo-map-probe.deepseek.strict.json
+```
+
+It asks the live provider to return only the files it would inspect first. Use
+it to validate navigation changes, not as a product tool. `--self-test` checks
+the local Symbol overview invariants without opening a provider page.
+
+`qwen_submit_probe.py` is a narrow live diagnostic for Qwen submit/readiness
+issues:
+
+```powershell
+python -B tests\manual\qwen_submit_probe.py --timeout 45
+```
+
+It can reuse the Project Map/Symbol overview benchmark prompts with `--case`
+and `--arm` when diagnosing Qwen-specific stalls.
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 

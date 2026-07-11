@@ -98,9 +98,9 @@ def _project_has_user_files(project: str | Path) -> bool:
     return False
 
 
-def _safe_project_map(project: str | Path, verified_facts: str) -> str:
+def _safe_project_map(project: str | Path, verified_facts: str, task: str = "") -> str:
     try:
-        return render_project_map(project, verified_facts)
+        return render_project_map(project, verified_facts, task=task)
     except Exception:
         return ""
 
@@ -350,7 +350,7 @@ class TaskRunner:
                     if self.project_facts is not None
                     else ""
                 )
-                project_map = _safe_project_map(project, verified_facts)
+                project_map = _safe_project_map(project, verified_facts, task)
                 checkpoint_prompt = ""
                 if self.work_checkpoints is not None:
                     try:
@@ -516,7 +516,7 @@ class TaskRunner:
                         if self.project_facts is not None
                         else ""
                     )
-                    project_map = _safe_project_map(project, verified_facts)
+                    project_map = _safe_project_map(project, verified_facts, task)
                     if has_reviewable_changes(task_changes):
                         verification_map = _safe_verification_map(
                             project,
@@ -584,7 +584,7 @@ class TaskRunner:
                                     if self.project_facts is not None
                                     else ""
                                 )
-                                project_map = _safe_project_map(project, verified_facts)
+                                project_map = _safe_project_map(project, verified_facts, task)
                                 result = self.agent_run(
                                     provider,
                                     Path(project),

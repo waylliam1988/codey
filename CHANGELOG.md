@@ -4,6 +4,14 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.32 - Bounded Symbol Overview
+
+Added a task-aware Symbol overview inside the existing Project Map so the
+Writer starts with better file and symbol navigation hints before its first
+read. It remains bounded and local-only: no new UI, public tool, cache, index,
+embedding, LSP, or source body injection. Qwen also gained a narrow recovery
+for redirect aborts and one stalled-response retry.
+
 ## 0.1.31 - Structured Execution Evidence
 
 Added a bounded in-memory execution ledger so Verification Map, Review, receipts, and successful project facts use the same read, search, edit, truncation, and post-edit check evidence.

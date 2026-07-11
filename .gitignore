@@ -3,3 +3,4 @@ __pycache__/
 *.log
 .pytest_cache/
 .e2e-artifacts/
+.repo-map-probe*.json

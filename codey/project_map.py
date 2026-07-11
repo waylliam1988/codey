@@ -7,20 +7,29 @@ and Reviewer start from the same basic project facts.
 
 from __future__ import annotations
 
+import ast
 import json
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
 
-MAX_PROJECT_MAP_CHARS = 5_000
+MAX_PROJECT_MAP_CHARS = 7_000
 MAX_DIRECTORY_ENTRIES = 180
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_LISTED_DIRS = 40
 MAX_LISTED_FILES = 80
 MAX_CANDIDATE_COMMANDS = 12
 MAX_SUCCESSFUL_CHECK_LINES = 8
+MAX_SYMBOL_MAP_CHARS = 2_500
+MAX_SYMBOL_DIRECTORIES = 240
+MAX_SYMBOL_FILES = 120
+MAX_SYMBOL_FILE_BYTES = 256 * 1024
+MAX_SYMBOL_TOTAL_BYTES = 2 * 1024 * 1024
+MAX_SYMBOLS_PER_FILE = 12
+SOURCE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
 
 EXCLUDED_DIRS = {
     ".git",
@@ -125,6 +134,7 @@ class ProjectMap:
     docs: tuple[str, ...] = ()
     candidate_commands: tuple[str, ...] = ()
     observed_successful_checks: tuple[str, ...] = ()
+    symbol_overview: str = ""
     truncated: bool = False
 
     def render(self) -> str:
@@ -144,6 +154,8 @@ class ProjectMap:
             "Candidate commands (inspect before running)",
             self.candidate_commands,
         )
+        if self.symbol_overview:
+            lines.append(self.symbol_overview)
         if self.truncated:
             lines.append("- map truncated: inspect narrower paths as needed")
         text = "\n".join(lines).strip()
@@ -152,7 +164,18 @@ class ProjectMap:
         return text[:MAX_PROJECT_MAP_CHARS].rstrip() + "\n- map truncated by character budget"
 
 
-def build_project_map(project: str | Path, verified_facts: str = "") -> ProjectMap:
+@dataclass(frozen=True)
+class SymbolSummary:
+    path: str
+    symbols: tuple[str, ...]
+    score: int
+
+
+def build_project_map(
+    project: str | Path,
+    verified_facts: str = "",
+    task: str = "",
+) -> ProjectMap:
     root = Path(project).expanduser().resolve()
     dirs: list[str] = []
     files: list[str] = []
@@ -214,6 +237,7 @@ def build_project_map(project: str | Path, verified_facts: str = "") -> ProjectM
             break
 
     observed = _observed_successful_checks(verified_facts)
+    symbol_overview = build_symbol_overview(root, task) if task.strip() else ""
     return ProjectMap(
         directories=tuple(dirs[:MAX_LISTED_DIRS]),
         files=tuple(files[:MAX_LISTED_FILES]),
@@ -223,12 +247,52 @@ def build_project_map(project: str | Path, verified_facts: str = "") -> ProjectM
         docs=tuple(docs),
         candidate_commands=tuple(_dedupe(candidate_commands)[:MAX_CANDIDATE_COMMANDS]),
         observed_successful_checks=tuple(observed[:MAX_SUCCESSFUL_CHECK_LINES]),
+        symbol_overview=symbol_overview,
         truncated=truncated,
     )
 
 
-def render_project_map(project: str | Path, verified_facts: str = "") -> str:
-    return build_project_map(project, verified_facts).render()
+def render_project_map(
+    project: str | Path,
+    verified_facts: str = "",
+    task: str = "",
+) -> str:
+    return build_project_map(project, verified_facts, task).render()
+
+
+def build_symbol_overview(
+    project: str | Path,
+    task: str,
+    *,
+    max_chars: int = MAX_SYMBOL_MAP_CHARS,
+) -> str:
+    task = (task or "").strip()
+    if not task:
+        return ""
+    root = Path(project).expanduser().resolve()
+    summaries: list[SymbolSummary] = []
+    for path in _iter_symbol_source_files(root):
+        rel = _safe_relative(root, path)
+        if not rel:
+            continue
+        symbols = _symbols_for_file(path)
+        if not symbols:
+            continue
+        summaries.append(SymbolSummary(rel, symbols, _symbol_score(rel, symbols, task)))
+
+    if not summaries:
+        return ""
+    ordered = sorted(summaries, key=lambda item: (-item.score, item.path))
+    lines = ["Symbol overview (bounded navigation hints only; read files before editing):"]
+    for item in ordered:
+        if item.score <= 0 and len(lines) > 10:
+            continue
+        block = f"- {item.path}: " + "; ".join(item.symbols)
+        if len("\n".join(lines)) + len(block) + 2 > max_chars:
+            lines.append("- symbol overview truncated; use grep/read_file for narrower inspection")
+            break
+        lines.append(block)
+    return "\n".join(lines) if len(lines) > 1 else ""
 
 
 def _extend_section(lines: list[str], title: str, items: Sequence[str]) -> None:
@@ -252,6 +316,49 @@ def _bounded_directory_entries(path: Path, remaining: int) -> tuple[list[Path], 
     except OSError:
         return [], False
     return sorted(entries, key=_entry_sort_key), False
+
+
+def _iter_symbol_source_files(root: Path) -> list[Path]:
+    files: list[Path] = []
+    total_bytes = 0
+    directories_seen = 0
+    stack = [root]
+    while (
+        stack
+        and len(files) < MAX_SYMBOL_FILES
+        and directories_seen < MAX_SYMBOL_DIRECTORIES
+    ):
+        current = stack.pop()
+        directories_seen += 1
+        entries, _truncated = _bounded_directory_entries(current, MAX_DIRECTORY_ENTRIES)
+        subdirs: list[Path] = []
+        for path in entries:
+            rel = _safe_relative(root, path)
+            if not rel or _path_blocked(rel):
+                continue
+            try:
+                if path.is_symlink():
+                    continue
+                if path.is_dir():
+                    subdirs.append(path)
+                    continue
+                if not path.is_file():
+                    continue
+                if path.suffix.lower() not in SOURCE_SUFFIXES:
+                    continue
+                size = path.stat().st_size
+                if size > MAX_SYMBOL_FILE_BYTES:
+                    continue
+                if total_bytes + size > MAX_SYMBOL_TOTAL_BYTES:
+                    break
+                total_bytes += size
+            except OSError:
+                continue
+            files.append(path)
+            if len(files) >= MAX_SYMBOL_FILES:
+                break
+        stack.extend(reversed(subdirs))
+    return sorted(files)
 
 
 def _entry_sort_key(item: Path) -> tuple[bool, str]:
@@ -311,6 +418,137 @@ def _observed_successful_checks(verified_facts: str) -> list[str]:
             continue
         _append_unique(checks, stripped.removeprefix("- ").strip())
     return checks
+
+
+def _symbols_for_file(path: Path) -> tuple[str, ...]:
+    suffix = path.suffix.lower()
+    if suffix == ".py":
+        return _python_symbols(path)
+    if suffix in {".js", ".jsx", ".ts", ".tsx"}:
+        return _js_symbols(path)
+    return ()
+
+
+def _python_symbols(path: Path) -> tuple[str, ...]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        return ()
+    symbols: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef):
+            symbols.append(f"class {node.name}")
+            for child in node.body:
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    symbols.append(f"def {node.name}.{child.name}({_python_args(child.args)})")
+                    if len(symbols) >= MAX_SYMBOLS_PER_FILE:
+                        return tuple(symbols)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            symbols.append(f"def {node.name}({_python_args(node.args)})")
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id.isupper():
+                    symbols.append(f"const {target.id}")
+        if len(symbols) >= MAX_SYMBOLS_PER_FILE:
+            break
+    return tuple(symbols[:MAX_SYMBOLS_PER_FILE])
+
+
+def _python_args(args: ast.arguments) -> str:
+    names = [arg.arg for arg in (*args.posonlyargs, *args.args)]
+    if args.vararg:
+        names.append("*" + args.vararg.arg)
+    names.extend(arg.arg for arg in args.kwonlyargs)
+    if args.kwarg:
+        names.append("**" + args.kwarg.arg)
+    return ", ".join(names[:6]) + (", ..." if len(names) > 6 else "")
+
+
+JS_SYMBOL_RE = re.compile(
+    r"^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)"
+    r"|^\s*(?:export\s+)?class\s+([A-Za-z_$][\w$]*)"
+    r"|^\s*(?:export\s+)?interface\s+([A-Za-z_$][\w$]*)"
+    r"|^\s*(?:export\s+)?type\s+([A-Za-z_$][\w$]*)\s*="
+    r"|^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=",
+    re.MULTILINE,
+)
+
+
+def _js_symbols(path: Path) -> tuple[str, ...]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ()
+    symbols: list[str] = []
+    for match in JS_SYMBOL_RE.finditer(text):
+        func, args, cls, interface, typ, const = match.groups()
+        if func:
+            parts = [part.strip() for part in args.split(",") if part.strip()]
+            arg_names = ", ".join(part.split(":")[0].strip() for part in parts[:6])
+            suffix = ", ..." if len(parts) > 6 else ""
+            symbols.append(f"function {func}({arg_names}{suffix})")
+        elif cls:
+            symbols.append(f"class {cls}")
+        elif interface:
+            symbols.append(f"interface {interface}")
+        elif typ:
+            symbols.append(f"type {typ}")
+        elif const:
+            symbols.append(f"const {const}")
+        if len(symbols) >= MAX_SYMBOLS_PER_FILE:
+            break
+    return tuple(symbols)
+
+
+STOP_TOKENS = {
+    "and",
+    "change",
+    "changes",
+    "file",
+    "files",
+    "first",
+    "for",
+    "implementation",
+    "likely",
+    "need",
+    "should",
+    "the",
+    "want",
+    "where",
+    "which",
+    "with",
+}
+
+
+def _tokens(text: str) -> set[str]:
+    expanded = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text.replace("_", " "))
+    return {
+        token.lower()
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9]{1,}", expanded)
+        if token.lower() not in STOP_TOKENS
+    }
+
+
+def _symbol_score(rel: str, symbols: tuple[str, ...], task: str) -> int:
+    task_tokens = _tokens(task)
+    path_tokens = _tokens(rel.replace("/", " "))
+    basename_tokens = _tokens(Path(rel).stem)
+    symbol_tokens = _tokens(" ".join(symbols))
+    score = 0
+    score += 8 * len(task_tokens & path_tokens)
+    score += 6 * len(task_tokens & basename_tokens)
+    score += 5 * len(task_tokens & symbol_tokens)
+    lower_rel = rel.lower()
+    lower_symbols = tuple(symbol.lower() for symbol in symbols)
+    for token in task_tokens:
+        if len(token) >= 4 and token in lower_rel:
+            score += 2
+        if len(token) >= 4 and any(token in symbol for symbol in lower_symbols):
+            score += 2
+    if task_tokens & {"check", "test", "testing", "tests", "verification", "verify"}:
+        if lower_rel.startswith("tests/") or "/test_" in lower_rel:
+            score += 4
+    return score
 
 
 def _manifest_commands(path: Path, rel: str) -> list[str]:

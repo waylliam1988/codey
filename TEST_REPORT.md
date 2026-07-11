@@ -1,4 +1,37 @@
-# Codey 0.1.31 Test Report
+# Codey 0.1.32 Test Report
+
+## 0.1.32 Bounded Symbol Overview
+
+This release adds a bounded task-aware Symbol overview as a small section of the
+existing Project Map. It gives the Writer file and symbol navigation hints
+before the first read, while keeping the old Project Map role for manifests,
+docs, roots, candidate commands, and observed checks. It adds no UI, public
+tool, persisted index, cache, embedding, LSP integration, or source bodies.
+
+The live Edge/CDP A/B benchmark asks each provider to choose the first files it
+would inspect for five Codey maintenance tasks. The final production
+`render_project_map(..., task=...)` path improved first-file selection across
+all four web providers:
+
+| Arm | Expected-path hits | Top-1 hits |
+|---|---:|---:|
+| Initial listing only | 18 | 7 / 20 |
+| Project Map | 23 | 8 / 20 |
+| Project Map + Symbol overview | 40 | 20 / 20 |
+
+Provider-level Symbol overview top-1 result: DeepSeek 5/5, Qwen 5/5, MiMo 5/5,
+GLM 5/5. The manual benchmark now lives at
+`tests/manual/project_map_symbol_ab.py` and tests the production Project Map
+renderer directly.
+
+Qwen reliability also improved: `new_chat()` now tolerates Qwen redirect
+`net::ERR_ABORTED` before readiness checks, and `chat()` retries once when a
+confirmed submission stalls without producing a response. Other navigation and
+timeout failures remain visible.
+
+Validation: `python -B -m unittest` passed with 590 tests; `python -B -m pytest
+-q` passed with 598 tests and 31 subtests; changed-file Ruff, `compileall`,
+manual Symbol overview self-test, and `git diff --check` passed.
 
 ## 0.1.31 Structured Execution Evidence
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page
 
 from codey import cancellation, provider_controls as controls
@@ -33,6 +34,7 @@ SUBMIT_CONFIRM_TIMEOUT = 15.0
 COPY_READY_TIMEOUT = 10.0
 PREFERENCE_TIMEOUT = 15.0
 REGENERATE_START_TIMEOUT = 15.0
+MAX_STALLED_RESPONSE_RETRIES = 1
 
 _BOOTSTRAP_READY_JS = r"""
 () => {
@@ -184,7 +186,11 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
 
 def new_chat(page: Page) -> None:
     cancellation.check()
-    page.goto(QWEN_URL, wait_until="domcontentloaded", timeout=60000)
+    try:
+        page.goto(QWEN_URL, wait_until="domcontentloaded", timeout=60000)
+    except PlaywrightError as exc:
+        if "net::ERR_ABORTED" not in str(exc):
+            raise
     wait_ready(page)
 
 
@@ -442,7 +448,15 @@ def chat(
     tick: float = 0.8,
     min_wait: float = 1.5,
 ) -> str:
-    try:
-        return _chat(page, text, response_timeout, stable_ticks, tick, min_wait)
-    finally:
-        controls.stop_response_watch(page, PROVIDER_ID)
+    for attempt in range(MAX_STALLED_RESPONSE_RETRIES + 1):
+        try:
+            return _chat(page, text, response_timeout, stable_ticks, tick, min_wait)
+        except TimeoutError as exc:
+            if (
+                attempt >= MAX_STALLED_RESPONSE_RETRIES
+                or "response timed out" not in str(exc)
+            ):
+                raise
+        finally:
+            controls.stop_response_watch(page, PROVIDER_ID)
+    raise TimeoutError(f"Qwen Studio response timed out after {response_timeout:.0f}s")

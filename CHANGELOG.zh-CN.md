@@ -4,6 +4,14 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.32 - Bounded Symbol Overview
+
+在现有 Project Map 里加入 task-aware 的 Symbol overview，让 Writer
+第一次读文件前先看到更准确的文件和符号导航提示。它仍然是有边界、本地
+只读的小节：不增加 UI、不增加公开工具、不做缓存/索引/embedding/LSP，
+也不把源码体塞进 prompt。Qwen 还新增了窄范围恢复：容忍重定向
+`net::ERR_ABORTED`，并对一次确认提交后无回复的卡顿做单次重试。
+
 ## 0.1.31 - Structured Execution Evidence
 
 新增有边界的内存执行证据账本，让 Verification Map、Review、任务收据和成功项目事实共同使用同一份读取、搜索、编辑、截断和最后一次编辑后检查记录。
