@@ -26,6 +26,30 @@ Compare correctness first, then tool turns, sent characters, and provider time.
 Single-run wall-clock differences are noisy because web providers throttle and
 vary their generation latency.
 
+`context_delta_ab.py` tests whether Codey's short same-web-conversation
+follow-up has measurable value compared with repeating the complete project
+intro. Both arms first run the same read-only orientation task. The second
+stage either sends the full context again, sends only the new request, or uses
+`contract-delta` to repeat the stable tool contract without repeating Project
+Map, project instructions, or the initial listing:
+
+```powershell
+python -B tests\manual\context_delta_ab.py `
+  --case codey_execution_evidence `
+  --arm delta `
+  --provider deepseek `
+  --port 9222
+```
+
+Run `full`, `delta`, and `contract-delta` in separate fresh benchmark
+conversations. Compare
+follow-up correctness first, then `followup_turns`,
+`repeated_warmup_information_calls`, `followup_first_prompt_chars`, total sent
+characters, and provider time. The harness disables edit and run, never
+executes Shell, and writes results to the system temporary directory.
+If the first-stage orientation does not complete cleanly, the sample is marked
+`eligible=false` and the follow-up is not run.
+
 `verification_review_ab.py` compares the same synthetic diff with and without
 the hidden Verification Map:
 
