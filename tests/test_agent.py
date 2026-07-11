@@ -535,6 +535,24 @@ class RunLoopTests(unittest.TestCase):
         self.assertIn("Project Map", provider.sent[0])
         self.assertIn("package.json", provider.sent[0])
 
+    def test_project_intro_includes_local_execution_checkpoint_when_provided(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"resumed"}}')
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Continue the task",
+                work_checkpoint=(
+                    "Local execution checkpoint (bounded local facts):\n"
+                    "- Recorded changed files: src/app.py\n"
+                    "- Successful checks after the latest recorded change: (none)"
+                ),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Local execution checkpoint", provider.sent[0])
+        self.assertIn("src/app.py", provider.sent[0])
+
     def test_emits_structured_turn_and_tool_events(self) -> None:
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"app.py"}}',

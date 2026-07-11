@@ -29,6 +29,11 @@ from codey.project_map import render_project_map
 from codey.providers import PROVIDER_LABELS
 from codey.receipt import build_task_receipt
 from codey.review import has_reviewable_changes, render_writer_followup
+from codey.work_checkpoint import (
+    WorkCheckpoint,
+    WorkCheckpointStore,
+    render_work_checkpoint,
+)
 
 
 @dataclass(frozen=True)
@@ -112,6 +117,7 @@ class TaskRunner:
         run_consensus: Callable | None = None,
         run_project_audit: Callable | None = None,
         project_facts: ProjectFactsStore | None = None,
+        work_checkpoints: WorkCheckpointStore | None = None,
         is_git_repository: Callable[[str | Path], bool] | None = None,
         review_fix_turns: int = 12,
         review_log_lines: int = 80,
@@ -124,6 +130,7 @@ class TaskRunner:
         self.run_project_audit = run_project_audit
         self.capture_provider_failure = capture_provider_failure
         self.project_facts = project_facts
+        self.work_checkpoints = work_checkpoints
         self.is_git_repository = is_git_repository or (lambda _project: False)
         self.review_fix_turns = review_fix_turns
         self.review_log_lines = review_log_lines
@@ -171,6 +178,19 @@ class TaskRunner:
         recent_events: list[str] = []
         task_changes: dict | None = None
         successful_check_commands: list[str] = []
+        work_checkpoint: WorkCheckpoint | None = None
+        resumed_checkpoint = False
+
+        def update_checkpoint(
+            action: Callable[[WorkCheckpointStore, WorkCheckpoint], WorkCheckpoint],
+        ) -> None:
+            nonlocal work_checkpoint
+            if self.work_checkpoints is None or work_checkpoint is None:
+                return
+            try:
+                work_checkpoint = action(self.work_checkpoints, work_checkpoint)
+            except (OSError, ValueError):
+                pass
 
         def on_event(event: RunEvent) -> None:
             message = render_run_event(event)
@@ -201,6 +221,27 @@ class TaskRunner:
                     )
                 except (OSError, ValueError):
                     pass
+            if (
+                project
+                and event.kind == "tool"
+                and event.call is not None
+                and event.outcome is not None
+            ):
+                if event.call.name == "edit" and event.outcome.ok and event.outcome.changed:
+                    rel = str(event.call.args.get("path") or "")
+                    update_checkpoint(lambda store, item: store.record_edit(item, rel))
+                elif event.call.name == "run":
+                    command = str(event.call.args.get("command") or "")
+                    cwd = str(event.call.args.get("path") or ".")
+                    ok = event.outcome.ok and event.outcome.exit_code == 0
+                    update_checkpoint(
+                        lambda store, item: store.record_run(
+                            item,
+                            command=command,
+                            cwd=cwd,
+                            ok=ok,
+                        )
+                    )
 
         def on_shell_request(cwd_rel: str, command: str) -> None:
             if not project:
@@ -292,6 +333,32 @@ class TaskRunner:
                     else ""
                 )
                 project_map = _safe_project_map(project, verified_facts)
+                checkpoint_prompt = ""
+                if self.work_checkpoints is not None:
+                    try:
+                        previous = self.work_checkpoints.load(session_id)
+                        same_project = (
+                            previous is not None
+                            and previous.project == str(Path(project).expanduser().resolve())
+                        )
+                        resume_requested = continue_task or provider_session_changed
+                        same_task = (
+                            previous is not None
+                            and previous.original_task.strip() == task.strip()
+                        )
+                        if same_project and resume_requested and (continue_task or same_task):
+                            work_checkpoint = self.work_checkpoints.reconcile(previous)
+                            checkpoint_prompt = render_work_checkpoint(work_checkpoint)
+                            resumed_checkpoint = True
+                        else:
+                            work_checkpoint = self.work_checkpoints.start(
+                                run_id=run_id,
+                                session_id=session_id,
+                                project=project,
+                                task=task,
+                            )
+                    except (OSError, ValueError):
+                        work_checkpoint = None
                 agent_task = task
                 change_brief: ChangeBrief | None = None
                 agent_fresh_chat = fresh_chat
@@ -364,8 +431,30 @@ class TaskRunner:
                     handoff=handoff,
                     project_facts=verified_facts,
                     project_map=project_map,
+                    work_checkpoint=checkpoint_prompt,
                 )
-                task_changed = result.changed
+                if (
+                    resumed_checkpoint
+                    and work_checkpoint is not None
+                    and not result.changed
+                    and not result.checks_ran
+                    and work_checkpoint.successful_checks_after_last_change
+                ):
+                    result = replace(result, checks_passed=True)
+                    successful_check_commands.extend(
+                        item.command
+                        for item in work_checkpoint.successful_checks_after_last_change
+                        if item.command not in successful_check_commands
+                    )
+                task_changed = result.changed or bool(
+                    resumed_checkpoint
+                    and work_checkpoint is not None
+                    and work_checkpoint.changed_files
+                )
+                if result.stop_reason == "done":
+                    update_checkpoint(
+                        lambda store, item: store.set_status(item, "ready_for_review")
+                    )
                 state.set_provider_session(
                     provider_id,
                     None if result.stop_reason == "stopped" else session_id,
@@ -447,6 +536,12 @@ class TaskRunner:
                         if reviewed is not None:
                             _reviewer_id, review = reviewed
                             if not review.approved:
+                                update_checkpoint(
+                                    lambda store, item: store.set_status(
+                                        item,
+                                        "fixing_review",
+                                    )
+                                )
                                 checks_before_review_followup = result.checks_passed
                                 followup = render_writer_followup(
                                     task,
@@ -475,6 +570,13 @@ class TaskRunner:
                                     project_facts=verified_facts,
                                     project_map=project_map,
                                 )
+                                if result.stop_reason == "done":
+                                    update_checkpoint(
+                                        lambda store, item: store.set_status(
+                                            item,
+                                            "ready_for_review",
+                                        )
+                                    )
                                 if (
                                     result.stop_reason == "done"
                                     and not result.changed
@@ -545,24 +647,48 @@ class TaskRunner:
                     for item in (task_changes.get("files") or [])
                     if item.get("path")
                 )
-                if (
+                facts_write_required = (
                     self.project_facts is not None
                     and result.stop_reason == "done"
                     and task_changed
                     and result.checks_passed
                     and successful_check_commands
                     and files
-                ):
+                )
+                facts_write_succeeded = not facts_write_required
+                if facts_write_required:
                     try:
-                        self.project_facts.record_successful_change(
-                            project,
-                            task=task,
-                            files=files,
-                            check_commands=successful_check_commands,
-                            receipt=receipt.text,
+                        fact_task = (
+                            work_checkpoint.original_task
+                            if resumed_checkpoint and work_checkpoint is not None
+                            else task
+                        )
+                        facts_write_succeeded = (
+                            self.project_facts.record_successful_change(
+                                project,
+                                task=fact_task,
+                                files=files,
+                                check_commands=successful_check_commands,
+                                receipt=receipt.text,
+                            )
                         )
                     except (OSError, ValueError):
-                        pass
+                        facts_write_succeeded = False
+                if self.work_checkpoints is not None and work_checkpoint is not None:
+                    if result.stop_reason == "done" and facts_write_succeeded:
+                        try:
+                            self.work_checkpoints.delete(session_id)
+                            work_checkpoint = None
+                        except OSError:
+                            pass
+                    elif result.stop_reason != "done":
+                        update_checkpoint(
+                            lambda store, item: store.set_status(
+                                item,
+                                "interrupted",
+                                result.stop_reason,
+                            )
+                        )
                 conversation.update_snapshot(replace(
                     conversation.snapshot,
                     provider_id=provider_id,
@@ -596,6 +722,9 @@ class TaskRunner:
             state.finish_run(run_id, event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             state.set_provider_session(provider_id, None)
+            update_checkpoint(
+                lambda store, item: store.set_status(item, "interrupted", "stopped")
+            )
             if "conversation" in locals():
                 conversation.update_snapshot(replace(
                     conversation.snapshot,
@@ -614,6 +743,9 @@ class TaskRunner:
                 "provider_failure": None,
             })
         except Exception as exc:
+            update_checkpoint(
+                lambda store, item: store.set_status(item, "interrupted", "error")
+            )
             if "conversation" in locals():
                 conversation.update_snapshot(replace(
                     conversation.snapshot,

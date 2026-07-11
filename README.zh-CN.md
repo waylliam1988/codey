@@ -73,6 +73,8 @@ Codey 想解决的是一个很朴素的问题：
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
 
+`0.1.28` 增加隐藏的 Durable Execution Checkpoint，用来恢复尚未完成的项目任务。真实 edit 成功后，Codey 只在 `~/.codey` 原子保存有边界的本地事实：带内容 hash 的相对改动路径、最后一次记录修改之后成功的检查命令、最后一个 edit/run 动作和中断原因；不保存源码、diff、工具输出、prompt、模型计划或“剩余步骤”自述。新的 edit 即使路径无法记录也会立即使旧检查失效；运行时已接受的路径会先在项目根目录下规范化，再按与重新加载相同的长度边界记录 hash。恢复时还会重新核对当前文件 hash，工作区若在 checkpoint 后发生变化，旧检查会被清空。checkpoint 只在同一 session / project 被明确继续，或同一任务的网页 Provider 上下文丢失时注入；stop、error、max-turn、no-progress 后都会保留，恢复完成后仍进入正常 Diff / Review，最终正常完成并写好必要的 ProjectFacts 后才删除。本版没有新增 UI、工作流引擎、任务拆分、提前 Review 或额外模型调用；通过 555 项 pytest、33 项 subtest、语法编译、本次改动 Ruff 和 `git diff --check`。真实 Edge/CDP smoke 刻意让 DeepSeek 在一次 edit 后中断，随后打开全新模型对话从 checkpoint 继续，独立 `unittest` 通过、GLM Review 批准，并确认完成后的 checkpoint 已删除。
+
 `0.1.27` 增加 `find_references`，这是一个有边界的“文本引用提示”工具，适合稍大的改动：模型可以先问“这个函数、类或本地 API 还在哪里被提到”，再决定要读哪些调用方。它故意不承诺语义精确：不是 LSP、不是调用图、不是索引，也不是重命名引擎。它只接受简单 symbol，跳过依赖 / 构建 / 缓存目录、大文件、不可读文件和 symlink 路径，最多返回 80 条稳定的路径 / 行号提示，并明确要求模型编辑前必须再用 `read_file` 读取真实源码。直接把起始路径指向 symlink 时会在解析前拒绝，所以项目内链接不会静默把扫描重定向到目标文件；直接把起始路径指向依赖 / 构建 / 缓存目录时也会按大小写不敏感规则跳过，但如果用户选择的项目根目录本身叫 `build`、`dist` 或 `target`，仍然会正常扫描。`find_references`、普通 `grep`、隐藏项目审查顾问的搜索和引用扫描现在共用同一个流式 bounded scanner，不再先收集并排序所有候选文件；如果扫描预算耗尽，工具会明确提示省略文件里仍可能有匹配。这个工具不能放进 `parallel`；隐藏项目审查顾问仍然经过更严格的 audit 过滤；Reviewer 仍然没有工具权限，只看上下文。`edit` 也会给出更清楚的单文件 / path 协议错误，并且能安全恢复唯一的行首缩进丢失，适配部分网页模型把代码缩进压缩掉的情况。本版没有新增 UI、缓存、持久化、索引或语义解析器；通过 542 项 pytest、聚焦 runtime / protocol / agent / consensus / live-smoke 套件、语法编译、`git diff --check` 无输出，以及 DeepSeek、GLM、Qwen、MiMo 四个网页模型的 `find_references` 实机 smoke。
 
 `0.1.26` 增加 `outline_file`，这是一个很小的只读导航工具，用来帮助模型面对大源码文件时少读无关内容。Project Map 先告诉模型项目里有哪些重要文件；如果模型锁定了某个目标文件，就可以调用 `outline_file` 看这个文件的浅层结构：imports、函数、类、方法、测试、exports、箭头函数，以及常见 JS / TS 路由声明和行号提示。它不会返回函数体，不是源码内容，协议里明确要求不能把 outline 输出当作 `old_string`；编辑前仍然必须用 `read_file` 按行号读取真实源码。这个工具不能放进 `parallel`，隐藏项目审查顾问可以使用它，但仍走同一套敏感路径过滤；Reviewer 没有新增工具。没有新增 UI、缓存、索引、RAG 或持久化。本版通过 510 项 unittest、510 项 pytest、语法编译和 `git diff --check` 无输出。
@@ -349,6 +351,7 @@ codey/
   changes.py                Git 与 snapshot diff / restore
   local_store.py            共享本地数据根目录和原子 JSON 写入
   project_facts.py          经过成功运行验证的项目事实
+  work_checkpoint.py        未完成执行的持久事实检查点
   conversation_store.py     有上限的对话事实持久化
   provider_profiles.json    支持模型网页的版本化选择器
   provider_profiles.py      经过验证的 Profile 加载

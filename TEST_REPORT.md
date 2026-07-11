@@ -1,7 +1,41 @@
-# Codey 0.1.27 Test Report
+# Codey 0.1.28 Test Report
 
 Date: 2026-07-11
 Environment: Windows / Edge or Chrome CDP reuse path / DeepSeek, MiMo, Qwen, GLM tabs open
+
+## 0.1.28 Durable Execution Checkpoint
+
+This release adds a bounded, atomic, session-scoped checkpoint for unfinished
+project execution. It stores local execution facts only: relative changed
+paths with post-edit hashes, successful checks after the latest edit, a small
+last-action record, status, and stop reason. It stores no source, diff, tool
+output, prompt, task plan, or model-authored remaining work.
+
+Covered behavior:
+
+- successful edits invalidate all earlier checks even if a path/hash cannot be
+  recorded; runtime-accepted relative or in-project absolute paths are
+  canonicalized under the project root before hashing;
+- successful runs are recorded, while failed runs remain only the last action;
+- recovery reconciles hashes and invalidates checks after external changes;
+- stopped, errored, max-turn, and no-progress tasks retain an interrupted checkpoint;
+- only the same session/project with an explicit continuation, or the same task
+  after provider-context loss, receives the recovered facts;
+- unrelated new tasks do not inherit an old checkpoint;
+- recovered changes still enter final Diff/Review even if the resumed Writer
+  performs no additional edit;
+- a failed verified ProjectFacts write does not delete the checkpoint early;
+- normal completion removes the active checkpoint;
+- corrupt, oversized, or incompatible checkpoint files are ignored safely.
+
+Live Edge/CDP verification intentionally stopped DeepSeek at `max_turns=1`
+immediately after creating `app.py`, closed the provider, opened a fresh
+DeepSeek conversation with the recovered checkpoint, read the real files, ran
+`python -m unittest`, completed successfully, passed an independent local
+check, received GLM approval, and deleted the completed checkpoint.
+
+Regression result: `555 passed, 33 subtests passed` with pytest; changed-file
+Ruff, `compileall`, and `git diff --check` also passed.
 
 ## 0.1.27 Find References Tool
 

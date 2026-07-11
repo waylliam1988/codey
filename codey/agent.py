@@ -190,6 +190,7 @@ def run(
     handoff: str = "",
     project_facts: str = "",
     project_map: str = "",
+    work_checkpoint: str = "",
 ) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
@@ -265,12 +266,18 @@ def run(
             if project_map
             else ""
         )
+        checkpoint_block = (
+            f"{work_checkpoint}\n\n"
+            if work_checkpoint
+            else ""
+        )
         return (
             f"{codec.system_prompt()}\n\n"
             f"Project root: {project}\n"
             f"Project instructions:\n{format_project_instructions(project_instructions)}\n\n"
             f"{facts}"
             f"{map_block}"
+            f"{checkpoint_block}"
             f"Initial listing:\n{list_directory(project, '.').output}\n\n"
             f"User task:\n{current}"
         )

@@ -59,6 +59,7 @@ from codey.providers import (
 )
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
 from codey.project_facts import ProjectFactsStore
+from codey.work_checkpoint import WorkCheckpointStore
 from codey.review import (
     ReviewResult,
     parse_review_with_repair,
@@ -349,6 +350,9 @@ class State:
         self.last_shell_result: dict | None = None
         self.project_facts = (
             ProjectFactsStore(state_home) if state_home else ProjectFactsStore()
+        )
+        self.work_checkpoints = (
+            WorkCheckpointStore(state_home) if state_home else WorkCheckpointStore()
         )
         self.conversation_store = (
             ConversationStore(state_home) if state_home else ConversationStore()
@@ -783,6 +787,7 @@ def _run_task(
         run_consensus=_run_consensus,
         run_project_audit=_run_project_audit,
         project_facts=STATE.project_facts,
+        work_checkpoints=STATE.work_checkpoints,
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
