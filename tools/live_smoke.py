@@ -15,6 +15,7 @@ from codey.agent import run
 from codey import provider_controls
 from codey.changes import ChangeTracker, collect_changes
 from codey.events import render_run_event
+from codey.execution_evidence import ExecutionEvidence
 from codey.providers.registry import connect_provider, provider_ids
 from codey.review import (
     has_reviewable_changes,
@@ -170,6 +171,7 @@ def _run_review_pass(
     port: int,
     max_turns: int,
     tracker: ChangeTracker,
+    evidence: ExecutionEvidence,
 ) -> tuple[str, str, str]:
     reviewer = None
     try:
@@ -182,6 +184,7 @@ def _run_review_pass(
                 writer_summary=writer_summary,
                 changes=changes,
                 recent_log="\n".join(events[-80:]),
+                execution_evidence=evidence.render_for_review(),
             )
         )
         result = parse_review_with_repair(reply, reviewer.send)
@@ -197,13 +200,18 @@ def _run_review_pass(
 
     followup = render_writer_followup(task, result)
     writer = connect_provider(writer_id, port=port)
+
+    def on_event(event) -> None:
+        evidence.record(event)
+        _record_event(events, event)
+
     try:
         fixed = run(
             writer,
             root,
             followup,
             max_turns=min(max_turns, 12),
-            on_event=lambda event: _record_event(events, event),
+            on_event=on_event,
             fresh_chat=False,
             change_tracker=tracker,
         )
@@ -225,8 +233,10 @@ def run_smoke(
     try:
         _make_fixture(root, case)
         events: list[str] = []
+        evidence = ExecutionEvidence()
 
         def on_event(event) -> None:
+            evidence.record(event)
             _record_event(events, event)
 
         provider_controls.begin_task_context(f"live-smoke:{provider_id}:{case}")
@@ -288,6 +298,7 @@ def run_smoke(
                         port=port,
                         max_turns=max_turns,
                         tracker=tracker,
+                        evidence=evidence,
                     )
         finally:
             try:
@@ -310,6 +321,7 @@ def run_smoke(
             "review": review_status,
             "verification": verification,
             "events": events,
+            "execution_evidence": evidence.render_for_review(),
             "project": str(root),
         }
     finally:

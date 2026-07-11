@@ -145,6 +145,25 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("not modified, not that it is missing", prompt)
         self.assertIn("do not relax the Changed-files-only", prompt)
 
+    def test_render_review_prompt_includes_bounded_execution_evidence(self) -> None:
+        prompt = review.render_review_prompt(
+            project="E:/demo",
+            task="Fix auth",
+            writer_summary="done",
+            changes={
+                "files": [{"path": "src/auth.py", "status": "M"}],
+                "diff": "diff --git a/src/auth.py b/src/auth.py\n+fixed\n",
+            },
+            execution_evidence=(
+                "Execution Evidence (bounded local facts):\n"
+                "- Latest edit epoch: 1\n"
+                "- Successful checks after latest edit: python -m pytest"
+            ),
+        )
+
+        self.assertIn("Execution Evidence (bounded local facts)", prompt)
+        self.assertIn("Successful checks after latest edit", prompt)
+
     def test_render_writer_followup_keeps_reviewer_advisory(self) -> None:
         result = review.ReviewResult(
             verdict="changes_requested",

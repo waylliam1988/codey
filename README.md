@@ -10,7 +10,9 @@ It is a local-first, low-cost AI coding workspace built for multiple web models.
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.30`
+Version: `0.1.31`
+
+Version `0.1.31` adds Structured Execution Evidence, a bounded in-memory ledger for one project run. It records edit epochs, changed paths, files read, complete or truncated searches, tool-result truncation, repeated information calls, and successful or failed checks after the latest edit. TaskRunner now uses this single local fact source for Verification Map, Review, receipts, and successful ProjectFacts; the Reviewer receives a private bounded evidence section instead of reconstructing execution state from prose logs. The ledger is not persisted, adds no UI or tool, and does not yet intervene in Writer convergence. A live four-provider reference-aware edit passed with MiMo in 6 turns, Qwen in 7, GLM in 8, and DeepSeek in 9; a MiMo Writer to Qwen Reviewer flow was approved. The live run also exposed and fixed a GLM duplicate-submission false positive by comparing the submitted prompt body rather than total question-node growth. The release passed 582 pytest tests and 31 subtests, Ruff, syntax compilation, and `git diff --check`.
 
 Version `0.1.30` removes the withdrawn `outline_file` tool completely. Natural-use audits showed that web models reliably chose Project Map, literal `grep` or `find_references`, then offset `read_file`. The separate source-outline parser added protocol and maintenance surface without dependable everyday benefit, so no compatibility alias remains. The release passed 575 pytest tests and 31 subtests, Ruff, syntax compilation, and `git diff --check`.
 
@@ -345,6 +347,7 @@ codey/
   text_budget.py            bounded head-and-tail output clipping
   bounded_scan.py           shared bounded local file traversal
   tool_runtime.py           local tools and structured outcomes
+  execution_evidence.py     bounded in-memory execution fact ledger
   references.py             bounded lexical reference hints
   project_map.py            deterministic bounded project orientation
   verification_map.py       bounded review-time verification candidates

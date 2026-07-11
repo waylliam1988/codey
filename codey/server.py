@@ -124,6 +124,7 @@ def _run_review(
     change_brief: str = "",
     project_map: str = "",
     verification_map: str = "",
+    execution_evidence: str = "",
 ) -> tuple[str, ReviewResult] | None:
     cancellation.check()
     last_error: Exception | None = None
@@ -143,6 +144,7 @@ def _run_review(
                 change_brief=change_brief,
                 project_map=project_map,
                 verification_map=verification_map,
+                execution_evidence=execution_evidence,
             )
             with provider_controls.suppress_assistance():
                 reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)

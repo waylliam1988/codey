@@ -181,6 +181,27 @@ def _question_count(page: Page) -> int:
         return 0
 
 
+def _submitted_question_count(page: Page, submitted_text: str) -> int:
+    """Count question nodes whose prompt body equals this submission."""
+
+    needle = submitted_text.strip()
+    if not needle:
+        return 0
+    try:
+        values = page.locator(PROFILE.selector("question")).all_inner_texts()
+    except Exception:
+        return 0
+    if not isinstance(values, list):
+        return 0
+    count = 0
+    for value in values:
+        _label, separator, body = value.partition("\n")
+        prompt = body if separator else value
+        if prompt.strip() == needle:
+            count += 1
+    return count
+
+
 def _last_text(page: Page) -> str:
     response = controls.locate_response(
         page,
@@ -300,6 +321,7 @@ def _chat(
     response_baseline = _response_count(page)
     baseline_text = _last_text(page) if response_baseline else ""
     question_baseline = _question_count(page)
+    submitted_question_baseline = _submitted_question_count(page, text)
     controls.start_response_watch(page, PROVIDER_ID)
 
     textarea = _message_box(page, teach=True)
@@ -327,7 +349,7 @@ def _chat(
 
     while time.time() < deadline:
         cancellation.wait(tick)
-        if _question_count(page) > question_baseline + 1:
+        if _submitted_question_count(page, text) > submitted_question_baseline + 1:
             raise RuntimeError("GLM page submitted the message more than once")
         count = _response_count(page)
         current = _last_text(page) if count else ""

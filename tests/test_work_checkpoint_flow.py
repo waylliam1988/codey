@@ -236,6 +236,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 server._run_task("session-1", str(project), "Fix login", 8, False, "deepseek")
 
             rendered = review.call_args.kwargs["verification_map"]
+            execution = review.call_args.kwargs["execution_evidence"]
             self.assertIn("tests/test_auth.py", rendered)
             observed = rendered.split(
                 "Observed successful checks after the latest edit:\n",
@@ -243,6 +244,9 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             )[1].split("Broader check candidates", 1)[0]
             self.assertIn("python -m pytest tests/test_auth.py", observed)
             self.assertNotIn("python -m pytest tests/old.py", observed)
+            self.assertIn("Latest edit epoch: 1", execution)
+            self.assertIn("python -m pytest tests/test_auth.py", execution)
+            self.assertNotIn("python -m pytest tests/old.py", execution)
             facts = state.project_facts.load(project)
             self.assertEqual(
                 facts.successful_changes[-1].checks,

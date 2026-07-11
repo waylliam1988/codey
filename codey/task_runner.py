@@ -18,6 +18,7 @@ from codey.consensus import (
     render_project_context,
 )
 from codey.events import RunEvent, render_run_event
+from codey.execution_evidence import ExecutionEvidence
 from codey.handoff import (
     ConversationSnapshot,
     render_continuation_prompt,
@@ -31,7 +32,6 @@ from codey.receipt import build_task_receipt
 from codey.review import has_reviewable_changes, render_writer_followup
 from codey.verification_map import render_verification_map
 from codey.work_checkpoint import (
-    CheckpointCheck,
     WorkCheckpoint,
     WorkCheckpointStore,
     render_work_checkpoint,
@@ -108,7 +108,7 @@ def _safe_project_map(project: str | Path, verified_facts: str) -> str:
 def _safe_verification_map(
     project: str | Path,
     changes: dict,
-    checks: tuple[CheckpointCheck, ...],
+    checks: tuple[object, ...],
     project_map: str,
 ) -> str:
     try:
@@ -196,7 +196,7 @@ class TaskRunner:
 
         recent_events: list[str] = []
         task_changes: dict | None = None
-        checks_after_last_change: list[CheckpointCheck] = []
+        evidence = ExecutionEvidence()
         work_checkpoint: WorkCheckpoint | None = None
         resumed_checkpoint = False
 
@@ -212,6 +212,7 @@ class TaskRunner:
                 pass
 
         def on_event(event: RunEvent) -> None:
+            evidence.record(event)
             message = render_run_event(event)
             recent_events.append(message)
             if len(recent_events) > self.review_log_lines * 2:
@@ -245,21 +246,12 @@ class TaskRunner:
                 and event.outcome is not None
             ):
                 if event.call.name == "edit" and event.outcome.ok and event.outcome.changed:
-                    checks_after_last_change.clear()
                     rel = str(event.call.args.get("path") or "")
                     update_checkpoint(lambda store, item: store.record_edit(item, rel))
                 elif event.call.name == "run":
                     command = str(event.call.args.get("command") or "")
                     cwd = str(event.call.args.get("path") or ".")
                     ok = event.outcome.ok and event.outcome.exit_code == 0
-                    if ok and command:
-                        check = CheckpointCheck(command, cwd)
-                        checks_after_last_change[:] = [
-                            item for item in checks_after_last_change if item != check
-                        ]
-                        checks_after_last_change.append(check)
-                    elif not ok:
-                        checks_after_last_change.clear()
                     update_checkpoint(
                         lambda store, item: store.record_run(
                             item,
@@ -374,7 +366,7 @@ class TaskRunner:
                         )
                         if same_project and resume_requested and (continue_task or same_task):
                             work_checkpoint = self.work_checkpoints.reconcile(previous)
-                            checks_after_last_change.extend(
+                            evidence.seed_checks(
                                 work_checkpoint.successful_checks_after_last_change
                             )
                             checkpoint_prompt = render_work_checkpoint(work_checkpoint)
@@ -467,7 +459,7 @@ class TaskRunner:
                     and work_checkpoint is not None
                     and not result.changed
                     and not result.checks_ran
-                    and checks_after_last_change
+                    and evidence.has_successful_checks
                 ):
                     result = replace(result, checks_passed=True)
                 task_changed = result.changed or bool(
@@ -529,7 +521,7 @@ class TaskRunner:
                         verification_map = _safe_verification_map(
                             project,
                             task_changes,
-                            tuple(checks_after_last_change),
+                            evidence.successful_checks,
                             project_map,
                         )
                         rendered_change_brief = (
@@ -550,6 +542,7 @@ class TaskRunner:
                                 writer_summary=result.summary,
                                 changes=task_changes,
                                 recent_log="\n".join(recent_events[-self.review_log_lines:]),
+                                execution_evidence=evidence.render_for_review(),
                                 writer_id=provider_id,
                                 change_brief=rendered_change_brief,
                                 project_map=project_map,
@@ -573,7 +566,13 @@ class TaskRunner:
                                         "fixing_review",
                                     )
                                 )
-                                checks_before_review_followup = result.checks_passed
+                                checks_before_review_followup = (
+                                    evidence.has_successful_checks
+                                    or (
+                                        not evidence.observed_tool_events
+                                        and result.checks_passed
+                                    )
+                                )
                                 followup = render_writer_followup(
                                     task,
                                     review,
@@ -668,6 +667,15 @@ class TaskRunner:
                 state.emit({"type": "reply", "session_id": session_id, "text": reply})
                 result = RunResult("", "done", 1)
             if project:
+                if (
+                    result.stop_reason == "done"
+                    and task_changed
+                    and evidence.observed_tool_events
+                ):
+                    result = replace(
+                        result,
+                        checks_passed=evidence.has_successful_checks,
+                    )
                 task_changes = self.collect_changes(project, tracker)
                 receipt = build_task_receipt(
                     task_changes,
@@ -683,7 +691,7 @@ class TaskRunner:
                     and result.stop_reason == "done"
                     and task_changed
                     and result.checks_passed
-                    and checks_after_last_change
+                    and evidence.has_successful_checks
                     and files
                 )
                 facts_write_succeeded = not facts_write_required
@@ -700,7 +708,7 @@ class TaskRunner:
                                 task=fact_task,
                                 files=files,
                                 check_commands=[
-                                    item.command for item in checks_after_last_change
+                                    item.command for item in evidence.successful_checks
                                 ],
                                 receipt=receipt.text,
                             )

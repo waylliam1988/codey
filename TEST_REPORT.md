@@ -1,4 +1,32 @@
-# Codey 0.1.30 Test Report
+# Codey 0.1.31 Test Report
+
+## 0.1.31 Structured Execution Evidence
+
+This release adds a bounded, in-memory evidence ledger for one TaskRunner run.
+It records edit epochs, changed files, read ranges, complete and truncated
+searches, truncated tool results, duplicate information calls, and successful
+or failed checks after the latest edit. Verification Map, Review, receipts, and
+successful ProjectFacts now consume the same current check facts. The ledger is
+not persisted, adds no UI or public tool, and does not intervene in Writer
+convergence.
+
+Live Edge/CDP reference-aware edits passed on all four providers:
+
+| Provider | Result |
+|---|---|
+| MiMo | passed in 6 turns |
+| Qwen | passed in 7 turns |
+| GLM | passed in 8 turns |
+| DeepSeek | passed in 9 turns |
+| MiMo Writer -> Qwen Reviewer | approved; independent unittest passed |
+
+The live run exposed a GLM duplicate-submission false positive. GLM can append
+different question nodes for tool results and protocol repair; duplicate
+detection now compares the normalized full prompt body for this submission
+instead of treating total question-node growth as duplication.
+
+Validation: `582 passed`, `31 subtests passed`, Ruff, `compileall`, and
+`git diff --check` all pass.
 
 ## Post-0.1.29 Four-Provider Capability Audit
 

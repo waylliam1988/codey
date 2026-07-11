@@ -180,6 +180,47 @@ class GlmDriverTests(unittest.TestCase):
 
         self.assertTrue(started)
 
+    def test_submitted_question_count_ignores_other_question_nodes(self) -> None:
+        page = mock.Mock()
+        page.locator.return_value.all_inner_texts.return_value = [
+            "user\nolder tool result",
+            "user\ncurrent prompt",
+            "user\nnot current prompt",
+            "user\nprotocol repair",
+        ]
+
+        self.assertEqual(glm._submitted_question_count(page, "current prompt"), 1)
+
+    def test_chat_duplicate_guard_counts_only_matching_submitted_prompt(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        with (
+            mock.patch.object(glm, "wait_ready"),
+            mock.patch.object(glm, "_message_box", return_value=textarea),
+            mock.patch.object(glm, "_submit", return_value=attempt),
+            mock.patch.object(glm, "_response_count", side_effect=[0, 1]),
+            mock.patch.object(glm, "_question_count", return_value=3),
+            mock.patch.object(glm, "_submitted_question_count", side_effect=[0, 1]),
+            mock.patch.object(glm, "_last_text", return_value='{"tool":"done"}'),
+            mock.patch.object(glm, "_generation_complete", return_value=True),
+            mock.patch.object(glm, "_final_text", return_value='{"tool":"done"}'),
+            mock.patch.object(glm.controls, "control_has_text", return_value=True),
+            mock.patch.object(glm.controls, "confirm_control"),
+            mock.patch.object(glm.cancellation, "wait"),
+        ):
+            reply = glm.chat(
+                page,
+                "current prompt",
+                response_timeout=1,
+                stable_ticks=0,
+                tick=0,
+                min_wait=0,
+            )
+
+        self.assertEqual(reply, '{"tool":"done"}')
+
     def test_submission_started_accepts_changed_text_without_count_increase(self) -> None:
         with (
             mock.patch.object(glm, "_response_count", return_value=1),
@@ -256,7 +297,8 @@ class GlmDriverTests(unittest.TestCase):
             mock.patch.object(glm, "_message_box", return_value=textarea),
             mock.patch.object(glm, "_submit", return_value=attempt),
             mock.patch.object(glm, "_response_count", return_value=0),
-            mock.patch.object(glm, "_question_count", side_effect=[0, 2]),
+            mock.patch.object(glm, "_question_count", return_value=0),
+            mock.patch.object(glm, "_submitted_question_count", side_effect=[0, 2]),
             mock.patch.object(glm.controls, "control_has_text", return_value=True),
             mock.patch.object(glm.controls, "confirm_control"),
             mock.patch.object(glm.cancellation, "wait"),

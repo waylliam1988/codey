@@ -10,7 +10,9 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.30`
+版本：`0.1.31`
+
+`0.1.31` 增加 Structured Execution Evidence：一份只存在于当前项目任务内存中的有边界执行证据账本。它记录 edit epoch、改动路径、读取过的文件、完整或截断的搜索、被截断的工具结果、重复信息调用，以及最后一次 edit 后成功或失败的检查。TaskRunner 现在让 Verification Map、Review、任务收据和成功 ProjectFacts 共同消费这份本地事实；Reviewer 会看到私有、有限长度的证据段，不再主要依靠散文日志猜执行状态。账本不持久化、不新增 UI 或工具，也暂不干预 Writer 收敛。四个网页模型的引用感知跨文件修改均实机通过：MiMo 6 轮、Qwen 7 轮、GLM 8 轮、DeepSeek 9 轮；MiMo Writer 到 Qwen Reviewer 的完整闭环也获批准。实机过程还发现并修复了 GLM 依据 question 节点总数误判重复提交的问题，改为比较本次提交的完整 prompt body。本版通过 582 项 pytest、31 项 subtest、Ruff、语法编译和 `git diff --check`。
 
 `0.1.30` 完整移除了已经撤回的 `outline_file` 工具。自然使用审查显示，网页模型更稳定地使用 Project Map、字面量 `grep` 或 `find_references`，再用带 offset 的 `read_file`。单独的源码大纲解析器增加了协议和维护面，却没有稳定的日常收益，因此不保留兼容别名。575 项 pytest、31 项 subtest、Ruff、语法编译和 `git diff --check` 均通过。
 
@@ -344,6 +346,7 @@ codey/
   text_budget.py            有上限的命令输出头尾截取
   bounded_scan.py           共享的有边界本地文件遍历
   tool_runtime.py           本地工具和结构化执行结果
+  execution_evidence.py     有边界的内存执行证据账本
   references.py             有边界的文本引用提示
   project_map.py            确定性的有边界项目地图
   verification_map.py       Review 阶段的有边界验证候选

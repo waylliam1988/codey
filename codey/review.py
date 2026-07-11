@@ -178,6 +178,7 @@ def render_review_prompt(
     change_brief: str = "",
     project_map: str = "",
     verification_map: str = "",
+    execution_evidence: str = "",
 ) -> str:
     files = changes.get("files") if isinstance(changes.get("files"), list) else []
     file_lines = []
@@ -208,6 +209,8 @@ def render_review_prompt(
     verification_block = (
         f"{verification_section}\n\n" if verification_section else ""
     )
+    evidence = _clip(execution_evidence, 5_000)
+    evidence_block = f"{evidence}\n\n" if evidence else ""
     intent_guidance = (
         "Review the change against the Original user task and the private task brief below: "
         "check whether the user intent is satisfied, acceptance checks are covered, "
@@ -256,6 +259,7 @@ def render_review_prompt(
         f"{map_block}"
         f"Writer summary:\n{_clip(writer_summary, 2_000)}\n\n"
         f"Changed files:\n{changed_files}\n\n"
+        f"{evidence_block}"
         f"{verification_block}"
         f"Recent tool log:\n{log}\n\n"
         f"{diff_note}"
