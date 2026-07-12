@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import subprocess
 from dataclasses import dataclass
@@ -45,12 +46,31 @@ READ_DEFAULT_LINES = 300
 READ_MAX_LINES = 600
 READ_MAX_CHARS = 16_000
 MAX_REPLACEMENTS = 8
+EDIT_FAILURE_MAX_CHARS = 1_600
+EDIT_FAILURE_MAX_LINES = 7
+EDIT_FAILURE_MAX_MATCHES = 3
+EDIT_FAILURE_MAX_LINE_CHARS = 400
+EDIT_FAILURE_MAX_ANCHOR_CANDIDATES = 32
 RUN_TIMEOUT_SECONDS = 90
 RUN_OUTPUT_LIMIT = 24_000
 RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
 RUN_ALLOWED_PYTHON_FLAGS = {"-B"}
 RUN_ALLOWED_NPM_SCRIPTS = {"test", "build", "lint", "check", "typecheck"}
 LONG_LINE_MARKER = "\n[... middle of overlong line omitted; not a complete old_string ...]\n"
+EDIT_ANCHOR_RE = re.compile(
+    r"(?P<quote>['\"])(?P<literal>[^'\"\r\n]{4,})(?P=quote)"
+    r"|(?P<identifier>[A-Za-z_][A-Za-z0-9_]{3,})"
+)
+EDIT_ANCHOR_STOPWORDS = {
+    "class",
+    "const",
+    "else",
+    "false",
+    "function",
+    "import",
+    "return",
+    "true",
+}
 
 
 @dataclass(frozen=True)
@@ -199,12 +219,190 @@ def _replace_unique_indentation_recovery(
     return "".join(updated_lines), 1
 
 
-def _search_not_found(rel: str) -> ToolOutcome:
-    return ToolOutcome.error(
-        f"SEARCH text not found in {rel}; old_string must match exact file text "
-        "including indentation and whitespace. Use read_file and copy exact "
-        "complete lines."
+def _bounded_failure_output(lines: list[str]) -> str:
+    max_chars = EDIT_FAILURE_MAX_CHARS - len("ERROR: ")
+    rendered: list[str] = []
+    size = 0
+    for line in lines:
+        extra = len(line) + (1 if rendered else 0)
+        if size + extra > max_chars:
+            note = "Additional failure context omitted by character budget."
+            note_extra = len(note) + (1 if rendered else 0)
+            if size + note_extra <= max_chars:
+                rendered.append(note)
+            break
+        rendered.append(line)
+        size += extra
+    return "\n".join(rendered)
+
+
+def _unique_anchor_position(content: str, value: str, kind: str) -> int | None:
+    if kind == "literal":
+        first = content.find(value)
+        if first < 0 or content.find(value, first + 1) >= 0:
+            return None
+        return first
+    pattern = re.compile(
+        rf"(?<![A-Za-z0-9_]){re.escape(value)}(?![A-Za-z0-9_])"
     )
+    matches = pattern.finditer(content)
+    first = next(matches, None)
+    if first is None or next(matches, None) is not None:
+        return None
+    return first.start()
+
+
+def _edit_anchor(content: str, search: str) -> tuple[str, str, int] | None:
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for match in EDIT_ANCHOR_RE.finditer(search):
+        literal = match.group("literal")
+        identifier = match.group("identifier")
+        value = literal or identifier or ""
+        if (
+            not value
+            or len(value) > EDIT_FAILURE_MAX_LINE_CHARS
+            or value in seen
+            or value.lower() in EDIT_ANCHOR_STOPWORDS
+        ):
+            continue
+        seen.add(value)
+        kind = "literal" if literal is not None else "identifier"
+        candidates.append((value, kind))
+    candidates.sort(key=lambda item: -len(item[0]))
+    for value, kind in candidates[:EDIT_FAILURE_MAX_ANCHOR_CANDIDATES]:
+        position = _unique_anchor_position(content, value, kind)
+        if position is not None:
+            return value, kind, position
+    return None
+
+
+def _render_edit_failure_context(content: str, search: str) -> str:
+    anchor = _edit_anchor(content, search)
+    if anchor is None:
+        return ""
+    value, kind, position = anchor
+    lines = content.splitlines()
+    center = content.count("\n", 0, position)
+    radius = EDIT_FAILURE_MAX_LINES // 2
+    start = max(0, center - radius)
+    end = min(len(lines), start + EDIT_FAILURE_MAX_LINES)
+    start = max(0, end - EDIT_FAILURE_MAX_LINES)
+    rendered = [
+        f'Current bounded context near {kind} "{value}"',
+        '(navigation only; copy exact complete code after "|"):',
+    ]
+    for index in range(start, end):
+        line = lines[index]
+        if len(line) > EDIT_FAILURE_MAX_LINE_CHARS:
+            rendered.append(
+                f"Line {index + 1} omitted because it exceeds "
+                f"{EDIT_FAILURE_MAX_LINE_CHARS} characters; use read_file "
+                f"offset={index + 1} limit=1."
+            )
+            continue
+        rendered.append(f"{index + 1:>4} | {line}")
+    return _bounded_failure_output(rendered)
+
+
+def _first_match_start_lines(
+    content: str,
+    search: str,
+    limit: int = EDIT_FAILURE_MAX_MATCHES,
+) -> list[int]:
+    if not search:
+        return []
+    lines: list[int] = []
+    offset = 0
+    newline_offset = 0
+    line_number = 1
+    while len(lines) < limit:
+        position = content.find(search, offset)
+        if position < 0:
+            break
+        line_number += content.count("\n", newline_offset, position)
+        lines.append(line_number)
+        newline_offset = position
+        offset = position + len(search)
+    return lines
+
+
+def _render_multiple_match_context(
+    content: str,
+    search: str,
+    match_count: int,
+) -> str:
+    positions = _first_match_start_lines(content, search)
+    if not positions:
+        return ""
+    lines = ["Exact matches start at lines: " + ", ".join(map(str, positions)) + "."]
+    if match_count > len(positions):
+        lines.append("Additional matches omitted.")
+    lines.append("Add surrounding lines to old_string so it matches one location uniquely.")
+    return _bounded_failure_output(lines)
+
+
+def _replacement_failure_note(index: int, count: int) -> str:
+    if count <= 1:
+        return ""
+    return f"Replacement {index} of {count} failed. No replacements were written."
+
+
+def _search_not_found(
+    rel: str,
+    *,
+    original_content: str,
+    search: str,
+    replacement_index: int,
+    replacement_count: int,
+) -> ToolOutcome:
+    lines = [f"SEARCH text not found in {rel}; exact replacement was not applied."]
+    note = _replacement_failure_note(replacement_index, replacement_count)
+    if note:
+        lines.append(note)
+    context = _render_edit_failure_context(original_content, search)
+    if context:
+        lines.append("")
+        lines.extend(context.splitlines())
+    else:
+        lines.append(
+            "old_string must match exact file text including indentation and "
+            "whitespace. Use read_file and copy exact complete lines."
+        )
+    return ToolOutcome.error(_bounded_failure_output(lines))
+
+
+def _multiple_matches(
+    rel: str,
+    match_count: int,
+    *,
+    original_content: str,
+    search: str,
+    replacement_index: int,
+    replacement_count: int,
+) -> ToolOutcome:
+    lines = [
+        f"SEARCH text matched {match_count} times in {rel}; replacement was not applied."
+    ]
+    note = _replacement_failure_note(replacement_index, replacement_count)
+    if note:
+        lines.append(note)
+    original_search = search
+    original_count = original_content.count(original_search)
+    if original_count == 0 and "\r\n" in original_content and "\r\n" not in search:
+        original_search = search.replace("\n", "\r\n")
+        original_count = original_content.count(original_search)
+    context = (
+        _render_multiple_match_context(original_content, original_search, match_count)
+        if original_count == match_count
+        else ""
+    )
+    if context:
+        lines.append("")
+        lines.extend(context.splitlines())
+    else:
+        lines.append("Add surrounding lines to old_string so it matches one location uniquely.")
+    return ToolOutcome.error(_bounded_failure_output(lines))
 
 
 def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
@@ -227,7 +425,7 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
 
     updated = content
     indentation_recovered = False
-    for block in blocks:
+    for index, block in enumerate(blocks, start=1):
         exact_count = updated.count(block.search)
         crlf_count = 0
         if exact_count == 0 and "\r\n" in updated and "\r\n" not in block.search:
@@ -242,10 +440,21 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
             )
         total = exact_count or crlf_count or recovered_count
         if total == 0:
-            return _search_not_found(rel)
+            return _search_not_found(
+                rel,
+                original_content=content,
+                search=block.search,
+                replacement_index=index,
+                replacement_count=len(blocks),
+            )
         if total > 1:
-            return ToolOutcome.error(
-                f"SEARCH text matched {total} times in {rel}; make it unique"
+            return _multiple_matches(
+                rel,
+                total,
+                original_content=content,
+                search=block.search,
+                replacement_index=index,
+                replacement_count=len(blocks),
             )
         if recovered_count == 1:
             updated = recovered_updated
@@ -253,7 +462,13 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         else:
             updated, replaced = _replace_unique(updated, block.search, block.replace)
             if not replaced:
-                return _search_not_found(rel)
+                return _search_not_found(
+                    rel,
+                    original_content=content,
+                    search=block.search,
+                    replacement_index=index,
+                    replacement_count=len(blocks),
+                )
 
     if updated == content:
         return ToolOutcome(f"edited {rel} (no changes)", True)

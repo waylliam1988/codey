@@ -42,6 +42,15 @@ after a block, final local test success, turns, tool calls, and changed files.
 Omit `--arm` for the full baseline/guard A/B; select one arm for a lightweight
 provider smoke.
 
+`edit_failure_context_ab.py` simulates a file changing after the model reads it,
+then compares the existing generic replacement error with the same error plus a
+bounded current-file excerpt. It is a probe only and does not change production
+edit behavior:
+
+```powershell
+python -B tests\manual\edit_failure_context_ab.py --provider mimo --port 9222
+```
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 

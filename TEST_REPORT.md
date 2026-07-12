@@ -1,4 +1,45 @@
-# Codey 0.1.33 Test Report
+# Codey 0.1.34 Test Report
+
+## 0.1.34 Bounded Edit Failure Context
+
+Exact replacement writes remain unchanged. On failure, `edit_file()` may add a
+bounded, line-numbered excerpt only when it finds a unique lexical anchor from
+the submitted `old_string` in the original disk content. Missing anchors retain
+the generic read-again guidance. Multiple exact matches report at most three
+start lines. Output is capped at 1,600 characters and seven complete source
+lines; overlong lines are omitted with an offset-read instruction.
+
+Atomic multi-replacement failures identify the failed replacement and state
+that nothing was written. All failure evidence comes from the original disk
+content, never the partially updated in-memory value. Unit coverage includes
+stale comments, absent anchors, bounded duplicate positions, omitted matches,
+identifier boundaries, quoted literal semantics, long lines, total budget, CRLF
+line numbers, late atomic failure, intermediate duplicate matches, unchanged
+files, unchanged success output, and tool-result-like source text. A local
+100,000-match `edit_file()` regression probe completed in approximately 0.017
+seconds and left the file unchanged.
+
+Anchor discovery is capped at 32 deduplicated candidates after a stable
+longest-first sort. A local 1,000-candidate probe over approximately 475 KiB
+completed in about 0.242 seconds and safely returned no context, compared with
+the previously observed multi-second unbounded scan. The JSON tool contract now
+states consistently that `content` is only for new-file creation; existing
+files must use exact replacements even when JSON escaping is difficult.
+
+Live stale-read A/B used production `edit_file()` for both arms and disabled
+only the context renderer for baseline. DeepSeek improved from 6 turns / 5 tool
+calls / 1 reread to 5 / 4 / 0. Qwen improved from 7 / 6 / 1 to 5 / 4 / 0.
+MiMo improved from 6 / 5 / 1 to 5 / 4 / 0 on the completed comparison; one
+separate MiMo context attempt hit a 300-second webpage timeout before a clean
+single-arm rerun passed. GLM baseline passed at 6 / 6 / 1. GLM context preserved
+correctness and removed the reread, but was variable: one run reached max turns
+after producing a correct tested file, and a clean rerun finished at 7 / 5 / 0.
+Across completed arms, the target edit was correct, the external comment was
+preserved, the unrelated default was unchanged, and local tests passed.
+
+Validation: `python -B -m unittest` passed with 630 tests; `python -B -m pytest
+-q` passed with 638 tests and 31 subtests. Full-tree Ruff, `compileall`, manual
+probe self-test, and `git diff --check` passed.
 
 ## 0.1.33 Read-before-edit Guard
 

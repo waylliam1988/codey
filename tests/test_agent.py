@@ -384,7 +384,8 @@ class ToolTests(unittest.TestCase):
 
             result = tool_runtime.edit_file(root, "app.py", blocks).output
 
-            self.assertEqual(result, "ERROR: SEARCH text matched 2 times in app.py; make it unique")
+            self.assertIn("SEARCH text matched 2 times in app.py", result)
+            self.assertIn("Exact matches start at lines: 1, 2.", result)
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "same\nsame\n")
 
     def test_edit_rejects_missing_search_text(self) -> None:
@@ -393,11 +394,10 @@ class ToolTests(unittest.TestCase):
             (root / "app.py").write_text("current\n", encoding="utf-8")
             blocks = [tool_runtime.EditBlock("missing", "replacement")]
 
-            self.assertEqual(
-                tool_runtime.edit_file(root, "app.py", blocks).output,
-                "ERROR: SEARCH text not found in app.py; old_string must match exact file text "
-                "including indentation and whitespace. Use read_file and copy exact complete lines.",
-            )
+            result = tool_runtime.edit_file(root, "app.py", blocks).output
+
+            self.assertIn("SEARCH text not found in app.py", result)
+            self.assertIn("Use read_file and copy exact complete lines.", result)
 
     def test_edit_recovers_unique_leading_indentation_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -453,10 +453,8 @@ class ToolTests(unittest.TestCase):
 
             result = tool_runtime.edit_file(root, "app.py", blocks).output
 
-            self.assertEqual(
-                result,
-                "ERROR: SEARCH text matched 2 times in app.py; make it unique",
-            )
+            self.assertIn("SEARCH text matched 2 times in app.py", result)
+            self.assertIn("Exact matches start at lines: 2, 5.", result)
             self.assertEqual(
                 path.read_text(encoding="utf-8"),
                 "def one():\n"

@@ -4,6 +4,15 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.34 - Bounded Edit Failure Context
+
+Failed exact replacements now return bounded current-file evidence when a
+unique lexical anchor can be proven. Non-unique replacements report up to three
+exact start lines. The write decision remains fully exact: Codey never applies
+a closest match, never returns partial long lines as copyable code, and never
+uses an in-memory partial batch as disk evidence. Normal successful edits have
+no added prompt cost or output.
+
 ## 0.1.33 - Read-before-edit Guard
 
 Added a run-scoped guard that rejects replacement edits to existing files until

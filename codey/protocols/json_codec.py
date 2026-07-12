@@ -200,12 +200,14 @@ Rules:
   - find_references output is lexical reference hints only, not semantic
     resolution or a complete call graph. Use read_file before editing.
   - Use edit for all file changes. Use old_string/new_string for one small edit,
-    replacements for multiple edits in one file, and content only for creation
-    or a substantial rewrite. Never mix these edit modes.
+    and replacements for multiple edits in one file. Use content only when
+    creating a new file. Existing files must use exact old_string/new_string or
+    replacements. Never mix these edit modes.
   - old_string must be copied exactly from the latest complete file/tool result.
     An overlong-line preview is not a complete old_string.
-  - JSON strings must escape quotes and backslashes correctly. If exact strings
-    are hard to escape, use content with the full file instead.
+  - JSON strings must escape quotes and backslashes correctly. If escaping is
+    difficult, read the exact current lines and escape them; never use content
+    to replace an existing file.
   - Paths are relative to the project root. No absolute paths or parent traversal.
   - Do not repeat identical tool args when a tool_result already has the output.
   - Use run only for verification, such as python -m unittest, python -m pytest,

@@ -4,6 +4,13 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.34 - Bounded Edit Failure Context
+
+精确 replacement 失败后，如果能证明存在唯一词法锚点，Codey 会返回有边界的
+当前文件证据；匹配不唯一时，最多返回三个真实起始行。写入判定仍然完全精确：
+不会自动采用 closest match，不会把超长行截断后伪装成可复制代码，也不会把内存中
+尚未落盘的半成品当作磁盘证据。正常成功 edit 不增加 prompt 成本或输出。
+
 ## 0.1.33 - Read-before-edit Guard
 
 新增本轮 agent run 内的读后编辑保护：Writer 对已有文件做精确替换前，必须先在

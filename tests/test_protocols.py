@@ -24,6 +24,16 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("Matching is case-insensitive; regex is not supported.", prompt)
         self.assertNotIn('{"tool":"grep","args":{"pattern":', prompt)
 
+    def test_system_prompt_limits_content_to_new_file_creation(self) -> None:
+        prompt = JsonToolCodec().system_prompt()
+        normalized = " ".join(prompt.split())
+
+        self.assertIn("content only when creating a new file", normalized)
+        self.assertIn("Existing files must use exact old_string/new_string", normalized)
+        self.assertIn("never use content to replace an existing file", normalized)
+        self.assertNotIn("substantial rewrite", normalized)
+        self.assertNotIn("use content with the full file instead", normalized)
+
     def test_parse_json_tool_call(self) -> None:
         codec = JsonToolCodec()
         plan = codec.parse(
@@ -357,7 +367,7 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("not semantic\n    resolution", prompt)
         self.assertIn("written atomically", prompt)
         self.assertIn("JSON strings must escape quotes", prompt)
-        self.assertIn("use content with the full", prompt)
+        self.assertIn("never use content\n    to replace an existing file", prompt)
         self.assertIn("Never claim a command, test, build, lint, or shell result", prompt)
         self.assertIn("[tool_result tool=run]", prompt)
         self.assertIn("No pipes, redirects", prompt)

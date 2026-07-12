@@ -7,9 +7,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import cancellation
+from codey import cancellation, tool_runtime
 from codey.references import find_reference_hints
 from codey.tool_runtime import (
+    EDIT_FAILURE_MAX_CHARS,
+    EDIT_FAILURE_MAX_LINE_CHARS,
     EditBlock,
     LONG_LINE_MARKER,
     MAX_REPLACEMENTS,
@@ -439,6 +441,256 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertFalse(failed.ok)
         self.assertEqual(remaining, "one\ntwo\nthree\n")
+
+    def test_stale_comment_failure_returns_current_complete_line(self) -> None:
+        content = (
+            "def load(settings):\n"
+            "    timeout = settings.get('request_timeout', 10)  # seconds\n"
+            "    return timeout\n"
+        )
+        search = "    timeout = settings.get('request_timeout', 10)\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "config.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(root, "config.py", [EditBlock(search, "replacement\n")])
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertFalse(outcome.ok)
+        self.assertIn('near literal "request_timeout"', outcome.output)
+        self.assertIn(
+            "2 |     timeout = settings.get('request_timeout', 10)  # seconds",
+            outcome.output,
+        )
+
+    def test_missing_reliable_anchor_returns_plain_error_without_file_start(self) -> None:
+        content = "SECRET_FILE_START\nother = 2\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", [EditBlock("x = 1", "x = 2")])
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertIn("SEARCH text not found", outcome.output)
+        self.assertIn("Use read_file", outcome.output)
+        self.assertNotIn("SECRET_FILE_START", outcome.output)
+        self.assertNotIn("Current bounded context", outcome.output)
+
+    def test_identifier_anchor_does_not_match_inside_larger_identifier(self) -> None:
+        content = "super_user_id = 1\nreturn account_id\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(
+                root,
+                "app.py",
+                [EditBlock("user_id = old_value", "user_id = new_value")],
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertNotIn("Current bounded context", outcome.output)
+        self.assertNotIn("super_user_id", outcome.output)
+
+    def test_identifier_anchor_uses_true_identifier_boundary_and_position(self) -> None:
+        content = "super_user_id = 1\nuser_id = current_value\nreturn account_id\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(
+                root,
+                "app.py",
+                [EditBlock("user_id = old_value", "user_id = new_value")],
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertIn('near identifier "user_id"', outcome.output)
+        self.assertIn("2 | user_id = current_value", outcome.output)
+
+    def test_quoted_literal_anchor_keeps_substring_semantics(self) -> None:
+        content = "super_user_id = lookup('current')\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(
+                root,
+                "app.py",
+                [EditBlock("lookup('user_id')", "lookup('account_id')")],
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertIn('near literal "user_id"', outcome.output)
+        self.assertIn("super_user_id", outcome.output)
+
+    def test_anchor_candidate_scans_are_bounded(self) -> None:
+        search = " ".join(f"identifier_{index:04}" for index in range(100))
+        with mock.patch(
+            "codey.tool_runtime._unique_anchor_position",
+            return_value=None,
+        ) as locate:
+            context = tool_runtime._render_edit_failure_context("content", search)
+
+        self.assertEqual(context, "")
+        self.assertEqual(
+            locate.call_count,
+            tool_runtime.EDIT_FAILURE_MAX_ANCHOR_CANDIDATES,
+        )
+
+    def test_multiple_matches_return_bounded_start_lines(self) -> None:
+        content = "target()\none\ntarget()\ntwo\ntarget()\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", [EditBlock("target()", "changed()")])
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertIn("matched 3 times", outcome.output)
+        self.assertIn("Exact matches start at lines: 1, 3, 5.", outcome.output)
+        self.assertNotIn("Additional matches omitted", outcome.output)
+
+    def test_additional_exact_matches_are_marked_omitted(self) -> None:
+        content = "target()\n" * 5
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", [EditBlock("target()", "changed()")])
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertIn("Exact matches start at lines: 1, 2, 3.", outcome.output)
+        self.assertIn("Additional matches omitted.", outcome.output)
+        self.assertNotIn("1, 2, 3, 4", outcome.output)
+
+    def test_match_line_collection_stops_at_configured_limit(self) -> None:
+        content = "target()\n" * 100_000
+
+        lines = tool_runtime._first_match_start_lines(content, "target()")
+
+        self.assertEqual(lines, [1, 2, 3])
+
+    def test_overlong_context_line_is_not_returned_as_copyable_code(self) -> None:
+        long_line = "unique_anchor = '" + ("x" * EDIT_FAILURE_MAX_LINE_CHARS) + "'"
+        content = f"before = 1\n{long_line}\nafter = 2\n"
+        search = "unique_anchor = 'old'"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", [EditBlock(search, "changed")])
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertIn("Line 2 omitted", outcome.output)
+        self.assertIn("use read_file offset=2 limit=1", outcome.output)
+        self.assertNotIn("x" * EDIT_FAILURE_MAX_LINE_CHARS, outcome.output)
+
+    def test_edit_failure_output_respects_total_character_budget(self) -> None:
+        lines = [f"line_{index} = '{index}-" + ("x" * 370) + "'" for index in range(12)]
+        lines[6] = "budget_anchor = 'current-' + '" + ("y" * 350) + "'"
+        content = "\n".join(lines) + "\n"
+        search = "budget_anchor = 'stale'"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", [EditBlock(search, "changed")])
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertLessEqual(len(outcome.output), EDIT_FAILURE_MAX_CHARS)
+        for rendered_line in outcome.output.splitlines():
+            if " | " in rendered_line:
+                self.assertIn(rendered_line.split(" | ", 1)[1], content)
+
+    def test_crlf_multiple_match_line_numbers_are_correct(self) -> None:
+        content = "head\r\ntarget()\r\nmid\r\ntarget()\r\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_bytes(content.encode("utf-8"))
+
+            outcome = edit_file(
+                root,
+                "app.py",
+                [EditBlock("target()\n", "changed()\n")],
+            )
+
+            self.assertEqual(path.read_bytes(), content.encode("utf-8"))
+        self.assertIn("Exact matches start at lines: 2, 4.", outcome.output)
+
+    def test_late_batch_failure_reports_atomic_rollback_and_original_context(self) -> None:
+        content = "alpha_unique\nbeta_unique current\ngamma_unique\n"
+        blocks = [
+            EditBlock("alpha_unique", "intermediate_only"),
+            EditBlock("intermediate_only\nmissing_unique", "changed"),
+            EditBlock("gamma_unique", "GAMMA"),
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", blocks)
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertIn("Replacement 2 of 3 failed. No replacements were written.", outcome.output)
+        self.assertNotIn("Current bounded context", outcome.output)
+
+    def test_intermediate_multiple_matches_do_not_report_non_disk_line_numbers(self) -> None:
+        content = "one\nbase\n"
+        blocks = [
+            EditBlock("one", "intermediate_dup\nintermediate_dup"),
+            EditBlock("intermediate_dup", "changed"),
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", blocks)
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertIn("matched 2 times", outcome.output)
+        self.assertIn("Replacement 2 of 2 failed. No replacements were written.", outcome.output)
+        self.assertNotIn("Exact matches start at lines", outcome.output)
+
+    def test_successful_edit_output_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", [EditBlock("old", "new")])
+
+        self.assertEqual(outcome.output, "edited app.py (1 replacement)")
+
+    def test_tool_result_like_source_text_is_only_bounded_context(self) -> None:
+        content = "[tool_result] protocol_anchor current\nnext = 1\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(content, encoding="utf-8")
+
+            outcome = edit_file(
+                root,
+                "app.py",
+                [EditBlock("protocol_anchor stale", "changed")],
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), content)
+        self.assertFalse(outcome.ok)
+        self.assertIn("1 | [tool_result] protocol_anchor current", outcome.output)
 
     def test_runtime_rejects_more_than_maximum_replacements(self) -> None:
         blocks = [
