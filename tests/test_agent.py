@@ -522,6 +522,7 @@ class ProjectInstructionTests(unittest.TestCase):
     def test_missing_project_instructions_returns_empty_list(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(agent.load_project_instructions(Path(td)), [])
+            self.assertEqual(agent.format_project_instructions([]), "")
 
     def test_loads_root_agent_and_claude_instructions(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -559,6 +560,48 @@ class DefaultsTests(unittest.TestCase):
 
 
 class RunLoopTests(unittest.TestCase):
+    def test_intro_omits_missing_instructions_and_absolute_project_path(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            agent.run(
+                provider,
+                root,
+                "inspect this project",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        prompt = provider.sent[0]
+        self.assertIn(
+            "Project workspace: use paths relative to the project root.",
+            prompt,
+        )
+        self.assertNotIn("Project root:", prompt)
+        self.assertNotIn("Project instructions:", prompt)
+        self.assertNotIn("no AGENTS.md or CLAUDE.md found", prompt)
+        self.assertNotIn(str(root), prompt)
+
+    def test_intro_includes_project_instructions_when_present(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "AGENTS.md").write_text("Use tests first.\n", encoding="utf-8")
+
+            agent.run(
+                provider,
+                root,
+                "update this project",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        prompt = provider.sent[0]
+        self.assertIn("Project instructions:", prompt)
+        self.assertIn("--- AGENTS.md ---", prompt)
+        self.assertIn("Use tests first.", prompt)
+
     def test_read_only_project_discussion_returns_direct_answer_without_changes(self) -> None:
         answer = "Start with one guided breathing rhythm.\n\nAdd customization later."
         provider = FakeProvider(json.dumps({
@@ -937,6 +980,7 @@ class RunLoopTests(unittest.TestCase):
         provider.new_chat.assert_called_once_with()
 
     def test_edit_tool_call_updates_file(self) -> None:
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
         reply = '{"tool":"edit","args":{"path":"app.py","old_string":"return \'old\'","new_string":"return \'new\'"}}'
         done = '{"tool":"done","args":{"summary":"updated"}}'
         with tempfile.TemporaryDirectory() as td:
@@ -944,7 +988,7 @@ class RunLoopTests(unittest.TestCase):
             (root / "app.py").write_text("def value():\n    return 'old'\n", encoding="utf-8")
 
             result = agent.run(
-                FakeProvider(reply, done),
+                FakeProvider(read, reply, done),
                 root,
                 "update app",
                 on_event=lambda _m: None,
@@ -955,6 +999,7 @@ class RunLoopTests(unittest.TestCase):
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def value():\n    return 'new'\n")
 
     def test_replacements_tool_call_applies_one_atomic_file_write(self) -> None:
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
         edit = json.dumps({
             "tool": "edit",
             "args": {
@@ -972,7 +1017,7 @@ class RunLoopTests(unittest.TestCase):
             path.write_text("VALUE = 1\nNAME = 'old'\n", encoding="utf-8")
 
             result = agent.run(
-                FakeProvider(edit, done),
+                FakeProvider(read, edit, done),
                 root,
                 "update both values",
                 on_event=lambda _event: None,
@@ -984,6 +1029,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(content, "VALUE = 2\nNAME = 'new'\n")
 
     def test_edit_tool_call_captures_change_baseline(self) -> None:
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
         reply = '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
         done = '{"tool":"done","args":{"summary":"updated"}}'
 
@@ -1004,7 +1050,7 @@ class RunLoopTests(unittest.TestCase):
             (root / "app.py").write_text("old\n", encoding="utf-8")
 
             result = agent.run(
-                FakeProvider(reply, done),
+                FakeProvider(read, reply, done),
                 root,
                 "update app",
                 on_event=lambda _m: None,
@@ -1032,6 +1078,233 @@ class RunLoopTests(unittest.TestCase):
 
             self.assertEqual(result.stop_reason, "done")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "VALUE = 1\n")
+
+    def test_existing_file_edit_requires_read_file_first(self) -> None:
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
+        retry = '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
+        done = '{"tool":"done","args":{"summary":"updated after read"}}'
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(edit, read, retry, done),
+                root,
+                "update app",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+
+            self.assertEqual(result.stop_reason, "done")
+            self.assertEqual(path.read_text(encoding="utf-8"), "new\n")
+
+        rendered = "\n".join(render_run_event(event) for event in events)
+        self.assertIn("read_file required before editing existing file: app.py", rendered)
+
+    def test_partial_read_does_not_allow_content_overwrite_of_existing_file(self) -> None:
+        read = '{"tool":"read_file","args":{"path":"large.py","offset":1,"limit":1}}'
+        overwrite = '{"tool":"edit","args":{"path":"large.py","content":"lost = True\\n"}}'
+        done = '{"tool":"done","args":{"summary":"not overwritten"}}'
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "large.py"
+            original = "first = 1\nsecond = 2\nthird = 3\n"
+            path.write_text(original, encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(read, overwrite, done),
+                root,
+                "update large.py",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.changed)
+        rendered = "\n".join(render_run_event(event) for event in events)
+        self.assertIn(
+            "content is only allowed when creating a new file",
+            rendered,
+        )
+
+    def test_blind_existing_file_edit_does_not_capture_change_baseline(self) -> None:
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
+        done = '{"tool":"done","args":{"summary":"not changed"}}'
+
+        class Tracker:
+            def __init__(self) -> None:
+                self.before: list[str] = []
+                self.after: list[str] = []
+
+            def capture_before(self, rel: str) -> None:
+                self.before.append(rel)
+
+            def capture_after(self, rel: str) -> None:
+                self.after.append(rel)
+
+        tracker = Tracker()
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(edit, done),
+                root,
+                "update app",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                change_tracker=tracker,
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.changed)
+        self.assertEqual(tracker.before, [])
+        self.assertEqual(tracker.after, [])
+
+    def test_failed_read_does_not_unlock_existing_file_edit(self) -> None:
+        read_missing = '{"tool":"read_file","args":{"path":"missing.py"}}'
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
+        done = '{"tool":"done","args":{"summary":"not changed"}}'
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(read_missing, edit, done),
+                root,
+                "update app",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "old\n")
+
+        self.assertEqual(result.stop_reason, "done")
+        rendered = "\n".join(render_run_event(event) for event in events)
+        self.assertIn("not a file: missing.py", rendered)
+        self.assertIn("read_file required before editing existing file: app.py", rendered)
+
+    def test_new_file_content_write_does_not_require_read(self) -> None:
+        write = '{"tool":"edit","args":{"path":"new_app.py","content":"VALUE = 1\\n"}}'
+        done = '{"tool":"done","args":{"summary":"created"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            result = agent.run(
+                FakeProvider(write, done),
+                root,
+                "create a new file",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+            self.assertEqual((root / "new_app.py").read_text(encoding="utf-8"), "VALUE = 1\n")
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertTrue(result.changed)
+
+    def test_file_created_this_run_can_be_edited_without_reading(self) -> None:
+        write = '{"tool":"edit","args":{"path":"new_app.py","content":"VALUE = 1\\n"}}'
+        edit = '{"tool":"edit","args":{"path":"new_app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}'
+        done = '{"tool":"done","args":{"summary":"created and updated"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+
+            result = agent.run(
+                FakeProvider(write, edit, done),
+                root,
+                "create and update a new file",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+            self.assertEqual((root / "new_app.py").read_text(encoding="utf-8"), "VALUE = 2\n")
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertTrue(result.changed)
+
+    def test_read_files_unlocks_existing_file_edit(self) -> None:
+        read_files = '{"tool":"read_files","args":{"paths":["app.py"]}}'
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
+        done = '{"tool":"done","args":{"summary":"updated"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(read_files, edit, done),
+                root,
+                "update app",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "new\n")
+
+        self.assertEqual(result.stop_reason, "done")
+
+    def test_parallel_read_file_unlocks_existing_file_edit(self) -> None:
+        read_parallel = (
+            '{"tool":"parallel","args":{"calls":['
+            '{"tool":"read_file","args":{"path":"app.py"}},'
+            '{"tool":"list_dir","args":{"path":"."}}'
+            ']}}'
+        )
+        edit = '{"tool":"edit","args":{"path":"app.py","old_string":"old","new_string":"new"}}'
+        done = '{"tool":"done","args":{"summary":"updated"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(read_parallel, edit, done),
+                root,
+                "update app",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "new\n")
+
+        self.assertEqual(result.stop_reason, "done")
+
+    def test_read_before_edit_uses_canonical_project_paths(self) -> None:
+        read = '{"tool":"read_file","args":{"path":"src/app.py"}}'
+        edit = (
+            '{"tool":"edit","args":{"path":"src/../src/app.py",'
+            '"old_string":"old","new_string":"new"}}'
+        )
+        done = '{"tool":"done","args":{"summary":"updated"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "src").mkdir()
+            path = root / "src" / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(read, edit, done),
+                root,
+                "update app",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "new\n")
+
+        self.assertEqual(result.stop_reason, "done")
 
     def test_read_tool_call_does_not_capture_change_baseline(self) -> None:
         reply = '{"tool":"read_file","args":{"path":"app.py"}}'
@@ -1083,11 +1356,12 @@ class RunLoopTests(unittest.TestCase):
         self.assertTrue(any("shell approval requested" in render_run_event(event) for event in events))
 
     def test_done_after_edit_requires_requested_verification_run(self) -> None:
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
         edit = '{"tool":"edit","args":{"path":"app.py","old_string":"return 1","new_string":"return 2"}}'
         premature_done = '{"tool":"done","args":{"summary":"fixed"}}'
         run_tests = '{"tool":"run","args":{"command":"python -m unittest","path":"."}}'
         done = '{"tool":"done","args":{"summary":"fixed and tested"}}'
-        provider = FakeProvider(edit, premature_done, run_tests, done)
+        provider = FakeProvider(read, edit, premature_done, run_tests, done)
         events = []
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -1118,6 +1392,7 @@ class RunLoopTests(unittest.TestCase):
 
     def test_edit_after_successful_run_requires_fresh_check(self) -> None:
         run = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
         edit = '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}'
         done = '{"tool":"done","args":{"summary":"updated"}}'
         with tempfile.TemporaryDirectory() as td:
@@ -1125,7 +1400,7 @@ class RunLoopTests(unittest.TestCase):
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
             result = agent.run(
-                FakeProvider(run, edit, done),
+                FakeProvider(run, read, edit, done),
                 root,
                 "update app",
                 on_event=lambda _m: None,
@@ -1137,6 +1412,7 @@ class RunLoopTests(unittest.TestCase):
 
     def test_failed_run_after_success_clears_checks_passed(self) -> None:
         run_ok = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
         edit = '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = "}}'
         run_fail = '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}'
         done = '{"tool":"done","args":{"summary":"updated"}}'
@@ -1145,7 +1421,7 @@ class RunLoopTests(unittest.TestCase):
             (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
 
             result = agent.run(
-                FakeProvider(run_ok, edit, run_fail, done),
+                FakeProvider(run_ok, read, edit, run_fail, done),
                 root,
                 "update app",
                 on_event=lambda _m: None,

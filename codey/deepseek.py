@@ -39,6 +39,10 @@ READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 90.0
 COPY_READY_TIMEOUT = 10.0
 SUBMIT_CONFIRM_TIMEOUT = 15.0
+RATE_LIMIT_COOLDOWN = 10.0
+RATE_LIMIT_TEXT = "消息发送过于频繁"
+RATE_LIMIT_RETRY_BUTTON = "div[role='button'].ds-button--warning"
+RATE_LIMIT_RETRY_TEXT = "重试"
 
 
 def new_chat(page) -> None:
@@ -217,6 +221,36 @@ def _wait_submission_started(
     return False
 
 
+def _rate_limit_visible(page: Page) -> bool:
+    try:
+        return RATE_LIMIT_TEXT in str(page.locator("body").inner_text(timeout=1000))
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
+        return False
+
+
+def _click_rate_limit_retry(page: Page) -> bool:
+    cancellation.wait(RATE_LIMIT_COOLDOWN)
+    buttons = page.locator(RATE_LIMIT_RETRY_BUTTON)
+    try:
+        count = buttons.count()
+        for index in range(count - 1, -1, -1):
+            candidate = buttons.nth(index)
+            if (
+                candidate.is_visible()
+                and RATE_LIMIT_RETRY_TEXT in candidate.inner_text(timeout=500)
+            ):
+                cancellation.check()
+                candidate.click()
+                return True
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
+        return False
+    return False
+
+
 def _submit(
     page: Page,
     message_box,
@@ -303,6 +337,16 @@ def chat(
         appeared = False
         while time.time() < start_deadline:
             cancellation.wait(tick)
+            if (
+                _response_count(page) <= baseline
+                and _rate_limit_visible(page)
+            ):
+                if _click_rate_limit_retry(page):
+                    sent_at = time.time()
+                    last = ""
+                    stable = 0
+                    appeared = False
+                    continue
             current = _last_text(page)
             if _response_count(page) <= baseline and current == baseline_text:
                 continue

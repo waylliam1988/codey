@@ -103,13 +103,14 @@ TOOL_SPECS = (
         "edit",
         "edit",
         examples=(
-            '{"tool":"edit","args":{"path":"app.py","content":"full file contents"}}',
+            '{"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}',
             '{"tool":"edit","args":{"path":"app.py","old_string":"old exact text","new_string":"new text"}}',
             '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}',
         ),
         description=(
-            f"Create or edit one file. Up to {MAX_REPLACEMENTS} replacements are "
-            "validated together and written atomically."
+            f"Create a new file with content, or edit an existing file with exact "
+            f"replacements. Up to {MAX_REPLACEMENTS} replacements are validated "
+            "together and written atomically."
         ),
     ),
     ToolSpec(
@@ -415,8 +416,8 @@ class JsonToolCodec:
 
         if normalized and normalized not in TOOL_SPEC_BY_NAME:
             raise ProtocolValidationError(
-                f"unknown tool: {tool}. Use edit with content to create or replace a file, "
-                'for example {"tool":"edit","args":{"path":"app.py","content":"..."}}.'
+                f"unknown tool: {tool}. Use edit with content to create a new file, "
+                'for example {"tool":"edit","args":{"path":"new_app.py","content":"..."}}.'
             )
 
         call = self._tool_call(tool, args)

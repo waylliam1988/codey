@@ -4,6 +4,16 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.33 - Read-before-edit Guard
+
+新增本轮 agent run 内的读后编辑保护：Writer 对已有文件做精确替换前，必须先在
+本轮成功读过该文件。`content` 全量写入只允许创建新文件；已有文件必须使用精确
+replacement。本轮创建或修改过的文件会被视为已知，后续可继续做替换编辑。这样
+Symbol overview 仍只是导航提示，不会变成跳过真实文件检查的理由。DeepSeek 和
+GLM 也新增了可见限流重试按钮的短冷却后自动点击。初始项目提示不再暴露绝对
+临时路径，也不再显示空 instructions 小节；只有实际存在 `AGENTS.md` 或
+`CLAUDE.md` 时才加入仓库说明。
+
 ## 0.1.32 - Bounded Symbol Overview
 
 在现有 Project Map 里加入 task-aware 的 Symbol overview，让 Writer

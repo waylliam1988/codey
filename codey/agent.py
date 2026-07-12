@@ -109,7 +109,7 @@ def load_project_instructions(
 
 def format_project_instructions(docs: list[ProjectInstruction]) -> str:
     if not docs:
-        return "(no AGENTS.md or CLAUDE.md found)"
+        return ""
     chunks = []
     for doc in docs:
         label = f"{doc.name} (truncated)" if doc.truncated else doc.name
@@ -140,6 +140,25 @@ def _edit_blocks_from_call(call: ToolCall) -> list[EditBlock]:
 
 def _edit_has_content(call: ToolCall) -> bool:
     return "content" in call.args
+
+
+def _canonical_project_path(root: Path, rel: str) -> str:
+    path = safe_join(root, rel)
+    return path.relative_to(root.resolve()).as_posix()
+
+
+def _read_before_edit_outcome(
+    root: Path,
+    rel: str,
+    known_file_paths: set[str],
+) -> ToolOutcome | None:
+    canonical = _canonical_project_path(root, rel)
+    target = safe_join(root, canonical)
+    if target.is_file() and canonical not in known_file_paths:
+        return ToolOutcome.error(
+            f"read_file required before editing existing file: {canonical}"
+        )
+    return None
 
 
 def _task_requests_verification(task: str) -> bool:
@@ -199,6 +218,7 @@ def run(
     checks_passed = False
     checks_ran = False
     changed_files = set(conversation.snapshot.changed_files if conversation else ())
+    known_file_paths: set[str] = set()
     verification_required = _task_requests_verification(user_task)
     project_text = str(project)
     active_provider_id = provider_id or getattr(provider, "name", "")
@@ -268,10 +288,16 @@ def run(
             if work_checkpoint
             else ""
         )
+        instructions_block = (
+            "Project instructions:\n"
+            f"{format_project_instructions(project_instructions)}\n\n"
+            if project_instructions
+            else ""
+        )
         return (
             f"{codec.system_prompt()}\n\n"
-            f"Project root: {project}\n"
-            f"Project instructions:\n{format_project_instructions(project_instructions)}\n\n"
+            "Project workspace: use paths relative to the project root.\n"
+            f"{instructions_block}"
             f"{facts}"
             f"{map_block}"
             f"{checkpoint_block}"
@@ -343,13 +369,24 @@ def run(
             try:
                 if call.name == "edit":
                     if _edit_has_content(call):
-                        if change_tracker is not None:
-                            change_tracker.capture_before(path)
-                        outcome = write_file(project, path, _call_arg(call, "content"))
+                        canonical = _canonical_project_path(project, path)
+                        if safe_join(project, canonical).is_file():
+                            outcome = ToolOutcome.error(
+                                "content is only allowed when creating a new file; "
+                                f"use replacements for existing file: {canonical}"
+                            )
+                        else:
+                            if change_tracker is not None:
+                                change_tracker.capture_before(path)
+                            outcome = write_file(project, path, _call_arg(call, "content"))
                     else:
-                        if change_tracker is not None:
-                            change_tracker.capture_before(path)
-                        outcome = edit_file(project, path, _edit_blocks_from_call(call))
+                        guard = _read_before_edit_outcome(project, path, known_file_paths)
+                        if guard is not None:
+                            outcome = guard
+                        else:
+                            if change_tracker is not None:
+                                change_tracker.capture_before(path)
+                            outcome = edit_file(project, path, _edit_blocks_from_call(call))
                     if outcome.ok and outcome.changed:
                         if change_tracker is not None:
                             change_tracker.capture_after(path)
@@ -357,6 +394,7 @@ def run(
                         wrote_files = True
                         checks_passed = False
                         changed_files.add(path)
+                        known_file_paths.add(_canonical_project_path(project, path))
                 elif call.name == "read":
                     read_options = {
                         name: call.args[name]
@@ -364,6 +402,8 @@ def run(
                         if name in call.args
                     }
                     outcome = read_file(project, path, **read_options)
+                    if outcome.ok:
+                        known_file_paths.add(_canonical_project_path(project, path))
                 elif call.name == "ls":
                     outcome = list_directory(project, path)
                 elif call.name == "search":

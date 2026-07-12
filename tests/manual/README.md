@@ -25,6 +25,23 @@ python -B tests\manual\qwen_submit_probe.py --timeout 45
 It can reuse the Project Map/Symbol overview benchmark prompts with `--case`
 and `--arm` when diagnosing Qwen-specific stalls.
 
+`read_before_edit_ab.py` compares live task completion with the read-before-edit
+guard disabled and enabled:
+
+```powershell
+python -B tests\manual\read_before_edit_ab.py `
+  --provider deepseek `
+  --case similar-config-constant `
+  --arm guard `
+  --port 9222 `
+  --out .read-before-edit.deepseek.json
+```
+
+It uses temporary projects and records guard blocks, whether the model reads
+after a block, final local test success, turns, tool calls, and changed files.
+Omit `--arm` for the full baseline/guard A/B; select one arm for a lightweight
+provider smoke.
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 

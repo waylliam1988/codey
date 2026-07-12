@@ -1,4 +1,63 @@
-# Codey 0.1.32 Test Report
+# Codey 0.1.33 Test Report
+
+## 0.1.33 Read-before-edit Guard
+
+This release adds a run-scoped guard for existing files: the Writer must
+successfully `read_file` a file in the current agent run before a replacement
+edit may change that existing file. Full `content` writes are only allowed for
+new-file creation, so a paginated read cannot unlock whole-file replacement.
+Files created or changed in the same run become known for follow-up replacement
+edits. `grep`,
+`find_references`, Project Map, and Symbol overview remain navigation hints, not
+edit permission.
+
+Targeted tests cover blind existing-file edits, failed reads, new-file creation,
+same-run follow-up edits, `read_files`, `parallel(read_file)`, path
+normalization, baseline capture, and rejection of whole-file `content` writes
+after a paginated read. A fake-provider flow verifies the model can recover
+after the guard blocks a blind replacement by reading the file and retrying.
+
+Live Edge/CDP A/B across DeepSeek, Qwen, MiMo, and GLM ran three small project
+tasks each with the guard disabled and enabled. The four web models generally
+read files before editing, so the guard did not need to block any live edit. The
+important live signal is that the guard did not add visible burden or regress
+success on compliant providers: DeepSeek, Qwen, and MiMo passed all 6/6
+baseline/guard arms; GLM passed 4/6 arms, with its failure unrelated to the
+guard because no read-before-edit block fired. The GLM failure exposed smart
+quotes in Python edit JSON. A diagnostic route-case rerun passed both arms after
+an experimental snippet normalization, but that normalization was removed
+before release because it could alter legitimate string content. A later full
+GLM rerun was stopped when the site remained rate-limited, so neither run is
+reported as a current-build full-matrix pass.
+
+DeepSeek provider reliability also improved: when the page shows the visible
+yellow rate-limit retry button with "消息发送过于频繁", Codey waits a short
+cooldown, clicks the retry button, and continues waiting for the answer.
+GLM applies the same bounded recovery when it shows "请求过于频繁，请稍后再试"
+with a visible "重新回答" action. Both providers may retry repeatedly after
+cooldowns, bounded by the original request timeout.
+
+GLM smart-quote normalization first accepts already-valid JSON unchanged except
+for compile-gated full Python `content`. Structural quote repair runs only after
+the original JSON fails to parse, and its candidate must parse successfully
+before use. It preserves `old_string`, `new_string`, summary text, and
+replacement items exactly, including legitimate typographic punctuation.
+
+The initial project prompt now gives one stable relative-path workspace rule
+instead of exposing an absolute temporary project path. The entire Project
+instructions section is omitted when neither `AGENTS.md` nor `CLAUDE.md` exists;
+when present, those files are still loaded and bounded as before. Unit tests
+capture both prompt forms.
+
+A lightweight live guard smoke used one `similar-config-constant` task per web
+provider after this prompt change. DeepSeek, Qwen, MiMo, and GLM each passed in
+4 turns, changed only `limits.py`, and passed the two local checks. Tool calls
+were 3 / 3 / 4 / 3 respectively. No guard block, navigation error, duplicate
+submission, rate-limit recovery, or protocol repair occurred.
+
+Validation: `python -B -m unittest` passed with 613 tests; `python -B -m pytest
+-q` passed with 621 tests and 31 subtests. Full-tree Ruff, `compileall`,
+manual `read_before_edit_ab.py --self-test`, and `git diff --check` passed.
 
 ## 0.1.32 Bounded Symbol Overview
 

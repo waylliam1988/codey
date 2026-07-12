@@ -47,6 +47,9 @@ READY_TIMEOUT = 90.0
 RESPONSE_TIMEOUT_GRACE = 60.0
 SEND_TIMEOUT = 30.0
 SUBMIT_CONFIRM_TIMEOUT = 15.0
+RATE_LIMIT_COOLDOWN = 10.0
+RATE_LIMIT_TEXT = "请求过于频繁，请稍后再试"
+RATE_LIMIT_RETRY_TEXT = "重新回答"
 
 
 def prepare_prompt(text: str) -> str:
@@ -56,16 +59,34 @@ def prepare_prompt(text: str) -> str:
 def normalize_tool_json_reply(text: str) -> str:
     """Repair structural smart quotes without changing quotes inside values."""
 
+    try:
+        json.loads(text)
+    except (TypeError, ValueError):
+        pass
+    else:
+        return _normalize_python_edit(text)
+
     stripped = text.lstrip()
-    if not stripped.startswith(("{“", "{”", "{„", "{‟")):
-        return _normalize_python_content(text)
+    if not stripped.startswith("{") or not any(char in text for char in SMART_TOOL_QUOTES):
+        return text
+
+    candidate = _repair_structural_smart_quotes(text)
+    try:
+        json.loads(candidate)
+    except (TypeError, ValueError):
+        return text
+    return _normalize_python_edit(candidate)
+
+
+def _repair_structural_smart_quotes(text: str) -> str:
+    """Build a structural-quote repair candidate for invalid JSON."""
 
     chars: list[str] = []
     in_string = False
     escaped = False
     for index, char in enumerate(text):
         if not in_string:
-            if char in SMART_TOOL_QUOTES:
+            if char == '"' or char in SMART_TOOL_QUOTES:
                 chars.append('"')
                 in_string = True
             else:
@@ -91,33 +112,52 @@ def normalize_tool_json_reply(text: str) -> str:
                 in_string = False
                 continue
         chars.append(char)
-    return _normalize_python_content("".join(chars))
+    return "".join(chars)
 
 
-def _normalize_python_content(text: str) -> str:
+def _normalize_python_edit(text: str) -> str:
     try:
         payload = json.loads(text)
     except (TypeError, ValueError):
         return text
-    if not isinstance(payload, dict) or payload.get("tool") != "edit":
+    original = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    if not _is_python_edit_payload(payload):
         return text
+    changed = _normalize_python_edit_content(payload)
+    if not changed:
+        return text
+    rendered = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return rendered if rendered != original else text
+
+
+def _is_python_edit_payload(payload: object) -> bool:
+    if not isinstance(payload, dict) or payload.get("tool") != "edit":
+        return False
     args = payload.get("args")
     if not isinstance(args, dict) or not str(args.get("path") or "").lower().endswith(".py"):
-        return text
+        return False
+    return True
+
+
+def _normalize_python_edit_content(payload: dict) -> bool:
+    args = payload.get("args")
+    if not isinstance(args, dict):
+        return False
     content = args.get("content")
     if not isinstance(content, str) or not any(char in content for char in SMART_SOURCE_QUOTES):
-        return text
+        return False
+    candidate = content.translate(SMART_SOURCE_QUOTE_TRANSLATION)
     try:
         compile(content, "<glm-edit>", "exec")
-        return text
+        return False
     except SyntaxError:
-        candidate = content.translate(SMART_SOURCE_QUOTE_TRANSLATION)
+        pass
     try:
         compile(candidate, "<glm-edit>", "exec")
     except SyntaxError:
-        return text
+        return False
     args["content"] = candidate
-    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    return True
 
 
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
@@ -200,6 +240,33 @@ def _submitted_question_count(page: Page, submitted_text: str) -> int:
         if prompt.strip() == needle:
             count += 1
     return count
+
+
+def _rate_limit_visible(page: Page) -> bool:
+    try:
+        return RATE_LIMIT_TEXT in str(page.locator("body").inner_text(timeout=1000))
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
+        return False
+
+
+def _click_rate_limit_retry(page: Page) -> bool:
+    cancellation.wait(RATE_LIMIT_COOLDOWN)
+    buttons = page.get_by_text(RATE_LIMIT_RETRY_TEXT, exact=True)
+    try:
+        count = buttons.count()
+        for index in range(count - 1, -1, -1):
+            candidate = buttons.nth(index)
+            if candidate.is_visible():
+                cancellation.check()
+                candidate.click()
+                return True
+    except cancellation.TaskCancelled:
+        raise
+    except Exception:
+        return False
+    return False
 
 
 def _last_text(page: Page) -> str:
@@ -353,6 +420,17 @@ def _chat(
             raise RuntimeError("GLM page submitted the message more than once")
         count = _response_count(page)
         current = _last_text(page) if count else ""
+        if (
+            count <= response_baseline
+            and current == baseline_text
+            and _rate_limit_visible(page)
+        ):
+            if _click_rate_limit_retry(page):
+                sent_at = time.time()
+                last = ""
+                stable = 0
+                appeared = False
+                continue
         if count <= response_baseline and current == baseline_text:
             continue
         confirm_submission(attempt, PROVIDER_ID)

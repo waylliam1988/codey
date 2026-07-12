@@ -66,6 +66,14 @@ class GlmDriverTests(unittest.TestCase):
             },
         )
 
+    def test_normalize_tool_json_reply_preserves_valid_summary_before_comma(self) -> None:
+        reply = json.dumps({
+            "tool": "done",
+            "args": {"summary": "He said “stop”, then left"},
+        }, ensure_ascii=False)
+
+        self.assertEqual(glm.normalize_tool_json_reply(reply), reply)
+
     def test_normalize_tool_json_reply_repairs_only_ast_valid_python_content(self) -> None:
         reply = '{“tool”:“edit”,“args”:{“path”:“app.py”,“content”:“def greeting():\\n return ‘hello’\\n”}}'
 
@@ -90,6 +98,51 @@ class GlmDriverTests(unittest.TestCase):
 
         self.assertIn("‘hello’", glm.normalize_tool_json_reply(invalid))
         self.assertIn("‘hello’", glm.normalize_tool_json_reply(javascript))
+
+    def test_normalize_tool_json_reply_preserves_python_edit_snippet_quotes(self) -> None:
+        reply = json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "routes.py",
+                "old_string": "TITLE = '“Hello”'",
+                "new_string": "return 'it’s ready'",
+            },
+        }, ensure_ascii=False)
+
+        normalized = json.loads(glm.normalize_tool_json_reply(reply))
+
+        self.assertEqual(normalized["args"]["old_string"], "TITLE = '“Hello”'")
+        self.assertEqual(normalized["args"]["new_string"], "return 'it’s ready'")
+
+    def test_normalize_tool_json_reply_preserves_valid_python_replacement_quotes(self) -> None:
+        reply = json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "old_string": "TITLE = “stop”, then_continue()",
+                "new_string": "TITLE = “go”, then_continue()",
+            },
+        }, ensure_ascii=False)
+
+        self.assertEqual(glm.normalize_tool_json_reply(reply), reply)
+
+    def test_normalize_tool_json_reply_repairs_mixed_smart_json_for_python_edit(self) -> None:
+        reply = (
+            '{"tool":"edit","args":{"path":"routes.py","old_string":'
+            '"if not user.get(‘enabled’, False):",“new_string":'
+            '"if not user.get(‘admin’, False):"}}'
+        )
+
+        normalized = json.loads(glm.normalize_tool_json_reply(reply))
+
+        self.assertEqual(normalized["tool"], "edit")
+        self.assertEqual(normalized["args"]["old_string"], "if not user.get(‘enabled’, False):")
+        self.assertEqual(normalized["args"]["new_string"], "if not user.get(‘admin’, False):")
+
+    def test_normalize_tool_json_reply_rejects_invalid_repair_candidate(self) -> None:
+        reply = '{“tool”:“done”,“args”:'
+
+        self.assertEqual(glm.normalize_tool_json_reply(reply), reply)
 
     def test_last_text_reads_only_profiled_final_answer(self) -> None:
         page = mock.Mock()
@@ -191,6 +244,35 @@ class GlmDriverTests(unittest.TestCase):
 
         self.assertEqual(glm._submitted_question_count(page, "current prompt"), 1)
 
+    def test_rate_limit_visible_matches_glm_notice(self) -> None:
+        page = mock.Mock()
+        page.locator.return_value.inner_text.return_value = (
+            "请求过于频繁，请稍后再试\n重新回答"
+        )
+
+        self.assertTrue(glm._rate_limit_visible(page))
+        page.locator.assert_called_once_with("body")
+        page.locator.return_value.inner_text.assert_called_once_with(timeout=1000)
+
+    def test_click_rate_limit_retry_uses_latest_visible_button(self) -> None:
+        page = mock.Mock()
+        buttons = mock.Mock()
+        hidden = mock.Mock()
+        visible = mock.Mock()
+        buttons.count.return_value = 2
+        buttons.nth.side_effect = lambda index: [hidden, visible][index]
+        hidden.is_visible.return_value = False
+        visible.is_visible.return_value = True
+        page.get_by_text.return_value = buttons
+
+        with mock.patch.object(glm.cancellation, "wait") as wait:
+            self.assertTrue(glm._click_rate_limit_retry(page))
+
+        wait.assert_called_once_with(glm.RATE_LIMIT_COOLDOWN)
+        page.get_by_text.assert_called_once_with("重新回答", exact=True)
+        visible.click.assert_called_once_with()
+        hidden.click.assert_not_called()
+
     def test_chat_duplicate_guard_counts_only_matching_submitted_prompt(self) -> None:
         page = mock.Mock()
         textarea = mock.Mock()
@@ -286,6 +368,40 @@ class GlmDriverTests(unittest.TestCase):
         sent = textarea.fill.call_args.args[0]
         self.assertTrue(sent.startswith("hello\n\n"))
         self.assertIn("ASCII U+0022", sent)
+
+    def test_chat_retries_repeated_rate_limits_and_waits_for_answer(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        with (
+            mock.patch.object(glm, "wait_ready"),
+            mock.patch.object(glm, "_message_box", return_value=textarea),
+            mock.patch.object(glm, "_submit", return_value=attempt),
+            mock.patch.object(glm, "_response_count", side_effect=[0, 0, 0, 1]),
+            mock.patch.object(glm, "_question_count", return_value=0),
+            mock.patch.object(glm, "_submitted_question_count", return_value=0),
+            mock.patch.object(glm, "_last_text", return_value='{"tool":"done"}'),
+            mock.patch.object(glm, "_rate_limit_visible", return_value=True),
+            mock.patch.object(glm, "_click_rate_limit_retry", return_value=True) as retry,
+            mock.patch.object(glm, "_generation_complete", return_value=True),
+            mock.patch.object(glm, "_final_text", return_value='{"tool":"done"}'),
+            mock.patch.object(glm.controls, "control_has_text", return_value=True),
+            mock.patch.object(glm.controls, "confirm_control"),
+            mock.patch.object(glm.cancellation, "wait"),
+        ):
+            reply = glm.chat(
+                page,
+                "hello",
+                response_timeout=1,
+                stable_ticks=0,
+                tick=0,
+                min_wait=0,
+            )
+
+        self.assertEqual(reply, '{"tool":"done"}')
+        self.assertEqual(retry.call_count, 2)
+        retry.assert_has_calls([mock.call(page), mock.call(page)])
 
     def test_duplicate_question_is_reported_without_second_local_click(self) -> None:
         page = mock.Mock()

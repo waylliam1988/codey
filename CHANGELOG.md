@@ -4,6 +4,19 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.33 - Read-before-edit Guard
+
+Added a run-scoped guard that rejects replacement edits to existing files until
+the Writer has successfully read that file in the current agent run. Full
+`content` writes are limited to new-file creation; existing files must use exact
+replacements. Files created or changed during the run become known for follow-up
+replacement edits. This keeps Symbol overview as navigation help without
+letting it become a substitute for inspecting real file contents. DeepSeek and
+GLM also auto-click their visible rate-limit retry buttons after a short
+cooldown. The initial project prompt now omits absolute temporary paths and the
+empty instructions section; repository instructions are included only when an
+`AGENTS.md` or `CLAUDE.md` file exists.
+
 ## 0.1.32 - Bounded Symbol Overview
 
 Added a task-aware Symbol overview inside the existing Project Map so the

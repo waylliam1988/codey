@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 .e2e-artifacts/
 .repo-map-probe*.json
+.read-before-edit*.json

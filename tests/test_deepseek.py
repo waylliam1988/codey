@@ -135,7 +135,8 @@ class DeepSeekTimeoutTests(unittest.TestCase):
             mock.patch.object(deepseek, "wait_ready"),
             mock.patch.object(deepseek, "_message_box", return_value=message_box),
             mock.patch.object(deepseek, "_submit", return_value=attempt),
-            mock.patch.object(deepseek, "_response_count", side_effect=[0, 1, 1]),
+            mock.patch.object(deepseek, "_response_count", side_effect=[0, 0, 1, 1, 1]),
+            mock.patch.object(deepseek, "_rate_limit_visible", return_value=False),
             mock.patch.object(deepseek, "_last_text", return_value="delayed reply"),
             mock.patch.object(deepseek, "_final_text", return_value="raw delayed reply"),
             mock.patch.object(deepseek.controls, "control_has_text", return_value=True),
@@ -147,6 +148,83 @@ class DeepSeekTimeoutTests(unittest.TestCase):
             )
 
         self.assertEqual(reply, "raw delayed reply")
+        self.assertTrue(attempt.confirmed)
+
+    def test_rate_limit_visible_checks_deepseek_warning_text(self) -> None:
+        page = mock.Mock()
+        body = mock.Mock()
+        page.locator.return_value = body
+        body.inner_text.return_value = "消息发送过于频繁，请稍后重试"
+
+        self.assertTrue(deepseek._rate_limit_visible(page))
+        page.locator.assert_called_once_with("body")
+        body.inner_text.assert_called_once_with(timeout=1000)
+
+    def test_click_rate_limit_retry_uses_latest_visible_warning_button(self) -> None:
+        page = mock.Mock()
+        buttons = mock.Mock()
+        hidden = mock.Mock()
+        visible = mock.Mock()
+        page.locator.return_value = buttons
+        buttons.count.return_value = 2
+        buttons.nth.side_effect = [visible, hidden]
+        visible.is_visible.return_value = True
+        visible.inner_text.return_value = "重试"
+
+        with mock.patch.object(deepseek.cancellation, "wait") as wait:
+            self.assertTrue(deepseek._click_rate_limit_retry(page))
+
+        wait.assert_called_once_with(deepseek.RATE_LIMIT_COOLDOWN)
+        page.locator.assert_called_once_with(deepseek.RATE_LIMIT_RETRY_BUTTON)
+        buttons.nth.assert_called_once_with(1)
+        visible.click.assert_called_once_with()
+        hidden.click.assert_not_called()
+
+    def test_click_rate_limit_retry_ignores_other_warning_action(self) -> None:
+        page = mock.Mock()
+        buttons = mock.Mock()
+        warning = mock.Mock()
+        page.locator.return_value = buttons
+        buttons.count.return_value = 1
+        buttons.nth.return_value = warning
+        warning.is_visible.return_value = True
+        warning.inner_text.return_value = "确认"
+
+        with mock.patch.object(deepseek.cancellation, "wait"):
+            self.assertFalse(deepseek._click_rate_limit_retry(page))
+
+        warning.click.assert_not_called()
+
+    def test_chat_retries_repeated_rate_limits_and_waits_for_answer(self) -> None:
+        page = mock.Mock()
+        message_box = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+
+        with (
+            mock.patch.object(deepseek, "wait_ready"),
+            mock.patch.object(deepseek, "_message_box", return_value=message_box),
+            mock.patch.object(deepseek, "_submit", return_value=attempt),
+            mock.patch.object(
+                deepseek,
+                "_response_count",
+                side_effect=[0, 0, 0, 1, 1, 1, 1],
+            ),
+            mock.patch.object(deepseek, "_rate_limit_visible", return_value=True),
+            mock.patch.object(deepseek, "_click_rate_limit_retry", return_value=True) as retry,
+            mock.patch.object(deepseek, "_last_text", return_value="reply after retry"),
+            mock.patch.object(deepseek, "_final_text", return_value="raw reply after retry"),
+            mock.patch.object(deepseek.controls, "control_has_text", return_value=True),
+            mock.patch.object(deepseek.controls, "confirm_control"),
+            mock.patch.object(deepseek.cancellation, "wait"),
+        ):
+            reply = deepseek.chat(
+                page, "hello", response_timeout=1, stable_ticks=0, tick=0, min_wait=0
+            )
+
+        self.assertEqual(reply, "raw reply after retry")
+        self.assertEqual(retry.call_count, 2)
+        retry.assert_has_calls([mock.call(page), mock.call(page)])
         self.assertTrue(attempt.confirmed)
 
 
