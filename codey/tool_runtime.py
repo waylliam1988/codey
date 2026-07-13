@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import re
 import shlex
@@ -51,6 +52,8 @@ EDIT_FAILURE_MAX_LINES = 7
 EDIT_FAILURE_MAX_MATCHES = 3
 EDIT_FAILURE_MAX_LINE_CHARS = 400
 EDIT_FAILURE_MAX_ANCHOR_CANDIDATES = 32
+PYTHON_SYNTAX_HINT_MAX_CHARS = 128 * 1024
+PYTHON_SYNTAX_HINT_MAX_MESSAGE_CHARS = 160
 RUN_TIMEOUT_SECONDS = 90
 RUN_OUTPUT_LIMIT = 24_000
 RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
@@ -405,6 +408,44 @@ def _multiple_matches(
     return ToolOutcome.error(_bounded_failure_output(lines))
 
 
+def _python_syntax_regression_hint(rel: str, before: str, after: str) -> str:
+    if Path(rel).suffix.lower() != ".py":
+        return ""
+    if max(len(before), len(after)) > PYTHON_SYNTAX_HINT_MAX_CHARS:
+        return ""
+
+    parse_failures = (
+        SyntaxError,
+        ValueError,
+        TypeError,
+        MemoryError,
+        RecursionError,
+        OverflowError,
+    )
+    try:
+        ast.parse(before, filename=rel)
+    except parse_failures:
+        return ""
+
+    try:
+        ast.parse(after, filename=rel)
+    except SyntaxError as exc:
+        message = " ".join(str(exc.msg or "invalid syntax").split())
+        message = message[:PYTHON_SYNTAX_HINT_MAX_MESSAGE_CHARS]
+        location = f"line {max(1, int(exc.lineno or 1))}"
+        if exc.offset:
+            location += f", column {max(1, int(exc.offset))}"
+        return (
+            f"\nSyntax regression detected in {rel} at {location}: {message}.\n"
+            "The edit was applied. Inspect and repair the current file "
+            "before completion."
+        )
+    except (ValueError, TypeError, MemoryError, RecursionError, OverflowError):
+        return ""
+
+    return ""
+
+
 def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     if not blocks:
         return ToolOutcome.error("edit requires at least one replacement")
@@ -474,11 +515,16 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         return ToolOutcome(f"edited {rel} (no changes)", True)
     if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
+    syntax_hint = _python_syntax_regression_hint(rel, content, updated)
     path.write_text(updated, encoding="utf-8")
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"
     note = "; indentation recovered" if indentation_recovered else ""
-    return ToolOutcome(f"edited {rel} ({count} {label}{note})", True, changed=True)
+    return ToolOutcome(
+        f"edited {rel} ({count} {label}{note}){syntax_hint}",
+        True,
+        changed=True,
+    )
 
 
 def bounded_positive_int(

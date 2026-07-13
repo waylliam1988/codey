@@ -4,6 +4,20 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.37 - Python Syntax Regression Hint
+
+Successful replacement edits to Python files now receive one bounded syntax
+regression hint when the original file parsed successfully but the final edited
+content does not. The edit remains written and successful: Codey does not
+rollback, run commands, or treat the hint as a passed check. Existing-invalid
+files, valid edits, non-Python files, and files above a 128K-character parsing
+budget receive no hint.
+
+DeepSeek, Qwen, MiMo, and GLM live A/B fault injection all avoided one failed
+test run while preserving correct final code and independent test success.
+Three providers also reduced turns or total tool calls; valid-edit controls
+produced zero hints across all four providers.
+
 ## 0.1.36 - Provider Revival and Writer Takeover
 
 Provider recovery now works as one bounded transaction across the message box,

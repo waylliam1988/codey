@@ -71,6 +71,22 @@ checks that a second natural send reuses and promotes the recovered bundle:
 python -B tests\manual\provider_revival_smoke.py --provider all --port 9222
 ```
 
+`python_syntax_regression_ab.py` compares the production Python
+syntax-regression hint with a baseline that suppresses it. Fault injection is
+probe-only: it inserts the same missing colon in both A/B arms and runs a
+separate valid-edit control. Production parsing is skipped above 128K
+characters; this is a character budget, not a byte-size limit:
+
+```powershell
+python -B tests\manual\python_syntax_regression_ab.py --provider deepseek
+python -B tests\manual\python_syntax_regression_ab.py --provider qwen
+python -B tests\manual\python_syntax_regression_ab.py --provider mimo
+python -B tests\manual\python_syntax_regression_ab.py --provider glm
+```
+
+The default order is baseline-first for DeepSeek/Qwen and hint-first for
+MiMo/GLM. Use `--order baseline-first` or `--order hint-first` to override it.
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 

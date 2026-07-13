@@ -1,4 +1,32 @@
-# Codey 0.1.36 Test Report
+# Codey 0.1.37 Test Report
+
+## 0.1.37 Python Syntax Regression Hint
+
+A narrow production check compares Python replacement edits before and after
+with `ast.parse()`. It emits a bounded navigation hint only when the
+original file parsed successfully and the final edited content does not. The
+edit remains written and successful; existing-invalid files, non-Python files,
+valid edits, and files above the 128K-character parsing budget receive no hint.
+
+The live A/B injected the same missing colon after the first successful target
+edit. DeepSeek and Qwen ran baseline first; MiMo and GLM ran hint first to
+reduce fixed-order bias. Every fault arm ended with valid syntax, the requested
+change, and an independently passing unittest. Every valid-edit control passed
+with zero generated or exposed hints.
+
+| Provider | Turns baseline -> hint | Tools baseline -> hint | Runs baseline -> hint | Result |
+|---|---:|---:|---:|---|
+| DeepSeek | 7 -> 6 | 6 -> 5 | 2 -> 1 | avoided failed run |
+| Qwen | 7 -> 6 | 7 -> 5 | 2 -> 1 | avoided failed run and extra read |
+| MiMo | 8 -> 6 | 8 -> 6 | 2 -> 1 | avoided failed run and extra read |
+| GLM | 7 -> 7 | 6 -> 6 | 2 -> 1 | failed run replaced by one read |
+
+No provider reached max turns or hit a DOM, submission, rate-limit, retry, or
+response-timeout failure. All four avoided one failed test run, three reduced
+turns or total tool calls, and legal edits produced no false positives. This
+meets the predeclared retention threshold for the narrow Python-only behavior;
+it does not justify Ruff, JavaScript/TypeScript, LSP, automatic rollback, or
+automatic command execution.
 
 ## 0.1.36 Provider Revival and Writer Takeover
 

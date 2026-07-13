@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.36-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.1.37-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.36`
+版本：`0.1.37`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -72,6 +72,7 @@ Codey 想解决的是一个很朴素的问题：
 - 用隐藏任务 brief 让 Writer 和 Reviewer 共享同一份有边界的意图
 - 在模型真正读文件前，给 Writer、隐藏顾问和 Reviewer 一份有边界的本地项目地图
 - 让模型在改某个符号前，先请求有边界的文本引用提示
+- Python replacement edit 新引入语法错误时立即提示，但不自动回滚，也不冒充检查通过
 - 长对话接近上限时，自动总结事实并在新对话里无感继续
 - 记住真实运行成功的项目命令，后续任务不必重新猜测
 - 只从通过本地检查的成功改动里沉淀最近变更事实

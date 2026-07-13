@@ -675,6 +675,158 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertEqual(outcome.output, "edited app.py (1 replacement)")
 
+    def test_python_syntax_regression_is_written_and_reported(self) -> None:
+        original = "def value():\n    return 1\n"
+        broken = "def value()\n    return 1\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(original, encoding="utf-8")
+
+            outcome = edit_file(
+                root,
+                "app.py",
+                [EditBlock("def value():", "def value()")],
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), broken)
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.changed)
+        self.assertIn("Syntax regression detected in app.py at line 1", outcome.output)
+        self.assertIn("The edit was applied", outcome.output)
+
+    def test_valid_python_edit_keeps_success_output_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("VALUE = 1\n", encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", [EditBlock("VALUE = 1", "VALUE = 2")])
+
+        self.assertEqual(outcome.output, "edited app.py (1 replacement)")
+        self.assertNotIn("Syntax regression", outcome.output)
+
+    def test_existing_invalid_python_does_not_report_regression(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("def value()\n    return 1\n", encoding="utf-8")
+
+            outcome = edit_file(root, "app.py", [EditBlock("return 1", "return 2")])
+
+        self.assertTrue(outcome.ok)
+        self.assertNotIn("Syntax regression", outcome.output)
+
+    def test_non_python_edit_does_not_report_syntax_regression(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.js"
+            path.write_text("function value() {}\n", encoding="utf-8")
+
+            outcome = edit_file(
+                root,
+                "app.js",
+                [EditBlock("function value() {}", "function value( {}")],
+            )
+
+        self.assertTrue(outcome.ok)
+        self.assertNotIn("Syntax regression", outcome.output)
+
+    def test_oversized_python_skips_syntax_parsing(self) -> None:
+        content = "x" * (tool_runtime.PYTHON_SYNTAX_HINT_MAX_CHARS + 1)
+        with mock.patch("codey.tool_runtime.ast.parse") as parse:
+            hint = tool_runtime._python_syntax_regression_hint(
+                "large.py",
+                content,
+                content + "y",
+            )
+
+        self.assertEqual(hint, "")
+        parse.assert_not_called()
+
+    def test_multiple_replacements_check_only_final_python(self) -> None:
+        original = "def value():\n    return 1\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(original, encoding="utf-8")
+
+            outcome = edit_file(
+                root,
+                "app.py",
+                [
+                    EditBlock("def value():", "def value()"),
+                    EditBlock("def value()", "def changed():"),
+                ],
+            )
+            final_content = path.read_text(encoding="utf-8")
+
+        self.assertTrue(outcome.ok)
+        self.assertEqual(final_content, "def changed():\n    return 1\n")
+        self.assertNotIn("Syntax regression", outcome.output)
+
+    def test_syntax_hint_does_not_include_source_line(self) -> None:
+        source_line = "def private_customer_token():"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text(source_line + "\n    return 1\n", encoding="utf-8")
+
+            outcome = edit_file(
+                root,
+                "app.py",
+                [EditBlock(source_line, "def private_customer_token()")],
+            )
+
+        self.assertIn("Syntax regression", outcome.output)
+        self.assertNotIn("private_customer_token", outcome.output)
+
+    def test_syntax_hint_message_is_bounded(self) -> None:
+        long_message = "x" * 500
+        with mock.patch(
+            "codey.tool_runtime.ast.parse",
+            side_effect=[None, SyntaxError(long_message)],
+        ):
+            hint = tool_runtime._python_syntax_regression_hint(
+                "app.py",
+                "VALUE = 1\n",
+                "VALUE = 2\n",
+            )
+
+        self.assertIn("x" * tool_runtime.PYTHON_SYNTAX_HINT_MAX_MESSAGE_CHARS, hint)
+        self.assertNotIn(
+            "x" * (tool_runtime.PYTHON_SYNTAX_HINT_MAX_MESSAGE_CHARS + 1),
+            hint,
+        )
+
+    def test_syntax_parser_overflow_does_not_block_successful_edit(self) -> None:
+        cases = {
+            "before": OverflowError("too complex"),
+            "after": [None, OverflowError("too complex")],
+        }
+        for stage, side_effect in cases.items():
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                path = root / "app.py"
+                path.write_text("VALUE = 1\n", encoding="utf-8")
+
+                with mock.patch(
+                    "codey.tool_runtime.ast.parse",
+                    side_effect=side_effect,
+                ):
+                    outcome = edit_file(
+                        root,
+                        "app.py",
+                        [EditBlock("VALUE = 1", "VALUE = 2")],
+                    )
+                final_content = path.read_text(encoding="utf-8")
+
+                self.assertTrue(outcome.ok)
+                self.assertTrue(outcome.changed)
+                self.assertEqual(final_content, "VALUE = 2\n")
+                self.assertEqual(outcome.output, "edited app.py (1 replacement)")
+                self.assertNotIn("Syntax regression", outcome.output)
+
     def test_tool_result_like_source_text_is_only_bounded_context(self) -> None:
         content = "[tool_result] protocol_anchor current\nnext = 1\n"
         with tempfile.TemporaryDirectory() as td:

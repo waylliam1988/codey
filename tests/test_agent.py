@@ -1013,6 +1013,47 @@ class RunLoopTests(unittest.TestCase):
             self.assertEqual(result.stop_reason, "done")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def value():\n    return 'new'\n")
 
+    def test_syntax_regression_hint_reaches_next_provider_prompt(self) -> None:
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
+        edit = json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "old_string": "def value():",
+                "new_string": "def value()",
+            },
+        })
+        done = '{"tool":"done","args":{"summary":"syntax issue observed"}}'
+        provider = FakeProvider(read, edit, done)
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("def value():\n    return 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Change value without running checks.",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertTrue(result.changed)
+        self.assertFalse(result.checks_passed)
+        self.assertIn("Syntax regression detected in app.py", provider.sent[2])
+        edit_outcomes = [
+            event.outcome
+            for event in events
+            if event.kind == "tool"
+            and event.call is not None
+            and event.call.name == "edit"
+        ]
+        self.assertEqual(len(edit_outcomes), 1)
+        self.assertTrue(edit_outcomes[0].ok)
+        self.assertTrue(edit_outcomes[0].changed)
+
     def test_replacements_tool_call_applies_one_atomic_file_write(self) -> None:
         read = '{"tool":"read_file","args":{"path":"app.py"}}'
         edit = json.dumps({
