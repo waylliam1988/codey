@@ -17,9 +17,8 @@ Policy tests cover manifest discovery, executable filtering, ecosystem
 compatibility, closest monorepo scope, documentation skipping, and cwd
 coverage. Candidate directory discovery has both directory and cumulative
 entry budgets, skips dot directories and case-insensitive excluded directories,
-and safely stops when either budget is exhausted. No live provider run was performed for the production change, as
-requested; the earlier MiMo/DeepSeek probe remains the live evidence for the
-decision.
+and safely stops when either budget is exhausted. Production behavior was
+first locked locally, then checked with the four-provider smoke recorded below.
 
 Candidate manifests are refreshed from current disk state once per edit epoch
 at the completion boundary and once before the final receipt. Historical
@@ -56,6 +55,15 @@ and completed with zero wrong-run attempts:
 No provider hit a DOM submission failure, navigation abort, rate-limit recovery
 button, duplicate send, or response timeout during this smoke. Provider code
 was therefore unchanged.
+
+A later exploratory A/B tested whether appending bounded verbatim excerpts from
+already-visible failed-check output should become a new production feature.
+DeepSeek baseline completed in 7 turns / 6 tool calls with 1 read after failure;
+the context arm regressed to 8 turns / 7 tool calls with 2 reads after failure.
+Both were correct, but the added excerpt supplied no new facts and increased
+exploration. A MiMo baseline stalled and was discarded as an invalid sample.
+The proposed verification-failure context was therefore withdrawn: no parser,
+Agent integration, provider branch, version bump, or permanent probe was kept.
 
 Validation: `python -B -m pytest -q` passed with 653 tests, 8 skips, and 31
 subtests. `python -B -m unittest` passed with 653 tests and 8 skips. Full-tree
