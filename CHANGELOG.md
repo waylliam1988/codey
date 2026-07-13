@@ -4,6 +4,18 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.35 - Default Post-edit Verification
+
+Code changes now receive one bounded verification reminder when Codey can prove
+there is a unique, runnable check for the changed files. Candidates come only
+from previously successful checks or explicit pytest, npm, Cargo, and Go
+project configuration. Existing green checks after the latest edit are reused;
+documentation-only changes, ambiguous commands, missing executables, and
+cross-ecosystem matches do not enable the gate. Codey never installs or runs a
+command automatically, and a failed default check is not repeated forever.
+Manifest candidates are refreshed at completion so edits to project scripts
+cannot leave the gate using stale commands.
+
 ## 0.1.34 - Bounded Edit Failure Context
 
 Failed exact replacements now return bounded current-file evidence when a

@@ -31,6 +31,12 @@ from codey.providers import PROVIDER_LABELS
 from codey.receipt import build_task_receipt
 from codey.review import has_reviewable_changes, render_writer_followup
 from codey.verification_map import render_verification_map
+from codey.verification_policy import (
+    VerificationCandidate,
+    check_matches_candidate,
+    discover_verification_candidates,
+    select_verification_candidate,
+)
 from codey.work_checkpoint import (
     WorkCheckpoint,
     WorkCheckpointStore,
@@ -96,6 +102,32 @@ def _project_has_user_files(project: str | Path) -> bool:
             except OSError:
                 continue
     return False
+
+
+def _verification_candidates(
+    project: str | Path,
+    verified_commands: tuple[object, ...] = (),
+    additional_commands: tuple[object, ...] = (),
+) -> tuple[VerificationCandidate, ...]:
+    try:
+        return discover_verification_candidates(
+            project,
+            verified_commands + additional_commands,
+        )
+    except (OSError, TypeError, ValueError):
+        return ()
+
+
+def _verified_commands(
+    project: str | Path,
+    store: ProjectFactsStore | None,
+) -> tuple[object, ...]:
+    try:
+        facts = store.load(project) if store is not None else None
+        commands = getattr(facts, "commands", ())
+        return tuple(commands) if isinstance(commands, (tuple, list)) else ()
+    except (OSError, TypeError, ValueError):
+        return ()
 
 
 def _safe_project_map(project: str | Path, verified_facts: str, task: str = "") -> str:
@@ -350,6 +382,17 @@ class TaskRunner:
                     if self.project_facts is not None
                     else ""
                 )
+                verification_verified_commands = _verified_commands(
+                    project,
+                    self.project_facts,
+                )
+                verification_candidates = _verification_candidates(
+                    project,
+                    verification_verified_commands,
+                )
+                verification_additional_commands: tuple[object, ...] = ()
+                resumed_changed_files: tuple[str, ...] = ()
+                resumed_successful_checks: tuple[VerificationCandidate, ...] = ()
                 project_map = _safe_project_map(project, verified_facts, task)
                 checkpoint_prompt = ""
                 if self.work_checkpoints is not None:
@@ -367,6 +410,21 @@ class TaskRunner:
                         if same_project and resume_requested and (continue_task or same_task):
                             work_checkpoint = self.work_checkpoints.reconcile(previous)
                             evidence.seed_checks(
+                                work_checkpoint.successful_checks_after_last_change
+                            )
+                            resumed_changed_files = tuple(
+                                item.path for item in work_checkpoint.changed_files
+                            )
+                            resumed_successful_checks = tuple(
+                                VerificationCandidate(item.command, item.cwd, "checkpoint")
+                                for item in work_checkpoint.successful_checks_after_last_change
+                            )
+                            verification_candidates = _verification_candidates(
+                                project,
+                                verification_verified_commands,
+                                work_checkpoint.successful_checks_after_last_change,
+                            )
+                            verification_additional_commands = (
                                 work_checkpoint.successful_checks_after_last_change
                             )
                             checkpoint_prompt = render_work_checkpoint(work_checkpoint)
@@ -453,6 +511,14 @@ class TaskRunner:
                     project_facts=verified_facts,
                     project_map=project_map,
                     work_checkpoint=checkpoint_prompt,
+                    verification_candidates=verification_candidates,
+                    verification_candidate_loader=lambda: _verification_candidates(
+                        project,
+                        verification_verified_commands,
+                        verification_additional_commands,
+                    ),
+                    verification_changed_files=resumed_changed_files,
+                    verification_successful_checks=resumed_successful_checks,
                 )
                 if (
                     resumed_checkpoint
@@ -599,6 +665,27 @@ class TaskRunner:
                                     provider_id=provider_id,
                                     project_facts=verified_facts,
                                     project_map=project_map,
+                                    verification_candidates=verification_candidates,
+                                    verification_candidate_loader=lambda: (
+                                        _verification_candidates(
+                                            project,
+                                            verification_verified_commands,
+                                            verification_additional_commands,
+                                        )
+                                    ),
+                                    verification_changed_files=tuple(
+                                        str(item.get("path") or "")
+                                        for item in (task_changes.get("files") or [])
+                                        if item.get("path")
+                                    ),
+                                    verification_successful_checks=tuple(
+                                        VerificationCandidate(
+                                            item.command,
+                                            item.cwd,
+                                            "execution evidence",
+                                        )
+                                        for item in evidence.successful_checks
+                                    ),
                                 )
                                 if result.stop_reason == "done":
                                     update_checkpoint(
@@ -667,24 +754,35 @@ class TaskRunner:
                 state.emit({"type": "reply", "session_id": session_id, "text": reply})
                 result = RunResult("", "done", 1)
             if project:
-                if (
-                    result.stop_reason == "done"
-                    and task_changed
-                    and evidence.observed_tool_events
-                ):
-                    result = replace(
-                        result,
-                        checks_passed=evidence.has_successful_checks,
-                    )
                 task_changes = self.collect_changes(project, tracker)
-                receipt = build_task_receipt(
-                    task_changes,
-                    checks_passed=result.checks_passed,
-                )
                 files = tuple(
                     str(item.get("path") or "")
                     for item in (task_changes.get("files") or [])
                     if item.get("path")
+                )
+                verification_candidates = _verification_candidates(
+                    project,
+                    verification_verified_commands,
+                    verification_additional_commands,
+                )
+                if result.stop_reason == "done" and task_changed and files:
+                    selected_check = select_verification_candidate(
+                        verification_candidates,
+                        files,
+                    )
+                    if selected_check is not None and evidence.observed_tool_events:
+                        relevant_green = any(
+                            check_matches_candidate(
+                                selected_check,
+                                item.command,
+                                item.cwd,
+                            )
+                            for item in evidence.successful_checks
+                        )
+                        result = replace(result, checks_passed=relevant_green)
+                receipt = build_task_receipt(
+                    task_changes,
+                    checks_passed=result.checks_passed,
                 )
                 facts_write_required = (
                     self.project_facts is not None

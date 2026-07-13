@@ -84,6 +84,15 @@ class WorkCheckpointFlowTests(unittest.TestCase):
 
             self.assertIn("Local execution checkpoint", captured["work_checkpoint"])
             self.assertIn("app.py", captured["work_checkpoint"])
+            self.assertEqual(captured["verification_changed_files"], ("app.py",))
+            self.assertEqual(
+                captured["verification_successful_checks"][0].command,
+                "python -m unittest",
+            )
+            self.assertEqual(
+                captured["verification_candidates"][0].command,
+                "python -m unittest",
+            )
             done = state.last_terminal_event
             self.assertTrue(done["changed"])
             self.assertTrue(done["receipt"]["checks_passed"])
@@ -353,6 +362,151 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 server._run_task("session-1", str(project), "Continue", 8, True, "deepseek")
 
             self.assertFalse(state.last_terminal_event["receipt"]["checks_passed"])
+
+    def test_receipt_rejects_green_command_other_than_selected_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            (project / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (project / "other.py").write_text("VALUE = 0\n", encoding="utf-8")
+            (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+            state = server.State(root / "state")
+            provider = self._provider()
+            changes = {
+                "ok": True,
+                "mode": "git",
+                "changed_count": 1,
+                "files": [{"path": "app.py", "status": "M"}],
+                "diff": "diff --git a/app.py b/app.py\n+VALUE = 2\n",
+            }
+
+            def completed(*args, **kwargs):
+                kwargs["on_event"](RunEvent.tool_finished(
+                    1,
+                    ToolCall("edit", {"path": "app.py"}),
+                    ToolOutcome("edited", True, changed=True),
+                ))
+                kwargs["on_event"](RunEvent.tool_finished(
+                    2,
+                    ToolCall(
+                        "run",
+                        {"path": ".", "command": "python -m py_compile other.py"},
+                    ),
+                    ToolOutcome("ok", True, exit_code=0),
+                ))
+                return RunResult("done", "done", 2, True, True, True)
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run", side_effect=completed),
+                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch.object(server, "_run_review", return_value=None),
+            ):
+                server._run_task(
+                    "session-1",
+                    str(project),
+                    "Update app",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+            self.assertFalse(state.last_terminal_event["receipt"]["checks_passed"])
+
+    def test_candidate_loader_refreshes_manifest_from_current_disk(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            manifest = project / "pytest.ini"
+            manifest.write_text("[pytest]\n", encoding="utf-8")
+            state = server.State(root / "state")
+            provider = self._provider()
+
+            def completed(*args, **kwargs):
+                self.assertEqual(
+                    kwargs["verification_candidates"][0].command,
+                    "python -m pytest",
+                )
+                manifest.unlink()
+                self.assertEqual(kwargs["verification_candidate_loader"](), ())
+                return RunResult("done", "done", 1)
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run", side_effect=completed),
+                mock.patch.object(
+                    server,
+                    "collect_changes",
+                    return_value={"ok": True, "changed_count": 0, "files": []},
+                ),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+            ):
+                server._run_task(
+                    "session-1",
+                    str(project),
+                    "Inspect config",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+    def test_candidate_loader_drops_stale_historical_npm_script(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            manifest = project / "package.json"
+            manifest.write_text(
+                '{"scripts":{"test":"node test.js"}}', encoding="utf-8"
+            )
+            state = server.State(root / "state")
+            state.project_facts.record_success(project, ".", "npm test")
+            provider = self._provider()
+
+            def completed(*args, **kwargs):
+                self.assertTrue(
+                    any(
+                        item.command == "npm test"
+                        for item in kwargs["verification_candidates"]
+                    )
+                )
+                manifest.write_text('{"scripts":{}}', encoding="utf-8")
+                self.assertFalse(
+                    any(
+                        item.command == "npm test"
+                        for item in kwargs["verification_candidate_loader"]()
+                    )
+                )
+                return RunResult("done", "done", 1)
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run", side_effect=completed),
+                mock.patch.object(
+                    server,
+                    "collect_changes",
+                    return_value={"ok": True, "changed_count": 0, "files": []},
+                ),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch(
+                    "codey.verification_policy.shutil.which",
+                    return_value="npm",
+                ),
+            ):
+                server._run_task(
+                    "session-1",
+                    str(project),
+                    "Update package metadata",
+                    8,
+                    False,
+                    "deepseek",
+                )
 
 
 if __name__ == "__main__":

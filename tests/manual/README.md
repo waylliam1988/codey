@@ -51,6 +51,17 @@ edit behavior:
 python -B tests\manual\edit_failure_context_ab.py --provider mimo --port 9222
 ```
 
+`default_verification_ab.py` compares the pre-0.1.35 completion behavior with
+the bounded production policy for trusted post-edit verification. Run one
+case/arm at a time to avoid provider rate limits:
+
+```powershell
+python -B tests\manual\default_verification_ab.py `
+  --provider mimo `
+  --case python-pytest `
+  --arm current
+```
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 

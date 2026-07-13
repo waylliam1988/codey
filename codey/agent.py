@@ -8,10 +8,11 @@ stay outside this module.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
 
 from codey import cancellation
 from codey.events import RunEvent, print_run_event
@@ -34,6 +35,11 @@ from codey.tool_runtime import (
     safe_join,
     search_files,
     write_file,
+)
+from codey.verification_policy import (
+    VerificationCandidate,
+    check_matches_candidate,
+    select_verification_candidate,
 )
 
 DEFAULT_MAX_TURNS = 50
@@ -176,6 +182,21 @@ def _verification_reminder(task: str) -> str:
     )
 
 
+def _default_verification_reminder(candidate: VerificationCandidate) -> str:
+    call = json.dumps(
+        {
+            "tool": "run",
+            "args": {"command": candidate.command, "path": candidate.cwd},
+        },
+        separators=(",", ":"),
+    )
+    return (
+        "Files changed and a trusted local check is available. Run this check "
+        "after the latest edit before completing:\n\n"
+        f"{call}"
+    )
+
+
 # ----------------------------------------------------------------- loop ---
 
 @dataclass
@@ -207,6 +228,12 @@ def run(
     project_facts: str = "",
     project_map: str = "",
     work_checkpoint: str = "",
+    verification_candidates: tuple[VerificationCandidate, ...] = (),
+    verification_candidate_loader: Callable[
+        [], tuple[VerificationCandidate, ...]
+    ] | None = None,
+    verification_changed_files: tuple[str, ...] = (),
+    verification_successful_checks: tuple[VerificationCandidate, ...] = (),
 ) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
@@ -218,8 +245,16 @@ def run(
     checks_passed = False
     checks_ran = False
     changed_files = set(conversation.snapshot.changed_files if conversation else ())
+    changed_files.update(verification_changed_files)
+    verification_paths = set(verification_changed_files)
     known_file_paths: set[str] = set()
     verification_required = _task_requests_verification(user_task)
+    edit_epoch = 0
+    successful_verifications = [
+        (item.command, item.cwd, edit_epoch) for item in verification_successful_checks
+    ]
+    default_verification_reminded_epoch: int | None = None
+    verification_candidates_epoch: int | None = None
     project_text = str(project)
     active_provider_id = provider_id or getattr(provider, "name", "")
 
@@ -393,8 +428,11 @@ def run(
                         made_progress = True
                         wrote_files = True
                         checks_passed = False
-                        changed_files.add(path)
-                        known_file_paths.add(_canonical_project_path(project, path))
+                        canonical = _canonical_project_path(project, path)
+                        changed_files.add(canonical)
+                        verification_paths.add(canonical)
+                        known_file_paths.add(canonical)
+                        edit_epoch += 1
                 elif call.name == "read":
                     read_options = {
                         name: call.args[name]
@@ -411,9 +449,12 @@ def run(
                 elif call.name == "references":
                     outcome = find_references(project, path, _call_arg(call, "symbol"))
                 elif call.name == "run":
-                    outcome = run_command(project, path, _call_arg(call, "command"))
+                    command = _call_arg(call, "command")
+                    outcome = run_command(project, path, command)
                     checks_ran = True
                     checks_passed = outcome.ok
+                    if outcome.ok:
+                        successful_verifications.append((command, path, edit_epoch))
                 elif call.name == "shell":
                     command = _call_arg(call, "command").strip()
                     if on_shell_request:
@@ -483,6 +524,43 @@ def run(
                 report_reply(turn + 1, reply, "(verification reminder)")
                 continue
             else:
+                if (
+                    verification_candidate_loader is not None
+                    and verification_paths
+                    and verification_candidates_epoch != edit_epoch
+                ):
+                    try:
+                        verification_candidates = verification_candidate_loader()
+                    except (OSError, TypeError, ValueError):
+                        verification_candidates = ()
+                    verification_candidates_epoch = edit_epoch
+                candidate = select_verification_candidate(
+                    verification_candidates,
+                    tuple(verification_paths),
+                )
+                trusted_green = candidate is not None and any(
+                    epoch == edit_epoch
+                    and check_matches_candidate(candidate, command, cwd)
+                    for command, cwd, epoch in successful_verifications
+                )
+                if candidate is not None:
+                    checks_passed = trusted_green
+                if (
+                    not verification_required
+                    and candidate is not None
+                    and not trusted_green
+                    and default_verification_reminded_epoch != edit_epoch
+                ):
+                    default_verification_reminded_epoch = edit_epoch
+                    emit(RunEvent.status(
+                        "[agent] code changed; asking model to handle the trusted check."
+                    ))
+                    if turn >= max_turns:
+                        return finish("verification did not pass", "max_turns", turn)
+                    reminder = _default_verification_reminder(candidate)
+                    reply = send_prompt(reminder, restart_request=reminder)
+                    report_reply(turn + 1, reply, "(default verification reminder)")
+                    continue
                 emit(RunEvent.status(f"[agent] DONE: {control.body}"))
                 return finish(control.body, "done", turn)
 

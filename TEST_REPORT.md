@@ -1,4 +1,66 @@
-# Codey 0.1.34 Test Report
+# Codey 0.1.35 Test Report
+
+## 0.1.35 Default Post-edit Verification
+
+The default completion boundary now offers one exact trusted check after code
+changes when candidate discovery proves a unique runnable command, compatible
+ecosystem, and covering working directory. Discovery is bounded to successful
+ProjectFacts or checkpoint commands and explicit pytest, npm, Cargo, and Go
+configuration. Documentation-only changes, unavailable executables, ambiguous
+candidates, and cross-ecosystem commands safely disable the default gate.
+
+Agent regressions cover the per-edit-epoch reminder, proactive green-check
+reuse, same-epoch failed-check non-repetition, latest-edit invalidation, exact
+candidate matching, and checkpoint reuse. Receipt coverage confirms that a
+successful same-ecosystem command cannot stand in for the selected candidate.
+Policy tests cover manifest discovery, executable filtering, ecosystem
+compatibility, closest monorepo scope, documentation skipping, and cwd
+coverage. Candidate directory discovery has both directory and cumulative
+entry budgets, skips dot directories and case-insensitive excluded directories,
+and safely stops when either budget is exhausted. No live provider run was performed for the production change, as
+requested; the earlier MiMo/DeepSeek probe remains the live evidence for the
+decision.
+
+Candidate manifests are refreshed from current disk state once per edit epoch
+at the completion boundary and once before the final receipt. Historical
+ProjectFacts commands are frozen at task start so an unrelated successful run
+from the current task cannot promote itself into a trusted candidate. The
+manual A/B current arm now calls production discovery, selection, exact-match,
+and Agent gate code directly; it contains no duplicate policy or verification
+monkeypatch.
+
+Frozen historical and checkpoint commands that depend on manifests are also
+revalidated: npm commands require the named current package script, Cargo
+requires `Cargo.toml`, and Go requires `go.mod`. Python history remains valid
+without a manifest because pytest, unittest, and py_compile can be legitimate
+project checks without configuration files.
+
+All verification manifests must be regular project files. Discovery and
+historical-command revalidation reject symlinked `package.json`, `pytest.ini`,
+`pyproject.toml`, `Cargo.toml`, and `go.mod`, so configuration cannot be
+imported through a link to a file outside the selected project.
+The read helper also proves the path is a regular file before `stat()` or
+`read_text()`, preventing FIFO, socket, device, and directory manifests from
+being opened.
+
+Four-provider production smoke used the `python-pytest` current arm after all
+policy fixes. Every provider changed only `limits.py`, passed the independent
+check, ran the exact selected `python -m pytest` command after the latest edit,
+and completed with zero wrong-run attempts:
+
+- DeepSeek: 4 turns, 3 tool calls.
+- Qwen: 5 turns, 3 tool calls.
+- MiMo: 5 turns, 4 tool calls.
+- GLM: 4 turns, 3 tool calls.
+
+No provider hit a DOM submission failure, navigation abort, rate-limit recovery
+button, duplicate send, or response timeout during this smoke. Provider code
+was therefore unchanged.
+
+Validation: `python -B -m pytest -q` passed with 653 tests, 8 skips, and 31
+subtests. `python -B -m unittest` passed with 653 tests and 8 skips. Full-tree
+Ruff, `compileall`, and `git diff --check` passed. Pytest emitted one harmless
+warning because the sandbox could not update `.pytest_cache`.
 
 ## 0.1.34 Bounded Edit Failure Context
 

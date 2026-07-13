@@ -1429,6 +1429,209 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertFalse(result.checks_passed)
 
+    def test_default_verification_reminds_once_and_passes(self) -> None:
+        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        replies = (
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}',
+            '{"tool":"done","args":{"summary":"updated"}}',
+            '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}',
+            '{"tool":"done","args":{"summary":"updated and checked"}}',
+        )
+        provider = FakeProvider(*replies)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+            result = agent.run(
+                provider,
+                root,
+                "update app",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                verification_candidates=(candidate,),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertTrue(result.checks_passed)
+        self.assertEqual(
+            sum("trusted local check" in prompt for prompt in provider.sent), 1
+        )
+
+    def test_proactive_compatible_check_avoids_default_reminder(self) -> None:
+        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}',
+            '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}',
+            '{"tool":"done","args":{"summary":"checked"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+            result = agent.run(
+                provider,
+                root,
+                "update app",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                verification_candidates=(candidate,),
+            )
+
+        self.assertTrue(result.checks_passed)
+        self.assertFalse(any("trusted local check" in prompt for prompt in provider.sent))
+
+    def test_default_verification_does_not_repeat_after_failure(self) -> None:
+        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE ="}}',
+            '{"tool":"done","args":{"summary":"updated"}}',
+            '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}',
+            '{"tool":"done","args":{"summary":"could not verify"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+            result = agent.run(
+                provider,
+                root,
+                "update app",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                verification_candidates=(candidate,),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.checks_passed)
+        self.assertEqual(
+            sum("trusted local check" in prompt for prompt in provider.sent), 1
+        )
+
+    def test_checkpoint_green_check_is_reused(self) -> None:
+        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        provider = FakeProvider('{"tool":"done","args":{"summary":"resumed"}}')
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 2\n", encoding="utf-8")
+            result = agent.run(
+                provider,
+                root,
+                "continue update",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                verification_candidates=(candidate,),
+                verification_changed_files=("app.py",),
+                verification_successful_checks=(candidate,),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertTrue(result.checks_passed)
+        self.assertEqual(len(provider.sent), 1)
+
+    def test_new_edit_after_failed_default_check_gets_new_reminder(self) -> None:
+        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE ="}}',
+            '{"tool":"done","args":{"summary":"updated"}}',
+            '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}',
+            '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE =","new_string":"VALUE = 2"}}',
+            '{"tool":"done","args":{"summary":"fixed"}}',
+            '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}',
+            '{"tool":"done","args":{"summary":"fixed and checked"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+            result = agent.run(
+                provider,
+                root,
+                "update app",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                verification_candidates=(candidate,),
+            )
+
+        self.assertTrue(result.checks_passed)
+        self.assertEqual(
+            sum("trusted local check" in prompt for prompt in provider.sent), 2
+        )
+
+    def test_unrelated_green_run_does_not_satisfy_default_candidate(self) -> None:
+        candidate = agent.VerificationCandidate("python -m pytest")
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}',
+            '{"tool":"run","args":{"command":"python -m py_compile other.py","path":"."}}',
+            '{"tool":"done","args":{"summary":"updated"}}',
+            '{"tool":"done","args":{"summary":"not verified"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "other.py").write_text("VALUE = 0\n", encoding="utf-8")
+            result = agent.run(
+                provider,
+                root,
+                "update app",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                verification_candidates=(candidate,),
+            )
+
+        self.assertFalse(result.checks_passed)
+        self.assertEqual(
+            sum("trusted local check" in prompt for prompt in provider.sent), 1
+        )
+
+    def test_default_candidate_refresh_discovers_new_manifest(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"edit","args":{"path":"pytest.ini","content":"[pytest]\\n"}}',
+            '{"tool":"done","args":{"summary":"created config"}}',
+            '{"tool":"done","args":{"summary":"not verified"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            result = agent.run(
+                provider,
+                root,
+                "create project config",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                verification_candidate_loader=lambda: (
+                    agent.VerificationCandidate("python -m pytest"),
+                ),
+            )
+
+        self.assertFalse(result.checks_passed)
+        self.assertEqual(
+            sum("trusted local check" in prompt for prompt in provider.sent), 1
+        )
+
+    def test_default_candidate_refresh_drops_removed_manifest_command(self) -> None:
+        stale = agent.VerificationCandidate("npm test")
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.js"}}',
+            '{"tool":"edit","args":{"path":"app.js","old_string":"old","new_string":"new"}}',
+            '{"tool":"done","args":{"summary":"updated"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.js").write_text("old\n", encoding="utf-8")
+            result = agent.run(
+                provider,
+                root,
+                "update app metadata",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                verification_candidates=(stale,),
+                verification_candidate_loader=lambda: (),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertFalse(result.checks_passed)
+        self.assertFalse(any("trusted local check" in prompt for prompt in provider.sent))
+
 
 if __name__ == "__main__":
     unittest.main()
