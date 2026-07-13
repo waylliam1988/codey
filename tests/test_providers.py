@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey import cancellation
+from codey.provider_diagnostics import ProviderActionError
 from codey.providers import (
     DeepSeekWebProvider,
     GlmWebProvider,
@@ -63,9 +64,10 @@ class DeepSeekWebProviderTests(unittest.TestCase):
             "chat",
             side_effect=TimeoutError("response timed out"),
         ):
-            with self.assertRaisesRegex(TimeoutError, "response timed out"):
+            with self.assertRaises(ProviderActionError) as raised:
                 provider.send("hello")
 
+        self.assertIsInstance(raised.exception.__cause__, TimeoutError)
         self.assertIsNotNone(provider.last_failure)
         self.assertEqual(provider.last_failure.model, "DeepSeek Web")
         self.assertEqual(provider.last_failure.action, "send")
@@ -228,8 +230,12 @@ class ProviderTimeoutBoundaryTests(unittest.TestCase):
                     cancellation.wait(60)
 
                 with mock.patch.object(driver, "chat", side_effect=wait_past_deadline) as chat:
-                    with self.assertRaises(cancellation.DeadlineExceeded):
+                    with self.assertRaises(ProviderActionError) as raised:
                         provider.send("hello", timeout=0)
+                    self.assertIsInstance(
+                        raised.exception.__cause__,
+                        cancellation.DeadlineExceeded,
+                    )
 
                 chat.assert_called_once()
 

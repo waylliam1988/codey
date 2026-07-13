@@ -9,7 +9,7 @@ from playwright.sync_api import Locator, Page
 
 from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
-from codey.provider_diagnostics import ControlMissing, ResponseMissing
+from codey.provider_diagnostics import ControlMissing, RateLimited, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.provider_submission import (
     SendAttempt,
@@ -472,6 +472,8 @@ def _chat(
         ):
             return _final_text(page)
 
+    if _rate_limit_visible(page):
+        raise RateLimited("GLM is rate limited")
     late = _wait_late_response(
         page,
         response_baseline,

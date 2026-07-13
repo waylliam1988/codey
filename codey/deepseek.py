@@ -20,7 +20,7 @@ from playwright.sync_api import Page
 
 from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
-from codey.provider_diagnostics import ControlMissing, ResponseMissing
+from codey.provider_diagnostics import ControlMissing, RateLimited, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.provider_submission import (
     SendAttempt,
@@ -394,6 +394,8 @@ def chat(
             else:
                 stable = 0
                 last = current
+        if _rate_limit_visible(page):
+            raise RateLimited("DeepSeek is rate limited")
         late = _wait_late_response(page, baseline, baseline_text=baseline_text, grace=TIMEOUT_GRACE, tick=tick)
         if late:
             confirm_submission(attempt, PROVIDER_ID)
