@@ -943,6 +943,23 @@ class RunLoopTests(unittest.TestCase):
         self.assertGreater(context.used_tokens, 149)
         self.assertTrue(any("reusing current tab" in render_run_event(event) for event in events))
 
+    def test_strict_fresh_chat_does_not_reuse_existing_context(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"unused"}}')
+        provider.new_chat = mock.Mock(side_effect=RuntimeError("button missing"))
+
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaisesRegex(RuntimeError, "button missing"):
+                agent.run(
+                    provider,
+                    Path(td),
+                    "Continue safely",
+                    on_event=lambda _event: None,
+                    fresh_chat=True,
+                    strict_fresh_chat=True,
+                )
+
+        self.assertEqual(provider.sent, [])
+
     def test_failed_first_handoff_send_keeps_summary_and_budget(self) -> None:
         provider = mock.Mock()
         provider.name = "DeepSeek Web"

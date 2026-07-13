@@ -221,6 +221,7 @@ def run(
     on_shell_request=None,
     stop_flag=None,
     fresh_chat: bool = True,
+    strict_fresh_chat: bool = False,
     change_tracker: ChangeTracker | None = None,
     conversation: ConversationContext | None = None,
     provider_id: str = "",
@@ -291,6 +292,8 @@ def run(
         except cancellation.TaskCancelled:
             raise
         except Exception as exc:
+            if strict_fresh_chat:
+                raise
             emit(RunEvent.status(
                 f"[agent] could not open new chat: {exc}; reusing current tab"
             ))

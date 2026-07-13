@@ -80,6 +80,11 @@ This is not about replacing professional tools. It is about making the first ste
   factual handoff plus recent visible conversation context
 - Keep non-Git diff and restore available across Codey restarts
 - Recover from small provider-page DOM changes with bounded, verified discovery
+- Hand an interrupted project Writer to a healthy sibling model from bounded
+  local checkpoint facts, with at most two switches and no repeated uncertain
+  submission to the failed model
+- Keep a small local provider-health circuit so rate limits, login pages, and
+  repeated structural failures do not keep receiving hidden work
 - Stop a running provider wait, review, recovery, or test command promptly
 - Preserve both the beginning and end of long command output
 - Recover the active run, approval, or teaching prompt after a UI reconnect
@@ -102,6 +107,14 @@ This is not about replacing professional tools. It is about making the first ste
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
 
 If a provider page changes, Codey first attempts the bounded recovery above. When it still cannot identify a control safely, it pauses and asks you to click that control once. It stores only the latest verified control record, never the page DOM or your conversation, so the main workflow stays quiet.
+
+If a project Writer fails with an explicit provider-page error, Codey can move
+the unfinished task to a healthy sibling model. The new Writer starts a clean
+conversation and receives only the original task plus bounded local checkpoint
+facts such as changed-file hashes and still-valid checks. Provider health stores
+only counters, timestamps, and failure kinds; it never stores page text, URLs,
+prompts, source code, cookies, or chat content. Cooled-down providers receive one
+data-free canary only when they are about to handle real work again.
 
 ---
 
@@ -349,6 +362,7 @@ codey/
   provider_discovery.py     bounded DOM candidate discovery and scoring
   provider_controls.py      verified recovery, learning, and human teaching
   provider_submission.py    shared one-shot remote submission boundary
+  provider_supervisor.py    passive health circuit, Writer selection, and canary
   profile_doctor.py         one-shot sanitized candidate selection
   deepseek.py               DeepSeek page driver
   mimo.py                   MiMo page driver

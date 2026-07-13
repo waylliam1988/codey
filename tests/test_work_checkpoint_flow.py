@@ -9,6 +9,7 @@ from codey import server
 from codey.agent import RunResult
 from codey.events import RunEvent
 from codey.models import ToolCall
+from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.tool_runtime import ToolOutcome
 
 
@@ -97,6 +98,349 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             self.assertTrue(done["changed"])
             self.assertTrue(done["receipt"]["checks_passed"])
             self.assertIsNone(state.work_checkpoints.load("session-1"))
+
+    def test_provider_failure_hands_writer_to_sibling_from_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            (project / "app.py").write_text("before\n", encoding="utf-8")
+            state = server.State(root / "state")
+            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            first = self._provider()
+            second = self._provider()
+            second.name = "MiMo"
+            captured = {}
+
+            def writer(*args, **kwargs):
+                if args[0] is first:
+                    (project / "app.py").write_text("after\n", encoding="utf-8")
+                    kwargs["on_event"](RunEvent.tool_finished(
+                        2,
+                        ToolCall("edit", {"path": "app.py"}),
+                        ToolOutcome("edited", True, changed=True),
+                    ))
+                    raise ProviderActionError(ProviderFailure(
+                        "DeepSeek",
+                        "send",
+                        "",
+                        "",
+                        "response missing",
+                        "now",
+                        "response_missing",
+                    ))
+                captured.update(kwargs)
+                kwargs["on_event"](RunEvent.tool_finished(
+                    1,
+                    ToolCall("read_file", {"path": "app.py"}),
+                    ToolOutcome("after", True),
+                ))
+                return RunResult("finished", "done", 1, False, False, False)
+
+            changes = {
+                "ok": True,
+                "mode": "git",
+                "changed_count": 1,
+                "files": [{"path": "app.py", "status": "M"}],
+                "diff": "diff --git a/app.py b/app.py\n",
+            }
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(
+                    state,
+                    "get_provider",
+                    side_effect=[first, second],
+                ) as get_provider,
+                mock.patch.object(server, "agent_run", side_effect=writer) as agent_run,
+                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch.object(server, "_run_review", return_value=None),
+            ):
+                server._run_task(
+                    "session-takeover",
+                    str(project),
+                    "Update app.py",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+            self.assertEqual(get_provider.call_args_list[1].args, ("mimo",))
+            self.assertEqual(agent_run.call_count, 2)
+            self.assertTrue(captured["fresh_chat"])
+            self.assertTrue(captured["strict_fresh_chat"])
+            self.assertIn("Local execution checkpoint", captured["work_checkpoint"])
+            self.assertIn("app.py", captured["work_checkpoint"])
+            self.assertEqual(captured["verification_changed_files"], ("app.py",))
+            self.assertEqual(state.last_terminal_event["provider"], "mimo")
+            self.assertEqual(state.active_run, None)
+            self.assertEqual(agent_run.call_args_list[1].kwargs["max_turns"], 6)
+
+    def test_connect_failure_uses_next_writer_with_strict_fresh_chat(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            (project / "app.py").write_text("content\n", encoding="utf-8")
+            state = server.State(root / "state")
+            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            provider = self._provider()
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(
+                    state,
+                    "get_provider",
+                    side_effect=[RuntimeError("tab unavailable"), provider],
+                ) as get_provider,
+                mock.patch.object(
+                    server,
+                    "agent_run",
+                    return_value=RunResult("done", "done", 1),
+                ) as agent_run,
+                mock.patch.object(
+                    server,
+                    "collect_changes",
+                    return_value={"ok": True, "changed_count": 0, "files": []},
+                ),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+            ):
+                server._run_task(
+                    "session-connect-failover",
+                    str(project),
+                    "Inspect app.py",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+            self.assertEqual(
+                [call.args[0] for call in get_provider.call_args_list],
+                ["deepseek", "mimo"],
+            )
+            self.assertEqual(agent_run.call_args.kwargs["provider_id"], "mimo")
+            self.assertTrue(agent_run.call_args.kwargs["strict_fresh_chat"])
+            self.assertEqual(state.last_terminal_event["provider"], "mimo")
+
+    def test_first_rescue_failure_continues_to_second_sibling(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            (project / "app.py").write_text("content\n", encoding="utf-8")
+            state = server.State(root / "state")
+            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            providers = [self._provider(), self._provider(), self._provider()]
+            failure = ProviderActionError(ProviderFailure(
+                "web",
+                "send",
+                "",
+                "",
+                "missing",
+                "now",
+                "response_missing",
+            ))
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(
+                    state,
+                    "get_provider",
+                    side_effect=providers,
+                ) as get_provider,
+                mock.patch.object(
+                    server,
+                    "agent_run",
+                    side_effect=[failure, failure, RunResult("done", "done", 1)],
+                ) as agent_run,
+                mock.patch.object(
+                    server,
+                    "collect_changes",
+                    return_value={"ok": True, "changed_count": 0, "files": []},
+                ),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+            ):
+                server._run_task(
+                    "session-rescue-chain",
+                    str(project),
+                    "Inspect app.py",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+            self.assertEqual(
+                [call.args[0] for call in get_provider.call_args_list],
+                ["deepseek", "mimo", "qwen"],
+            )
+            self.assertEqual(agent_run.call_count, 3)
+            self.assertEqual(state.last_terminal_event["provider"], "qwen")
+            self.assertEqual(agent_run.call_args.kwargs["max_turns"], 6)
+
+    def test_takeover_drops_green_check_when_recorded_file_hash_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            target = project / "app.py"
+            target.write_text("before\n", encoding="utf-8")
+            state = server.State(root / "state")
+            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            providers = [self._provider(), self._provider()]
+            captured = {}
+
+            def writer(*args, **kwargs):
+                if args[0] is providers[0]:
+                    target.write_text("after\n", encoding="utf-8")
+                    kwargs["on_event"](RunEvent.tool_finished(
+                        1,
+                        ToolCall("edit", {"path": "app.py"}),
+                        ToolOutcome("edited", True, changed=True),
+                    ))
+                    kwargs["on_event"](RunEvent.tool_finished(
+                        2,
+                        ToolCall(
+                            "run",
+                            {"path": ".", "command": "python -m unittest"},
+                        ),
+                        ToolOutcome("ok", True, exit_code=0),
+                    ))
+                    target.write_text("external drift\n", encoding="utf-8")
+                    raise ProviderActionError(ProviderFailure(
+                        "DeepSeek",
+                        "send",
+                        "",
+                        "",
+                        "missing",
+                        "now",
+                        "response_missing",
+                    ))
+                captured.update(kwargs)
+                return RunResult("done", "done", 1)
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", side_effect=providers),
+                mock.patch.object(server, "agent_run", side_effect=writer),
+                mock.patch.object(
+                    server,
+                    "collect_changes",
+                    return_value={
+                        "ok": True,
+                        "changed_count": 1,
+                        "files": [{"path": "app.py", "status": "M"}],
+                    },
+                ),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch.object(server, "_run_review", return_value=None),
+            ):
+                server._run_task(
+                    "session-hash-takeover",
+                    str(project),
+                    "Update app.py",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+            self.assertEqual(captured["verification_successful_checks"], ())
+            self.assertIn(
+                "Successful checks after the latest recorded change: (none)",
+                captured["work_checkpoint"],
+            )
+
+    def test_stop_wins_over_provider_takeover(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            (project / "app.py").write_text("content\n", encoding="utf-8")
+            state = server.State(root / "state")
+            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            provider = self._provider()
+
+            def stopped(*_args, **_kwargs):
+                state.stop_flag.set()
+                raise ProviderActionError(ProviderFailure(
+                    "DeepSeek",
+                    "send",
+                    "",
+                    "",
+                    "uncertain",
+                    "now",
+                    "submission_uncertain",
+                ))
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(
+                    state,
+                    "get_provider",
+                    return_value=provider,
+                ) as get_provider,
+                mock.patch.object(server, "agent_run", side_effect=stopped),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+            ):
+                server._run_task(
+                    "session-stop-takeover",
+                    str(project),
+                    "Inspect app.py",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+            get_provider.assert_called_once_with("deepseek")
+            self.assertEqual(state.last_terminal_event["stop_reason"], "stopped")
+
+    def test_writer_takeover_stops_after_two_switches(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            (project / "app.py").write_text("content\n", encoding="utf-8")
+            state = server.State(root / "state")
+            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            providers = [self._provider(), self._provider(), self._provider()]
+
+            def failed(*_args, **_kwargs):
+                raise ProviderActionError(ProviderFailure(
+                    "web",
+                    "send",
+                    "",
+                    "",
+                    "missing",
+                    "now",
+                    "response_missing",
+                ))
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(
+                    state,
+                    "get_provider",
+                    side_effect=providers,
+                ) as get_provider,
+                mock.patch.object(server, "agent_run", side_effect=failed) as agent_run,
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+            ):
+                server._run_task(
+                    "session-switch-limit",
+                    str(project),
+                    "Inspect app.py",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+            self.assertEqual(agent_run.call_count, 3)
+            self.assertEqual(get_provider.call_count, 3)
+            self.assertEqual(state.last_terminal_event["stop_reason"], "error")
+            self.assertEqual(state.last_terminal_event["provider"], "qwen")
+            self.assertEqual(
+                state.last_terminal_event["provider_failure"]["kind"],
+                "response_missing",
+            )
 
     def test_unrelated_new_task_does_not_receive_old_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as td:

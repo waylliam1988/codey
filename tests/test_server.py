@@ -193,6 +193,52 @@ class ProviderStatusTests(unittest.TestCase):
         detected.assert_called_once_with()
         connected.assert_not_called()
 
+    def test_health_filter_excludes_open_provider_from_helpers(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            state.provider_supervisor.record_failure(
+                "qwen",
+                ProviderFailure(
+                    "Qwen",
+                    "send",
+                    "",
+                    "",
+                    "limited",
+                    "now",
+                    "rate_limited",
+                ),
+            )
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(
+                    server,
+                    "provider_tab_availability",
+                    return_value={
+                        "deepseek": True,
+                        "mimo": True,
+                        "qwen": True,
+                        "glm": True,
+                    },
+                ),
+            ):
+                statuses = server.provider_availability()
+                reviewers = server.reviewer_candidates("deepseek")
+
+        self.assertFalse(statuses["qwen"])
+        self.assertNotIn("qwen", reviewers)
+        self.assertIn("mimo", reviewers)
+
+    def test_failover_order_prefers_open_tabs_then_registry_order(self) -> None:
+        state = server.State()
+        with mock.patch.object(
+            server,
+            "provider_tab_availability",
+            return_value={"qwen": True, "glm": True},
+        ):
+            order = state.provider_failover_order()
+
+        self.assertEqual(order, ("qwen", "glm", "deepseek", "mimo"))
+
     def test_review_honors_task_cancellation_before_connecting(self) -> None:
         event = threading.Event()
         event.set()
@@ -1874,22 +1920,27 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["stop_reason"], "error")
         self.assertEqual(task_done["provider_failure"], {
             "model": "MiMo",
-            "action": "send",
-            "url": "https://aistudio.xiaomimimo.com/#/c",
-            "title": "MiMo",
+            "action": "task",
+            "url": "",
+            "title": "",
             "message": "response timed out",
-            "time": "2026-06-28T01:02:03+00:00",
             "kind": "transient",
+            "time": task_done["provider_failure"]["time"],
         })
-        self.assertIs(state.last_provider_failure, provider.last_failure)
+        self.assertIsNot(state.last_provider_failure, provider.last_failure)
 
     def test_run_task_records_connect_failure_without_provider_page(self) -> None:
         state = server.State()
+        state.provider_failover_order = lambda: ("qwen", "deepseek", "mimo", "glm")
         events = state.subscribe()
 
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(state, "get_provider", side_effect=RuntimeError("Edge not reachable")),
+            mock.patch.object(
+                state,
+                "get_provider",
+                side_effect=RuntimeError("Edge not reachable"),
+            ) as get_provider,
         ):
             server._run_task("session-1", None, "hello", 8, False, "qwen")
 
@@ -1898,7 +1949,11 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
         failure = task_done["provider_failure"]
-        self.assertEqual(failure["model"], "Qwen")
+        self.assertEqual(
+            [call.args[0] for call in get_provider.call_args_list],
+            ["qwen", "deepseek", "mimo"],
+        )
+        self.assertEqual(failure["model"], "MiMo")
         self.assertEqual(failure["action"], "connect")
         self.assertEqual(failure["url"], "")
         self.assertEqual(failure["title"], "")

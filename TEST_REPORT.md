@@ -1274,6 +1274,24 @@ So the two-model feature is useful, but it should stay quiet and automatic. It i
 - Functional UI assertions and screenshot capture are automated, but there is
   no pixel-diff visual regression baseline yet.
 
+## Passive Provider Supervisor and Writer Takeover
+
+Deterministic local fault injection covers:
+
+- typed provider action failures and stale-diagnostic clearing
+- bounded health persistence, circuit cooldown, login/challenge state, and
+  corrupt-state fallback
+- data-free half-open canary with one-attempt behavior
+- Writer takeover after edits using the current work checkpoint
+- invalidating inherited green checks when a recorded file hash changes
+- strict fresh chats, two-switch limit, shared turn budget, Stop priority, and
+  first-rescue failure followed by a second sibling
+- open-tab-first deterministic selection and health filtering for Doctor,
+  hidden advisors, and Reviewer
+- no takeover for ordinary local Python exceptions or agent stop reasons
+
+No real web-provider smoke was run for this control-plane change.
+
 ## Release Notes
 
 Version `0.1.3` is a durable model-browser release:

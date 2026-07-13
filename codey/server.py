@@ -58,6 +58,7 @@ from codey.providers import (
     provider_tab_availability,
 )
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
+from codey.provider_supervisor import ProviderSupervisor
 from codey.project_facts import ProjectFactsStore
 from codey.work_checkpoint import WorkCheckpointStore
 from codey.review import (
@@ -81,7 +82,13 @@ PROFILE_DOCTOR_TIMEOUT = 90.0
 MAX_CONVERSATION_STATES = 32
 def reviewer_candidates(writer_id: str) -> tuple[str, ...]:
     writer = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
-    return tuple(provider_id for provider_id in PROVIDER_LABELS if provider_id != writer)
+    supervisor = getattr(globals().get("STATE"), "provider_supervisor", None)
+    return tuple(
+        provider_id
+        for provider_id in PROVIDER_LABELS
+        if provider_id != writer
+        and (supervisor is None or supervisor.is_available(provider_id))
+    )
 
 
 def review_label(provider_id: str) -> str:
@@ -89,7 +96,14 @@ def review_label(provider_id: str) -> str:
 
 
 def provider_availability() -> dict[str, bool]:
-    return provider_tab_availability()
+    statuses = provider_tab_availability()
+    supervisor = getattr(globals().get("STATE"), "provider_supervisor", None)
+    if supervisor is None:
+        return statuses
+    return {
+        provider_id: available and supervisor.is_available(provider_id)
+        for provider_id, available in statuses.items()
+    }
 
 
 def provider_payload(statuses: dict[str, bool] | None = None) -> list[dict]:
@@ -358,6 +372,9 @@ class State:
         self.work_checkpoints = (
             WorkCheckpointStore(state_home) if state_home else WorkCheckpointStore()
         )
+        self.provider_supervisor = (
+            ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
+        )
         self.conversation_store = (
             ConversationStore(state_home) if state_home else ConversationStore()
         )
@@ -460,6 +477,13 @@ class State:
             if self.active_run is not None:
                 self.active_run = replace(self.active_run, status=status)
             self.status = status
+
+    def switch_run_provider(self, run_id: str, provider_id: str) -> bool:
+        with self.lock:
+            if self.active_run is None or self.active_run.run_id != run_id:
+                return False
+            self.active_run = replace(self.active_run, provider_id=provider_id)
+            return True
 
     def release_run(self, run_id: str) -> None:
         with self.lock:
@@ -577,6 +601,23 @@ class State:
         })
         return provider
 
+    def provider_failover_order(self) -> tuple[str, ...]:
+        """Prefer already-open sibling tabs, then keep the registry order stable."""
+        try:
+            statuses = provider_tab_availability()
+        except Exception:
+            statuses = {}
+        opened = tuple(
+            provider_id
+            for provider_id in PROVIDER_LABELS
+            if statuses.get(provider_id)
+        )
+        return opened + tuple(
+            provider_id
+            for provider_id in PROVIDER_LABELS
+            if provider_id not in opened
+        )
+
     def conversation_for(self, session_id: str) -> ConversationContext:
         with self.lock:
             context = self.conversations.pop(session_id, None)
@@ -690,6 +731,8 @@ class State:
         deadline = time.monotonic() + PROFILE_DOCTOR_TIMEOUT
         for provider_id in reviewer_candidates(request.provider_id)[:3]:
             cancellation.check()
+            if not self.provider_supervisor.is_available(provider_id):
+                continue
             if time.monotonic() >= deadline:
                 return None
             helper = borrow_open_provider(provider_id, request.page)
@@ -723,7 +766,7 @@ class State:
         return None
 
 
-STATE = State()
+STATE = State(DEFAULT_STATE_HOME)
 provider_controls.set_teach_handler(STATE.handle_control_teach)
 provider_controls.set_doctor_handler(STATE.handle_profile_doctor)
 

@@ -28,6 +28,8 @@ from codey.handoff import (
 from codey.project_facts import ProjectFactsStore
 from codey.project_map import render_project_map
 from codey.providers import PROVIDER_LABELS
+from codey.provider_diagnostics import ProviderActionError
+from codey.provider_supervisor import run_half_open_canary
 from codey.receipt import build_task_receipt
 from codey.review import has_reviewable_changes, render_writer_followup
 from codey.verification_map import render_verification_map
@@ -322,7 +324,91 @@ class TaskRunner:
             state.emit(pending["ui_event"])
 
         try:
-            provider = state.get_provider(provider_id)
+            supervisor = getattr(state, "provider_supervisor", None)
+            def provider_failover_order() -> tuple[str, ...]:
+                loader = getattr(state, "provider_failover_order", None)
+                try:
+                    return tuple(loader()) if loader is not None else tuple(PROVIDER_LABELS)
+                except Exception:
+                    return tuple(PROVIDER_LABELS)
+
+            preflight_tried: set[str] = set()
+            preflight_switches = 0
+            if supervisor is not None:
+                supervisor.prepare_user_selected(provider_id)
+            if supervisor is not None and not supervisor.is_available(provider_id):
+                replacement_id = supervisor.select(
+                    "",
+                    provider_failover_order(),
+                    excluded=(provider_id,),
+                )
+                if replacement_id is not None:
+                    provider_id = replacement_id
+                    state.switch_run_provider(run_id, provider_id)
+                    preflight_switches = 1
+                else:
+                    raise RuntimeError("selected provider is unavailable")
+            while True:
+                preflight_tried.add(provider_id)
+                try:
+                    provider = state.get_provider(provider_id)
+                except cancellation.TaskCancelled:
+                    raise
+                except Exception as connect_error:
+                    failure = self.capture_provider_failure(
+                        model=PROVIDER_LABELS.get(provider_id, provider_id),
+                        action="connect",
+                        page=None,
+                        error=connect_error,
+                    )
+                    if supervisor is not None:
+                        supervisor.record_failure(provider_id, failure)
+                    if preflight_switches >= 2:
+                        raise ProviderActionError(failure) from connect_error
+                    replacement_id = (
+                        supervisor.select(
+                            "",
+                            provider_failover_order(),
+                            excluded=preflight_tried,
+                        )
+                        if supervisor is not None
+                        else next(
+                            (
+                                item
+                                for item in provider_failover_order()
+                                if item not in preflight_tried
+                            ),
+                            None,
+                        )
+                    )
+                    if replacement_id is None:
+                        raise ProviderActionError(failure) from connect_error
+                    provider_id = replacement_id
+                    preflight_switches += 1
+                    state.switch_run_provider(run_id, provider_id)
+                    continue
+                if (
+                    supervisor is None
+                    or not supervisor.needs_canary(provider_id)
+                    or run_half_open_canary(provider_id, provider, supervisor)
+                ):
+                    break
+                try:
+                    provider.close()
+                except Exception:
+                    pass
+                if preflight_switches >= 2:
+                    raise RuntimeError("no healthy provider available after canary failure")
+                replacement_id = supervisor.select(
+                    "",
+                    provider_failover_order(),
+                    excluded=preflight_tried,
+                )
+                if replacement_id is None:
+                    raise RuntimeError("no healthy provider available after canary failure")
+                provider_id = replacement_id
+                preflight_switches += 1
+                state.switch_run_provider(run_id, provider_id)
             mode = "project" if project else "chat"
             project_text = str(Path(project).expanduser().resolve()) if project else ""
             conversation = state.conversation_for(session_id)
@@ -495,31 +581,152 @@ class TaskRunner:
                     key,
                     persistent=not self.is_git_repository(key),
                 )
-                result = self.agent_run(
-                    provider,
-                    Path(project),
-                    agent_task,
-                    max_turns=max_turns,
-                    on_event=on_event,
-                    on_shell_request=on_shell_request,
-                    stop_flag=state.stop_flag,
-                    fresh_chat=agent_fresh_chat,
-                    change_tracker=tracker,
-                    conversation=conversation,
-                    provider_id=provider_id,
-                    handoff=handoff,
-                    project_facts=verified_facts,
-                    project_map=project_map,
-                    work_checkpoint=checkpoint_prompt,
-                    verification_candidates=verification_candidates,
-                    verification_candidate_loader=lambda: _verification_candidates(
-                        project,
-                        verification_verified_commands,
-                        verification_additional_commands,
-                    ),
-                    verification_changed_files=resumed_changed_files,
-                    verification_successful_checks=resumed_successful_checks,
-                )
+                tried_writers = set(preflight_tried)
+                writer_switches = preflight_switches
+                writer_turns_used = 0
+                while True:
+                    attempt_turn = 0
+
+                    def on_writer_event(event: RunEvent) -> None:
+                        nonlocal attempt_turn
+                        attempt_turn = max(attempt_turn, event.turn)
+                        on_event(event)
+
+                    try:
+                        result = self.agent_run(
+                            provider,
+                            Path(project),
+                            agent_task,
+                            max_turns=max(1, max_turns - writer_turns_used),
+                            on_event=on_writer_event,
+                            on_shell_request=on_shell_request,
+                            stop_flag=state.stop_flag,
+                            fresh_chat=agent_fresh_chat,
+                            strict_fresh_chat=writer_switches > 0,
+                            change_tracker=tracker,
+                            conversation=conversation,
+                            provider_id=provider_id,
+                            handoff=handoff,
+                            project_facts=verified_facts,
+                            project_map=project_map,
+                            work_checkpoint=checkpoint_prompt,
+                            verification_candidates=verification_candidates,
+                            verification_candidate_loader=lambda: (
+                                _verification_candidates(
+                                    project,
+                                    verification_verified_commands,
+                                    verification_additional_commands,
+                                )
+                            ),
+                            verification_changed_files=resumed_changed_files,
+                            verification_successful_checks=resumed_successful_checks,
+                        )
+                        if supervisor is not None:
+                            supervisor.record_success(provider_id)
+                        result = replace(
+                            result,
+                            turns=min(max_turns, writer_turns_used + result.turns),
+                        )
+                        break
+                    except ProviderActionError as exc:
+                        if state.stop_flag.is_set():
+                            raise cancellation.TaskCancelled("task stopped") from exc
+                        writer_turns_used += max(1, attempt_turn)
+                        if supervisor is not None:
+                            supervisor.record_failure(provider_id, exc.failure)
+                        state.set_provider_session(provider_id, None)
+                        try:
+                            provider.close()
+                        except Exception:
+                            pass
+                        if writer_switches >= 2 or writer_turns_used >= max_turns:
+                            raise
+                        while True:
+                            next_provider_id = (
+                                supervisor.select(
+                                    "",
+                                    provider_failover_order(),
+                                    excluded=tried_writers,
+                                )
+                                if supervisor is not None
+                                else next(
+                                    (
+                                        item
+                                        for item in provider_failover_order()
+                                        if item not in tried_writers
+                                    ),
+                                    None,
+                                )
+                            )
+                            if next_provider_id is None:
+                                raise exc
+                            provider_id = next_provider_id
+                            tried_writers.add(provider_id)
+                            writer_switches += 1
+                            state.switch_run_provider(run_id, provider_id)
+                            conversation.update_snapshot(replace(
+                                conversation.snapshot,
+                                provider_id=provider_id,
+                                blocker="",
+                            ))
+                            try:
+                                provider = state.get_provider(provider_id)
+                            except cancellation.TaskCancelled:
+                                raise
+                            except Exception as connect_error:
+                                failure = self.capture_provider_failure(
+                                    model=PROVIDER_LABELS.get(provider_id, provider_id),
+                                    action="connect",
+                                    page=None,
+                                    error=connect_error,
+                                )
+                                if supervisor is not None:
+                                    supervisor.record_failure(provider_id, failure)
+                                if writer_switches >= 2:
+                                    raise ProviderActionError(failure) from connect_error
+                                continue
+                            if (
+                                supervisor is not None
+                                and supervisor.needs_canary(provider_id)
+                                and not run_half_open_canary(
+                                    provider_id,
+                                    provider,
+                                    supervisor,
+                                )
+                            ):
+                                try:
+                                    provider.close()
+                                except Exception:
+                                    pass
+                                if writer_switches >= 2:
+                                    raise exc
+                                continue
+                            break
+                        if self.work_checkpoints is not None and work_checkpoint is not None:
+                            try:
+                                work_checkpoint = self.work_checkpoints.reconcile(
+                                    work_checkpoint
+                                )
+                                checkpoint_prompt = render_work_checkpoint(
+                                    work_checkpoint
+                                )
+                                resumed_changed_files = tuple(
+                                    item.path for item in work_checkpoint.changed_files
+                                )
+                                resumed_successful_checks = tuple(
+                                    VerificationCandidate(
+                                        item.command,
+                                        item.cwd,
+                                        "checkpoint",
+                                    )
+                                    for item in (
+                                        work_checkpoint.successful_checks_after_last_change
+                                    )
+                                )
+                            except (OSError, ValueError):
+                                checkpoint_prompt = ""
+                        agent_fresh_chat = True
+                        handoff = ""
                 if (
                     resumed_checkpoint
                     and work_checkpoint is not None
@@ -891,15 +1098,20 @@ class TaskRunner:
                     provider_id=provider_id,
                     blocker=str(exc),
                 ))
-            if "provider" in locals() and provider is not None:
-                failure = getattr(provider, "last_failure", None)
-            else:
-                failure = self.capture_provider_failure(
+            failure = (
+                exc.failure
+                if isinstance(exc, ProviderActionError)
+                else self.capture_provider_failure(
                     model=PROVIDER_LABELS.get(provider_id, provider_id),
-                    action="connect",
+                    action=(
+                        "task"
+                        if "provider" in locals() and provider is not None
+                        else "connect"
+                    ),
                     page=None,
                     error=exc,
                 )
+            )
             state.last_provider_failure = failure
             state.finish_run(run_id, {
                 "type": "task_done",
