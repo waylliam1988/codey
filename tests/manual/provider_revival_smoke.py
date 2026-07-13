@@ -21,7 +21,7 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import deepseek, glm, mimo, provider_controls, qwen, server
+from codey import deepseek, glm, mimo, provider_controls, provider_flow, qwen, server
 from codey.local_store import read_json
 from codey.provider_profiles import ProviderProfile
 from codey.providers.registry import connect_provider, provider_ids
@@ -133,7 +133,7 @@ def run_provider_smoke(
                 first_meta = dict(first_bundle["_revival"])
                 if first_meta.get("status") != "provisional":
                     raise AssertionError(f"first recovery was not provisional: {first_meta}")
-                if "send_button" not in first_meta.get("actions", []):
+                if "send_button" not in first_meta.get("changed_actions", []):
                     raise AssertionError(f"send button was not recovered: {first_meta}")
                 if not any(
                     event["action"] == "send_button" and event["selected"]
@@ -168,7 +168,7 @@ def run_provider_smoke(
         "helper_attempts": helper_attempts,
         "first_status": first_meta.get("status"),
         "final_status": second_meta.get("status"),
-        "actions": second_meta.get("actions", []),
+        "actions": second_meta.get("required_actions", []),
     }
 
 
@@ -193,6 +193,7 @@ def main() -> int:
             server.STATE = state
             provider_controls.CONTROL_STORE = store
             provider_controls.set_teach_handler(None)
+            provider_flow.set_recovery_handler(state.handle_flow_recovery)
             for provider_id in selected:
                 print(f"[revival-smoke] {provider_id}: starting", flush=True)
                 try:
@@ -217,6 +218,7 @@ def main() -> int:
             server.STATE = old_state
             provider_controls.set_teach_handler(old_state.handle_control_teach)
             provider_controls.set_doctor_handler(old_state.handle_profile_doctor)
+            provider_flow.set_recovery_handler(old_state.handle_flow_recovery)
 
     report = {
         "ok": all(item.get("ok") for item in results),

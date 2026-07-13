@@ -33,6 +33,7 @@ class ProviderDiagnosticsTests(unittest.TestCase):
             "title": "Example Chat",
             "message": "response timed out",
             "kind": "transient",
+            "stage": "",
             "time": "2026-06-28T01:02:03+00:00",
         })
 
@@ -47,6 +48,31 @@ class ProviderDiagnosticsTests(unittest.TestCase):
         )
 
         self.assertEqual(failure.kind, "control_missing")
+        self.assertEqual(failure.stage, "input")
+
+    def test_explicit_failure_stage_is_preserved(self) -> None:
+        from codey.provider_diagnostics import ResponseMissing
+
+        failure = capture_provider_failure(
+            model="Qwen",
+            action="send",
+            page=None,
+            error=ResponseMissing("completion marker missing", stage="completion"),
+        )
+
+        self.assertEqual(failure.kind, "response_missing")
+        self.assertEqual(failure.stage, "completion")
+
+    def test_new_chat_action_uses_new_chat_stage(self) -> None:
+        failure = capture_provider_failure(
+            model="Qwen",
+            action="new_chat",
+            page=None,
+            error=TimeoutError("navigation timed out"),
+        )
+
+        self.assertEqual(failure.kind, "transient")
+        self.assertEqual(failure.stage, "new_chat")
 
     def test_capture_provider_failure_tolerates_broken_page_accessors(self) -> None:
         class BrokenPage:

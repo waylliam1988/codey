@@ -8,7 +8,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import cancellation, changes, profile_doctor, provider_controls
+from codey import (
+    cancellation,
+    changes,
+    profile_doctor,
+    provider_controls,
+    provider_flow,
+)
 from codey import server
 from codey.agent import RunResult
 from codey.changes import ChangeTracker
@@ -773,6 +779,88 @@ class SessionThreadingTests(unittest.TestCase):
 
         borrowed.assert_not_called()
 
+    def test_flow_recovery_tries_next_healthy_sibling(self) -> None:
+        from codey import provider_flow
+
+        state = server.State()
+        page = mock.Mock()
+        first = mock.Mock()
+        second = mock.Mock()
+
+        def assert_new_chat(*_args, **_kwargs):
+            self.assertFalse(provider_controls.can_doctor())
+            self.assertFalse(provider_controls.can_teach())
+
+        def fail_send(*_args, **_kwargs):
+            self.assertFalse(provider_controls.can_doctor())
+            self.assertFalse(provider_controls.can_teach())
+            raise TimeoutError("failed")
+
+        def select_send(*_args, **_kwargs):
+            self.assertFalse(provider_controls.can_doctor())
+            self.assertFalse(provider_controls.can_teach())
+            return '{"candidate_id":"f1"}'
+
+        first.new_chat.side_effect = assert_new_chat
+        first.send.side_effect = fail_send
+        second.new_chat.side_effect = assert_new_chat
+        second.send.side_effect = select_send
+        request = provider_flow.FlowRecoveryRequest(
+            provider_id="deepseek",
+            stage=provider_flow.STAGE_COMPLETION,
+            trace=({"response_stable": True, "response_nonempty": True},),
+            candidates=(
+                provider_flow.FlowCandidate(
+                    "f1",
+                    provider_flow.STAGE_COMPLETION,
+                    (provider_flow.PREDICATE_RESPONSE_STABLE,),
+                ),
+            ),
+            page=page,
+        )
+
+        with (
+            mock.patch.object(
+                server,
+                "borrow_open_provider",
+                side_effect=[first, second],
+            ) as borrowed,
+            mock.patch.object(provider_controls, "_handler", mock.Mock()),
+            mock.patch.object(provider_controls, "_doctor_handler", mock.Mock()),
+        ):
+            selected = state.handle_flow_recovery(request)
+
+        self.assertEqual(selected, "f1")
+        self.assertEqual(
+            borrowed.call_args_list,
+            [mock.call("mimo", page), mock.call("qwen", page)],
+        )
+        first.close.assert_called_once_with()
+        second.close.assert_called_once_with()
+
+    def test_flow_recovery_honors_stop_before_borrowing_tab(self) -> None:
+        from codey import provider_flow
+
+        state = server.State()
+        request = provider_flow.FlowRecoveryRequest(
+            provider_id="deepseek",
+            stage=provider_flow.STAGE_COMPLETION,
+            trace=(),
+            candidates=(),
+            page=mock.Mock(),
+        )
+        event = threading.Event()
+        event.set()
+
+        with (
+            cancellation.scope(event),
+            mock.patch.object(server, "borrow_open_provider") as borrowed,
+        ):
+            with self.assertRaises(cancellation.TaskCancelled):
+                state.handle_flow_recovery(request)
+
+        borrowed.assert_not_called()
+
     def test_run_task_keeps_selected_provider_through_agent_completion(self) -> None:
         state = server.State()
         events = state.subscribe()
@@ -804,6 +892,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(state.provider_id, "qwen")
         self.assertIn(str(Path(td).resolve()), state.change_trackers)
         self.assertIsNotNone(agent_run.call_args.kwargs["change_tracker"])
+        self.assertIs(provider_flow._handler.__self__, state)
         for name in provider_controls._TASK_CONTEXT_FIELDS:
             self.assertFalse(hasattr(provider_controls._context, name), name)
 
@@ -2060,6 +2149,7 @@ class SessionThreadingTests(unittest.TestCase):
             "title": "",
             "message": "response timed out",
             "kind": "transient",
+            "stage": "",
             "time": task_done["provider_failure"]["time"],
         })
         self.assertIsNot(state.last_provider_failure, provider.last_failure)

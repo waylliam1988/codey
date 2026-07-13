@@ -12,17 +12,19 @@ import re
 import threading
 import time
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 from codey import cancellation
+from codey import provider_flow
 from codey import provider_discovery as discovery
 from codey import profile_doctor
 from codey import provider_revival
 from codey.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
+from codey.provider_diagnostics import ResponseMissing
 from codey.provider_profiles import get_profile
 
 CONTROL_MESSAGE_BOX = "message_box"
@@ -46,6 +48,7 @@ _TASK_CONTEXT_FIELDS = (
     "response_locators",
     "response_watches",
     "revival_attempts",
+    "flow_cache",
 )
 
 
@@ -55,6 +58,14 @@ class _RevivalSend:
     staged: dict[str, dict[str, Any]]
     verified: set[str]
     learned_verified: set[str]
+    profile_hash: str
+    flow_recipe: dict[str, tuple[str, ...]] | None = None
+    staged_flow: dict[str, tuple[str, ...]] | None = None
+    learned_flow_verified: bool = False
+    loaded_flow_stages: set[str] = field(default_factory=set)
+    flow_evaluated_stages: set[str] = field(default_factory=set)
+    flow_used_stages: set[str] = field(default_factory=set)
+    persistent_failure_recorded: bool = False
     path: Path | None = None
 
 
@@ -113,12 +124,14 @@ def begin_task_context(session_id: str) -> None:
     end_task_context()
     _context.session_id = session_id or ""
     _context.doctor_attempts = set()
+    provider_flow.begin_task_context(session_id)
 
 
 def end_task_context() -> None:
     for name in _TASK_CONTEXT_FIELDS:
         if hasattr(_context, name):
             delattr(_context, name)
+    provider_flow.end_task_context()
 
 
 def revival_send(provider_id: str):
@@ -129,7 +142,8 @@ def revival_send(provider_id: str):
             _begin_revival_send(provider_id, page)
             try:
                 result = func(page, *args, **kwargs)
-            except BaseException:
+            except BaseException as exc:
+                _record_revival_flow_failure(provider_id, exc)
                 _abort_revival_send(provider_id)
                 raise
             _complete_revival_send(provider_id)
@@ -645,7 +659,10 @@ def resolve_captured_control(request: ControlTeachRequest, captured: CapturedCon
 
 def load_controls(path: Path | None = None) -> dict[str, Any]:
     path = path or CONTROL_STORE
-    return read_json(path) or {}
+    return read_json(
+        path,
+        max_bytes=provider_revival.MAX_PROVIDER_STORE_BYTES,
+    ) or {}
 
 
 def save_control(
@@ -670,7 +687,11 @@ def save_control(
         "failures": 0,
     }
     try:
-        write_json_atomic(path, data)
+        write_json_atomic(
+            path,
+            data,
+            max_bytes=provider_revival.MAX_PROVIDER_STORE_BYTES,
+        )
     except (OSError, ValueError) as exc:
         raise OSError(f"Could not save the learned control: {path}") from exc
 
@@ -767,11 +788,26 @@ def _update_learned_control(
     success: bool,
     path: Path | None,
 ) -> None:
+    store = path or CONTROL_STORE
     try:
         if success:
-            provider_revival.record_control_success(path or CONTROL_STORE, provider_id, action)
+            changed = provider_revival.record_control_success(
+                store,
+                provider_id,
+                action,
+            )
         else:
-            provider_revival.record_control_failure(path or CONTROL_STORE, provider_id, action)
+            changed = provider_revival.record_control_failure(
+                store,
+                provider_id,
+                action,
+            )
+        if changed:
+            _invalidate_flow_cache(store, provider_id)
+            if not success:
+                attempt = _revival_attempts().get(provider_id)
+                if attempt is not None:
+                    attempt.persistent_failure_recorded = True
     except (OSError, ValueError):
         return
 
@@ -808,13 +844,61 @@ def _revival_attempts() -> dict[str, _RevivalSend]:
     return attempts
 
 
+def _flow_cache() -> dict[tuple[str, str, str], dict[str, tuple[str, ...]] | None]:
+    cache = getattr(_context, "flow_cache", None)
+    if cache is None:
+        cache = {}
+        _context.flow_cache = cache
+    return cache
+
+
+def _flow_cache_key(
+    path: Path,
+    provider_id: str,
+    profile_digest: str,
+) -> tuple[str, str, str]:
+    try:
+        store = str(path.resolve())
+    except OSError:
+        store = str(path.absolute())
+    return provider_id, profile_digest, store
+
+
+def _load_flow_cached(
+    path: Path,
+    provider_id: str,
+    profile_digest: str,
+) -> dict[str, tuple[str, ...]] | None:
+    key = _flow_cache_key(path, provider_id, profile_digest)
+    cache = _flow_cache()
+    if key not in cache:
+        cache[key] = provider_revival.load_flow_recipe(
+            path,
+            provider_id,
+            profile_digest,
+        )
+    return cache[key]
+
+
+def _invalidate_flow_cache(path: Path, provider_id: str) -> None:
+    target = _flow_cache_key(path, provider_id, "")[2]
+    for key in tuple(_flow_cache()):
+        if key[0] == provider_id and key[2] == target:
+            _flow_cache().pop(key, None)
+
+
 def _begin_revival_send(provider_id: str, page: Any) -> None:
     _abort_revival_send(provider_id)
+    profile_digest = provider_flow.profile_hash(get_profile(provider_id))
+    flow_recipe = _load_flow_cached(CONTROL_STORE, provider_id, profile_digest)
     _revival_attempts()[provider_id] = _RevivalSend(
         host=_page_host(page),
         staged={},
         verified=set(),
         learned_verified=set(),
+        profile_hash=profile_digest,
+        flow_recipe=flow_recipe,
+        loaded_flow_stages=set(flow_recipe or {}),
     )
 
 
@@ -835,14 +919,20 @@ def _complete_revival_send(provider_id: str) -> None:
     if attempt is None:
         return
     try:
-        provider_revival.complete_send(
-            attempt.path or CONTROL_STORE,
+        path = attempt.path or CONTROL_STORE
+        changed = provider_revival.complete_send(
+            path,
             provider_id,
             attempt.host,
             attempt.staged,
             attempt.verified,
             attempt.learned_verified,
+            staged_flow=attempt.staged_flow,
+            learned_flow_verified=attempt.learned_flow_verified,
+            built_in_profile_hash=attempt.profile_hash,
         )
+        if changed:
+            _invalidate_flow_cache(path, provider_id)
     except (OSError, ValueError):
         for action in attempt.staged:
             _remember_source(provider_id, action, "")
@@ -851,6 +941,128 @@ def _complete_revival_send(provider_id: str) -> None:
     _clear_pending_controls(provider_id)
     for action in attempt.staged:
         _remember_source(provider_id, action, "learned")
+
+
+def flow_matches(
+    provider_id: str,
+    stage: str,
+    observation: provider_flow.FlowObservation,
+    trace: provider_flow.FlowTrace | None = None,
+    *,
+    mark_used: bool = True,
+) -> bool:
+    attempt = _revival_attempts().get(provider_id)
+    if attempt is None or attempt.flow_recipe is None:
+        return False
+    if stage not in attempt.flow_recipe:
+        return False
+    if stage in attempt.loaded_flow_stages:
+        attempt.flow_evaluated_stages.add(stage)
+    matched = provider_flow.evaluate(attempt.flow_recipe, stage, observation, trace)
+    if matched:
+        attempt.learned_flow_verified = True
+        if mark_used and stage in attempt.loaded_flow_stages:
+            attempt.flow_used_stages.add(stage)
+    return matched
+
+
+def flow_stage_ready(
+    page: Any,
+    provider_id: str,
+    stage: str,
+    trace: provider_flow.FlowTrace,
+    observation: provider_flow.FlowObservation,
+    *,
+    built_in_ready: bool,
+    allow_recovery: bool = False,
+) -> bool:
+    """Evaluate built-in state first, then a verified or recoverable recipe."""
+    if built_in_ready:
+        flow_matches(
+            provider_id,
+            stage,
+            observation,
+            trace,
+            mark_used=False,
+        )
+        return True
+    if flow_matches(provider_id, stage, observation, trace):
+        return True
+    return allow_recovery and recover_flow(page, provider_id, stage, trace)
+
+
+def read_flow_response(
+    provider_id: str,
+    stage: str,
+    reader: Callable[[], str],
+) -> str:
+    """Type an unreadable final answer only when a loaded Flow chose completion."""
+    try:
+        return reader()
+    except RuntimeError as exc:
+        attempt = _revival_attempts().get(provider_id)
+        if attempt is not None and stage in attempt.flow_used_stages:
+            raise ResponseMissing(str(exc), stage=stage) from exc
+        raise
+
+
+def recover_flow(
+    page: Any,
+    provider_id: str,
+    stage: str,
+    trace: provider_flow.FlowTrace,
+) -> bool:
+    """Stage one model-selected recipe only when current boolean facts prove it."""
+    attempt = _revival_attempts().get(provider_id)
+    if attempt is None:
+        return False
+    recipe = provider_flow.request_recovery(provider_id, stage, trace, page)
+    if recipe is None or not provider_flow.evaluate(
+        recipe,
+        stage,
+        trace.latest(),
+        trace,
+    ):
+        return False
+    attempt.staged_flow = recipe
+    attempt.flow_recipe = recipe
+    attempt.learned_flow_verified = False
+    return True
+
+
+def reject_flow(provider_id: str, *, path: Path | None = None) -> None:
+    attempt = _revival_attempts().get(provider_id)
+    if attempt is not None and attempt.staged_flow is not None:
+        attempt.staged_flow = None
+        attempt.flow_recipe = None
+        return
+    store = path or CONTROL_STORE
+    if provider_revival.record_flow_failure(store, provider_id):
+        _invalidate_flow_cache(store, provider_id)
+
+
+def _record_revival_flow_failure(provider_id: str, error: BaseException) -> None:
+    attempt = _revival_attempts().get(provider_id)
+    if (
+        attempt is None
+        or attempt.staged_flow is not None
+        or attempt.persistent_failure_recorded
+    ):
+        return
+    kind = str(getattr(error, "provider_failure_kind", "") or "")
+    stage = str(getattr(error, "provider_failure_stage", "") or "")
+    if (
+        kind not in provider_flow.RECOVERABLE_FAILURE_KINDS
+        or stage not in attempt.loaded_flow_stages
+        or stage not in attempt.flow_evaluated_stages
+    ):
+        return
+    store = attempt.path or CONTROL_STORE
+    try:
+        if provider_revival.record_flow_failure(store, provider_id):
+            _invalidate_flow_cache(store, provider_id)
+    except (OSError, ValueError):
+        pass
 
 
 def _clear_pending_controls(provider_id: str) -> None:

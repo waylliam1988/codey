@@ -352,6 +352,7 @@ class GlmDriverTests(unittest.TestCase):
             mock.patch.object(glm, "_final_text", return_value='{"tool":"done"}'),
             mock.patch.object(glm.controls, "control_has_text", return_value=True),
             mock.patch.object(glm.controls, "confirm_control"),
+            mock.patch.object(glm.controls, "recover_flow") as recover_flow,
             mock.patch.object(glm.cancellation, "wait"),
         ):
             reply = glm.chat(
@@ -365,9 +366,31 @@ class GlmDriverTests(unittest.TestCase):
 
         self.assertEqual(reply, '{"tool":"done"}')
         self.assertTrue(attempt.confirmed)
+        recover_flow.assert_not_called()
         sent = textarea.fill.call_args.args[0]
         self.assertTrue(sent.startswith("hello\n\n"))
         self.assertIn("ASCII U+0022", sent)
+
+    def test_stable_response_without_terminal_evidence_cannot_recover_flow(self) -> None:
+        trace = glm.provider_flow.FlowTrace()
+        observation = glm.provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+        )
+        trace.add(observation)
+        trace.add(observation)
+        helper = mock.Mock()
+
+        with mock.patch.object(glm.provider_flow, "_handler", helper):
+            recipe = glm.provider_flow.request_recovery(
+                glm.PROVIDER_ID,
+                glm.provider_flow.STAGE_COMPLETION,
+                trace,
+                object(),
+            )
+
+        self.assertIsNone(recipe)
+        helper.assert_not_called()
 
     def test_chat_retries_repeated_rate_limits_and_waits_for_answer(self) -> None:
         page = mock.Mock()

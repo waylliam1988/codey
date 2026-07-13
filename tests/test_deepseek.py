@@ -141,6 +141,7 @@ class DeepSeekTimeoutTests(unittest.TestCase):
             mock.patch.object(deepseek, "_final_text", return_value="raw delayed reply"),
             mock.patch.object(deepseek.controls, "control_has_text", return_value=True),
             mock.patch.object(deepseek.controls, "confirm_control"),
+            mock.patch.object(deepseek.controls, "recover_flow") as recover_flow,
             mock.patch.object(deepseek.cancellation, "wait"),
         ):
             reply = deepseek.chat(
@@ -149,6 +150,7 @@ class DeepSeekTimeoutTests(unittest.TestCase):
 
         self.assertEqual(reply, "raw delayed reply")
         self.assertTrue(attempt.confirmed)
+        recover_flow.assert_not_called()
 
     def test_rate_limit_visible_checks_deepseek_warning_text(self) -> None:
         page = mock.Mock()

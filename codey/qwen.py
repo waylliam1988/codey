@@ -7,7 +7,7 @@ import time
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page
 
-from codey import cancellation, provider_controls as controls
+from codey import cancellation, provider_controls as controls, provider_flow
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
@@ -320,7 +320,20 @@ def _submission_started(page: Page, baseline: int, submitted_text: str = "") -> 
         if not submitted_text:
             return False
         message_box = _message_box(page)
-        return message_box is not None and not controls.control_has_text(message_box, submitted_text)
+        input_empty = (
+            message_box is not None
+            and not controls.control_has_text(message_box, submitted_text)
+        )
+        if input_empty:
+            return True
+        return controls.flow_matches(
+            PROVIDER_ID,
+            provider_flow.STAGE_SUBMISSION,
+            provider_flow.FlowObservation(
+                input_empty=input_empty,
+                response_count_increased=_response_count(page) > baseline,
+            ),
+        )
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
@@ -331,7 +344,10 @@ def _submit(page: Page, baseline: int, submitted_text: str = "") -> SendAttempt:
     send = _send_button(page, timeout=SEND_TIMEOUT, teach=True)
     if send is None:
         controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON, page=page)
-        raise ControlMissing("Qwen Studio send button did not become ready")
+        raise ControlMissing(
+            "Qwen Studio send button did not become ready",
+            stage=provider_flow.STAGE_SUBMISSION,
+        )
 
     attempt = SendAttempt()
     # Qwen enables the button before its send closure receives the latest draft.
@@ -410,6 +426,7 @@ def _chat(
     stable = 0
     appeared = False
     regenerated = False
+    flow_trace = provider_flow.FlowTrace()
     while time.time() < deadline:
         cancellation.wait(tick)
         if _empty_response_visible(page) and _generation_complete(page):
@@ -432,17 +449,36 @@ def _chat(
         if not current:
             stable = 0
             continue
-        if current == last:
+        same = current == last
+        if same:
             stable += 1
         else:
             stable = 0
             last = current
-        if (
-            stable >= stable_ticks
-            and (time.time() - sent_at) >= min_wait
-            and _generation_complete(page)
-        ):
-            return _final_text(page)
+        stop_visible = _visible_locator(page, STOP_ACTIVE) is not None
+        observation = provider_flow.FlowObservation(
+            stop_visible=stop_visible,
+            stop_hidden=not stop_visible,
+            response_stable=same,
+            response_nonempty=bool(current),
+        )
+        flow_trace.add(observation)
+        if stable >= stable_ticks and (time.time() - sent_at) >= min_wait:
+            completion_ready = controls.flow_stage_ready(
+                page,
+                PROVIDER_ID,
+                provider_flow.STAGE_COMPLETION,
+                flow_trace,
+                observation,
+                built_in_ready=_generation_complete(page),
+                allow_recovery=attempt.confirmed,
+            )
+            if completion_ready:
+                return controls.read_flow_response(
+                    PROVIDER_ID,
+                    provider_flow.STAGE_COMPLETION,
+                    lambda: _final_text(page),
+                )
 
     late = _wait_late_response(
         page,

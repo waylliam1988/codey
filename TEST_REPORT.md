@@ -1,4 +1,55 @@
-# Codey 0.1.37 Test Report
+# Codey 0.1.38 Test Report
+
+## 0.1.38 Bounded Provider Flow Recovery
+
+Provider recovery now includes one optional single-stage Flow Recipe made only
+from fixed boolean observations. Deterministic tests cover schema rejection,
+AND evaluation, generation-to-terminal transitions, bounded traces, assistance
+suppression, transaction-local attribution, provisional promotion, persistent
+failure rollback, profile invalidation, and safe degradation when terminal
+evidence is absent. Production-component fault injection additionally covers:
+
+- Qwen recovery when its built-in completion signal fails but a real
+  `stop_visible -> stop_hidden` transition remains.
+- no completion during a long thinking pause while stop remains visible.
+- no guessed completion when the stop marker is also unavailable.
+- one failure count per unreadable Flow-selected answer and rollback after the
+  second independent structural failure.
+- provisional promotion only after the next natural send proves the same rule.
+- no MiMo or GLM completion recovery from text stability alone.
+
+The four-provider Edge/CDP control-revival matrix used a temporary store and
+in-memory selector faults. Every provider recovered its composer controls,
+read both nonce replies, reused the bundle without invoking Doctor again, and
+promoted `provisional -> active`:
+
+| Target | First recovery | Persisted reuse | Result |
+|---|---:|---:|---|
+| DeepSeek | 32.48s | 4.70s | passed |
+| MiMo | 21.77s | 12.31s | passed |
+| Qwen | 46.92s | 6.95s | passed |
+| GLM | 44.72s | 14.41s | passed |
+
+A stricter Qwen live run forced the built-in completion check to remain false
+while preserving real stop DOM observations. The first send completed through
+the bounded Flow path in 64.34s; the second reused it in 6.06s and promoted the
+bundle to active. The first helper could not provide a usable control choice,
+so bounded sibling relay continued to MiMo and succeeded without recursion or
+duplicate submission.
+
+Final regression after the local fault-injection additions:
+
+```text
+Provider/Server focused unittest: 287 tests OK
+Full unittest: 781 tests OK
+Full pytest: 789 passed, 56 subtests passed
+Ruff, compileall, and git diff --check: passed
+```
+
+The current completion Flow scope is intentionally narrow: Qwen has reliable
+terminal evidence; MiMo and GLM do not yet. This release does not add arbitrary
+browser actions, background probing, Python adapter self-modification, or a new
+user-visible mode.
 
 ## 0.1.37 Python Syntax Regression Hint
 

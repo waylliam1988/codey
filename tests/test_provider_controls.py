@@ -536,6 +536,436 @@ class ProviderControlsTests(unittest.TestCase):
 
             self.assertEqual(controls.load_controls(path), before)
 
+    def test_flow_recovery_is_staged_then_promoted_by_next_natural_send(self) -> None:
+        from codey import provider_flow
+
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        observation = provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+            stop_hidden=True,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            trace = provider_flow.FlowTrace()
+            trace.add(provider_flow.FlowObservation(stop_visible=True))
+            trace.add(observation)
+            trace.add(observation)
+            provider_flow.begin_task_context("flow-session")
+
+            @controls.revival_send("qwen")
+            def recovered_send(current_page):
+                return controls.flow_stage_ready(
+                    current_page,
+                    "qwen",
+                    provider_flow.STAGE_COMPLETION,
+                    trace,
+                    observation,
+                    built_in_ready=False,
+                    allow_recovery=True,
+                )
+
+            @controls.revival_send("qwen")
+            def natural_send(current_page):
+                return controls.flow_stage_ready(
+                    current_page,
+                    "qwen",
+                    provider_flow.STAGE_COMPLETION,
+                    trace,
+                    observation,
+                    built_in_ready=True,
+                )
+
+            try:
+                with mock.patch.object(
+                    provider_flow,
+                    "_handler",
+                    lambda request: request.candidates[0].candidate_id,
+                ), mock.patch.object(controls, "CONTROL_STORE", path):
+                    self.assertTrue(recovered_send(page))
+                    self.assertEqual(
+                        controls.load_controls(path)["qwen"]["_revival"]["status"],
+                        "provisional",
+                    )
+                    self.assertTrue(natural_send(page))
+                    self.assertEqual(
+                        controls.load_controls(path)["qwen"]["_revival"]["status"],
+                        "active",
+                    )
+            finally:
+                provider_flow.end_task_context()
+
+    def test_failed_send_discards_staged_flow_without_writing(self) -> None:
+        from codey import provider_flow
+
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        observation = provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+            stop_hidden=True,
+        )
+        trace = provider_flow.FlowTrace()
+        trace.add(provider_flow.FlowObservation(stop_visible=True))
+        trace.add(observation)
+        trace.add(observation)
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            provider_flow.begin_task_context("flow-session")
+
+            @controls.revival_send("qwen")
+            def failing_send(current_page):
+                self.assertTrue(
+                    controls.flow_stage_ready(
+                        current_page,
+                        "qwen",
+                        provider_flow.STAGE_COMPLETION,
+                        trace,
+                        observation,
+                        built_in_ready=False,
+                        allow_recovery=True,
+                    )
+                )
+                raise TimeoutError("response read failed")
+
+            try:
+                with (
+                    mock.patch.object(
+                        provider_flow,
+                        "_handler",
+                        lambda request: request.candidates[0].candidate_id,
+                    ),
+                    mock.patch.object(controls, "CONTROL_STORE", path),
+                    self.assertRaisesRegex(TimeoutError, "response read failed"),
+                ):
+                    failing_send(page)
+                self.assertFalse(path.exists())
+            finally:
+                provider_flow.end_task_context()
+
+    def test_persisted_flow_unreadable_final_response_triggers_rollback(self) -> None:
+        from codey import provider_flow, provider_revival
+        from codey.provider_diagnostics import ResponseMissing
+
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        generating = provider_flow.FlowObservation(stop_visible=True)
+        terminal = provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+            stop_hidden=True,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            profile_digest = provider_flow.profile_hash(controls.get_profile("qwen"))
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {},
+                set(),
+                set(),
+                staged_flow={
+                    provider_flow.STAGE_COMPLETION: (
+                        provider_flow.PREDICATE_RESPONSE_STABLE,
+                        provider_flow.PREDICATE_STOP_HIDDEN,
+                    )
+                },
+                built_in_profile_hash=profile_digest,
+            )
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {},
+                set(),
+                set(),
+                learned_flow_verified=True,
+                built_in_profile_hash=profile_digest,
+            )
+            controls.begin_task_context("rollback-session")
+
+            @controls.revival_send("qwen")
+            def structurally_failing_send(current_page):
+                trace = provider_flow.FlowTrace()
+                trace.add(generating)
+                trace.add(terminal)
+                trace.add(terminal)
+                self.assertTrue(
+                    controls.flow_stage_ready(
+                        current_page,
+                        "qwen",
+                        provider_flow.STAGE_COMPLETION,
+                        trace,
+                        terminal,
+                        built_in_ready=False,
+                    )
+                )
+                return controls.read_flow_response(
+                    "qwen",
+                    provider_flow.STAGE_COMPLETION,
+                    lambda: (_ for _ in ()).throw(
+                        RuntimeError("Could not read the Qwen Studio response")
+                    ),
+                )
+
+            with mock.patch.object(controls, "CONTROL_STORE", path):
+                for expected in (1, None):
+                    with self.assertRaises(ResponseMissing):
+                        structurally_failing_send(page)
+                    meta = controls.load_controls(path)["qwen"].get("_revival")
+                    if expected is None:
+                        self.assertIsNone(meta)
+                    else:
+                        self.assertEqual(meta["failures"], expected)
+
+    def test_builtin_completion_read_failure_is_not_attributed_to_flow(self) -> None:
+        from codey import provider_flow, provider_revival
+
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        generating = provider_flow.FlowObservation(stop_visible=True)
+        terminal = provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+            stop_hidden=True,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            profile_digest = provider_flow.profile_hash(controls.get_profile("qwen"))
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {},
+                set(),
+                set(),
+                staged_flow={
+                    provider_flow.STAGE_COMPLETION: (
+                        provider_flow.PREDICATE_RESPONSE_STABLE,
+                        provider_flow.PREDICATE_STOP_HIDDEN,
+                    )
+                },
+                built_in_profile_hash=profile_digest,
+            )
+            before = path.read_bytes()
+            controls.begin_task_context("builtin-session")
+
+            @controls.revival_send("qwen")
+            def builtin_send(current_page):
+                trace = provider_flow.FlowTrace()
+                trace.add(generating)
+                trace.add(terminal)
+                trace.add(terminal)
+                self.assertTrue(
+                    controls.flow_stage_ready(
+                        current_page,
+                        "qwen",
+                        provider_flow.STAGE_COMPLETION,
+                        trace,
+                        terminal,
+                        built_in_ready=True,
+                    )
+                )
+                return controls.read_flow_response(
+                    "qwen",
+                    provider_flow.STAGE_COMPLETION,
+                    lambda: (_ for _ in ()).throw(RuntimeError("read failed")),
+                )
+
+            with (
+                mock.patch.object(controls, "CONTROL_STORE", path),
+                self.assertRaisesRegex(RuntimeError, "read failed"),
+            ):
+                builtin_send(page)
+
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_control_and_flow_failure_are_counted_once_per_send(self) -> None:
+        from codey import provider_flow, provider_revival
+        from codey.provider_diagnostics import ResponseMissing
+
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        terminal = provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+            stop_hidden=True,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            profile_digest = provider_flow.profile_hash(controls.get_profile("qwen"))
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {controls.CONTROL_RESPONSE: {"tag": "article", "classes": ["answer"]}},
+                {controls.CONTROL_RESPONSE},
+                set(),
+                staged_flow={
+                    provider_flow.STAGE_COMPLETION: (
+                        provider_flow.PREDICATE_RESPONSE_STABLE,
+                        provider_flow.PREDICATE_STOP_HIDDEN,
+                    )
+                },
+                built_in_profile_hash=profile_digest,
+            )
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {},
+                {controls.CONTROL_RESPONSE},
+                {controls.CONTROL_RESPONSE},
+                learned_flow_verified=True,
+                built_in_profile_hash=profile_digest,
+            )
+            controls.begin_task_context("dedupe-session")
+
+            @controls.revival_send("qwen")
+            def unreadable_send(current_page):
+                trace = provider_flow.FlowTrace()
+                trace.add(provider_flow.FlowObservation(stop_visible=True))
+                trace.add(terminal)
+                trace.add(terminal)
+                self.assertTrue(
+                    controls.flow_stage_ready(
+                        current_page,
+                        "qwen",
+                        provider_flow.STAGE_COMPLETION,
+                        trace,
+                        terminal,
+                        built_in_ready=False,
+                    )
+                )
+                controls._remember_source(
+                    "qwen",
+                    controls.CONTROL_RESPONSE,
+                    "learned",
+                )
+                controls.reject_control(
+                    "qwen",
+                    controls.CONTROL_RESPONSE,
+                    path=path,
+                )
+                return controls.read_flow_response(
+                    "qwen",
+                    provider_flow.STAGE_COMPLETION,
+                    lambda: (_ for _ in ()).throw(RuntimeError("unreadable")),
+                )
+
+            with (
+                mock.patch.object(controls, "CONTROL_STORE", path),
+                self.assertRaises(ResponseMissing),
+            ):
+                unreadable_send(page)
+
+            provider = controls.load_controls(path)["qwen"]
+
+        self.assertEqual(provider["_revival"]["failures"], 1)
+        self.assertEqual(provider[controls.CONTROL_RESPONSE]["failures"], 1)
+
+    def test_transient_failure_does_not_penalize_persisted_flow(self) -> None:
+        from codey import provider_flow, provider_revival
+        from codey.provider_submission import SubmissionUncertain
+
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        generating = provider_flow.FlowObservation(stop_visible=True)
+        terminal = provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+            stop_hidden=True,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            profile_digest = provider_flow.profile_hash(controls.get_profile("qwen"))
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {},
+                set(),
+                set(),
+                staged_flow={
+                    provider_flow.STAGE_COMPLETION: (
+                        provider_flow.PREDICATE_RESPONSE_STABLE,
+                        provider_flow.PREDICATE_STOP_HIDDEN,
+                    )
+                },
+                built_in_profile_hash=profile_digest,
+            )
+            before = path.read_bytes()
+            controls.begin_task_context("transient-session")
+
+            @controls.revival_send("qwen")
+            def failing_send(current_page, error):
+                trace = provider_flow.FlowTrace()
+                trace.add(generating)
+                trace.add(terminal)
+                trace.add(terminal)
+                self.assertTrue(
+                    controls.flow_stage_ready(
+                        current_page,
+                        "qwen",
+                        provider_flow.STAGE_COMPLETION,
+                        trace,
+                        terminal,
+                        built_in_ready=False,
+                    )
+                )
+                raise error
+
+            with mock.patch.object(controls, "CONTROL_STORE", path):
+                for error in (
+                    TimeoutError("network stalled"),
+                    SubmissionUncertain("submission uncertain"),
+                ):
+                    with self.subTest(error=type(error).__name__):
+                        with self.assertRaises(type(error)):
+                            failing_send(page, error)
+
+            self.assertEqual(path.read_bytes(), before)
+
+    def test_missing_flow_is_read_once_per_task_and_invalidated_on_commit(self) -> None:
+        from codey import provider_flow
+
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            controls.begin_task_context("cache-session")
+
+            @controls.revival_send("qwen")
+            def healthy_send(_current_page):
+                return "ok"
+
+            with (
+                mock.patch.object(controls, "CONTROL_STORE", path),
+                mock.patch.object(
+                    controls.provider_revival,
+                    "load_flow_recipe",
+                    return_value=None,
+                ) as load,
+            ):
+                self.assertEqual(healthy_send(page), "ok")
+                self.assertEqual(healthy_send(page), "ok")
+                self.assertEqual(load.call_count, 1)
+
+                attempt = controls._RevivalSend(
+                    host="chat.qwen.ai",
+                    staged={},
+                    verified=set(),
+                    learned_verified=set(),
+                    profile_hash=provider_flow.profile_hash(
+                        controls.get_profile("qwen")
+                    ),
+                    staged_flow={
+                        provider_flow.STAGE_COMPLETION: (
+                            provider_flow.PREDICATE_RESPONSE_STABLE,
+                            provider_flow.PREDICATE_STOP_HIDDEN,
+                        )
+                    },
+                )
+                controls._revival_attempts()["qwen"] = attempt
+                controls._complete_revival_send("qwen")
+                self.assertEqual(healthy_send(page), "ok")
+                self.assertEqual(load.call_count, 2)
+
     def test_pending_confirmation_ignores_storage_failure(self) -> None:
         page = mock.Mock()
         page.url = "https://chat.qwen.ai/"

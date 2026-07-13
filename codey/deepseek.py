@@ -18,7 +18,7 @@ import time
 
 from playwright.sync_api import Page
 
-from codey import cancellation, provider_controls as controls
+from codey import cancellation, provider_controls as controls, provider_flow
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, RateLimited, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
@@ -219,7 +219,17 @@ def _submission_started(
     if message_box is None:
         return False
     try:
-        return not controls.control_has_text(message_box, submitted_text)
+        input_empty = not controls.control_has_text(message_box, submitted_text)
+        if input_empty:
+            return True
+        return controls.flow_matches(
+            PROVIDER_ID,
+            provider_flow.STAGE_SUBMISSION,
+            provider_flow.FlowObservation(
+                input_empty=input_empty,
+                response_count_increased=count > baseline,
+            ),
+        )
     except Exception:
         return False
 
@@ -367,6 +377,7 @@ def chat(
         last = ""
         stable = 0
         appeared = False
+        flow_trace = provider_flow.FlowTrace()
         while time.time() < start_deadline:
             cancellation.wait(tick)
             if (
@@ -387,10 +398,28 @@ def chat(
             if not current:
                 stable = 0
                 continue
-            if current == last and (time.time() - sent_at) >= min_wait:
+            same = current == last
+            observation = provider_flow.FlowObservation(
+                response_stable=same,
+                response_nonempty=bool(current),
+            )
+            flow_trace.add(observation)
+            if same and (time.time() - sent_at) >= min_wait:
                 stable += 1
-                if stable >= stable_ticks:
-                    return _final_text(page)
+                ready = controls.flow_stage_ready(
+                    page,
+                    PROVIDER_ID,
+                    provider_flow.STAGE_COMPLETION,
+                    flow_trace,
+                    observation,
+                    built_in_ready=stable >= stable_ticks,
+                )
+                if ready:
+                    return controls.read_flow_response(
+                        PROVIDER_ID,
+                        provider_flow.STAGE_COMPLETION,
+                        lambda: _final_text(page),
+                    )
             else:
                 stable = 0
                 last = current

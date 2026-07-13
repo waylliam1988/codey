@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from codey import cancellation, profile_doctor, provider_controls
+from codey import cancellation, profile_doctor, provider_controls, provider_flow
 from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
@@ -765,10 +765,55 @@ class State:
                 return selected
         return None
 
+    def handle_flow_recovery(
+        self,
+        request: provider_flow.FlowRecoveryRequest,
+    ) -> str | None:
+        """Ask healthy siblings to choose only among fixed flow predicates."""
+        cancellation.check()
+        deadline = time.monotonic() + PROFILE_DOCTOR_TIMEOUT
+        for provider_id in reviewer_candidates(request.provider_id)[:3]:
+            cancellation.check()
+            if not self.provider_supervisor.is_available(provider_id):
+                continue
+            if time.monotonic() >= deadline:
+                return None
+            helper = borrow_open_provider(provider_id, request.page)
+            if helper is None:
+                continue
+            with provider_controls.suppress_assistance():
+                try:
+                    helper.new_chat(timeout=max(0.1, deadline - time.monotonic()))
+                except cancellation.TaskCancelled:
+                    helper.close()
+                    raise
+                except Exception:
+                    helper.close()
+                    continue
+                self.set_provider_session(provider_id, None)
+                try:
+                    selected = provider_flow.choose_candidate(
+                        request,
+                        lambda prompt: helper.send(
+                            prompt,
+                            timeout=max(0.1, deadline - time.monotonic()),
+                        ),
+                    )
+                except cancellation.TaskCancelled:
+                    raise
+                except Exception:
+                    continue
+                finally:
+                    helper.close()
+            if selected:
+                return selected
+        return None
+
 
 STATE = State(DEFAULT_STATE_HOME)
 provider_controls.set_teach_handler(STATE.handle_control_teach)
 provider_controls.set_doctor_handler(STATE.handle_profile_doctor)
+provider_flow.set_recovery_handler(STATE.handle_flow_recovery)
 
 
 def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:

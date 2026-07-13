@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.37-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.38-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.37`
+Version: `0.1.38`
 
 [Version history](CHANGELOG.md)
 
@@ -83,6 +83,9 @@ This is not about replacing professional tools. It is about making the first ste
 - Keep non-Git diff and restore available across Codey restarts
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
+- Recover one bounded web-chat state rule from boolean-only evidence when a
+  verified control bundle is not enough; Qwen completion recovery currently
+  requires a real generating-to-stop-hidden transition
 - Hand an interrupted project Writer to a healthy sibling model from bounded
   local checkpoint facts, with at most two switches and no repeated uncertain
   submission to the failed model
@@ -115,6 +118,13 @@ Recovered controls are committed only after the original message is submitted
 once and a new answer is read. The first successful bundle remains provisional;
 the next natural success promotes it, while explicit repeated control failures
 restore the previous bundle. Normal healthy sends do not call sibling models.
+
+The same recovery bundle can contain one bounded Flow Recipe made only from
+fixed boolean facts such as response stability and a verified stop-state
+transition. Recipes cannot contain selectors, JavaScript, URLs, arbitrary
+clicks, page text, or project data. Completion is never inferred from stable
+text alone. This is currently a Qwen completion pilot; MiMo and GLM safely keep
+their built-in behavior until they expose equally reliable terminal evidence.
 
 If a project Writer fails with an explicit provider-page error, Codey can move
 the unfinished task to a healthy sibling model. The new Writer starts a clean
@@ -369,6 +379,7 @@ codey/
   provider_profiles.py      validated profile loader
   provider_discovery.py     bounded DOM candidate discovery and scoring
   provider_controls.py      verified recovery, learning, and human teaching
+  provider_flow.py          bounded boolean web-chat state rules
   provider_revival.py       atomic control bundles, promotion, and rollback
   provider_submission.py    shared one-shot remote submission boundary
   provider_supervisor.py    passive health circuit, Writer selection, and canary

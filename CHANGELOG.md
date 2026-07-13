@@ -4,6 +4,23 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.38 - Bounded Provider Flow Recovery
+
+Provider recovery bundles can now carry one bounded web-chat state rule in
+addition to verified controls. A Flow Recipe is built only from a fixed set of
+boolean observations, contains no selectors, JavaScript, URLs, arbitrary
+actions, page text, or project data, and shares the existing provisional,
+promotion, failure-counting, and rollback lifecycle.
+
+Completion recovery requires stable non-empty output plus a real transition
+from generation evidence to terminal evidence; stable text alone is never
+enough. Qwen is the first completion pilot through its visible-to-hidden stop
+transition. MiMo and GLM deliberately keep their built-in completion behavior
+when no equally reliable terminal evidence exists. Four-provider Edge/CDP
+control fault injection passed, and a stricter Qwen live run completed with its
+built-in completion check disabled, then reused and promoted the recovered
+Flow on the next send.
+
 ## 0.1.37 - Python Syntax Regression Hint
 
 Successful replacement edits to Python files now receive one bounded syntax

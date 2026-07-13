@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.37-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.1.38-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.37`
+版本：`0.1.38`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -80,6 +80,8 @@ Codey 想解决的是一个很朴素的问题：
 - 非 Git 项目的 diff 和 restore 在 Codey 重启后仍然可用
 - 网页输入框或发送按钮改版时，先做有边界的本地发现，仍不确定则让健康兄弟模型
   从脱敏候选中选择；真实发送成功后才能保存、晋级或回滚恢复包
+- 控件恢复仍不足时，只根据脱敏布尔事实恢复一条有边界的网页状态规则；当前 Qwen
+  completion 必须观察到真实的“生成中 → stop 消失”转换
 - Writer 遇到明确网页故障时，从本地 checkpoint 把未完成任务交给健康兄弟模型，
   同一任务最多切换两次，不会向提交状态不确定的旧模型重发
 - 用小型健康熔断区分控件故障、临时错误、限流、登录和验证码状态
@@ -108,6 +110,11 @@ Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当�
 新控件只有在原消息只提交一次、并且成功读到新回答后，才会作为一组恢复包原子保存。
 第一次成功只是 provisional，下一次自然发送成功后才晋级 active；明确的连续控件失败
 会恢复上一版。健康 Provider 的正常发送不会调用兄弟模型。
+
+同一恢复包现在还可以保存一条有边界的 Flow Recipe。它只能组合固定布尔事实，例如
+回答稳定和经过验证的 stop 状态转换，不能包含 selector、JavaScript、URL、任意点击、
+网页正文或项目数据。Codey 绝不会只凭“文字暂时稳定”猜测回答已经结束。目前这是
+Qwen completion 的安全试点；MiMo 和 GLM 在没有同等可靠的终止证据时继续安全降级。
 
 ---
 
@@ -356,6 +363,7 @@ codey/
   provider_profiles.py      经过验证的 Profile 加载
   provider_discovery.py     有边界的 DOM 候选发现和评分
   provider_controls.py      经过验证的恢复、记忆和人工教学
+  provider_flow.py          有边界的网页布尔状态规则
   provider_revival.py       控件恢复包的原子保存、晋级和回滚
   provider_submission.py    共享的单次远程提交边界
   provider_supervisor.py    被动健康熔断、Writer 选择和 canary

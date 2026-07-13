@@ -6,7 +6,7 @@ import time
 
 from playwright.sync_api import Locator, Page
 
-from codey import cancellation, provider_controls as controls
+from codey import cancellation, provider_controls as controls, provider_flow
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
@@ -249,12 +249,12 @@ def _clean_copied_text(raw: str, visible_text: str) -> str:
     return visible
 
 
-def _final_text(page: Page) -> str:
-    raw = _copy_last_text(page)
+def _final_text(page: Page, *, completion_verified: bool = False) -> str:
+    raw = "" if completion_verified else _copy_last_text(page)
     if raw:
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
         return raw
-    if not _generation_complete(page):
+    if not completion_verified and not _generation_complete(page):
         raise RuntimeError("Xiaomi MiMo response is still generating")
     fallback = _last_text(page)
     if fallback:
@@ -280,7 +280,17 @@ def _submission_started(
     if submitted_text:
         textarea = _message_box(page)
         try:
-            return textarea is not None and not textarea.input_value().strip()
+            input_empty = textarea is not None and not textarea.input_value().strip()
+            if input_empty:
+                return True
+            return controls.flow_matches(
+                PROVIDER_ID,
+                provider_flow.STAGE_SUBMISSION,
+                provider_flow.FlowObservation(
+                    input_empty=input_empty,
+                    response_count_increased=count > baseline,
+                ),
+            )
         except Exception:
             return False
     return False
@@ -297,7 +307,10 @@ def _submit(
         controls.reject_control(
             PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
         )
-        raise ControlMissing("Xiaomi MiMo Chat input is not visible")
+        raise ControlMissing(
+            "Xiaomi MiMo Chat input is not visible",
+            stage=provider_flow.STAGE_SUBMISSION,
+        )
 
     button = _send_button(page, teach=True)
     attempt = SendAttempt()
@@ -582,6 +595,7 @@ def _chat(
     last = ""
     stable = 0
     appeared = False
+    flow_trace = provider_flow.FlowTrace()
     while time.time() < deadline:
         cancellation.wait(tick)
         count = _response_count(page)
@@ -593,14 +607,37 @@ def _chat(
         if not current:
             stable = 0
             continue
-        if current == last:
+        same = current == last
+        if same:
             stable += 1
         else:
             stable = 0
             last = current
+        observation = provider_flow.FlowObservation(
+            response_stable=same,
+            response_nonempty=bool(current),
+        )
+        flow_trace.add(observation)
         if stable >= stable_ticks and (time.time() - sent_at) >= min_wait:
-            if _generation_complete(page):
-                return _final_text(page)
+            built_in_ready = _generation_complete(page)
+            completion_ready = controls.flow_stage_ready(
+                page,
+                PROVIDER_ID,
+                provider_flow.STAGE_COMPLETION,
+                flow_trace,
+                observation,
+                built_in_ready=built_in_ready,
+                allow_recovery=attempt.confirmed,
+            )
+            if completion_ready:
+                return controls.read_flow_response(
+                    PROVIDER_ID,
+                    provider_flow.STAGE_COMPLETION,
+                    lambda: _final_text(
+                        page,
+                        completion_verified=not built_in_ready,
+                    ),
+                )
 
     late = _wait_late_response(
         page,
@@ -612,8 +649,31 @@ def _chat(
     if late:
         confirm_submission(attempt, PROVIDER_ID)
         return late
-    if appeared and last and _generation_complete(page):
-        return _final_text(page)
+    if appeared and last:
+        observation = provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+        )
+        flow_trace.add(observation)
+        built_in_ready = _generation_complete(page)
+        completion_ready = controls.flow_stage_ready(
+            page,
+            PROVIDER_ID,
+            provider_flow.STAGE_COMPLETION,
+            flow_trace,
+            observation,
+            built_in_ready=built_in_ready,
+            allow_recovery=attempt.confirmed,
+        )
+        if completion_ready:
+            return controls.read_flow_response(
+                PROVIDER_ID,
+                provider_flow.STAGE_COMPLETION,
+                lambda: _final_text(
+                    page,
+                    completion_verified=not built_in_ready,
+                ),
+            )
     recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
     if recovered is not None:
         confirm_submission(attempt, PROVIDER_ID)

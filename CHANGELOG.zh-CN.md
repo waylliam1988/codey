@@ -4,6 +4,18 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.38 - 有边界的 Provider Flow 恢复
+
+Provider 恢复包除了经过验证的控件，现在还能携带一条有边界的网页状态规则。
+Flow Recipe 只能使用固定的布尔观察，不包含 selector、JavaScript、URL、任意动作、
+网页正文或项目数据，并且复用现有的 provisional、晋级、失败计数和回滚生命周期。
+
+completion 恢复必须同时看到稳定非空回答，以及从生成证据到终止证据的真实转换；
+只凭文字稳定绝不会判定完成。Qwen 首先使用 stop 从可见到消失的转换进行安全试点。
+MiMo 和 GLM 没有同等可靠终止证据时，继续使用内置完成逻辑并安全降级。四家
+Edge/CDP 控件故障注入全部通过；更严格的 Qwen 实机测试关闭内置完成判断后仍能
+完成回答，并在下一次发送中复用 Flow、从 provisional 晋级 active。
+
 ## 0.1.37 - Python 语法回归提示
 
 Python 文件的 replacement edit 成功后，如果原文件语法有效、最终修改结果却无法解析，

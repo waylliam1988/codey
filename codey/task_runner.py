@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable
 
-from codey import cancellation, provider_controls
+from codey import cancellation, provider_controls, provider_flow
 from codey.agent import RunResult
 from codey.change_brief import (
     ChangeBrief,
@@ -225,6 +225,9 @@ class TaskRunner:
 
         provider_controls.set_teach_handler(state.handle_control_teach)
         provider_controls.set_doctor_handler(getattr(state, "handle_profile_doctor", None))
+        provider_flow.set_recovery_handler(
+            getattr(state, "handle_flow_recovery", None)
+        )
         provider_controls.begin_task_context(session_id)
         state.last_provider_failure = None
         previous_cancel_event = cancellation.set_event(state.stop_flag)

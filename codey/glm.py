@@ -7,7 +7,7 @@ import time
 
 from playwright.sync_api import Locator, Page
 
-from codey import cancellation, provider_controls as controls
+from codey import cancellation, provider_controls as controls, provider_flow
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, RateLimited, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
@@ -324,9 +324,20 @@ def _submission_started(
         ):
             return True
         message_box = _message_box(page)
-        return (
+        input_empty = (
             message_box is not None
             and not controls.control_has_text(message_box, submitted_text)
+        )
+        if input_empty:
+            return True
+        return controls.flow_matches(
+            PROVIDER_ID,
+            provider_flow.STAGE_SUBMISSION,
+            provider_flow.FlowObservation(
+                input_empty=input_empty,
+                question_count_increased=_question_count(page) > question_baseline,
+                response_count_increased=_response_count(page) > response_baseline,
+            ),
         )
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
@@ -344,7 +355,10 @@ def _submit(
     button = _send_button(page, timeout=SEND_TIMEOUT, teach=True)
     if button is None:
         controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON, page=page)
-        raise ControlMissing("GLM send button did not become ready")
+        raise ControlMissing(
+            "GLM send button did not become ready",
+            stage=provider_flow.STAGE_SUBMISSION,
+        )
 
     attempt = SendAttempt()
     attempt.submit("click", button.click)
@@ -435,6 +449,7 @@ def _chat(
     last = ""
     stable = 0
     appeared = False
+    flow_trace = provider_flow.FlowTrace()
 
     while time.time() < deadline:
         cancellation.wait(tick)
@@ -460,17 +475,33 @@ def _chat(
         if not current:
             stable = 0
             continue
-        if current == last:
+        same = current == last
+        if same:
             stable += 1
         else:
             stable = 0
             last = current
-        if (
-            stable >= stable_ticks
-            and (time.time() - sent_at) >= min_wait
-            and _generation_complete(page)
-        ):
-            return _final_text(page)
+        observation = provider_flow.FlowObservation(
+            response_stable=same,
+            response_nonempty=bool(current),
+        )
+        flow_trace.add(observation)
+        if stable >= stable_ticks and (time.time() - sent_at) >= min_wait:
+            completion_ready = controls.flow_stage_ready(
+                page,
+                PROVIDER_ID,
+                provider_flow.STAGE_COMPLETION,
+                flow_trace,
+                observation,
+                built_in_ready=_generation_complete(page),
+                allow_recovery=attempt.confirmed,
+            )
+            if completion_ready:
+                return controls.read_flow_response(
+                    PROVIDER_ID,
+                    provider_flow.STAGE_COMPLETION,
+                    lambda: _final_text(page),
+                )
 
     if _rate_limit_visible(page):
         raise RateLimited("GLM is rate limited")

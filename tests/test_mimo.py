@@ -427,6 +427,7 @@ class MimoDriverTests(unittest.TestCase):
             mock.patch.object(mimo, "_final_text", return_value="raw delayed reply"),
             mock.patch.object(mimo.controls, "control_has_text", return_value=True),
             mock.patch.object(mimo.controls, "confirm_control"),
+            mock.patch.object(mimo.controls, "recover_flow") as recover_flow,
             mock.patch.object(mimo.cancellation, "wait"),
         ):
             reply = mimo.chat(
@@ -435,6 +436,28 @@ class MimoDriverTests(unittest.TestCase):
 
         self.assertEqual(reply, "raw delayed reply")
         self.assertTrue(attempt.confirmed)
+        recover_flow.assert_not_called()
+
+    def test_stable_response_without_terminal_evidence_cannot_recover_flow(self) -> None:
+        trace = mimo.provider_flow.FlowTrace()
+        observation = mimo.provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+        )
+        trace.add(observation)
+        trace.add(observation)
+        helper = mock.Mock()
+
+        with mock.patch.object(mimo.provider_flow, "_handler", helper):
+            recipe = mimo.provider_flow.request_recovery(
+                mimo.PROVIDER_ID,
+                mimo.provider_flow.STAGE_COMPLETION,
+                trace,
+                object(),
+            )
+
+        self.assertIsNone(recipe)
+        helper.assert_not_called()
 
     def test_submission_started_accepts_cleared_input_after_send_click(self) -> None:
         page = mock.Mock()

@@ -6,6 +6,13 @@ from typing import Any, Callable, TypeVar
 from urllib.parse import urlparse
 
 from codey import cancellation
+from codey.provider_flow import (
+    STAGE_COMPLETION,
+    STAGE_INPUT,
+    STAGE_NEW_CHAT,
+    STAGE_RETRY,
+    STAGES,
+)
 
 
 T = TypeVar("T")
@@ -31,13 +38,22 @@ FAILURE_KINDS = frozenset({
 class ControlMissing(TimeoutError):
     provider_failure_kind = FAILURE_CONTROL_MISSING
 
+    def __init__(self, message: str, *, stage: str = STAGE_INPUT) -> None:
+        self.provider_failure_stage = stage
+        super().__init__(message)
+
 
 class ResponseMissing(TimeoutError):
     provider_failure_kind = FAILURE_RESPONSE_MISSING
 
+    def __init__(self, message: str, *, stage: str = STAGE_COMPLETION) -> None:
+        self.provider_failure_stage = stage
+        super().__init__(message)
+
 
 class RateLimited(TimeoutError):
     provider_failure_kind = FAILURE_RATE_LIMITED
+    provider_failure_stage = STAGE_RETRY
 
 
 class AuthenticationRequired(RuntimeError):
@@ -57,6 +73,7 @@ class ProviderFailure:
     message: str
     time: str
     kind: str = FAILURE_TRANSIENT
+    stage: str = ""
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
@@ -87,6 +104,7 @@ def capture_provider_failure(
         message=str(error),
         time=(now or datetime.now(timezone.utc)).isoformat(),
         kind=_failure_kind(error),
+        stage=_failure_stage(error, action),
     )
 
 
@@ -120,6 +138,13 @@ def run_provider_action(
 def _failure_kind(error: BaseException) -> str:
     kind = str(getattr(error, "provider_failure_kind", FAILURE_TRANSIENT))
     return kind if kind in FAILURE_KINDS else FAILURE_TRANSIENT
+
+
+def _failure_stage(error: BaseException, action: str) -> str:
+    stage = str(getattr(error, "provider_failure_stage", "") or "")
+    if stage in STAGES:
+        return stage
+    return STAGE_NEW_CHAT if action == "new_chat" else ""
 
 
 def guard_provider_page(page: Any) -> None:

@@ -499,6 +499,7 @@ class QwenDriverTests(unittest.TestCase):
             mock.patch.object(qwen, "_final_text", return_value="raw delayed reply"),
             mock.patch.object(qwen.controls, "control_has_text", return_value=True),
             mock.patch.object(qwen.controls, "confirm_control"),
+            mock.patch.object(qwen.controls, "recover_flow") as recover_flow,
             mock.patch.object(qwen.cancellation, "wait"),
         ):
             reply = qwen.chat(
@@ -507,6 +508,40 @@ class QwenDriverTests(unittest.TestCase):
 
         self.assertEqual(reply, "raw delayed reply")
         self.assertTrue(attempt.confirmed)
+        recover_flow.assert_not_called()
+
+    def test_confirmed_stable_response_can_use_bounded_flow_fallback(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        with (
+            mock.patch.object(qwen, "wait_ready"),
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_fill_message"),
+            mock.patch.object(qwen, "_submit", return_value=attempt),
+            mock.patch.object(qwen, "_response_count", side_effect=[0, 1, 1, 1]),
+            mock.patch.object(qwen, "_last_text", return_value="stable reply"),
+            mock.patch.object(qwen, "_empty_response_visible", return_value=False),
+            mock.patch.object(qwen, "_generation_complete", return_value=False),
+            mock.patch.object(qwen, "_final_text", return_value="raw stable reply"),
+            mock.patch.object(
+                qwen,
+                "_visible_locator",
+                side_effect=[mock.Mock(), mock.Mock(), None],
+            ),
+            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+            mock.patch.object(qwen.controls, "confirm_control"),
+            mock.patch.object(qwen.provider_flow, "_handler") as helper,
+            mock.patch.object(qwen.cancellation, "wait"),
+        ):
+            reply = qwen.chat(
+                page, "hello", response_timeout=1, stable_ticks=0, tick=0, min_wait=0
+            )
+
+        self.assertEqual(reply, "raw stable reply")
+        self.assertTrue(attempt.confirmed)
+        helper.assert_not_called()
 
     def test_chat_retries_once_after_confirmed_submission_stalls(self) -> None:
         page = mock.Mock()
