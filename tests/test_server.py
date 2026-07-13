@@ -14,7 +14,7 @@ from codey.agent import RunResult
 from codey.changes import ChangeTracker
 from codey.consensus import ConsensusAdvice, ConsensusResult
 from codey.handoff import ConversationSnapshot
-from codey.provider_diagnostics import ProviderFailure
+from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_discovery import Discovery
 from codey.task_runner import _project_has_user_files
 
@@ -1156,6 +1156,63 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(len(task_done["changes"]["files"]), 3)
         self.assertEqual(task_done["changes"]["project"], td)
 
+    def test_run_task_recovers_failed_diff_before_review_and_receipt(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
+        reviewer = mock.Mock()
+        reviewer.name = "Xiaomi MiMo Chat"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.return_value = (
+            '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        )
+        final_changes = {
+            "ok": True,
+            "mode": "snapshot",
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M"}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("complete", "done", 3, False, True),
+            ),
+            mock.patch.object(
+                server,
+                "collect_changes",
+                side_effect=[{"ok": False, "error": "snapshot unavailable"}, final_changes],
+            ) as collect_changes,
+            mock.patch.object(
+                server,
+                "connect_existing_provider",
+                return_value=reviewer,
+            ) as connect_review,
+        ):
+            server._run_task("session-diff-retry", td, "task", 8, False, "deepseek")
+
+        self.assertEqual(collect_changes.call_count, 2)
+        connect_review.assert_called_once_with("mimo")
+        reviewer.send.assert_called_once()
+        review_prompt = reviewer.send.call_args.args[0]
+        self.assertIn("app.py", review_prompt)
+        self.assertIn(final_changes["diff"], review_prompt)
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertTrue(task_done["changed"])
+        self.assertEqual(task_done["changes"]["changed_count"], 1)
+        self.assertEqual(task_done["changes"]["files"], final_changes["files"])
+        self.assertEqual(task_done["receipt"]["changed_count"], 1)
+
     def test_run_task_uses_second_model_for_approved_review(self) -> None:
         state = server.State()
         events = state.subscribe()
@@ -1182,12 +1239,17 @@ class SessionThreadingTests(unittest.TestCase):
                 "agent_run",
                 return_value=RunResult("complete", "done", 3, False, True),
             ) as agent_run,
-            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value=changes,
+            ) as collect_changes,
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer) as connect_review,
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
         self.assertEqual(agent_run.call_count, 1)
+        collect_changes.assert_called_once()
         connect_review.assert_called_once_with("mimo")
         reviewer.new_chat.assert_called_once_with()
         reviewer.send.assert_called_once()
@@ -1251,6 +1313,79 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(review_event["text"], "MiMo suggested changes")
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["summary"], "review fixed")
+
+    def test_review_repair_uses_writer_failover(self) -> None:
+        state = server.State()
+        state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        reviewer = mock.Mock()
+        reviewer.send.return_value = (
+            '{"verdict":"changes_requested","summary":"Fix it",'
+            '"findings":[{"path":"app.py","issue":"Bug",'
+            '"suggested_fix":"Repair it"}]}'
+        )
+        provider_failure = ProviderActionError(ProviderFailure(
+            "DeepSeek",
+            "send",
+            "",
+            "",
+            "response missing",
+            "now",
+            "response_missing",
+        ))
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M"}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+        repaired_changes = {
+            "ok": True,
+            "changed_count": 2,
+            "files": [
+                {"path": "app.py", "status": "M"},
+                {"path": "tests/test_app.py", "status": "A"},
+            ],
+            "diff": "diff --git a/tests/test_app.py b/tests/test_app.py\n+test\n",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer) as get_provider,
+            mock.patch.object(
+                server,
+                "agent_run",
+                side_effect=[
+                    RunResult("first pass", "done", 2, False, True),
+                    provider_failure,
+                    RunResult("fixed by sibling", "done", 1, False, True),
+                ],
+            ) as agent_run,
+            mock.patch.object(
+                server,
+                "collect_changes",
+                side_effect=[changes, repaired_changes],
+            ) as collect_changes,
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+        ):
+            server._run_task("session-review-failover", td, "task", 12, False, "deepseek")
+
+        self.assertEqual(agent_run.call_count, 3)
+        self.assertEqual(collect_changes.call_count, 2)
+        self.assertEqual(get_provider.call_count, 3)
+        self.assertFalse(agent_run.call_args_list[1].kwargs["fresh_chat"])
+        self.assertTrue(agent_run.call_args_list[2].kwargs["fresh_chat"])
+        self.assertTrue(agent_run.call_args_list[2].kwargs["strict_fresh_chat"])
+        self.assertEqual(agent_run.call_args_list[2].kwargs["provider_id"], "mimo")
+        self.assertEqual(state.last_terminal_event["provider"], "mimo")
+        self.assertEqual(state.last_terminal_event["summary"], "fixed by sibling")
+        self.assertEqual(state.last_terminal_event["changes"]["changed_count"], 2)
+        self.assertEqual(
+            state.last_terminal_event["changes"]["files"],
+            repaired_changes["files"],
+        )
 
     def test_review_followup_without_changes_preserves_prior_checks_passed(self) -> None:
         state = server.State()

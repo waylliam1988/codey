@@ -137,6 +137,12 @@ class ProfileDoctorTests(unittest.TestCase):
         self.assertNotIn("private model answer", prompt)
         self.assertIn("markdown,prose", prompt)
 
+    def test_center_class_does_not_emit_enter_structure_hint(self) -> None:
+        self.assertNotIn("enter", profile_doctor._structure_hint("flex-y-center").split(","))
+
+    def test_exact_enter_class_emits_enter_structure_hint(self) -> None:
+        self.assertIn("enter", profile_doctor._structure_hint("enter").split(","))
+
 
 if __name__ == "__main__":
     unittest.main()

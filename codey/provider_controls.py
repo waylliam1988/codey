@@ -58,6 +58,13 @@ class _RevivalSend:
     path: Path | None = None
 
 
+@dataclass(frozen=True)
+class _PendingControl:
+    page: Any
+    fingerprint: dict[str, Any]
+    locator: Any | None = None
+
+
 class ControlTeachCancelled(RuntimeError):
     """Raised when the user stops a paused control teaching request."""
 
@@ -175,6 +182,17 @@ def locate_control(
             if _usable(control, require_enabled):
                 _remember_source(provider_id, action, "profile")
                 return control
+        pending_source = _source_for(provider_id, action)
+        if pending_source in {"pending", "staged"}:
+            control = pending_control(
+                page,
+                provider_id,
+                action,
+                require_enabled=require_enabled,
+            )
+            if control is not None:
+                _remember_source(provider_id, action, pending_source)
+                return control
         control = saved_control(page, provider_id, action, require_enabled=require_enabled)
         if control is not None:
             _remember_source(provider_id, action, "learned")
@@ -198,6 +216,36 @@ def locate_control(
             action,
             require_enabled=require_enabled,
         )
+    return None
+
+
+def pending_control(
+    page: Any,
+    provider_id: str,
+    action: str,
+    *,
+    require_enabled: bool = False,
+) -> Any | None:
+    """Reuse one uncommitted control only within its originating page."""
+    pending = _pending_map().get((provider_id, action))
+    if pending is None or pending.page is not page:
+        return None
+    if pending.locator is not None:
+        try:
+            if pending.locator.is_visible() and _usable(
+                pending.locator,
+                require_enabled,
+            ):
+                return pending.locator
+        except Exception:
+            pass
+    for selector in selector_candidates(pending.fingerprint, action):
+        try:
+            control = unique_visible_locator(page, selector)
+        except Exception:
+            continue
+        if _usable(control, require_enabled):
+            return control
     return None
 
 
@@ -276,7 +324,7 @@ def discover_control(
     control = found.locator
     if not _usable(control, require_enabled):
         return None
-    _remember_pending(provider_id, action, page, fingerprint)
+    _remember_pending(provider_id, action, page, fingerprint, control)
     _remember_source(provider_id, action, "pending")
     return control
 
@@ -420,7 +468,7 @@ def _remember_discovered_response(
     fingerprint = fingerprint_from_click(found.fingerprint)
     response = found.locator
     _response_locator_map()[provider_id] = response
-    _remember_pending(provider_id, CONTROL_RESPONSE, page, fingerprint)
+    _remember_pending(provider_id, CONTROL_RESPONSE, page, fingerprint, response)
     _remember_source(provider_id, CONTROL_RESPONSE, "pending")
     return response
 
@@ -585,6 +633,7 @@ def resolve_captured_control(request: ControlTeachRequest, captured: CapturedCon
             request.action,
             request.page,
             captured.fingerprint,
+            control,
         )
         _remember_source(request.provider_id, request.action, "pending")
         if request.action == CONTROL_RESPONSE:
@@ -639,10 +688,11 @@ def confirm_control(provider_id: str, action: str, *, path: Path | None = None) 
     """Promote the learned control only after the caller observed the expected state."""
     source = _source_for(provider_id, action)
     if source == "pending":
-        pending = _pending_map().pop((provider_id, action), None)
+        pending = _pending_map().get((provider_id, action))
         if pending is None:
             return
-        page, fingerprint = pending
+        page = pending.page
+        fingerprint = pending.fingerprint
         attempt = _revival_attempts().get(provider_id)
         if attempt is not None:
             attempt.staged[action] = fingerprint
@@ -650,6 +700,7 @@ def confirm_control(provider_id: str, action: str, *, path: Path | None = None) 
             attempt.path = path or attempt.path
             _remember_source(provider_id, action, "staged")
             return
+        _pending_map().pop((provider_id, action), None)
         try:
             save_control(
                 provider_id,
@@ -689,6 +740,7 @@ def reject_control(
         if attempt is not None:
             attempt.staged.pop(action, None)
             attempt.verified.discard(action)
+        _pending_map().pop((provider_id, action), None)
         _remember_source(provider_id, action, "")
         return
     if source == "pending":
@@ -732,7 +784,7 @@ def _source_map() -> dict[tuple[str, str], str]:
     return sources
 
 
-def _pending_map() -> dict[tuple[str, str], tuple[Any, dict[str, Any]]]:
+def _pending_map() -> dict[tuple[str, str], _PendingControl]:
     pending = getattr(_context, "pending", None)
     if pending is None:
         pending = {}
@@ -794,9 +846,17 @@ def _complete_revival_send(provider_id: str) -> None:
     except (OSError, ValueError):
         for action in attempt.staged:
             _remember_source(provider_id, action, "")
+        _clear_pending_controls(provider_id)
         return
+    _clear_pending_controls(provider_id)
     for action in attempt.staged:
         _remember_source(provider_id, action, "learned")
+
+
+def _clear_pending_controls(provider_id: str) -> None:
+    for key in tuple(_pending_map()):
+        if key[0] == provider_id:
+            _pending_map().pop(key, None)
 
 
 def _remember_pending(
@@ -804,8 +864,13 @@ def _remember_pending(
     action: str,
     page: Any,
     fingerprint: dict[str, Any],
+    locator: Any | None = None,
 ) -> None:
-    _pending_map()[(provider_id, action)] = (page, fingerprint)
+    _pending_map()[(provider_id, action)] = _PendingControl(
+        page,
+        fingerprint,
+        locator,
+    )
 
 
 def _remember_source(provider_id: str, action: str, source: str) -> None:
@@ -1028,6 +1093,13 @@ def _looks_like_send_button(fingerprint: dict[str, Any]) -> bool:
     tag = _clean(fingerprint.get("tag"), 32).lower()
     role = _clean(fingerprint.get("role"), 48).lower()
     if tag == "button" or role == "button":
+        return True
+    classes = {
+        _clean(item, 64).lower()
+        for item in fingerprint.get("classes", [])
+        if isinstance(item, str)
+    }
+    if "enter" in classes:
         return True
     text = _combined_text(fingerprint)
     return any(word in text for word in ("send", "submit", "发送", "送出"))

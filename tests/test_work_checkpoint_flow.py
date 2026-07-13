@@ -79,7 +79,11 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server, "agent_run", side_effect=resumed),
                 mock.patch.object(server, "collect_changes", return_value=changes),
                 mock.patch.object(server, "_run_project_audit", return_value=()),
-                mock.patch.object(server, "_run_review", return_value=None),
+                mock.patch.object(
+                    server,
+                    "_run_review",
+                    return_value=None,
+                ),
             ):
                 server._run_task("session-1", str(project), "Continue safely", 8, True, "deepseek")
 
@@ -114,6 +118,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
 
             def writer(*args, **kwargs):
                 if args[0] is first:
+                    kwargs["change_tracker"].capture_before("app.py")
                     (project / "app.py").write_text("after\n", encoding="utf-8")
                     kwargs["on_event"](RunEvent.tool_finished(
                         2,
@@ -137,13 +142,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 ))
                 return RunResult("finished", "done", 1, False, False, False)
 
-            changes = {
-                "ok": True,
-                "mode": "git",
-                "changed_count": 1,
-                "files": [{"path": "app.py", "status": "M"}],
-                "diff": "diff --git a/app.py b/app.py\n",
-            }
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(
@@ -152,9 +150,12 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     side_effect=[first, second],
                 ) as get_provider,
                 mock.patch.object(server, "agent_run", side_effect=writer) as agent_run,
-                mock.patch.object(server, "collect_changes", return_value=changes),
                 mock.patch.object(server, "_run_project_audit", return_value=()),
-                mock.patch.object(server, "_run_review", return_value=None),
+                mock.patch.object(
+                    server,
+                    "_run_review",
+                    return_value=None,
+                ) as run_review,
             ):
                 server._run_task(
                     "session-takeover",
@@ -175,6 +176,10 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             self.assertEqual(state.last_terminal_event["provider"], "mimo")
             self.assertEqual(state.active_run, None)
             self.assertEqual(agent_run.call_args_list[1].kwargs["max_turns"], 6)
+            run_review.assert_called_once()
+            done = state.last_terminal_event
+            self.assertTrue(done["changed"])
+            self.assertEqual(done["changes"]["files"][0]["path"], "app.py")
 
     def test_connect_failure_uses_next_writer_with_strict_fresh_chat(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -284,6 +289,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project.mkdir()
             target = project / "app.py"
             target.write_text("before\n", encoding="utf-8")
+            (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
             state = server.State(root / "state")
             state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
             providers = [self._provider(), self._provider()]
@@ -301,7 +307,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                         2,
                         ToolCall(
                             "run",
-                            {"path": ".", "command": "python -m unittest"},
+                            {"path": ".", "command": "python -m pytest"},
                         ),
                         ToolOutcome("ok", True, exit_code=0),
                     ))
@@ -347,6 +353,9 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             self.assertIn(
                 "Successful checks after the latest recorded change: (none)",
                 captured["work_checkpoint"],
+            )
+            self.assertFalse(
+                state.last_terminal_event["receipt"]["checks_passed"]
             )
 
     def test_stop_wins_over_provider_takeover(self) -> None:

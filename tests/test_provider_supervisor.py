@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
 
+from codey import cancellation
 from codey.provider_diagnostics import ProviderFailure
 from codey.provider_supervisor import (
     STATE_AUTH_REQUIRED,
@@ -116,13 +118,16 @@ class ProviderSupervisorTests(unittest.TestCase):
             supervisor.record_failure("qwen", failure("rate_limited"))
             now[0] = 500.0
             provider = mock.Mock()
-            provider.send.side_effect = lambda prompt: prompt.rsplit(" ", 1)[-1]
+            provider.send.side_effect = (
+                lambda prompt, timeout: prompt.rsplit(" ", 1)[-1]
+            )
 
             ok = run_half_open_canary("qwen", provider, supervisor)
 
             self.assertTrue(ok)
-            provider.new_chat.assert_called_once_with()
+            self.assertGreater(provider.new_chat.call_args.kwargs["timeout"], 0)
             prompt = provider.send.call_args.args[0]
+            self.assertGreater(provider.send.call_args.kwargs["timeout"], 0)
             self.assertIn("CODEY_CANARY_", prompt)
             self.assertNotIn("project", prompt.lower())
             self.assertNotIn("user", prompt.lower())
@@ -143,6 +148,86 @@ class ProviderSupervisorTests(unittest.TestCase):
 
             self.assertFalse(run_half_open_canary("qwen", provider, supervisor))
             self.assertEqual(supervisor.get("qwen").state, STATE_OPEN)
+
+    def test_half_open_canary_propagates_user_stop(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            now = [100.0]
+            supervisor = ProviderSupervisor(td, clock=lambda: now[0])
+            supervisor.record_failure("qwen", failure("rate_limited"))
+            now[0] = 500.0
+            provider = mock.Mock()
+            provider.new_chat.side_effect = cancellation.TaskCancelled("stopped")
+
+            with self.assertRaises(cancellation.TaskCancelled):
+                run_half_open_canary("qwen", provider, supervisor)
+
+            provider.send.assert_not_called()
+
+    def test_half_open_canary_shares_one_deadline_between_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            now = [100.0]
+            supervisor = ProviderSupervisor(td, clock=lambda: now[0])
+            supervisor.record_failure("qwen", failure("rate_limited"))
+            now[0] = 500.0
+            provider = mock.Mock()
+            provider.send.side_effect = (
+                lambda prompt, timeout: prompt.rsplit(" ", 1)[-1]
+            )
+
+            with (
+                mock.patch(
+                    "codey.provider_supervisor.start_deadline",
+                    return_value=123.0,
+                ),
+                mock.patch(
+                    "codey.provider_supervisor.remaining",
+                    side_effect=[30.0, 5.0],
+                ) as remaining_budget,
+                mock.patch("codey.provider_supervisor.cancellation.deadline_scope") as scope,
+            ):
+                scope.return_value.__enter__.return_value = None
+                scope.return_value.__exit__.return_value = False
+                self.assertTrue(run_half_open_canary("qwen", provider, supervisor))
+
+            provider.new_chat.assert_called_once_with(timeout=30.0)
+            self.assertEqual(provider.send.call_args.kwargs["timeout"], 5.0)
+            self.assertEqual(
+                remaining_budget.call_args_list,
+                [mock.call(123.0, 45.0), mock.call(123.0, 45.0)],
+            )
+
+    def test_failure_counter_resets_when_failure_family_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = ProviderSupervisor(td, clock=lambda: 100.0)
+            supervisor.record_failure("qwen", failure("transient"))
+            supervisor.record_failure("qwen", failure("transient"))
+
+            structural = supervisor.record_failure(
+                "qwen", failure("control_missing")
+            )
+            opened = supervisor.record_failure(
+                "qwen", failure("response_missing")
+            )
+
+            self.assertEqual(structural.consecutive_failures, 1)
+            self.assertEqual(structural.state, STATE_DEGRADED)
+            self.assertEqual(opened.consecutive_failures, 2)
+            self.assertEqual(opened.state, STATE_OPEN)
+
+    def test_concurrent_health_updates_do_not_lose_counts(self) -> None:
+        supervisor = ProviderSupervisor()
+
+        def record_successes() -> None:
+            for _ in range(50):
+                supervisor.record_success("qwen")
+
+        threads = [threading.Thread(target=record_successes) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(supervisor.get("qwen").success_count, 400)
 
 
 if __name__ == "__main__":

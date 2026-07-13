@@ -156,6 +156,18 @@ def _safe_verification_map(
         return ""
 
 
+def _changed_state(changes: object) -> bool | None:
+    """Return final diff state, or None when change collection was unavailable."""
+    if not isinstance(changes, dict) or changes.get("ok") is not True:
+        return None
+    files = changes.get("files")
+    changed_count = changes.get("changed_count")
+    return bool(
+        (isinstance(changed_count, int) and changed_count > 0)
+        or (isinstance(files, list) and files)
+    )
+
+
 class TaskRunner:
     """Coordinate one task while leaving transport and storage outside."""
 
@@ -230,6 +242,7 @@ class TaskRunner:
 
         recent_events: list[str] = []
         task_changes: dict | None = None
+        task_changes_dirty = False
         evidence = ExecutionEvidence()
         work_checkpoint: WorkCheckpoint | None = None
         resumed_checkpoint = False
@@ -583,150 +596,209 @@ class TaskRunner:
                 )
                 tried_writers = set(preflight_tried)
                 writer_switches = preflight_switches
-                writer_turns_used = 0
-                while True:
-                    attempt_turn = 0
 
-                    def on_writer_event(event: RunEvent) -> None:
-                        nonlocal attempt_turn
-                        attempt_turn = max(attempt_turn, event.turn)
-                        on_event(event)
-
+                def refresh_takeover_checkpoint() -> None:
+                    nonlocal work_checkpoint
+                    nonlocal checkpoint_prompt
+                    nonlocal resumed_changed_files
+                    nonlocal resumed_successful_checks
+                    if self.work_checkpoints is None or work_checkpoint is None:
+                        return
                     try:
-                        result = self.agent_run(
-                            provider,
-                            Path(project),
-                            agent_task,
-                            max_turns=max(1, max_turns - writer_turns_used),
-                            on_event=on_writer_event,
-                            on_shell_request=on_shell_request,
-                            stop_flag=state.stop_flag,
-                            fresh_chat=agent_fresh_chat,
-                            strict_fresh_chat=writer_switches > 0,
-                            change_tracker=tracker,
-                            conversation=conversation,
-                            provider_id=provider_id,
-                            handoff=handoff,
-                            project_facts=verified_facts,
-                            project_map=project_map,
-                            work_checkpoint=checkpoint_prompt,
-                            verification_candidates=verification_candidates,
-                            verification_candidate_loader=lambda: (
-                                _verification_candidates(
-                                    project,
-                                    verification_verified_commands,
-                                    verification_additional_commands,
-                                )
-                            ),
-                            verification_changed_files=resumed_changed_files,
-                            verification_successful_checks=resumed_successful_checks,
+                        work_checkpoint = self.work_checkpoints.reconcile(work_checkpoint)
+                        if work_checkpoint.workspace_changed:
+                            evidence.invalidate_checks()
+                        checkpoint_prompt = render_work_checkpoint(work_checkpoint)
+                        resumed_changed_files = tuple(
+                            item.path for item in work_checkpoint.changed_files
                         )
-                        if supervisor is not None:
-                            supervisor.record_success(provider_id)
-                        result = replace(
-                            result,
-                            turns=min(max_turns, writer_turns_used + result.turns),
+                        resumed_successful_checks = tuple(
+                            VerificationCandidate(item.command, item.cwd, "checkpoint")
+                            for item in work_checkpoint.successful_checks_after_last_change
                         )
-                        break
-                    except ProviderActionError as exc:
-                        if state.stop_flag.is_set():
-                            raise cancellation.TaskCancelled("task stopped") from exc
-                        writer_turns_used += max(1, attempt_turn)
-                        if supervisor is not None:
-                            supervisor.record_failure(provider_id, exc.failure)
-                        state.set_provider_session(provider_id, None)
-                        try:
-                            provider.close()
-                        except Exception:
-                            pass
-                        if writer_switches >= 2 or writer_turns_used >= max_turns:
-                            raise
-                        while True:
-                            next_provider_id = (
-                                supervisor.select(
-                                    "",
-                                    provider_failover_order(),
-                                    excluded=tried_writers,
-                                )
-                                if supervisor is not None
-                                else next(
-                                    (
-                                        item
-                                        for item in provider_failover_order()
-                                        if item not in tried_writers
-                                    ),
-                                    None,
-                                )
+                    except (OSError, ValueError):
+                        checkpoint_prompt = ""
+                        resumed_changed_files = ()
+                        resumed_successful_checks = ()
+
+                def activate_next_writer(origin: ProviderActionError) -> None:
+                    nonlocal provider
+                    nonlocal provider_id
+                    nonlocal writer_switches
+                    while True:
+                        next_provider_id = (
+                            supervisor.select(
+                                "",
+                                provider_failover_order(),
+                                excluded=tried_writers,
                             )
-                            if next_provider_id is None:
-                                raise exc
-                            provider_id = next_provider_id
-                            tried_writers.add(provider_id)
-                            writer_switches += 1
-                            state.switch_run_provider(run_id, provider_id)
-                            conversation.update_snapshot(replace(
-                                conversation.snapshot,
+                            if supervisor is not None
+                            else next(
+                                (
+                                    item
+                                    for item in provider_failover_order()
+                                    if item not in tried_writers
+                                ),
+                                None,
+                            )
+                        )
+                        if next_provider_id is None:
+                            raise origin
+                        provider_id = next_provider_id
+                        tried_writers.add(provider_id)
+                        writer_switches += 1
+                        state.switch_run_provider(run_id, provider_id)
+                        conversation.update_snapshot(replace(
+                            conversation.snapshot,
+                            provider_id=provider_id,
+                            blocker="",
+                        ))
+                        try:
+                            provider = state.get_provider(provider_id)
+                        except cancellation.TaskCancelled:
+                            raise
+                        except Exception as connect_error:
+                            failure = self.capture_provider_failure(
+                                model=PROVIDER_LABELS.get(provider_id, provider_id),
+                                action="connect",
+                                page=None,
+                                error=connect_error,
+                            )
+                            if supervisor is not None:
+                                supervisor.record_failure(provider_id, failure)
+                            if writer_switches >= 2:
+                                raise ProviderActionError(failure) from connect_error
+                            continue
+                        if (
+                            supervisor is not None
+                            and supervisor.needs_canary(provider_id)
+                            and not run_half_open_canary(
+                                provider_id,
+                                provider,
+                                supervisor,
+                            )
+                        ):
+                            try:
+                                provider.close()
+                            except Exception:
+                                pass
+                            if writer_switches >= 2:
+                                raise origin
+                            continue
+                        refresh_takeover_checkpoint()
+                        return
+
+                def run_writer_with_failover(
+                    writer_task: str,
+                    turn_budget: int,
+                    *,
+                    fresh: bool,
+                    factual_handoff: str = "",
+                    changed_files: tuple[str, ...] = (),
+                    successful_checks: tuple[VerificationCandidate, ...] = (),
+                ) -> RunResult:
+                    nonlocal provider
+                    nonlocal writer_switches
+                    turns_used = 0
+                    current_fresh = fresh
+                    current_handoff = factual_handoff
+                    current_changed_files = changed_files
+                    current_successful_checks = successful_checks
+                    if provider is None:
+                        try:
+                            provider = state.get_provider(provider_id)
+                        except cancellation.TaskCancelled:
+                            raise
+                        except Exception as connect_error:
+                            failure = self.capture_provider_failure(
+                                model=PROVIDER_LABELS.get(provider_id, provider_id),
+                                action="connect",
+                                page=None,
+                                error=connect_error,
+                            )
+                            if supervisor is not None:
+                                supervisor.record_failure(provider_id, failure)
+                            state.set_provider_session(provider_id, None)
+                            error = ProviderActionError(failure)
+                            if writer_switches >= 2:
+                                raise error from connect_error
+                            activate_next_writer(error)
+                            current_fresh = True
+                            current_changed_files = resumed_changed_files
+                            current_successful_checks = resumed_successful_checks
+                    while True:
+                        attempt_turn = 0
+
+                        def on_writer_event(event: RunEvent) -> None:
+                            nonlocal attempt_turn
+                            attempt_turn = max(attempt_turn, event.turn)
+                            on_event(event)
+
+                        try:
+                            writer_result = self.agent_run(
+                                provider,
+                                Path(project),
+                                writer_task,
+                                max_turns=max(1, turn_budget - turns_used),
+                                on_event=on_writer_event,
+                                on_shell_request=on_shell_request,
+                                stop_flag=state.stop_flag,
+                                fresh_chat=current_fresh,
+                                strict_fresh_chat=writer_switches > 0,
+                                change_tracker=tracker,
+                                conversation=conversation,
                                 provider_id=provider_id,
-                                blocker="",
-                            ))
+                                handoff=current_handoff,
+                                project_facts=verified_facts,
+                                project_map=project_map,
+                                work_checkpoint=checkpoint_prompt,
+                                verification_candidates=verification_candidates,
+                                verification_candidate_loader=lambda: (
+                                    _verification_candidates(
+                                        project,
+                                        verification_verified_commands,
+                                        verification_additional_commands,
+                                    )
+                                ),
+                                verification_changed_files=current_changed_files,
+                                verification_successful_checks=(
+                                    current_successful_checks
+                                ),
+                            )
+                            if supervisor is not None:
+                                supervisor.record_success(provider_id)
+                            return replace(
+                                writer_result,
+                                turns=min(turn_budget, turns_used + writer_result.turns),
+                            )
+                        except ProviderActionError as exc:
+                            if state.stop_flag.is_set():
+                                raise cancellation.TaskCancelled("task stopped") from exc
+                            turns_used += max(1, attempt_turn)
+                            if supervisor is not None:
+                                supervisor.record_failure(provider_id, exc.failure)
+                            state.set_provider_session(provider_id, None)
                             try:
-                                provider = state.get_provider(provider_id)
-                            except cancellation.TaskCancelled:
+                                provider.close()
+                            except Exception:
+                                pass
+                            provider = None
+                            if writer_switches >= 2 or turns_used >= turn_budget:
                                 raise
-                            except Exception as connect_error:
-                                failure = self.capture_provider_failure(
-                                    model=PROVIDER_LABELS.get(provider_id, provider_id),
-                                    action="connect",
-                                    page=None,
-                                    error=connect_error,
-                                )
-                                if supervisor is not None:
-                                    supervisor.record_failure(provider_id, failure)
-                                if writer_switches >= 2:
-                                    raise ProviderActionError(failure) from connect_error
-                                continue
-                            if (
-                                supervisor is not None
-                                and supervisor.needs_canary(provider_id)
-                                and not run_half_open_canary(
-                                    provider_id,
-                                    provider,
-                                    supervisor,
-                                )
-                            ):
-                                try:
-                                    provider.close()
-                                except Exception:
-                                    pass
-                                if writer_switches >= 2:
-                                    raise exc
-                                continue
-                            break
-                        if self.work_checkpoints is not None and work_checkpoint is not None:
-                            try:
-                                work_checkpoint = self.work_checkpoints.reconcile(
-                                    work_checkpoint
-                                )
-                                checkpoint_prompt = render_work_checkpoint(
-                                    work_checkpoint
-                                )
-                                resumed_changed_files = tuple(
-                                    item.path for item in work_checkpoint.changed_files
-                                )
-                                resumed_successful_checks = tuple(
-                                    VerificationCandidate(
-                                        item.command,
-                                        item.cwd,
-                                        "checkpoint",
-                                    )
-                                    for item in (
-                                        work_checkpoint.successful_checks_after_last_change
-                                    )
-                                )
-                            except (OSError, ValueError):
-                                checkpoint_prompt = ""
-                        agent_fresh_chat = True
-                        handoff = ""
+                            activate_next_writer(exc)
+                            current_fresh = True
+                            current_handoff = ""
+                            current_changed_files = resumed_changed_files
+                            current_successful_checks = resumed_successful_checks
+
+                result = run_writer_with_failover(
+                    agent_task,
+                    max_turns,
+                    fresh=agent_fresh_chat,
+                    factual_handoff=handoff,
+                    changed_files=resumed_changed_files,
+                    successful_checks=resumed_successful_checks,
+                )
                 if (
                     resumed_checkpoint
                     and work_checkpoint is not None
@@ -735,11 +807,15 @@ class TaskRunner:
                     and evidence.has_successful_checks
                 ):
                     result = replace(result, checks_passed=True)
-                task_changed = result.changed or bool(
-                    resumed_checkpoint
-                    and work_checkpoint is not None
-                    and work_checkpoint.changed_files
+                checkpoint_changed = bool(
+                    work_checkpoint is not None and work_checkpoint.changed_files
                 )
+                task_changed = result.changed or checkpoint_changed
+                task_changes = self.collect_changes(project, tracker)
+                collected_changed = _changed_state(task_changes)
+                task_changes_dirty = collected_changed is None
+                if collected_changed is not None:
+                    task_changed = collected_changed
                 if result.stop_reason == "done":
                     update_checkpoint(
                         lambda store, item: store.set_status(item, "ready_for_review")
@@ -782,8 +858,18 @@ class TaskRunner:
                     result.stop_reason == "done"
                     and task_changed
                     and not state.stop_flag.is_set()
+                    and task_changes_dirty
                 ):
                     task_changes = self.collect_changes(project, tracker)
+                    collected_changed = _changed_state(task_changes)
+                    task_changes_dirty = collected_changed is None
+                    if collected_changed is not None:
+                        task_changed = collected_changed
+                if (
+                    result.stop_reason == "done"
+                    and task_changed
+                    and not state.stop_flag.is_set()
+                ):
                     verified_facts = (
                         self.project_facts.render(project)
                         if self.project_facts is not None
@@ -851,41 +937,22 @@ class TaskRunner:
                                     review,
                                     change_brief=rendered_change_brief,
                                 )
-                                provider = state.get_provider(provider_id)
                                 verified_facts = (
                                     self.project_facts.render(project)
                                     if self.project_facts is not None
                                     else ""
                                 )
                                 project_map = _safe_project_map(project, verified_facts, task)
-                                result = self.agent_run(
-                                    provider,
-                                    Path(project),
+                                result = run_writer_with_failover(
                                     followup,
-                                    max_turns=min(max_turns, self.review_fix_turns),
-                                    on_event=on_event,
-                                    on_shell_request=on_shell_request,
-                                    stop_flag=state.stop_flag,
-                                    fresh_chat=False,
-                                    change_tracker=tracker,
-                                    conversation=conversation,
-                                    provider_id=provider_id,
-                                    project_facts=verified_facts,
-                                    project_map=project_map,
-                                    verification_candidates=verification_candidates,
-                                    verification_candidate_loader=lambda: (
-                                        _verification_candidates(
-                                            project,
-                                            verification_verified_commands,
-                                            verification_additional_commands,
-                                        )
-                                    ),
-                                    verification_changed_files=tuple(
+                                    min(max_turns, self.review_fix_turns),
+                                    fresh=False,
+                                    changed_files=tuple(
                                         str(item.get("path") or "")
                                         for item in (task_changes.get("files") or [])
                                         if item.get("path")
                                     ),
-                                    verification_successful_checks=tuple(
+                                    successful_checks=tuple(
                                         VerificationCandidate(
                                             item.command,
                                             item.cwd,
@@ -894,6 +961,7 @@ class TaskRunner:
                                         for item in evidence.successful_checks
                                     ),
                                 )
+                                task_changes_dirty = True
                                 if result.stop_reason == "done":
                                     update_checkpoint(
                                         lambda store, item: store.set_status(
@@ -961,7 +1029,11 @@ class TaskRunner:
                 state.emit({"type": "reply", "session_id": session_id, "text": reply})
                 result = RunResult("", "done", 1)
             if project:
-                task_changes = self.collect_changes(project, tracker)
+                if task_changes is None or task_changes_dirty:
+                    task_changes = self.collect_changes(project, tracker)
+                collected_changed = _changed_state(task_changes)
+                if collected_changed is not None:
+                    task_changed = collected_changed
                 files = tuple(
                     str(item.get("path") or "")
                     for item in (task_changes.get("files") or [])

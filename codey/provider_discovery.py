@@ -102,10 +102,23 @@ def score_control_candidate(
             score += 8
         return score
 
-    if action != SEND_BUTTON or (tag != "button" and role != "button"):
+    class_hints = {
+        str(item).lower()
+        for item in fingerprint["classes"]
+        if isinstance(item, str)
+    }
+    class_clickable = bool(
+        "enter" in class_hints
+        or any("send" in item or "submit" in item for item in class_hints)
+    )
+    if action != SEND_BUTTON or (
+        tag != "button" and role != "button" and not class_clickable
+    ):
         return -1000
     score += 28
-    if any(word in text for word in ("send", "submit", "发送", "送出")):
+    if "enter" in class_hints or any(
+        word in text for word in ("send", "submit", "发送", "送出")
+    ):
         score += 48
     if "primary" in text:
         score += 12
@@ -282,7 +295,7 @@ def _clean(value: Any, limit: int) -> str:
 
 _DISCOVER_CONTROLS_JS = r"""
 ({ token, anchorBox }) => {
-  const selector = 'button,[role="button"],textarea,input,[role="textbox"],[contenteditable="true"],[contenteditable="plaintext-only"]';
+  const selector = 'button,[role="button"],[class~="enter"],[class*="send"],[class*="submit"],textarea,input,[role="textbox"],[contenteditable="true"],[contenteditable="plaintext-only"]';
   const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
   const items = []; let index = 0;
   for (const el of document.querySelectorAll(selector)) {

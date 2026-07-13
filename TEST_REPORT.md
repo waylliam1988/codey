@@ -1,4 +1,14 @@
-# Codey 0.1.35 Test Report
+# Codey 0.1.36 Test Report
+
+## 0.1.36 Provider Revival and Writer Takeover
+
+This release adds atomic provider-control revival, passive provider health,
+bounded half-open canaries, and checkpoint-based Writer takeover. Deterministic
+tests cover typed failure boundaries, cooldown and restart behavior, Stop
+priority, strict fresh-chat takeover, shared turn budgets, stale-check
+invalidation, final Diff ownership across Writers, and Review-repair failover.
+The four-provider live fault-injection matrix is recorded in the dedicated
+section below.
 
 ## 0.1.35 Default Post-edit Verification
 
@@ -1290,7 +1300,29 @@ Deterministic local fault injection covers:
   hidden advisors, and Reviewer
 - no takeover for ordinary local Python exceptions or agent stop reasons
 
-No real web-provider smoke was run for this control-plane change.
+Live Edge/CDP fault injection was run after the deterministic control-plane
+tests. Each target's production message-box and send-button selectors were
+replaced in memory, send-button heuristic selection was disabled, and a
+healthy sibling selected among bounded DOM candidates. Recovery state used a
+temporary store and did not modify the user's provider controls.
+
+| Target | Sibling | Candidates | First recovery | Persisted reuse | Result |
+|---|---|---:|---:|---:|---|
+| DeepSeek | MiMo | 5 | 30.05s | 5.50s | provisional -> active |
+| Qwen | DeepSeek | 2 | 45.20s | 6.08s | provisional -> active |
+| MiMo | DeepSeek | 8 | 20.52s | 12.25s | provisional -> active |
+| GLM | DeepSeek | 2 | 46.56s | 7.73s | provisional -> active |
+
+The smoke exposed and closed two real recovery gaps before the final pass:
+
+- Qwen could submit and receive a reply but lost the recovered send-button
+  locator before its generation-complete check. Transaction-local locators now
+  survive through staged validation and are cleared on success, abort, or
+  explicit rejection; they are never persisted or reused across pages.
+- GLM's send control is a `div.enter` without button semantics and was absent
+  from bounded discovery. Discovery now admits only explicit send/submit/enter
+  class candidates, with exact-token handling so `center` cannot impersonate
+  `enter`.
 
 ## Release Notes
 

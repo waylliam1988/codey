@@ -62,6 +62,15 @@ python -B tests\manual\default_verification_ab.py `
   --arm current
 ```
 
+`provider_revival_smoke.py` performs a live, temporary-store fault injection
+for Provider Revival. It invalidates the selected provider's composer
+selectors in memory, requires a sibling model to select the send button, then
+checks that a second natural send reuses and promotes the recovered bundle:
+
+```powershell
+python -B tests\manual\provider_revival_smoke.py --provider all --port 9222
+```
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 

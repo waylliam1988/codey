@@ -128,6 +128,11 @@ class ExecutionEvidence:
     def has_successful_checks(self) -> bool:
         return bool(self.checks_after_edit)
 
+    def invalidate_checks(self) -> None:
+        """Drop check facts after an out-of-band workspace change."""
+        self.checks_after_edit.clear()
+        self.failed_checks_after_edit.clear()
+
     def render_for_review(self) -> str:
         all_reads = self._unique(item.path for item in self.reads if item.ok)
         current_reads = self._unique(

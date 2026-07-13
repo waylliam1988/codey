@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.35-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.36-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.35`
+Version: `0.1.36`
 
 [Version history](CHANGELOG.md)
 
@@ -79,7 +79,8 @@ This is not about replacing professional tools. It is about making the first ste
 - Resume the same chat after a Codey restart or model switch from one bounded
   factual handoff plus recent visible conversation context
 - Keep non-Git diff and restore available across Codey restarts
-- Recover from small provider-page DOM changes with bounded, verified discovery
+- Recover changed composer controls through bounded local discovery or a
+  healthy sibling model, then verify, promote, and roll back the local bundle
 - Hand an interrupted project Writer to a healthy sibling model from bounded
   local checkpoint facts, with at most two switches and no repeated uncertain
   submission to the failed model
@@ -107,6 +108,11 @@ This is not about replacing professional tools. It is about making the first ste
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
 
 If a provider page changes, Codey first attempts the bounded recovery above. When it still cannot identify a control safely, it pauses and asks you to click that control once. It stores only the latest verified control record, never the page DOM or your conversation, so the main workflow stays quiet.
+
+Recovered controls are committed only after the original message is submitted
+once and a new answer is read. The first successful bundle remains provisional;
+the next natural success promotes it, while explicit repeated control failures
+restore the previous bundle. Normal healthy sends do not call sibling models.
 
 If a project Writer fails with an explicit provider-page error, Codey can move
 the unfinished task to a healthy sibling model. The new Writer starts a clean
@@ -361,6 +367,7 @@ codey/
   provider_profiles.py      validated profile loader
   provider_discovery.py     bounded DOM candidate discovery and scoring
   provider_controls.py      verified recovery, learning, and human teaching
+  provider_revival.py       atomic control bundles, promotion, and rollback
   provider_submission.py    shared one-shot remote submission boundary
   provider_supervisor.py    passive health circuit, Writer selection, and canary
   profile_doctor.py         one-shot sanitized candidate selection

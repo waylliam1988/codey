@@ -4,6 +4,24 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.36 - Provider Revival and Writer Takeover
+
+Provider recovery now works as one bounded transaction across the message box,
+send button, and answer read. When local discovery is uncertain, Codey can ask
+up to three healthy sibling models to select among sanitized structural
+candidates, verify the choice through one real send, save a provisional control
+bundle atomically, promote it after the next natural success, and roll it back
+after explicit repeated control failures.
+
+A passive provider-health circuit now distinguishes structural failures,
+transient errors, rate limits, uncertain submissions, and authentication or
+challenge states. A Writer that fails with a typed provider-page error can hand
+the unfinished task to a healthy sibling in a strict fresh chat using bounded
+checkpoint facts. Switches and turn budgets remain bounded; Stop, ordinary
+tool failures, protocol failures, and uncertain submissions never trigger an
+unsafe resend. Four-provider Edge/CDP fault injection verified recovery and
+persisted reuse for DeepSeek, Qwen, MiMo, and GLM.
+
 ## 0.1.35 - Default Post-edit Verification
 
 Code changes now receive one bounded verification reminder when Codey can prove

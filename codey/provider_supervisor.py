@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import time
 import secrets
+import threading
+import time
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Callable, Iterable
 
 from codey.local_store import read_json, write_json_atomic
+from codey import cancellation
 from codey.provider_diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     FAILURE_CHALLENGE_REQUIRED,
@@ -19,6 +21,7 @@ from codey.provider_diagnostics import (
     FAILURE_TRANSIENT,
     ProviderFailure,
 )
+from codey.provider_timeouts import remaining, start_deadline
 
 
 STATE_UNKNOWN = "unknown"
@@ -42,6 +45,7 @@ TRANSIENT_THRESHOLD = 3
 STRUCTURAL_COOLDOWN = 300.0
 TRANSIENT_COOLDOWN = 90.0
 RATE_LIMIT_COOLDOWN = 300.0
+CANARY_TIMEOUT = 45.0
 
 
 @dataclass(frozen=True)
@@ -67,20 +71,22 @@ class ProviderSupervisor:
     ) -> None:
         self.path = Path(state_home) / "provider-health.json" if state_home else None
         self.clock = clock
+        self._lock = threading.RLock()
         self._health = self._load()
 
     def get(self, provider_id: str) -> ProviderHealth:
-        key = _provider_id(provider_id)
-        health = self._health.get(key, ProviderHealth())
-        if health.state == STATE_OPEN and health.circuit_open_until <= self.clock():
-            health = replace(
-                health,
-                state=STATE_DEGRADED,
-                circuit_open_until=0.0,
-            )
-            self._health[key] = health
-            self._save()
-        return health
+        with self._lock:
+            key = _provider_id(provider_id)
+            health = self._health.get(key, ProviderHealth())
+            if health.state == STATE_OPEN and health.circuit_open_until <= self.clock():
+                health = replace(
+                    health,
+                    state=STATE_DEGRADED,
+                    circuit_open_until=0.0,
+                )
+                self._health[key] = health
+                self._save()
+            return health
 
     def is_available(self, provider_id: str) -> bool:
         return self.get(provider_id).state not in {STATE_OPEN, STATE_AUTH_REQUIRED}
@@ -91,14 +97,15 @@ class ProviderSupervisor:
 
     def prepare_user_selected(self, provider_id: str) -> ProviderHealth:
         """Allow an explicit user retry to verify that login/challenge was cleared."""
-        key = _provider_id(provider_id)
-        current = self.get(key)
-        if current.state != STATE_AUTH_REQUIRED:
-            return current
-        return self._store(
-            key,
-            replace(current, state=STATE_DEGRADED, circuit_open_until=0.0),
-        )
+        with self._lock:
+            key = _provider_id(provider_id)
+            current = self.get(key)
+            if current.state != STATE_AUTH_REQUIRED:
+                return current
+            return self._store(
+                key,
+                replace(current, state=STATE_DEGRADED, circuit_open_until=0.0),
+            )
 
     def allows_revival(self, provider_id: str) -> bool:
         health = self.get(provider_id)
@@ -108,50 +115,79 @@ class ProviderSupervisor:
         )
 
     def record_success(self, provider_id: str, *, canary: bool = False) -> ProviderHealth:
-        key = _provider_id(provider_id)
-        current = self.get(key)
-        state = STATE_DEGRADED if canary else STATE_HEALTHY
-        updated = replace(
-            current,
-            state=state,
-            consecutive_failures=0,
-            last_failure_kind="",
-            last_success_at=self.clock(),
-            circuit_open_until=0.0,
-            success_count=current.success_count + 1,
-        )
-        return self._store(key, updated)
+        with self._lock:
+            key = _provider_id(provider_id)
+            current = self.get(key)
+            state = STATE_DEGRADED if canary else STATE_HEALTHY
+            updated = replace(
+                current,
+                state=state,
+                consecutive_failures=0,
+                last_failure_kind="",
+                last_success_at=self.clock(),
+                circuit_open_until=0.0,
+                success_count=current.success_count + 1,
+            )
+            return self._store(key, updated)
 
     def record_failure(self, provider_id: str, failure: ProviderFailure) -> ProviderHealth:
-        key = _provider_id(provider_id)
-        current = self.get(key)
-        now = self.clock()
-        count = current.consecutive_failures + 1
-        state = STATE_DEGRADED
-        open_until = 0.0
-        if failure.kind in AUTH_FAILURES:
-            state = STATE_AUTH_REQUIRED
-        elif failure.kind == FAILURE_RATE_LIMITED:
-            state = STATE_OPEN
-            open_until = now + RATE_LIMIT_COOLDOWN
-        elif failure.kind in STRUCTURAL_FAILURES and count >= STRUCTURAL_THRESHOLD:
-            state = STATE_OPEN
-            open_until = now + STRUCTURAL_COOLDOWN
-        elif failure.kind == FAILURE_TRANSIENT and count >= TRANSIENT_THRESHOLD:
-            state = STATE_OPEN
-            open_until = now + TRANSIENT_COOLDOWN
-        elif failure.kind == FAILURE_SUBMISSION_UNCERTAIN:
+        with self._lock:
+            key = _provider_id(provider_id)
+            current = self.get(key)
+            now = self.clock()
+            same_family = _failure_family(current.last_failure_kind) == _failure_family(
+                failure.kind
+            )
+            count = current.consecutive_failures + 1 if same_family else 1
             state = STATE_DEGRADED
-        updated = replace(
-            current,
-            state=state,
-            consecutive_failures=count,
-            last_failure_kind=failure.kind,
-            last_failure_at=now,
-            circuit_open_until=open_until,
-            failure_count=current.failure_count + 1,
-        )
-        return self._store(key, updated)
+            open_until = 0.0
+            if failure.kind in AUTH_FAILURES:
+                state = STATE_AUTH_REQUIRED
+            elif failure.kind == FAILURE_RATE_LIMITED:
+                state = STATE_OPEN
+                open_until = now + RATE_LIMIT_COOLDOWN
+            elif failure.kind in STRUCTURAL_FAILURES and count >= STRUCTURAL_THRESHOLD:
+                state = STATE_OPEN
+                open_until = now + STRUCTURAL_COOLDOWN
+            elif failure.kind == FAILURE_TRANSIENT and count >= TRANSIENT_THRESHOLD:
+                state = STATE_OPEN
+                open_until = now + TRANSIENT_COOLDOWN
+            elif failure.kind == FAILURE_SUBMISSION_UNCERTAIN:
+                state = STATE_DEGRADED
+            updated = replace(
+                current,
+                state=state,
+                consecutive_failures=count,
+                last_failure_kind=failure.kind,
+                last_failure_at=now,
+                circuit_open_until=open_until,
+                failure_count=current.failure_count + 1,
+            )
+            return self._store(key, updated)
+
+    def record_canary_failure(
+        self,
+        provider_id: str,
+        failure: ProviderFailure,
+    ) -> ProviderHealth:
+        """A failed half-open probe immediately reopens its circuit."""
+        with self._lock:
+            updated = self.record_failure(provider_id, failure)
+            if updated.state in {STATE_OPEN, STATE_AUTH_REQUIRED}:
+                return updated
+            cooldown = (
+                STRUCTURAL_COOLDOWN
+                if failure.kind in STRUCTURAL_FAILURES
+                else TRANSIENT_COOLDOWN
+            )
+            return self._store(
+                _provider_id(provider_id),
+                replace(
+                    updated,
+                    state=STATE_OPEN,
+                    circuit_open_until=self.clock() + cooldown,
+                ),
+            )
 
     def select(
         self,
@@ -160,17 +196,18 @@ class ProviderSupervisor:
         *,
         excluded: Iterable[str] = (),
     ) -> str | None:
-        blocked = {_provider_id(item) for item in excluded}
-        ordered = [_provider_id(preferred)]
-        ordered.extend(_provider_id(item) for item in provider_ids)
-        seen: set[str] = set()
-        for provider_id in ordered:
-            if not provider_id or provider_id in seen or provider_id in blocked:
-                continue
-            seen.add(provider_id)
-            if self.is_available(provider_id):
-                return provider_id
-        return None
+        with self._lock:
+            blocked = {_provider_id(item) for item in excluded}
+            ordered = [_provider_id(preferred)]
+            ordered.extend(_provider_id(item) for item in provider_ids)
+            seen: set[str] = set()
+            for provider_id in ordered:
+                if not provider_id or provider_id in seen or provider_id in blocked:
+                    continue
+                seen.add(provider_id)
+                if self.is_available(provider_id):
+                    return provider_id
+            return None
 
     def _store(self, provider_id: str, health: ProviderHealth) -> ProviderHealth:
         self._health[provider_id] = health
@@ -229,6 +266,14 @@ def _provider_id(value: object) -> str:
     return text if text.replace("-", "").replace("_", "").isalnum() else ""
 
 
+def _failure_family(kind: str) -> str:
+    if kind in STRUCTURAL_FAILURES:
+        return "structural"
+    if kind in AUTH_FAILURES:
+        return "auth"
+    return kind
+
+
 def run_half_open_canary(
     provider_id: str,
     provider: object,
@@ -239,16 +284,29 @@ def run_half_open_canary(
         return True
     marker = "CODEY_CANARY_" + secrets.token_hex(8).upper()
     prompt = f"Return exactly this marker and nothing else: {marker}"
+    deadline = start_deadline(CANARY_TIMEOUT)
     try:
-        provider.new_chat()
-        reply = provider.send(prompt)
+        with cancellation.deadline_scope(deadline):
+            provider.new_chat(timeout=remaining(deadline, CANARY_TIMEOUT))
+            reply = provider.send(prompt, timeout=remaining(deadline, CANARY_TIMEOUT))
+    except cancellation.TaskCancelled:
+        raise
     except Exception as exc:
         failure = getattr(exc, "failure", None)
-        if isinstance(failure, ProviderFailure):
-            supervisor.record_failure(provider_id, failure)
+        if not isinstance(failure, ProviderFailure):
+            failure = ProviderFailure(
+                provider_id,
+                "canary",
+                "",
+                "",
+                "canary action failed",
+                "",
+                FAILURE_TRANSIENT,
+            )
+        supervisor.record_canary_failure(provider_id, failure)
         return False
     if str(reply or "").strip() != marker:
-        supervisor.record_failure(
+        supervisor.record_canary_failure(
             provider_id,
             ProviderFailure(
                 provider_id,

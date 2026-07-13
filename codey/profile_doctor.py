@@ -43,7 +43,7 @@ SEMANTIC_TERMS = (
 )
 STRUCTURAL_TERMS = SEMANTIC_TERMS + (
     "button", "btn", "textbox", "textarea", "input", "editor", "composer",
-    "primary", "filled", "circle", "icon", "contenteditable",
+    "primary", "filled", "circle", "icon", "contenteditable", "enter",
 )
 
 
@@ -218,7 +218,11 @@ def _structure_hint(value: Any) -> str:
     text = _token(value, 80).lower()
     if not text:
         return ""
-    return ",".join(dict.fromkeys(term for term in STRUCTURAL_TERMS if term in text))
+    return ",".join(dict.fromkeys(
+        term
+        for term in STRUCTURAL_TERMS
+        if term in text and (term != "enter" or text == "enter")
+    ))
 
 
 def _token(value: Any, limit: int) -> str:

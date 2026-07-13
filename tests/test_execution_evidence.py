@@ -69,6 +69,18 @@ class ExecutionEvidenceTests(unittest.TestCase):
         self.assertTrue(evidence.has_successful_checks)
         self.assertEqual(evidence.failed_checks_after_edit, [])
 
+    def test_workspace_drift_invalidates_all_check_evidence(self) -> None:
+        evidence = ExecutionEvidence()
+        evidence.seed_checks((CheckpointCheck("python -m pytest", "."),))
+        evidence.failed_checks_after_edit.append(
+            evidence.successful_checks[0]
+        )
+
+        evidence.invalidate_checks()
+
+        self.assertFalse(evidence.has_successful_checks)
+        self.assertEqual(evidence.failed_checks_after_edit, [])
+
     def test_truncated_search_is_not_reported_complete(self) -> None:
         evidence = ExecutionEvidence()
         evidence.record(event(

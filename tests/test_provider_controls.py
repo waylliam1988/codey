@@ -100,6 +100,95 @@ class ProviderControlsTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
+    def test_locate_control_reuses_pending_control_on_same_page(self) -> None:
+        page = mock.Mock()
+        page.url = "https://chat.qwen.ai/"
+        missing = mock.Mock()
+        missing.count.return_value = 0
+        locator = mock.Mock()
+        candidate = mock.Mock()
+        candidate.is_visible.return_value = True
+        candidate.is_enabled.return_value = True
+        locator.count.return_value = 1
+        locator.nth.return_value = candidate
+        page.locator.side_effect = lambda selector: (
+            missing if "data-codey-fault" in selector else locator
+        )
+        controls._remember_pending(
+            "qwen",
+            controls.CONTROL_SEND_BUTTON,
+            page,
+            controls.fingerprint_from_click({"tag": "button", "ariaLabel": "Send"}),
+        )
+        controls._remember_source(
+            "qwen",
+            controls.CONTROL_SEND_BUTTON,
+            "pending",
+        )
+
+        with (
+            mock.patch.object(controls, "saved_control") as saved,
+            mock.patch.object(controls, "discover_control") as discover,
+        ):
+            result = controls.locate_control(
+                page,
+                "qwen",
+                controls.CONTROL_SEND_BUTTON,
+                ('[data-codey-fault="send"]',),
+                require_enabled=True,
+            )
+
+        self.assertIs(result, candidate)
+        saved.assert_not_called()
+        discover.assert_not_called()
+        self.assertEqual(
+            controls._source_for("qwen", controls.CONTROL_SEND_BUTTON),
+            "pending",
+        )
+
+    def test_pending_control_is_not_reused_on_another_page(self) -> None:
+        original_page = mock.Mock()
+        other_page = mock.Mock()
+        controls._remember_pending(
+            "qwen",
+            controls.CONTROL_SEND_BUTTON,
+            original_page,
+            controls.fingerprint_from_click({"tag": "button", "ariaLabel": "Send"}),
+        )
+
+        result = controls.pending_control(
+            other_page,
+            "qwen",
+            controls.CONTROL_SEND_BUTTON,
+            require_enabled=True,
+        )
+
+        self.assertIsNone(result)
+        other_page.locator.assert_not_called()
+
+    def test_pending_control_reuses_verified_locator_without_stable_selector(self) -> None:
+        page = mock.Mock()
+        candidate = mock.Mock()
+        candidate.is_visible.return_value = True
+        candidate.is_enabled.return_value = True
+        controls._remember_pending(
+            "qwen",
+            controls.CONTROL_SEND_BUTTON,
+            page,
+            controls.fingerprint_from_click({"tag": "button", "role": "button"}),
+            candidate,
+        )
+
+        result = controls.pending_control(
+            page,
+            "qwen",
+            controls.CONTROL_SEND_BUTTON,
+            require_enabled=True,
+        )
+
+        self.assertIs(result, candidate)
+        page.locator.assert_not_called()
+
     def test_candidate_scoring_requires_semantics_or_proximity_for_send(self) -> None:
         generic = {
             "fingerprint": {"tag": "button", "role": "button"},
@@ -141,8 +230,81 @@ class ProviderControlsTests(unittest.TestCase):
             12,
         )
 
+    def test_enter_class_div_is_a_bounded_send_candidate(self) -> None:
+        anchor = {"x": 0, "y": 0, "width": 400, "height": 80}
+        candidate = {
+            "fingerprint": {
+                "tag": "div",
+                "classes": ["enter", "is-main-chat"],
+            },
+            "bottom_ratio": 0.9,
+            "anchor_distance": 40,
+            "enabled": True,
+        }
+        fingerprint = controls.fingerprint_from_click(candidate["fingerprint"])
+
+        self.assertGreaterEqual(
+            controls.score_control_candidate(
+                candidate,
+                controls.CONTROL_SEND_BUTTON,
+                anchor,
+            ),
+            62,
+        )
+        self.assertTrue(
+            controls.control_fingerprint_is_valid(
+                fingerprint,
+                controls.CONTROL_SEND_BUTTON,
+            )
+        )
+
+    def test_generic_div_is_not_a_send_candidate(self) -> None:
+        candidate = {
+            "fingerprint": {"tag": "div", "classes": ["model-select-item"]},
+            "bottom_ratio": 0.9,
+            "anchor_distance": 40,
+            "enabled": True,
+        }
+
+        self.assertLess(
+            controls.score_control_candidate(
+                candidate,
+                controls.CONTROL_SEND_BUTTON,
+                {"x": 0, "y": 0, "width": 400, "height": 80},
+            ),
+            0,
+        )
+        self.assertFalse(
+            controls.control_fingerprint_is_valid(
+                controls.fingerprint_from_click(candidate["fingerprint"]),
+                controls.CONTROL_SEND_BUTTON,
+            )
+        )
+
+    def test_center_class_does_not_count_as_enter_send_semantics(self) -> None:
+        candidate = {
+            "fingerprint": {
+                "tag": "div",
+                "role": "button",
+                "classes": ["model-select-item", "flex-y-center"],
+            },
+            "bottom_ratio": 0.6,
+            "anchor_distance": 270,
+            "enabled": True,
+        }
+
+        self.assertLess(
+            controls.score_control_candidate(
+                candidate,
+                controls.CONTROL_SEND_BUTTON,
+                {"x": 0, "y": 0, "width": 400, "height": 80},
+            ),
+            62,
+        )
+
     def test_control_discovery_keeps_prior_transaction_markers_until_cleanup(self) -> None:
         source = controls.discovery._DISCOVER_CONTROLS_JS
+        self.assertIn('[class~="enter"]', source)
         self.assertNotIn("removeAttribute('data-codey-auto-candidate')", source)
         self.assertIn("getAttribute('data-codey-auto-candidate')", source)
         self.assertIn(
@@ -228,6 +390,92 @@ class ProviderControlsTests(unittest.TestCase):
                 set(provider["_revival"]["verified_actions"]),
                 {"message_box", "send_button", "response"},
             )
+
+    def test_staged_control_locator_survives_until_send_transaction_completes(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        locator = mock.Mock()
+        locator.is_visible.return_value = True
+        locator.is_enabled.return_value = True
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            controls._begin_revival_send("qwen", page)
+            controls._remember_pending(
+                "qwen",
+                controls.CONTROL_SEND_BUTTON,
+                page,
+                controls.fingerprint_from_click({"tag": "button", "role": "button"}),
+                locator,
+            )
+            controls._remember_source(
+                "qwen",
+                controls.CONTROL_SEND_BUTTON,
+                "pending",
+            )
+
+            controls.confirm_control(
+                "qwen",
+                controls.CONTROL_SEND_BUTTON,
+                path=path,
+            )
+
+            self.assertEqual(
+                controls._source_for("qwen", controls.CONTROL_SEND_BUTTON),
+                "staged",
+            )
+            self.assertIs(
+                controls.pending_control(
+                    page,
+                    "qwen",
+                    controls.CONTROL_SEND_BUTTON,
+                    require_enabled=True,
+                ),
+                locator,
+            )
+
+            controls._complete_revival_send("qwen")
+
+            self.assertIsNone(
+                controls.pending_control(
+                    page,
+                    "qwen",
+                    controls.CONTROL_SEND_BUTTON,
+                )
+            )
+
+    def test_rejected_staged_control_cannot_reuse_transaction_locator(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        locator = mock.Mock()
+        locator.is_visible.return_value = True
+        locator.is_enabled.return_value = True
+        controls._begin_revival_send("qwen", page)
+        controls._remember_pending(
+            "qwen",
+            controls.CONTROL_SEND_BUTTON,
+            page,
+            controls.fingerprint_from_click({"tag": "button", "role": "button"}),
+            locator,
+        )
+        controls._remember_source(
+            "qwen",
+            controls.CONTROL_SEND_BUTTON,
+            "pending",
+        )
+        controls.confirm_control("qwen", controls.CONTROL_SEND_BUTTON)
+
+        controls.reject_control("qwen", controls.CONTROL_SEND_BUTTON)
+
+        self.assertIsNone(
+            controls.pending_control(
+                page,
+                "qwen",
+                controls.CONTROL_SEND_BUTTON,
+                require_enabled=True,
+            )
+        )
+        self.assertEqual(
+            controls._source_for("qwen", controls.CONTROL_SEND_BUTTON),
+            "",
+        )
 
     def test_failed_provider_send_discards_staged_controls(self) -> None:
         page = mock.Mock(url="https://chat.qwen.ai/")
