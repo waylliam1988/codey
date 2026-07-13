@@ -9,6 +9,8 @@ from playwright.sync_api import Locator, Page
 
 from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
+from codey.provider_diagnostics import ControlMissing, ResponseMissing
+from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.provider_submission import (
     SendAttempt,
     SubmissionUncertain,
@@ -92,7 +94,7 @@ def _bootstrap_ready(page: Page) -> bool:
     """Return whether Qwen has loaded the model state used by its send handler."""
     try:
         return bool(page.evaluate(_BOOTSTRAP_READY_JS))
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         return False
@@ -141,7 +143,7 @@ def _qwen_enabled_send_button(page: Page) -> Locator | None:
     try:
         buttons = page.locator("button.send-button")
         count = int(buttons.count())
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         return None
@@ -157,7 +159,7 @@ def _qwen_enabled_send_button(page: Page) -> Locator | None:
                     className: String(el.className || '')
                 })"""
             )
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
             continue
@@ -184,14 +186,22 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     raise TimeoutError("Qwen Studio did not finish loading. Are you logged in?")
 
 
-def new_chat(page: Page) -> None:
+def new_chat(page: Page, timeout: float | None = None) -> None:
     cancellation.check()
+    deadline = start_deadline(timeout)
     try:
-        page.goto(QWEN_URL, wait_until="domcontentloaded", timeout=60000)
+        page.goto(
+            QWEN_URL,
+            wait_until="domcontentloaded",
+            timeout=navigation_timeout_ms(deadline),
+        )
     except PlaywrightError as exc:
         if "net::ERR_ABORTED" not in str(exc):
             raise
-    wait_ready(page)
+    if deadline is None:
+        wait_ready(page)
+    else:
+        wait_ready(page, timeout=remaining(deadline, READY_TIMEOUT))
 
 
 def _response_count(page: Page) -> int:
@@ -283,10 +293,17 @@ def _resolve_preference(page: Page) -> bool:
 
 def _final_text(page: Page) -> str:
     _resolve_preference(page)
-    raw = _copy_last_text(page)
+    try:
+        raw = _copy_last_text(page)
+        if not raw:
+            raw = _last_text(page)
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
+        raise
     if not raw:
-        raw = _last_text(page)
-    if not raw:
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
         raise RuntimeError("Could not read the Qwen Studio response")
     controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     return raw
@@ -304,7 +321,7 @@ def _submission_started(page: Page, baseline: int, submitted_text: str = "") -> 
             return False
         message_box = _message_box(page)
         return message_box is not None and not controls.control_has_text(message_box, submitted_text)
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         return False
@@ -313,7 +330,8 @@ def _submission_started(page: Page, baseline: int, submitted_text: str = "") -> 
 def _submit(page: Page, baseline: int, submitted_text: str = "") -> SendAttempt:
     send = _send_button(page, timeout=SEND_TIMEOUT, teach=True)
     if send is None:
-        raise TimeoutError("Qwen Studio send button did not become ready")
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON, page=page)
+        raise ControlMissing("Qwen Studio send button did not become ready")
 
     attempt = SendAttempt()
     # Qwen enables the button before its send closure receives the latest draft.
@@ -343,7 +361,7 @@ def _wait_late_response(
             if current and (count > baseline or current != baseline_text):
                 if _generation_complete(page):
                     return _final_text(page)
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
             pass
@@ -369,10 +387,21 @@ def _chat(
 
     textarea = _message_box(page, teach=True)
     if textarea is None:
-        raise TimeoutError("Qwen Studio chat input is not visible")
-    submitted_text = _fill_message(page, textarea, text)
-    if controls.control_has_text(textarea, submitted_text):
-        controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+        controls.reject_control(
+            PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
+        )
+        raise ControlMissing("Qwen Studio chat input is not visible")
+    try:
+        submitted_text = _fill_message(page, textarea, text)
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+        raise
+    if not controls.control_has_text(textarea, submitted_text):
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+        raise ControlMissing("Qwen Studio chat input did not accept the complete message")
+    controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
     attempt = _submit(page, baseline, submitted_text)
 
     sent_at = time.time()
@@ -431,15 +460,17 @@ def _chat(
     if recovered is not None:
         confirm_submission(attempt, PROVIDER_ID)
         return recovered
-    controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     if not attempt.confirmed:
+        if attempt.method == "click" and attempt.action_error is not None:
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
         action = ""
         if attempt.action_error is not None:
             action = f"; click failed with {type(attempt.action_error).__name__}"
         raise SubmissionUncertain(f"Qwen Studio submission status is uncertain{action}")
-    raise TimeoutError(f"Qwen Studio response timed out after {response_timeout:.0f}s")
+    raise ResponseMissing(f"Qwen Studio response timed out after {response_timeout:.0f}s")
 
 
+@controls.revival_send(PROVIDER_ID)
 def chat(
     page: Page,
     text: str,
@@ -459,4 +490,4 @@ def chat(
                 raise
         finally:
             controls.stop_response_watch(page, PROVIDER_ID)
-    raise TimeoutError(f"Qwen Studio response timed out after {response_timeout:.0f}s")
+    raise ResponseMissing(f"Qwen Studio response timed out after {response_timeout:.0f}s")

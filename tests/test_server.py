@@ -592,18 +592,27 @@ class SessionThreadingTests(unittest.TestCase):
             borrowed.call_args_list,
             [mock.call("mimo", page), mock.call("qwen", page)],
         )
-        helper.new_chat.assert_called_once_with()
+        helper.new_chat.assert_called_once()
+        self.assertGreater(helper.new_chat.call_args.kwargs["timeout"], 0)
+        self.assertLessEqual(
+            helper.new_chat.call_args.kwargs["timeout"],
+            server.PROFILE_DOCTOR_TIMEOUT,
+        )
         helper.send.assert_called_once()
-        self.assertEqual(helper.send.call_args.kwargs["timeout"], server.PROFILE_DOCTOR_TIMEOUT)
+        self.assertGreater(helper.send.call_args.kwargs["timeout"], 0)
+        self.assertLessEqual(
+            helper.send.call_args.kwargs["timeout"], server.PROFILE_DOCTOR_TIMEOUT
+        )
         helper.close.assert_called_once_with()
         self.assertTrue(state.provider_session_changed("qwen", "old-session"))
 
-    def test_profile_doctor_does_not_try_another_model_after_call_failure(self) -> None:
+    def test_profile_doctor_tries_next_model_after_call_failure(self) -> None:
         state = server.State()
         page = mock.Mock()
         first = mock.Mock()
         first.send.side_effect = TimeoutError("failed")
         second = mock.Mock()
+        second.send.return_value = '{"candidate_id":"c1"}'
         request = profile_doctor.make_request(
             "deepseek",
             provider_controls.CONTROL_SEND_BUTTON,
@@ -618,10 +627,85 @@ class SessionThreadingTests(unittest.TestCase):
         ) as borrowed:
             selected = state.handle_profile_doctor(request)
 
-        self.assertIsNone(selected)
-        borrowed.assert_called_once_with("mimo", page)
+        self.assertEqual(selected, "c1")
+        self.assertEqual(
+            borrowed.call_args_list,
+            [mock.call("mimo", page), mock.call("qwen", page)],
+        )
         first.send.assert_called_once()
-        second.send.assert_not_called()
+        second.send.assert_called_once()
+
+    def test_profile_doctor_reduces_shared_budget_after_new_chat(self) -> None:
+        state = server.State()
+        page = mock.Mock()
+        helper = mock.Mock()
+        helper.send.return_value = '{"candidate_id":"c1"}'
+        request = profile_doctor.make_request(
+            "deepseek",
+            provider_controls.CONTROL_SEND_BUTTON,
+            page,
+            (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
+        )
+
+        with (
+            mock.patch.object(server, "borrow_open_provider", return_value=helper),
+            mock.patch.object(
+                server.time,
+                "monotonic",
+                side_effect=[100.0, 101.0, 105.0, 110.0],
+            ),
+        ):
+            selected = state.handle_profile_doctor(request)
+
+        self.assertEqual(selected, "c1")
+        self.assertEqual(helper.new_chat.call_args.kwargs["timeout"], 85.0)
+        self.assertEqual(helper.send.call_args.kwargs["timeout"], 80.0)
+
+    def test_profile_doctor_tries_next_model_after_null_decision(self) -> None:
+        state = server.State()
+        page = mock.Mock()
+        first = mock.Mock()
+        first.send.return_value = '{"candidate_id":null}'
+        second = mock.Mock()
+        second.send.return_value = '{"candidate_id":"c1"}'
+        request = profile_doctor.make_request(
+            "deepseek",
+            provider_controls.CONTROL_SEND_BUTTON,
+            page,
+            (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
+        )
+
+        with mock.patch.object(
+            server, "borrow_open_provider", side_effect=[first, second]
+        ):
+            selected = state.handle_profile_doctor(request)
+
+        self.assertEqual(selected, "c1")
+        first.close.assert_called_once_with()
+        second.close.assert_called_once_with()
+
+    def test_profile_doctor_stops_after_all_three_siblings_decline(self) -> None:
+        state = server.State()
+        page = mock.Mock()
+        helpers = [mock.Mock() for _ in range(3)]
+        for helper in helpers:
+            helper.send.return_value = '{"candidate_id":null}'
+        request = profile_doctor.make_request(
+            "deepseek",
+            provider_controls.CONTROL_SEND_BUTTON,
+            page,
+            (Discovery(mock.Mock(), {"tag": "button", "ariaLabel": "Send"}, 50),),
+        )
+
+        with mock.patch.object(
+            server, "borrow_open_provider", side_effect=helpers
+        ) as borrowed:
+            selected = state.handle_profile_doctor(request)
+
+        self.assertIsNone(selected)
+        self.assertEqual(borrowed.call_count, 3)
+        for helper in helpers:
+            helper.close.assert_called_once_with()
 
     def test_profile_doctor_honors_task_cancellation_before_borrowing_tab(self) -> None:
         state = server.State()
@@ -1795,6 +1879,7 @@ class SessionThreadingTests(unittest.TestCase):
             "title": "MiMo",
             "message": "response timed out",
             "time": "2026-06-28T01:02:03+00:00",
+            "kind": "transient",
         })
         self.assertIs(state.last_provider_failure, provider.last_failure)
 

@@ -121,8 +121,16 @@ class TaskCancelled(RuntimeError):
     """Raised when the user stops the active task."""
 
 
+class DeadlineExceeded(TimeoutError):
+    """Raised when a bounded provider operation exhausts its total budget."""
+
+
 def current_event() -> threading.Event | None:
     return getattr(_context, "event", None)
+
+
+def current_deadline() -> float | None:
+    return getattr(_context, "deadline", None)
 
 
 def set_event(event: threading.Event | None) -> threading.Event | None:
@@ -140,20 +148,40 @@ def scope(event: threading.Event | None) -> Iterator[None]:
         set_event(previous)
 
 
+@contextmanager
+def deadline_scope(deadline: float | None) -> Iterator[None]:
+    previous = current_deadline()
+    active = deadline
+    if previous is not None and (active is None or previous < active):
+        active = previous
+    _context.deadline = active
+    try:
+        yield
+    finally:
+        _context.deadline = previous
+
+
 def check() -> None:
     event = current_event()
     if event is not None and event.is_set():
         raise TaskCancelled("task stopped")
+    deadline = current_deadline()
+    if deadline is not None and time.monotonic() >= deadline:
+        raise DeadlineExceeded("provider operation timed out")
 
 
 def wait(seconds: float) -> None:
+    check()
     event = current_event()
     timeout = max(0.0, float(seconds))
+    deadline = current_deadline()
+    if deadline is not None:
+        timeout = min(timeout, max(0.0, deadline - time.monotonic()))
     if event is None:
         time.sleep(timeout)
-        return
-    if event.wait(timeout):
+    elif event.wait(timeout):
         raise TaskCancelled("task stopped")
+    check()
 
 
 def run_process(
@@ -210,7 +238,7 @@ def run_process(
                 )
             except subprocess.TimeoutExpired:
                 continue
-    except (TaskCancelled, subprocess.TimeoutExpired):
+    except (TaskCancelled, DeadlineExceeded, subprocess.TimeoutExpired):
         _terminate_process_tree(proc, job)
         raise
     finally:

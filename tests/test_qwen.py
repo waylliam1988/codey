@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import unittest
 import threading
+import tempfile
+from pathlib import Path
 from unittest import mock
 
-from codey import cancellation, qwen
-from codey.provider_submission import SendAttempt
+from codey import cancellation, provider_revival, qwen
+from codey.local_store import read_json, write_json_atomic
+from codey.provider_diagnostics import ControlMissing
+from codey.provider_submission import SendAttempt, SubmissionUncertain
 
 
 class QwenDriverTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        qwen.controls.end_task_context()
+
     def test_cancelled_chat_exits_before_touching_page(self) -> None:
         event = threading.Event()
         event.set()
@@ -23,6 +30,216 @@ class QwenDriverTests(unittest.TestCase):
 
     def test_ready_timeout_allows_slow_homepage(self) -> None:
         self.assertGreaterEqual(qwen.READY_TIMEOUT, 90)
+
+    def test_new_chat_applies_one_budget_to_navigation_and_ready_wait(self) -> None:
+        page = mock.Mock()
+        with (
+            mock.patch.object(qwen, "start_deadline", return_value=20.0) as start,
+            mock.patch.object(qwen, "navigation_timeout_ms", return_value=2500) as nav,
+            mock.patch.object(qwen, "remaining", return_value=1.25) as remaining,
+            mock.patch.object(qwen, "wait_ready") as ready,
+        ):
+            qwen.new_chat(page, timeout=5.0)
+
+        start.assert_called_once_with(5.0)
+        nav.assert_called_once_with(20.0)
+        page.goto.assert_called_once_with(
+            qwen.QWEN_URL,
+            wait_until="domcontentloaded",
+            timeout=2500,
+        )
+        remaining.assert_called_once_with(20.0, qwen.READY_TIMEOUT)
+        ready.assert_called_once_with(page, timeout=1.25)
+
+    def test_late_grace_does_not_swallow_total_deadline(self) -> None:
+        with (
+            cancellation.deadline_scope(qwen.time.monotonic()),
+            mock.patch.object(qwen, "_response_count", return_value=0),
+        ):
+            with self.assertRaises(cancellation.DeadlineExceeded):
+                qwen._wait_late_response(mock.Mock(), 0, grace=60, tick=1)
+
+    def test_learned_input_failure_reaches_revival_health(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        textarea = mock.Mock()
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {"message_box": {"tag": "textarea", "placeholder": "Ask"}},
+                {"message_box"},
+                set(),
+            )
+
+            def learned_message_box(_page, *, teach=False):
+                del teach
+                qwen.controls._remember_source("qwen", "message_box", "learned")
+                return textarea
+
+            with (
+                mock.patch.object(qwen.controls, "CONTROL_STORE", path),
+                mock.patch.object(qwen, "wait_ready"),
+                mock.patch.object(qwen, "_response_count", return_value=0),
+                mock.patch.object(qwen, "_message_box", side_effect=learned_message_box),
+                mock.patch.object(qwen, "_fill_message", return_value="hello "),
+                mock.patch.object(qwen.controls, "control_has_text", return_value=False),
+            ):
+                with self.assertRaises(ControlMissing):
+                    qwen.chat(page, "hello")
+
+            meta = read_json(path)["qwen"]["_revival"]
+
+        self.assertEqual(meta["failures"], 1)
+
+    def test_missing_learned_send_button_rolls_back_through_submit_path(self) -> None:
+        old = {
+            "host": "chat.qwen.ai",
+            "fingerprint": {"tag": "button", "aria_label": "Old send"},
+            "verified": True,
+            "failures": 0,
+        }
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            write_json_atomic(path, {"qwen": {"send_button": old}})
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {"send_button": {"tag": "button", "aria_label": "New send"}},
+                {"send_button"},
+                set(),
+            )
+            with (
+                mock.patch.object(qwen.controls, "CONTROL_STORE", path),
+                mock.patch.object(qwen, "_send_button", return_value=None),
+            ):
+                for _ in range(2):
+                    with self.assertRaises(ControlMissing):
+                        qwen._submit(page, 0, "hello ")
+
+            provider = read_json(path)["qwen"]
+
+        self.assertEqual(provider["send_button"], old)
+        self.assertNotIn("_revival", provider)
+
+    def test_learned_response_read_failure_rolls_back_through_final_text(self) -> None:
+        old = {
+            "host": "chat.qwen.ai",
+            "fingerprint": {"tag": "article", "classes": ["old-answer"]},
+            "verified": True,
+            "failures": 0,
+        }
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            write_json_atomic(path, {"qwen": {"response": old}})
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {"response": {"tag": "article", "classes": ["new-answer"]}},
+                {"response"},
+                set(),
+            )
+            with (
+                mock.patch.object(qwen.controls, "CONTROL_STORE", path),
+                mock.patch.object(qwen, "_resolve_preference"),
+                mock.patch.object(qwen, "_copy_last_text", return_value=""),
+                mock.patch.object(qwen, "_last_text", return_value=""),
+            ):
+                for _ in range(2):
+                    qwen.controls._remember_source("qwen", "response", "learned")
+                    with self.assertRaisesRegex(RuntimeError, "Could not read"):
+                        qwen._final_text(mock.Mock())
+
+            provider = read_json(path)["qwen"]
+
+        self.assertEqual(provider["response"], old)
+        self.assertNotIn("_revival", provider)
+
+    def test_uncertain_submission_without_click_error_does_not_penalize_button(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        textarea = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {"send_button": {"tag": "button", "aria_label": "Send"}},
+                {"send_button"},
+                set(),
+            )
+
+            def uncertain_submit(*_args, **_kwargs):
+                qwen.controls._remember_source("qwen", "send_button", "learned")
+                return attempt
+
+            with (
+                mock.patch.object(qwen.controls, "CONTROL_STORE", path),
+                mock.patch.object(qwen, "wait_ready"),
+                mock.patch.object(qwen, "_response_count", return_value=0),
+                mock.patch.object(qwen, "_message_box", return_value=textarea),
+                mock.patch.object(qwen, "_fill_message", return_value="hello "),
+                mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+                mock.patch.object(qwen, "_submit", side_effect=uncertain_submit),
+                mock.patch.object(qwen, "_wait_late_response", return_value=""),
+                mock.patch.object(qwen.controls, "recover_response", return_value=None),
+            ):
+                with self.assertRaises(SubmissionUncertain):
+                    qwen.chat(page, "hello", response_timeout=0)
+
+            provider = read_json(path)["qwen"]
+
+        self.assertEqual(provider["_revival"]["failures"], 0)
+        self.assertEqual(provider["send_button"]["failures"], 0)
+
+    def test_uncertain_submission_with_click_error_penalizes_button(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        textarea = mock.Mock()
+        attempt = SendAttempt()
+
+        def click_failed():
+            raise RuntimeError("detached")
+
+        attempt.submit("click", click_failed)
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {"send_button": {"tag": "button", "aria_label": "Send"}},
+                {"send_button"},
+                set(),
+            )
+
+            def failed_submit(*_args, **_kwargs):
+                qwen.controls._remember_source("qwen", "send_button", "learned")
+                return attempt
+
+            with (
+                mock.patch.object(qwen.controls, "CONTROL_STORE", path),
+                mock.patch.object(qwen, "wait_ready"),
+                mock.patch.object(qwen, "_response_count", return_value=0),
+                mock.patch.object(qwen, "_message_box", return_value=textarea),
+                mock.patch.object(qwen, "_fill_message", return_value="hello "),
+                mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+                mock.patch.object(qwen, "_submit", side_effect=failed_submit),
+                mock.patch.object(qwen, "_wait_late_response", return_value=""),
+                mock.patch.object(qwen.controls, "recover_response", return_value=None),
+            ):
+                with self.assertRaises(SubmissionUncertain):
+                    qwen.chat(page, "hello", response_timeout=0)
+
+            provider = read_json(path)["qwen"]
+
+        self.assertEqual(provider["_revival"]["failures"], 1)
+        self.assertEqual(provider["send_button"]["failures"], 1)
 
     def test_wait_ready_requires_model_bootstrap_after_input_appears(self) -> None:
         page = mock.Mock()
@@ -402,6 +619,7 @@ class QwenDriverTests(unittest.TestCase):
             mock.patch.object(qwen, "_generation_complete", return_value=True),
             mock.patch.object(qwen, "_regenerate_empty_response", return_value=True) as regenerate,
             mock.patch.object(qwen, "_final_text", return_value="raw recovered"),
+            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
             mock.patch.object(qwen.cancellation, "wait"),
         ):
             reply = qwen.chat(

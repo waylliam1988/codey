@@ -10,7 +10,7 @@ class ChatProvider(Protocol):
     def location(self) -> str:
         """Return a human-readable provider location or page URL."""
 
-    def new_chat(self) -> None:
+    def new_chat(self, timeout: float | None = None) -> None:
         """Start a fresh remote conversation."""
 
     def send(self, text: str, timeout: float | None = None) -> str:

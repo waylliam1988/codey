@@ -205,6 +205,89 @@ class ProviderControlsTests(unittest.TestCase):
             self.assertEqual(record["failures"], 0)
             write.assert_called_once()
 
+    def test_provider_send_stages_all_controls_until_success(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            controls._begin_revival_send("qwen", page)
+            for action, fingerprint in (
+                (controls.CONTROL_MESSAGE_BOX, {"tag": "textarea"}),
+                (controls.CONTROL_SEND_BUTTON, {"tag": "button", "aria_label": "Send"}),
+                (controls.CONTROL_RESPONSE, {"tag": "article", "classes": ["answer"]}),
+            ):
+                controls._remember_pending("qwen", action, page, fingerprint)
+                controls._remember_source("qwen", action, "pending")
+                controls.confirm_control("qwen", action, path=path)
+            self.assertFalse(path.exists())
+
+            controls._complete_revival_send("qwen")
+
+            provider = controls.load_controls(path)["qwen"]
+            self.assertEqual(provider["_revival"]["status"], "provisional")
+            self.assertEqual(
+                set(provider["_revival"]["verified_actions"]),
+                {"message_box", "send_button", "response"},
+            )
+
+    def test_failed_provider_send_discards_staged_controls(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            @controls.revival_send("qwen")
+            def failing_send(current_page):
+                controls._remember_pending(
+                    "qwen",
+                    controls.CONTROL_SEND_BUTTON,
+                    current_page,
+                    {"tag": "button"},
+                )
+                controls._remember_source(
+                    "qwen", controls.CONTROL_SEND_BUTTON, "pending"
+                )
+                controls.confirm_control(
+                    "qwen", controls.CONTROL_SEND_BUTTON, path=path
+                )
+                raise TimeoutError("network timeout")
+
+            with self.assertRaisesRegex(TimeoutError, "network timeout"):
+                failing_send(page)
+
+            self.assertFalse(path.exists())
+            self.assertNotIn("qwen", controls._revival_attempts())
+            self.assertEqual(
+                controls._source_for("qwen", controls.CONTROL_SEND_BUTTON), ""
+            )
+
+    def test_transient_failure_does_not_reduce_learned_bundle_health(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "controls.json"
+            controls.provider_revival.complete_send(
+                path,
+                "qwen",
+                "chat.qwen.ai",
+                {controls.CONTROL_RESPONSE: {"tag": "article", "classes": ["answer"]}},
+                {controls.CONTROL_RESPONSE},
+                set(),
+            )
+            before = controls.load_controls(path)
+
+            @controls.revival_send("qwen")
+            def timed_out(current_page):
+                del current_page
+                controls._remember_source(
+                    "qwen", controls.CONTROL_RESPONSE, "learned"
+                )
+                controls.confirm_control(
+                    "qwen", controls.CONTROL_RESPONSE, path=path
+                )
+                raise TimeoutError("provider timeout")
+
+            with self.assertRaisesRegex(TimeoutError, "provider timeout"):
+                timed_out(page)
+
+            self.assertEqual(controls.load_controls(path), before)
+
     def test_pending_confirmation_ignores_storage_failure(self) -> None:
         page = mock.Mock()
         page.url = "https://chat.qwen.ai/"
@@ -347,8 +430,33 @@ class ProviderControlsTests(unittest.TestCase):
         self.assertTrue(controls.control_fingerprint_is_valid(textarea, controls.CONTROL_MESSAGE_BOX))
         self.assertTrue(controls.control_fingerprint_is_valid(editable, controls.CONTROL_MESSAGE_BOX))
 
+    def test_message_box_rejects_password_and_file_inputs(self) -> None:
+        for input_type in ("password", "file"):
+            fingerprint = controls.fingerprint_from_click({
+                "tag": "input",
+                "type": input_type,
+                "placeholder": "Message",
+            })
+            self.assertFalse(
+                controls.control_fingerprint_is_valid(
+                    fingerprint, controls.CONTROL_MESSAGE_BOX
+                )
+            )
+
+    def test_discovery_does_not_run_on_wrong_provider_host(self) -> None:
+        page = mock.Mock(url="https://accounts.example.com/login")
+        with mock.patch.object(controls.discovery, "control_candidates") as candidates:
+            result = controls.discover_control(
+                page,
+                "qwen",
+                controls.CONTROL_MESSAGE_BOX,
+            )
+
+        self.assertIsNone(result)
+        candidates.assert_not_called()
+
     def test_request_teaching_calls_registered_handler_with_session(self) -> None:
-        page = mock.Mock()
+        page = mock.Mock(url="https://chat.qwen.ai/")
         handler = mock.Mock(return_value="control")
         controls.begin_task_context("session-1")
         controls.set_teach_handler(handler)

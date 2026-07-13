@@ -8,6 +8,18 @@ from codey import cancellation
 
 
 T = TypeVar("T")
+FAILURE_TRANSIENT = "transient"
+FAILURE_CONTROL_MISSING = "control_missing"
+FAILURE_SUBMISSION_UNCERTAIN = "submission_uncertain"
+FAILURE_RESPONSE_MISSING = "response_missing"
+
+
+class ControlMissing(TimeoutError):
+    provider_failure_kind = FAILURE_CONTROL_MISSING
+
+
+class ResponseMissing(TimeoutError):
+    provider_failure_kind = FAILURE_RESPONSE_MISSING
 
 
 @dataclass(frozen=True)
@@ -18,6 +30,7 @@ class ProviderFailure:
     title: str
     message: str
     time: str
+    kind: str = FAILURE_TRANSIENT
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
@@ -39,6 +52,7 @@ def capture_provider_failure(
         title=_safe_page_title(page),
         message=str(error),
         time=(now or datetime.now(timezone.utc)).isoformat(),
+        kind=str(getattr(error, "provider_failure_kind", FAILURE_TRANSIENT)),
     )
 
 

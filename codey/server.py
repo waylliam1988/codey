@@ -685,15 +685,18 @@ class State:
         self,
         request: profile_doctor.ProfileDoctorRequest,
     ) -> str | None:
-        """Use one healthy sibling tab for one bounded candidate decision."""
+        """Try healthy sibling tabs within one bounded recovery deadline."""
         cancellation.check()
-        for provider_id in reviewer_candidates(request.provider_id):
+        deadline = time.monotonic() + PROFILE_DOCTOR_TIMEOUT
+        for provider_id in reviewer_candidates(request.provider_id)[:3]:
             cancellation.check()
+            if time.monotonic() >= deadline:
+                return None
             helper = borrow_open_provider(provider_id, request.page)
             if helper is None:
                 continue
             try:
-                helper.new_chat()
+                helper.new_chat(timeout=max(0.1, deadline - time.monotonic()))
             except cancellation.TaskCancelled:
                 helper.close()
                 raise
@@ -702,16 +705,22 @@ class State:
                 continue
             self.set_provider_session(provider_id, None)
             try:
-                return profile_doctor.choose_candidate(
+                selected = profile_doctor.choose_candidate(
                     request,
-                    lambda prompt: helper.send(prompt, timeout=PROFILE_DOCTOR_TIMEOUT),
+                    lambda prompt: helper.send(
+                        prompt,
+                        timeout=max(0.1, deadline - time.monotonic()),
+                    ),
                 )
             except cancellation.TaskCancelled:
                 raise
             except Exception:
-                return None
+                continue
             finally:
                 helper.close()
+            if selected:
+                return selected
+        return None
 
 
 STATE = State()

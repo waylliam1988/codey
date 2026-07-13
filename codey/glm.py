@@ -9,6 +9,8 @@ from playwright.sync_api import Locator, Page
 
 from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
+from codey.provider_diagnostics import ControlMissing, ResponseMissing
+from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.provider_submission import (
     SendAttempt,
     SubmissionUncertain,
@@ -204,10 +206,18 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     raise TimeoutError("GLM chat input did not appear. Are you logged in?")
 
 
-def new_chat(page: Page) -> None:
+def new_chat(page: Page, timeout: float | None = None) -> None:
     cancellation.check()
-    page.goto(GLM_URL, wait_until="domcontentloaded", timeout=60000)
-    wait_ready(page)
+    deadline = start_deadline(timeout)
+    page.goto(
+        GLM_URL,
+        wait_until="domcontentloaded",
+        timeout=navigation_timeout_ms(deadline),
+    )
+    if deadline is None:
+        wait_ready(page)
+    else:
+        wait_ready(page, timeout=remaining(deadline, READY_TIMEOUT))
 
 
 def _response_count(page: Page) -> int:
@@ -245,7 +255,7 @@ def _submitted_question_count(page: Page, submitted_text: str) -> int:
 def _rate_limit_visible(page: Page) -> bool:
     try:
         return RATE_LIMIT_TEXT in str(page.locator("body").inner_text(timeout=1000))
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         return False
@@ -262,7 +272,7 @@ def _click_rate_limit_retry(page: Page) -> bool:
                 cancellation.check()
                 candidate.click()
                 return True
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         return False
@@ -292,6 +302,7 @@ def _last_text(page: Page) -> str:
 def _final_text(page: Page) -> str:
     text = _last_text(page)
     if not text:
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
         raise RuntimeError("Could not read the GLM response")
     controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     return text
@@ -317,7 +328,7 @@ def _submission_started(
             message_box is not None
             and not controls.control_has_text(message_box, submitted_text)
         )
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         return False
@@ -332,7 +343,8 @@ def _submit(
 ) -> SendAttempt:
     button = _send_button(page, timeout=SEND_TIMEOUT, teach=True)
     if button is None:
-        raise TimeoutError("GLM send button did not become ready")
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON, page=page)
+        raise ControlMissing("GLM send button did not become ready")
 
     attempt = SendAttempt()
     attempt.submit("click", button.click)
@@ -366,7 +378,7 @@ def _wait_late_response(
             current = _last_text(page) if count else ""
             if current and (count > baseline or current != baseline_text) and _generation_complete(page):
                 return _final_text(page)
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
             pass
@@ -393,11 +405,21 @@ def _chat(
 
     textarea = _message_box(page, teach=True)
     if textarea is None:
-        raise TimeoutError("GLM chat input is not visible")
-    cancellation.check()
-    textarea.click()
-    textarea.fill(text)
+        controls.reject_control(
+            PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
+        )
+        raise ControlMissing("GLM chat input is not visible")
+    try:
+        cancellation.check()
+        textarea.click()
+        textarea.fill(text)
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+        raise
     if not controls.control_has_text(textarea, text):
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
         raise RuntimeError("GLM chat input did not accept the complete message")
     controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
 
@@ -466,12 +488,14 @@ def _chat(
     if recovered is not None:
         confirm_submission(attempt, PROVIDER_ID)
         return recovered
-    controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     if not attempt.confirmed:
+        if attempt.method == "click" and attempt.action_error is not None:
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
         raise SubmissionUncertain("GLM submission status is uncertain")
-    raise TimeoutError(f"GLM response timed out after {response_timeout:.0f}s")
+    raise ResponseMissing(f"GLM response timed out after {response_timeout:.0f}s")
 
 
+@controls.revival_send(PROVIDER_ID)
 def chat(
     page: Page,
     text: str,

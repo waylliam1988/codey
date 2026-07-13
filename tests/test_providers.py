@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from codey import cancellation
 from codey.providers import (
     DeepSeekWebProvider,
     GlmWebProvider,
@@ -110,6 +111,16 @@ class QwenWebProviderTests(unittest.TestCase):
         provider.close()
         session.close.assert_called_once_with()
 
+    def test_new_chat_forwards_optional_recovery_budget(self) -> None:
+        page = SimpleNamespace(url="https://chat.qwen.ai/")
+        page.title = mock.Mock(return_value="Qwen")
+        provider = QwenWebProvider(SimpleNamespace(page=page, close=mock.Mock()))
+
+        with mock.patch.object(qwen_web.qwen, "new_chat") as new_chat:
+            provider.new_chat(timeout=7.5)
+
+        new_chat.assert_called_once_with(page, timeout=7.5)
+
 
 class MimoWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
@@ -195,6 +206,32 @@ class GlmWebProviderTests(unittest.TestCase):
 
         page.locator.assert_not_called()
         page.title.assert_not_called()
+
+
+class ProviderTimeoutBoundaryTests(unittest.TestCase):
+    def test_explicit_send_timeout_bounds_entire_provider_call(self) -> None:
+        cases = (
+            (DeepSeekWebProvider, deepseek_web.deepseek),
+            (QwenWebProvider, qwen_web.qwen),
+            (MimoWebProvider, mimo_web.mimo),
+            (GlmWebProvider, glm_web.glm),
+        )
+        for provider_type, driver in cases:
+            with self.subTest(provider=provider_type.__name__):
+                page = SimpleNamespace(url="https://chat.example/")
+                page.title = mock.Mock(return_value="Chat")
+                provider = provider_type(
+                    SimpleNamespace(page=page, close=mock.Mock())
+                )
+
+                def wait_past_deadline(*_args, **_kwargs):
+                    cancellation.wait(60)
+
+                with mock.patch.object(driver, "chat", side_effect=wait_past_deadline) as chat:
+                    with self.assertRaises(cancellation.DeadlineExceeded):
+                        provider.send("hello", timeout=0)
+
+                chat.assert_called_once()
 
 
 class ProviderRegistryTests(unittest.TestCase):

@@ -13,6 +13,7 @@ import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -20,7 +21,9 @@ from urllib.parse import urlparse
 from codey import cancellation
 from codey import provider_discovery as discovery
 from codey import profile_doctor
+from codey import provider_revival
 from codey.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
+from codey.provider_profiles import get_profile
 
 CONTROL_MESSAGE_BOX = "message_box"
 CONTROL_SEND_BUTTON = "send_button"
@@ -31,8 +34,6 @@ CONTROL_LABELS = {
     CONTROL_RESPONSE: "answer",
 }
 CONTROL_STORE = DEFAULT_STATE_HOME / "provider-controls.json"
-MAX_LEARNED_FAILURES = 2
-
 _handler: Callable[["ControlTeachRequest"], Any] | None = None
 _doctor_handler: Callable[[profile_doctor.ProfileDoctorRequest], str | None] | None = None
 _context = threading.local()
@@ -44,7 +45,17 @@ _TASK_CONTEXT_FIELDS = (
     "pending",
     "response_locators",
     "response_watches",
+    "revival_attempts",
 )
+
+
+@dataclass
+class _RevivalSend:
+    host: str
+    staged: dict[str, dict[str, Any]]
+    verified: set[str]
+    learned_verified: set[str]
+    path: Path | None = None
 
 
 class ControlTeachCancelled(RuntimeError):
@@ -101,6 +112,23 @@ def end_task_context() -> None:
     for name in _TASK_CONTEXT_FIELDS:
         if hasattr(_context, name):
             delattr(_context, name)
+
+
+def revival_send(provider_id: str):
+    """Wrap one provider send in an atomic local-control recovery transaction."""
+    def decorate(func):
+        @wraps(func)
+        def wrapped(page, *args, **kwargs):
+            _begin_revival_send(provider_id, page)
+            try:
+                result = func(page, *args, **kwargs)
+            except BaseException:
+                _abort_revival_send(provider_id)
+                raise
+            _complete_revival_send(provider_id)
+            return result
+        return wrapped
+    return decorate
 
 
 def visible_locator(page: Any, selector: str) -> Any | None:
@@ -226,6 +254,8 @@ def discover_control(
 ) -> Any | None:
     """Find a plausible composer control without allowing a broad selector to click it."""
     cancellation.check()
+    if not _provider_host_allowed(page, provider_id):
+        return None
     candidates = discovery.control_candidates(page, action, anchor=anchor)
     found = discovery.select_control_candidate(candidates, action)
     if found is not None and not _discovery_is_usable(found, action, require_enabled):
@@ -328,6 +358,8 @@ def response_count(
 
 
 def discover_response(page: Any, provider_id: str) -> Any | None:
+    if not _provider_host_allowed(page, provider_id):
+        return None
     watches = getattr(_context, "response_watches", {})
     token = watches.get(provider_id, "") if isinstance(watches, dict) else ""
     candidates = discovery.response_candidates(page, token)
@@ -339,6 +371,8 @@ def discover_response(page: Any, provider_id: str) -> Any | None:
 
 def request_doctor_response(page: Any, provider_id: str) -> Any | None:
     """Ask once only after normal response discovery has exhausted its wait."""
+    if not _provider_host_allowed(page, provider_id):
+        return None
     watches = getattr(_context, "response_watches", {})
     token = watches.get(provider_id, "") if isinstance(watches, dict) else ""
     found = _doctor_selection(
@@ -415,6 +449,8 @@ def request_teaching(
     require_enabled: bool = False,
 ) -> Any:
     cancellation.check()
+    if not _provider_host_allowed(page, provider_id):
+        raise TimeoutError("Provider page host does not match the recovery target")
     if not can_teach():
         label = CONTROL_LABELS.get(action, "control")
         raise TimeoutError(f"Could not find the {label} in the model page")
@@ -607,6 +643,13 @@ def confirm_control(provider_id: str, action: str, *, path: Path | None = None) 
         if pending is None:
             return
         page, fingerprint = pending
+        attempt = _revival_attempts().get(provider_id)
+        if attempt is not None:
+            attempt.staged[action] = fingerprint
+            attempt.verified.add(action)
+            attempt.path = path or attempt.path
+            _remember_source(provider_id, action, "staged")
+            return
         try:
             save_control(
                 provider_id,
@@ -623,17 +666,44 @@ def confirm_control(provider_id: str, action: str, *, path: Path | None = None) 
         return
     if source != "learned":
         return
+    attempt = _revival_attempts().get(provider_id)
+    if attempt is not None:
+        attempt.verified.add(action)
+        attempt.learned_verified.add(action)
+        attempt.path = path or attempt.path
+        return
     _update_learned_control(provider_id, action, success=True, path=path)
 
 
-def reject_control(provider_id: str, action: str, *, path: Path | None = None) -> None:
+def reject_control(
+    provider_id: str,
+    action: str,
+    *,
+    path: Path | None = None,
+    page: Any | None = None,
+) -> None:
     """Forget a learned control after repeated failed state validation."""
     source = _source_for(provider_id, action)
+    if source == "staged":
+        attempt = _revival_attempts().get(provider_id)
+        if attempt is not None:
+            attempt.staged.pop(action, None)
+            attempt.verified.discard(action)
+        _remember_source(provider_id, action, "")
+        return
     if source == "pending":
         _pending_map().pop((provider_id, action), None)
         _remember_source(provider_id, action, "")
         return
-    if source != "learned":
+    if source == "learned":
+        _update_learned_control(provider_id, action, success=False, path=path)
+        return
+    if source or page is None:
+        return
+    record = load_control(provider_id, action, path=path)
+    if not isinstance(record, dict):
+        return
+    if not _host_matches(_page_host(page), str(record.get("host") or "")):
         return
     _update_learned_control(provider_id, action, success=False, path=path)
 
@@ -645,25 +715,11 @@ def _update_learned_control(
     success: bool,
     path: Path | None,
 ) -> None:
-    path = path or CONTROL_STORE
-    data = load_controls(path)
-    provider = data.get(provider_id)
-    if not isinstance(provider, dict):
-        return
-    record = provider.get(action)
-    if not isinstance(record, dict):
-        return
-    if success:
-        record["verified"] = True
-        record["failures"] = 0
-    else:
-        failures = int(record.get("failures") or 0) + 1
-        if failures >= MAX_LEARNED_FAILURES:
-            provider.pop(action, None)
-        else:
-            record["failures"] = failures
     try:
-        write_json_atomic(path, data)
+        if success:
+            provider_revival.record_control_success(path or CONTROL_STORE, provider_id, action)
+        else:
+            provider_revival.record_control_failure(path or CONTROL_STORE, provider_id, action)
     except (OSError, ValueError):
         return
 
@@ -690,6 +746,57 @@ def _response_locator_map() -> dict[str, Any]:
         locators = {}
         _context.response_locators = locators
     return locators
+
+
+def _revival_attempts() -> dict[str, _RevivalSend]:
+    attempts = getattr(_context, "revival_attempts", None)
+    if attempts is None:
+        attempts = {}
+        _context.revival_attempts = attempts
+    return attempts
+
+
+def _begin_revival_send(provider_id: str, page: Any) -> None:
+    _abort_revival_send(provider_id)
+    _revival_attempts()[provider_id] = _RevivalSend(
+        host=_page_host(page),
+        staged={},
+        verified=set(),
+        learned_verified=set(),
+    )
+
+
+def _abort_revival_send(provider_id: str) -> None:
+    _revival_attempts().pop(provider_id, None)
+    for key in tuple(_pending_map()):
+        if key[0] == provider_id:
+            _pending_map().pop(key, None)
+            if _source_for(*key) in {"pending", "staged"}:
+                _remember_source(*key, "")
+    for key, source in tuple(_source_map().items()):
+        if key[0] == provider_id and source in {"pending", "staged"}:
+            _remember_source(*key, "")
+
+
+def _complete_revival_send(provider_id: str) -> None:
+    attempt = _revival_attempts().pop(provider_id, None)
+    if attempt is None:
+        return
+    try:
+        provider_revival.complete_send(
+            attempt.path or CONTROL_STORE,
+            provider_id,
+            attempt.host,
+            attempt.staged,
+            attempt.verified,
+            attempt.learned_verified,
+        )
+    except (OSError, ValueError):
+        for action in attempt.staged:
+            _remember_source(provider_id, action, "")
+        return
+    for action in attempt.staged:
+        _remember_source(provider_id, action, "learned")
 
 
 def _remember_pending(
@@ -820,6 +927,15 @@ def _host_matches(current: str, saved: str) -> bool:
     return current == saved or current.endswith("." + saved) or saved.endswith("." + current)
 
 
+def _provider_host_allowed(page: Any, provider_id: str) -> bool:
+    current = _page_host(page)
+    try:
+        hosts = get_profile(provider_id).hosts
+    except KeyError:
+        return False
+    return bool(current) and any(_host_matches(current, host) for host in hosts)
+
+
 def _clean(value: Any, limit: int = 120) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     return text[:limit]
@@ -889,6 +1005,9 @@ def _combined_text(fingerprint: dict[str, Any]) -> str:
 def _looks_like_message_box(fingerprint: dict[str, Any]) -> bool:
     tag = _clean(fingerprint.get("tag"), 32).lower()
     role = _clean(fingerprint.get("role"), 48).lower()
+    input_type = _clean(fingerprint.get("type"), 32).lower()
+    if tag == "input" and input_type in {"file", "hidden", "password"}:
+        return False
     return tag in {"textarea", "input"} or role in {"textbox", "searchbox"} or bool(
         fingerprint.get("contenteditable") or fingerprint.get("placeholder")
     )

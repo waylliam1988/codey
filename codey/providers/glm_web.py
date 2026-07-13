@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar
 
-from codey import glm
+from codey import cancellation, glm
 from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE, Session, open_glm
 from codey.provider_diagnostics import ProviderFailure, run_provider_action
+from codey.provider_timeouts import start_deadline
 
 
 @dataclass
@@ -38,13 +39,15 @@ class GlmWebProvider:
     def location(self) -> str:
         return self.session.page.url
 
-    def new_chat(self) -> None:
-        run_provider_action(
-            self,
-            action="new_chat",
-            page=self.session.page,
-            func=lambda: glm.new_chat(self.session.page),
-        )
+    def new_chat(self, timeout: float | None = None) -> None:
+        kwargs = {} if timeout is None else {"timeout": timeout}
+        with cancellation.deadline_scope(start_deadline(timeout)):
+            run_provider_action(
+                self,
+                action="new_chat",
+                page=self.session.page,
+                func=lambda: glm.new_chat(self.session.page, **kwargs),
+            )
 
     def send(self, text: str, timeout: float | None = None) -> str:
         if not text.strip():
@@ -52,12 +55,13 @@ class GlmWebProvider:
         kwargs = {}
         if timeout is not None:
             kwargs["response_timeout"] = timeout
-        return run_provider_action(
-            self,
-            action="send",
-            page=self.session.page,
-            func=lambda: glm.chat(self.session.page, text, **kwargs),
-        )
+        with cancellation.deadline_scope(start_deadline(timeout)):
+            return run_provider_action(
+                self,
+                action="send",
+                page=self.session.page,
+                func=lambda: glm.chat(self.session.page, text, **kwargs),
+            )
 
     def close(self) -> None:
         self.session.close()

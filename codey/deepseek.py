@@ -20,6 +20,8 @@ from playwright.sync_api import Page
 
 from codey import cancellation, provider_controls as controls
 from codey.provider_profiles import get_profile
+from codey.provider_diagnostics import ControlMissing, ResponseMissing
+from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.provider_submission import (
     SendAttempt,
     SubmissionUncertain,
@@ -45,11 +47,19 @@ RATE_LIMIT_RETRY_BUTTON = "div[role='button'].ds-button--warning"
 RATE_LIMIT_RETRY_TEXT = "重试"
 
 
-def new_chat(page) -> None:
+def new_chat(page, timeout: float | None = None) -> None:
     """Reset the page to a fresh DeepSeek conversation (clears prior context)."""
     cancellation.check()
-    page.goto(DEEPSEEK_URL, wait_until="domcontentloaded", timeout=60000)
-    wait_ready(page)
+    deadline = start_deadline(timeout)
+    page.goto(
+        DEEPSEEK_URL,
+        wait_until="domcontentloaded",
+        timeout=navigation_timeout_ms(deadline),
+    )
+    if deadline is None:
+        wait_ready(page)
+    else:
+        wait_ready(page, timeout=remaining(deadline, READY_TIMEOUT))
 
 
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
@@ -167,7 +177,7 @@ def _copy_last_text(page: Page) -> str:
                 if copy_button.is_visible():
                     cancellation.check()
                     return copy_action_text(page, copy_button, origin=DEEPSEEK_URL)
-            except cancellation.TaskCancelled:
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
                 raise
             except Exception:
                 pass
@@ -176,10 +186,17 @@ def _copy_last_text(page: Page) -> str:
 
 
 def _final_text(page: Page) -> str:
-    raw = _copy_last_text(page)
+    try:
+        raw = _copy_last_text(page)
+        if not raw:
+            raw = _last_text(page)
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
+        raise
     if not raw:
-        raw = _last_text(page)
-    if not raw:
+        controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
         raise RuntimeError("Could not read the DeepSeek response")
     controls.confirm_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
     return raw
@@ -224,7 +241,7 @@ def _wait_submission_started(
 def _rate_limit_visible(page: Page) -> bool:
     try:
         return RATE_LIMIT_TEXT in str(page.locator("body").inner_text(timeout=1000))
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         return False
@@ -244,7 +261,7 @@ def _click_rate_limit_retry(page: Page) -> bool:
                 cancellation.check()
                 candidate.click()
                 return True
-    except cancellation.TaskCancelled:
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
         return False
@@ -263,6 +280,9 @@ def _submit(
     if button is not None:
         attempt.submit("click", button.click)
     else:
+        controls.reject_control(
+            PROVIDER_ID, controls.CONTROL_SEND_BUTTON, page=page
+        )
         attempt.submit("enter", lambda: message_box.press("Enter"))
 
     if _wait_submission_started(page, baseline, baseline_text, submitted_text):
@@ -292,7 +312,7 @@ def _wait_late_response(
                     return _final_text(page)
                 except RuntimeError:
                     pass
-        except cancellation.TaskCancelled:
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
             pass
@@ -300,6 +320,7 @@ def _wait_late_response(
     return ""
 
 
+@controls.revival_send(PROVIDER_ID)
 def chat(
     page: Page,
     text: str,
@@ -319,13 +340,24 @@ def chat(
     try:
         ta = _message_box(page, teach=True)
         if ta is None:
-            raise TimeoutError("DeepSeek chat input is not visible")
-        cancellation.check()
-        ta.click()
-        cancellation.check()
-        ta.fill(text)
-        if controls.control_has_text(ta, text):
-            controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+            controls.reject_control(
+                PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
+            )
+            raise ControlMissing("DeepSeek chat input is not visible")
+        try:
+            cancellation.check()
+            ta.click()
+            cancellation.check()
+            ta.fill(text)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception:
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+            raise
+        if not controls.control_has_text(ta, text):
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+            raise ControlMissing("DeepSeek chat input did not accept the complete message")
+        controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
         cancellation.wait(0.3)
 
         attempt = _submit(page, ta, baseline, baseline_text, text)
@@ -372,9 +404,10 @@ def chat(
         if recovered is not None:
             confirm_submission(attempt, PROVIDER_ID)
             return recovered
-        controls.reject_control(PROVIDER_ID, controls.CONTROL_RESPONSE)
         if not attempt.confirmed:
+            if attempt.method == "click" and attempt.action_error is not None:
+                controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
             raise SubmissionUncertain("DeepSeek submission status is uncertain")
-        raise TimeoutError(f"DeepSeek response timed out after {response_timeout:.0f}s")
+        raise ResponseMissing(f"DeepSeek response timed out after {response_timeout:.0f}s")
     finally:
         controls.stop_response_watch(page, PROVIDER_ID)

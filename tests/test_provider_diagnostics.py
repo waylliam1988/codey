@@ -26,8 +26,21 @@ class ProviderDiagnosticsTests(unittest.TestCase):
             "url": "https://chat.example/c",
             "title": "Example Chat",
             "message": "response timed out",
+            "kind": "transient",
             "time": "2026-06-28T01:02:03+00:00",
         })
+
+    def test_capture_provider_failure_uses_explicit_structural_kind(self) -> None:
+        from codey.provider_diagnostics import ControlMissing
+
+        failure = capture_provider_failure(
+            model="Qwen",
+            action="send",
+            page=SimpleNamespace(url="https://chat.qwen.ai/", title=lambda: "Qwen"),
+            error=ControlMissing("message box missing"),
+        )
+
+        self.assertEqual(failure.kind, "control_missing")
 
     def test_capture_provider_failure_tolerates_broken_page_accessors(self) -> None:
         class BrokenPage:

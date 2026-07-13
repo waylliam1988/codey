@@ -376,6 +376,29 @@ class MimoDriverTests(unittest.TestCase):
         teaching.assert_not_called()
         self.assertEqual(attempt.phase, "attempted")
 
+    def test_send_button_uses_bounded_recovery_after_profile_fails(self) -> None:
+        page = mock.Mock()
+        recovered = mock.Mock()
+        message_box = mock.Mock()
+        with (
+            mock.patch.object(mimo, "_profiled_send_button", return_value=None),
+            mock.patch.object(mimo, "_message_box", return_value=message_box),
+            mock.patch.object(mimo.controls, "locate_control", return_value=recovered) as locate,
+            mock.patch.object(mimo.cancellation, "wait"),
+        ):
+            result = mimo._send_button(page, teach=True)
+
+        self.assertIs(result, recovered)
+        locate.assert_called_once_with(
+            page,
+            mimo.PROVIDER_ID,
+            mimo.controls.CONTROL_SEND_BUTTON,
+            (),
+            require_enabled=True,
+            teach=True,
+            anchor=message_box,
+        )
+
     def test_submit_refuses_enter_while_generation_active(self) -> None:
         page = mock.Mock()
         textarea = mock.Mock()

@@ -11,6 +11,8 @@ from codey import cancellation, provider_controls
 class SubmissionUncertain(TimeoutError):
     """The remote action ran, but the page did not confirm submission."""
 
+    provider_failure_kind = "submission_uncertain"
+
 
 @dataclass
 class SendAttempt:
