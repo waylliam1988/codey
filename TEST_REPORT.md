@@ -65,8 +65,14 @@ exploration. A MiMo baseline stalled and was discarded as an invalid sample.
 The proposed verification-failure context was therefore withdrawn: no parser,
 Agent integration, provider branch, version bump, or permanent probe was kept.
 
-Validation: `python -B -m pytest -q` passed with 653 tests, 8 skips, and 31
-subtests. `python -B -m unittest` passed with 653 tests and 8 skips. Full-tree
+A canonical JSON tool contract fixture now snapshots the ordered `TOOL_SPECS`
+fields and the exact rendered contract inserted into the web-model prompt.
+Intentional protocol changes must update the reviewed fixture explicitly;
+parser behavior tests continue to own required arguments and invalid
+combinations. This guard adds no runtime code, prompt text, UI, or model call.
+
+Validation: `python -B -m pytest -q` passed with 654 tests, 8 skips, and 31
+subtests. `python -B -m unittest` passed with 654 tests and 8 skips. Full-tree
 Ruff, `compileall`, and `git diff --check` passed. Pytest emitted one harmless
 warning because the sandbox could not update `.pytest_cache`.
 

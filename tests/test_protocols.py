@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from pathlib import Path
 
 from codey.agent import SUPPORTED_TOOL_NAMES
 from codey.models import ToolCall, ToolResult
@@ -12,11 +13,40 @@ from codey.protocols.json_codec import (
     RESULT_TOOL_NAMES,
     TOOL_SPECS,
     TOOL_SPEC_BY_NAME,
+    _render_tool_contract,
 )
 from codey.tool_runtime import MAX_REPLACEMENTS, READ_MAX_LINES
 
 
+CONTRACT_FIXTURE = Path(__file__).parent / "fixtures" / "json_tool_contract.txt"
+
+
+def _canonical_tool_contract() -> str:
+    lines = ["# Canonical JSON Tool Contract", ""]
+    for index, spec in enumerate(TOOL_SPECS, start=1):
+        lines.extend((
+            f"[{index}] {spec.name}",
+            f"runtime_name: {spec.runtime_name or '-'}",
+            f"aliases: {', '.join(spec.aliases) if spec.aliases else '-'}",
+            f"read_only: {str(spec.read_only).lower()}",
+            f"parallel_safe: {str(spec.parallel_safe).lower()}",
+            f"description: {spec.description}",
+            "examples:",
+        ))
+        lines.extend(f"- {example}" for example in spec.examples)
+        if not spec.examples:
+            lines.append("-")
+        lines.append("")
+    lines.extend(("--- rendered prompt contract ---", _render_tool_contract(), ""))
+    return "\n".join(lines)
+
+
 class JsonToolCodecTests(unittest.TestCase):
+    def test_canonical_tool_contract_matches_reviewed_fixture(self) -> None:
+        expected = CONTRACT_FIXTURE.read_text(encoding="utf-8")
+
+        self.assertEqual(_canonical_tool_contract(), expected)
+
     def test_system_prompt_describes_grep_as_literal_search(self) -> None:
         prompt = JsonToolCodec().system_prompt()
 

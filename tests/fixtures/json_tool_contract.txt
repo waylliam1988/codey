@@ -1,0 +1,128 @@
+# Canonical JSON Tool Contract
+
+[1] list_dir
+runtime_name: ls
+aliases: ls
+read_only: true
+parallel_safe: true
+description: List files in a directory.
+examples:
+- {"tool":"list_dir","args":{"path":"."}}
+
+[2] read_file
+runtime_name: read
+aliases: read
+read_only: true
+parallel_safe: true
+description: Read one file. Large files are returned in complete-line pages.
+examples:
+- {"tool":"read_file","args":{"path":"app.py"}}
+- {"tool":"read_file","args":{"path":"app.py","offset":301,"limit":300}}
+
+[3] read_files
+runtime_name: -
+aliases: -
+read_only: true
+parallel_safe: false
+description: Read up to 8 files in one step. Do not nest it inside parallel.
+examples:
+- {"tool":"read_files","args":{"paths":["a.py","b.py"]}}
+
+[4] grep
+runtime_name: search
+aliases: search
+read_only: true
+parallel_safe: true
+description: Search file contents for literal text before reading when the location is unknown. Matching is case-insensitive; regex is not supported.
+examples:
+- {"tool":"grep","args":{"query":"login handler","path":"."}}
+
+[5] find_references
+runtime_name: references
+aliases: references
+read_only: true
+parallel_safe: false
+description: Find bounded lexical reference hints for a simple symbol. This is not semantic resolution; use read_file before editing.
+examples:
+- {"tool":"find_references","args":{"symbol":"createRouter","path":"."}}
+
+[6] parallel
+runtime_name: -
+aliases: -
+read_only: true
+parallel_safe: false
+description: Batch at most 4 independent read-only list_dir, read_file, or grep calls. Local execution remains sequential.
+examples:
+- {"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}
+
+[7] edit
+runtime_name: edit
+aliases: -
+read_only: false
+parallel_safe: false
+description: Create a new file with content, or edit an existing file with exact replacements. Up to 8 replacements are validated together and written atomically.
+examples:
+- {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
+- {"tool":"edit","args":{"path":"app.py","old_string":"old exact text","new_string":"new text"}}
+- {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}
+
+[8] run
+runtime_name: run
+aliases: -
+read_only: false
+parallel_safe: false
+description: Run an allowed test, build, lint, or check command.
+examples:
+- {"tool":"run","args":{"command":"python -m unittest","path":"."}}
+
+[9] shell
+runtime_name: shell
+aliases: -
+read_only: false
+parallel_safe: false
+description: Ask the user to approve a necessary non-allowlisted command.
+examples:
+- {"tool":"shell","args":{"command":"git status --short","path":"."}}
+
+[10] done
+runtime_name: -
+aliases: -
+read_only: false
+parallel_safe: false
+description: Finish the task. summary is the complete user-facing response. For discussion, explanation, or read-only analysis, answer directly instead of merely saying that the topic was discussed.
+examples:
+- {"tool":"done","args":{"summary":"direct final response to the user"}}
+
+--- rendered prompt contract ---
+  {"tool":"list_dir","args":{"path":"."}}
+    List files in a directory.
+
+  {"tool":"read_file","args":{"path":"app.py"}}
+  {"tool":"read_file","args":{"path":"app.py","offset":301,"limit":300}}
+    Read one file. Large files are returned in complete-line pages.
+
+  {"tool":"read_files","args":{"paths":["a.py","b.py"]}}
+    Read up to 8 files in one step. Do not nest it inside parallel.
+
+  {"tool":"grep","args":{"query":"login handler","path":"."}}
+    Search file contents for literal text before reading when the location is unknown. Matching is case-insensitive; regex is not supported.
+
+  {"tool":"find_references","args":{"symbol":"createRouter","path":"."}}
+    Find bounded lexical reference hints for a simple symbol. This is not semantic resolution; use read_file before editing.
+
+  {"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}
+    Batch at most 4 independent read-only list_dir, read_file, or grep calls. Local execution remains sequential.
+
+  {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
+  {"tool":"edit","args":{"path":"app.py","old_string":"old exact text","new_string":"new text"}}
+  {"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}
+    Create a new file with content, or edit an existing file with exact replacements. Up to 8 replacements are validated together and written atomically.
+
+  {"tool":"run","args":{"command":"python -m unittest","path":"."}}
+    Run an allowed test, build, lint, or check command.
+
+  {"tool":"shell","args":{"command":"git status --short","path":"."}}
+    Ask the user to approve a necessary non-allowlisted command.
+
+  {"tool":"done","args":{"summary":"direct final response to the user"}}
+    Finish the task. summary is the complete user-facing response. For discussion, explanation, or read-only analysis, answer directly instead of merely saying that the topic was discussed.
