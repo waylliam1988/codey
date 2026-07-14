@@ -4,6 +4,20 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.40 - Bounded Stacktrace Pruning
+
+Controlled `run` output now folds obvious dependency stack frames before the
+existing middle clipping budget is applied. Python dependency frames from
+`site-packages`, `dist-packages`, `.venv`, and `venv` are folded together with
+their immediate dependency source line. Node frames are folded only when they
+are explicit `at ...` stack entries with a `:line:column` location inside
+`node_modules` or `.pnpm`.
+
+Project source frames, assertion messages, exception summaries, test names, and
+ordinary logs are preserved. If no dependency stack frame is found, output is
+returned byte-for-byte unchanged. The feature changes no tool protocol, exit
+code, `ok`, `changed`, or `truncated` semantics.
+
 ## 0.1.39 - MiMo Typing Flow and Neutral Web Markers
 
 MiMo completion recovery now reuses its explicit `data-is-typing` transition.

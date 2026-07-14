@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.39-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.40-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.39`
+Version: `0.1.40`
 
 [Version history](CHANGELOG.md)
 
@@ -84,8 +84,8 @@ This is not about replacing professional tools. It is about making the first ste
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
 - Recover one bounded web-chat state rule from boolean-only evidence when a
-  verified control bundle is not enough; Qwen completion recovery currently
-  requires a real generating-to-stop-hidden transition
+  verified control bundle is not enough; Qwen uses a real stop-state
+  transition and MiMo uses an explicit typing transition
 - Hand an interrupted project Writer to a healthy sibling model from bounded
   local checkpoint facts, with at most two switches and no repeated uncertain
   submission to the failed model
@@ -93,6 +93,8 @@ This is not about replacing professional tools. It is about making the first ste
   repeated structural failures do not keep receiving hidden work
 - Stop a running provider wait, review, recovery, or test command promptly
 - Preserve both the beginning and end of long command output
+- Fold obvious dependency stack frames from Python and Node command output so
+  user-code failures survive the existing output budget
 - Recover the active run, approval, or teaching prompt after a UI reconnect
 - Prevent uncertain provider submissions from being sent twice
 - Record compact provider failure diagnostics for debugging web-page breakage
@@ -123,8 +125,9 @@ The same recovery bundle can contain one bounded Flow Recipe made only from
 fixed boolean facts such as response stability and a verified stop-state
 transition. Recipes cannot contain selectors, JavaScript, URLs, arbitrary
 clicks, page text, or project data. Completion is never inferred from stable
-text alone. This is currently a Qwen completion pilot; MiMo and GLM safely keep
-their built-in behavior until they expose equally reliable terminal evidence.
+text alone. Qwen uses a real stop-state transition, MiMo uses an explicit
+typing transition, and GLM safely keeps its built-in behavior until it exposes
+equally reliable terminal evidence.
 
 If a project Writer fails with an explicit provider-page error, Codey can move
 the unfinished task to a healthy sibling model. The new Writer starts a clean

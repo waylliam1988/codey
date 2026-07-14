@@ -90,6 +90,48 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(outcome.output.endswith("TAIL"))
         self.assertIn("middle of output omitted", outcome.output)
 
+    def test_run_command_prunes_dependency_stack_frames_before_budget_clip(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            root_posix = root.as_posix()
+            dependency_frames = "".join(
+                f'  File "C:/Python/Lib/site-packages/pkg/mod_{index}.py", line {index}, in call\n'
+                f"    internal_{index}()\n"
+                for index in range(12)
+            )
+            stdout = (
+                "Traceback (most recent call last):\n"
+                f'  File "{root_posix}/app.py", line 4, in handle\n'
+                "    service()\n"
+                f"{dependency_frames}"
+                f'  File "{root_posix}/tests/test_app.py", line 9, in test_handle\n'
+                "    assert result == 42\n"
+                "AssertionError: expected 42\n"
+            )
+            completed = __import__("subprocess").CompletedProcess(
+                ["python", "fail.py"],
+                1,
+                stdout=stdout,
+                stderr="",
+            )
+
+            with (
+                mock.patch("codey.tool_runtime.RUN_OUTPUT_LIMIT", 700),
+                mock.patch(
+                    "codey.tool_runtime.cancellation.run_process",
+                    return_value=completed,
+                ),
+            ):
+                outcome = run_command(root, ".", "python fail.py")
+
+        self.assertFalse(outcome.ok)
+        self.assertIn("[... 12 dependency stack frames omitted ...]", outcome.output)
+        self.assertIn("tests/test_app.py", outcome.output)
+        self.assertIn("assert result == 42", outcome.output)
+        self.assertIn("AssertionError: expected 42", outcome.output)
+        self.assertNotIn("site-packages/pkg", outcome.output)
+        self.assertNotIn("internal_0()", outcome.output)
+
     def test_writing_identical_content_is_not_a_change(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

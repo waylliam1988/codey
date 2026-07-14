@@ -4,6 +4,17 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.40 - 有边界的 Stacktrace 降噪
+
+受控 `run` 输出现在会在原有中间截断预算前，先折叠明显的依赖库调用栈。
+Python 会折叠来自 `site-packages`、`dist-packages`、`.venv` 和 `venv` 的依赖
+frame，并一起折叠紧随其后的依赖源码行。Node 只折叠明确的 `at ...` stack
+entry，且路径必须带有 `:line:column` 并位于 `node_modules` 或 `.pnpm` 内。
+
+项目源码 frame、assertion 信息、异常摘要、测试名和普通日志都会保留。如果没有
+可折叠的依赖调用栈，输出会字节级保持不变。这个能力不改变工具协议、退出码、
+`ok`、`changed` 或 `truncated` 语义。
+
 ## 0.1.39 - MiMo Typing Flow 与中性网页标记
 
 MiMo completion 恢复现在复用网页明确提供的 `data-is-typing` 状态转换。

@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.39-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.1.40-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.39`
+版本：`0.1.40`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -87,6 +87,7 @@ Codey 想解决的是一个很朴素的问题：
 - 用小型健康熔断区分控件故障、临时错误、限流、登录和验证码状态
 - 及时停止正在等待的网页模型、Review、恢复流程或测试命令
 - 长命令输出同时保留开头与结尾，不丢失末尾错误摘要
+- 把 Python 和 Node 报错里的明显依赖库调用栈折叠掉，让用户代码错误更容易留在上下文里
 - UI 重连后自动恢复运行状态、审批或人工教学
 - 网页提交结果不确定时绝不重复发送
 - 底层记录很小的失败诊断信息，方便网页改版后定位问题
@@ -112,9 +113,10 @@ Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当�
 会恢复上一版。健康 Provider 的正常发送不会调用兄弟模型。
 
 同一恢复包现在还可以保存一条有边界的 Flow Recipe。它只能组合固定布尔事实，例如
-回答稳定和经过验证的 stop 状态转换，不能包含 selector、JavaScript、URL、任意点击、
-网页正文或项目数据。Codey 绝不会只凭“文字暂时稳定”猜测回答已经结束。目前这是
-Qwen completion 的安全试点；MiMo 和 GLM 在没有同等可靠的终止证据时继续安全降级。
+回答稳定和经过验证的 stop 或 typing 状态转换，不能包含 selector、JavaScript、URL、
+任意点击、网页正文或项目数据。Codey 绝不会只凭“文字暂时稳定”猜测回答已经结束。
+Qwen 使用真实 stop 状态转换，MiMo 使用明确 typing 状态转换；GLM 在没有同等可靠的
+终止证据时继续安全降级。
 
 ---
 

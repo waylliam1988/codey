@@ -19,7 +19,7 @@ from codey.bounded_scan import (
     iter_bounded_files,
 )
 from codey.references import find_reference_hints
-from codey.text_budget import clip_middle
+from codey.text_budget import clip_middle, prune_dependency_stack_frames
 
 
 SEARCH_EXCLUDED_DIRS = {
@@ -837,6 +837,7 @@ def run_command(root: Path, rel: str, command: str) -> ToolOutcome:
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
+    output = prune_dependency_stack_frames(output, root)
     output, truncated = clip_middle(output, RUN_OUTPUT_LIMIT)
     display = f"exit {proc.returncode}: {command}\n{output}"
     return ToolOutcome(

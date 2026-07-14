@@ -1,4 +1,32 @@
-# Codey 0.1.39 Test Report
+# Codey 0.1.40 Test Report
+
+## 0.1.40 Bounded Stacktrace Pruning
+
+Controlled `run` output now folds obvious dependency stack frames before the
+existing `clip_middle()` budget is applied. The pruning is deterministic,
+line-oriented, and local to display text: it does not change command execution,
+exit codes, `ok`, `changed`, or `truncated` semantics.
+
+Python pruning recognizes explicit traceback frames under `site-packages`,
+`dist-packages`, `.venv`, and `venv`, and folds the immediately following
+dependency source line with the frame. Node pruning recognizes only explicit
+`at ...` stack entries whose parsed location ends with `:line:column` and lives
+under `node_modules` or `.pnpm`. Project frames, assertion lines, exception
+messages, test names, and ordinary logs are preserved. If no dependency stack
+frame is found, the output is returned byte-for-byte unchanged.
+
+No live web-provider smoke was required for this release because the change is
+pure local text post-processing after a controlled command completes and before
+the existing output clipping step.
+
+Validation:
+
+```text
+Focused text-budget/runtime tests: 59 tests OK
+Full unittest: 798 tests OK
+Full pytest: 806 passed, 67 subtests passed
+Ruff, compileall, and git diff --check: passed
+```
 
 ## 0.1.39 MiMo Typing Transition Flow
 
