@@ -1,4 +1,43 @@
-# Codey 0.1.38 Test Report
+# Codey 0.1.39 Test Report
+
+## 0.1.39 MiMo Typing Transition Flow
+
+MiMo now contributes an explicit three-state typing observation to the existing
+bounded completion Flow. Deterministic tests cover true-to-false recovery,
+thinking pauses, initial false without generation evidence, missing attributes,
+DOM errors, built-in completion priority, unreadable final answers, provisional
+promotion, rollback, Stop, and deadline propagation.
+
+The live evidence probe stores only bounded booleans, lengths, timings, and
+recovery status. It never stores prompt or reply text. All required scenarios
+passed:
+
+| Scenario | Result | Evidence |
+|---|---|---|
+| Short answer | passed | typing transition, stable completion, no later growth |
+| Long code | passed | typing remained true during generation, then stable false |
+| Deep thinking | passed | empty thinking interval stayed true; no premature completion |
+| Forced Flow | passed | two distinct sends, `provisional -> active` |
+
+Observed end-to-end durations were 12.41s, 31.83s, 29.81s, and 20.73s
+respectively. The long-code probe was aligned with the production evaluator:
+an initial false observation is not enough; completion requires the subsequent
+stable non-empty samples used by the real Flow rule.
+
+All browser-visible validation markers now use neutral `SESSION_CHECK_<random>`
+values. Temporary DOM attributes, page globals, and clipboard sentinels likewise
+contain no product name. Local-only module names, report paths, and environment
+variables remain unchanged because web pages cannot observe them.
+
+Final regression:
+
+```text
+Focused provider regression: 146 tests OK
+Full unittest: 792 tests OK
+Full pytest: 800 passed, 67 subtests passed
+MiMo probe self-test: passed
+Ruff, compileall, residual marker scan, and git diff --check: passed
+```
 
 ## 0.1.38 Bounded Provider Flow Recovery
 

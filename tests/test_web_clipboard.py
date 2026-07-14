@@ -26,11 +26,13 @@ class WebClipboardTests(unittest.TestCase):
             origin="https://example.test/",
         )
         self.assertEqual(page.evaluate.call_args_list[-1].args[1], "user clipboard")
+        sentinel = page.evaluate.call_args_list[1].args[1]
+        self.assertNotIn("codey", sentinel.lower())
 
     def test_returns_empty_when_copy_action_does_not_replace_sentinel(self) -> None:
         page = mock.Mock()
         action = mock.Mock()
-        page.evaluate.side_effect = ["old", None, "__CODEY_CLIPBOARD_test__", None]
+        page.evaluate.side_effect = ["old", None, "__CLIPBOARD_CHECK_test__", None]
 
         with (
             mock.patch("codey.web_clipboard.uuid.uuid4") as uuid4,

@@ -593,7 +593,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
         captured = provider_controls.CapturedControl(
             fingerprint={"tag": "button", "role": "button", "text": "Send"},
-            current_selector='[data-codey-teach-current="token"]',
+            current_selector='[data-session-teach-current="token"]',
         )
         button = mock.Mock()
 

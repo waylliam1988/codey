@@ -128,7 +128,8 @@ class ProviderSupervisorTests(unittest.TestCase):
             self.assertGreater(provider.new_chat.call_args.kwargs["timeout"], 0)
             prompt = provider.send.call_args.args[0]
             self.assertGreater(provider.send.call_args.kwargs["timeout"], 0)
-            self.assertIn("CODEY_CANARY_", prompt)
+            self.assertIn("SESSION_CHECK_", prompt)
+            self.assertNotIn("codey", prompt.lower())
             self.assertNotIn("project", prompt.lower())
             self.assertNotIn("user", prompt.lower())
             self.assertEqual(supervisor.get("qwen").state, STATE_DEGRADED)

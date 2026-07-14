@@ -170,13 +170,37 @@ def _response_complete(page: Page, response: Locator) -> bool:
 
 
 def _response_is_typing(response: Locator) -> bool:
+    return _response_typing_state(response) is True
+
+
+def _response_typing_state(response: Locator) -> bool | None:
     try:
-        value = response.evaluate("el => el.getAttribute('data-is-typing') || ''")
+        value = response.evaluate("el => el.getAttribute('data-is-typing')")
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
+        return None
+    normalized = str(value).strip().lower() if value is not None else ""
+    if normalized == "true":
+        return True
+    if normalized == "false":
         return False
-    return str(value or "").strip().lower() == "true"
+    return None
+
+
+def _completion_observation(
+    response: Locator | None,
+    *,
+    current: str,
+    stable: bool,
+) -> provider_flow.FlowObservation:
+    typing_state = _response_typing_state(response) if response is not None else None
+    return provider_flow.FlowObservation(
+        response_stable=stable,
+        response_nonempty=bool(current),
+        typing_true=typing_state is True,
+        typing_false=typing_state is False,
+    )
 
 
 def _copy_button_after_response(page: Page, response: Locator) -> Locator | None:
@@ -595,29 +619,37 @@ def _chat(
     last = ""
     stable = 0
     appeared = False
+    answer_text_seen = False
     flow_trace = provider_flow.FlowTrace()
     while time.time() < deadline:
-        cancellation.wait(tick)
+        cancellation.wait(min(tick, 0.2) if not answer_text_seen else tick)
         count = _response_count(page)
-        current = _last_text(page) if count else ""
+        response = (
+            controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
+            if count
+            else None
+        )
+        current = _response_text(response) if response is not None else ""
         if count <= baseline and current == baseline_text:
             continue
         confirm_submission(attempt, PROVIDER_ID)
         appeared = True
+        same = bool(current) and current == last
+        observation = _completion_observation(
+            response,
+            current=current,
+            stable=same,
+        )
+        flow_trace.add(observation)
         if not current:
             stable = 0
             continue
-        same = current == last
+        answer_text_seen = True
         if same:
             stable += 1
         else:
             stable = 0
             last = current
-        observation = provider_flow.FlowObservation(
-            response_stable=same,
-            response_nonempty=bool(current),
-        )
-        flow_trace.add(observation)
         if stable >= stable_ticks and (time.time() - sent_at) >= min_wait:
             built_in_ready = _generation_complete(page)
             completion_ready = controls.flow_stage_ready(
@@ -650,9 +682,15 @@ def _chat(
         confirm_submission(attempt, PROVIDER_ID)
         return late
     if appeared and last:
-        observation = provider_flow.FlowObservation(
-            response_stable=True,
-            response_nonempty=True,
+        response = controls.locate_response(
+            page,
+            PROVIDER_ID,
+            PROFILE.selectors("response"),
+        )
+        observation = _completion_observation(
+            response,
+            current=last,
+            stable=True,
         )
         flow_trace.add(observation)
         built_in_ready = _generation_complete(page)

@@ -14,6 +14,16 @@ class ProviderControlsTests(unittest.TestCase):
         controls.set_doctor_handler(None)
         controls.end_task_context()
 
+    def test_page_injected_helpers_do_not_expose_product_name(self) -> None:
+        scripts = (
+            controls._INSTALL_CAPTURE_JS,
+            controls.discovery._DISCOVER_CONTROLS_JS,
+            controls.discovery._START_RESPONSE_WATCH_JS,
+            controls.discovery._READ_RESPONSE_WATCH_JS,
+            controls.discovery._STOP_RESPONSE_WATCH_JS,
+        )
+        self.assertTrue(all("codey" not in script.lower() for script in scripts))
+
     def test_task_context_cleanup_removes_all_task_local_state(self) -> None:
         page = mock.Mock()
         controls.begin_task_context("session-1")
@@ -112,7 +122,7 @@ class ProviderControlsTests(unittest.TestCase):
         locator.count.return_value = 1
         locator.nth.return_value = candidate
         page.locator.side_effect = lambda selector: (
-            missing if "data-codey-fault" in selector else locator
+            missing if "data-revival-fault" in selector else locator
         )
         controls._remember_pending(
             "qwen",
@@ -134,7 +144,7 @@ class ProviderControlsTests(unittest.TestCase):
                 page,
                 "qwen",
                 controls.CONTROL_SEND_BUTTON,
-                ('[data-codey-fault="send"]',),
+                ('[data-revival-fault="send"]',),
                 require_enabled=True,
             )
 
@@ -305,20 +315,20 @@ class ProviderControlsTests(unittest.TestCase):
     def test_control_discovery_keeps_prior_transaction_markers_until_cleanup(self) -> None:
         source = controls.discovery._DISCOVER_CONTROLS_JS
         self.assertIn('[class~="enter"]', source)
-        self.assertNotIn("removeAttribute('data-codey-auto-candidate')", source)
-        self.assertIn("getAttribute('data-codey-auto-candidate')", source)
+        self.assertNotIn("removeAttribute('data-session-auto-candidate')", source)
+        self.assertIn("getAttribute('data-session-auto-candidate')", source)
         self.assertIn(
-            "removeAttribute('data-codey-auto-candidate')",
+            "removeAttribute('data-session-auto-candidate')",
             controls.discovery._STOP_RESPONSE_WATCH_JS,
         )
 
     def test_response_discovery_keeps_locator_marker_until_transaction_cleanup(self) -> None:
         source = controls.discovery._READ_RESPONSE_WATCH_JS
-        self.assertNotIn("removeAttribute('data-codey-response-candidate')", source)
-        self.assertIn("getAttribute('data-codey-response-candidate')", source)
+        self.assertNotIn("removeAttribute('data-session-response-candidate')", source)
+        self.assertIn("getAttribute('data-session-response-candidate')", source)
         self.assertIn("state.nextMarker++", source)
         self.assertIn(
-            "removeAttribute('data-codey-response-candidate')",
+            "removeAttribute('data-session-response-candidate')",
             controls.discovery._STOP_RESPONSE_WATCH_JS,
         )
 
@@ -1050,7 +1060,7 @@ class ProviderControlsTests(unittest.TestCase):
         page.evaluate.side_effect = [
             None,
             [{
-                "selector": '[data-codey-response-candidate="one"]',
+                "selector": '[data-session-response-candidate="one"]',
                 "visible": True,
                 "text": '{"tool":"done"}',
                 "bottom_ratio": 0.8,

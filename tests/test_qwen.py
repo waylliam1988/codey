@@ -31,6 +31,9 @@ class QwenDriverTests(unittest.TestCase):
     def test_ready_timeout_allows_slow_homepage(self) -> None:
         self.assertGreaterEqual(qwen.READY_TIMEOUT, 90)
 
+    def test_page_bootstrap_helper_does_not_expose_product_name(self) -> None:
+        self.assertNotIn("codey", qwen._BOOTSTRAP_READY_JS.lower())
+
     def test_new_chat_applies_one_budget_to_navigation_and_ready_wait(self) -> None:
         page = mock.Mock()
         with (

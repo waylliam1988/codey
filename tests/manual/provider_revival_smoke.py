@@ -37,19 +37,22 @@ PROVIDER_MODULES = {
 
 def _faulted_profile(profile: ProviderProfile) -> ProviderProfile:
     selectors = dict(profile.selectors_by_action)
-    selectors["message_box"] = ('[data-codey-fault="message-box"]',)
-    selectors["send_button"] = ('[data-codey-fault="send-button"]',)
+    selectors["message_box"] = ('[data-revival-fault="message-box"]',)
+    selectors["send_button"] = ('[data-revival-fault="send-button"]',)
     return replace(profile, selectors_by_action=selectors)
 
 
 def _reply_marker(provider_id: str, phase: str) -> str:
-    return f"CODEY_REVIVAL_{provider_id.upper()}_{phase}_{uuid.uuid4().hex[:8]}"
+    del provider_id, phase
+    return f"SESSION_CHECK_{uuid.uuid4().hex[:12]}"
 
 
 def _send_marker(provider, marker: str, timeout: float) -> tuple[str, float]:
+    if "codey" in marker.lower():
+        raise ValueError("web verification markers must be product-neutral")
     prompt = (
-        "This is a local browser-connection verification. Reply with exactly "
-        f'one JSON object and no markdown: {{"nonce":"{marker}"}}'
+        "Reply with exactly one JSON object and no markdown: "
+        f'{{"nonce":"{marker}"}}'
     )
     started = time.monotonic()
     reply = provider.send(prompt, timeout=timeout)

@@ -71,6 +71,23 @@ checks that a second natural send reuses and promotes the recovered bundle:
 python -B tests\manual\provider_revival_smoke.py --provider all --port 9222
 ```
 
+`mimo_typing_evidence_probe.py` records only bounded boolean DOM evidence for
+MiMo's `data-is-typing` transition. It never writes the prompt or reply text to
+the report, and its outbound nonce uses the same product-neutral
+`SESSION_CHECK_<random>` form as the other web probes. Run short, long-code,
+and deep-thinking cases separately before
+retaining MiMo completion Flow; `--force-flow` disables only the built-in
+completion decision for the first send so the production Flow path must save a
+provisional rule, then performs a second natural send in a fresh task context
+and requires promotion to active:
+
+```powershell
+python -B tests\manual\mimo_typing_evidence_probe.py --case short
+python -B tests\manual\mimo_typing_evidence_probe.py --case long-code
+python -B tests\manual\mimo_typing_evidence_probe.py --case deep-thinking
+python -B tests\manual\mimo_typing_evidence_probe.py --case short --force-flow
+```
+
 `python_syntax_regression_ab.py` compares the production Python
 syntax-regression hint with a baseline that suppresses it. Fault injection is
 probe-only: it inserts the same missing colon in both A/B arms and runs a

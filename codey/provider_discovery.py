@@ -34,7 +34,7 @@ def control_candidates(
     if action not in {MESSAGE_BOX, SEND_BUTTON}:
         return ()
     anchor_box = _bounding_box(anchor)
-    token = f"codey_{time.time_ns()}"
+    token = f"session_{time.time_ns()}"
     try:
         raw = page.evaluate(_DISCOVER_CONTROLS_JS, {"token": token, "anchorBox": anchor_box})
     except Exception:
@@ -141,7 +141,7 @@ def score_control_candidate(
 
 
 def start_response_watch(page: Any) -> str:
-    token = f"codey_response_{time.time_ns()}"
+    token = f"session_response_{time.time_ns()}"
     try:
         page.evaluate(_START_RESPONSE_WATCH_JS, {"token": token})
     except Exception:
@@ -302,17 +302,17 @@ _DISCOVER_CONTROLS_JS = r"""
     const style = window.getComputedStyle(el); const box = el.getBoundingClientRect();
     const visible = style.visibility !== 'hidden' && style.display !== 'none' && box.width > 1 && box.height > 1;
     if (!visible) continue;
-    const marker = el.getAttribute('data-codey-auto-candidate') || (token + '_' + index++);
-    if (!el.hasAttribute('data-codey-auto-candidate')) el.setAttribute('data-codey-auto-candidate', marker);
+    const marker = el.getAttribute('data-session-auto-candidate') || (token + '_' + index++);
+    if (!el.hasAttribute('data-session-auto-candidate')) el.setAttribute('data-session-auto-candidate', marker);
     const data = {};
-    for (const attr of Array.from(el.attributes || [])) if (attr.name && attr.name.startsWith('data-') && !attr.name.startsWith('data-codey-')) data[attr.name] = attr.value || '';
+    for (const attr of Array.from(el.attributes || [])) if (attr.name && attr.name.startsWith('data-') && !attr.name.startsWith('data-session-')) data[attr.name] = attr.value || '';
     let distance = null;
     if (anchorBox) {
       const ax = Number(anchorBox.x || 0) + Number(anchorBox.width || 0) / 2;
       const ay = Number(anchorBox.y || 0) + Number(anchorBox.height || 0) / 2;
       distance = Math.hypot(ax - (box.x + box.width / 2), ay - (box.y + box.height / 2));
     }
-    items.push({ selector: '[data-codey-auto-candidate="' + marker + '"]', visible,
+    items.push({ selector: '[data-session-auto-candidate="' + marker + '"]', visible,
       enabled: !el.disabled && el.getAttribute('aria-disabled') !== 'true', area: box.width * box.height,
       bottom_ratio: Math.max(0, Math.min(1, (box.y + box.height / 2) / viewportHeight)), anchor_distance: distance,
       fingerprint: { tag: (el.tagName || '').toLowerCase(), role: el.getAttribute('role') || '', type: el.getAttribute('type') || '',
@@ -327,7 +327,7 @@ _DISCOVER_CONTROLS_JS = r"""
 
 _START_RESPONSE_WATCH_JS = r"""
 ({ token }) => {
-  const old = window.__codeyResponseWatch; if (old && old.observer) old.observer.disconnect();
+  const old = window.__sessionResponseWatch; if (old && old.observer) old.observer.disconnect();
   const state = { token, changed: [], seen: new WeakSet(), observer: null, nextMarker: 0 };
   const remember = (raw) => {
     let el = raw && raw.nodeType === 3 ? raw.parentElement : raw;
@@ -340,14 +340,14 @@ _START_RESPONSE_WATCH_JS = r"""
     for (const mutation of mutations) { remember(mutation.target); for (const node of mutation.addedNodes || []) remember(node); }
   });
   state.observer.observe(document.body, { childList: true, subtree: true, characterData: true });
-  window.__codeyResponseWatch = state;
+  window.__sessionResponseWatch = state;
 }
 """
 
 
 _READ_RESPONSE_WATCH_JS = r"""
 ({ token }) => {
-  const state = window.__codeyResponseWatch; if (!state || state.token !== token) return [];
+  const state = window.__sessionResponseWatch; if (!state || state.token !== token) return [];
   const viewportHeight = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
   const items = [];
   for (const el of state.changed) {
@@ -356,11 +356,11 @@ _READ_RESPONSE_WATCH_JS = r"""
     const visible = style.visibility !== 'hidden' && style.display !== 'none' && box.width > 1 && box.height > 1;
     const text = (el.innerText || el.textContent || '').trim();
     if (!visible || !text || text.length > 250000) continue;
-    const marker = el.getAttribute('data-codey-response-candidate') || (token + '_' + state.nextMarker++);
-    if (!el.hasAttribute('data-codey-response-candidate')) el.setAttribute('data-codey-response-candidate', marker);
+    const marker = el.getAttribute('data-session-response-candidate') || (token + '_' + state.nextMarker++);
+    if (!el.hasAttribute('data-session-response-candidate')) el.setAttribute('data-session-response-candidate', marker);
     const data = {};
-    for (const attr of Array.from(el.attributes || [])) if (attr.name && attr.name.startsWith('data-') && !attr.name.startsWith('data-codey-')) data[attr.name] = attr.value || '';
-    items.push({ selector: '[data-codey-response-candidate="' + marker + '"]', visible, text,
+    for (const attr of Array.from(el.attributes || [])) if (attr.name && attr.name.startsWith('data-') && !attr.name.startsWith('data-session-')) data[attr.name] = attr.value || '';
+    items.push({ selector: '[data-session-response-candidate="' + marker + '"]', visible, text,
       bottom_ratio: Math.max(0, Math.min(1, (box.y + box.height / 2) / viewportHeight)),
       fingerprint: { tag: (el.tagName || '').toLowerCase(), role: el.getAttribute('role') || '', type: el.getAttribute('type') || '',
         ariaLabel: el.getAttribute('aria-label') || '', title: el.getAttribute('title') || '', placeholder: el.getAttribute('placeholder') || '',
@@ -373,9 +373,9 @@ _READ_RESPONSE_WATCH_JS = r"""
 
 _STOP_RESPONSE_WATCH_JS = r"""
 ({ token }) => {
-  const state = window.__codeyResponseWatch;
-  if (state && state.token === token) { if (state.observer) state.observer.disconnect(); window.__codeyResponseWatch = null; }
-  for (const el of document.querySelectorAll('[data-codey-response-candidate]')) el.removeAttribute('data-codey-response-candidate');
-  for (const el of document.querySelectorAll('[data-codey-auto-candidate]')) el.removeAttribute('data-codey-auto-candidate');
+  const state = window.__sessionResponseWatch;
+  if (state && state.token === token) { if (state.observer) state.observer.disconnect(); window.__sessionResponseWatch = null; }
+  for (const el of document.querySelectorAll('[data-session-response-candidate]')) el.removeAttribute('data-session-response-candidate');
+  for (const el of document.querySelectorAll('[data-session-auto-candidate]')) el.removeAttribute('data-session-auto-candidate');
 }
 """

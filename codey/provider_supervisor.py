@@ -282,7 +282,7 @@ def run_half_open_canary(
     """Probe one cooled-down provider without exposing task or project data."""
     if not supervisor.needs_canary(provider_id):
         return True
-    marker = "CODEY_CANARY_" + secrets.token_hex(8).upper()
+    marker = "SESSION_CHECK_" + secrets.token_hex(8).upper()
     prompt = f"Return exactly this marker and nothing else: {marker}"
     deadline = start_deadline(CANARY_TIMEOUT)
     try:

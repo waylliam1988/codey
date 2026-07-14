@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import unittest
 import threading
+import tempfile
+import unittest
+from pathlib import Path
 from unittest import mock
 
 from codey import cancellation, mimo
@@ -335,6 +337,54 @@ class MimoDriverTests(unittest.TestCase):
 
         copy_button.assert_not_called()
 
+    def test_response_typing_state_is_explicitly_three_state(self) -> None:
+        response = mock.Mock()
+        for raw, expected in (
+            ("true", True),
+            (" TRUE ", True),
+            ("false", False),
+            (" False ", False),
+            (None, None),
+            ("", None),
+            ("invalid", None),
+        ):
+            with self.subTest(raw=raw):
+                response.evaluate.return_value = raw
+                self.assertIs(mimo._response_typing_state(response), expected)
+
+    def test_response_typing_state_dom_error_is_unknown(self) -> None:
+        response = mock.Mock()
+        response.evaluate.side_effect = RuntimeError("detached")
+
+        self.assertIsNone(mimo._response_typing_state(response))
+        self.assertFalse(mimo._response_is_typing(response))
+
+    def test_response_typing_state_propagates_stop_and_deadline(self) -> None:
+        response = mock.Mock()
+        for error in (
+            cancellation.TaskCancelled("stop"),
+            cancellation.DeadlineExceeded("deadline"),
+        ):
+            with self.subTest(error=type(error).__name__):
+                response.evaluate.side_effect = error
+                with self.assertRaises(type(error)):
+                    mimo._response_typing_state(response)
+
+    def test_completion_observation_never_turns_unknown_into_false(self) -> None:
+        response = mock.Mock()
+        response.evaluate.return_value = None
+
+        observation = mimo._completion_observation(
+            response,
+            current="stable reply",
+            stable=True,
+        )
+
+        self.assertTrue(observation.response_nonempty)
+        self.assertTrue(observation.response_stable)
+        self.assertFalse(observation.typing_true)
+        self.assertFalse(observation.typing_false)
+
     def test_generation_complete_accepts_finished_response_without_copy_when_not_generating(self) -> None:
         page = mock.Mock()
         response = mock.Mock()
@@ -415,6 +465,8 @@ class MimoDriverTests(unittest.TestCase):
     def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
         page = mock.Mock()
         textarea = mock.Mock()
+        response = mock.Mock()
+        response.evaluate.return_value = "false"
         attempt = SendAttempt()
         attempt.submit("click", lambda: None)
         with (
@@ -422,7 +474,8 @@ class MimoDriverTests(unittest.TestCase):
             mock.patch.object(mimo, "_message_box", return_value=textarea),
             mock.patch.object(mimo, "_submit", return_value=attempt),
             mock.patch.object(mimo, "_response_count", side_effect=[0, 1]),
-            mock.patch.object(mimo, "_last_text", return_value="delayed reply"),
+            mock.patch.object(mimo.controls, "locate_response", return_value=response),
+            mock.patch.object(mimo, "_response_text", return_value="delayed reply"),
             mock.patch.object(mimo, "_generation_complete", return_value=True),
             mock.patch.object(mimo, "_final_text", return_value="raw delayed reply"),
             mock.patch.object(mimo.controls, "control_has_text", return_value=True),
@@ -458,6 +511,142 @@ class MimoDriverTests(unittest.TestCase):
 
         self.assertIsNone(recipe)
         helper.assert_not_called()
+
+    def test_typing_transition_can_recover_without_model_assistance(self) -> None:
+        trace = mimo.provider_flow.FlowTrace()
+        trace.add(mimo.provider_flow.FlowObservation(typing_true=True))
+        terminal = mimo.provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+            typing_false=True,
+        )
+        trace.add(terminal)
+        trace.add(terminal)
+        helper = mock.Mock()
+
+        with mock.patch.object(mimo.provider_flow, "_handler", helper):
+            recipe = mimo.provider_flow.request_recovery(
+                mimo.PROVIDER_ID,
+                mimo.provider_flow.STAGE_COMPLETION,
+                trace,
+                object(),
+            )
+
+        self.assertEqual(
+            recipe,
+            {
+                mimo.provider_flow.STAGE_COMPLETION: (
+                    mimo.provider_flow.PREDICATE_RESPONSE_STABLE,
+                    mimo.provider_flow.PREDICATE_TYPING_FALSE,
+                )
+            },
+        )
+        helper.assert_not_called()
+
+    def test_chat_wires_typing_transition_into_revival_transaction(self) -> None:
+        page = mock.Mock(url="https://aistudio.xiaomimimo.com/#/c")
+        textarea = mock.Mock()
+        typing = mock.Mock()
+        typing.evaluate.return_value = "true"
+        terminal = mock.Mock()
+        terminal.evaluate.return_value = "false"
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        helper = mock.Mock()
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "provider-controls.json"
+            mimo.controls.begin_task_context("mimo-chat-flow")
+            try:
+                with (
+                    mock.patch.object(mimo.controls, "CONTROL_STORE", path),
+                    mock.patch.object(mimo.provider_flow, "_handler", helper),
+                    mock.patch.object(mimo, "wait_ready"),
+                    mock.patch.object(mimo, "_message_box", return_value=textarea),
+                    mock.patch.object(mimo, "_submit", return_value=attempt),
+                    mock.patch.object(
+                        mimo,
+                        "_response_count",
+                        side_effect=[0, 1, 1, 1, 1],
+                    ),
+                    mock.patch.object(
+                        mimo.controls,
+                        "locate_response",
+                        side_effect=[typing, terminal, terminal, terminal],
+                    ),
+                    mock.patch.object(
+                        mimo,
+                        "_response_text",
+                        side_effect=["", "final", "final", "final"],
+                    ),
+                    mock.patch.object(mimo, "_generation_complete", return_value=False),
+                    mock.patch.object(mimo, "_final_text", return_value="final") as final_text,
+                    mock.patch.object(mimo.controls, "control_has_text", return_value=True),
+                    mock.patch.object(mimo.controls, "confirm_control"),
+                    mock.patch.object(mimo.controls, "start_response_watch"),
+                    mock.patch.object(mimo.controls, "stop_response_watch"),
+                    mock.patch.object(mimo.cancellation, "wait"),
+                ):
+                    reply = mimo.chat(
+                        page,
+                        "hello",
+                        response_timeout=1,
+                        stable_ticks=1,
+                        tick=0,
+                        min_wait=0,
+                    )
+                meta = mimo.controls.load_controls(path)["mimo"]["_revival"]
+            finally:
+                mimo.controls.end_task_context()
+
+        self.assertEqual(reply, "final")
+        self.assertEqual(meta["status"], "provisional")
+        final_text.assert_called_once_with(page, completion_verified=True)
+        helper.assert_not_called()
+
+    def test_typing_pause_or_missing_attribute_cannot_recover(self) -> None:
+        helper = mock.Mock()
+        with mock.patch.object(mimo.provider_flow, "_handler", helper):
+            for terminal in (True, None):
+                with self.subTest(terminal=terminal):
+                    trace = mimo.provider_flow.FlowTrace()
+                    trace.add(mimo.provider_flow.FlowObservation(typing_true=True))
+                    observation = mimo.provider_flow.FlowObservation(
+                        response_stable=True,
+                        response_nonempty=True,
+                        typing_true=terminal is True,
+                        typing_false=terminal is False,
+                    )
+                    trace.add(observation)
+                    trace.add(observation)
+                    self.assertIsNone(
+                        mimo.provider_flow.request_recovery(
+                            mimo.PROVIDER_ID,
+                            mimo.provider_flow.STAGE_COMPLETION,
+                            trace,
+                            object(),
+                        )
+                    )
+        helper.assert_not_called()
+
+    def test_initial_typing_false_without_start_evidence_cannot_recover(self) -> None:
+        trace = mimo.provider_flow.FlowTrace()
+        terminal = mimo.provider_flow.FlowObservation(
+            response_stable=True,
+            response_nonempty=True,
+            typing_false=True,
+        )
+        trace.add(terminal)
+        trace.add(terminal)
+
+        self.assertIsNone(
+            mimo.provider_flow.request_recovery(
+                mimo.PROVIDER_ID,
+                mimo.provider_flow.STAGE_COMPLETION,
+                trace,
+                object(),
+            )
+        )
 
     def test_submission_started_accepts_cleared_input_after_send_click(self) -> None:
         page = mock.Mock()

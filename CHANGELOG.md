@@ -4,6 +4,21 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.39 - MiMo Typing Flow and Neutral Web Markers
+
+MiMo completion recovery now reuses its explicit `data-is-typing` transition.
+Flow observations distinguish true, false, and unavailable states, so a missing
+attribute or DOM read error is never treated as completion. Recovery still
+requires a previously observed typing state, an explicit transition to false,
+non-empty output, and stable text; built-in completion remains the first path.
+
+Short-answer, long-code, and deep-thinking live probes all observed the required
+transition without post-completion growth. A forced-Flow run saved a provisional
+rule on the first send and promoted it to active on the next natural send.
+Browser-visible verification markers, temporary DOM attributes, page globals,
+and clipboard sentinels are now product-neutral. Local-only configuration names
+remain unchanged.
+
 ## 0.1.38 - Bounded Provider Flow Recovery
 
 Provider recovery bundles can now carry one bounded web-chat state rule in

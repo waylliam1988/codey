@@ -27,7 +27,7 @@ def copy_action_text(
     except Exception:
         previous = None
 
-    sentinel = f"__CODEY_CLIPBOARD_{uuid.uuid4().hex}__"
+    sentinel = f"__CLIPBOARD_CHECK_{uuid.uuid4().hex}__"
     try:
         page.evaluate("(text) => navigator.clipboard.writeText(text)", sentinel)
     except Exception:

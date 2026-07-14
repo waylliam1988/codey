@@ -40,7 +40,7 @@ MAX_STALLED_RESPONSE_RETRIES = 1
 
 _BOOTSTRAP_READY_JS = r"""
 () => {
-  if (window.__codeyQwenReady) return true;
+  if (window.__qwenComposerReady) return true;
   const modelReady = performance.getEntriesByType('resource').some((entry) => {
     try {
       const url = new URL(entry.name);
@@ -53,7 +53,7 @@ _BOOTSTRAP_READY_JS = r"""
       return false;
     }
   });
-  if (modelReady) window.__codeyQwenReady = true;
+  if (modelReady) window.__qwenComposerReady = true;
   return modelReady;
 }
 """

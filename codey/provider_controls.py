@@ -608,7 +608,7 @@ def suppress_assistance():
 
 def start_click_capture(page: Any) -> str:
     cancellation.check()
-    token = "codey_" + str(int(time.time() * 1000))
+    token = "capture_" + str(int(time.time() * 1000))
     page.evaluate(_INSTALL_CAPTURE_JS, {"token": token})
     return token
 
@@ -627,7 +627,7 @@ def finish_click_capture(
         if control_fingerprint_is_valid(fingerprint, action):
             return CapturedControl(
                 fingerprint=fingerprint,
-                current_selector=f'[data-codey-teach-current="{token}"]',
+                current_selector=f'[data-session-teach-current="{token}"]',
             )
         label = control_label(fingerprint)
         raise ValueError(label or "clicked item was not usable")
@@ -1166,7 +1166,7 @@ def control_label(fingerprint: dict[str, Any]) -> str:
 def _wait_for_click(page: Any, deadline: float) -> dict[str, Any]:
     while time.time() < deadline:
         cancellation.check()
-        captured = page.evaluate("window.__codeyTeachClick || null")
+        captured = page.evaluate("window.__sessionTeachClick || null")
         if captured:
             return captured
         cancellation.wait(0.1)
@@ -1175,7 +1175,7 @@ def _wait_for_click(page: Any, deadline: float) -> dict[str, Any]:
 
 def _cleanup_capture(page: Any) -> None:
     try:
-        page.evaluate("window.__codeyTeachCleanup && window.__codeyTeachCleanup()")
+        page.evaluate("window.__sessionTeachCleanup && window.__sessionTeachCleanup()")
     except Exception:
         pass
 
@@ -1230,7 +1230,7 @@ def _stable_data(value: Any) -> dict[str, str]:
     out: dict[str, str] = {}
     for key, item in value.items():
         attr = _clean(key, 48)
-        if not attr.startswith("data-") or attr.startswith("data-codey-"):
+        if not attr.startswith("data-") or attr.startswith("data-session-"):
             continue
         text = _clean(item, 120)
         if text:
@@ -1324,8 +1324,8 @@ def _looks_like_upload(fingerprint: dict[str, Any]) -> bool:
 
 _INSTALL_CAPTURE_JS = r"""
 ({ token }) => {
-  if (window.__codeyTeachCleanup) window.__codeyTeachCleanup();
-  window.__codeyTeachClick = null;
+  if (window.__sessionTeachCleanup) window.__sessionTeachCleanup();
+  window.__sessionTeachClick = null;
   const interactive = 'button,[role="button"],textarea,input,[contenteditable="true"],[contenteditable="plaintext-only"]';
   const handler = (event) => {
     const raw = event.target;
@@ -1334,12 +1334,12 @@ _INSTALL_CAPTURE_JS = r"""
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
-    el.setAttribute('data-codey-teach-current', token);
+    el.setAttribute('data-session-teach-current', token);
     const data = {};
     for (const attr of Array.from(el.attributes || [])) {
       if (attr.name && attr.name.startsWith('data-')) data[attr.name] = attr.value || '';
     }
-    window.__codeyTeachClick = {
+    window.__sessionTeachClick = {
       tag: (el.tagName || '').toLowerCase(),
       role: el.getAttribute('role') || '',
       type: el.getAttribute('type') || '',
@@ -1351,12 +1351,12 @@ _INSTALL_CAPTURE_JS = r"""
       classes: Array.from(el.classList || []),
       data,
     };
-    window.__codeyTeachCleanup();
+    window.__sessionTeachCleanup();
   };
   document.addEventListener('click', handler, true);
-  window.__codeyTeachCleanup = () => {
+  window.__sessionTeachCleanup = () => {
     document.removeEventListener('click', handler, true);
-    window.__codeyTeachCleanup = null;
+    window.__sessionTeachCleanup = null;
   };
 }
 """
