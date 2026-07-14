@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.41-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.1.42-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.41`
+版本：`0.1.42`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -61,7 +61,7 @@ Codey 想解决的是一个很朴素的问题：
 - 用 New Chat 正常聊天，不向模型开放任何项目
 - 在同一个项目对话里讨论、查看和修改；只有明确要求时才改文件
 - 让模型读取和修改你选择的项目目录
-- 运行测试，并把结果继续反馈给模型
+- 运行允许的测试、构建、lint 和类型检查，并把结果继续反馈给模型
 - 显示红绿 diff
 - 每次任务结束后显示一条克制的任务收据，例如 `DONE · 2 files changed · checks passed · restore available`
 - 即使没有 Git，也能用 snapshot diff 和 restore 恢复改动
@@ -86,9 +86,12 @@ Codey 想解决的是一个很朴素的问题：
   同一任务最多切换两次，不会向提交状态不确定的旧模型重发
 - 用小型健康熔断区分控件故障、临时错误、限流、登录和验证码状态
 - 及时停止正在等待的网页模型、Review、恢复流程或测试命令
+- 对完整测试/构建套件给更长超时，同时保持快速命令有界
 - 长命令输出同时保留开头与结尾，不丢失末尾错误摘要
 - 大文件只读到一页时，直接告诉模型下一页应该调用的 `read_file` JSON 参数
+- grep 命中过多被截断时，提示模型缩小查询或指定子目录
 - 把 Python 和 Node 报错里的明显依赖库调用栈折叠掉，让用户代码错误更容易留在上下文里
+- 助手回复支持克制的 Markdown 基础渲染，代码块带复制按钮，不加语法高亮或新颜色
 - UI 重连后自动恢复运行状态、审批或人工教学
 - 网页提交结果不确定时绝不重复发送
 - 底层记录很小的失败诊断信息，方便网页改版后定位问题

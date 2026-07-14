@@ -304,6 +304,47 @@
     width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.8;
   }
 
+  /* ---------- assistant markdown (monochrome, no highlighting) ---------- */
+  .msg .body.md { white-space: normal; }
+  .msg .body.md > :first-child { margin-top: 0; }
+  .msg .body.md > :last-child { margin-bottom: 0; }
+  .md-p { margin: 0 0 10px; white-space: pre-wrap; }
+  .md-h {
+    font-weight: 600; color: var(--text);
+    font-size: 13px; margin: 14px 0 8px;
+  }
+  .md-list { margin: 0 0 10px; padding-left: 20px; }
+  .md-list li { margin: 2px 0; }
+  .md-ic {
+    font-family: var(--font-mono); font-size: 12px;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 4px; padding: 0 4px;
+  }
+  .md-code {
+    position: relative;
+    background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 12px; margin: 0 0 10px;
+    overflow-x: auto;
+  }
+  .md-code code {
+    display: block;
+    font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
+    color: var(--text); white-space: pre;
+  }
+  .code-copy {
+    position: absolute; top: 6px; right: 6px;
+    font-family: var(--font-mono); font-size: 11px;
+    background: transparent; border: 1px solid var(--border);
+    color: var(--muted); border-radius: 4px; padding: 2px 8px;
+    cursor: pointer; opacity: 0;
+    transition: background .12s, color .12s, opacity .12s;
+  }
+  .md-code:hover .code-copy,
+  .md-code:focus-within .code-copy { opacity: 1; }
+  .code-copy:hover,
+  .code-copy:focus-visible { background: var(--hover); color: var(--text-dim); opacity: 1; }
+  .code-copy.copied { color: var(--text); }
+
   /* ---------- tool line ---------- */
   .tool-line {
     display: grid;
@@ -1242,6 +1283,109 @@ function addMessageCopyButton(div, text) {
   div.appendChild(btn);
 }
 
+function applyBold(segment) {
+  return segment.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+}
+function renderInlineMd(text) {
+  const escaped = escapeHtml(text);
+  const re = /`([^`]+)`/g;
+  let out = '';
+  let last = 0;
+  let m;
+  while ((m = re.exec(escaped)) !== null) {
+    out += applyBold(escaped.slice(last, m.index));
+    out += `<code class="md-ic">${m[1]}</code>`;
+    last = re.lastIndex;
+  }
+  out += applyBold(escaped.slice(last));
+  return out;
+}
+function addCodeCopyButton(pre, text) {
+  const value = String(text || '');
+  const btn = document.createElement('button');
+  btn.className = 'code-copy';
+  btn.type = 'button';
+  btn.title = 'Copy';
+  btn.setAttribute('aria-label', 'Copy code');
+  btn.textContent = 'Copy';
+  btn.onclick = async (e) => {
+    e.stopPropagation();
+    const ok = await copyText(value);
+    btn.classList.toggle('copied', ok);
+    btn.textContent = ok ? 'Copied' : 'Copy';
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = 'Copy'; }, 1200);
+  };
+  pre.appendChild(btn);
+}
+function appendCodeBlock(container, code) {
+  const pre = document.createElement('pre');
+  pre.className = 'md-code';
+  const el = document.createElement('code');
+  el.textContent = code;
+  pre.appendChild(el);
+  addCodeCopyButton(pre, code);
+  container.appendChild(pre);
+}
+function renderMarkdown(container, text) {
+  const lines = String(text == null ? '' : text).split('\n');
+  let list = null;
+  const flushList = () => { if (list) { container.appendChild(list); list = null; } };
+  const isBreak = (line) => (
+    /^\s*```/.test(line) || /^#{1,3}\s+/.test(line)
+    || /^\s*[-*]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line)
+  );
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      flushList();
+      const buf = [];
+      i++;
+      while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
+      i++;
+      appendCodeBlock(container, buf.join('\n'));
+      continue;
+    }
+    if (!line.trim()) { flushList(); i++; continue; }
+    const heading = line.match(/^#{1,3}\s+(.*)$/);
+    if (heading) {
+      flushList();
+      const el = document.createElement('div');
+      el.className = 'md-h';
+      el.innerHTML = renderInlineMd(heading[1]);
+      container.appendChild(el);
+      i++;
+      continue;
+    }
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    const ordered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (bullet || ordered) {
+      const tag = ordered ? 'ol' : 'ul';
+      if (!list || list.tagName.toLowerCase() !== tag) {
+        flushList();
+        list = document.createElement(tag);
+        list.className = 'md-list';
+      }
+      const li = document.createElement('li');
+      li.innerHTML = renderInlineMd((bullet || ordered)[1]);
+      list.appendChild(li);
+      i++;
+      continue;
+    }
+    flushList();
+    const para = [];
+    while (i < lines.length && lines[i].trim() && !isBreak(lines[i])) {
+      para.push(lines[i]);
+      i++;
+    }
+    const p = document.createElement('p');
+    p.className = 'md-p';
+    p.innerHTML = renderInlineMd(para.join('\n'));
+    container.appendChild(p);
+  }
+  flushList();
+}
+
 function appendMessageNode(chat, m) {
   if (m.type === 'user') {
     const div = document.createElement('div');
@@ -1263,8 +1407,8 @@ function appendMessageNode(chat, m) {
     label.textContent = 'Codey';
     div.appendChild(label);
     const body = document.createElement('div');
-    body.className = 'body collapsed';
-    body.textContent = m.text;
+    body.className = 'body md collapsed';
+    renderMarkdown(body, m.text);
     div.appendChild(body);
     if (m.text.split('\n').length > 6 || m.text.length > 400) {
       const toggle = document.createElement('div');

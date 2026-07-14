@@ -303,6 +303,42 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertLess(HTML.index("await restoreUiStateFromServer();"), HTML.index("connectEvents();"))
         self.assertIn("persistActive();", HTML[HTML.index("function ensureProject"):HTML.index("async function pickProject")])
 
+    def test_assistant_replies_render_minimal_markdown(self) -> None:
+        self.assertIn("function renderMarkdown(container, text)", HTML)
+        self.assertIn("function renderInlineMd(text)", HTML)
+        self.assertIn("const escaped = escapeHtml(text);", HTML)
+        self.assertIn("<strong>$1</strong>", HTML)
+        self.assertIn("body.className = 'body md collapsed'", HTML)
+        self.assertIn("renderMarkdown(body, m.text)", HTML)
+        self.assertNotIn("body.textContent = m.text;", HTML)
+        self.assertIn(".md-code", HTML)
+        self.assertIn(".md-ic", HTML)
+        self.assertIn(".md-list", HTML)
+        self.assertIn("background: var(--panel-2)", HTML)
+
+    def test_inline_code_spans_are_not_bolded(self) -> None:
+        self.assertIn("function applyBold(segment)", HTML)
+        self.assertIn("out += applyBold(escaped.slice(last, m.index));", HTML)
+        self.assertIn("${m[1]}</code>", HTML)
+        self.assertIn("out += applyBold(escaped.slice(last));", HTML)
+
+    def test_markdown_stays_monochrome_without_syntax_highlighting(self) -> None:
+        md_css_start = HTML.index("assistant markdown")
+        md_css_end = HTML.index("tool line", md_css_start)
+        md_css = HTML[md_css_start:md_css_end]
+        self.assertNotIn("#", md_css.replace("var(--", ""))
+        self.assertNotIn("hljs", HTML)
+        self.assertNotIn("highlight.js", HTML)
+
+    def test_code_blocks_have_quiet_copy_button(self) -> None:
+        self.assertIn("function addCodeCopyButton(pre, text)", HTML)
+        self.assertIn("function appendCodeBlock(container, code)", HTML)
+        self.assertIn("className = 'code-copy'", HTML)
+        self.assertIn("aria-label', 'Copy code'", HTML)
+        self.assertIn("el.textContent = code", HTML)
+        self.assertIn(".md-code:hover .code-copy", HTML)
+        self.assertIn("await copyText(value)", HTML)
+
 
 if __name__ == "__main__":
     unittest.main()

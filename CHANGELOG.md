@@ -4,6 +4,27 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.42 - Broader Checks and Quiet Markdown
+
+Controlled `run` now accepts more common verification commands without opening
+the unsafe shell path: `ruff check`, `ruff format --check`, `mypy`,
+`python -m mypy`, `python -m ruff`, safe `make` targets, `bun test` or
+allowed `bun run` scripts, and safe Deno test/lint/check/fmt forms. Mutating or
+installing forms such as `ruff --fix`, `ruff format` without `--check`,
+`mypy --install-types`, `make deploy`, `bun install`, and `deno run` remain
+blocked.
+
+Full verification suites now receive a 300-second timeout while quick commands
+keep the existing 90-second budget. Timeout feedback explicitly states that a
+timeout is not a test failure and asks the Writer to rerun a smaller subset
+instead of guessing a code fix. Literal grep output also suggests narrowing the
+query or path when it reaches the match limit.
+
+Assistant replies in the local UI now render a small, monochrome Markdown
+subset: code blocks, inline code, bold, headings, and simple lists. Code blocks
+get a quiet copy button. There is still no syntax highlighting, no new color
+palette, and no additional mode or panel.
+
 ## 0.1.41 - Smart Pagination Hint
 
 Paged `read_file` results now include the exact next JSON tool call when more

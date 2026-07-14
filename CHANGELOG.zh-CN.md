@@ -4,6 +4,23 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.42 - 更多检查命令与克制 Markdown
+
+受控 `run` 现在可以执行更多常见验证命令，而不需要走不安全的 shell 路径：
+`ruff check`、`ruff format --check`、`mypy`、`python -m mypy`、
+`python -m ruff`、安全的 `make` 目标、`bun test` 或允许的 `bun run` 脚本，
+以及安全的 Deno test/lint/check/fmt 形式。会修改文件或安装依赖的形式仍然拒绝，
+例如 `ruff --fix`、没有 `--check` 的 `ruff format`、`mypy --install-types`、
+`make deploy`、`bun install` 和 `deno run`。
+
+完整测试/构建套件现在有 300 秒超时，快速命令继续使用 90 秒预算。超时反馈会明确
+说明这是 timeout，不是测试断言失败，并提示 Writer 运行更小的子集，而不是猜测代码
+修复。字面 grep 达到匹配上限时，也会提示缩小查询或指定子目录。
+
+本地 UI 的助手回复现在支持一小部分单色 Markdown：代码块、行内代码、粗体、标题和
+简单列表。代码块带安静的复制按钮。仍然没有语法高亮、没有新配色，也没有新增模式或
+面板。
+
 ## 0.1.41 - 智能分页提示
 
 `read_file` 只返回大文件的一页时，现在会直接附带下一页的 JSON 工具调用。

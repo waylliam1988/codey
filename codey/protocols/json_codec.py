@@ -211,7 +211,7 @@ Rules:
   - Paths are relative to the project root. No absolute paths or parent traversal.
   - Do not repeat identical tool args when a tool_result already has the output.
   - Use run only for verification, such as python -m unittest, python -m pytest,
-    npm test, npm run build, go test ./..., or cargo test.
+    npm test, npm run build, go test ./..., cargo test, ruff check, or mypy.
   - run commands must be simple. No pipes, redirects, chaining, tail/head, or
     shell-only syntax. Never use run/shell to write files; use edit.
   - [tool_result tool=...] means the local tool already ran. Continue from it.

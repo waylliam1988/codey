@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import threading
 import time
+import subprocess
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -131,6 +132,139 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIn("AssertionError: expected 42", outcome.output)
         self.assertNotIn("site-packages/pkg", outcome.output)
         self.assertNotIn("internal_0()", outcome.output)
+
+    def test_run_allowlist_accepts_common_verification_tools(self) -> None:
+        for command in (
+            "ruff check .",
+            "ruff format --check .",
+            "mypy codey",
+            "python -m mypy codey",
+            "python -m ruff check .",
+            "python -m ruff format --check .",
+            "make test",
+            "make lint check",
+            "bun test",
+            "bun run build",
+            "deno test",
+            "deno lint",
+            "deno fmt --check",
+        ):
+            argv = command.split()
+            self.assertTrue(
+                tool_runtime._is_allowed_run_command(argv),
+                f"expected allowed: {command}",
+            )
+
+    def test_run_allowlist_blocks_file_mutating_and_installing_forms(self) -> None:
+        for command in (
+            "ruff format .",
+            "ruff check --fix .",
+            "ruff check --fix-only .",
+            "ruff check --unsafe-fixes .",
+            "ruff check --add-noqa .",
+            "ruff check --output-file report.txt .",
+            "ruff check --output-file=report.txt .",
+            "python -m ruff format .",
+            "python -m ruff check --fix .",
+            "python -m ruff check --add-noqa .",
+            "python -m ruff check --output-file report.txt .",
+            "python -m ruff clean",
+            "deno fmt",
+            "mypy --install-types --non-interactive codey",
+            "python -m mypy --install-types codey",
+            "bun build ./src/index.ts --outdir dist",
+            "bun install",
+            "bun lint",
+            "bun check",
+            "bun typecheck",
+            "python -m compileall .",
+            "python -m compileall",
+            "ruff check --unsafe-fixes=true .",
+            "mypy --install-types=1 codey",
+            "python -m mypy --install-types=1 codey",
+        ):
+            argv = command.split()
+            self.assertFalse(
+                tool_runtime._is_allowed_run_command(argv),
+                f"expected rejected: {command}",
+            )
+
+    def test_suite_classification_never_exceeds_allowlist(self) -> None:
+        for command in (
+            "bun build ./src/index.ts --outdir dist",
+            "mypy --install-types codey",
+            "python -m compileall .",
+        ):
+            self.assertFalse(
+                tool_runtime._is_suite_run_command(command.split()),
+                f"disallowed command must not be a suite: {command}",
+            )
+        for command in (
+            "pytest",
+            "bun test",
+            "bun run build",
+            "python -m unittest",
+            "make test",
+        ):
+            self.assertTrue(
+                tool_runtime._is_suite_run_command(command.split()),
+                f"expected suite: {command}",
+            )
+
+    def test_run_allowlist_still_rejects_unlisted_and_unsafe_commands(self) -> None:
+        for command in (
+            "pip install requests",
+            "ruff clean",
+            "make deploy",
+            "deno run server.ts",
+            "bun add left-pad",
+            "rm -rf .",
+            "python -m http.server",
+        ):
+            argv = command.split()
+            self.assertFalse(
+                tool_runtime._is_allowed_run_command(argv),
+                f"expected rejected: {command}",
+            )
+
+    def test_suite_commands_report_timeout_distinct_from_failure(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch(
+                "codey.tool_runtime.cancellation.run_process",
+                side_effect=subprocess.TimeoutExpired(cmd="pytest", timeout=300),
+            ),
+        ):
+            outcome = run_command(Path(td), ".", "pytest")
+
+        self.assertFalse(outcome.ok)
+        self.assertIn(f"{tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s", outcome.output)
+        self.assertIn("timeout, not a test failure", outcome.output)
+
+    def test_quick_commands_keep_the_default_timeout(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("print('hi')\n", encoding="utf-8")
+            with mock.patch(
+                "codey.tool_runtime.cancellation.run_process",
+                side_effect=subprocess.TimeoutExpired(cmd="python app.py", timeout=90),
+            ):
+                outcome = run_command(root, ".", "python app.py")
+
+        self.assertFalse(outcome.ok)
+        self.assertIn(f"{tool_runtime.RUN_TIMEOUT_SECONDS}s", outcome.output)
+        self.assertNotIn(f"{tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s", outcome.output)
+
+    def test_search_truncation_hint_suggests_narrowing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "a.py").write_text("target\ntarget\ntarget\n", encoding="utf-8")
+
+            outcome = tool_runtime.search_files(root, ".", "target", max_results=2)
+
+        self.assertTrue(outcome.truncated)
+        self.assertIn("truncated after 2 matches", outcome.output)
+        self.assertIn("narrow the query", outcome.output)
 
     def test_writing_identical_content_is_not_a_change(self) -> None:
         with tempfile.TemporaryDirectory() as td:

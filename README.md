@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.41-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.42-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.41`
+Version: `0.1.42`
 
 [Version history](CHANGELOG.md)
 
@@ -61,7 +61,8 @@ This is not about replacing professional tools. It is about making the first ste
 - Use New Chat for normal conversation without granting access to a project
 - Discuss, inspect, and edit inside one project conversation; files change only when requested
 - Let the model read and modify files in a selected project folder
-- Run tests and feed results back to the model
+- Run allowed tests, builds, linters, and type checks, then feed results back
+  to the model
 - Show red/green diffs
 - Show a compact task receipt after each run, such as `DONE · 2 files changed · checks passed · restore available`
 - Restore snapshot changes without requiring Git
@@ -92,11 +93,16 @@ This is not about replacing professional tools. It is about making the first ste
 - Keep a small local provider-health circuit so rate limits, login pages, and
   repeated structural failures do not keep receiving hidden work
 - Stop a running provider wait, review, recovery, or test command promptly
+- Give longer timeouts to full verification suites while keeping quick commands
+  bounded
 - Preserve both the beginning and end of long command output
 - Tell the model the exact next `read_file` JSON call when a large file read
   returns only one page
+- Suggest narrowing a literal grep when search results hit the match limit
 - Fold obvious dependency stack frames from Python and Node command output so
   user-code failures survive the existing output budget
+- Render assistant replies with quiet Markdown basics and copy buttons on code
+  blocks, without syntax highlighting or new colors
 - Recover the active run, approval, or teaching prompt after a UI reconnect
 - Prevent uncertain provider submissions from being sent twice
 - Record compact provider failure diagnostics for debugging web-page breakage
