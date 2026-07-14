@@ -28,7 +28,7 @@ from codey.handoff import (
 from codey.project_facts import ProjectFactsStore
 from codey.project_map import render_project_map
 from codey.providers import PROVIDER_LABELS
-from codey.provider_diagnostics import ProviderActionError
+from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
 from codey.receipt import build_task_receipt
 from codey.review import has_reviewable_changes, render_writer_followup
@@ -43,6 +43,11 @@ from codey.work_checkpoint import (
     WorkCheckpoint,
     WorkCheckpointStore,
     render_work_checkpoint,
+)
+from codey.writer_failover import (
+    CheckpointView,
+    WriterAttempt,
+    WriterFailoverRunner,
 )
 
 
@@ -598,15 +603,18 @@ class TaskRunner:
                     persistent=not self.is_git_repository(key),
                 )
                 tried_writers = set(preflight_tried)
-                writer_switches = preflight_switches
 
-                def refresh_takeover_checkpoint() -> None:
+                def refresh_checkpoint_view() -> CheckpointView:
                     nonlocal work_checkpoint
                     nonlocal checkpoint_prompt
                     nonlocal resumed_changed_files
                     nonlocal resumed_successful_checks
                     if self.work_checkpoints is None or work_checkpoint is None:
-                        return
+                        return CheckpointView(
+                            prompt=checkpoint_prompt,
+                            changed_files=resumed_changed_files,
+                            successful_checks=resumed_successful_checks,
+                        )
                     try:
                         work_checkpoint = self.work_checkpoints.reconcile(work_checkpoint)
                         if work_checkpoint.workspace_changed:
@@ -623,185 +631,139 @@ class TaskRunner:
                         checkpoint_prompt = ""
                         resumed_changed_files = ()
                         resumed_successful_checks = ()
+                    return CheckpointView(
+                        prompt=checkpoint_prompt,
+                        changed_files=resumed_changed_files,
+                        successful_checks=resumed_successful_checks,
+                    )
 
-                def activate_next_writer(origin: ProviderActionError) -> None:
-                    nonlocal provider
-                    nonlocal provider_id
-                    nonlocal writer_switches
-                    while True:
-                        next_provider_id = (
-                            supervisor.select(
-                                "",
-                                provider_failover_order(),
-                                excluded=tried_writers,
-                            )
-                            if supervisor is not None
-                            else next(
-                                (
-                                    item
-                                    for item in provider_failover_order()
-                                    if item not in tried_writers
-                                ),
-                                None,
-                            )
-                        )
-                        if next_provider_id is None:
-                            raise origin
-                        provider_id = next_provider_id
-                        tried_writers.add(provider_id)
-                        writer_switches += 1
-                        state.switch_run_provider(run_id, provider_id)
-                        conversation.update_snapshot(replace(
-                            conversation.snapshot,
-                            provider_id=provider_id,
-                            blocker="",
-                        ))
-                        try:
-                            provider = state.get_provider(provider_id)
-                        except cancellation.TaskCancelled:
-                            raise
-                        except Exception as connect_error:
-                            failure = self.capture_provider_failure(
-                                model=PROVIDER_LABELS.get(provider_id, provider_id),
-                                action="connect",
-                                page=None,
-                                error=connect_error,
-                            )
-                            if supervisor is not None:
-                                supervisor.record_failure(provider_id, failure)
-                            if writer_switches >= 2:
-                                raise ProviderActionError(failure) from connect_error
-                            continue
-                        if (
-                            supervisor is not None
-                            and supervisor.needs_canary(provider_id)
-                            and not run_half_open_canary(
-                                provider_id,
-                                provider,
-                                supervisor,
-                            )
-                        ):
-                            try:
-                                provider.close()
-                            except Exception:
-                                pass
-                            if writer_switches >= 2:
-                                raise origin
-                            continue
-                        refresh_takeover_checkpoint()
-                        return
-
-                def run_writer_with_failover(
-                    writer_task: str,
-                    turn_budget: int,
-                    *,
-                    fresh: bool,
-                    factual_handoff: str = "",
-                    changed_files: tuple[str, ...] = (),
-                    successful_checks: tuple[VerificationCandidate, ...] = (),
+                def run_one_writer_attempt(
+                    spec: WriterAttempt,
+                    note_turn: Callable[[int], None],
                 ) -> RunResult:
-                    nonlocal provider
-                    nonlocal writer_switches
-                    turns_used = 0
-                    current_fresh = fresh
-                    current_handoff = factual_handoff
-                    current_changed_files = changed_files
-                    current_successful_checks = successful_checks
-                    if provider is None:
-                        try:
-                            provider = state.get_provider(provider_id)
-                        except cancellation.TaskCancelled:
-                            raise
-                        except Exception as connect_error:
-                            failure = self.capture_provider_failure(
-                                model=PROVIDER_LABELS.get(provider_id, provider_id),
-                                action="connect",
-                                page=None,
-                                error=connect_error,
-                            )
-                            if supervisor is not None:
-                                supervisor.record_failure(provider_id, failure)
-                            state.set_provider_session(provider_id, None)
-                            error = ProviderActionError(failure)
-                            if writer_switches >= 2:
-                                raise error from connect_error
-                            activate_next_writer(error)
-                            current_fresh = True
-                            current_changed_files = resumed_changed_files
-                            current_successful_checks = resumed_successful_checks
-                    while True:
-                        attempt_turn = 0
+                    def on_writer_event(event: RunEvent) -> None:
+                        note_turn(event.turn)
+                        on_event(event)
 
-                        def on_writer_event(event: RunEvent) -> None:
-                            nonlocal attempt_turn
-                            attempt_turn = max(attempt_turn, event.turn)
-                            on_event(event)
-
-                        try:
-                            writer_result = self.agent_run(
-                                provider,
-                                Path(project),
-                                writer_task,
-                                max_turns=max(1, turn_budget - turns_used),
-                                on_event=on_writer_event,
-                                on_shell_request=on_shell_request,
-                                stop_flag=state.stop_flag,
-                                fresh_chat=current_fresh,
-                                strict_fresh_chat=writer_switches > 0,
-                                change_tracker=tracker,
-                                conversation=conversation,
-                                provider_id=provider_id,
-                                handoff=current_handoff,
-                                project_facts=verified_facts,
-                                project_map=project_map,
-                                work_checkpoint=checkpoint_prompt,
-                                verification_candidates=verification_candidates,
-                                verification_candidate_loader=lambda: (
-                                    _verification_candidates(
-                                        project,
-                                        verification_verified_commands,
-                                        verification_additional_commands,
-                                    )
-                                ),
-                                verification_changed_files=current_changed_files,
-                                verification_successful_checks=(
-                                    current_successful_checks
-                                ),
+                    return self.agent_run(
+                        spec.provider,
+                        Path(project),
+                        spec.task,
+                        max_turns=spec.remaining_turns,
+                        on_event=on_writer_event,
+                        on_shell_request=on_shell_request,
+                        stop_flag=state.stop_flag,
+                        fresh_chat=spec.fresh_chat,
+                        strict_fresh_chat=spec.strict_fresh_chat,
+                        change_tracker=tracker,
+                        conversation=conversation,
+                        provider_id=spec.provider_id,
+                        handoff=spec.handoff,
+                        project_facts=verified_facts,
+                        project_map=project_map,
+                        work_checkpoint=spec.checkpoint.prompt,
+                        verification_candidates=verification_candidates,
+                        verification_candidate_loader=lambda: (
+                            _verification_candidates(
+                                project,
+                                verification_verified_commands,
+                                verification_additional_commands,
                             )
-                            if supervisor is not None:
-                                supervisor.record_success(provider_id)
-                            return replace(
-                                writer_result,
-                                turns=min(turn_budget, turns_used + writer_result.turns),
-                            )
-                        except ProviderActionError as exc:
-                            if state.stop_flag.is_set():
-                                raise cancellation.TaskCancelled("task stopped") from exc
-                            turns_used += max(1, attempt_turn)
-                            if supervisor is not None:
-                                supervisor.record_failure(provider_id, exc.failure)
-                            state.set_provider_session(provider_id, None)
-                            try:
-                                provider.close()
-                            except Exception:
-                                pass
-                            provider = None
-                            if writer_switches >= 2 or turns_used >= turn_budget:
-                                raise
-                            activate_next_writer(exc)
-                            current_fresh = True
-                            current_handoff = ""
-                            current_changed_files = resumed_changed_files
-                            current_successful_checks = resumed_successful_checks
+                        ),
+                        verification_changed_files=spec.checkpoint.changed_files,
+                        verification_successful_checks=(
+                            spec.checkpoint.successful_checks
+                        ),
+                    )
 
-                result = run_writer_with_failover(
-                    agent_task,
-                    max_turns,
-                    fresh=agent_fresh_chat,
-                    factual_handoff=handoff,
-                    changed_files=resumed_changed_files,
-                    successful_checks=resumed_successful_checks,
+                def select_next_writer(excluded: set[str]) -> str | None:
+                    if supervisor is not None:
+                        return supervisor.select(
+                            "",
+                            provider_failover_order(),
+                            excluded=excluded,
+                        )
+                    return next(
+                        (
+                            item
+                            for item in provider_failover_order()
+                            if item not in excluded
+                        ),
+                        None,
+                    )
+
+                def capture_writer_failure(
+                    pid: str,
+                    action: str,
+                    error: BaseException,
+                ) -> ProviderFailure:
+                    return self.capture_provider_failure(
+                        model=PROVIDER_LABELS.get(pid, pid),
+                        action=action,
+                        page=None,
+                        error=error,
+                    )
+
+                def on_writer_switch(next_provider_id: str) -> None:
+                    state.switch_run_provider(run_id, next_provider_id)
+                    conversation.update_snapshot(replace(
+                        conversation.snapshot,
+                        provider_id=next_provider_id,
+                        blocker="",
+                    ))
+
+                failover = WriterFailoverRunner(
+                    provider=provider,
+                    provider_id=provider_id,
+                    switches=preflight_switches,
+                    tried=tried_writers,
+                    attempt=run_one_writer_attempt,
+                    select_next=select_next_writer,
+                    connect=state.get_provider,
+                    close=lambda item: item.close(),
+                    needs_canary=(
+                        supervisor.needs_canary
+                        if supervisor is not None
+                        else (lambda _pid: False)
+                    ),
+                    run_canary=(
+                        lambda pid, item: run_half_open_canary(pid, item, supervisor)
+                    ),
+                    capture_failure=capture_writer_failure,
+                    record_failure=(
+                        supervisor.record_failure
+                        if supervisor is not None
+                        else (lambda _pid, _failure: None)
+                    ),
+                    record_success=(
+                        supervisor.record_success
+                        if supervisor is not None
+                        else (lambda _pid: None)
+                    ),
+                    clear_session=lambda pid: state.set_provider_session(pid, None),
+                    on_switch=on_writer_switch,
+                    refresh_checkpoint=refresh_checkpoint_view,
+                    stopped=state.stop_flag.is_set,
                 )
+
+                try:
+                    result = failover.run(
+                        task=agent_task,
+                        turn_budget=max_turns,
+                        fresh=agent_fresh_chat,
+                        handoff=handoff,
+                        checkpoint=CheckpointView(
+                            prompt=checkpoint_prompt,
+                            changed_files=resumed_changed_files,
+                            successful_checks=resumed_successful_checks,
+                        ),
+                    )
+                finally:
+                    # Mirror the old nonlocal semantics: the last provider tried
+                    # must be visible even when failover exhausts its budget and
+                    # raises, so the terminal event reports the takeover provider.
+                    provider = failover.provider
+                    provider_id = failover.provider_id
                 if (
                     resumed_checkpoint
                     and work_checkpoint is not None
@@ -896,6 +858,7 @@ class TaskRunner:
                         except Exception:
                             pass
                         provider = None
+                        failover.provider = None
                         try:
                             reviewed = self.run_review(
                                 session_id=session_id,
@@ -946,24 +909,32 @@ class TaskRunner:
                                     else ""
                                 )
                                 project_map = _safe_project_map(project, verified_facts, task)
-                                result = run_writer_with_failover(
-                                    followup,
-                                    min(max_turns, self.review_fix_turns),
-                                    fresh=False,
-                                    changed_files=tuple(
-                                        str(item.get("path") or "")
-                                        for item in (task_changes.get("files") or [])
-                                        if item.get("path")
-                                    ),
-                                    successful_checks=tuple(
-                                        VerificationCandidate(
-                                            item.command,
-                                            item.cwd,
-                                            "execution evidence",
-                                        )
-                                        for item in evidence.successful_checks
-                                    ),
-                                )
+                                try:
+                                    result = failover.run(
+                                        task=followup,
+                                        turn_budget=min(max_turns, self.review_fix_turns),
+                                        fresh=False,
+                                        handoff="",
+                                        checkpoint=CheckpointView(
+                                            prompt=checkpoint_prompt,
+                                            changed_files=tuple(
+                                                str(item.get("path") or "")
+                                                for item in (task_changes.get("files") or [])
+                                                if item.get("path")
+                                            ),
+                                            successful_checks=tuple(
+                                                VerificationCandidate(
+                                                    item.command,
+                                                    item.cwd,
+                                                    "execution evidence",
+                                                )
+                                                for item in evidence.successful_checks
+                                            ),
+                                        ),
+                                    )
+                                finally:
+                                    provider = failover.provider
+                                    provider_id = failover.provider_id
                                 task_changes_dirty = True
                                 if result.stop_reason == "done":
                                     update_checkpoint(

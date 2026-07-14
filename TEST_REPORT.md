@@ -1,5 +1,25 @@
 # Codey 0.1.42 Test Report
 
+## Post-0.1.42 Writer Failover Refactor
+
+Writer provider takeover is now isolated in `codey/writer_failover.py`.
+`TaskRunner` still owns prompts, verification, review, diffs, receipts, and
+project facts; the new runner only coordinates Writer attempts, provider
+switches, shared turn budget, canary checks, checkpoint refresh, and Stop
+priority. Initial Writer execution and Review repair reuse the same runner
+instance so the switch budget and tried-provider set remain shared.
+
+This is an internal maintainability refactor. It does not change the user
+interface, provider protocol, prompt contract, or release version.
+
+Validation:
+
+```text
+Focused failover/server/work-checkpoint tests: 107 tests OK
+Full pytest: 827 passed, 67 subtests passed
+Ruff, py_compile, and git diff --check: passed
+```
+
 ## 0.1.42 Broader Checks and Quiet Markdown
 
 The controlled `run` allowlist now accepts additional verification commands:
