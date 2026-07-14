@@ -28,6 +28,33 @@ Full pytest: 806 passed, 67 subtests passed
 Ruff, compileall, and git diff --check: passed
 ```
 
+## Post-0.1.40 Incomplete Refactor Hint Probe
+
+`tests/manual/refactor_hint_ab.py` was added as a probe-only A/B harness. The
+hint arm monkeypatches successful replacement edits inside the script only:
+after a narrow identifier rename, it runs a bounded lexical scan for the old
+symbol in other Python/JS/TS source files and appends only a file-count note.
+No production code, prompt, protocol, version, or runtime behavior changed.
+
+Live web A/B did not meet the retention threshold. DeepSeek, Qwen, and MiMo
+all completed the explicit `python-function-rename` case correctly in both
+arms with no missed callers. The shorter `implicit-function-rename` case
+showed one positive Qwen sample, improving from 8 turns / 7 tool calls to
+5 turns / 6 tool calls, but DeepSeek stayed neutral and MiMo regressed by one
+tool call. Qwen's `public-string-control` case showed no over-rename of the
+external string contract. Class rename samples for Qwen and DeepSeek were
+neutral.
+
+Conclusion: keep the manual probe for future larger-project refactor testing,
+but do not promote the hint to production on the current evidence.
+
+Validation:
+
+```text
+python -B tests\manual\refactor_hint_ab.py --self-test: passed
+Ruff and py_compile for the probe: passed
+```
+
 ## 0.1.39 MiMo Typing Transition Flow
 
 MiMo now contributes an explicit three-state typing observation to the existing

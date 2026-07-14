@@ -104,6 +104,23 @@ python -B tests\manual\python_syntax_regression_ab.py --provider glm
 The default order is baseline-first for DeepSeek/Qwen and hint-first for
 MiMo/GLM. Use `--order baseline-first` or `--order hint-first` to override it.
 
+`refactor_hint_ab.py` compares current production edits with a probe-only
+incomplete-refactor hint. The hint arm monkeypatches successful replacement
+edits only inside the script: after a narrow identifier rename, it runs a
+bounded lexical scan for the old symbol in other Python/JS/TS source files and
+adds only a file-count note, with no source excerpts:
+
+```powershell
+python -B tests\manual\refactor_hint_ab.py `
+  --provider deepseek `
+  --case python-function-rename
+```
+
+Available cases are `python-function-rename`, `python-class-rename`,
+`implicit-function-rename`, and `public-string-control`. The implicit case uses
+a shorter user-style rename request; the control case checks whether the hint
+causes a model to over-rename an external string contract.
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 
