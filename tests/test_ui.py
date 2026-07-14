@@ -339,6 +339,263 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".md-code:hover .code-copy", HTML)
         self.assertIn("await copyText(value)", HTML)
 
+    def test_ui_state_persistence_is_debounced_with_immediate_flush_helpers(self) -> None:
+        # A-1: hot-path persistence is coalesced behind a debounce timer, while
+        # discrete/terminal moments flush immediately. Data shape is unchanged.
+        self.assertIn("function markUiStateDirty()", HTML)
+        self.assertIn("function flushUiState()", HTML)
+        self.assertIn("function persistActive()", HTML)
+        self.assertIn("function persistActiveNow()", HTML)
+        self.assertIn("let uiStatePersistTimer = null;", HTML)
+        self.assertIn("const UI_STATE_PERSIST_DELAY = 400;", HTML)
+        # revision bump preserved (relied on by isUiStateNewer ordering).
+        self.assertIn("uiStateRevision += 1", HTML)
+
+        dirty_start = HTML.index("function markUiStateDirty()")
+        dirty_end = HTML.index("function flushUiState()", dirty_start)
+        dirty_block = HTML[dirty_start:dirty_end]
+        self.assertIn("uiStateUpdatedAt = Math.max(Date.now(), uiStateUpdatedAt);", dirty_block)
+        self.assertIn("uiStateRevision += 1;", dirty_block)
+        self.assertIn("uiStateDirtySinceBoot = true;", dirty_block)
+
+        flush_start = HTML.index("function flushUiState()")
+        flush_end = HTML.index("function persistActive()", flush_start)
+        flush_block = HTML[flush_start:flush_end]
+        self.assertIn("clearTimeout(uiStatePersistTimer)", flush_block)
+        self.assertIn("cacheUiState();", flush_block)
+        self.assertIn("saveUiStateToServer();", flush_block)
+
+        persist_start = HTML.index("function persistActive()")
+        persist_end = HTML.index("function persistActiveNow()", persist_start)
+        persist_block = HTML[persist_start:persist_end]
+        self.assertIn("markUiStateDirty();", persist_block)
+        self.assertIn("if (uiStatePersistTimer !== null) return;", persist_block)
+        self.assertIn("uiStatePersistTimer = setTimeout(", persist_block)
+        self.assertIn("UI_STATE_PERSIST_DELAY", persist_block)
+
+        now_start = HTML.index("function persistActiveNow()")
+        now_end = HTML.index("function updateComposerContext()", now_start)
+        now_block = HTML[now_start:now_end]
+        self.assertIn("markUiStateDirty();", now_block)
+        self.assertIn("flushUiState();", now_block)
+
+    def test_streaming_events_stay_debounced_while_user_actions_flush(self) -> None:
+        # A-1: the SSE hot path (addToSession) must keep the debounced persistActive,
+        # otherwise every turn/tool/info event would序列化+落盘 all over again.
+        add_start = HTML.index("function addToSession(sid, m)")
+        add_end = HTML.index("function markTerminalRun", add_start)
+        add_block = HTML[add_start:add_end]
+        self.assertIn("persistActive();", add_block)
+        self.assertNotIn("persistActiveNow(", add_block)
+
+        # User-visible / discrete mutations flush immediately.
+        push_start = HTML.index("function pushMsg(m)")
+        push_end = HTML.index("function openMenuAt", push_start)
+        push_block = HTML[push_start:push_end]
+        self.assertIn("persistActiveNow();", push_block)
+        self.assertNotIn("persistActive();", push_block)
+
+        # Terminal task events flush the coalesced state right away.
+        done_start = HTML.index("if (data.type === 'task_done')")
+        done_end = HTML.index("if (data.type === 'shell_request')", done_start)
+        done_block = HTML[done_start:done_end]
+        self.assertIn("flushUiState();", done_block)
+
+    def test_discrete_session_actions_flush_immediately(self) -> None:
+        # A-1 follow-up: switching/creating a chat and picking a provider are
+        # discrete user actions, not the SSE hot path, so they flush now.
+        switch_start = HTML.index("function switchSession(id)")
+        switch_end = HTML.index("function openProject(projectId)", switch_start)
+        self.assertIn("persistActiveNow();", HTML[switch_start:switch_end])
+
+        new_start = HTML.index("function newSession(projectId = null)")
+        new_end = HTML.index("async function forgetSessionState(id)", new_start)
+        self.assertIn("persistActiveNow();", HTML[new_start:new_end])
+
+        prov_start = HTML.index("function setActiveProvider(id)")
+        prov_end = HTML.index("$('provider-button').onclick", prov_start)
+        self.assertIn("persistActiveNow();", HTML[prov_start:prov_end])
+
+        # The debounced path is still used where coalescing matters: the SSE hot
+        # path (addToSession) and low-signal toggles like ensureProject / expand.
+        self.assertIn(
+            "persistActive();",
+            HTML[HTML.index("function ensureProject"):HTML.index("async function pickProject")],
+        )
+
+    def test_pagehide_flushes_pending_ui_state_before_beacon(self) -> None:
+        page_start = HTML.index("window.addEventListener('pagehide'")
+        page_end = HTML.index("async function boot()", page_start)
+        page_block = HTML[page_start:page_end]
+        self.assertIn("clearTimeout(uiStatePersistTimer)", page_block)
+        self.assertIn("cacheUiState();", page_block)
+        self.assertIn("navigator.sendBeacon('/api/ui_state'", page_block)
+        self.assertLess(
+            page_block.index("cacheUiState();"),
+            page_block.index("navigator.sendBeacon('/api/ui_state'"),
+        )
+
+    def test_rename_uses_inline_input_not_native_prompt(self) -> None:
+        # B-1: rename is an ordinary edit -> inline <input>, no native prompt().
+        self.assertNotIn("prompt(", HTML)
+        self.assertIn(".rename-input", HTML)
+        self.assertIn("function renameInputEl(value, commit, cancel)", HTML)
+        self.assertIn("function focusRenameInput()", HTML)
+        self.assertIn("let editingSessionId = '';", HTML)
+        self.assertIn("let editingProjectId = '';", HTML)
+        self.assertIn("function commitSessionRename(id, value)", HTML)
+        self.assertIn("function commitProjectRename(id, value)", HTML)
+        self.assertIn("function cancelSessionRename()", HTML)
+        self.assertIn("function cancelProjectRename()", HTML)
+
+        # Enter commits, Escape cancels, blur commits (avoids losing the edit).
+        input_start = HTML.index("function renameInputEl(value, commit, cancel)")
+        input_end = HTML.index("function focusRenameInput()", input_start)
+        input_block = HTML[input_start:input_end]
+        self.assertIn("e.key === 'Enter'", input_block)
+        self.assertIn("finish(commit, input.value)", input_block)
+        self.assertIn("e.key === 'Escape'", input_block)
+        self.assertIn("finish(cancel)", input_block)
+        self.assertIn("input.onblur = () => finish(commit, input.value);", input_block)
+        # settled guard prevents a double commit from cancel->render->blur.
+        self.assertIn("let settled = false;", input_block)
+        # clicks inside the input must not bubble to the row switch/open handlers.
+        self.assertIn("input.onmousedown = (e) => e.stopPropagation();", input_block)
+
+        # rename entry points arm inline editing rather than prompting.
+        rs_start = HTML.index("function renameSession(id)")
+        rs_end = HTML.index("async function clearMessages(id)", rs_start)
+        rs_block = HTML[rs_start:rs_end]
+        self.assertIn("editingSessionId = id;", rs_block)
+        self.assertIn("focusRenameInput();", rs_block)
+        rp_start = HTML.index("function renameProject(id)")
+        rp_end = HTML.index("async function deleteProject(id)", rp_start)
+        rp_block = HTML[rp_start:rp_end]
+        self.assertIn("editingProjectId = id;", rp_block)
+        self.assertIn("focusRenameInput();", rp_block)
+        # committing a session rename still clamps title length (unchanged shape).
+        self.assertIn("s.title = title.slice(0, 80);", HTML)
+
+    def test_destructive_actions_use_two_step_arm_not_native_confirm(self) -> None:
+        # B-1: delete/clear are destructive -> in-menu two-step confirm, no confirm().
+        self.assertNotIn("confirm(", HTML)
+        self.assertIn("function armDanger(btn, run)", HTML)
+        self.assertIn("function disarmDangerButtons()", HTML)
+        self.assertIn(".ctx-menu button.arming", HTML)
+        # auto-revert after a few seconds keeps the menu quiet.
+        self.assertIn("setTimeout(disarmDangerButtons, 3000)", HTML)
+
+        # every destructive menu item carries its confirm label.
+        self.assertIn('data-act="remove" class="danger" data-confirm="Confirm remove"', HTML)
+        self.assertIn('data-act="delete" class="danger" data-confirm="Confirm delete"', HTML)
+        self.assertIn('data-act="clear" class="danger" data-confirm="Confirm clear"', HTML)
+        # the project remove label must state that chats are deleted, not merely
+        # "removed from sidebar" (deleteProject drops sessions under the project).
+        self.assertIn('>Remove project and chats</button>', HTML)
+        self.assertNotIn('Remove from sidebar', HTML)
+
+        # first click arms + relabels; second click runs and closes.
+        arm_start = HTML.index("function armDanger(btn, run)")
+        arm_end = HTML.index("// ============================ chat rendering", arm_start)
+        arm_block = HTML[arm_start:arm_end]
+        self.assertIn("if (btn.classList.contains('arming'))", arm_block)
+        self.assertIn("run();", arm_block)
+        self.assertIn("btn.textContent = btn.dataset.confirm", arm_block)
+        self.assertIn("btn.classList.add('arming');", arm_block)
+
+        # closing any menu disarms pending confirmations.
+        close_start = HTML.index("function closeAllMenus()")
+        close_end = HTML.index("function openProjectMenu", close_start)
+        close_block = HTML[close_start:close_end]
+        self.assertIn("disarmDangerButtons();", close_block)
+
+        # menu handlers route destructive acts through armDanger and return early.
+        self.assertIn("if (act === 'remove') { if (id) armDanger(btn, () => deleteProject(id)); return; }", HTML)
+        self.assertIn("if (act === 'delete') { if (id) armDanger(btn, () => deleteSession(id)); return; }", HTML)
+        self.assertIn("if (act === 'clear') { armDanger(btn, () => clearMessages(activeId)); return; }", HTML)
+
+        # the destructive ops themselves no longer gate on a native confirm.
+        del_start = HTML.index("async function deleteSession(id)")
+        del_end = HTML.index("function renameSession(id)", del_start)
+        del_block = HTML[del_start:del_end]
+        self.assertIn("if (!await forgetSessionState(id)) return;", del_block)
+
+    def test_readonly_tool_lines_fold_into_render_layer_groups(self) -> None:
+        # B-2: only consecutive read-only tools fold; grouping is render-only and
+        # never touches the sessions data structure.
+        self.assertIn(
+            "const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);",
+            HTML,
+        )
+        self.assertIn("function toolRowEl(m, compact)", HTML)
+        self.assertIn("function createToolGroup(kind)", HTML)
+        self.assertIn("function standaloneToolEl(m)", HTML)
+        self.assertIn("function appendToToolGroup(group, m)", HTML)
+        self.assertIn("function appendOrFoldTool(chat, m)", HTML)
+        self.assertIn("function foldCountLabel(kind, n)", HTML)
+
+        # count labels pluralize correctly, incl. the irregular "searches".
+        self.assertIn("search: ['search', 'searches'],", HTML)
+        self.assertIn("read: ['file', 'files'],", HTML)
+        self.assertNotIn("noun + (n === 1 ? '' : 's')", HTML)
+
+        # edit / run / shell are deliberately absent from the foldable set.
+        set_line = "const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);"
+        self.assertNotIn("'edit'", set_line)
+        self.assertNotIn("'run'", set_line)
+        self.assertNotIn("'shell'", set_line)
+
+        # the tool branch folds read-only, non-error rows and keeps the rest as
+        # standalone tool lines (edit/run/shell/error stay visible).
+        tool_start = HTML.index("} else if (m.type === 'tool') {")
+        tool_end = HTML.index("} else if (m.type === 'done') {", tool_start)
+        tool_block = HTML[tool_start:tool_end]
+        self.assertIn("if (FOLDABLE_TOOL_KINDS.has(m.kind) && !m.error) {", tool_block)
+        self.assertIn("appendOrFoldTool(chat, m);", tool_block)
+        self.assertIn("chat.appendChild(standaloneToolEl(m));", tool_block)
+
+        # a single foldable tool stays visible; only the second consecutive tool
+        # of the same kind converts the previous standalone row into a group.
+        standalone_start = HTML.index("function standaloneToolEl(m)")
+        standalone_end = HTML.index("function appendToToolGroup", standalone_start)
+        standalone_block = HTML[standalone_start:standalone_end]
+        self.assertIn("div.className = 'msg tool';", standalone_block)
+        self.assertIn("div.dataset.foldkind = m.kind;", standalone_block)
+        self.assertIn("div.appendChild(toolRowEl(m, false));", standalone_block)
+
+        # merge only into a trailing group or standalone row of the same kind.
+        merge_start = HTML.index("function appendOrFoldTool(chat, m)")
+        merge_end = HTML.index("function appendMessageNode(chat, m)", merge_start)
+        merge_block = HTML[merge_start:merge_end]
+        self.assertIn("const last = chat.lastElementChild;", merge_block)
+        self.assertIn("last.dataset.foldkind === m.kind", merge_block)
+        self.assertIn("last.replaceWith(group);", merge_block)
+        self.assertIn("chat.appendChild(standaloneToolEl(m));", merge_block)
+
+        append_start = HTML.index("function appendToToolGroup(group, m)")
+        append_end = HTML.index("function appendOrFoldTool(chat, m)", append_start)
+        append_block = HTML[append_start:append_end]
+        self.assertIn("body.children.length", append_block)
+
+        # converted groups default collapsed and toggle on click; state is not persisted.
+        group_start = HTML.index("function createToolGroup(kind)")
+        group_end = HTML.index("function standaloneToolEl(m)", group_start)
+        group_block = HTML[group_start:group_end]
+        self.assertIn("group.className = 'tool-group collapsed';", group_block)
+        self.assertIn("group.dataset.foldkind = kind;", group_block)
+        self.assertIn("summary.onclick = () => group.classList.toggle('collapsed');", group_block)
+        self.assertNotIn("persist", group_block)
+
+        # monochrome, cardless folding CSS: hidden body, chevron rotate, no colors.
+        self.assertIn(".tool-line.compact { grid-template-columns: 1fr auto auto; }", HTML)
+        self.assertIn(".tool-group-body { display: none; padding-left: 20px; }", HTML)
+        self.assertIn(".tool-group:not(.collapsed) .tool-group-body { display: block; }", HTML)
+        self.assertIn(".tool-group:not(.collapsed) .tg-chevron { transform: rotate(90deg); }", HTML)
+        group_css_start = HTML.index("/* ---------- tool group (read-only folding) ---------- */")
+        group_css_end = HTML.index("/* ---------- turn divider ---------- */", group_css_start)
+        group_css = HTML[group_css_start:group_css_end]
+        self.assertNotIn("#", group_css.replace("var(--", ""))
+
 
 if __name__ == "__main__":
     unittest.main()

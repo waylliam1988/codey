@@ -4,6 +4,28 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.43 - Quiet UI Persistence and Sidebar Polish
+
+UI state persistence is now debounced on the hot SSE path. Streaming turn,
+tool, and info events coalesce their full localStorage/server saves, while
+discrete user actions and terminal task events still flush immediately. This
+reduces hidden serialization, network POST, and atomic-write churn during long
+tasks without changing the persisted state shape.
+
+Native browser `prompt()` and `confirm()` calls have been removed from the
+sidebar. Chat and project rename now use inline inputs, and destructive menu
+actions use a quiet two-step confirmation inside the existing monochrome menu.
+
+Consecutive read-only tool rows now fold at render time into compact groups
+such as `read · 5 files`. A single read/search/list/reference row remains
+visible; only consecutive rows of the same safe kind are grouped. Edit, run,
+shell, and error rows stay expanded.
+
+Internally, Writer provider failover was extracted from `TaskRunner` into a
+small tested state machine. The refactor does not change provider protocol or
+user-facing behavior, but keeps provider takeover, shared turn budget, canary,
+checkpoint refresh, and Stop priority easier to prove.
+
 ## 0.1.42 - Broader Checks and Quiet Markdown
 
 Controlled `run` now accepts more common verification commands without opening

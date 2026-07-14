@@ -180,6 +180,21 @@
   }
   .ctx-menu button:hover { background: var(--hover); color: var(--text); }
   .ctx-menu button.danger:hover { color: var(--err-text); }
+  .ctx-menu button.arming { color: var(--err-text); background: var(--hover); }
+
+  /* ---------- inline rename ---------- */
+  .rename-input {
+    flex: 1; min-width: 0;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 5px;
+    padding: 3px 7px;
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+  }
+  .rename-input:focus { border-color: var(--faint); }
 
   /* ============================== main ============================== */
   main {
@@ -365,8 +380,34 @@
   .tool-line .tl-arrow { color: var(--faint); }
   .tool-line .tl-result { color: var(--text-dim); }
   .tool-line .tl-result.err { color: var(--err-text); }
+  .tool-line.compact { grid-template-columns: 1fr auto auto; }
   .msg.tool { margin: 0; }
   .msg.tool + .msg.tool { margin-top: 0; }
+
+  /* ---------- tool group (read-only folding) ---------- */
+  .tool-group { margin: 0; }
+  .tool-group-summary {
+    display: grid;
+    grid-template-columns: 12px auto 1fr auto;
+    align-items: baseline;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .tool-group-summary .tg-kind { color: var(--text-dim); }
+  .tool-group-summary .tg-count { color: var(--muted); }
+  .tool-group-summary .tg-chevron {
+    justify-self: end; color: var(--faint);
+    transition: transform .12s;
+  }
+  .tool-group:not(.collapsed) .tg-chevron { transform: rotate(90deg); }
+  .tool-group-summary:hover .tg-kind,
+  .tool-group-summary:hover .tg-count { color: var(--text); }
+  .tool-group-body { display: none; padding-left: 20px; }
+  .tool-group:not(.collapsed) .tool-group-body { display: block; }
 
   /* ---------- turn divider ---------- */
   .turn-divider {
@@ -820,15 +861,15 @@
 <div class="ctx-menu" id="proj-menu">
   <button data-act="newchat">New chat here</button>
   <button data-act="rename">Rename</button>
-  <button data-act="remove" class="danger">Remove from sidebar</button>
+  <button data-act="remove" class="danger" data-confirm="Confirm remove">Remove project and chats</button>
 </div>
 <div class="ctx-menu" id="sess-menu">
   <button data-act="rename">Rename</button>
-  <button data-act="delete" class="danger">Delete chat</button>
+  <button data-act="delete" class="danger" data-confirm="Confirm delete">Delete chat</button>
 </div>
 <div class="ctx-menu" id="top-menu">
   <button data-act="rename">Rename chat</button>
-  <button data-act="clear" class="danger">Clear messages</button>
+  <button data-act="clear" class="danger" data-confirm="Confirm clear">Clear messages</button>
 </div>
 
 <section class="changes-drawer" id="changes-drawer" aria-hidden="true">
@@ -1058,12 +1099,33 @@ async function refreshProviderStatus() {
     applyProviderStatus(data.providers);
   } catch {}
 }
-function persistActive() {
+let uiStatePersistTimer = null;
+const UI_STATE_PERSIST_DELAY = 400;
+function markUiStateDirty() {
   uiStateUpdatedAt = Math.max(Date.now(), uiStateUpdatedAt);
   uiStateRevision += 1;
   uiStateDirtySinceBoot = true;
+}
+function flushUiState() {
+  if (uiStatePersistTimer !== null) {
+    clearTimeout(uiStatePersistTimer);
+    uiStatePersistTimer = null;
+  }
   cacheUiState();
   saveUiStateToServer();
+}
+function persistActive() {
+  markUiStateDirty();
+  if (uiStatePersistTimer !== null) return;
+  uiStatePersistTimer = setTimeout(() => {
+    uiStatePersistTimer = null;
+    cacheUiState();
+    saveUiStateToServer();
+  }, UI_STATE_PERSIST_DELAY);
+}
+function persistActiveNow() {
+  markUiStateDirty();
+  flushUiState();
 }
 function updateComposerContext() {
   const el = $('composer-context');
@@ -1113,12 +1175,20 @@ function renderSidebar() {
     };
     row.appendChild(toggle);
 
-    const main = document.createElement('div');
-    main.className = 'project-main';
-    main.textContent = p.name;
-    row.appendChild(main);
+    if (p.id === editingProjectId) {
+      row.appendChild(renameInputEl(
+        p.name || '',
+        (val) => commitProjectRename(p.id, val),
+        cancelProjectRename,
+      ));
+    } else {
+      const main = document.createElement('div');
+      main.className = 'project-main';
+      main.textContent = p.name;
+      row.appendChild(main);
 
-    row.onclick = () => openProject(p.id);
+      row.onclick = () => openProject(p.id);
+    }
 
     const more = document.createElement('button');
     more.className = 'project-more';
@@ -1167,6 +1237,14 @@ function renderSidebar() {
 function sessionNode(s) {
   const item = document.createElement('div');
   item.className = 'session-item' + (s.id === activeId ? ' active' : '');
+  if (s.id === editingSessionId) {
+    item.appendChild(renameInputEl(
+      s.title || '',
+      (val) => commitSessionRename(s.id, val),
+      cancelSessionRename,
+    ));
+    return item;
+  }
   item.onclick = (e) => { if (!e.target.closest('button')) switchSession(s.id); };
   const title = document.createElement('span');
   title.className = 'session-title';
@@ -1177,6 +1255,89 @@ function sessionNode(s) {
   more.onclick = (e) => { e.stopPropagation(); openSessionMenu(e.currentTarget, s.id); };
   item.appendChild(more);
   return item;
+}
+
+// ============================ inline rename & confirm ============================
+let editingSessionId = '';
+let editingProjectId = '';
+let armedDangerTimer = null;
+function renameInputEl(value, commit, cancel) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'rename-input';
+  input.value = value || '';
+  input.maxLength = 80;
+  input.setAttribute('aria-label', 'Rename');
+  let settled = false;
+  const finish = (fn, arg) => {
+    if (settled) return;
+    settled = true;
+    fn(arg);
+  };
+  input.onmousedown = (e) => e.stopPropagation();
+  input.onclick = (e) => e.stopPropagation();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(commit, input.value); }
+    else if (e.key === 'Escape') { e.preventDefault(); finish(cancel); }
+  };
+  input.onblur = () => finish(commit, input.value);
+  return input;
+}
+function focusRenameInput() {
+  const input = document.querySelector('.rename-input');
+  if (input) { input.focus(); input.select(); }
+}
+function commitSessionRename(id, value) {
+  editingSessionId = '';
+  const s = sessions.find(x => x.id === id);
+  if (!s) { renderSidebar(); return; }
+  const title = (value || '').trim();
+  if (title && title !== s.title) {
+    s.title = title.slice(0, 80);
+    persistActiveNow();
+  }
+  renderSidebar();
+  if (id === activeId) renderChat();
+}
+function cancelSessionRename() {
+  editingSessionId = '';
+  renderSidebar();
+}
+function commitProjectRename(id, value) {
+  editingProjectId = '';
+  const p = projectById(id);
+  if (!p) { renderSidebar(); return; }
+  const name = (value || '').trim();
+  if (name && name !== p.name) {
+    p.name = name.slice(0, 80);
+    persistActiveNow();
+  }
+  renderSidebar();
+  if (activeProject() && activeProject().id === id) renderChat();
+}
+function cancelProjectRename() {
+  editingProjectId = '';
+  renderSidebar();
+}
+function disarmDangerButtons() {
+  if (armedDangerTimer !== null) { clearTimeout(armedDangerTimer); armedDangerTimer = null; }
+  document.querySelectorAll('.ctx-menu button.arming').forEach((b) => {
+    b.classList.remove('arming');
+    if (b.dataset.label) b.textContent = b.dataset.label;
+  });
+}
+function armDanger(btn, run) {
+  if (btn.classList.contains('arming')) {
+    disarmDangerButtons();
+    closeAllMenus();
+    run();
+    return;
+  }
+  disarmDangerButtons();
+  btn.dataset.label = btn.textContent;
+  btn.textContent = btn.dataset.confirm || 'Confirm';
+  btn.classList.add('arming');
+  armedDangerTimer = setTimeout(disarmDangerButtons, 3000);
 }
 
 // ============================ chat rendering ============================
@@ -1386,6 +1547,86 @@ function renderMarkdown(container, text) {
   flushList();
 }
 
+// ============================ tool line rendering ============================
+const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);
+function toolRowEl(m, compact) {
+  const row = document.createElement('div');
+  row.className = 'tool-line' + (compact ? ' compact' : '');
+  if (!compact) {
+    const dot = document.createElement('span'); dot.className = 'tl-dot'; dot.textContent = '·';
+    const kind = document.createElement('span'); kind.className = 'tl-kind'; kind.textContent = m.kind || '';
+    row.append(dot, kind);
+  }
+  const path = document.createElement('span'); path.className = 'tl-path'; path.textContent = m.path || '';
+  const arrow = document.createElement('span'); arrow.className = 'tl-arrow'; arrow.textContent = '→';
+  const result = document.createElement('span'); result.className = 'tl-result' + (m.error ? ' err' : ''); result.textContent = m.result || '';
+  row.append(path, arrow, result);
+  return row;
+}
+function foldCountLabel(kind, n) {
+  const nouns = {
+    read: ['file', 'files'],
+    ls: ['dir', 'dirs'],
+    search: ['search', 'searches'],
+    references: ['lookup', 'lookups'],
+  };
+  const pair = nouns[kind] || ['call', 'calls'];
+  return n + ' ' + (n === 1 ? pair[0] : pair[1]);
+}
+function createToolGroup(kind) {
+  const group = document.createElement('div');
+  group.className = 'tool-group collapsed';
+  group.dataset.foldkind = kind;
+  const summary = document.createElement('div');
+  summary.className = 'tool-group-summary';
+  const dot = document.createElement('span'); dot.className = 'tl-dot'; dot.textContent = '·';
+  const kindEl = document.createElement('span'); kindEl.className = 'tg-kind'; kindEl.textContent = kind;
+  const count = document.createElement('span'); count.className = 'tg-count';
+  const chev = document.createElement('span'); chev.className = 'tg-chevron'; chev.textContent = '▸';
+  summary.append(dot, kindEl, count, chev);
+  const body = document.createElement('div');
+  body.className = 'tool-group-body';
+  summary.onclick = () => group.classList.toggle('collapsed');
+  group.append(summary, body);
+  return group;
+}
+function standaloneToolEl(m) {
+  const div = document.createElement('div');
+  div.className = 'msg tool';
+  if (FOLDABLE_TOOL_KINDS.has(m.kind) && !m.error) {
+    div.dataset.foldkind = m.kind;
+    div.dataset.toolPath = m.path || '';
+    div.dataset.toolResult = m.result || '';
+  }
+  div.appendChild(toolRowEl(m, false));
+  return div;
+}
+function appendToToolGroup(group, m) {
+  const body = group.querySelector('.tool-group-body');
+  body.appendChild(toolRowEl(m, true));
+  group.querySelector('.tg-count').textContent = foldCountLabel(m.kind, body.children.length);
+}
+function appendOrFoldTool(chat, m) {
+  const last = chat.lastElementChild;
+  if (last && last.classList && last.classList.contains('tool-group') && last.dataset.foldkind === m.kind) {
+    appendToToolGroup(last, m);
+    return;
+  }
+  if (last && last.classList && last.classList.contains('msg') && last.classList.contains('tool') && last.dataset.foldkind === m.kind) {
+    const group = createToolGroup(m.kind);
+    appendToToolGroup(group, {
+      kind: m.kind,
+      path: last.dataset.toolPath || '',
+      result: last.dataset.toolResult || '',
+      error: false,
+    });
+    appendToToolGroup(group, m);
+    last.replaceWith(group);
+    return;
+  }
+  chat.appendChild(standaloneToolEl(m));
+}
+
 function appendMessageNode(chat, m) {
   if (m.type === 'user') {
     const div = document.createElement('div');
@@ -1424,18 +1665,11 @@ function appendMessageNode(chat, m) {
     addMessageCopyButton(div, messageCopyText(m));
     chat.appendChild(div);
   } else if (m.type === 'tool') {
-    const div = document.createElement('div');
-    div.className = 'msg tool';
-    const row = document.createElement('div');
-    row.className = 'tool-line';
-    const dot = document.createElement('span'); dot.className = 'tl-dot'; dot.textContent = '·';
-    const kind = document.createElement('span'); kind.className = 'tl-kind'; kind.textContent = m.kind || '';
-    const path = document.createElement('span'); path.className = 'tl-path'; path.textContent = m.path || '';
-    const arrow = document.createElement('span'); arrow.className = 'tl-arrow'; arrow.textContent = '→';
-    const result = document.createElement('span'); result.className = 'tl-result' + (m.error ? ' err' : ''); result.textContent = m.result || '';
-    row.append(dot, kind, path, arrow, result);
-    div.appendChild(row);
-    chat.appendChild(div);
+    if (FOLDABLE_TOOL_KINDS.has(m.kind) && !m.error) {
+      appendOrFoldTool(chat, m);
+    } else {
+      chat.appendChild(standaloneToolEl(m));
+    }
   } else if (m.type === 'done') {
     const action = m.project && m.changed ? {
       label: 'View diff',
@@ -1549,7 +1783,7 @@ function scrollChat() {
 
 // ============================ session ops ============================
 function switchSession(id) {
-  activeId = id; persistActive(); renderSidebar(); renderChat();
+  activeId = id; persistActiveNow(); renderSidebar(); renderChat();
 }
 function openProject(projectId) {
   const p = projectById(projectId);
@@ -1562,7 +1796,7 @@ function openProject(projectId) {
 function newSession(projectId = null) {
   const provider = currentProviderId();
   const s = { id: uid(), projectId, title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), provider };
-  sessions.unshift(s); activeId = s.id; persistActive(); renderSidebar(); renderChat();
+  sessions.unshift(s); activeId = s.id; persistActiveNow(); renderSidebar(); renderChat();
   fetch('/api/new_chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1582,7 +1816,6 @@ async function forgetSessionState(id) {
   }
 }
 async function deleteSession(id) {
-  if (!confirm('Delete this chat?')) return;
   if (!await forgetSessionState(id)) return;
   const fallbackProvider = currentProviderId();
   sessions = sessions.filter(s => s.id !== id);
@@ -1591,46 +1824,37 @@ async function deleteSession(id) {
     sessions = [s];
   }
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
-  persistActive(); renderSidebar(); renderChat();
+  persistActiveNow(); renderSidebar(); renderChat();
 }
 function renameSession(id) {
   const s = sessions.find(x => x.id === id);
   if (!s) return;
-  const next = prompt('Rename chat', s.title || 'New chat');
-  if (next === null) return;
-  const title = next.trim();
-  if (!title) return;
-  s.title = title.slice(0, 80);
-  persistActive();
+  editingProjectId = '';
+  editingSessionId = id;
+  if (s.projectId) { const p = projectById(s.projectId); if (p) p.expanded = true; }
   renderSidebar();
-  if (id === activeId) renderChat();
+  focusRenameInput();
 }
 async function clearMessages(id) {
   const s = sessions.find(x => x.id === id);
   if (!s) return;
-  if (!confirm('Clear all messages in this chat?')) return;
   if (!await forgetSessionState(id)) return;
   s.messages = [];
   s.terminalRuns = [];
-  persistActive();
+  persistActiveNow();
   if (id === activeId) renderChat();
 }
 function renameProject(id) {
   const p = projectById(id);
   if (!p) return;
-  const next = prompt('Rename project', p.name);
-  if (next === null) return;
-  const name = next.trim();
-  if (!name) return;
-  p.name = name.slice(0, 80);
-  persistActive();
+  editingSessionId = '';
+  editingProjectId = id;
   renderSidebar();
-  if (activeProject() && activeProject().id === id) renderChat();
+  focusRenameInput();
 }
 async function deleteProject(id) {
   const p = projectById(id);
   if (!p) return;
-  if (!confirm(`Remove project "${p.name}" from the sidebar? Files on disk will not be deleted, but local chats under this project will be.`)) return;
   const cleared = await Promise.all(
     sessions.filter(s => s.projectId === id).map(s => forgetSessionState(s.id))
   );
@@ -1639,7 +1863,7 @@ async function deleteProject(id) {
   sessions = sessions.filter(s => s.projectId !== id);
   if (!sessions.length) sessions = [{ id: uid(), title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER }];
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
-  persistActive(); renderSidebar(); renderChat();
+  persistActiveNow(); renderSidebar(); renderChat();
 }
 function ensureProject(path, name) {
   const existing = projects.find(p => pathKey(p.path) === pathKey(path));
@@ -1687,12 +1911,12 @@ function pushMsg(m) {
   s.messages.push(m);
   if (s.title === 'New chat' && m.type === 'user' && m.text) {
     s.title = m.text.slice(0, 28) + (m.text.length > 28 ? '…' : '');
-    persistActive();
+    persistActiveNow();
     renderSidebar();
     renderChat();
     return;
   }
-  persistActive();
+  persistActiveNow();
   if (wasEmpty) renderChat();
   else {
     appendMessageNode($('chat'), m);
@@ -1713,6 +1937,7 @@ function openMenuAt(menu, anchor) {
   menu.style.top = Math.max(8, top) + 'px';
 }
 function closeAllMenus() {
+  disarmDangerButtons();
   document.querySelectorAll('.ctx-menu.open').forEach(m => m.classList.remove('open'));
 }
 function openProjectMenu(anchor, projectId) {
@@ -1734,28 +1959,28 @@ function openTopMenu(anchor) {
 $('proj-menu').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-act]'); if (!btn) return;
   const id = $('proj-menu').dataset.projectId;
+  const act = btn.dataset.act;
+  if (act === 'remove') { if (id) armDanger(btn, () => deleteProject(id)); return; }
   closeAllMenus();
   if (!id) return;
-  const act = btn.dataset.act;
   if (act === 'newchat') newSession(id);
   else if (act === 'rename') renameProject(id);
-  else if (act === 'remove') deleteProject(id);
 });
 $('sess-menu').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-act]'); if (!btn) return;
   const id = $('sess-menu').dataset.sessionId;
+  const act = btn.dataset.act;
+  if (act === 'delete') { if (id) armDanger(btn, () => deleteSession(id)); return; }
   closeAllMenus();
   if (!id) return;
-  const act = btn.dataset.act;
   if (act === 'rename') renameSession(id);
-  else if (act === 'delete') deleteSession(id);
 });
 $('top-menu').addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-act]'); if (!btn) return;
-  closeAllMenus();
   const act = btn.dataset.act;
+  if (act === 'clear') { armDanger(btn, () => clearMessages(activeId)); return; }
+  closeAllMenus();
   if (act === 'rename') renameSession(activeId);
-  else if (act === 'clear') clearMessages(activeId);
 });
 document.addEventListener('click', (e) => {
   if (e.target.closest('.ctx-menu')) return;
@@ -1867,6 +2092,7 @@ function handleServerEvent(data) {
         syncProviderUI(currentProviderId());
       }
       addSendError(sid, terminalKey, runId);
+      flushUiState();
       return;
     }
     if (summary.startsWith('ERROR:')) {
@@ -1903,6 +2129,7 @@ function handleServerEvent(data) {
       addToSession(sid, { type: 'done', text: summary, runId, eventKey: terminalKey });
     }
     if (reason !== 'error' && reason !== 'approval' && data.changed && !shownReceipt) maybeAddChangesSummary(sid, terminalKey, runId);
+    flushUiState();
     return;
   }
   if (data.type === 'shell_request') {
@@ -2348,7 +2575,7 @@ function setActiveProvider(id) {
   const s = activeSession();
   if (!s) return;
   s.provider = provider;
-  persistActive();
+  persistActiveNow();
   syncProviderUI(provider);
   updateComposerContext();
 }
@@ -2491,6 +2718,11 @@ document.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('pagehide', () => {
+  if (uiStatePersistTimer !== null) {
+    clearTimeout(uiStatePersistTimer);
+    uiStatePersistTimer = null;
+  }
+  cacheUiState();
   const payload = JSON.stringify({ state: currentUiState() });
   try {
     if (navigator.sendBeacon) {

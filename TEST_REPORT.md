@@ -1,6 +1,31 @@
-# Codey 0.1.42 Test Report
+# Codey 0.1.43 Test Report
 
-## Post-0.1.42 Writer Failover Refactor
+## 0.1.43 Quiet UI Persistence and Sidebar Polish
+
+UI state persistence now separates the SSE hot path from discrete user actions.
+`addToSession()` still records every streamed event, but its full localStorage
+serialization and `/api/ui_state` POST are debounced. User actions such as
+switching chats, creating chats, renaming, deleting, clearing, and provider
+selection flush immediately. Terminal task events also flush immediately so the
+completed receipt is durable without waiting for the debounce timer.
+
+Sidebar rename now uses inline inputs instead of native `prompt()`. Destructive
+actions use a quiet two-step confirmation inside the existing monochrome menu
+instead of native `confirm()`. Consecutive read-only tool rows fold at render
+time only after a second same-kind row appears; a single read/search/list or
+reference row remains visible, while edit, run, shell, and error rows stay
+expanded.
+
+Validation:
+
+```text
+UI focused unittest: 40 tests OK
+Full unittest: 826 tests OK
+Full pytest: 834 passed, 67 subtests passed
+Ruff, compileall, and git diff --check: passed
+```
+
+## Internal Writer Failover Refactor
 
 Writer provider takeover is now isolated in `codey/writer_failover.py`.
 `TaskRunner` still owns prompts, verification, review, diffs, receipts, and
@@ -9,8 +34,8 @@ switches, shared turn budget, canary checks, checkpoint refresh, and Stop
 priority. Initial Writer execution and Review repair reuse the same runner
 instance so the switch budget and tried-provider set remain shared.
 
-This is an internal maintainability refactor. It does not change the user
-interface, provider protocol, prompt contract, or release version.
+This is an internal maintainability refactor. It does not change the provider
+protocol or prompt contract.
 
 Validation:
 
