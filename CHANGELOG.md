@@ -4,6 +4,18 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.41 - Smart Pagination Hint
+
+Paged `read_file` results now include the exact next JSON tool call when more
+content remains. Codey keeps the existing complete-line paging behavior and the
+older `next offset` text, but adds a concrete `read_file` call with the same
+path, next offset, and effective limit so the Writer does not have to infer how
+to continue reading a large file.
+
+The hint is generated with JSON escaping, appears only when another page exists,
+and does not change read budgets, file contents, tool protocol, or truncation
+semantics.
+
 ## 0.1.40 - Bounded Stacktrace Pruning
 
 Controlled `run` output now folds obvious dependency stack frames before the

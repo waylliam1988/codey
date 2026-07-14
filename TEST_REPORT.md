@@ -1,4 +1,29 @@
-# Codey 0.1.40 Test Report
+# Codey 0.1.41 Test Report
+
+## 0.1.41 Smart Pagination Hint
+
+Paged `read_file` results now include a concrete next-page JSON call when more
+content remains. The existing complete-line paging, `next offset` text, page
+metadata format, and truncation semantics remain intact. The added hint uses
+the same path, next offset, and effective limit:
+
+```text
+next call: {"tool":"read_file","args":{"path":"app.py","offset":301,"limit":300}}
+```
+
+The hint is omitted on the final page and is generated with JSON escaping so
+Windows-style paths and other escaped characters remain valid JSON. This change
+does not touch providers, Agent orchestration, file contents, or verification
+logic.
+
+Validation:
+
+```text
+Focused runtime/agent/protocol tests: 168 tests OK
+Full unittest: 799 tests OK
+Full pytest: 807 passed, 67 subtests passed
+Ruff, compileall, and git diff --check: passed
+```
 
 ## 0.1.40 Bounded Stacktrace Pruning
 

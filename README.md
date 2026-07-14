@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.40-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.41-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.40`
+Version: `0.1.41`
 
 [Version history](CHANGELOG.md)
 
@@ -93,6 +93,8 @@ This is not about replacing professional tools. It is about making the first ste
   repeated structural failures do not keep receiving hidden work
 - Stop a running provider wait, review, recovery, or test command promptly
 - Preserve both the beginning and end of long command output
+- Tell the model the exact next `read_file` JSON call when a large file read
+  returns only one page
 - Fold obvious dependency stack frames from Python and Node command output so
   user-code failures survive the existing output budget
 - Recover the active run, approval, or teaching prompt after a UI reconnect

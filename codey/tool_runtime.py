@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import os
 import re
 import shlex
@@ -550,6 +551,21 @@ def _append_page_metadata(content: str, metadata: str) -> str:
     return f"{content}{separator}\n[{metadata}]"
 
 
+def _read_file_next_call(rel: str, offset: int, limit: int) -> str:
+    return json.dumps(
+        {
+            "tool": "read_file",
+            "args": {
+                "path": rel,
+                "offset": offset,
+                "limit": limit,
+            },
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
 def read_file(
     root: Path,
     rel: str,
@@ -585,7 +601,12 @@ def read_file(
     if len(first) > READ_MAX_CHARS:
         preview, _ = clip_middle(first, READ_MAX_CHARS, LONG_LINE_MARKER)
         next_offset = start_line + 1
-        next_text = f"; next offset={next_offset}" if next_offset <= total else ""
+        next_text = ""
+        if next_offset <= total:
+            next_text = (
+                f"; next offset={next_offset}; next call: "
+                f"{_read_file_next_call(rel, next_offset, line_limit)}"
+            )
         metadata = (
             f"read_file page: line {start_line} of {total} exceeds "
             f"{READ_MAX_CHARS} chars; preview only, not a complete old_string"
@@ -610,7 +631,13 @@ def read_file(
     partial = start_line > 1 or end_line < total
     if not partial:
         return ToolOutcome(content, True)
-    next_text = f"; next offset={end_line + 1}" if end_line < total else ""
+    next_text = ""
+    if end_line < total:
+        next_offset = end_line + 1
+        next_text = (
+            f"; next offset={next_offset}; next call: "
+            f"{_read_file_next_call(rel, next_offset, line_limit)}"
+        )
     metadata = (
         f"read_file page: lines {start_line}-{end_line} of {total}{next_text}"
     )

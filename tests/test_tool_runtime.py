@@ -166,11 +166,20 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(first.truncated)
         self.assertTrue(first.output.startswith("one\ntwo\n"))
         self.assertIn("lines 1-2 of 5; next offset=3", first.output)
+        self.assertIn(
+            'next call: {"tool":"read_file","args":{"path":"app.txt","offset":3,"limit":2}}',
+            first.output,
+        )
         self.assertTrue(middle.output.startswith("three\nfour\n"))
         self.assertIn("next offset=5", middle.output)
+        self.assertIn(
+            'next call: {"tool":"read_file","args":{"path":"app.txt","offset":5,"limit":2}}',
+            middle.output,
+        )
         self.assertTrue(last.output.startswith("five\n"))
         self.assertIn("lines 5-5 of 5", last.output)
         self.assertNotIn("next offset=", last.output)
+        self.assertNotIn("next call:", last.output)
 
     def test_read_file_character_budget_never_splits_a_normal_line(self) -> None:
         first_line = "a" * (READ_MAX_CHARS // 2) + "\n"
@@ -185,6 +194,10 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertEqual(content, first_line.rstrip("\n"))
         self.assertNotIn("b", content)
         self.assertIn("lines 1-1 of 2; next offset=2", metadata)
+        self.assertIn(
+            'next call: {"tool":"read_file","args":{"path":"large.txt","offset":2,"limit":300}}',
+            metadata,
+        )
 
     def test_read_file_marks_overlong_line_as_preview_only(self) -> None:
         line = "HEAD" + ("x" * READ_MAX_CHARS) + "TAIL\n"
@@ -201,6 +214,26 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIn(LONG_LINE_MARKER.strip(), outcome.output)
         self.assertIn("preview only, not a complete old_string", outcome.output)
         self.assertIn("next offset=2", outcome.output)
+        self.assertIn(
+            'next call: {"tool":"read_file","args":{"path":"generated.txt","offset":2,"limit":300}}',
+            outcome.output,
+        )
+
+    def test_read_file_next_call_escapes_path_as_json(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            nested = root / "nested"
+            nested.mkdir()
+            path = nested / "page.txt"
+            path.write_text("one\ntwo\n", encoding="utf-8")
+
+            outcome = read_file(root, "nested\\page.txt", limit=1)
+
+        self.assertTrue(outcome.truncated)
+        self.assertIn(
+            'next call: {"tool":"read_file","args":{"path":"nested\\\\page.txt","offset":2,"limit":1}}',
+            outcome.output,
+        )
 
     def test_read_file_validates_page_bounds_and_empty_files(self) -> None:
         with tempfile.TemporaryDirectory() as td:
