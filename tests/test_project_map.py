@@ -249,6 +249,7 @@ class ProjectMapTests(unittest.TestCase):
             symbol_overview,
         )
         self.assertIn("Focused subtree", rendered)
+        self.assertNotIn("Symbol overview", rendered)
         self.assertIn("apps/commerce/", rendered)
         self.assertIn("apps/commerce/src/domain/billing/policies/proration_policy.py", rendered)
         self.assertIn("apps/commerce/src/domain/billing/invoices/adjustment_builder.py", rendered)

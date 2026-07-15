@@ -39,8 +39,8 @@ JSON report to the system temporary directory by default.
 the legacy task-aware Project Map shape. It creates a temporary deep synthetic
 monorepo with most target filenames omitted from the task text, then compares:
 
-- `current`: production `render_project_map(..., task=...)` with
-  `focused_subtree` stripped to recreate the legacy baseline.
+- `current`: the legacy task-aware map shape, with the ordinary Symbol overview
+  and without Focused subtree.
 - `zoom`: production `render_project_map(..., task=...)`, including the
   bounded `Focused subtree` section.
 

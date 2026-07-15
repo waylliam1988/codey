@@ -3,7 +3,8 @@
 This probe builds a temporary deep synthetic repository, then asks a live web
 provider to choose the first files it would inspect under two read-only arms:
 
-* current: the production task-aware Project Map with Focused subtree stripped
+* current: the legacy task-aware Project Map shape, including Symbol overview
+  and excluding Focused subtree
 * zoom: the production task-aware Project Map, including Focused subtree
 
 The fixture intentionally includes deep target files that are not named in most
@@ -34,6 +35,7 @@ if str(ROOT) not in sys.path:
 from codey import provider_controls
 from codey.project_map import (
     build_project_map,
+    build_symbol_overview,
     render_project_map,
 )
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
@@ -507,7 +509,11 @@ def _score_result(
 
 def render_legacy_project_map(root: Path, task: str) -> str:
     project_map = build_project_map(root, task=task)
-    return replace(project_map, focused_subtree="").render()
+    return replace(
+        project_map,
+        focused_subtree="",
+        symbol_overview=build_symbol_overview(root, task),
+    ).render()
 
 
 def render_zoom_project_map(root: Path, task: str) -> str:

@@ -266,8 +266,10 @@ def build_project_map(
             break
 
     observed = _observed_successful_checks(verified_facts)
-    symbol_overview = build_symbol_overview(root, task) if task.strip() else ""
     focused_subtree = build_focused_subtree_overview(root, task) if task.strip() else ""
+    symbol_overview = ""
+    if task.strip() and not focused_subtree:
+        symbol_overview = build_symbol_overview(root, task)
     return ProjectMap(
         directories=tuple(dirs[:MAX_LISTED_DIRS]),
         files=tuple(files[:MAX_LISTED_FILES]),

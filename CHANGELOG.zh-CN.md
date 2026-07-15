@@ -11,8 +11,9 @@ Project Map 现在会在有任务时加入一个有边界的 `Focused subtree` �
 和输出字符预算内扫描源码文件，只展示最高分模块的相对路径、source/test 标记和符号
 签名。它不展示源码体、不建索引、不持久化、不增加 UI，也不会额外调用 planner 模型。
 
-Focused subtree 只在存在 task 且普通 Symbol overview 可能受大仓预算影响时出现，并且
-放在 Symbol overview 前面，确保深层导航提示能留在 Project Map 的总字符预算内。
+Focused subtree 只在存在 task 且普通 Symbol overview 可能受大仓预算影响时出现。它出现时
+会替代普通 Symbol overview，让 Project Map 把 token 留给深层任务相关模块，而不是继续展示
+低相关的前序文件符号。
 
 Qwen readiness 也更稳：Codey 现在会等聊天输入框、bootstrap 信号，以及模型选择器文本
 连续两次读取相同且非空后才发送。输入框清空不再被当作提交成功；Qwen 提交确认只认 stop
@@ -21,7 +22,7 @@ Qwen readiness 也更稳：Codey 现在会等聊天输入框、bootstrap 信号�
 手工 probe 也记录了两条未采纳路线：两段式 scoped planner 和本地 deterministic
 pre-scope 都没有证明值得进入生产。最终保留的是更轻的分层 map。四个网页模型在深层
 synthetic monorepo 上从 `0/16` top1 提升到 `16/16`，同时 prompt 字符从 `53,424`
-降到 `27,308`。
+降到合并后实机复测的 `33,564`。
 
 ## 0.1.43 - 安静的 UI 持久化与侧边栏打磨
 

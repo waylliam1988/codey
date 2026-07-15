@@ -15,8 +15,9 @@ UI, or call an extra planner model.
 
 The Focused subtree is emitted only when a task is present and only when the
 normal Symbol overview is likely insufficient for a larger or budget-limited
-repository. It is placed before Symbol overview so deep navigation hints survive
-the Project Map's overall character budget.
+repository. When it appears, it replaces the ordinary Symbol overview so the
+Project Map stays focused on the deep task-relevant module instead of spending
+tokens on low-relevance early files.
 
 Qwen readiness is also stricter and faster: Codey now waits for the chat input,
 bootstrap signal, and two consecutive identical non-empty model selector reads
@@ -28,7 +29,7 @@ Manual probes recorded that two pre-scope approaches did not earn production
 adoption. The retained production path is the lighter layered map: on a deep
 synthetic monorepo across DeepSeek, MiMo, Qwen, and GLM, Focused subtree
 improved first-file selection from 0/16 to 16/16 while reducing prompt
-characters from 53,424 to 27,308.
+characters from 53,424 to 33,564 in the post-merge live verification.
 
 ## 0.1.43 - Quiet UI Persistence and Sidebar Polish
 

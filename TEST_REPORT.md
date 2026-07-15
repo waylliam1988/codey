@@ -11,9 +11,9 @@ or call an extra planning model.
 
 The section appears only when a task is present and only when the normal
 task-aware Symbol overview is likely insufficient because the repository is
-larger than the symbol scan budget or the focused scan itself hit a budget. It
-is rendered before Symbol overview so deep navigation hints survive the total
-Project Map character budget.
+larger than the symbol scan budget or the focused scan itself hit a budget.
+When it appears, it replaces the ordinary Symbol overview so deep navigation
+hints are not diluted by low-relevance early files.
 
 Qwen readiness now waits for message input visibility, bootstrap readiness, and
 two consecutive identical non-empty model-selector reads before sending. The
@@ -32,7 +32,7 @@ monorepo:
 
 ```text
 current: top1 0/16, path_hits 0,  test_hits 0,  chars 53,424
-zoom:    top1 16/16, path_hits 31, test_hits 16, chars 27,308
+zoom:    top1 16/16, path_hits 31, test_hits 16, chars 33,564
 ```
 
 Qwen submit probe after the readiness fix:
