@@ -35,10 +35,9 @@ from codey.providers import PROVIDER_LABELS
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
 from codey.receipt import build_task_receipt
-from codey.review import has_reviewable_changes, render_writer_followup
+from codey.review_coordinator import ReviewCoordinator, change_state
 from codey.verification_map import render_verification_map
 from codey.verification_policy import (
-    VerificationCandidate,
     check_matches_candidate,
     select_verification_candidate,
 )
@@ -128,18 +127,6 @@ def _safe_verification_map(
         )
     except Exception:
         return ""
-
-
-def _changed_state(changes: object) -> bool | None:
-    """Return final diff state, or None when change collection was unavailable."""
-    if not isinstance(changes, dict) or changes.get("ok") is not True:
-        return None
-    files = changes.get("files")
-    changed_count = changes.get("changed_count")
-    return bool(
-        (isinstance(changed_count, int) and changed_count > 0)
-        or (isinstance(files, list) and files)
-    )
 
 
 class TaskRunner:
@@ -702,7 +689,7 @@ class TaskRunner:
                 )
                 task_changed = result.changed or checkpoint_changed
                 task_changes = self.collect_changes(project, tracker)
-                collected_changed = _changed_state(task_changes)
+                collected_changed = change_state(task_changes)
                 task_changes_dirty = collected_changed is None
                 if collected_changed is not None:
                     task_changed = collected_changed
@@ -744,138 +731,111 @@ class TaskRunner:
                         if consulted.degraded:
                             state.set_provider_session(provider_id, None)
                         result = replace(result, summary=consulted.answer)
-                if (
-                    result.stop_reason == "done"
-                    and task_changed
-                    and not state.stop_flag.is_set()
-                    and task_changes_dirty
-                ):
-                    task_changes = self.collect_changes(project, tracker)
-                    collected_changed = _changed_state(task_changes)
-                    task_changes_dirty = collected_changed is None
-                    if collected_changed is not None:
-                        task_changed = collected_changed
-                if (
-                    result.stop_reason == "done"
-                    and task_changed
-                    and not state.stop_flag.is_set()
-                ):
+                review_coordinator = ReviewCoordinator(self.collect_changes)
+
+                def render_review_change_brief() -> str:
+                    return (
+                        change_brief.render(audience="reviewer")
+                        if change_brief is not None
+                        else ""
+                    )
+
+                def refresh_review_project_map() -> str:
+                    nonlocal verified_facts
+                    nonlocal project_map
                     verified_facts = (
                         self.project_facts.render(project)
                         if self.project_facts is not None
                         else ""
                     )
                     project_map = safe_project_map(project, verified_facts, task)
-                    if has_reviewable_changes(task_changes):
-                        verification_map = _safe_verification_map(
-                            project,
-                            task_changes,
-                            evidence.successful_checks,
-                            project_map,
-                        )
-                        rendered_change_brief = (
-                            change_brief.render(audience="reviewer")
-                            if change_brief is not None
-                            else ""
-                        )
+                    return project_map
+
+                def close_writer_for_review() -> None:
+                    nonlocal provider
+                    if provider is not None:
                         try:
                             provider.close()
                         except Exception:
                             pass
-                        provider = None
-                        failover.provider = None
-                        try:
-                            reviewed = self.run_review(
-                                session_id=session_id,
-                                project=project,
-                                task=task,
-                                writer_summary=result.summary,
-                                changes=task_changes,
-                                recent_log="\n".join(recent_events[-self.review_log_lines:]),
-                                execution_evidence=evidence.render_for_review(),
-                                writer_id=provider_id,
-                                change_brief=rendered_change_brief,
-                                project_map=project_map,
-                                verification_map=verification_map,
-                            )
-                        except cancellation.TaskCancelled:
-                            raise
-                        except Exception:
-                            state.emit({
-                                "type": "review",
-                                "session_id": session_id,
-                                "text": "Unavailable. Continued with one model.",
-                            })
-                            reviewed = None
-                        if reviewed is not None:
-                            _reviewer_id, review = reviewed
-                            if not review.approved:
-                                update_checkpoint(
-                                    lambda store, item: store.set_status(
-                                        item,
-                                        "fixing_review",
-                                    )
-                                )
-                                checks_before_review_followup = (
-                                    evidence.has_successful_checks
-                                    or (
-                                        not evidence.observed_tool_events
-                                        and result.checks_passed
-                                    )
-                                )
-                                followup = render_writer_followup(
-                                    task,
-                                    review,
-                                    change_brief=rendered_change_brief,
-                                )
-                                verified_facts = (
-                                    self.project_facts.render(project)
-                                    if self.project_facts is not None
-                                    else ""
-                                )
-                                project_map = safe_project_map(project, verified_facts, task)
-                                try:
-                                    result = failover.run(
-                                        task=followup,
-                                        turn_budget=min(max_turns, self.review_fix_turns),
-                                        fresh=False,
-                                        handoff="",
-                                        checkpoint=CheckpointView(
-                                            prompt=checkpoint_prompt,
-                                            changed_files=tuple(
-                                                str(item.get("path") or "")
-                                                for item in (task_changes.get("files") or [])
-                                                if item.get("path")
-                                            ),
-                                            successful_checks=tuple(
-                                                VerificationCandidate(
-                                                    item.command,
-                                                    item.cwd,
-                                                    "execution evidence",
-                                                )
-                                                for item in evidence.successful_checks
-                                            ),
-                                        ),
-                                    )
-                                finally:
-                                    provider = failover.provider
-                                    provider_id = failover.provider_id
-                                task_changes_dirty = True
-                                if result.stop_reason == "done":
-                                    update_checkpoint(
-                                        lambda store, item: store.set_status(
-                                            item,
-                                            "ready_for_review",
-                                        )
-                                    )
-                                if (
-                                    result.stop_reason == "done"
-                                    and not result.changed
-                                    and checks_before_review_followup
-                                    and not result.checks_ran
-                                ):
-                                    result = replace(result, checks_passed=True)
-                                task_changed = task_changed or result.changed
+                    provider = None
+                    failover.provider = None
+
+                def repair_writer(
+                    followup: str,
+                    checkpoint: CheckpointView,
+                ) -> RunResult:
+                    nonlocal provider
+                    nonlocal provider_id
+                    try:
+                        return failover.run(
+                            task=followup,
+                            turn_budget=min(max_turns, self.review_fix_turns),
+                            fresh=False,
+                            handoff="",
+                            checkpoint=checkpoint,
+                        )
+                    finally:
+                        provider = failover.provider
+                        provider_id = failover.provider_id
+
+                def set_checkpoint_status(status: str) -> None:
+                    update_checkpoint(
+                        lambda store, item: store.set_status(
+                            item,
+                            status,
+                        )
+                    )
+
+                def emit_review_unavailable() -> None:
+                    state.emit({
+                        "type": "review",
+                        "session_id": session_id,
+                        "text": "Unavailable. Continued with one model.",
+                    })
+
+                review_cycle = review_coordinator.run_cycle(
+                    project=project,
+                    tracker=tracker,
+                    session_id=session_id,
+                    task=task,
+                    result=result,
+                    task_changed=task_changed,
+                    changes=task_changes,
+                    changes_dirty=task_changes_dirty,
+                    writer_id=provider_id,
+                    recent_log="\n".join(recent_events[-self.review_log_lines:]),
+                    render_change_brief=render_review_change_brief,
+                    execution_evidence=evidence.render_for_review(),
+                    successful_checks=evidence.successful_checks,
+                    checkpoint_prompt=checkpoint_prompt,
+                    checks_before_review_followup=(
+                        evidence.has_successful_checks
+                        or (
+                            not evidence.observed_tool_events
+                            and result.checks_passed
+                        )
+                    ),
+                    stop_requested=state.stop_flag.is_set,
+                    refresh_project_map=refresh_review_project_map,
+                    build_verification_map=lambda changes, current_project_map: (
+                        _safe_verification_map(
+                            project,
+                            changes,
+                            evidence.successful_checks,
+                            current_project_map,
+                        )
+                    ),
+                    run_review=self.run_review,
+                    close_writer_for_review=close_writer_for_review,
+                    repair_writer=repair_writer,
+                    set_checkpoint_status=set_checkpoint_status,
+                    emit_review_unavailable=emit_review_unavailable,
+                )
+                result = review_cycle.result
+                task_changed = review_cycle.task_changed
+                task_changes = review_cycle.changes
+                task_changes_dirty = review_cycle.changes_dirty
             else:
                 if fresh_chat:
                     provider.new_chat()
@@ -930,7 +890,7 @@ class TaskRunner:
             if project:
                 if task_changes is None or task_changes_dirty:
                     task_changes = self.collect_changes(project, tracker)
-                collected_changed = _changed_state(task_changes)
+                collected_changed = change_state(task_changes)
                 if collected_changed is not None:
                     task_changed = collected_changed
                 files = tuple(

@@ -38,6 +38,13 @@ initial verification candidates. `TaskRunner` still owns Writer execution,
 Review, receipts, conversation state, provider failover, and the explicit
 evidence seed/invalidation calls.
 
+The diff-review lifecycle is also isolated in `codey/review_coordinator.py`.
+The coordinator handles diff retry before review, reviewability checks,
+review-unavailable fallback, reviewer follow-up creation, repair dirty-state
+tracking, and the narrow green-check inheritance rule after review repair.
+Reviewer connection, Writer failover, receipts, ProjectFacts, and conversation
+state remain in `TaskRunner`.
+
 ## 0.1.43 - Quiet UI Persistence and Sidebar Polish
 
 UI state persistence is now debounced on the hot SSE path. Streaming turn,

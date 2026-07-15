@@ -78,6 +78,29 @@ Full pytest: 869 passed, 67 subtests passed
 Ruff, py_compile/compileall, and git diff --check: passed
 ```
 
+## Internal ReviewCoordinator Refactor
+
+Diff Review lifecycle management is now isolated in
+`codey/review_coordinator.py`. The coordinator owns the bounded review-time
+state machine: retrying unavailable diffs before review, checking whether a
+diff is reviewable, handling review-unavailable fallback, turning rejected
+reviews into Writer follow-up prompts, marking diff state dirty after repair,
+and preserving the narrow checks-passed inheritance rule when a repair confirms
+the reviewer finding was invalid without changing files or running checks.
+
+`TaskRunner` still owns reviewer connection, Writer failover, provider state,
+Receipt construction, ProjectFacts writes, checkpoint deletion, and conversation
+snapshots. This keeps the refactor behavior-preserving while making the
+previously fragile diff/review/repair lifecycle independently testable.
+
+Validation:
+
+```text
+ReviewCoordinator/server/work checkpoint focused pytest: 119 passed
+ReviewCoordinator/server/work checkpoint focused unittest: 110 tests OK
+Ruff, compileall, and git diff --check: passed
+```
+
 ## 0.1.43 Quiet UI Persistence and Sidebar Polish
 
 UI state persistence now separates the SSE hot path from discrete user actions.

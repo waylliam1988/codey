@@ -358,6 +358,7 @@ codey/
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
   verification_map.py       Review 阶段的有边界验证候选
   change_brief.py           隐藏任务意图 brief
+  review_coordinator.py     有边界的 diff review 生命周期
   task_runner.py            任务、会话、review 和收据编排
   browser.py                Chromium CDP 连接
   browser_worker.py         Playwright 线程调度

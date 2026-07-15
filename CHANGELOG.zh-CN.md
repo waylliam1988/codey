@@ -30,6 +30,11 @@ checkpoint 恢复/启动、checkpoint prompt 和初始验证候选；`TaskRunner
 Writer、Review、Receipt、会话状态、Provider 接管，以及显式的 evidence seed /
 invalidate 调用。
 
+Diff Review 生命周期也已抽到 `codey/review_coordinator.py`。Coordinator 负责 Review 前
+diff 重试、是否值得 Review、Review 不可用时降级、Reviewer 反馈生成 Writer followup、
+repair 后 diff dirty 状态，以及 review repair 后极窄的绿色检查继承规则。Reviewer
+连接、Writer 接管、Receipt、ProjectFacts 和会话状态仍然留在 `TaskRunner`。
+
 ## 0.1.43 - 安静的 UI 持久化与侧边栏打磨
 
 UI 状态持久化现在会在 SSE 热路径上节流。连续的 turn、tool、info 事件会合并
