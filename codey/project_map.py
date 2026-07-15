@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
+from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
+
 
 MAX_PROJECT_MAP_CHARS = 7_000
 MAX_DIRECTORY_ENTRIES = 180
@@ -29,6 +31,13 @@ MAX_SYMBOL_FILES = 120
 MAX_SYMBOL_FILE_BYTES = 256 * 1024
 MAX_SYMBOL_TOTAL_BYTES = 2 * 1024 * 1024
 MAX_SYMBOLS_PER_FILE = 12
+MAX_FOCUSED_SUBTREE_CHARS = 2_000
+MAX_FOCUS_SCAN_FILES = 1_000
+MAX_FOCUS_SCAN_DIRS = 350
+MAX_FOCUS_SOURCE_BYTES = 256 * 1024
+MAX_FOCUS_TOTAL_BYTES = 8 * 1024 * 1024
+MAX_FOCUS_MODULES = 1
+MAX_FOCUS_FILES_PER_MODULE = 8
 SOURCE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx"}
 
 EXCLUDED_DIRS = {
@@ -135,6 +144,7 @@ class ProjectMap:
     candidate_commands: tuple[str, ...] = ()
     observed_successful_checks: tuple[str, ...] = ()
     symbol_overview: str = ""
+    focused_subtree: str = ""
     truncated: bool = False
 
     def render(self) -> str:
@@ -154,6 +164,8 @@ class ProjectMap:
             "Candidate commands (inspect before running)",
             self.candidate_commands,
         )
+        if self.focused_subtree:
+            lines.append(self.focused_subtree)
         if self.symbol_overview:
             lines.append(self.symbol_overview)
         if self.truncated:
@@ -169,6 +181,23 @@ class SymbolSummary:
     path: str
     symbols: tuple[str, ...]
     score: int
+
+
+@dataclass(frozen=True)
+class FocusCandidate:
+    path: str
+    symbols: tuple[str, ...]
+    score: int
+    module: str
+    is_test: bool
+
+
+@dataclass(frozen=True)
+class FocusModule:
+    path: str
+    max_score: int
+    total_score: int
+    top_files: tuple[FocusCandidate, ...]
 
 
 def build_project_map(
@@ -238,6 +267,7 @@ def build_project_map(
 
     observed = _observed_successful_checks(verified_facts)
     symbol_overview = build_symbol_overview(root, task) if task.strip() else ""
+    focused_subtree = build_focused_subtree_overview(root, task) if task.strip() else ""
     return ProjectMap(
         directories=tuple(dirs[:MAX_LISTED_DIRS]),
         files=tuple(files[:MAX_LISTED_FILES]),
@@ -248,6 +278,7 @@ def build_project_map(
         candidate_commands=tuple(_dedupe(candidate_commands)[:MAX_CANDIDATE_COMMANDS]),
         observed_successful_checks=tuple(observed[:MAX_SUCCESSFUL_CHECK_LINES]),
         symbol_overview=symbol_overview,
+        focused_subtree=focused_subtree,
         truncated=truncated,
     )
 
@@ -293,6 +324,60 @@ def build_symbol_overview(
             break
         lines.append(block)
     return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def build_focused_subtree_overview(
+    project: str | Path,
+    task: str,
+    *,
+    max_chars: int = MAX_FOCUSED_SUBTREE_CHARS,
+) -> str:
+    task = (task or "").strip()
+    if not task:
+        return ""
+    root = Path(project).expanduser().resolve()
+    candidates, budget = _scan_focus_candidates(root, task)
+    if not candidates:
+        return ""
+    if len(candidates) <= MAX_SYMBOL_FILES and not budget.limited:
+        return ""
+
+    modules = _focus_modules(candidates)
+    focused = tuple(module for module in modules if module.max_score > 0)[:MAX_FOCUS_MODULES]
+    if not focused:
+        return ""
+
+    lines = ["Focused subtree (task-scored navigation; read files before editing):"]
+    for module in focused:
+        _append_budgeted_line(lines, f"- {module.path}", max_chars)
+        for candidate in module.top_files[:MAX_FOCUS_FILES_PER_MODULE]:
+            symbol_text = "; ".join(candidate.symbols[:4])
+            role = "test" if candidate.is_test else "source"
+            line = f"  - {candidate.path} [{role}]"
+            if symbol_text:
+                line += f": {symbol_text}"
+            if not _append_budgeted_line(lines, line, max_chars):
+                _append_budgeted_line(
+                    lines,
+                    "  - focused subtree truncated; inspect narrower paths as needed",
+                    max_chars,
+                )
+                return "\n".join(lines)
+    if budget.limited:
+        _append_budgeted_line(
+            lines,
+            budget.stop_message("focused subtree scan"),
+            max_chars,
+        )
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+def _append_budgeted_line(lines: list[str], line: str, max_chars: int) -> bool:
+    current = "\n".join(lines)
+    if len(current) + len(line) + 1 > max_chars:
+        return False
+    lines.append(line)
+    return True
 
 
 def _extend_section(lines: list[str], title: str, items: Sequence[str]) -> None:
@@ -359,6 +444,107 @@ def _iter_symbol_source_files(root: Path) -> list[Path]:
                 break
         stack.extend(reversed(subdirs))
     return sorted(files)
+
+
+def _scan_focus_candidates(
+    root: Path,
+    task: str,
+) -> tuple[list[FocusCandidate], BoundedScanBudget]:
+    budget = BoundedScanBudget(
+        max_files=MAX_FOCUS_SCAN_FILES,
+        max_dirs=MAX_FOCUS_SCAN_DIRS,
+        max_dir_entries=1_000,
+        max_bytes=MAX_FOCUS_TOTAL_BYTES,
+    )
+    candidates: list[FocusCandidate] = []
+    for path in iter_bounded_files(
+        root,
+        excluded_dirs=EXCLUDED_DIRS,
+        budget=budget,
+        allow_dir=lambda item: _focus_dir_allowed(root, item),
+        allow_file=lambda item: _focus_source_file_allowed(root, item),
+    ):
+        rel = _safe_relative(root, path)
+        if not rel:
+            continue
+        symbols = _symbols_for_file(path)
+        if not symbols:
+            continue
+        candidates.append(
+            FocusCandidate(
+                path=rel,
+                symbols=symbols,
+                score=_symbol_score(rel, symbols, task),
+                module=_focus_root(rel),
+                is_test=_is_test_path(rel),
+            )
+        )
+    return candidates, budget
+
+
+def _focus_dir_allowed(root: Path, path: Path) -> bool:
+    rel = _safe_relative(root, path)
+    return bool(rel and not _path_blocked(rel))
+
+
+def _focus_source_file_allowed(root: Path, path: Path) -> bool:
+    rel = _safe_relative(root, path)
+    if not rel or _path_blocked(rel):
+        return False
+    if path.suffix.lower() not in SOURCE_SUFFIXES:
+        return False
+    try:
+        return path.stat().st_size <= MAX_FOCUS_SOURCE_BYTES
+    except OSError:
+        return False
+
+
+def _focus_root(rel: str) -> str:
+    parts = PurePosixPath(rel).parts
+    if not parts:
+        return "."
+    if parts[0] in {"apps", "libs", "packages", "services"} and len(parts) >= 2:
+        return f"{parts[0]}/{parts[1]}/"
+    if parts[0] in {"src", "test", "tests"}:
+        return f"{parts[0]}/"
+    return f"{parts[0]}/" if len(parts) > 1 else "."
+
+
+def _is_test_path(rel: str) -> bool:
+    parts = {part.lower() for part in PurePosixPath(rel).parts}
+    name = PurePosixPath(rel).name.lower()
+    return "tests" in parts or "test" in parts or name.startswith("test_")
+
+
+def _focus_modules(candidates: Sequence[FocusCandidate]) -> tuple[FocusModule, ...]:
+    grouped: dict[str, list[FocusCandidate]] = {}
+    for candidate in candidates:
+        grouped.setdefault(candidate.module, []).append(candidate)
+
+    modules: list[FocusModule] = []
+    for module, module_candidates in grouped.items():
+        ordered = sorted(
+            (item for item in module_candidates if item.score > 0),
+            key=lambda item: (item.is_test, -item.score, item.path),
+        )
+        if not ordered:
+            top_files: tuple[FocusCandidate, ...] = ()
+        else:
+            top_files = tuple(ordered[:MAX_FOCUS_FILES_PER_MODULE])
+        modules.append(
+            FocusModule(
+                path=module,
+                max_score=max(item.score for item in module_candidates),
+                total_score=sum(item.score for item in module_candidates),
+                top_files=top_files,
+            )
+        )
+    return tuple(
+        sorted(
+            modules,
+            key=lambda item: (-item.max_score, -item.total_score, item.path),
+        )
+    )
 
 
 def _entry_sort_key(item: Path) -> tuple[bool, str]:

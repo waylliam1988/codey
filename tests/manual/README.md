@@ -15,6 +15,48 @@ It asks the live provider to return only the files it would inspect first. Use
 it to validate navigation changes, not as a product tool. `--self-test` checks
 the local Symbol overview invariants without opening a provider page.
 
+`scoped_task_plan_ab.py` compares current task-aware Project Map navigation
+with a deterministic local scope hint. The default `current,hint` arms ask for
+first files directly; `hint` adds a local advisory "Deterministic Scope Hint"
+computed from the current project map scoring signals, without an extra model
+planning turn. The older `scoped` arm can still be selected explicitly to
+retest the two-step hidden planner:
+
+```powershell
+python -B tests\manual\scoped_task_plan_ab.py `
+  --provider all `
+  --port 9222 `
+  --case stockalarm-training-flow `
+  --case stockalarm-backtest-masks `
+  --arms current,hint
+```
+
+It records path, test-path, and expected-term hits plus sent characters and
+provider time. The probe never edits files, never runs commands, and writes its
+JSON report to the system temporary directory by default.
+
+`zoom_project_map_ab.py` tests the production Focused subtree section against
+the legacy task-aware Project Map shape. It creates a temporary deep synthetic
+monorepo with most target filenames omitted from the task text, then compares:
+
+- `current`: production `render_project_map(..., task=...)` with
+  `focused_subtree` stripped to recreate the legacy baseline.
+- `zoom`: production `render_project_map(..., task=...)`, including the
+  bounded `Focused subtree` section.
+
+```powershell
+python -B tests\manual\zoom_project_map_ab.py `
+  --provider all `
+  --max-cases 4 `
+  --output .zoom-project-map-ab.live.json
+```
+
+Use `summary.unnamed_deep` for the decision. The original probe required
+better `top1_path_hits` without larger prompts; after production integration,
+the compatibility check is whether the `Focused subtree` section recovers deep
+targets while the full Project Map remains under the bounded map character
+budget.
+
 `qwen_submit_probe.py` is a narrow live diagnostic for Qwen submit/readiness
 issues:
 

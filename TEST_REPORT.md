@@ -1,4 +1,59 @@
-# Codey 0.1.43 Test Report
+# Codey 0.1.44 Test Report
+
+## 0.1.44 Focused Project Map
+
+Project Map now includes a bounded `Focused subtree` section for larger
+task-aware repositories. It scans source files under fixed file, directory,
+single-file-size, total-byte, and output-character budgets, then emits only
+relative paths, source/test labels, and symbol signatures for the top-scored
+module. It does not emit source bodies, build an index, persist data, add UI,
+or call an extra planning model.
+
+The section appears only when a task is present and only when the normal
+task-aware Symbol overview is likely insufficient because the repository is
+larger than the symbol scan budget or the focused scan itself hit a budget. It
+is rendered before Symbol overview so deep navigation hints survive the total
+Project Map character budget.
+
+Qwen readiness now waits for message input visibility, bootstrap readiness, and
+two consecutive identical non-empty model-selector reads before sending. The
+final readiness fallback uses the same rule. Qwen submission confirmation no
+longer treats a cleared input box as evidence that the message was accepted; it
+requires stop visibility or response-count growth.
+
+Two scoped/pre-scope probes were intentionally not promoted. The two-step
+hidden Scoped Task Plan arm lost path/test hits and more than doubled prompt
+traffic. The lighter deterministic scope hint was neutral on the stockalarm
+large-repo cases while adding prompt characters. The retained production path
+is the layered map / zoom-map approach.
+
+Live zoom-map A/B across DeepSeek, MiMo, Qwen, and GLM on the deep synthetic
+monorepo:
+
+```text
+current: top1 0/16, path_hits 0,  test_hits 0,  chars 53,424
+zoom:    top1 16/16, path_hits 31, test_hits 16, chars 27,308
+```
+
+Qwen submit probe after the readiness fix:
+
+```text
+new_chat seconds=7.69
+after send attempt seconds=9.39
+responses=1
+reply={"ok":true}
+```
+
+Validation:
+
+```text
+Focused pytest: 137 passed, 2 subtests passed
+Full pytest: 859 passed, 67 subtests passed
+zoom_project_map_ab --self-test: passed
+zoom_project_map_ab --max-cases 4 --dry-run: passed
+scoped_task_plan_ab --self-test: passed
+Ruff, compileall, and git diff --check: passed
+```
 
 ## 0.1.43 Quiet UI Persistence and Sidebar Polish
 

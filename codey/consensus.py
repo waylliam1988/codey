@@ -633,6 +633,7 @@ def _audit_find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
             symbol,
             files=files,
             scan_budget=budget,
+            files_budgeted=True,
         )
     except ValueError as exc:
         return ToolOutcome.error(str(exc))

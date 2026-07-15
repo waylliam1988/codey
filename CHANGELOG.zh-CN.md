@@ -4,6 +4,25 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.44 - Focused Project Map
+
+Project Map 现在会在有任务时加入一个有边界的 `Focused subtree` 小节，用来帮助
+模型在深层仓库里更快找到相关模块。它在固定的文件数、目录数、单文件大小、总字节数
+和输出字符预算内扫描源码文件，只展示最高分模块的相对路径、source/test 标记和符号
+签名。它不展示源码体、不建索引、不持久化、不增加 UI，也不会额外调用 planner 模型。
+
+Focused subtree 只在存在 task 且普通 Symbol overview 可能受大仓预算影响时出现，并且
+放在 Symbol overview 前面，确保深层导航提示能留在 Project Map 的总字符预算内。
+
+Qwen readiness 也更稳：Codey 现在会等聊天输入框、bootstrap 信号，以及模型选择器文本
+连续两次读取相同且非空后才发送。输入框清空不再被当作提交成功；Qwen 提交确认只认 stop
+出现或回答数量增加。
+
+手工 probe 也记录了两条未采纳路线：两段式 scoped planner 和本地 deterministic
+pre-scope 都没有证明值得进入生产。最终保留的是更轻的分层 map。四个网页模型在深层
+synthetic monorepo 上从 `0/16` top1 提升到 `16/16`，同时 prompt 字符从 `53,424`
+降到 `27,308`。
+
 ## 0.1.43 - 安静的 UI 持久化与侧边栏打磨
 
 UI 状态持久化现在会在 SSE 热路径上节流。连续的 turn、tool、info 事件会合并

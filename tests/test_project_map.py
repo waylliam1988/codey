@@ -2,11 +2,76 @@ from __future__ import annotations
 
 import json
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from codey import project_map
+
+
+def _write(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(textwrap.dedent(text).strip() + "\n", encoding="utf-8")
+
+
+def _build_deep_focus_fixture(root: Path) -> None:
+    for index in range(project_map.MAX_SYMBOL_FILES + 15):
+        _write(
+            root / "apps" / "admin" / "src" / "generated" / f"admin_report_{index:03d}.py",
+            f"""
+            class AdminReport{index:03d}:
+                def render_overview(self, user, flags):
+                    return "admin-report-{index:03d}"
+
+            def build_admin_report_{index:03d}(config):
+                return AdminReport{index:03d}()
+            """,
+        )
+    _write(
+        root
+        / "apps"
+        / "commerce"
+        / "src"
+        / "domain"
+        / "billing"
+        / "policies"
+        / "proration_policy.py",
+        """
+        class SubscriptionProrationPolicy:
+            def calculate_unused_credit(self, previous_plan, new_plan, period):
+                return "BODY_SHOULD_NOT_APPEAR"
+
+            def build_invoice_adjustment(self, credit, upgrade_delta):
+                return {"credit": credit, "delta": upgrade_delta}
+        """,
+    )
+    _write(
+        root
+        / "apps"
+        / "commerce"
+        / "src"
+        / "domain"
+        / "billing"
+        / "invoices"
+        / "adjustment_builder.py",
+        """
+        def create_invoice_adjustment(subscription_id, credit, delta):
+            return {"subscription_id": subscription_id, "unused_credit": credit}
+        """,
+    )
+    _write(
+        root
+        / "apps"
+        / "commerce"
+        / "tests"
+        / "billing"
+        / "test_proration_policy.py",
+        """
+        def test_subscription_upgrade_unused_credit_creates_adjustment():
+            assert True
+        """,
+    )
 
 
 class ProjectMapTests(unittest.TestCase):
@@ -165,6 +230,160 @@ class ProjectMapTests(unittest.TestCase):
         )
         self.assertNotIn("BODY_SHOULD_NOT_APPEAR", rendered)
         self.assertNotIn("return []", rendered)
+
+    def test_focused_subtree_finds_deep_target_past_symbol_file_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _build_deep_focus_fixture(root)
+            task = (
+                "Find where subscription upgrades calculate unused credit and "
+                "create invoice adjustments in the billing flow. Include likely "
+                "focused tests."
+            )
+
+            symbol_overview = project_map.build_symbol_overview(root, task)
+            rendered = project_map.render_project_map(root, task=task)
+
+        self.assertNotIn(
+            "apps/commerce/src/domain/billing/policies/proration_policy.py",
+            symbol_overview,
+        )
+        self.assertIn("Focused subtree", rendered)
+        self.assertIn("apps/commerce/", rendered)
+        self.assertIn("apps/commerce/src/domain/billing/policies/proration_policy.py", rendered)
+        self.assertIn("apps/commerce/src/domain/billing/invoices/adjustment_builder.py", rendered)
+        self.assertIn("apps/commerce/tests/billing/test_proration_policy.py", rendered)
+        self.assertIn("class SubscriptionProrationPolicy", rendered)
+        self.assertNotIn("BODY_SHOULD_NOT_APPEAR", rendered)
+        self.assertLessEqual(len(rendered), project_map.MAX_PROJECT_MAP_CHARS + 80)
+
+    def test_focused_subtree_survives_near_project_map_character_cap(self) -> None:
+        target_path = "apps/commerce/src/domain/billing/policies/proration_policy.py"
+        focused = "\n".join(
+            [
+                "Focused subtree (task-scored navigation; read files before editing):",
+                "- apps/commerce/",
+                f"  - {target_path} [source]: class SubscriptionProrationPolicy",
+            ]
+        )
+        symbol = "\n".join(
+            [
+                "Symbol overview (bounded navigation hints only; read files before editing):",
+                *(
+                    f"- apps/admin/src/generated/filler_{index:03d}.py: "
+                    f"class AdminReport{index:03d}; def build_report_{index:03d}()"
+                    for index in range(180)
+                ),
+            ]
+        )
+        rendered = project_map.ProjectMap(
+            files=tuple(
+                f"apps/admin/src/generated/filler_{index:03d}.py"
+                for index in range(80)
+            ),
+            symbol_overview=symbol,
+            focused_subtree=focused,
+        ).render()
+
+        self.assertIn("Focused subtree", rendered)
+        self.assertIn(target_path, rendered)
+        self.assertLess(rendered.index("Focused subtree"), rendered.index("Symbol overview"))
+        self.assertIn("map truncated by character budget", rendered)
+        self.assertLessEqual(len(rendered), project_map.MAX_PROJECT_MAP_CHARS + 80)
+
+    def test_focused_subtree_stops_at_total_byte_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            first = root / "src" / "router_a.py"
+            second = root / "src" / "router_b.py"
+            _write(
+                first,
+                """
+                def router_dispatch(request):
+                    return True
+                """,
+            )
+            _write(
+                second,
+                """
+                def router_dispatch_extra(request):
+                    return True
+                """
+                + ("#" * 400),
+            )
+            max_bytes = first.stat().st_size + 16
+
+            with mock.patch.object(project_map, "MAX_FOCUS_TOTAL_BYTES", max_bytes):
+                focused = project_map.build_focused_subtree_overview(
+                    root,
+                    "router dispatch",
+                )
+
+        self.assertIn("Focused subtree", focused)
+        self.assertIn("src/router_a.py", focused)
+        self.assertIn("focused subtree scan stopped", focused)
+        self.assertIn("byte budget", focused)
+
+    def test_focused_subtree_is_hidden_without_task(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _build_deep_focus_fixture(root)
+
+            rendered = project_map.render_project_map(root)
+
+        self.assertNotIn("Focused subtree", rendered)
+
+    def test_focused_subtree_skips_secret_symlink_large_and_non_utf8_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for index in range(project_map.MAX_SYMBOL_FILES + 5):
+                _write(
+                    root / "apps" / "admin" / "src" / f"filler_{index:03d}.py",
+                    f"def filler_router_{index:03d}():\n    return True\n",
+                )
+            _write(
+                root / "src" / "visible_router.py",
+                """
+                def visible_router_dispatch(request):
+                    return "VISIBLE_BODY_SHOULD_NOT_APPEAR"
+                """,
+            )
+            _write(
+                root / ".hidden" / "hidden_router.py",
+                "def hidden_router_dispatch():\n    return True\n",
+            )
+            _write(
+                root / "src" / "private_router.py",
+                "def private_router_dispatch():\n    return True\n",
+            )
+            _write(
+                root / "src" / "big_router.py",
+                "def big_router_dispatch():\n    return True\n"
+                + ("#" * (project_map.MAX_FOCUS_SOURCE_BYTES + 1)),
+            )
+            (root / "src" / "binary_router.py").write_bytes(b"\xff\xfe\x00\x00")
+            link = root / "src" / "linked_router.py"
+            try:
+                link.symlink_to(root / "src" / "visible_router.py")
+            except OSError:
+                link = None
+
+            rendered = project_map.render_project_map(root, task="router dispatch")
+            focused = project_map.build_focused_subtree_overview(
+                root,
+                "router dispatch",
+            )
+
+        self.assertIn("Focused subtree", rendered)
+        self.assertIn("src/visible_router.py", focused)
+        self.assertIn("visible_router_dispatch", focused)
+        self.assertNotIn("VISIBLE_BODY_SHOULD_NOT_APPEAR", focused)
+        self.assertNotIn("hidden_router", focused)
+        self.assertNotIn("private_router", focused)
+        self.assertNotIn("big_router", focused)
+        self.assertNotIn("binary_router", focused)
+        if link is not None:
+            self.assertNotIn("linked_router", focused)
 
     def test_symbol_overview_includes_lightweight_js_ts_symbols(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -21,15 +21,23 @@ class BoundedScanBudget:
     max_files: int = DEFAULT_MAX_SCAN_FILES
     max_dirs: int = DEFAULT_MAX_SCAN_DIRS
     max_dir_entries: int = DEFAULT_MAX_DIR_ENTRIES
+    max_bytes: int | None = None
     files_seen: int = 0
     dirs_seen: int = 0
+    bytes_seen: int = 0
     file_limited: bool = False
     dir_limited: bool = False
     entry_limited: bool = False
+    byte_limited: bool = False
 
     @property
     def limited(self) -> bool:
-        return self.file_limited or self.dir_limited or self.entry_limited
+        return (
+            self.file_limited
+            or self.dir_limited
+            or self.entry_limited
+            or self.byte_limited
+        )
 
     def stop_message(self, label: str) -> str:
         reasons: list[str] = []
@@ -39,12 +47,33 @@ class BoundedScanBudget:
             reasons.append(f"directory budget {self.max_dirs}")
         if self.entry_limited:
             reasons.append(f"per-directory entry budget {self.max_dir_entries}")
+        if self.byte_limited and self.max_bytes is not None:
+            reasons.append(f"byte budget {self.max_bytes}")
         reason = ", ".join(reasons) if reasons else "scan budget"
+        scanned = f"{self.files_seen} files and {self.dirs_seen} directories"
+        if self.max_bytes is not None:
+            scanned += f", {self.bytes_seen} bytes"
         return (
-            f"- {label} stopped after {self.files_seen} files and "
-            f"{self.dirs_seen} directories ({reason}); omitted files may "
+            f"- {label} stopped after {scanned} ({reason}); omitted files may "
             "contain more matches"
         )
+
+    def consume_file(self, path: Path) -> bool:
+        if self.files_seen >= self.max_files:
+            self.file_limited = True
+            return False
+        size = 0
+        if self.max_bytes is not None:
+            try:
+                size = path.stat().st_size
+            except OSError:
+                return False
+            if self.bytes_seen + size > self.max_bytes:
+                self.byte_limited = True
+                return False
+        self.files_seen += 1
+        self.bytes_seen += size
+        return True
 
 
 def iter_provided_files(
@@ -52,10 +81,10 @@ def iter_provided_files(
     budget: BoundedScanBudget,
 ) -> Iterator[Path]:
     for path in files:
-        if budget.files_seen >= budget.max_files:
-            budget.file_limited = True
-            return
-        budget.files_seen += 1
+        if not budget.consume_file(path):
+            if budget.limited:
+                return
+            continue
         yield path
 
 
@@ -74,10 +103,8 @@ def iter_bounded_files(
     if start.is_file():
         if allow_file is not None and not allow_file(start):
             return
-        if budget.files_seen >= budget.max_files:
-            budget.file_limited = True
+        if not budget.consume_file(start):
             return
-        budget.files_seen += 1
         yield start
         return
     if skip_start_if_excluded and start.name.lower() in excluded_lower:
@@ -114,10 +141,10 @@ def iter_bounded_files(
                 elif entry.is_file():
                     if allow_file is not None and not allow_file(entry):
                         continue
-                    if budget.files_seen >= budget.max_files:
-                        budget.file_limited = True
-                        return
-                    budget.files_seen += 1
+                    if not budget.consume_file(entry):
+                        if budget.limited:
+                            return
+                        continue
                     yield entry
             except OSError:
                 continue

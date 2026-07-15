@@ -4,6 +4,32 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.44 - Focused Project Map
+
+Project Map now adds a bounded `Focused subtree` section for task-aware deep
+repository navigation. It scans source files under fixed file, directory,
+single-file-size, total-byte, and output-character budgets, then shows only the
+highest-scoring module with relative paths, source/test labels, and symbol
+signatures. It does not show source bodies, create an index, persist data, add
+UI, or call an extra planner model.
+
+The Focused subtree is emitted only when a task is present and only when the
+normal Symbol overview is likely insufficient for a larger or budget-limited
+repository. It is placed before Symbol overview so deep navigation hints survive
+the Project Map's overall character budget.
+
+Qwen readiness is also stricter and faster: Codey now waits for the chat input,
+bootstrap signal, and two consecutive identical non-empty model selector reads
+before sending. A cleared input alone no longer counts as a successful
+submission; Qwen submit confirmation now requires a stop indicator or response
+count increase.
+
+Manual probes recorded that two pre-scope approaches did not earn production
+adoption. The retained production path is the lighter layered map: on a deep
+synthetic monorepo across DeepSeek, MiMo, Qwen, and GLM, Focused subtree
+improved first-file selection from 0/16 to 16/16 while reducing prompt
+characters from 53,424 to 27,308.
+
 ## 0.1.43 - Quiet UI Persistence and Sidebar Polish
 
 UI state persistence is now debounced on the hot SSE path. Streaming turn,

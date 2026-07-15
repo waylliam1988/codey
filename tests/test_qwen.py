@@ -249,13 +249,74 @@ class QwenDriverTests(unittest.TestCase):
         textarea = mock.Mock()
         with (
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_bootstrap_ready", side_effect=[False, True]) as ready,
+            mock.patch.object(qwen, "_bootstrap_ready", side_effect=[False, True, True]) as ready,
+            mock.patch.object(qwen, "_model_selector_text", return_value="Qwen3.7-Plus"),
             mock.patch.object(qwen.cancellation, "wait") as wait,
         ):
             qwen.wait_ready(page, timeout=1)
 
-        self.assertEqual(ready.call_count, 2)
-        wait.assert_called_once_with(0.4)
+        self.assertEqual(ready.call_count, 3)
+        self.assertEqual(wait.call_count, 2)
+
+    def test_wait_ready_requires_model_selector_stability(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        with (
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_bootstrap_ready", return_value=True),
+            mock.patch.object(
+                qwen,
+                "_model_selector_text",
+                side_effect=["", "Qwen3.7-Plus", "Qwen3.7-Plus"],
+            ) as model_text,
+            mock.patch.object(qwen.cancellation, "wait") as wait,
+        ):
+            qwen.wait_ready(page, timeout=1)
+
+        self.assertEqual(model_text.call_count, 3)
+        self.assertEqual(wait.call_count, 2)
+
+    def test_wait_ready_fallback_does_not_accept_one_selector_read(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        with (
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_bootstrap_ready", return_value=True),
+            mock.patch.object(qwen, "_model_selector_text", return_value="Qwen3.7-Plus"),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "model selector"):
+                qwen.wait_ready(page, timeout=0)
+
+    def test_wait_ready_rejects_changing_model_selector_until_timeout(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        now = 0.0
+
+        def fake_time() -> float:
+            return now
+
+        def advance(seconds: float) -> None:
+            nonlocal now
+            now += seconds
+
+        with (
+            mock.patch.object(qwen.time, "time", side_effect=fake_time),
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_bootstrap_ready", return_value=True),
+            mock.patch.object(
+                qwen,
+                "_model_selector_text",
+                side_effect=[
+                    "Qwen3.7-Plus",
+                    "Qwen3.7-Flash",
+                    "Qwen3.7-Plus",
+                    "Qwen3.7-Flash",
+                ],
+            ),
+            mock.patch.object(qwen.cancellation, "wait", side_effect=advance),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "model selector"):
+                qwen.wait_ready(page, timeout=1)
 
     def test_new_chat_tolerates_qwen_redirect_abort_before_ready(self) -> None:
         page = mock.Mock()
@@ -282,6 +343,14 @@ class QwenDriverTests(unittest.TestCase):
         self.assertTrue(qwen._bootstrap_ready(page))
 
         page.evaluate.assert_called_once_with(qwen._BOOTSTRAP_READY_JS)
+
+    def test_model_selector_text_is_read_without_page_content(self) -> None:
+        page = mock.Mock()
+        page.evaluate.return_value = " Qwen3.7-Plus "
+
+        self.assertEqual(qwen._model_selector_text(page), "Qwen3.7-Plus")
+
+        page.evaluate.assert_called_once_with(qwen._MODEL_SELECTOR_TEXT_JS)
 
     def test_wait_late_response_requires_generation_completion(self) -> None:
         with (
@@ -585,6 +654,19 @@ class QwenDriverTests(unittest.TestCase):
             started = qwen._submission_started(mock.Mock(), baseline=0)
 
         self.assertFalse(started)
+
+    def test_submission_started_does_not_accept_cleared_input_alone(self) -> None:
+        page = mock.Mock()
+        with (
+            mock.patch.object(qwen, "_visible_locator", return_value=None),
+            mock.patch.object(qwen, "_response_count", return_value=0),
+            mock.patch.object(qwen.controls, "control_has_text") as control_has_text,
+            mock.patch.object(qwen.controls, "flow_matches", return_value=False),
+        ):
+            started = qwen._submission_started(page, baseline=0, submitted_text="hello ")
+
+        self.assertFalse(started)
+        control_has_text.assert_not_called()
 
     def test_submission_probe_failure_remains_uncertain(self) -> None:
         with mock.patch.object(qwen, "_visible_locator", side_effect=ValueError("detached")):

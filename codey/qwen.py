@@ -31,6 +31,7 @@ PREFERENCE_CHOICE = PROFILE.selector("preference_choice")
 READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 60.0
 SEND_TIMEOUT = 30.0
+MODEL_SELECTOR_STABLE_READS = 2
 COMPOSER_SETTLE_TIME = 1.5
 SUBMIT_CONFIRM_TIMEOUT = 15.0
 COPY_READY_TIMEOUT = 10.0
@@ -55,6 +56,35 @@ _BOOTSTRAP_READY_JS = r"""
   });
   if (modelReady) window.__qwenComposerReady = true;
   return modelReady;
+}
+"""
+
+_MODEL_SELECTOR_TEXT_JS = r"""
+() => {
+  const visible = (el) => {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return rect.width > 0
+      && rect.height > 0
+      && style.visibility !== 'hidden'
+      && style.display !== 'none';
+  };
+  const selectors = [
+    '#qwen-chat-header-left .ant-dropdown-trigger',
+    '#qwen-chat-header-left [class*="model-selector"]',
+    '.header-left .ant-dropdown-trigger',
+  ];
+  for (const selector of selectors) {
+    for (const element of document.querySelectorAll(selector)) {
+      if (!visible(element)) continue;
+      const text = String(element.innerText || element.textContent || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (text) return text;
+    }
+  }
+  return '';
 }
 """
 
@@ -98,6 +128,15 @@ def _bootstrap_ready(page: Page) -> bool:
         raise
     except Exception:
         return False
+
+
+def _model_selector_text(page: Page) -> str:
+    try:
+        return str(page.evaluate(_MODEL_SELECTOR_TEXT_JS) or "").strip()
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        return ""
 
 
 def _send_button(
@@ -177,13 +216,29 @@ def _qwen_enabled_send_button(page: Page) -> Locator | None:
 def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     cancellation.check()
     deadline = time.time() + timeout
+    stable_text = ""
+    stable_reads = 0
     while time.time() < deadline:
         if _message_box(page) is not None and _bootstrap_ready(page):
-            return
+            model_text = _model_selector_text(page)
+            if model_text and model_text == stable_text:
+                stable_reads += 1
+                if stable_reads >= MODEL_SELECTOR_STABLE_READS:
+                    return
+            elif model_text:
+                stable_text = model_text
+                stable_reads = 1
+            else:
+                stable_text = ""
+                stable_reads = 0
         cancellation.wait(0.4)
     if _message_box(page, teach=True) is not None and _bootstrap_ready(page):
-        return
-    raise TimeoutError("Qwen Studio did not finish loading. Are you logged in?")
+        model_text = _model_selector_text(page)
+        if model_text and model_text == stable_text:
+            stable_reads += 1
+            if stable_reads >= MODEL_SELECTOR_STABLE_READS:
+                return
+    raise TimeoutError("Qwen Studio did not finish loading its model selector. Are you logged in?")
 
 
 def new_chat(page: Page, timeout: float | None = None) -> None:
@@ -315,23 +370,16 @@ def _generation_complete(page: Page) -> bool:
 
 def _submission_started(page: Page, baseline: int, submitted_text: str = "") -> bool:
     try:
-        if _visible_locator(page, STOP_ACTIVE) is not None or _response_count(page) > baseline:
+        count = _response_count(page)
+        if _visible_locator(page, STOP_ACTIVE) is not None or count > baseline:
             return True
         if not submitted_text:
             return False
-        message_box = _message_box(page)
-        input_empty = (
-            message_box is not None
-            and not controls.control_has_text(message_box, submitted_text)
-        )
-        if input_empty:
-            return True
         return controls.flow_matches(
             PROVIDER_ID,
             provider_flow.STAGE_SUBMISSION,
             provider_flow.FlowObservation(
-                input_empty=input_empty,
-                response_count_increased=_response_count(page) > baseline,
+                response_count_increased=count > baseline,
             ),
         )
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):

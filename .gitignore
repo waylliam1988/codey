@@ -5,3 +5,5 @@ __pycache__/
 .e2e-artifacts/
 .repo-map-probe*.json
 .read-before-edit*.json
+.scoped-task-plan-ab*.json
+.zoom-project-map-ab*.json

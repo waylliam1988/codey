@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey import cancellation, tool_runtime
+from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.references import find_reference_hints
 from codey.tool_runtime import (
     EDIT_FAILURE_MAX_CHARS,
@@ -556,6 +557,54 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIn("file budget 2", scan.output)
         self.assertIn("omitted files may contain more matches", scan.output)
         self.assertNotIn("c.py:1", scan.output)
+
+    def test_find_references_applies_byte_budget_to_provided_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            first = root / "a.py"
+            second = root / "b.py"
+            first.write_text("target_symbol()\n", encoding="utf-8")
+            second.write_text("target_symbol()\n", encoding="utf-8")
+            budget = BoundedScanBudget(max_files=10, max_bytes=first.stat().st_size + 1)
+
+            scan = find_reference_hints(
+                root,
+                root,
+                "target_symbol",
+                files=(first, second),
+                scan_budget=budget,
+            )
+
+        self.assertTrue(scan.truncated)
+        self.assertIn("a.py:1", scan.output)
+        self.assertNotIn("b.py:1", scan.output)
+        self.assertIn("byte budget", scan.output)
+
+    def test_find_references_does_not_double_count_budgeted_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for index in range(3):
+                Path(root, f"f{index}.py").write_text(
+                    "target_symbol()\n",
+                    encoding="utf-8",
+                )
+            budget = BoundedScanBudget(max_files=2, max_dirs=5)
+            files = iter_bounded_files(root, excluded_dirs=set(), budget=budget)
+
+            scan = find_reference_hints(
+                root,
+                root,
+                "target_symbol",
+                files=files,
+                scan_budget=budget,
+                files_budgeted=True,
+            )
+
+        self.assertTrue(scan.truncated)
+        self.assertIn("f0.py:1", scan.output)
+        self.assertIn("f1.py:1", scan.output)
+        self.assertNotIn("f2.py:1", scan.output)
+        self.assertIn("reference scan stopped after 2 files", scan.output)
 
     def test_find_references_does_not_follow_symlinked_dirs(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -71,6 +71,7 @@ def find_reference_hints(
     max_scan_dirs: int | None = None,
     max_dir_entries: int | None = None,
     scan_budget: BoundedScanBudget | None = None,
+    files_budgeted: bool = False,
 ) -> ReferenceScan:
     clean_symbol = validate_symbol(symbol)
     root = root.resolve()
@@ -81,7 +82,7 @@ def find_reference_hints(
         max_dir_entries=max_dir_entries or REFERENCE_MAX_DIR_ENTRIES,
     )
     if files is not None:
-        candidates = files if scan_budget is not None else iter_provided_files(files, budget)
+        candidates = files if files_budgeted else iter_provided_files(files, budget)
     else:
         candidates = iter_bounded_files(
             start,
