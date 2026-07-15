@@ -55,6 +55,29 @@ scoped_task_plan_ab --self-test: passed
 Ruff, compileall, and git diff --check: passed
 ```
 
+## Internal ProjectTaskContext Refactor
+
+Project task context preparation is now isolated in
+`codey/project_task_context.py`. The new builder prepares verified project
+facts, Project Map text, checkpoint resume/start state, checkpoint prompts,
+resumed changed files, resumed successful checks, and initial verification
+candidates before the Writer runs.
+
+`TaskRunner` still explicitly owns execution evidence seeding/invalidation,
+Writer and Review execution, Receipt construction, conversation state, and
+Provider failover. This keeps the refactor behavior-preserving while reducing
+the amount of checkpoint and ProjectFacts state assembly inside the main task
+control flow.
+
+Validation:
+
+```text
+ProjectTaskContext focused unittest: 26 tests OK
+Focused pytest/server/work checkpoint set: 131 passed
+Full pytest: 869 passed, 67 subtests passed
+Ruff, py_compile/compileall, and git diff --check: passed
+```
+
 ## 0.1.43 Quiet UI Persistence and Sidebar Polish
 
 UI state persistence now separates the SSE hot path from discrete user actions.

@@ -4,13 +4,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import task_runner
+from codey import project_task_context
 
 
 class TaskRunnerProjectMapTests(unittest.TestCase):
     def test_safe_project_map_passes_task_to_renderer(self) -> None:
-        with mock.patch.object(task_runner, "render_project_map", return_value="map") as render:
-            rendered = task_runner._safe_project_map(
+        with mock.patch.object(project_task_context, "render_project_map", return_value="map") as render:
+            rendered = project_task_context.safe_project_map(
                 Path("project"),
                 "- successful check: python -m unittest",
                 "change json codec",

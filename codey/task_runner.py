@@ -26,7 +26,11 @@ from codey.handoff import (
     render_recovered_handoff,
 )
 from codey.project_facts import ProjectFactsStore
-from codey.project_map import render_project_map
+from codey.project_task_context import (
+    ProjectTaskContextBuilder,
+    safe_project_map,
+    safe_verification_candidates,
+)
 from codey.providers import PROVIDER_LABELS
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
@@ -36,13 +40,11 @@ from codey.verification_map import render_verification_map
 from codey.verification_policy import (
     VerificationCandidate,
     check_matches_candidate,
-    discover_verification_candidates,
     select_verification_candidate,
 )
 from codey.work_checkpoint import (
     WorkCheckpoint,
     WorkCheckpointStore,
-    render_work_checkpoint,
 )
 from codey.writer_failover import (
     CheckpointView,
@@ -109,39 +111,6 @@ def _project_has_user_files(project: str | Path) -> bool:
             except OSError:
                 continue
     return False
-
-
-def _verification_candidates(
-    project: str | Path,
-    verified_commands: tuple[object, ...] = (),
-    additional_commands: tuple[object, ...] = (),
-) -> tuple[VerificationCandidate, ...]:
-    try:
-        return discover_verification_candidates(
-            project,
-            verified_commands + additional_commands,
-        )
-    except (OSError, TypeError, ValueError):
-        return ()
-
-
-def _verified_commands(
-    project: str | Path,
-    store: ProjectFactsStore | None,
-) -> tuple[object, ...]:
-    try:
-        facts = store.load(project) if store is not None else None
-        commands = getattr(facts, "commands", ())
-        return tuple(commands) if isinstance(commands, (tuple, list)) else ()
-    except (OSError, TypeError, ValueError):
-        return ()
-
-
-def _safe_project_map(project: str | Path, verified_facts: str, task: str = "") -> str:
-    try:
-        return render_project_map(project, verified_facts, task=task)
-    except Exception:
-        return ""
 
 
 def _safe_verification_map(
@@ -484,67 +453,33 @@ class TaskRunner:
                 if visible_excerpt:
                     recovered_owner_prompt = handoff
             if project:
-                verified_facts = (
-                    self.project_facts.render(project)
-                    if self.project_facts is not None
-                    else ""
+                context_builder = ProjectTaskContextBuilder(
+                    project_facts=self.project_facts,
+                    work_checkpoints=self.work_checkpoints,
                 )
-                verification_verified_commands = _verified_commands(
-                    project,
-                    self.project_facts,
+                project_context = context_builder.build(
+                    project=project,
+                    task=task,
+                    session_id=session_id,
+                    run_id=run_id,
+                    continue_task=continue_task,
+                    provider_session_changed=provider_session_changed,
                 )
-                verification_candidates = _verification_candidates(
-                    project,
-                    verification_verified_commands,
+                verified_facts = project_context.verified_facts
+                verification_verified_commands = (
+                    project_context.verification_verified_commands
                 )
-                verification_additional_commands: tuple[object, ...] = ()
-                resumed_changed_files: tuple[str, ...] = ()
-                resumed_successful_checks: tuple[VerificationCandidate, ...] = ()
-                project_map = _safe_project_map(project, verified_facts, task)
-                checkpoint_prompt = ""
-                if self.work_checkpoints is not None:
-                    try:
-                        previous = self.work_checkpoints.load(session_id)
-                        same_project = (
-                            previous is not None
-                            and previous.project == str(Path(project).expanduser().resolve())
-                        )
-                        resume_requested = continue_task or provider_session_changed
-                        same_task = (
-                            previous is not None
-                            and previous.original_task.strip() == task.strip()
-                        )
-                        if same_project and resume_requested and (continue_task or same_task):
-                            work_checkpoint = self.work_checkpoints.reconcile(previous)
-                            evidence.seed_checks(
-                                work_checkpoint.successful_checks_after_last_change
-                            )
-                            resumed_changed_files = tuple(
-                                item.path for item in work_checkpoint.changed_files
-                            )
-                            resumed_successful_checks = tuple(
-                                VerificationCandidate(item.command, item.cwd, "checkpoint")
-                                for item in work_checkpoint.successful_checks_after_last_change
-                            )
-                            verification_candidates = _verification_candidates(
-                                project,
-                                verification_verified_commands,
-                                work_checkpoint.successful_checks_after_last_change,
-                            )
-                            verification_additional_commands = (
-                                work_checkpoint.successful_checks_after_last_change
-                            )
-                            checkpoint_prompt = render_work_checkpoint(work_checkpoint)
-                            resumed_checkpoint = True
-                        else:
-                            work_checkpoint = self.work_checkpoints.start(
-                                run_id=run_id,
-                                session_id=session_id,
-                                project=project,
-                                task=task,
-                            )
-                    except (OSError, ValueError):
-                        work_checkpoint = None
+                verification_candidates = project_context.verification_candidates
+                resumed_verification_commands = (
+                    project_context.resumed_verification_commands
+                )
+                project_map = project_context.project_map
+                work_checkpoint = project_context.checkpoint.item
+                checkpoint_prompt = project_context.checkpoint.prompt
+                resumed_checkpoint = project_context.checkpoint.resumed
+                resumed_changed_files = project_context.checkpoint.changed_files
+                resumed_successful_checks = project_context.checkpoint.successful_checks
+                evidence.seed_checks(project_context.checkpoint.seed_checks)
                 agent_task = task
                 change_brief: ChangeBrief | None = None
                 agent_fresh_chat = fresh_chat
@@ -609,28 +544,18 @@ class TaskRunner:
                     nonlocal checkpoint_prompt
                     nonlocal resumed_changed_files
                     nonlocal resumed_successful_checks
-                    if self.work_checkpoints is None or work_checkpoint is None:
-                        return CheckpointView(
-                            prompt=checkpoint_prompt,
-                            changed_files=resumed_changed_files,
-                            successful_checks=resumed_successful_checks,
-                        )
-                    try:
-                        work_checkpoint = self.work_checkpoints.reconcile(work_checkpoint)
-                        if work_checkpoint.workspace_changed:
-                            evidence.invalidate_checks()
-                        checkpoint_prompt = render_work_checkpoint(work_checkpoint)
-                        resumed_changed_files = tuple(
-                            item.path for item in work_checkpoint.changed_files
-                        )
-                        resumed_successful_checks = tuple(
-                            VerificationCandidate(item.command, item.cwd, "checkpoint")
-                            for item in work_checkpoint.successful_checks_after_last_change
-                        )
-                    except (OSError, ValueError):
+                    refreshed = context_builder.refresh_checkpoint(work_checkpoint)
+                    if refreshed.item is None:
                         checkpoint_prompt = ""
                         resumed_changed_files = ()
                         resumed_successful_checks = ()
+                    else:
+                        work_checkpoint = refreshed.item
+                        checkpoint_prompt = refreshed.prompt
+                        resumed_changed_files = refreshed.changed_files
+                        resumed_successful_checks = refreshed.successful_checks
+                    if refreshed.workspace_changed:
+                        evidence.invalidate_checks()
                     return CheckpointView(
                         prompt=checkpoint_prompt,
                         changed_files=resumed_changed_files,
@@ -664,10 +589,10 @@ class TaskRunner:
                         work_checkpoint=spec.checkpoint.prompt,
                         verification_candidates=verification_candidates,
                         verification_candidate_loader=lambda: (
-                            _verification_candidates(
+                            safe_verification_candidates(
                                 project,
                                 verification_verified_commands,
-                                verification_additional_commands,
+                                resumed_verification_commands,
                             )
                         ),
                         verification_changed_files=spec.checkpoint.changed_files,
@@ -840,7 +765,7 @@ class TaskRunner:
                         if self.project_facts is not None
                         else ""
                     )
-                    project_map = _safe_project_map(project, verified_facts, task)
+                    project_map = safe_project_map(project, verified_facts, task)
                     if has_reviewable_changes(task_changes):
                         verification_map = _safe_verification_map(
                             project,
@@ -908,7 +833,7 @@ class TaskRunner:
                                     if self.project_facts is not None
                                     else ""
                                 )
-                                project_map = _safe_project_map(project, verified_facts, task)
+                                project_map = safe_project_map(project, verified_facts, task)
                                 try:
                                     result = failover.run(
                                         task=followup,
@@ -1013,10 +938,10 @@ class TaskRunner:
                     for item in (task_changes.get("files") or [])
                     if item.get("path")
                 )
-                verification_candidates = _verification_candidates(
+                verification_candidates = safe_verification_candidates(
                     project,
                     verification_verified_commands,
-                    verification_additional_commands,
+                    resumed_verification_commands,
                 )
                 if result.stop_reason == "done" and task_changed and files:
                     selected_check = select_verification_candidate(

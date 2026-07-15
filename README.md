@@ -376,6 +376,7 @@ codey/
   execution_evidence.py     bounded in-memory execution fact ledger
   references.py             bounded lexical reference hints
   project_map.py            deterministic bounded project orientation
+  project_task_context.py   project facts, map, checkpoint, and verification context
   verification_map.py       bounded review-time verification candidates
   change_brief.py           hidden task intent brief
   task_runner.py            task, conversation, review, and receipt orchestration

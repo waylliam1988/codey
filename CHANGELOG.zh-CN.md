@@ -24,6 +24,12 @@ pre-scope 都没有证明值得进入生产。最终保留的是更轻的分层 
 synthetic monorepo 上从 `0/16` top1 提升到 `16/16`，同时 prompt 字符从 `53,424`
 降到合并后实机复测的 `33,564`。
 
+内部上，项目任务上下文准备逻辑已从 `TaskRunner` 抽到
+`codey/project_task_context.py`。这个 builder 负责 verified facts、Project Map、
+checkpoint 恢复/启动、checkpoint prompt 和初始验证候选；`TaskRunner` 仍然负责
+Writer、Review、Receipt、会话状态、Provider 接管，以及显式的 evidence seed /
+invalidate 调用。
+
 ## 0.1.43 - 安静的 UI 持久化与侧边栏打磨
 
 UI 状态持久化现在会在 SSE 热路径上节流。连续的 turn、tool、info 事件会合并

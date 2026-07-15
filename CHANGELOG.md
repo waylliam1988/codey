@@ -31,6 +31,13 @@ synthetic monorepo across DeepSeek, MiMo, Qwen, and GLM, Focused subtree
 improved first-file selection from 0/16 to 16/16 while reducing prompt
 characters from 53,424 to 33,564 in the post-merge live verification.
 
+Internally, project task context preparation was extracted from `TaskRunner`
+into `codey/project_task_context.py`. The builder owns verified facts, Project
+Map rendering, checkpoint resume/start, checkpoint prompt construction, and
+initial verification candidates. `TaskRunner` still owns Writer execution,
+Review, receipts, conversation state, provider failover, and the explicit
+evidence seed/invalidation calls.
+
 ## 0.1.43 - Quiet UI Persistence and Sidebar Polish
 
 UI state persistence is now debounced on the hot SSE path. Streaming turn,

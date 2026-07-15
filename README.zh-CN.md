@@ -355,6 +355,7 @@ codey/
   execution_evidence.py     有边界的内存执行证据账本
   references.py             有边界的文本引用提示
   project_map.py            确定性的有边界项目地图
+  project_task_context.py   项目事实、地图、checkpoint 和验证上下文
   verification_map.py       Review 阶段的有边界验证候选
   change_brief.py           隐藏任务意图 brief
   task_runner.py            任务、会话、review 和收据编排
