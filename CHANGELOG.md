@@ -4,6 +4,41 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.45 - Provider Adapter Self-Repair
+
+Codey can now attempt a bounded background repair when a web provider adapter
+itself breaks and control-level or Flow-level recovery is not enough. Structural
+provider failures can enqueue a deduplicated self-repair job without blocking
+new user tasks. Failed repairs stay queued behind a cooldown instead of being
+dropped.
+
+Repair runs in a separate Python subprocess. A healthy helper model receives
+only the broken provider id, bounded failure context, allowed adapter source
+files, and read-only provider tests. It may modify only the target provider's
+adapter files inside a temporary sandbox; core files, test files, registry,
+tool runtime, server, supervisor, recovery, and safety modules remain outside
+the v1 self-modification boundary.
+
+Candidates must pass the repair policy, `py_compile`, Ruff, the corresponding
+provider unit test module, and a neutral marker canary before they become a
+local provisional override. Overrides load only through a child Provider worker
+process, not the main Codey process. The child uses a fresh background tab in
+the durable logged-in Codey browser profile, so it does not need cookie copying
+and does not steal the user's current chat tab. The parent can close that
+temporary tab by CDP target id before killing a stuck worker.
+
+Adapter overrides are versioned under the local state directory, record the
+built-in Codey base hash, promote from provisional to active only after natural
+successes, and roll back after repeated structural failures. Helper models are
+tried in sequence when a candidate is invalid, fails policy, fails checks, or
+fails canary.
+
+Live smoke verified the final shared-profile fresh-tab path across DeepSeek,
+Qwen, MiMo, and GLM for both the repair helper and candidate worker canary.
+Qwen exposed the key design fix: isolated profiles could look logged in but
+fail to submit; fresh background tabs in the main Codey browser profile submit
+normally.
+
 ## 0.1.44 - Focused Project Map
 
 Project Map now adds a bounded `Focused subtree` section for task-aware deep

@@ -25,6 +25,8 @@ class MimoWebProvider:
         profile: Path = DEFAULT_PROFILE,
         open_if_missing: bool = True,
         bring_to_front: bool = True,
+        isolated: bool = False,
+        fresh_tab: bool = False,
     ) -> MimoWebProvider:
         return cls(
             open_mimo(
@@ -32,6 +34,8 @@ class MimoWebProvider:
                 profile=profile,
                 open_if_missing=open_if_missing,
                 bring_to_front=bring_to_front,
+                isolated=isolated,
+                fresh_tab=fresh_tab,
             )
         )
 

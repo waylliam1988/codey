@@ -111,6 +111,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             profile=profile,
             open_if_missing=True,
             bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
         )
 
     def test_qwen_wrapper_uses_generic_chat_page(self) -> None:
@@ -127,6 +129,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             profile=profile,
             open_if_missing=True,
             bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
         )
 
     def test_mimo_wrapper_uses_generic_chat_page(self) -> None:
@@ -143,6 +147,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             profile=profile,
             open_if_missing=True,
             bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
         )
 
     def test_glm_wrapper_uses_generic_chat_page(self) -> None:
@@ -159,6 +165,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             profile=profile,
             open_if_missing=True,
             bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
         )
 
     def test_open_chat_page_can_attach_without_opening_missing_tab(self) -> None:
@@ -264,19 +272,78 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         pw.chromium.connect_over_cdp.return_value = browser_obj
 
         with (
-            mock.patch.object(browser, "_ensure_cdp_port", return_value=9333) as ensure,
+            mock.patch.object(
+                browser,
+                "_ensure_cdp_endpoint",
+                return_value=browser.CdpEndpoint(9333),
+            ) as ensure,
             mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
         ):
             session = browser.open_chat_page("https://chat.qwen.ai/", "chat.qwen.ai")
 
         ensure.assert_called_once()
-        pw.chromium.connect_over_cdp.assert_called_once_with("http://127.0.0.1:9333")
+        pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://127.0.0.1:9333",
+            timeout=browser.CDP_CONNECT_TIMEOUT_MS,
+        )
         new_page.goto.assert_called_once_with(
             "https://chat.qwen.ai/",
             wait_until="domcontentloaded",
             timeout=60000,
         )
         self.assertIs(session.page, new_page)
+
+    def test_fresh_tab_opens_new_page_even_when_provider_tab_exists_and_closes_it(self) -> None:
+        existing = mock.Mock(url="https://chat.qwen.ai/existing")
+        ctx = mock.Mock(pages=[existing])
+        new_page = mock.Mock()
+        ctx.new_page.return_value = new_page
+        browser_obj = mock.Mock(contexts=[ctx])
+        pw = mock.Mock()
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+
+        with (
+            mock.patch.object(
+                browser,
+                "_ensure_cdp_endpoint",
+                return_value=browser.CdpEndpoint(9333),
+            ) as ensure,
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            session = browser.open_chat_page(
+                "https://chat.qwen.ai/",
+                "chat.qwen.ai",
+                fresh_tab=True,
+                bring_to_front=False,
+            )
+
+        ensure.assert_called_once()
+        pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://127.0.0.1:9333",
+            timeout=browser.CDP_CONNECT_TIMEOUT_MS,
+        )
+        self.assertIs(session.page, new_page)
+        self.assertTrue(session.close_page_on_close)
+        new_page.goto.assert_called_once_with(
+            "https://chat.qwen.ai/",
+            wait_until="domcontentloaded",
+            timeout=60000,
+        )
+
+        session.close()
+
+        new_page.close.assert_called_once()
+        existing.close.assert_not_called()
+        pw.stop.assert_called_once()
+
+    def test_fresh_tab_requires_permission_to_open_pages(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "fresh provider tabs require"):
+            browser.open_chat_page(
+                "https://chat.qwen.ai/",
+                "chat.qwen.ai",
+                fresh_tab=True,
+                open_if_missing=False,
+            )
 
     def test_ensure_cdp_port_launches_on_free_fallback_when_default_is_busy(self) -> None:
         def port_open(port: int) -> bool:
@@ -319,6 +386,88 @@ class BrowserProviderWrapperTests(unittest.TestCase):
 
         self.assertEqual(port, 9333)
         launch.assert_not_called()
+
+    def test_isolated_cdp_port_does_not_reuse_existing_browser_or_save_port(self) -> None:
+        with (
+            mock.patch.object(browser, "_find_cdp_port_with_target") as find_target,
+            mock.patch.object(browser, "_find_existing_cdp_port") as find_existing,
+            mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
+            mock.patch.object(browser, "_launch_browser") as launch,
+            mock.patch.object(browser, "_wait_port") as wait_port,
+            mock.patch.object(browser, "_save_cdp_port") as save,
+        ):
+            port = browser._ensure_cdp_port(
+                preferred=9222,
+                profile=Path("worker-profile"),
+                start_url="https://chat.qwen.ai/",
+                url_contains="chat.qwen.ai",
+                open_if_missing=True,
+                isolated=True,
+            )
+
+        self.assertEqual(port, 9444)
+        find_target.assert_not_called()
+        find_existing.assert_not_called()
+        launch.assert_called_once_with(9444, Path("worker-profile"), "https://chat.qwen.ai/")
+        wait_port.assert_called_once_with(9444)
+        save.assert_not_called()
+
+    def test_isolated_open_chat_page_closes_launched_browser_process(self) -> None:
+        pw = mock.Mock()
+        browser_obj = mock.Mock()
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        browser_obj.contexts = [mock.Mock(pages=[page])]
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+        process = mock.Mock()
+        process.poll.return_value = None
+        with (
+            mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
+            mock.patch.object(browser, "_launch_browser", return_value=process),
+            mock.patch.object(browser, "_wait_port"),
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            session = browser.open_chat_page(
+                "https://chat.qwen.ai/",
+                "chat.qwen.ai",
+                port=9444,
+                profile=Path("worker-profile"),
+                isolated=True,
+            )
+
+        session.close()
+
+        pw.stop.assert_called_once()
+        process.terminate.assert_called_once()
+        process.wait.assert_called_once_with(timeout=2)
+
+    def test_non_isolated_session_close_does_not_terminate_browser_process(self) -> None:
+        pw = mock.Mock()
+        session = browser.Session(pw=pw, browser=mock.Mock(), page=mock.Mock())
+
+        session.close()
+
+        pw.stop.assert_called_once()
+
+    def test_isolated_launch_failure_terminates_process(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+        with (
+            mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
+            mock.patch.object(browser, "_launch_browser", return_value=process),
+            mock.patch.object(browser, "_wait_port", side_effect=TimeoutError("no port")),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "no port"):
+                browser._ensure_cdp_endpoint(
+                    preferred=9444,
+                    profile=Path("worker-profile"),
+                    start_url="https://chat.qwen.ai/",
+                    url_contains="chat.qwen.ai",
+                    open_if_missing=True,
+                    isolated=True,
+                )
+
+        process.terminate.assert_called_once()
+        process.wait.assert_called_once_with(timeout=2)
 
 
 class PlaywrightStartupTests(unittest.TestCase):

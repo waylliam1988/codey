@@ -29,6 +29,8 @@ class DeepSeekWebProviderTests(unittest.TestCase):
             profile=profile,
             open_if_missing=True,
             bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
         )
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
@@ -89,6 +91,8 @@ class QwenWebProviderTests(unittest.TestCase):
             profile=profile,
             open_if_missing=True,
             bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
         )
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
@@ -137,6 +141,8 @@ class MimoWebProviderTests(unittest.TestCase):
             profile=profile,
             open_if_missing=True,
             bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
         )
 
     def test_delegates_chat_operations_and_closes_playwright(self) -> None:
@@ -175,6 +181,8 @@ class GlmWebProviderTests(unittest.TestCase):
             profile=profile,
             open_if_missing=True,
             bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
         )
 
     def test_delegates_operations_while_driver_owns_formatting_hint(self) -> None:
@@ -269,6 +277,7 @@ class ProviderRegistryTests(unittest.TestCase):
         mimo = object()
         glm = object()
         with (
+            mock.patch.object(registry, "load_enabled_override", return_value=None),
             mock.patch.object(registry.DeepSeekWebProvider, "connect", return_value=deepseek),
             mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen),
             mock.patch.object(registry.MimoWebProvider, "connect", return_value=mimo),
@@ -281,7 +290,10 @@ class ProviderRegistryTests(unittest.TestCase):
 
     def test_connect_existing_provider_does_not_open_or_raise_window(self) -> None:
         qwen = object()
-        with mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen) as connected:
+        with (
+            mock.patch.object(registry, "load_enabled_override", return_value=None),
+            mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen) as connected,
+        ):
             self.assertIs(registry.connect_existing_provider("qwen"), qwen)
 
         connected.assert_called_once_with(

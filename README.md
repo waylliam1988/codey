@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.44-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.45-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.44`
+Version: `0.1.45`
 
 [Version history](CHANGELOG.md)
 
@@ -92,6 +92,9 @@ This is not about replacing professional tools. It is about making the first ste
   submission to the failed model
 - Keep a small local provider-health circuit so rate limits, login pages, and
   repeated structural failures do not keep receiving hidden work
+- Repair broken provider adapter code in a sandboxed background worker when
+  bounded control and Flow recovery are not enough, then verify the candidate
+  with an isolated worker canary before enabling it
 - Stop a running provider wait, review, recovery, or test command promptly
 - Give longer timeouts to full verification suites while keeping quick commands
   bounded
@@ -144,6 +147,19 @@ facts such as changed-file hashes and still-valid checks. Provider health stores
 only counters, timestamps, and failure kinds; it never stores page text, URLs,
 prompts, source code, cookies, or chat content. Cooled-down providers receive one
 data-free canary only when they are about to handle real work again.
+
+If a provider adapter itself breaks after a larger website change, Codey can
+queue a background adapter self-repair. The repair path runs in a separate
+Python process, asks a healthy helper model to modify only the broken provider's
+adapter files in a temporary sandbox, validates the candidate with policy
+checks, static checks, provider unit tests, and a neutral marker canary, then
+loads the candidate only through a child Provider worker. The worker uses a
+fresh background tab in the same logged-in Codey browser profile, so it does
+not need to copy cookies or block your current task. Candidates start as
+provisional, become active only after natural successes, and roll back after
+repeated structural failures. Core files such as `agent.py`, `task_runner.py`,
+`tool_runtime.py`, `server.py`, and the recovery/safety modules are not
+self-modified by this v1.
 
 ---
 
@@ -396,6 +412,15 @@ codey/
   provider_revival.py       atomic control bundles, promotion, and rollback
   provider_submission.py    shared one-shot remote submission boundary
   provider_supervisor.py    passive health circuit, Writer selection, and canary
+  adapter_overrides.py      local adapter candidates, promotion, and rollback
+  adapter_repair.py         sandboxed provider adapter repair runner
+  repair_policy.py          strict adapter repair file and code policy
+  repair_sandbox.py         temporary source copy for adapter repair
+  repair_journal.py         bounded local adapter repair journal
+  self_repair.py            deduplicated background repair queue
+  self_repair_worker.py     repair subprocess entry point and helper selection
+  provider_worker.py        parent-side isolated adapter worker wrapper
+  provider_worker_child.py  child process adapter runner
   profile_doctor.py         one-shot sanitized candidate selection
   deepseek.py               DeepSeek page driver
   mimo.py                   MiMo page driver

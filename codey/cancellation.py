@@ -211,14 +211,7 @@ def run_process(
         shell=shell,
         **group_args,
     )
-    job: _WindowsJob | None = None
-    if os.name == "nt":
-        try:
-            job = _WindowsJob(proc)
-        except Exception:
-            proc.kill()
-            proc.communicate()
-            raise
+    job = attach_process_tree(proc)
     deadline = time.monotonic() + max(0.0, timeout)
     try:
         while True:
@@ -239,11 +232,31 @@ def run_process(
             except subprocess.TimeoutExpired:
                 continue
     except (TaskCancelled, DeadlineExceeded, subprocess.TimeoutExpired):
-        _terminate_process_tree(proc, job)
+        terminate_process_tree(proc, job)
         raise
     finally:
         if job is not None:
             job.close()
+
+
+def attach_process_tree(proc: subprocess.Popen[str]):
+    """Attach a process to the platform process-tree owner, when available."""
+    if os.name != "nt":
+        return None
+    try:
+        return _WindowsJob(proc)
+    except Exception:
+        proc.kill()
+        proc.communicate()
+        raise
+
+
+def terminate_process_tree(
+    proc: subprocess.Popen[str],
+    job=None,
+) -> None:
+    """Terminate a process and its children created in the same tree/group."""
+    _terminate_process_tree(proc, job)
 
 
 def _terminate_process_tree(

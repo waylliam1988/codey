@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.44-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.1.45-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.44`
+版本：`0.1.45`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -85,6 +85,9 @@ Codey 想解决的是一个很朴素的问题：
 - Writer 遇到明确网页故障时，从本地 checkpoint 把未完成任务交给健康兄弟模型，
   同一任务最多切换两次，不会向提交状态不确定的旧模型重发
 - 用小型健康熔断区分控件故障、临时错误、限流、登录和验证码状态
+- 当控件恢复和 Flow 恢复都不够时，可以在后台 sandbox 里修坏掉的 Provider
+  adapter 代码；候选必须通过安全策略、静态检查、Provider 单测和中性 canary，
+  之后才会通过子进程 worker 启用
 - 及时停止正在等待的网页模型、Review、恢复流程或测试命令
 - 对完整测试/构建套件给更长超时，同时保持快速命令有界
 - 长命令输出同时保留开头与结尾，不丢失末尾错误摘要
@@ -121,6 +124,15 @@ Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当�
 任意点击、网页正文或项目数据。Codey 绝不会只凭“文字暂时稳定”猜测回答已经结束。
 Qwen 使用真实 stop 状态转换，MiMo 使用明确 typing 状态转换；GLM 在没有同等可靠的
 终止证据时继续安全降级。
+
+如果网页变化大到 adapter 代码本身也坏了，Codey 现在可以把这个 Provider 放入后台
+自修复队列。自修复运行在独立 Python 进程中，只允许健康 helper 模型修改坏掉的
+Provider adapter 文件，并在临时 sandbox 里通过策略检查、静态检查、对应 Provider
+单测和中性 marker canary。候选 adapter 不会直接加载进主进程，而是通过子进程
+Provider worker 运行；worker 使用同一个已登录 Codey 浏览器 profile 的后台新标签页，
+不会复制 cookie，也不会阻塞你当前的编程任务。候选先是 provisional，自然成功后才
+晋级 active，连续结构性失败会自动回滚。`agent.py`、`task_runner.py`、`tool_runtime.py`、
+`server.py` 以及恢复/安全控制面不在 v1 自修改范围内。
 
 ---
 
@@ -375,6 +387,15 @@ codey/
   provider_revival.py       控件恢复包的原子保存、晋级和回滚
   provider_submission.py    共享的单次远程提交边界
   provider_supervisor.py    被动健康熔断、Writer 选择和 canary
+  adapter_overrides.py      本地 adapter 候选、晋级和回滚
+  adapter_repair.py         sandbox 中的 Provider adapter 修复执行器
+  repair_policy.py          严格的 adapter 修复文件与代码策略
+  repair_sandbox.py         adapter 修复用临时源码副本
+  repair_journal.py         有边界的本地 adapter 修复日志
+  self_repair.py            去重的后台自修复队列
+  self_repair_worker.py     修复子进程入口和 helper 选择
+  provider_worker.py        父进程侧 adapter worker 包装
+  provider_worker_child.py  子进程 adapter 运行器
   profile_doctor.py         单次脱敏候选选择
   deepseek.py               DeepSeek 页面驱动
   mimo.py                   MiMo 页面驱动

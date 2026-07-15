@@ -113,6 +113,22 @@ checks that a second natural send reuses and promotes the recovered bundle:
 python -B tests\manual\provider_revival_smoke.py --provider all --port 9222
 ```
 
+`adapter_self_repair_smoke.py` performs a live smoke for the Provider adapter
+self-repair path. It does not install an override. Instead it checks that the
+background repair helper can use a fresh tab in the logged-in Codey browser
+profile, and that a candidate Provider worker can run a neutral marker canary:
+
+```powershell
+python -B tests\manual\adapter_self_repair_smoke.py --provider qwen --timeout 90
+python -B tests\manual\adapter_self_repair_smoke.py --provider deepseek --timeout 90
+python -B tests\manual\adapter_self_repair_smoke.py --provider mimo --timeout 90
+python -B tests\manual\adapter_self_repair_smoke.py --provider glm --timeout 90
+```
+
+Reports contain only bounded status metadata, marker length/exactness, timing,
+and error type/message snippets. They do not store prompts, replies, cookies,
+page text, DOM, or project data.
+
 `mimo_typing_evidence_probe.py` records only bounded boolean DOM evidence for
 MiMo's `data-is-typing` transition. It never writes the prompt or reply text to
 the report, and its outbound nonce uses the same product-neutral

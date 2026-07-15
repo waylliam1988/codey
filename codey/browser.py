@@ -28,6 +28,7 @@ QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
 DEFAULT_PORT = 9222
+CDP_CONNECT_TIMEOUT_MS = 30_000
 EDGE_PROFILE = DEFAULT_STATE_HOME / "edge-profile"
 CHROME_PROFILE = DEFAULT_STATE_HOME / "chrome-profile"
 DEFAULT_PROFILE = EDGE_PROFILE
@@ -58,6 +59,12 @@ class BrowserExecutable:
     path: Path
     kind: str
     profile: Path
+
+
+@dataclass(frozen=True)
+class CdpEndpoint:
+    port: int
+    process: subprocess.Popen | None = None
 
 
 def _browser_profile(kind: str) -> Path:
@@ -233,20 +240,39 @@ def _find_free_cdp_port(preferred: int = DEFAULT_PORT) -> int:
 
 
 def _ensure_cdp_port(
+    **kwargs,
+) -> int:
+    return _ensure_cdp_endpoint(**kwargs).port
+
+
+def _ensure_cdp_endpoint(
     *,
     preferred: int,
     profile: Path,
     start_url: str,
     url_contains: str,
     open_if_missing: bool,
-) -> int:
+    isolated: bool = False,
+) -> CdpEndpoint:
+    if isolated:
+        if not open_if_missing:
+            raise RuntimeError("isolated provider sessions require open_if_missing=True")
+        cdp_port = _find_free_cdp_port(preferred)
+        process = _launch_browser(cdp_port, profile, start_url)
+        try:
+            _wait_port(cdp_port)
+        except Exception:
+            _terminate_browser_process(process)
+            raise
+        return CdpEndpoint(cdp_port, process)
+
     existing = _find_cdp_port_with_target(url_contains, preferred)
     if existing is not None:
-        return existing
+        return CdpEndpoint(existing)
 
     existing = _find_existing_cdp_port(preferred)
     if existing is not None:
-        return existing
+        return CdpEndpoint(existing)
 
     if not open_if_missing:
         raise RuntimeError(f"CDP port {preferred} is not open")
@@ -254,7 +280,7 @@ def _ensure_cdp_port(
     cdp_port = _find_free_cdp_port(preferred)
     _launch_browser(cdp_port, profile, start_url)
     _wait_port(cdp_port)
-    return _remember_cdp_port(cdp_port)
+    return CdpEndpoint(_remember_cdp_port(cdp_port))
 
 
 @dataclass
@@ -262,9 +288,38 @@ class Session:
     pw: Playwright
     browser: Browser
     page: Page
+    process: subprocess.Popen | None = None
+    close_page_on_close: bool = False
+    cdp_port: int = 0
 
     def close(self) -> None:
-        self.pw.stop()
+        try:
+            if self.close_page_on_close:
+                try:
+                    self.page.close()
+                except Exception:
+                    pass
+            self.pw.stop()
+        finally:
+            if self.process is not None:
+                _terminate_browser_process(self.process)
+
+
+def _terminate_browser_process(process: subprocess.Popen) -> None:
+    try:
+        if process.poll() is not None:
+            return
+        process.terminate()
+        process.wait(timeout=2)
+    except Exception:
+        try:
+            process.kill()
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=2)
+        except Exception:
+            pass
 
 
 def _start_playwright_with_retry() -> Playwright:
@@ -297,44 +352,70 @@ def open_chat_page(
     profile: Path = DEFAULT_PROFILE,
     open_if_missing: bool = True,
     bring_to_front: bool = True,
+    isolated: bool = False,
+    fresh_tab: bool = False,
 ) -> Session:
     """Return a Playwright session attached to a matching provider tab."""
     cancellation.check()
-    cdp_port = _ensure_cdp_port(
+    if fresh_tab and not open_if_missing:
+        raise RuntimeError("fresh provider tabs require open_if_missing=True")
+    endpoint = _ensure_cdp_endpoint(
         preferred=port,
         profile=profile,
-        start_url=start_url,
+        start_url="about:blank" if fresh_tab else start_url,
         url_contains=url_contains,
         open_if_missing=open_if_missing,
+        isolated=isolated,
     )
 
-    pw = _start_playwright_with_retry()
-    browser = pw.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
-    _check_cancelled_connection(pw)
-
-    page: Page | None = None
-    for ctx in browser.contexts:
-        for p in ctx.pages:
-            if url_contains in (p.url or ""):
-                page = p
-                break
-        if page:
-            break
-
-    if page is None:
-        if not open_if_missing:
-            pw.stop()
-            raise RuntimeError(f"no existing provider tab matched {url_contains}")
-        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
-        page = ctx.new_page()
+    pw: Playwright | None = None
+    try:
+        pw = _start_playwright_with_retry()
+        browser = pw.chromium.connect_over_cdp(
+            f"http://127.0.0.1:{endpoint.port}",
+            timeout=CDP_CONNECT_TIMEOUT_MS,
+        )
         _check_cancelled_connection(pw)
-        page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
 
-    if bring_to_front:
+        page: Page | None = None
+        if not fresh_tab:
+            for ctx in browser.contexts:
+                for p in ctx.pages:
+                    if url_contains in (p.url or ""):
+                        page = p
+                        break
+                if page:
+                    break
+
+        if page is None:
+            if not open_if_missing:
+                raise RuntimeError(f"no existing provider tab matched {url_contains}")
+            ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+            page = ctx.new_page()
+            _check_cancelled_connection(pw)
+            page.goto(start_url, wait_until="domcontentloaded", timeout=60000)
+
+        if bring_to_front:
+            _check_cancelled_connection(pw)
+            page.bring_to_front()
         _check_cancelled_connection(pw)
-        page.bring_to_front()
-    _check_cancelled_connection(pw)
-    return Session(pw=pw, browser=browser, page=page)
+        return Session(
+            pw=pw,
+            browser=browser,
+            page=page,
+            process=endpoint.process,
+            close_page_on_close=fresh_tab,
+            cdp_port=endpoint.port,
+        )
+    except Exception:
+        if pw is not None:
+            try:
+                pw.stop()
+            except Exception:
+                pass
+        if endpoint.process is not None:
+            _terminate_browser_process(endpoint.process)
+        raise
 
 
 def _check_cancelled_connection(pw: Playwright) -> None:
@@ -351,6 +432,8 @@ def open_deepseek(
     *,
     open_if_missing: bool = True,
     bring_to_front: bool = True,
+    isolated: bool = False,
+    fresh_tab: bool = False,
 ) -> Session:
     """Return a session attached to a DeepSeek tab."""
     return open_chat_page(
@@ -360,6 +443,8 @@ def open_deepseek(
         profile=profile,
         open_if_missing=open_if_missing,
         bring_to_front=bring_to_front,
+        isolated=isolated,
+        fresh_tab=fresh_tab,
     )
 
 
@@ -369,6 +454,8 @@ def open_qwen(
     *,
     open_if_missing: bool = True,
     bring_to_front: bool = True,
+    isolated: bool = False,
+    fresh_tab: bool = False,
 ) -> Session:
     """Return a session attached to a Qwen Studio tab."""
     return open_chat_page(
@@ -378,6 +465,8 @@ def open_qwen(
         profile=profile,
         open_if_missing=open_if_missing,
         bring_to_front=bring_to_front,
+        isolated=isolated,
+        fresh_tab=fresh_tab,
     )
 
 
@@ -387,6 +476,8 @@ def open_mimo(
     *,
     open_if_missing: bool = True,
     bring_to_front: bool = True,
+    isolated: bool = False,
+    fresh_tab: bool = False,
 ) -> Session:
     """Return a session attached to a Xiaomi MiMo Chat tab."""
     return open_chat_page(
@@ -396,6 +487,8 @@ def open_mimo(
         profile=profile,
         open_if_missing=open_if_missing,
         bring_to_front=bring_to_front,
+        isolated=isolated,
+        fresh_tab=fresh_tab,
     )
 
 
@@ -405,6 +498,8 @@ def open_glm(
     *,
     open_if_missing: bool = True,
     bring_to_front: bool = True,
+    isolated: bool = False,
+    fresh_tab: bool = False,
 ) -> Session:
     """Return a session attached to a GLM tab."""
     return open_chat_page(
@@ -414,4 +509,6 @@ def open_glm(
         profile=profile,
         open_if_missing=open_if_missing,
         bring_to_front=bring_to_front,
+        isolated=isolated,
+        fresh_tab=fresh_tab,
     )

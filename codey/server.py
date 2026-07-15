@@ -59,6 +59,9 @@ from codey.providers import (
 )
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
 from codey.provider_supervisor import ProviderSupervisor
+from codey.adapter_repair import AdapterRepairResult
+from codey.self_repair import SelfRepairJob, SelfRepairSupervisor
+from codey.self_repair_worker import run_self_repair_worker
 from codey.project_facts import ProjectFactsStore
 from codey.work_checkpoint import WorkCheckpointStore
 from codey.review import (
@@ -344,6 +347,7 @@ class CodeyHTTPServer(ThreadingHTTPServer):
 
 class State:
     def __init__(self, state_home: str | Path | None = None) -> None:
+        self.state_home = Path(state_home) if state_home else None
         self.lock = threading.Lock()
         self.subscribers: list[queue.Queue[dict]] = []
         self.busy = False
@@ -375,6 +379,17 @@ class State:
         self.provider_supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
         )
+        repair_runner = (
+            self._run_self_repair_job
+            if self.state_home is not None and self.state_home == DEFAULT_STATE_HOME
+            else None
+        )
+        self.self_repair = (
+            SelfRepairSupervisor(state_home, runner=repair_runner)
+            if state_home
+            else SelfRepairSupervisor(None)
+        )
+        self._self_repair_running = False
         self.conversation_store = (
             ConversationStore(state_home) if state_home else ConversationStore()
         )
@@ -600,6 +615,48 @@ class State:
             "providers": provider_status_update(provider_id, True),
         })
         return provider
+
+    def kick_self_repair(self) -> bool:
+        """Run at most one queued adapter repair while the main task slot is idle."""
+        supervisor = getattr(self, "self_repair", None)
+        if supervisor is None or not supervisor.pending():
+            return False
+        has_due_work = getattr(supervisor, "has_due_work", None)
+        if callable(has_due_work) and not has_due_work():
+            return False
+        with self.lock:
+            if self.busy or self._self_repair_running:
+                return False
+            self._self_repair_running = True
+
+        def _worker() -> None:
+            try:
+                supervisor.run_pending_once()
+            finally:
+                with self.lock:
+                    self._self_repair_running = False
+
+        threading.Thread(target=_worker, name="codey-self-repair", daemon=True).start()
+        return True
+
+    def _run_self_repair_job(self, job: SelfRepairJob) -> AdapterRepairResult:
+        if self.state_home is None:
+            return AdapterRepairResult(False, job.provider_id, error="self-repair state is unavailable")
+        return run_self_repair_worker(
+            job,
+            helper_ids=self._self_repair_model_candidates(job.provider_id),
+            state_home=self.state_home,
+            source_root=Path(__file__).resolve().parents[1],
+        )
+
+    def _self_repair_model_candidates(self, broken_provider_id: str) -> tuple[str, ...]:
+        broken = str(broken_provider_id or "").strip().lower()
+        ordered = self.provider_failover_order()
+        return tuple(
+            provider_id
+            for provider_id in ordered
+            if provider_id != broken and self.provider_supervisor.is_available(provider_id)
+        )
 
     def provider_failover_order(self) -> tuple[str, ...]:
         """Prefer already-open sibling tabs, then keep the registry order stable."""
@@ -893,15 +950,18 @@ def _run_task(
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
     )
-    runner.run(TaskRequest(
-        session_id=session_id,
-        project=project,
-        task=task,
-        max_turns=max_turns,
-        continue_task=continue_task,
-        provider_id=provider_id,
-        run_id=run_id,
-    ))
+    try:
+        runner.run(TaskRequest(
+            session_id=session_id,
+            project=project,
+            task=task,
+            max_turns=max_turns,
+            continue_task=continue_task,
+            provider_id=provider_id,
+            run_id=run_id,
+        ))
+    finally:
+        STATE.kick_self_repair()
 
 
 def _submit_task(

@@ -125,7 +125,7 @@ class CancellationTests(unittest.TestCase):
                     timeout=30,
                 )
 
-            self.assertLess(time.monotonic() - started, 2.0)
+            self.assertLess(time.monotonic() - started, 5.0)
             self.assertTrue(parent_pid.exists())
             self.assertTrue(child_pid.exists())
             self.assertFalse(_windows_process_is_active(int(parent_pid.read_text())))

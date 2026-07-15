@@ -1,4 +1,50 @@
-# Codey 0.1.44 Test Report
+# Codey 0.1.45 Test Report
+
+## 0.1.45 Provider Adapter Self-Repair
+
+Provider adapter self-repair now has an end-to-end bounded path: structural
+provider failures can enqueue a deduplicated repair job; the repair subprocess
+asks healthy helper providers to modify only the broken adapter files in a
+sandbox; policy/static/provider tests and a neutral marker canary gate the
+candidate; and the enabled candidate runs only through a child Provider worker.
+
+The final browser strategy uses a fresh background tab in the durable logged-in
+Codey browser profile. Earlier isolated-profile auth bootstrapping was removed
+because Qwen could appear logged in while still failing to submit. The child
+worker reports the fresh tab target id, allowing the parent to close that tab
+before killing a stuck worker.
+
+Additional edge cases covered:
+
+- invalid helper output / policy failure / test failure / canary failure tries
+  the next helper instead of ending the repair;
+- failed repairs stay queued behind a cooldown instead of disappearing;
+- generated tests are no longer allowed; provider tests are read-only
+  references;
+- enabled overrides are invalidated by Codey base-hash drift;
+- candidate overrides do not shadow an existing active override until canary
+  passes and the candidate is marked provisional;
+- rollback does not restore a missing previous generation.
+
+Live smoke on the final shared-profile fresh-tab path:
+
+```text
+DeepSeek: fresh helper OK, candidate worker canary OK
+Qwen:    fresh helper OK, candidate worker canary OK
+MiMo:    fresh helper OK, candidate worker canary OK
+GLM:     fresh helper OK, candidate worker canary OK
+```
+
+Validation for the final pre-commit state:
+
+```text
+Focused self-repair/browser/provider/cancellation unittest: 96 tests OK
+Full unittest: 908 tests OK
+Full pytest was intentionally skipped for the final doc/type cleanup per user request
+Ruff focused/full checks: passed
+compileall: passed
+git diff --check: passed
+```
 
 ## 0.1.44 Focused Project Map
 

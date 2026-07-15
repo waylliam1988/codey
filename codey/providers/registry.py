@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from codey.adapter_overrides import load_enabled_override
 from codey.browser import (
     DEFAULT_PORT,
     DEFAULT_PROFILE,
@@ -15,6 +17,7 @@ from codey.providers.deepseek_web import DeepSeekWebProvider
 from codey.providers.glm_web import GlmWebProvider
 from codey.providers.mimo_web import MimoWebProvider
 from codey.providers.qwen_web import QwenWebProvider
+from codey.provider_worker import WorkerChatProvider
 
 DEFAULT_PROVIDER_ID = "deepseek"
 PROVIDER_LABELS = {
@@ -29,6 +32,13 @@ PROVIDER_TYPES = {
     "qwen": QwenWebProvider,
     "glm": GlmWebProvider,
 }
+PROVIDER_WORKER_PORT_OFFSETS = {
+    "deepseek": 101,
+    "mimo": 102,
+    "qwen": 103,
+    "glm": 104,
+}
+WORKER_CHILD_ENV = "CODEY_PROVIDER_WORKER_CHILD"
 
 
 @dataclass
@@ -60,6 +70,14 @@ def connect_provider(
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
+    if open_if_missing and os.environ.get(WORKER_CHILD_ENV) != "1":
+        override = load_enabled_override(normalized)
+        if override is not None:
+            return WorkerChatProvider(
+                normalized,
+                override,
+                port=port + PROVIDER_WORKER_PORT_OFFSETS.get(normalized, 100),
+            )
     return provider_type.connect(
         port=port,
         profile=profile,

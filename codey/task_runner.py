@@ -302,6 +302,18 @@ class TaskRunner:
 
         try:
             supervisor = getattr(state, "provider_supervisor", None)
+            self_repair = getattr(state, "self_repair", None)
+
+            def record_provider_failure(pid: str, failure: ProviderFailure) -> None:
+                if supervisor is None:
+                    return
+                health = supervisor.record_failure(pid, failure)
+                if self_repair is not None:
+                    try:
+                        self_repair.maybe_enqueue(pid, failure, health)
+                    except Exception:
+                        pass
+
             def provider_failover_order() -> tuple[str, ...]:
                 loader = getattr(state, "provider_failover_order", None)
                 try:
@@ -338,8 +350,7 @@ class TaskRunner:
                         page=None,
                         error=connect_error,
                     )
-                    if supervisor is not None:
-                        supervisor.record_failure(provider_id, failure)
+                    record_provider_failure(provider_id, failure)
                     if preflight_switches >= 2:
                         raise ProviderActionError(failure) from connect_error
                     replacement_id = (
@@ -642,11 +653,7 @@ class TaskRunner:
                         lambda pid, item: run_half_open_canary(pid, item, supervisor)
                     ),
                     capture_failure=capture_writer_failure,
-                    record_failure=(
-                        supervisor.record_failure
-                        if supervisor is not None
-                        else (lambda _pid, _failure: None)
-                    ),
+                    record_failure=record_provider_failure,
                     record_success=(
                         supervisor.record_success
                         if supervisor is not None

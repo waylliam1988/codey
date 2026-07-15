@@ -4,6 +4,32 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.45 - Provider Adapter 自修复
+
+当网页变化大到 Provider adapter 代码本身也失效，并且控件级恢复和 Flow 级恢复都不够时，
+Codey 现在可以尝试有边界的后台自修复。明确的结构性 Provider 故障会进入去重队列，
+不会阻塞新的用户任务；失败的修复不会直接丢失，而是进入冷却期后等待下次重试。
+
+修复运行在独立 Python 子进程中。健康 helper 模型只会看到坏掉的 Provider id、
+有边界的故障上下文、允许修改的 adapter 源码和只读 Provider 测试。第一版只允许
+在临时 sandbox 里修改目标 Provider 的 adapter 文件；核心文件、测试文件、registry、
+tool runtime、server、supervisor、恢复模块和安全控制面都不在自修改范围内。
+
+候选必须通过修复策略、`py_compile`、Ruff、对应 Provider 单测和中性 marker canary，
+才会成为本地 provisional override。Override 只通过子进程 Provider worker 加载，
+不会直接进入 Codey 主进程。子进程使用同一个已登录 Codey 浏览器 profile 的后台新标签页，
+不需要复制 cookie，也不会抢用户当前聊天页。worker 卡住时，父进程会先按 CDP target id
+关闭临时标签页，再清理子进程。
+
+本地 adapter override 会记录内置 Codey base hash，先 provisional，只有自然成功后才
+晋级 active；连续结构性失败会回滚。第一个 helper 产出非法候选、policy 失败、测试失败
+或 canary 失败时，会继续尝试下一个健康 helper。
+
+最终共享主 profile fresh-tab 路径已在 DeepSeek、Qwen、MiMo 和 GLM 上做过实机 smoke：
+repair helper 和 candidate worker canary 都能真实发送并读回中性 marker。Qwen 暴露了
+这次关键设计修正：独立 profile 可以看起来已经登录，却无法真正提交；复用主 Codey
+登录 profile 的后台新标签页后可以正常发送。
+
 ## 0.1.44 - Focused Project Map
 
 Project Map 现在会在有任务时加入一个有边界的 `Focused subtree` 小节，用来帮助
