@@ -112,6 +112,43 @@ class DeepSeekTimeoutTests(unittest.TestCase):
         response.locator.assert_called_once_with("xpath=../..")
         copy_action.assert_called_once_with(page, copy_button, origin=deepseek.DEEPSEEK_URL)
 
+    def test_final_text_prefers_dom_json_when_copy_is_stale_prompt(self) -> None:
+        with (
+            mock.patch.object(deepseek, "_copy_last_text", return_value="Your previous reply did not contain a valid JSON tool call."),
+            mock.patch.object(
+                deepseek,
+                "_last_text",
+                return_value='{"tool":"done","args":{"summary":"ok"}}',
+            ),
+            mock.patch.object(deepseek.controls, "confirm_control") as confirm_control,
+        ):
+            raw = deepseek._final_text(object())
+
+        self.assertEqual(raw, '{"tool":"done","args":{"summary":"ok"}}')
+        confirm_control.assert_called_once_with(deepseek.PROVIDER_ID, deepseek.controls.CONTROL_RESPONSE)
+
+    def test_final_text_keeps_non_json_copy_for_normal_answers(self) -> None:
+        with (
+            mock.patch.object(deepseek, "_copy_last_text", return_value="normal prose"),
+            mock.patch.object(deepseek, "_last_text", return_value="normal prose"),
+            mock.patch.object(deepseek.controls, "confirm_control"),
+        ):
+            raw = deepseek._final_text(object())
+
+        self.assertEqual(raw, "normal prose")
+
+    def test_final_text_repairs_missing_trailing_json_tool_brace(self) -> None:
+        incomplete = '{"tool":"done","args":{"summary":"ok"}'
+        complete = '{"tool":"done","args":{"summary":"ok"}}'
+        with (
+            mock.patch.object(deepseek, "_copy_last_text", return_value=incomplete),
+            mock.patch.object(deepseek, "_last_text", return_value=incomplete),
+            mock.patch.object(deepseek.controls, "confirm_control"),
+        ):
+            raw = deepseek._final_text(object())
+
+        self.assertEqual(raw, complete)
+
     def test_uncertain_submission_uses_only_the_chosen_action(self) -> None:
         page = mock.Mock()
         message_box = mock.Mock()
@@ -151,6 +188,103 @@ class DeepSeekTimeoutTests(unittest.TestCase):
         self.assertEqual(reply, "raw delayed reply")
         self.assertTrue(attempt.confirmed)
         recover_flow.assert_not_called()
+
+    def test_chat_returns_stable_json_before_general_stable_ticks(self) -> None:
+        page = mock.Mock()
+        message_box = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        json_reply = '{"tool":"done","args":{"summary":"ok"}}'
+        with (
+            mock.patch.object(deepseek, "wait_ready"),
+            mock.patch.object(deepseek, "_message_box", return_value=message_box),
+            mock.patch.object(deepseek, "_submit", return_value=attempt),
+            mock.patch.object(deepseek, "_response_count", side_effect=[0, *([1] * 20)]),
+            mock.patch.object(deepseek, "_rate_limit_visible", return_value=False),
+            mock.patch.object(deepseek, "_last_text", return_value=json_reply),
+            mock.patch.object(deepseek, "_final_text", return_value=json_reply),
+            mock.patch.object(deepseek.controls, "control_has_text", return_value=True),
+            mock.patch.object(deepseek.controls, "confirm_control"),
+            mock.patch.object(deepseek.controls, "flow_stage_ready", return_value=False) as flow_ready,
+            mock.patch.object(deepseek.cancellation, "wait"),
+        ):
+            reply = deepseek.chat(
+                page,
+                "hello",
+                response_timeout=1,
+                stable_ticks=99,
+                tick=0,
+                min_wait=0,
+            )
+
+        self.assertEqual(reply, json_reply)
+        self.assertLess(flow_ready.call_count, 3)
+
+    def test_chat_does_not_finish_on_stable_incomplete_json_tool_reply(self) -> None:
+        page = mock.Mock()
+        message_box = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        incomplete = '{"tool":"done","args":{"summary":"still streaming"}'
+        complete = '{"tool":"done","args":{"summary":"complete"}}'
+        with (
+            mock.patch.object(deepseek, "wait_ready"),
+            mock.patch.object(deepseek, "_message_box", return_value=message_box),
+            mock.patch.object(deepseek, "_submit", return_value=attempt),
+            mock.patch.object(deepseek, "_response_count", side_effect=[0, *([1] * 30)]),
+            mock.patch.object(deepseek, "_rate_limit_visible", return_value=False),
+            mock.patch.object(
+                deepseek,
+                "_last_text",
+                side_effect=[incomplete, incomplete, incomplete, complete, complete, complete],
+            ),
+            mock.patch.object(deepseek, "_final_text", return_value=complete),
+            mock.patch.object(deepseek.controls, "control_has_text", return_value=True),
+            mock.patch.object(deepseek.controls, "confirm_control"),
+            mock.patch.object(deepseek.controls, "flow_stage_ready", return_value=False),
+            mock.patch.object(deepseek.cancellation, "wait"),
+        ):
+            reply = deepseek.chat(
+                page,
+                "hello",
+                response_timeout=1,
+                stable_ticks=99,
+                tick=0,
+                min_wait=0,
+            )
+
+        self.assertEqual(reply, complete)
+
+    def test_chat_repairs_stable_missing_trailing_brace_after_general_stability(self) -> None:
+        page = mock.Mock()
+        message_box = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        incomplete = '{"tool":"done","args":{"summary":"ok"}'
+        complete = '{"tool":"done","args":{"summary":"ok"}}'
+        with (
+            mock.patch.object(deepseek, "wait_ready"),
+            mock.patch.object(deepseek, "_message_box", return_value=message_box),
+            mock.patch.object(deepseek, "_submit", return_value=attempt),
+            mock.patch.object(deepseek, "_response_count", side_effect=[0, *([1] * 30)]),
+            mock.patch.object(deepseek, "_rate_limit_visible", return_value=False),
+            mock.patch.object(deepseek, "_last_text", return_value=incomplete),
+            mock.patch.object(deepseek, "_final_text", return_value=complete),
+            mock.patch.object(deepseek.controls, "control_has_text", return_value=True),
+            mock.patch.object(deepseek.controls, "confirm_control"),
+            mock.patch.object(deepseek.controls, "flow_stage_ready", return_value=False),
+            mock.patch.object(deepseek.cancellation, "wait"),
+        ):
+            reply = deepseek.chat(
+                page,
+                "hello",
+                response_timeout=1,
+                stable_ticks=4,
+                tick=0,
+                min_wait=0,
+            )
+
+        self.assertEqual(reply, complete)
 
     def test_rate_limit_visible_checks_deepseek_warning_text(self) -> None:
         page = mock.Mock()

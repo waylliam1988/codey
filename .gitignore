@@ -7,3 +7,4 @@ __pycache__/
 .read-before-edit*.json
 .scoped-task-plan-ab*.json
 .zoom-project-map-ab*.json
+.scan-coverage-ab*.json

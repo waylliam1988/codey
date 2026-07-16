@@ -73,11 +73,49 @@ def normalize_tool_json_reply(text: str) -> str:
         return text
 
     candidate = _repair_structural_smart_quotes(text)
+    normalized = candidate
     try:
-        json.loads(candidate)
+        json.loads(normalized)
     except (TypeError, ValueError):
-        return text
-    return _normalize_python_edit(candidate)
+        normalized = _first_balanced_json_object(candidate)
+        if not normalized:
+            return text
+        try:
+            json.loads(normalized)
+        except (TypeError, ValueError):
+            return text
+    return _normalize_python_edit(normalized)
+
+
+def _first_balanced_json_object(text: str) -> str:
+    """Return the first balanced JSON object from repaired GLM output."""
+
+    in_string = False
+    escaped = False
+    start: int | None = None
+    depth = 0
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+            continue
+        if char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+            continue
+        if char == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                return text[start : index + 1]
+    return ""
 
 
 def _repair_structural_smart_quotes(text: str) -> str:

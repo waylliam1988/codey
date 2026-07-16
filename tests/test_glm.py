@@ -66,6 +66,22 @@ class GlmDriverTests(unittest.TestCase):
             },
         )
 
+    def test_normalize_tool_json_reply_handles_extra_trailing_brace(self) -> None:
+        reply = (
+            '{“tool”:“done”,“args”:{“summary”:“扫描不完整，'
+            'legacy/z_legacy_batch.py 被跳过。”}}}'
+        )
+
+        normalized = glm.normalize_tool_json_reply(reply)
+
+        self.assertEqual(
+            json.loads(normalized),
+            {
+                "tool": "done",
+                "args": {"summary": "扫描不完整，legacy/z_legacy_batch.py 被跳过。"},
+            },
+        )
+
     def test_normalize_tool_json_reply_preserves_valid_summary_before_comma(self) -> None:
         reply = json.dumps({
             "tool": "done",

@@ -240,3 +240,38 @@ python -B tests\manual\verification_review_ab.py `
 ```
 
 It is review-only and never opens or changes a local project.
+
+`scan_coverage_ab.py` compares current `find_references` output with a
+probe-only coverage note when the bounded reference scan skips oversized files:
+
+```powershell
+python -B tests\manual\scan_coverage_ab.py `
+  --provider deepseek `
+  --case references-oversized-omission
+```
+
+Use `--provider all` to run the same baseline/coverage arms across DeepSeek,
+MiMo, Qwen, and GLM. The fixture is temporary, read-only, and the coverage arm
+does not expose skipped file contents; it only reports skipped path examples
+and omission reasons.
+
+The scorer records `protocol_success` separately from `semantic_safe` so a
+provider can be credited for the right conclusion even when its JSON tool call
+is malformed. It also flags two coverage-specific failure modes:
+`contradictory_absence_with_reference` and `false_scan_complete_claim`.
+
+2026-07-16 live rerun, one provider at a time against Edge CDP on port 9222:
+
+- DeepSeek: coverage stayed semantically safe and reduced the run from 3 turns,
+  2 tools, and 1 follow-up search to 2 turns, 1 tool, and no search.
+- MiMo: both arms were semantically safe; coverage reduced the run from 4 turns
+  and 3 tools to 3 turns and 2 tools.
+- Qwen: coverage stayed semantically safe and reduced the run from 3 turns,
+  2 tools, and 1 search to 2 turns, 1 tool, and no search.
+- GLM: baseline was unsafe (`bad_confident_absence=true` and
+  `false_scan_complete_claim=true`); coverage made the incomplete scan explicit
+  and produced a semantically safe answer.
+
+The result supports a narrow `ScanReport` slice for `find_references`: the
+main value is reducing false certainty when bounded scans skip files, not raw
+speed. Keep this probe-only until production output changes are implemented.
