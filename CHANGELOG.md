@@ -4,6 +4,14 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.51 - Shell Approval Follow-up
+
+- Follow-up: approved shell results now include short internal hints about
+  failed commands, truncated output, PATH refreshes, dev-server ambiguity,
+  publish confirmation, and trusted local checks when relevant.
+- Safety: follow-up hints do not execute commands, retry installs, or change the
+  UI. Writer still has to request any next tool or shell approval explicitly.
+
 ## 0.1.50 - Setup-Aware Shell Approval
 
 - UX: shell approval cards now use a neutral `Approval required` label and show

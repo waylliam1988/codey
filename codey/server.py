@@ -63,6 +63,8 @@ from codey.adapter_repair import AdapterRepairResult
 from codey.self_repair import SelfRepairJob, SelfRepairSupervisor
 from codey.self_repair_worker import run_self_repair_worker
 from codey.project_facts import ProjectFactsStore
+from codey.project_task_context import safe_verification_candidates
+from codey.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.setup_context import safe_setup_context
 from codey.work_checkpoint import WorkCheckpointStore
 from codey.review import (
@@ -317,6 +319,7 @@ def build_shell_approval_continuation(
     result: dict,
     post_approval_instructions: str = "",
     setup_context: str = "",
+    followup_hints: str = "",
 ) -> str:
     truncation_note = (
         "\nShell output was truncated. Do not assume omitted content "
@@ -327,6 +330,7 @@ def build_shell_approval_continuation(
     checklist = (post_approval_instructions or "").strip()
     checklist_block = f"{checklist}\n\n" if checklist else ""
     setup_block = f"{setup_context.strip()}\n\n" if setup_context.strip() else ""
+    followup_block = f"{followup_hints.strip()}\n\n" if followup_hints.strip() else ""
     return (
         "Continue the interrupted task in this same conversation.\n"
         "The user approved and ran this shell command:\n"
@@ -337,6 +341,7 @@ def build_shell_approval_continuation(
         f"{truncation_note}"
         f"{setup_block}"
         f"{checklist_block}"
+        f"{followup_block}"
         "Use this result to continue the original task. If the task is complete,"
         " reply with a JSON done tool call."
     )
@@ -351,6 +356,29 @@ def _shell_continuation_setup_context(pending: dict) -> str:
     }:
         return ""
     return safe_setup_context(pending["project"])
+
+
+def _shell_followup_verification_candidates(project: str | Path, risk_label: object):
+    if risk_label not in {"dependency_install", "dev_server", "publish"}:
+        return ()
+    return safe_verification_candidates(project)
+
+
+def _shell_followup_hints(
+    *,
+    pending: dict,
+    result: dict,
+) -> str:
+    return render_shell_followup(ShellFollowupInput(
+        risk_label=str(pending.get("risk_label") or "generic"),
+        exit_code=result.get("exit_code"),
+        output=str(result.get("output") or result.get("error") or ""),
+        truncated=bool(result.get("truncated")),
+        verification_candidates=_shell_followup_verification_candidates(
+            pending["project"],
+            pending.get("risk_label"),
+        ),
+    ))
 
 
 @dataclass(frozen=True)
@@ -1260,13 +1288,19 @@ class Handler(BaseHTTPRequestHandler):
             STATE.record_shell_result(event)
             continued = False
             if pending.get("continue_after"):
+                setup_context = _shell_continuation_setup_context(pending)
+                followup_hints = _shell_followup_hints(
+                    pending=pending,
+                    result=result,
+                )
                 continuation = build_shell_approval_continuation(
                     command=command,
                     result=result,
                     post_approval_instructions=str(
                         pending.get("post_approval_instructions") or ""
                     ),
-                    setup_context=_shell_continuation_setup_context(pending),
+                    setup_context=setup_context,
+                    followup_hints=followup_hints,
                 )
                 continuation_run = _submit_task(
                     session_id,

@@ -23,6 +23,7 @@ from codey.handoff import ConversationSnapshot
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_discovery import Discovery
 from codey.task_runner import _project_has_user_files
+from codey.verification_policy import VerificationCandidate
 
 
 class GitChangesTests(unittest.TestCase):
@@ -179,6 +180,11 @@ class ApprovedShellTests(unittest.TestCase):
                 "Local tools:\n"
                 "- npm: available"
             ),
+            followup_hints=(
+                "Follow-up hints:\n"
+                "- The approved command exited with code 0.\n"
+                "- Do not claim tests passed until a run tool result shows it."
+            ),
         )
 
         self.assertIn("The user approved and ran this shell command:", prompt)
@@ -188,6 +194,9 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertIn("- npm: available", prompt)
         self.assertIn("Post-approval checklist", prompt)
         self.assertIn("trusted local check", prompt)
+        self.assertIn("Follow-up hints", prompt)
+        self.assertIn("Do not claim tests passed", prompt)
+        self.assertLess(prompt.index("Post-approval checklist"), prompt.index("Follow-up hints"))
 
     def test_shell_continuation_setup_context_is_limited_to_setup_risks(self) -> None:
         with mock.patch.object(server, "safe_setup_context", return_value="Setup Context"):
@@ -202,6 +211,50 @@ class ApprovedShellTests(unittest.TestCase):
 
         self.assertEqual(setup, "Setup Context")
         self.assertEqual(generic, "")
+
+    def test_shell_followup_verification_candidates_are_limited_to_relevant_risks(self) -> None:
+        with mock.patch.object(server, "safe_verification_candidates", return_value=("candidate",)) as discover:
+            dependency = server._shell_followup_verification_candidates("E:/demo", "dependency_install")
+            generic = server._shell_followup_verification_candidates("E:/demo", "generic")
+
+        self.assertEqual(dependency, ("candidate",))
+        self.assertEqual(generic, ())
+        discover.assert_called_once_with("E:/demo")
+
+    def test_shell_followup_hints_passes_result_setup_and_candidates(self) -> None:
+        candidate = VerificationCandidate("npm test", "frontend", "package.json")
+        with (
+            mock.patch.object(
+                server,
+                "_shell_followup_verification_candidates",
+                return_value=(candidate,),
+            ) as discover,
+            mock.patch.object(
+                server,
+                "render_shell_followup",
+                return_value="Follow-up hints:\n- ok",
+            ) as render,
+        ):
+            text = server._shell_followup_hints(
+                pending={
+                    "project": "E:/demo",
+                    "risk_label": "dependency_install",
+                },
+                result={
+                    "exit_code": 0,
+                    "output": "added packages",
+                    "truncated": True,
+                },
+            )
+
+        self.assertEqual(text, "Follow-up hints:\n- ok")
+        discover.assert_called_once_with("E:/demo", "dependency_install")
+        data = render.call_args.args[0]
+        self.assertEqual(data.risk_label, "dependency_install")
+        self.assertEqual(data.exit_code, 0)
+        self.assertEqual(data.output, "added packages")
+        self.assertTrue(data.truncated)
+        self.assertEqual(data.verification_candidates, (candidate,))
 
 
 class ProviderStatusTests(unittest.TestCase):

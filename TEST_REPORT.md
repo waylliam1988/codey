@@ -1,4 +1,32 @@
-# Codey 0.1.50 Test Report
+# Codey 0.1.51 Test Report
+
+## 0.1.51 Shell Approval Follow-up
+
+Approved shell continuations now include bounded `Follow-up hints` for the
+Writer. These deterministic hints summarize exit status, selected output
+signals, ambiguity around long-running dev servers, publish confirmation, and
+trusted verification candidates when relevant. They do not run commands, retry
+installs, or change UI behavior.
+
+Safety boundaries for this patch:
+
+- Follow-up hints are internal guidance only; Writer must still request tools or
+  shell approval explicitly for any next action.
+- Generic shell commands do not scan the project for verification candidates.
+- Dependency install, dev-server, and publish follow-up hints may use existing
+  bounded verification-candidate discovery.
+
+Validation for this patch:
+
+```text
+shell follow-up focused pytest: 100 passed
+focused pytest: 146 passed, 64 subtests passed
+ruff: All checks passed
+py_compile: passed
+full pytest: 1004 passed, 106 subtests passed
+git diff --check: passed
+live provider smoke: not run; this is a local approval continuation slice
+```
 
 ## 0.1.50 Setup-Aware Shell Approval
 
