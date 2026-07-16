@@ -597,6 +597,7 @@ def read_file(
     offset: int = 1,
     limit: int = READ_DEFAULT_LINES,
 ) -> ToolOutcome:
+    cancellation.check()
     path = safe_join(root, rel)
     if not path.is_file():
         return ToolOutcome.error(f"not a file: {rel}")
@@ -604,6 +605,7 @@ def read_file(
         start_line = bounded_positive_int(offset, "offset")
         line_limit = bounded_positive_int(limit, "limit", READ_MAX_LINES)
         text = path.read_text(encoding="utf-8")
+        cancellation.check()
     except UnicodeDecodeError:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
     except ValueError as exc:
@@ -645,6 +647,7 @@ def read_file(
     selected: list[str] = []
     chars = 0
     for line in available:
+        cancellation.check()
         if selected and chars + len(line) > READ_MAX_CHARS:
             break
         selected.append(line)
@@ -673,16 +676,19 @@ def read_file(
 
 
 def list_directory(root: Path, rel: str) -> ToolOutcome:
+    cancellation.check()
     path = safe_join(root, rel)
     if not path.is_dir():
         return ToolOutcome.error(f"not a directory: {rel}")
     lines: list[str] = []
     for entry in sorted(path.iterdir()):
+        cancellation.check()
         if entry.name.startswith("."):
             continue
         if entry.is_dir():
             lines.append(f"{entry.name}/")
             for sub in sorted(entry.iterdir())[:50]:
+                cancellation.check()
                 if sub.name.startswith("."):
                     continue
                 tag = "/" if sub.is_dir() else ""
@@ -699,6 +705,7 @@ def search_files(
     *,
     max_results: int = SEARCH_MAX_RESULTS,
 ) -> ToolOutcome:
+    cancellation.check()
     query = query.strip()
     if not query:
         return ToolOutcome.error("search query required")
@@ -728,6 +735,7 @@ def search_files(
         budget=budget,
         skip_start_if_excluded=start.resolve() != resolved_root,
     ):
+        cancellation.check()
         try:
             size = path.stat().st_size
         except OSError:
@@ -749,6 +757,8 @@ def search_files(
             unreadable_files += 1
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):
+            if line_no == 1 or line_no % 200 == 0:
+                cancellation.check()
             if needle not in line.lower():
                 continue
             rel_path = path.relative_to(resolved_root).as_posix()

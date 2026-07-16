@@ -4,6 +4,22 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.48 - Tool Function Injection and Parallel Probe
+
+- Improvement: Agent runtime now supports explicit `AgentToolFns` injection, so
+  tests and manual probes can replace tool functions without monkeypatching
+  `codey.agent` globals.
+- UX decision: Codey keeps production `read`, `ls`, and `search` execution
+  serial by default. A deterministic probe showed local wall-clock speedups from
+  concurrent read-only batches, but serial tool events preserve step-by-step
+  observability, which better matches Codey's quiet local developer-tool feel.
+- Safety: bounded file scanning/search paths now check cooperative cancellation
+  during long loops.
+- Tests/probes: manual A/B probes now use explicit tool-function injection
+  instead of monkeypatching `codey.agent` globals. The read-only parallel probe
+  remains as a script-local experiment and documents why production Codey does
+  not enable read-only concurrency by default.
+
 ## 0.1.47 - Search Omission Coverage
 
 - Bugfix: `grep` / `search` now reports non-UTF-8 and unreadable files instead

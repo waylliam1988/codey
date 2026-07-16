@@ -4,7 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey import agent
 from tests.manual import search_coverage_ab
 
 
@@ -111,12 +110,7 @@ class SearchCoverageABTests(unittest.TestCase):
             case = search_coverage_ab.CASES["search-non-utf8-omission"]
             search_coverage_ab._write_project(root, case)
             probe = search_coverage_ab._CoverageSearchProbe(arm="coverage", case=case)
-            original = agent.search_files
-            agent.search_files = probe
-            try:
-                outcome = agent.search_files(root, ".", case.query)
-            finally:
-                agent.search_files = original
+            outcome = probe(root, ".", case.query)
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)

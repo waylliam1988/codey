@@ -1,7 +1,7 @@
 """Live A/B for a narrow incomplete-refactor hint.
 
-This probe does not change production behavior. The hint arm monkeypatches
-successful replacement edits so that, after a narrow identifier rename, it
+This probe does not change production behavior. The hint arm injects a
+successful replacement edit wrapper so that, after a narrow identifier rename, it
 performs a bounded lexical scan for the old name in other source files and
 appends one factual note to the tool result.
 """
@@ -22,11 +22,13 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey import agent, provider_controls
+from codey.agent_tools import AgentToolFns
 from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.events import RunEvent, render_run_event
 from codey.project_map import render_project_map
 from codey.providers.registry import connect_provider, provider_ids
 from codey.tool_runtime import SEARCH_EXCLUDED_DIRS, ToolOutcome
+from codey.tool_runtime import edit_file as runtime_edit_file
 
 
 ARMS = ("baseline", "hint")
@@ -162,7 +164,7 @@ def _render_refactor_hint(root: Path, rel: str, blocks: list[Any]) -> str:
 class _RefactorHintProbe:
     def __init__(self, *, arm: str) -> None:
         self.arm = arm
-        self.original = agent.edit_file
+        self.original = runtime_edit_file
         self.generated_hints = 0
         self.exposed_hints = 0
 
@@ -421,21 +423,17 @@ def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str
         root = Path(td)
         _write_project(root, case.files)
         probe = _RefactorHintProbe(arm=arm)
-        original_edit = agent.edit_file
-        agent.edit_file = probe
-        try:
-            result = agent.run(
-                provider,
-                root,
-                case.task,
-                max_turns=max_turns,
-                on_event=events.append,
-                fresh_chat=True,
-                provider_id=getattr(provider, "id", ""),
-                project_map=render_project_map(root, task=case.task),
-            )
-        finally:
-            agent.edit_file = original_edit
+        result = agent.run(
+            provider,
+            root,
+            case.task,
+            max_turns=max_turns,
+            on_event=events.append,
+            fresh_chat=True,
+            provider_id=getattr(provider, "id", ""),
+            project_map=render_project_map(root, task=case.task),
+            tool_fns=AgentToolFns(edit_file=probe),
+        )
 
         final_success = case.check(root)
         missed_callers = case.missed(root)

@@ -4,6 +4,17 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.48 - 工具函数注入和并行 Probe
+
+- 改进：Agent runtime 现在支持显式 `AgentToolFns` 注入，测试和手工 probe 可以替换
+  工具函数，不再 monkeypatch `codey.agent` 全局函数。
+- UX 决策：生产 Codey 默认保持 `read`、`ls`、`search` 串行执行。deterministic
+  probe 证明只读并发 batch 可以缩短本地 wall-clock，但串行 tool event 更可观察，
+  更符合 Codey 作为安静本地开发工具的气质。
+- 安全：bounded file scan 和 search 的长循环现在会检查协作式 cancellation。
+- 测试/probe：手工 A/B probe 现在使用显式工具函数注入。只读 parallel probe
+  保留为脚本内实验，并记录为什么生产 Codey 默认不启用只读并发。
+
 ## 0.1.47 - Search 遗漏提示
 
 - Bugfix：`grep` / `search` 现在会报告非 UTF-8 文件和不可读文件，不再把这些被省略的

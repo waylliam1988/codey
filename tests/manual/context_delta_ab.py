@@ -23,9 +23,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import codey.agent as agent_module
 from codey import provider_controls
 from codey.agent import run
+from codey.agent_tools import AgentToolFns
 from codey.handoff import ConversationContext
 from codey.project_map import render_project_map
 from codey.protocols.json_codec import JsonToolCodec
@@ -190,10 +190,11 @@ def _stage_metrics(events, prior_info: set[tuple[str, str, str]]) -> dict[str, o
 
 
 def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -> dict:
-    original = (agent_module.write_file, agent_module.edit_file, agent_module.run_command)
-    agent_module.write_file = _read_only_error
-    agent_module.edit_file = _read_only_error
-    agent_module.run_command = _read_only_error
+    tool_fns = AgentToolFns(
+        write_file=_read_only_error,
+        edit_file=_read_only_error,
+        run_command=_read_only_error,
+    )
     provider_controls.begin_task_context(f"context-delta-ab:{case.name}:{arm}")
     raw = None
     started = time.monotonic()
@@ -213,6 +214,7 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
             conversation=conversation,
             provider_id=provider_id,
             project_map=project_map,
+            tool_fns=tool_fns,
         )
         if warmup.stop_reason != "done" or warmup.changed:
             return {
@@ -242,6 +244,7 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
             on_event=followup_events.append,
             provider_id=provider_id,
             project_map=project_map,
+            tool_fns=tool_fns,
             **followup_run_kwargs(arm, conversation),
         )
         followup_prompts = provider.prompts[sends_before:]
@@ -279,7 +282,6 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
             "warmup_sent_chars": chars_before,
         }
     finally:
-        agent_module.write_file, agent_module.edit_file, agent_module.run_command = original
         try:
             if raw is not None:
                 raw.close()

@@ -198,8 +198,8 @@ The default order is baseline-first for DeepSeek/Qwen and hint-first for
 MiMo/GLM. Use `--order baseline-first` or `--order hint-first` to override it.
 
 `refactor_hint_ab.py` compares current production edits with a probe-only
-incomplete-refactor hint. The hint arm monkeypatches successful replacement
-edits only inside the script: after a narrow identifier rename, it runs a
+incomplete-refactor hint. The hint arm injects an edit wrapper only inside the
+script: after a narrow identifier rename, it runs a
 bounded lexical scan for the old symbol in other Python/JS/TS source files and
 adds only a file-count note, with no source excerpts:
 
@@ -239,6 +239,35 @@ tested repository. Use `--output` to choose another path outside the projects.
 Compare correctness first, then tool turns, sent characters, and provider time.
 Single-run wall-clock differences are noisy because web providers throttle and
 vary their generation latency.
+
+`readonly_parallel_ab.py` is a benchmark for the read-only concurrency idea
+that Codey intentionally does not enable by default. The deterministic arm
+keeps the production serial execution shape as the baseline, then compares it
+with a script-local `read`, `ls`, and `search` concurrent prototype. Keep this
+probe as evidence for the UX tradeoff: serial tool events are more observable
+and better match Codey's quiet local developer-tool feel, even though the
+prototype can improve local wall-clock time.
+
+```powershell
+python -B tests\manual\readonly_parallel_ab.py
+```
+
+The optional live smoke asks one or more web providers to produce a `read_files`
+or `parallel` batch with bounded provider timeouts. It validates tool order and
+provider blockers, and confirms whether the web models still emit batch calls:
+
+```powershell
+python -B tests\manual\readonly_parallel_ab.py `
+  --live `
+  --provider all `
+  --send-timeout 75 `
+  --new-chat-timeout 25
+```
+
+By default the live smoke only attaches to existing provider tabs. Add
+`--open-if-missing` when intentionally allowing the probe to open provider
+pages. The live smoke is optional and provider-facing; production Codey remains
+serial for observable tool progress.
 
 `context_delta_ab.py` tests whether Codey's short same-web-conversation
 follow-up has measurable value compared with repeating the complete project

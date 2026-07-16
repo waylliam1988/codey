@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey import agent
+from codey.agent_tools import AgentToolFns
 from codey.events import render_run_event
 from codey.handoff import ConversationContext, ConversationSnapshot
 from codey import tool_runtime
@@ -1336,6 +1337,150 @@ class RunLoopTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), "new\n")
 
         self.assertEqual(result.stop_reason, "done")
+
+    def test_read_files_runs_reads_serially_and_returns_ordered_results(self) -> None:
+        read_files = (
+            '{"tool":"read_files","args":{"paths":["a.py","b.py","c.py","d.py"]}}'
+        )
+        done = '{"tool":"done","args":{"summary":"read all"}}'
+        seen: list[str] = []
+        paths = ("a.py", "b.py", "c.py", "d.py")
+
+        def read_probe(_root: Path, rel: str, **_options: object):
+            seen.append(rel)
+            return tool_runtime.ToolOutcome(f"{rel}: ok\n", True)
+
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for name in paths:
+                (root / name).write_text(f"{name}\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(read_files, done),
+                root,
+                "read files",
+                on_event=events.append,
+                fresh_chat=False,
+                tool_fns=AgentToolFns(read_file=read_probe),
+            )
+
+        tool_events = [event for event in events if event.kind == "tool"]
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(seen, list(paths))
+        self.assertEqual(
+            [event.call.args["path"] for event in tool_events],
+            list(paths),
+        )
+
+    def test_same_turn_read_flushes_before_existing_file_edit(self) -> None:
+        reply = (
+            '{"tool":"read_file","args":{"path":"app.py"}}\n'
+            '{"tool":"edit","args":{"path":"app.py",'
+            '"old_string":"old","new_string":"new"}}'
+        )
+        done = '{"tool":"done","args":{"summary":"updated"}}'
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+
+            result = agent.run(
+                FakeProvider(reply, done),
+                root,
+                "read and edit",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "new\n")
+
+        self.assertEqual(result.stop_reason, "done")
+
+    def test_references_boundary_keeps_all_tools_serial(self) -> None:
+        reply = (
+            '{"tool":"grep","args":{"path":".","query":"SessionStore"}}\n'
+            '{"tool":"find_references","args":{"path":".","symbol":"SessionStore"}}\n'
+            '{"tool":"read_file","args":{"path":"session.py"}}'
+        )
+        done = '{"tool":"done","args":{"summary":"checked"}}'
+        calls: list[str] = []
+
+        def record(name: str, output: str):
+            calls.append(name)
+            return tool_runtime.ToolOutcome(output, True)
+
+        def search_probe(_root: Path, _rel: str, _query: str):
+            return record("search", "session.py:1: SessionStore")
+
+        def references_probe(_root: Path, _rel: str, _symbol: str):
+            return record("references", "References for SessionStore under .:")
+
+        def read_probe(_root: Path, _rel: str, **_options: object):
+            return record("read", "class SessionStore:\n    pass\n")
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "session.py").write_text(
+                "class SessionStore:\n    pass\n",
+                encoding="utf-8",
+            )
+
+            result = agent.run(
+                FakeProvider(reply, done),
+                root,
+                "inspect references",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                tool_fns=AgentToolFns(
+                    read_file=read_probe,
+                    search_files=search_probe,
+                    find_references=references_probe,
+                ),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(calls, ["search", "references", "read"])
+
+    def test_serial_readonly_tool_exception_becomes_tool_error(self) -> None:
+        parallel = (
+            '{"tool":"parallel","args":{"calls":['
+            '{"tool":"read_file","args":{"path":"app.py"}},'
+            '{"tool":"grep","args":{"query":"boom","path":"."}}'
+            ']}}'
+        )
+        done = '{"tool":"done","args":{"summary":"handled"}}'
+
+        def read_probe(_root: Path, _rel: str, **_options: object):
+            return tool_runtime.ToolOutcome("ok\n", True)
+
+        def search_probe(_root: Path, _rel: str, _query: str):
+            raise RuntimeError("boom")
+
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                FakeProvider(parallel, done),
+                Path(td),
+                "handle search failure",
+                on_event=events.append,
+                fresh_chat=False,
+                tool_fns=AgentToolFns(
+                    read_file=read_probe,
+                    search_files=search_probe,
+                ),
+            )
+
+        search_events = [
+            event for event in events
+            if event.kind == "tool"
+            and event.call is not None
+            and event.call.name == "search"
+        ]
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(len(search_events), 1)
+        self.assertFalse(search_events[0].outcome.ok)
+        self.assertIn("ERROR: boom", search_events[0].outcome.output)
 
     def test_read_before_edit_uses_canonical_project_paths(self) -> None:
         read = '{"tool":"read_file","args":{"path":"src/app.py"}}'

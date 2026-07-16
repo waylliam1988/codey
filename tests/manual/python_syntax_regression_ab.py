@@ -22,10 +22,12 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey import agent, provider_controls
+from codey.agent_tools import AgentToolFns
 from codey.events import RunEvent, render_run_event
 from codey.project_map import render_project_map
 from codey.providers.registry import connect_provider, provider_ids
 from codey.tool_runtime import ToolOutcome, _python_syntax_regression_hint
+from codey.tool_runtime import edit_file as runtime_edit_file
 
 
 ARMS = ("baseline", "hint")
@@ -59,7 +61,7 @@ class _EditProbe:
         self.root = root
         self.arm = arm
         self.inject_fault = inject_fault
-        self.original = agent.edit_file
+        self.original = runtime_edit_file
         self.injected = False
         self.generated_hints = 0
         self.exposed_hints = 0
@@ -132,21 +134,17 @@ def _run_arm(
         root = Path(td)
         _write_project(root)
         probe = _EditProbe(root, arm=arm, inject_fault=inject_fault)
-        original_edit = agent.edit_file
-        agent.edit_file = probe
-        try:
-            result = agent.run(
-                provider,
-                root,
-                TASK,
-                max_turns=max_turns,
-                on_event=events.append,
-                fresh_chat=True,
-                provider_id=getattr(provider, "id", ""),
-                project_map=render_project_map(root, task=TASK),
-            )
-        finally:
-            agent.edit_file = original_edit
+        result = agent.run(
+            provider,
+            root,
+            TASK,
+            max_turns=max_turns,
+            on_event=events.append,
+            fresh_chat=True,
+            provider_id=getattr(provider, "id", ""),
+            project_map=render_project_map(root, task=TASK),
+            tool_fns=AgentToolFns(edit_file=probe),
+        )
 
         final_content = (root / TARGET).read_text(encoding="utf-8")
         final_tests_passed = _run_check(root)

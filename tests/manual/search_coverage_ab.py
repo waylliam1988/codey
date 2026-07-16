@@ -22,6 +22,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey import agent, provider_controls
+from codey.agent_tools import AgentToolFns
 from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
@@ -37,6 +38,7 @@ from codey.tool_runtime import (
     ToolOutcome,
     _byte_limit_label,
     _raw_path_symlink_reason,
+    read_file as runtime_read_file,
     safe_join,
 )
 
@@ -490,46 +492,31 @@ def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str
         root = Path(td)
         _write_project(root, case)
         probe = _CoverageSearchProbe(arm=arm, case=case)
-        originals = (
-            agent.search_files,
-            agent.read_file,
-            agent.write_file,
-            agent.edit_file,
-            agent.run_command,
-        )
-        agent.search_files = probe
-        original_read_file = agent.read_file
 
         def read_file_probe(root_path: Path, read_rel: str, *args, **kwargs) -> ToolOutcome:
             if case.unreadable_path and read_rel.replace("\\", "/").strip("/") == case.unreadable_path:
                 return _unreadable_read_error()
-            return original_read_file(root_path, read_rel, *args, **kwargs)
+            return runtime_read_file(root_path, read_rel, *args, **kwargs)
 
-        agent.read_file = read_file_probe
-        agent.write_file = _read_only_error
-        agent.edit_file = _read_only_error
-        agent.run_command = _read_only_error
-        try:
-            started = time.monotonic()
-            result = agent.run(
-                provider,
-                root,
-                case.task,
-                max_turns=max_turns,
-                on_event=events.append,
-                fresh_chat=True,
-                provider_id=getattr(provider, "id", ""),
-                project_map="",
-            )
-            elapsed = round(time.monotonic() - started, 3)
-        finally:
-            (
-                agent.search_files,
-                agent.read_file,
-                agent.write_file,
-                agent.edit_file,
-                agent.run_command,
-            ) = originals
+        started = time.monotonic()
+        result = agent.run(
+            provider,
+            root,
+            case.task,
+            max_turns=max_turns,
+            on_event=events.append,
+            fresh_chat=True,
+            provider_id=getattr(provider, "id", ""),
+            project_map="",
+            tool_fns=AgentToolFns(
+                search_files=probe,
+                read_file=read_file_probe,
+                write_file=_read_only_error,
+                edit_file=_read_only_error,
+                run_command=_read_only_error,
+            ),
+        )
+        elapsed = round(time.monotonic() - started, 3)
 
     tool_events = [event for event in events if event.kind == "tool" and event.call]
     search_events = [event for event in tool_events if event.call and event.call.name == "search"]
@@ -668,12 +655,7 @@ def run_self_test() -> None:
         assert NON_UTF8_MARKER not in coverage.output, coverage.output
 
         probe = _CoverageSearchProbe(arm="coverage", case=case)
-        original = agent.search_files
-        agent.search_files = probe
-        try:
-            outcome = agent.search_files(root, ".", case.query)
-        finally:
-            agent.search_files = original
+        outcome = probe(root, ".", case.query)
         assert outcome.truncated, outcome
         assert "Scan coverage:" in outcome.output, outcome.output
 

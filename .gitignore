@@ -10,3 +10,4 @@ __pycache__/
 .scan-coverage-ab*.json
 .task-lens-ab*.json
 .search-coverage-ab*.json
+.readonly-parallel-ab*.json

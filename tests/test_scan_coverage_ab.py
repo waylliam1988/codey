@@ -4,7 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey import agent
 from codey.events import RunEvent
 from tests.manual import scan_coverage_ab
 
@@ -51,12 +50,7 @@ class ScanCoverageABTests(unittest.TestCase):
             root = Path(td)
             scan_coverage_ab._write_project(root)
             probe = scan_coverage_ab._CoverageReferencesProbe(arm="coverage")
-            original = agent.find_references
-            agent.find_references = probe
-            try:
-                outcome = agent.find_references(root, ".", "process_payment")
-            finally:
-                agent.find_references = original
+            outcome = probe(root, ".", "process_payment")
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)

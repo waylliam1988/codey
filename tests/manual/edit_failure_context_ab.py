@@ -19,6 +19,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey import agent, provider_controls, tool_runtime
+from codey.agent_tools import AgentToolFns
 from codey.events import RunEvent, render_run_event
 from codey.project_map import render_project_map
 from codey.providers.registry import connect_provider, provider_ids
@@ -66,7 +67,7 @@ def _write_project(root: Path) -> None:
 class _EditProbe:
     def __init__(self, root: Path) -> None:
         self.root = root
-        self.original = agent.edit_file
+        self.original = tool_runtime.edit_file
         self.injected = False
 
     def __call__(self, root: Path, rel: str, blocks):
@@ -99,9 +100,7 @@ def _run_arm(provider, arm: str, max_turns: int) -> dict[str, Any]:
         root = Path(td)
         _write_project(root)
         probe = _EditProbe(root)
-        original_edit = agent.edit_file
         original_context = tool_runtime._render_edit_failure_context
-        agent.edit_file = probe
         if arm == "baseline":
             tool_runtime._render_edit_failure_context = lambda _content, _search: ""
         try:
@@ -114,9 +113,9 @@ def _run_arm(provider, arm: str, max_turns: int) -> dict[str, Any]:
                 fresh_chat=True,
                 provider_id=getattr(provider, "id", ""),
                 project_map=render_project_map(root, task=TASK),
+                tool_fns=AgentToolFns(edit_file=probe),
             )
         finally:
-            agent.edit_file = original_edit
             tool_runtime._render_edit_failure_context = original_context
 
         content = (root / TARGET).read_text(encoding="utf-8")

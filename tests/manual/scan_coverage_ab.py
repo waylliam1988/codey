@@ -1,11 +1,11 @@
 """Live A/B for references coverage hints.
 
 The baseline arm reconstructs the old low-level find_reference_hints output
-without Writer coverage rendering. The coverage arm monkeypatches the Writer's
-find_references tool result to append a short omission note when the bounded
-lexical reference scan skipped oversized candidate files. The goal is to
-measure whether live web providers avoid a confident "no references" answer
-when the local scan was incomplete.
+without Writer coverage rendering. The coverage arm injects a Writer
+find_references tool result that appends a short omission note when the bounded
+lexical reference scan skipped oversized candidate files. The goal is to measure
+whether live web providers avoid a confident "no references" answer when the
+local scan was incomplete.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey import agent, provider_controls
+from codey.agent_tools import AgentToolFns
 from codey.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
 from codey.references import find_reference_hints
@@ -316,31 +317,24 @@ def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str
         root = Path(td)
         _write_project(root)
         probe = _CoverageReferencesProbe(arm=arm)
-        originals = (agent.find_references, agent.write_file, agent.edit_file, agent.run_command)
-        agent.find_references = probe
-        agent.write_file = _read_only_error
-        agent.edit_file = _read_only_error
-        agent.run_command = _read_only_error
-        try:
-            started = time.monotonic()
-            result = agent.run(
-                provider,
-                root,
-                case.task,
-                max_turns=max_turns,
-                on_event=events.append,
-                fresh_chat=True,
-                provider_id=getattr(provider, "id", ""),
-                project_map="",
-            )
-            elapsed = round(time.monotonic() - started, 3)
-        finally:
-            (
-                agent.find_references,
-                agent.write_file,
-                agent.edit_file,
-                agent.run_command,
-            ) = originals
+        started = time.monotonic()
+        result = agent.run(
+            provider,
+            root,
+            case.task,
+            max_turns=max_turns,
+            on_event=events.append,
+            fresh_chat=True,
+            provider_id=getattr(provider, "id", ""),
+            project_map="",
+            tool_fns=AgentToolFns(
+                find_references=probe,
+                write_file=_read_only_error,
+                edit_file=_read_only_error,
+                run_command=_read_only_error,
+            ),
+        )
+        elapsed = round(time.monotonic() - started, 3)
 
     tool_events = [event for event in events if event.kind == "tool" and event.call]
     reference_events = [
@@ -480,12 +474,7 @@ def run_self_test() -> None:
         assert OVERSIZED_SOURCE_MARKER not in outcome.output, outcome.output
 
         probe = _CoverageReferencesProbe(arm="coverage")
-        original = agent.find_references
-        agent.find_references = probe
-        try:
-            outcome = agent.find_references(root, ".", "process_payment")
-        finally:
-            agent.find_references = original
+        outcome = probe(root, ".", "process_payment")
         assert outcome.truncated, outcome
         assert "Scan coverage:" in outcome.output, outcome.output
         assert OVERSIZED_SOURCE_MARKER not in outcome.output, outcome.output

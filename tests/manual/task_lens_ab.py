@@ -29,9 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import codey.agent as agent_module
 from codey import provider_controls
 from codey.agent import run as run_agent
+from codey.agent_tools import AgentToolFns
 from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.project_map import (
     EXCLUDED_DIRS,
@@ -659,10 +659,11 @@ def run_readonly_arm(
     port: int,
     max_turns: int,
 ) -> dict[str, Any]:
-    original = (agent_module.write_file, agent_module.edit_file, agent_module.run_command)
-    agent_module.write_file = _read_only_error
-    agent_module.edit_file = _read_only_error
-    agent_module.run_command = _read_only_error
+    tool_fns = AgentToolFns(
+        write_file=_read_only_error,
+        edit_file=_read_only_error,
+        run_command=_read_only_error,
+    )
     raw = None
     events = []
     started = time.monotonic()
@@ -679,6 +680,7 @@ def run_readonly_arm(
             on_event=events.append,
             fresh_chat=True,
             project_map=_map_for_arm(root, case.task, arm=arm),
+            tool_fns=tool_fns,
         )
         tool_events = [
             event
@@ -738,7 +740,6 @@ def run_readonly_arm(
             "summary": result.summary,
         }
     finally:
-        agent_module.write_file, agent_module.edit_file, agent_module.run_command = original
         try:
             if raw is not None:
                 raw.close()

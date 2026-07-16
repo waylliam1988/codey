@@ -16,6 +16,10 @@ from typing import Callable, Protocol
 
 from codey import cancellation
 from codey.events import RunEvent, print_run_event
+from codey.agent_tools import (
+    DEFAULT_TOOL_FNS,
+    AgentToolFns,
+)
 from codey.handoff import (
     ConversationContext,
     ConversationSnapshot,
@@ -27,14 +31,7 @@ from codey.protocols import JsonToolCodec, ProtocolCodec
 from codey.tool_runtime import (
     EditBlock,
     ToolOutcome,
-    edit_file,
-    find_references,
-    list_directory,
-    read_file,
-    run_command,
     safe_join,
-    search_files,
-    write_file,
 )
 from codey.verification_policy import (
     VerificationCandidate,
@@ -235,9 +232,11 @@ def run(
     ] | None = None,
     verification_changed_files: tuple[str, ...] = (),
     verification_successful_checks: tuple[VerificationCandidate, ...] = (),
+    tool_fns: AgentToolFns | None = None,
 ) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
+    tool_fns = tool_fns or DEFAULT_TOOL_FNS
     max_turns = max(1, int(max_turns or DEFAULT_MAX_TURNS))
     stagnant_turns = max(1, int(stagnant_turns or DEFAULT_STAGNANT_TURNS))
     seen_info: set[tuple[str, str, str]] = set()
@@ -339,7 +338,7 @@ def run(
             f"{facts}"
             f"{map_block}"
             f"{checkpoint_block}"
-            f"Initial listing:\n{list_directory(project, '.').output}\n\n"
+            f"Initial listing:\n{tool_fns.list_directory(project, '.').output}\n\n"
             f"User task:\n{current}"
         )
 
@@ -402,6 +401,24 @@ def run(
 
         results: list[ToolResult] = []
         made_progress = False
+
+        def record_tool_outcome(call: ToolCall, outcome: ToolOutcome) -> None:
+            nonlocal made_progress
+            path = _call_arg(call, "path", ".")
+            out = outcome.output
+            emit(RunEvent.tool_finished(turn, call, outcome))
+            results.append(
+                ToolResult(call=call, output=out, truncated=outcome.truncated)
+            )
+            if call.name == "read" and outcome.ok:
+                known_file_paths.add(_canonical_project_path(project, path))
+            produced_information = outcome.ok or outcome.exit_code is not None
+            if call.name in INFORMATION_TOOL_NAMES and produced_information:
+                sig = (call.name, path, out)
+                if sig not in seen_info:
+                    seen_info.add(sig)
+                    made_progress = True
+
         for call in calls:
             path = _call_arg(call, "path", ".")
             try:
@@ -416,7 +433,11 @@ def run(
                         else:
                             if change_tracker is not None:
                                 change_tracker.capture_before(path)
-                            outcome = write_file(project, path, _call_arg(call, "content"))
+                            outcome = tool_fns.write_file(
+                                project,
+                                path,
+                                _call_arg(call, "content"),
+                            )
                     else:
                         guard = _read_before_edit_outcome(project, path, known_file_paths)
                         if guard is not None:
@@ -424,7 +445,11 @@ def run(
                         else:
                             if change_tracker is not None:
                                 change_tracker.capture_before(path)
-                            outcome = edit_file(project, path, _edit_blocks_from_call(call))
+                            outcome = tool_fns.edit_file(
+                                project,
+                                path,
+                                _edit_blocks_from_call(call),
+                            )
                     if outcome.ok and outcome.changed:
                         if change_tracker is not None:
                             change_tracker.capture_after(path)
@@ -442,18 +467,20 @@ def run(
                         for name in ("offset", "limit")
                         if name in call.args
                     }
-                    outcome = read_file(project, path, **read_options)
-                    if outcome.ok:
-                        known_file_paths.add(_canonical_project_path(project, path))
+                    outcome = tool_fns.read_file(project, path, **read_options)
                 elif call.name == "ls":
-                    outcome = list_directory(project, path)
+                    outcome = tool_fns.list_directory(project, path)
                 elif call.name == "search":
-                    outcome = search_files(project, path, _call_arg(call, "query"))
+                    outcome = tool_fns.search_files(project, path, _call_arg(call, "query"))
                 elif call.name == "references":
-                    outcome = find_references(project, path, _call_arg(call, "symbol"))
+                    outcome = tool_fns.find_references(
+                        project,
+                        path,
+                        _call_arg(call, "symbol"),
+                    )
                 elif call.name == "run":
                     command = _call_arg(call, "command")
-                    outcome = run_command(project, path, command)
+                    outcome = tool_fns.run_command(project, path, command)
                     checks_ran = True
                     checks_passed = outcome.ok
                     if outcome.ok:
@@ -474,15 +501,7 @@ def run(
                 raise
             except Exception as exc:
                 outcome = ToolOutcome.error(str(exc))
-            out = outcome.output
-            emit(RunEvent.tool_finished(turn, call, outcome))
-            results.append(ToolResult(call=call, output=out, truncated=outcome.truncated))
-            produced_information = outcome.ok or outcome.exit_code is not None
-            if call.name in INFORMATION_TOOL_NAMES and produced_information:
-                sig = (call.name, path, out)
-                if sig not in seen_info:
-                    seen_info.add(sig)
-                    made_progress = True
+            record_tool_outcome(call, outcome)
         if conversation is not None:
             conversation.update_snapshot(snapshot(control.body if control else ""))
 

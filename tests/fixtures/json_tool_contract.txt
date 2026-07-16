@@ -51,7 +51,7 @@ runtime_name: -
 aliases: -
 read_only: true
 parallel_safe: false
-description: Batch at most 4 independent read-only list_dir, read_file, or grep calls. Local execution remains sequential.
+description: Batch at most 4 independent read-only list_dir, read_file, or grep calls. Local results are returned in request order.
 examples:
 - {"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}
 
@@ -111,7 +111,7 @@ examples:
     Find bounded lexical reference hints for a simple symbol. This is not semantic resolution; use read_file before editing.
 
   {"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}
-    Batch at most 4 independent read-only list_dir, read_file, or grep calls. Local execution remains sequential.
+    Batch at most 4 independent read-only list_dir, read_file, or grep calls. Local results are returned in request order.
 
   {"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}
   {"tool":"edit","args":{"path":"app.py","old_string":"old exact text","new_string":"new text"}}

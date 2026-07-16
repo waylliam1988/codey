@@ -96,7 +96,7 @@ TOOL_SPECS = (
         ),
         description=(
             f"Batch at most {MAX_PARALLEL_CALLS} independent read-only list_dir, "
-            "read_file, or grep calls. Local execution remains sequential."
+            "read_file, or grep calls. Local results are returned in request order."
         ),
     ),
     ToolSpec(

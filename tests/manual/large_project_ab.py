@@ -21,9 +21,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import codey.agent as agent_module
 from codey import provider_controls
 from codey.agent import run
+from codey.agent_tools import AgentToolFns
 from codey.project_map import render_project_map
 from codey.protocols.json_codec import JsonToolCodec, SYSTEM_PROMPT, TOOL_SPEC_BY_NAME
 from codey.providers.registry import connect_provider
@@ -136,10 +136,11 @@ def run_arm(
     port: int,
     max_turns: int,
 ) -> dict[str, object]:
-    original = (agent_module.write_file, agent_module.edit_file, agent_module.run_command)
-    agent_module.write_file = _read_only_error
-    agent_module.edit_file = _read_only_error
-    agent_module.run_command = _read_only_error
+    tool_fns = AgentToolFns(
+        write_file=_read_only_error,
+        edit_file=_read_only_error,
+        run_command=_read_only_error,
+    )
     provider_controls.begin_task_context(f"large-ab:{case.name}:{arm}")
     raw = None
     events = []
@@ -156,6 +157,7 @@ def run_arm(
             on_event=events.append,
             fresh_chat=True,
             project_map="" if arm == "baseline" else render_project_map(case.project),
+            tool_fns=tool_fns,
         )
         tool_events = [
             event for event in events
@@ -203,7 +205,6 @@ def run_arm(
             "summary": result.summary,
         }
     finally:
-        agent_module.write_file, agent_module.edit_file, agent_module.run_command = original
         try:
             if raw is not None:
                 raw.close()

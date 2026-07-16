@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
+from codey import cancellation
+
 
 DEFAULT_MAX_SCAN_FILES = 1_000
 DEFAULT_MAX_SCAN_DIRS = 250
@@ -81,6 +83,7 @@ def iter_provided_files(
     budget: BoundedScanBudget,
 ) -> Iterator[Path]:
     for path in files:
+        cancellation.check()
         if not budget.consume_file(path):
             if budget.limited:
                 return
@@ -97,6 +100,7 @@ def iter_bounded_files(
     allow_file: Callable[[Path], bool] | None = None,
     skip_start_if_excluded: bool = True,
 ) -> Iterator[Path]:
+    cancellation.check()
     excluded_lower = {name.lower() for name in excluded_dirs}
     if start.is_symlink():
         return
@@ -112,6 +116,7 @@ def iter_bounded_files(
 
     stack = [start]
     while stack:
+        cancellation.check()
         current = stack.pop()
         if budget.dirs_seen >= budget.max_dirs:
             budget.dir_limited = True
@@ -120,6 +125,7 @@ def iter_bounded_files(
         entries: list[Path] = []
         try:
             for index, entry in enumerate(current.iterdir()):
+                cancellation.check()
                 if index >= budget.max_dir_entries:
                     budget.entry_limited = True
                     break
@@ -129,6 +135,7 @@ def iter_bounded_files(
 
         dirs: list[Path] = []
         for entry in sorted(entries, key=lambda path: path.name.lower()):
+            cancellation.check()
             try:
                 if entry.is_symlink():
                     continue

@@ -1,4 +1,32 @@
-# Codey 0.1.47 Test Report
+# Codey 0.1.48 Test Report
+
+## 0.1.48 Tool Function Injection and Parallel Probe
+
+Agent runtime now supports explicit `AgentToolFns` injection, so tests and
+manual probes can replace tool functions without monkeypatching `codey.agent`
+globals. Production tool execution remains serial by default, including
+`read`, `ls`, and `search`, to preserve observable step-by-step tool progress
+in the chat stream.
+
+The `readonly_parallel_ab.py` deterministic probe remains as a script-local
+experiment. It preserves evidence that read-only concurrency can improve local
+wall-clock time, while documenting the product decision not to enable it by
+default because Codey values quiet observability over this small optimization.
+
+Cancellation coverage was extended so bounded scan/search loops check
+cooperative cancellation during long traversal.
+
+Validation for this patch:
+
+```text
+ruff: All checks passed
+focused pytest: 107 passed
+readonly_parallel_ab deterministic probe: passed
+full pytest: 970 passed, 67 subtests passed
+live provider smoke: DeepSeek/MiMo/Qwen/GLM read_files+parallel passed;
+  DeepSeek parallel had one transient timeout before retry, and GLM passed
+  after an earlier rate-limit/sliding-verification block cleared
+```
 
 ## 0.1.47 Search Coverage Bugfix
 
@@ -394,7 +422,7 @@ Ruff, compileall, and git diff --check: passed
 ## Post-0.1.40 Incomplete Refactor Hint Probe
 
 `tests/manual/refactor_hint_ab.py` was added as a probe-only A/B harness. The
-hint arm monkeypatches successful replacement edits inside the script only:
+hint arm injects an edit wrapper inside the script only:
 after a narrow identifier rename, it runs a bounded lexical scan for the old
 symbol in other Python/JS/TS source files and appends only a file-count note.
 No production code, prompt, protocol, version, or runtime behavior changed.
