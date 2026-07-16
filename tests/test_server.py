@@ -165,6 +165,44 @@ class ApprovedShellTests(unittest.TestCase):
         self.assertTrue(data["output"].endswith("TAIL"))
         self.assertIn("middle of output omitted", data["output"])
 
+    def test_shell_approval_continuation_includes_post_approval_checklist(self) -> None:
+        prompt = server.build_shell_approval_continuation(
+            command="npm install",
+            result={"exit_code": 0, "output": "added 10 packages", "truncated": False},
+            post_approval_instructions=(
+                "Post-approval checklist:\n"
+                "- Inspect the shell exit code and output before claiming success.\n"
+                "- If a trusted local check is available, run it before done."
+            ),
+            setup_context=(
+                "Setup Context (read-only diagnosis; no setup commands were run):\n"
+                "Local tools:\n"
+                "- npm: available"
+            ),
+        )
+
+        self.assertIn("The user approved and ran this shell command:", prompt)
+        self.assertIn("npm install", prompt)
+        self.assertIn("Exit code: 0", prompt)
+        self.assertIn("Setup Context", prompt)
+        self.assertIn("- npm: available", prompt)
+        self.assertIn("Post-approval checklist", prompt)
+        self.assertIn("trusted local check", prompt)
+
+    def test_shell_continuation_setup_context_is_limited_to_setup_risks(self) -> None:
+        with mock.patch.object(server, "safe_setup_context", return_value="Setup Context"):
+            setup = server._shell_continuation_setup_context({
+                "project": "E:/demo",
+                "risk_label": "dependency_install",
+            })
+            generic = server._shell_continuation_setup_context({
+                "project": "E:/demo",
+                "risk_label": "generic",
+            })
+
+        self.assertEqual(setup, "Setup Context")
+        self.assertEqual(generic, "")
+
 
 class ProviderStatusTests(unittest.TestCase):
     def test_provider_payload_marks_available_models(self) -> None:
@@ -895,6 +933,37 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIs(provider_flow._handler.__self__, state)
         for name in provider_controls._TASK_CONTEXT_FIELDS:
             self.assertFalse(hasattr(provider_controls._context, name), name)
+
+    def test_shell_request_includes_risk_explanation(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        provider = mock.Mock()
+        provider.name = "DeepSeek Web"
+        provider.location = "https://chat.deepseek.com/"
+        provider.send.return_value = (
+            '{"tool":"shell","args":{"path":".","command":"npm install"}}'
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider),
+            mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
+        ):
+            server._run_task("session-1", td, "Set up the project", 8, False, "deepseek")
+
+        pending = next(iter(state.pending_shell.values()))
+        self.assertEqual(pending["risk_label"], "dependency_install")
+        self.assertIn("download packages", pending["risk_detail"])
+        self.assertIn("Post-approval checklist", pending["post_approval_instructions"])
+
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        shell_event = next(event for event in emitted if event["type"] == "shell_request")
+        self.assertEqual(shell_event["risk_label"], "dependency_install")
+        self.assertEqual(shell_event["risk_title"], "Dependency install")
+        self.assertIn("install scripts", shell_event["risk_detail"])
 
     def test_run_task_reads_empty_file_without_error_or_legacy_log_event(self) -> None:
         state = server.State()

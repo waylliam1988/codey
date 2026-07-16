@@ -1,4 +1,34 @@
-# Codey 0.1.49 Test Report
+# Codey 0.1.50 Test Report
+
+## 0.1.50 Setup-Aware Shell Approval
+
+Shell approval now carries neutral risk explanations for dependency installs,
+system installs, external-source retrieval, publishing, dev servers, and generic
+shell commands. After the user approves setup-like shell commands, the
+continuation prompt includes a bounded read-only `Setup Context` with local tool
+availability, project manifests, lockfiles, scoped setup notes, and omission
+signals. This context is not exposed as a new model tool and is not sent in
+normal task prompts.
+
+Safety boundaries for this patch:
+
+- Setup context only runs after approved setup-like shell commands.
+- It never installs, clones, writes files, or performs network access itself.
+- It does not expose absolute tool paths.
+- It reuses sensitive-path filtering and skips dot/secret/private/token paths.
+- Manifest listing caps and bounded scan truncation are explicit.
+
+Validation for this patch:
+
+```text
+setup/shell focused pytest: 13 passed, 39 subtests passed
+focused pytest: 186 passed, 64 subtests passed
+ruff: All checks passed
+py_compile: passed
+full pytest: 990 passed, 106 subtests passed
+git diff --check: passed
+live provider smoke: not run; this is a local approval/continuation/UI slice
+```
 
 ## 0.1.49 Tool Start Visibility
 

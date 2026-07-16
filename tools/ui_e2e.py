@@ -242,9 +242,9 @@ def _exercise_page(
         "Request a shell command for git status --short and wait for approval."
     )
     page.locator("#send").click()
-    expect(page.locator("#chat")).to_contain_text("Command approval")
+    expect(page.locator("#chat")).to_contain_text("Approval required")
     page.reload(wait_until="domcontentloaded")
-    expect(page.locator("#chat")).to_contain_text("Command approval")
+    expect(page.locator("#chat")).to_contain_text("Approval required")
     deny = page.get_by_role("button", name="Deny", exact=True)
     expect(deny).to_be_visible()
     _close_event_stream(page)
@@ -264,7 +264,7 @@ def _exercise_page(
         "Request a shell command for git status --short and wait for approval."
     )
     page.locator("#send").click()
-    expect(page.locator("#chat")).to_contain_text("Command approval")
+    expect(page.locator("#chat")).to_contain_text("Approval required")
     deny = page.get_by_role("button", name="Deny", exact=True)
     expect(deny).to_be_visible()
     _close_event_stream(page)
@@ -281,7 +281,7 @@ def _exercise_page(
         "Request a shell command for git status --short and wait for approval."
     )
     page.locator("#send").click()
-    expect(page.locator("#chat")).to_contain_text("Command approval")
+    expect(page.locator("#chat")).to_contain_text("Approval required")
     allow = page.get_by_role("button", name="Allow", exact=True)
     expect(allow).to_be_visible()
     _close_event_stream(page)

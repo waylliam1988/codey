@@ -36,6 +36,7 @@ from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
 from codey.receipt import build_task_receipt
 from codey.review_coordinator import ReviewCoordinator, change_state
+from codey.shell_risk import classify_shell_risk
 from codey.verification_map import render_verification_map
 from codey.verification_policy import (
     check_matches_candidate,
@@ -277,6 +278,7 @@ class TaskRunner:
         def on_shell_request(cwd_rel: str, command: str) -> None:
             if not project:
                 return
+            risk = classify_shell_risk(command)
             approval_id = "shell_" + uuid.uuid4().hex[:12]
             pending = {
                 "id": approval_id,
@@ -284,6 +286,10 @@ class TaskRunner:
                 "project": project,
                 "cwd": cwd_rel or ".",
                 "command": command,
+                "risk_label": risk.label,
+                "risk_title": risk.title,
+                "risk_detail": risk.detail,
+                "post_approval_instructions": risk.post_approval_instructions,
                 "max_turns": max_turns,
                 "provider": provider_id,
                 "continue_after": True,
@@ -297,6 +303,9 @@ class TaskRunner:
                 "project": project,
                 "cwd": pending["cwd"],
                 "command": command,
+                "risk_label": risk.label,
+                "risk_title": risk.title,
+                "risk_detail": risk.detail,
             }
             with state.lock:
                 state.pending_shell[approval_id] = pending

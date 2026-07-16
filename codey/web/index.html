@@ -502,6 +502,12 @@
   .shell-card .sc-meta {
     color: var(--muted); font-family: var(--font-mono); font-size: 11.5px;
   }
+  .shell-card .sc-note {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
   .shell-card .sc-error {
     color: var(--err-text);
     font-size: 12px;
@@ -1722,10 +1728,17 @@ function appendMessageNode(chat, m) {
     card.className = 'shell-card';
     const title = document.createElement('div');
     title.className = 'sc-title';
-    title.textContent = 'Command approval';
+    title.textContent = 'Approval required';
     const meta = document.createElement('div');
     meta.className = 'sc-meta';
     meta.textContent = m.cwd ? `Runs in ${m.cwd}` : 'Runs in .';
+    const riskTitle = m.riskTitle || m.riskLabel || '';
+    const riskDetail = m.riskDetail || '';
+    const note = document.createElement('div');
+    note.className = 'sc-note';
+    note.textContent = riskTitle || riskDetail
+      ? `${riskTitle || 'Shell command'}${riskDetail ? ` · ${riskDetail}` : ''}`
+      : '';
     const cmd = document.createElement('div');
     cmd.className = 'shell-command';
     cmd.textContent = '$ ' + (m.command || '');
@@ -1743,7 +1756,9 @@ function appendMessageNode(chat, m) {
     approve.onclick = () => approveCommand(m.id, true, approve, deny, error);
     deny.onclick = () => approveCommand(m.id, false, approve, deny, error);
     actions.append(deny, approve);
-    card.append(title, meta, cmd, error, actions);
+    card.append(title, meta);
+    if (note.textContent) card.appendChild(note);
+    card.append(cmd, error, actions);
     div.appendChild(card);
     chat.appendChild(div);
   } else if (m.type === 'shell_result') {
@@ -2173,6 +2188,9 @@ function handleServerEvent(data) {
       command: data.command,
       cwd: data.cwd,
       project: data.project,
+      riskLabel: data.risk_label,
+      riskTitle: data.risk_title,
+      riskDetail: data.risk_detail,
       runId,
       eventKey: `shell:${data.id}`,
     });

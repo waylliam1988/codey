@@ -104,6 +104,14 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("removeShellRequest(sid, data.id)", HTML)
         self.assertIn("function removeShellRequest(sessionId, approvalId)", HTML)
 
+    def test_shell_approval_renders_risk_explanation(self) -> None:
+        self.assertIn("title.textContent = 'Approval required'", HTML)
+        self.assertIn("className = 'sc-note'", HTML)
+        self.assertIn("${riskTitle || 'Shell command'}", HTML)
+        self.assertIn("riskLabel: data.risk_label", HTML)
+        self.assertIn("riskTitle: data.risk_title", HTML)
+        self.assertIn("riskDetail: data.risk_detail", HTML)
+
     def test_provider_status_is_quiet_and_refreshes_on_menu_open(self) -> None:
         self.assertIn("if (menu.classList.contains('open')) refreshProviderStatus();", HTML)
         self.assertIn("if (data.type === 'providers')", HTML)
@@ -234,7 +242,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_routine_failures_do_not_use_native_alerts(self) -> None:
         self.assertNotIn("alert(", HTML)
         self.assertIn("setStatus('Could not add project', 'err')", HTML)
-        self.assertIn("Command approval", HTML)
+        self.assertIn("Approval required", HTML)
         self.assertIn("Could not send approval", HTML)
         self.assertIn("function showCommandApprovalError", HTML)
         self.assertNotIn("Failed to pick folder", HTML)

@@ -213,7 +213,11 @@ Rules:
   - Use run only for verification, such as python -m unittest, python -m pytest,
     npm test, npm run build, go test ./..., cargo test, ruff check, or mypy.
   - run commands must be simple. No pipes, redirects, chaining, tail/head, or
-    shell-only syntax. Never use run/shell to write files; use edit.
+    shell-only syntax.
+  - Use edit for source/content changes. Do not use run or shell to directly
+    edit project files. Use shell only for necessary user-approved setup,
+    dependency installation, external-source retrieval, publishing, or other
+    commands outside the run allowlist.
   - [tool_result tool=...] means the local tool already ran. Continue from it.
   - Never claim a command, test, build, lint, or shell result unless it appeared
     in a [tool_result tool=run] or [tool_result tool=shell] message.

@@ -4,6 +4,16 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.50 - Setup-aware Shell 审批
+
+- UX：Shell 审批卡现在使用中性的 `Approval required`，并针对依赖安装、系统安装、
+  外部源码获取、发布、开发服务器和普通 shell 命令显示简短风险说明。
+- 上下文：用户批准 setup 类 shell 命令后，Codey 会给 Writer 回传一段有界只读的
+  `Setup Context`，包含本机工具可用性、项目 manifest、lockfile 和带目录作用域的
+  setup 提示。它不是新的模型工具，也不会注入普通 prompt。
+- 安全：Setup Context 本身不会安装、clone、写文件或联网。它复用敏感路径过滤，
+  不暴露工具绝对路径，会说明列表上限，并继续把 shell 执行放在现有用户审批之后。
+
 ## 0.1.49 - Tool Start 可见性
 
 - UX：Agent 工具现在会在本地执行开始前发出轻量 `tool_started` 事件。

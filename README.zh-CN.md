@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.49-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.1.50-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.49`
+版本：`0.1.50`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -237,7 +237,8 @@ Codey 不是无限制 shell。
 - 正常改动会显示 diff。
 - 没有 Git 也能用 snapshot restore 恢复。
 - Git 是增强功能，不是入门门槛。
-- shell 命令需要你确认后才会执行。
+- shell 命令需要你确认后才会执行；setup/install 类审批会显示风险说明，
+  批准后再把只读的本地环境和 manifest 事实回传给 Writer。
 - 失败时 UI 保持简单：`ERROR · Could not send the message  Retry`。
 
 你仍然应该在保留改动前检查 diff。

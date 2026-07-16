@@ -38,6 +38,39 @@ class UiStateStoreTests(unittest.TestCase):
             self.assertEqual(store.load(), state)
             self.assertEqual(Path(td, "ui-state.json").is_file(), True)
 
+    def test_shell_request_risk_fields_are_persisted(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            store.save({
+                "active_id": "chat-1",
+                "updated_at": 1,
+                "revision": 1,
+                "sessions": [{
+                    "id": "chat-1",
+                    "title": "New chat",
+                    "messages": [{
+                        "type": "shell_request",
+                        "id": "shell-1",
+                        "command": "npm install",
+                        "cwd": ".",
+                        "riskLabel": "dependency_install",
+                        "riskTitle": "Dependency install",
+                        "riskDetail": "May download packages.",
+                    }],
+                    "terminalRuns": [],
+                    "createdAt": 0,
+                    "projectId": None,
+                    "provider": "deepseek",
+                }],
+                "projects": [],
+            })
+
+            message = store.load()["sessions"][0]["messages"][0]
+
+        self.assertEqual(message["riskLabel"], "dependency_install")
+        self.assertEqual(message["riskTitle"], "Dependency install")
+        self.assertEqual(message["riskDetail"], "May download packages.")
+
     def test_missing_or_wrong_schema_returns_empty_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = UiStateStore(td)

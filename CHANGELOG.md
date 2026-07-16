@@ -4,6 +4,19 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.50 - Setup-Aware Shell Approval
+
+- UX: shell approval cards now use a neutral `Approval required` label and show
+  concise risk notes for dependency installs, system installs, external source
+  retrieval, publishing, dev servers, and generic shell commands.
+- Context: after the user approves setup-like shell commands, Codey sends the
+  Writer a bounded read-only `Setup Context` with local tool availability,
+  project manifests, lockfiles, and scoped setup notes. The context is not a new
+  model tool and is not injected into normal prompts.
+- Safety: setup context never installs, clones, writes files, or networks on its
+  own. It reuses sensitive-path filtering, avoids absolute tool paths, reports
+  listing limits, and keeps shell execution behind the existing approval flow.
+
 ## 0.1.49 - Tool Start Visibility
 
 - UX: Agent tools now emit a lightweight `tool_started` event before local

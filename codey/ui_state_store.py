@@ -41,6 +41,9 @@ MESSAGE_KEYS = {
     "eventKey",
     "runId",
     "changed",
+    "riskLabel",
+    "riskTitle",
+    "riskDetail",
 }
 
 

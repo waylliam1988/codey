@@ -64,6 +64,18 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertNotIn("substantial rewrite", normalized)
         self.assertNotIn("use content with the full file instead", normalized)
 
+    def test_system_prompt_allows_approved_setup_without_shell_editing(self) -> None:
+        prompt = JsonToolCodec().system_prompt()
+        normalized = " ".join(prompt.split())
+
+        self.assertIn("Use edit for source/content changes", normalized)
+        self.assertIn("Do not use run or shell to directly edit project files", normalized)
+        self.assertIn("Use shell only for necessary user-approved setup", normalized)
+        self.assertIn("dependency installation", normalized)
+        self.assertIn("external-source retrieval", normalized)
+        self.assertIn("publishing", normalized)
+        self.assertNotIn("Never use run/shell to write files", normalized)
+
     def test_parse_json_tool_call(self) -> None:
         codec = JsonToolCodec()
         plan = codec.parse(

@@ -63,6 +63,7 @@ from codey.adapter_repair import AdapterRepairResult
 from codey.self_repair import SelfRepairJob, SelfRepairSupervisor
 from codey.self_repair_worker import run_self_repair_worker
 from codey.project_facts import ProjectFactsStore
+from codey.setup_context import safe_setup_context
 from codey.work_checkpoint import WorkCheckpointStore
 from codey.review import (
     ReviewResult,
@@ -308,6 +309,48 @@ def execute_approved_shell(project: str | Path, rel: str, command: str) -> dict:
         "output": output,
         "truncated": truncated,
     }
+
+
+def build_shell_approval_continuation(
+    *,
+    command: str,
+    result: dict,
+    post_approval_instructions: str = "",
+    setup_context: str = "",
+) -> str:
+    truncation_note = (
+        "\nShell output was truncated. Do not assume omitted content "
+        "is clean; inspect narrower output if needed.\n"
+        if result.get("truncated")
+        else ""
+    )
+    checklist = (post_approval_instructions or "").strip()
+    checklist_block = f"{checklist}\n\n" if checklist else ""
+    setup_block = f"{setup_context.strip()}\n\n" if setup_context.strip() else ""
+    return (
+        "Continue the interrupted task in this same conversation.\n"
+        "The user approved and ran this shell command:\n"
+        f"{command}\n\n"
+        f"Exit code: {result.get('exit_code')}\n"
+        "Output:\n"
+        f"{result.get('output') or result.get('error') or '(no output)'}\n\n"
+        f"{truncation_note}"
+        f"{setup_block}"
+        f"{checklist_block}"
+        "Use this result to continue the original task. If the task is complete,"
+        " reply with a JSON done tool call."
+    )
+
+
+def _shell_continuation_setup_context(pending: dict) -> str:
+    if pending.get("risk_label") not in {
+        "dependency_install",
+        "system_install",
+        "external_source",
+        "dev_server",
+    }:
+        return ""
+    return safe_setup_context(pending["project"])
 
 
 @dataclass(frozen=True)
@@ -1217,22 +1260,13 @@ class Handler(BaseHTTPRequestHandler):
             STATE.record_shell_result(event)
             continued = False
             if pending.get("continue_after"):
-                truncation_note = (
-                    "\nShell output was truncated. Do not assume omitted content "
-                    "is clean; inspect narrower output if needed.\n"
-                    if result.get("truncated")
-                    else ""
-                )
-                continuation = (
-                    "Continue the interrupted task in this same conversation.\n"
-                    "The user approved and ran this shell command:\n"
-                    f"{command}\n\n"
-                    f"Exit code: {result.get('exit_code')}\n"
-                    "Output:\n"
-                    f"{result.get('output') or result.get('error') or '(no output)'}\n\n"
-                    f"{truncation_note}"
-                    "Use this result to continue the original task. If the task is complete,"
-                    " reply with a JSON done tool call."
+                continuation = build_shell_approval_continuation(
+                    command=command,
+                    result=result,
+                    post_approval_instructions=str(
+                        pending.get("post_approval_instructions") or ""
+                    ),
+                    setup_context=_shell_continuation_setup_context(pending),
                 )
                 continuation_run = _submit_task(
                     session_id,
