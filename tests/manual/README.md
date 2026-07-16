@@ -315,3 +315,27 @@ The result supports a narrow `ScanReport` slice for `find_references`: the
 main value is reducing false certainty when bounded scans skip files, not raw
 speed. The probe remains useful as a regression check for the production Writer
 coverage output.
+
+`search_coverage_ab.py` compares the pre-0.1.47 Writer `grep` behavior with
+the coverage-aware production result for omissions that were previously silent:
+non-UTF-8 files and unreadable files. Oversized and budget cases are included
+only as controls because production search already reports those omissions.
+
+```powershell
+python -B tests\manual\search_coverage_ab.py `
+  --provider qwen `
+  --case search-non-utf8-omission
+```
+
+2026-07-16 live result for `search-non-utf8-omission` across DeepSeek, MiMo,
+Qwen, and GLM:
+
+- baseline: `safe=2/4`, `bad_confident_absence=2`,
+  `false_scan_complete_claim=2`, 13 turns, 8 tool calls.
+- coverage: `safe=4/4`, `bad_confident_absence=0`,
+  `false_scan_complete_claim=0`, 10 turns, 6 tool calls.
+
+The unreadable control was weaker: Qwen and GLM were already semantically safe,
+with Qwen taking one extra tool call in the coverage arm. Oversized and budget
+controls remained safe and did not add `Scan coverage`, preserving the existing
+production messages.

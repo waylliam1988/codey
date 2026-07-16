@@ -4,6 +4,13 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.47 - Search 遗漏提示
+
+- Bugfix：`grep` / `search` 现在会报告非 UTF-8 文件和不可读文件，不再把这些被省略的
+  文件静默当成“完整搜索后没有匹配”。这个修复只作用在 Writer 的 search 工具上：
+  oversized、read budget、bounded scan budget 的旧提示保持不变，也不迁移 hidden advisor
+  search。
+
 ## 0.1.46 - Coverage-aware References
 
 `find_references` 现在会说明有边界的文本引用扫描跳过了哪些可能仍包含引用的文件。

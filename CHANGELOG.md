@@ -4,6 +4,14 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.47 - Search Omission Coverage
+
+- Bugfix: `grep` / `search` now reports non-UTF-8 and unreadable files instead
+  of silently treating omitted files as a complete no-match result. The fix is
+  intentionally local to the Writer search tool: existing oversized, read-budget,
+  and bounded-scan messages are unchanged, and hidden advisor search is not
+  migrated.
+
 ## 0.1.46 - Coverage-Aware References
 
 `find_references` now reports when its bounded lexical scan skipped files that

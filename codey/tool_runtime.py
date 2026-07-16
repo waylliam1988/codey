@@ -714,6 +714,8 @@ def search_files(
     bytes_read = 0
     byte_limited = False
     oversized_files = 0
+    unreadable_files = 0
+    decode_failed_files = 0
     resolved_root = root.resolve()
     budget = BoundedScanBudget(
         max_files=SEARCH_MAX_SCAN_FILES,
@@ -728,15 +730,23 @@ def search_files(
     ):
         try:
             size = path.stat().st_size
-            if size > SEARCH_MAX_FILE_BYTES:
-                oversized_files += 1
-                continue
-            if bytes_read + size > SEARCH_MAX_SCAN_BYTES:
-                byte_limited = True
-                break
-            bytes_read += size
+        except OSError:
+            unreadable_files += 1
+            continue
+        if size > SEARCH_MAX_FILE_BYTES:
+            oversized_files += 1
+            continue
+        if bytes_read + size > SEARCH_MAX_SCAN_BYTES:
+            byte_limited = True
+            break
+        bytes_read += size
+        try:
             text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+        except UnicodeDecodeError:
+            decode_failed_files += 1
+            continue
+        except OSError:
+            unreadable_files += 1
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):
             if needle not in line.lower():
@@ -771,7 +781,28 @@ def search_files(
         )
     if budget.limited:
         matches.append(budget.stop_message("search scan"))
-    truncated = result_limited or budget.limited or byte_limited or bool(oversized_files)
+    if unreadable_files or decode_failed_files:
+        matches.append("Scan coverage:")
+        if unreadable_files:
+            plural = "file" if unreadable_files == 1 else "files"
+            matches.append(
+                f"- search could not read metadata or contents for "
+                f"{unreadable_files} {plural}; omitted files may contain more matches"
+            )
+        if decode_failed_files:
+            plural = "file" if decode_failed_files == 1 else "files"
+            matches.append(
+                f"- search skipped {decode_failed_files} non-UTF-8 {plural}; "
+                "omitted files may contain more matches"
+            )
+    truncated = (
+        result_limited
+        or budget.limited
+        or byte_limited
+        or bool(oversized_files)
+        or bool(unreadable_files)
+        or bool(decode_failed_files)
+    )
     return ToolOutcome("\n".join(matches), True, truncated=truncated)
 
 

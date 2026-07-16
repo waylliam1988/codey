@@ -1,4 +1,37 @@
-# Codey 0.1.46 Test Report
+# Codey 0.1.47 Test Report
+
+## 0.1.47 Search Coverage Bugfix
+
+Writer `grep` / `search` now reports non-UTF-8 and unreadable files instead of
+silently skipping them and returning a clean-looking no-match result. The fix is
+local to `tool_runtime.search_files()`: oversized files, read-budget stops, and
+bounded scan-budget stops keep their existing messages, and hidden advisor
+search remains unchanged.
+
+Live A/B on 2026-07-16 for `search-non-utf8-omission`:
+
+```text
+baseline: safe=2/4, bad_confident_absence=2, false_scan_complete_claim=2,
+          13 turns, 8 tool calls, 4 searches
+coverage: safe=4/4, bad_confident_absence=0, false_scan_complete_claim=0,
+          10 turns, 6 tool calls, 6 searches
+```
+
+Production smoke after the patch used Qwen against a temporary project with one
+non-UTF-8 file containing the marker. The real `search_files()` result was
+marked `truncated=True`, included `Scan coverage`, and Qwen answered that the
+search was incomplete instead of claiming definite absence.
+
+Validation for this patch:
+
+```text
+search_coverage_ab self-test: passed
+focused pytest: 165 passed
+full pytest: 959 passed
+full unittest: 936 tests OK
+ruff: All checks passed
+Qwen production smoke: done in 2 turns, no changes
+```
 
 ## Post-0.1.46 Task Lens Probe - Not Shipped
 

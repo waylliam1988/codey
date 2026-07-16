@@ -9,3 +9,4 @@ __pycache__/
 .zoom-project-map-ab*.json
 .scan-coverage-ab*.json
 .task-lens-ab*.json
+.search-coverage-ab*.json

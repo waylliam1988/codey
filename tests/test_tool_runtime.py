@@ -267,6 +267,106 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIn("truncated after 2 matches", outcome.output)
         self.assertIn("narrow the query", outcome.output)
 
+    def test_search_reports_non_utf8_files_as_incomplete(self) -> None:
+        marker = "RARE_NON_UTF8_SEARCH_MARKER"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text(
+                "def healthcheck():\n    return True\n",
+                encoding="utf-8",
+            )
+            (root / "binary.dat").write_bytes(b"\xff\xfe\x00" + marker.encode("ascii"))
+
+            outcome = tool_runtime.search_files(root, ".", marker)
+
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.truncated)
+        self.assertIn("no literal matches", outcome.output)
+        self.assertIn("Scan coverage:", outcome.output)
+        self.assertIn("search skipped 1 non-UTF-8 file", outcome.output)
+        self.assertIn("omitted files may contain more matches", outcome.output)
+        self.assertNotIn(marker, outcome.output)
+
+    def test_search_reports_read_text_errors_as_incomplete(self) -> None:
+        original_read_text = Path.read_text
+
+        def read_text(path: Path, *args, **kwargs) -> str:
+            if path.name == "unreadable.py":
+                raise OSError("synthetic unreadable file")
+            return original_read_text(path, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text(
+                "def healthcheck():\n    return True\n",
+                encoding="utf-8",
+            )
+            (root / "unreadable.py").write_text("target_marker\n", encoding="utf-8")
+
+            with mock.patch.object(Path, "read_text", read_text):
+                outcome = tool_runtime.search_files(root, ".", "target_marker")
+
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.truncated)
+        self.assertIn("no literal matches", outcome.output)
+        self.assertIn("Scan coverage:", outcome.output)
+        self.assertIn(
+            "search could not read metadata or contents for 1 file",
+            outcome.output,
+        )
+        self.assertNotIn("target_marker", outcome.output)
+
+    def test_search_reports_stat_errors_as_incomplete(self) -> None:
+        original_stat = Path.stat
+
+        def stat(path: Path, *args, **kwargs):
+            if path.name == "stat_unreadable.py":
+                import traceback
+
+                caller = traceback.extract_stack(limit=2)[0].name
+                if caller == "search_files":
+                    raise OSError("synthetic stat failure")
+            return original_stat(path, *args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text(
+                "def healthcheck():\n    return True\n",
+                encoding="utf-8",
+            )
+            (root / "stat_unreadable.py").write_text("target_marker\n", encoding="utf-8")
+
+            with mock.patch.object(Path, "stat", stat):
+                outcome = tool_runtime.search_files(root, ".", "target_marker")
+
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.truncated)
+        self.assertIn("no literal matches", outcome.output)
+        self.assertIn("Scan coverage:", outcome.output)
+        self.assertIn(
+            "search could not read metadata or contents for 1 file",
+            outcome.output,
+        )
+        self.assertNotIn("target_marker", outcome.output)
+
+    def test_search_does_not_duplicate_coverage_for_existing_oversized_and_budget_notes(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "huge.py").write_text("x" * 33, encoding="utf-8")
+            with mock.patch("codey.tool_runtime.SEARCH_MAX_FILE_BYTES", 32):
+                oversized = tool_runtime.search_files(root, "huge.py", "target")
+
+            (root / "a.py").write_text("pass\n", encoding="utf-8")
+            (root / "b.py").write_text("pass\n", encoding="utf-8")
+            (root / "c.py").write_text("target\n", encoding="utf-8")
+            with mock.patch("codey.tool_runtime.SEARCH_MAX_SCAN_FILES", 2):
+                budget = tool_runtime.search_files(root, ".", "target")
+
+        self.assertIn("skipped 1 file(s) larger than 32 bytes", oversized.output)
+        self.assertNotIn("Scan coverage:", oversized.output)
+        self.assertIn("search scan stopped after 2 files", budget.output)
+        self.assertNotIn("Scan coverage:", budget.output)
+
     def test_writing_identical_content_is_not_a_change(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
