@@ -8,3 +8,4 @@ __pycache__/
 .scoped-task-plan-ab*.json
 .zoom-project-map-ab*.json
 .scan-coverage-ab*.json
+.task-lens-ab*.json

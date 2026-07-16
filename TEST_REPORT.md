@@ -1,5 +1,40 @@
 # Codey 0.1.46 Test Report
 
+## Post-0.1.46 Task Lens Probe - Not Shipped
+
+A probe-only `task_lens_ab.py` benchmark was added to test whether a compact
+Coverage-aware Task Lens should replace the production task-aware Project Map
+navigation block. The `current` arm is the 0.1.46 production
+`render_project_map(..., task=task)` output; the `lens` arm replaces Focused
+subtree / Symbol overview with a short Task Lens prototype.
+
+Live file-pick A/B on 2026-07-16 across DeepSeek, MiMo, Qwen, and GLM showed no
+navigation lift because the production Focused subtree was already saturated:
+
+```text
+current: 16 rows, 32 path hits, 16 test hits, 16 top1 path hits
+lens:    16 rows, 32 path hits, 16 test hits, 16 top1 path hits
+prompt:  lens was 560 total characters shorter
+```
+
+Live read-only agent A/B across Qwen, MiMo, and GLM on two unnamed deep cases
+each showed a regression:
+
+```text
+current: 6/6 correct, 6/6 first-read hits, 18 tool calls, 0 searches, 19 turns
+lens:    5/6 correct, 6/6 first-read hits, 24 tool calls, 1 search, 19 turns
+```
+
+DeepSeek read-only hit a provider `rate_limited` send failure and was excluded
+from the paired readonly aggregate. GLM's failed lens case had already read the
+right files, then stopped without valid tool progress, so it was recorded as a
+real lens-arm protocol/navigation regression rather than a DOM blockage.
+
+Decision: keep Task Lens as a manual regression probe only. Do not change
+production Project Map output without a stronger fixture or live result that
+beats the 0.1.46 Focused subtree baseline on first-read hits, correctness, or
+tool count.
+
 ## 0.1.46 Coverage-Aware References
 
 `find_references` now exposes Writer-facing scan coverage when the bounded

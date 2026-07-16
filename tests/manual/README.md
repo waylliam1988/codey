@@ -57,6 +57,41 @@ the compatibility check is whether the `Focused subtree` section recovers deep
 targets while the full Project Map remains under the bounded map character
 budget.
 
+`task_lens_ab.py` is a probe-only benchmark for a possible Coverage-aware Task
+Lens. It compares the current production `render_project_map(..., task=task)`
+against a prototype that replaces Focused subtree / Symbol overview with a
+short `Task Lens` block. It supports a cheap first-file selection mode and a
+read-only agent navigation mode:
+
+```powershell
+python -B tests\manual\task_lens_ab.py `
+  --provider qwen `
+  --mode pick `
+  --max-cases 4 `
+  --output .task-lens-ab.pick.qwen.json
+
+python -B tests\manual\task_lens_ab.py `
+  --provider qwen `
+  --mode readonly `
+  --max-cases 2 `
+  --output .task-lens-ab.readonly.qwen.json
+```
+
+Use this before changing production Project Map output. The `current` arm must
+remain the current production Project Map, not the older legacy map from
+`zoom_project_map_ab.py`.
+
+2026-07-16 live result: do not ship this Task Lens prototype yet. In file-pick
+mode across DeepSeek, MiMo, Qwen, and GLM, both arms were already saturated:
+`current` and `lens` each reached 16/16 top1 path hits, 32 path hits, and 16
+test hits. The lens arm reduced prompt text by only 560 total characters. In
+read-only mode across Qwen, MiMo, and GLM on two unnamed deep cases each,
+`current` completed 6/6 correctly with 18 tool calls, while `lens` completed
+5/6 correctly with 24 tool calls and one extra search. DeepSeek's read-only run
+hit a provider `rate_limited` send failure and was excluded from the paired
+readonly aggregate. The result supports keeping this as a regression probe
+instead of changing production Project Map output.
+
 `qwen_submit_probe.py` is a narrow live diagnostic for Qwen submit/readiness
 issues:
 
