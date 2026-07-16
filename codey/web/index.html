@@ -380,6 +380,7 @@
   .tool-line .tl-arrow { color: var(--faint); }
   .tool-line .tl-result { color: var(--text-dim); }
   .tool-line .tl-result.err { color: var(--err-text); }
+  .tool-line.pending .tl-result { color: var(--muted); }
   .tool-line.compact { grid-template-columns: 1fr auto auto; }
   .msg.tool { margin: 0; }
   .msg.tool + .msg.tool { margin-top: 0; }
@@ -1552,6 +1553,7 @@ const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);
 function toolRowEl(m, compact) {
   const row = document.createElement('div');
   row.className = 'tool-line' + (compact ? ' compact' : '');
+  if (m.pending) row.classList.add('pending');
   if (!compact) {
     const dot = document.createElement('span'); dot.className = 'tl-dot'; dot.textContent = '·';
     const kind = document.createElement('span'); kind.className = 'tl-kind'; kind.textContent = m.kind || '';
@@ -1559,7 +1561,7 @@ function toolRowEl(m, compact) {
   }
   const path = document.createElement('span'); path.className = 'tl-path'; path.textContent = m.path || '';
   const arrow = document.createElement('span'); arrow.className = 'tl-arrow'; arrow.textContent = '→';
-  const result = document.createElement('span'); result.className = 'tl-result' + (m.error ? ' err' : ''); result.textContent = m.result || '';
+  const result = document.createElement('span'); result.className = 'tl-result' + (m.error ? ' err' : ''); result.textContent = m.pending ? (m.activity || m.result || 'Working') : (m.result || '');
   row.append(path, arrow, result);
   return row;
 }
@@ -1593,7 +1595,7 @@ function createToolGroup(kind) {
 function standaloneToolEl(m) {
   const div = document.createElement('div');
   div.className = 'msg tool';
-  if (FOLDABLE_TOOL_KINDS.has(m.kind) && !m.error) {
+  if (FOLDABLE_TOOL_KINDS.has(m.kind) && !m.error && !m.pending) {
     div.dataset.foldkind = m.kind;
     div.dataset.toolPath = m.path || '';
     div.dataset.toolResult = m.result || '';
@@ -1670,6 +1672,8 @@ function appendMessageNode(chat, m) {
     } else {
       chat.appendChild(standaloneToolEl(m));
     }
+  } else if (m.type === 'tool_pending') {
+    chat.appendChild(standaloneToolEl(m));
   } else if (m.type === 'done') {
     const action = m.project && m.changed ? {
       label: 'View diff',
@@ -2036,15 +2040,45 @@ function handleServerEvent(data) {
     addToSession(sid, { type: 'turn', n: data.turn || 0, runId });
     return;
   }
-  if (data.type === 'tool') {
+  if (data.type === 'tool_started') {
+    const rawToolId = (data.tool_id || '').toString();
+    const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
+    const s = sessions.find(x => x.id === sid);
+    if (s && toolKey && s.messages.some(item => item.toolKey === toolKey)) return;
     addToSession(sid, {
+      type: 'tool_pending',
+      toolKey,
+      eventKey: toolKey ? `tool:${toolKey}:start` : '',
+      kind: data.kind || '',
+      path: data.path || '',
+      activity: (data.activity || '').toString().slice(0, 200),
+      pending: true,
+      runId,
+    });
+    return;
+  }
+  if (data.type === 'tool') {
+    const rawToolId = (data.tool_id || '').toString();
+    const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
+    const message = {
       type: 'tool',
+      toolKey,
+      eventKey: toolKey ? `tool:${toolKey}:final` : '',
       kind: data.kind || '',
       path: data.path || '',
       result: (data.result || '').toString().slice(0, 200),
       error: !!data.error,
       runId,
-    });
+    };
+    if (
+      toolKey &&
+      replaceSessionMessage(
+        sid,
+        item => item.type === 'tool_pending' && item.toolKey === toolKey,
+        message,
+      )
+    ) return;
+    addToSession(sid, message);
     return;
   }
   if (data.type === 'info') {
@@ -2267,6 +2301,18 @@ function addToSession(sid, m) {
   s.messages.push(m);
   persistActive();
   if (sid === activeId) { appendMessageNode($('chat'), m); scrollChat(); }
+  return true;
+}
+
+function replaceSessionMessage(sid, predicate, message) {
+  const s = sessions.find(x => x.id === sid);
+  if (!s) return false;
+  if (message.eventKey && s.messages.some(item => item.eventKey === message.eventKey)) return false;
+  const index = s.messages.findIndex(predicate);
+  if (index < 0) return false;
+  s.messages[index] = message;
+  persistActive();
+  if (sid === activeId) { renderChat(); scrollChat(); }
   return true;
 }
 

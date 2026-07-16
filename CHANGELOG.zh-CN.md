@@ -4,6 +4,16 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.49 - Tool Start 可见性
+
+- UX：Agent 工具现在会在本地执行开始前发出轻量 `tool_started` 事件。
+  Web UI 会先显示安静的 pending 工具行，例如 `read app.py -> Reading app.py`，
+  工具完成后再替换成最终结果。
+- 设计：生产工具执行仍然保持串行和可观察。pending 行复用现有单色
+  `.tool-line` 样式；不加入 spinner、progress 系统、并发 runner 或 ToolSpec registry。
+- 安全：`tool_started` 只服务 UI/CLI 可见性，不计入 execution evidence、
+  reviewer recent log，也不参与任务完成进度判断。
+
 ## 0.1.48 - 工具函数注入和并行 Probe
 
 - 改进：Agent runtime 现在支持显式 `AgentToolFns` 注入，测试和手工 probe 可以替换

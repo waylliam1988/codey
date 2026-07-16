@@ -4,6 +4,18 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.49 - Tool Start Visibility
+
+- UX: Agent tools now emit a lightweight `tool_started` event before local
+  execution begins. The web UI shows a quiet pending tool line such as
+  `read app.py -> Reading app.py`, then replaces it with the final tool result.
+- Design: production tool execution remains serial and observable. The pending
+  line reuses the existing monochrome `.tool-line` style; there is no spinner,
+  progress system, parallel runner, or ToolSpec registry.
+- Safety: `tool_started` events are UI/CLI visibility only and do not count as
+  execution evidence, reviewer recent-log facts, or progress toward task
+  completion.
+
 ## 0.1.48 - Tool Function Injection and Parallel Probe
 
 - Improvement: Agent runtime now supports explicit `AgentToolFns` injection, so

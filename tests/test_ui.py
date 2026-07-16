@@ -164,6 +164,45 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("if (data.type === 'log')", HTML)
         self.assertNotIn("function handleLog", HTML)
 
+    def test_tool_start_pending_row_is_replaced_by_final_tool(self) -> None:
+        self.assertIn(".tool-line.pending .tl-result", HTML)
+        self.assertIn("if (m.pending) row.classList.add('pending');", HTML)
+        self.assertIn(
+            "result.textContent = m.pending ? (m.activity || m.result || 'Working') : (m.result || '');",
+            HTML,
+        )
+
+        pending_render_start = HTML.index("} else if (m.type === 'tool_pending') {")
+        pending_render_end = HTML.index("} else if (m.type === 'done') {", pending_render_start)
+        pending_render_block = HTML[pending_render_start:pending_render_end]
+        self.assertIn("chat.appendChild(standaloneToolEl(m));", pending_render_block)
+
+        started_start = HTML.index("if (data.type === 'tool_started')")
+        started_end = HTML.index("if (data.type === 'tool')", started_start)
+        started_block = HTML[started_start:started_end]
+        self.assertIn("const rawToolId = (data.tool_id || '').toString();", started_block)
+        self.assertIn("const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';", started_block)
+        self.assertIn("s.messages.some(item => item.toolKey === toolKey)", started_block)
+        self.assertIn("type: 'tool_pending'", started_block)
+        self.assertIn("pending: true", started_block)
+        self.assertIn("activity: (data.activity || '').toString().slice(0, 200)", started_block)
+
+        final_start = HTML.index("if (data.type === 'tool')", started_end)
+        final_end = HTML.index("if (data.type === 'info')", final_start)
+        final_block = HTML[final_start:final_end]
+        self.assertIn("const rawToolId = (data.tool_id || '').toString();", final_block)
+        self.assertIn("const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';", final_block)
+        self.assertIn("replaceSessionMessage(", final_block)
+        self.assertIn("item => item.type === 'tool_pending' && item.toolKey === toolKey", final_block)
+        self.assertIn("addToSession(sid, message);", final_block)
+
+        replace_start = HTML.index("function replaceSessionMessage")
+        replace_end = HTML.index("function markTerminalRun", replace_start)
+        replace_block = HTML[replace_start:replace_end]
+        self.assertIn("const index = s.messages.findIndex(predicate);", replace_block)
+        self.assertIn("s.messages[index] = message;", replace_block)
+        self.assertIn("renderChat(); scrollChat();", replace_block)
+
     def test_send_failures_render_inline_error(self) -> None:
         self.assertIn("function addSendError(sessionId, eventKey = '', runId = '')", HTML)
         self.assertIn("Could not send the message", HTML)

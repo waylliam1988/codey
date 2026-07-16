@@ -223,14 +223,16 @@ class TaskRunner:
                 pass
 
         def on_event(event: RunEvent) -> None:
+            payload = self._ui_event(run_id, session_id, event)
+            if payload is not None:
+                state.emit(payload)
+            if event.kind == "tool_start":
+                return
             evidence.record(event)
             message = render_run_event(event)
             recent_events.append(message)
             if len(recent_events) > self.review_log_lines * 2:
                 del recent_events[:self.review_log_lines]
-            payload = self._ui_event(run_id, session_id, event)
-            if payload is not None:
-                state.emit(payload)
             if (
                 project
                 and self.project_facts is not None
@@ -1081,15 +1083,30 @@ class TaskRunner:
             if names:
                 text = f"{text}: {names}"
             return {"type": "info", "run_id": run_id, "session_id": session_id, "text": text}
+        if event.kind == "tool_start" and event.call is not None:
+            path = str(event.call.args.get("path") or "")
+            tool_index = int(event.metadata.get("tool_index") or 0)
+            return {
+                "type": "tool_started",
+                "run_id": run_id,
+                "session_id": session_id,
+                "turn": event.turn,
+                "tool_id": f"{event.turn}:{tool_index}",
+                "kind": event.call.name,
+                "path": "" if path == "." else path,
+                "activity": event.message,
+            }
         if event.kind != "tool" or event.call is None or event.outcome is None:
             return None
         path = str(event.call.args.get("path") or "")
         result = event.outcome.first_line(200)
+        tool_index = int(event.metadata.get("tool_index") or 0)
         return {
             "type": "tool",
             "run_id": run_id,
             "session_id": session_id,
             "turn": event.turn,
+            "tool_id": f"{event.turn}:{tool_index}",
             "kind": event.call.name,
             "path": "" if path == "." else path,
             "result": result,

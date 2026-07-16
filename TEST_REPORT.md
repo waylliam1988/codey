@@ -1,4 +1,28 @@
-# Codey 0.1.48 Test Report
+# Codey 0.1.49 Test Report
+
+## 0.1.49 Tool Start Visibility
+
+Agent tools now emit a lightweight `tool_started` event immediately before
+local execution begins. The web UI renders that event as a pending `.tool-line`
+and replaces it with the final `tool` event by matching `tool_id`.
+
+This preserves Codey's serial execution model: no production read-only
+concurrency, no progress framework, and no ToolSpec registry were added.
+`tool_started` is UI/CLI visibility only; `TaskRunner` deliberately skips it
+for execution evidence, reviewer recent logs, project facts, and checkpoint
+updates.
+
+Validation for this patch:
+
+```text
+ruff: All checks passed
+ui static pytest: 41 passed
+focused pytest: 216 passed
+full pytest: 971 passed, 67 subtests passed
+live provider smoke: MiMo/Qwen read_files+parallel passed;
+  MiMo read_files had one transient timeout after a complete ordered tool
+  trace, then passed on retry with a longer provider timeout
+```
 
 ## 0.1.48 Tool Function Injection and Parallel Probe
 

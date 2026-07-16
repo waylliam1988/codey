@@ -918,8 +918,13 @@ class SessionThreadingTests(unittest.TestCase):
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
+        tool_started = next(event for event in emitted if event["type"] == "tool_started")
         tool = next(event for event in emitted if event["type"] == "tool")
         done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(tool_started["kind"], "read")
+        self.assertEqual(tool_started["path"], "empty.txt")
+        self.assertEqual(tool_started["activity"], "Reading empty.txt")
+        self.assertEqual(tool_started["tool_id"], tool["tool_id"])
         self.assertEqual(tool["result"], "")
         self.assertEqual(done["stop_reason"], "done")
         self.assertFalse(any(event["type"] == "log" for event in emitted))

@@ -127,6 +127,33 @@ def _call_arg(call: ToolCall, name: str, default: str = "") -> str:
     return str(value)
 
 
+def _clip_activity(value: str, limit: int = 80) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
+
+
+def _agent_tool_activity(call: ToolCall) -> str:
+    path = _call_arg(call, "path", ".")
+    if call.name == "read":
+        return f"Reading {path}"
+    if call.name == "ls":
+        return f"Listing {path}"
+    if call.name == "search":
+        query = _clip_activity(_call_arg(call, "query"))
+        return f"Searching {path} for {query}" if query else f"Searching {path}"
+    if call.name == "references":
+        symbol = _clip_activity(_call_arg(call, "symbol"))
+        return f"Finding references for {symbol}" if symbol else "Finding references"
+    if call.name == "edit":
+        return f"Writing {path}" if _edit_has_content(call) else f"Editing {path}"
+    if call.name == "run":
+        command = _clip_activity(_call_arg(call, "command"))
+        return f"Running {command}" if command else "Running command"
+    return f"Using {call.name}"
+
+
 def _edit_blocks_from_call(call: ToolCall) -> list[EditBlock]:
     replacements = call.args.get("replacements")
     if not isinstance(replacements, list):
@@ -402,11 +429,15 @@ def run(
         results: list[ToolResult] = []
         made_progress = False
 
-        def record_tool_outcome(call: ToolCall, outcome: ToolOutcome) -> None:
+        def record_tool_outcome(
+            call: ToolCall,
+            outcome: ToolOutcome,
+            tool_index: int,
+        ) -> None:
             nonlocal made_progress
             path = _call_arg(call, "path", ".")
             out = outcome.output
-            emit(RunEvent.tool_finished(turn, call, outcome))
+            emit(RunEvent.tool_finished(turn, call, outcome, index=tool_index))
             results.append(
                 ToolResult(call=call, output=out, truncated=outcome.truncated)
             )
@@ -419,9 +450,16 @@ def run(
                     seen_info.add(sig)
                     made_progress = True
 
-        for call in calls:
+        for tool_index, call in enumerate(calls):
             path = _call_arg(call, "path", ".")
             try:
+                if call.name != "shell":
+                    emit(RunEvent.tool_started(
+                        turn,
+                        call,
+                        _agent_tool_activity(call),
+                        index=tool_index,
+                    ))
                 if call.name == "edit":
                     if _edit_has_content(call):
                         canonical = _canonical_project_path(project, path)
@@ -501,7 +539,7 @@ def run(
                 raise
             except Exception as exc:
                 outcome = ToolOutcome.error(str(exc))
-            record_tool_outcome(call, outcome)
+            record_tool_outcome(call, outcome, tool_index)
         if conversation is not None:
             conversation.update_snapshot(snapshot(control.body if control else ""))
 

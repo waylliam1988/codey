@@ -24,13 +24,36 @@ class RunEvent:
         return cls("turn", turn=turn, reply=reply, note=note)
 
     @classmethod
+    def tool_started(
+        cls,
+        turn: int,
+        call: ToolCall,
+        activity: str,
+        index: int = 0,
+    ) -> RunEvent:
+        return cls(
+            "tool_start",
+            turn=turn,
+            call=call,
+            message=activity,
+            metadata={"tool_index": index},
+        )
+
+    @classmethod
     def tool_finished(
         cls,
         turn: int,
         call: ToolCall,
         outcome: ToolOutcome,
+        index: int = 0,
     ) -> RunEvent:
-        return cls("tool", turn=turn, call=call, outcome=outcome)
+        return cls(
+            "tool",
+            turn=turn,
+            call=call,
+            outcome=outcome,
+            metadata={"tool_index": index},
+        )
 
     @classmethod
     def info(cls, message: str, **metadata: object) -> RunEvent:
@@ -45,6 +68,10 @@ def render_run_event(event: RunEvent) -> str:
     if event.kind == "turn":
         suffix = f" {event.note}" if event.note else ""
         return f"\n--- turn {event.turn} reply{suffix} ---\n{event.reply}\n"
+    if event.kind == "tool_start" and event.call is not None:
+        path = str(event.call.args.get("path") or "")
+        label = path if path != "." else ""
+        return f"  · {event.call.name} {label} -> {event.message}"
     if event.kind == "tool" and event.call is not None and event.outcome is not None:
         path = str(event.call.args.get("path") or "")
         label = path if path != "." else ""

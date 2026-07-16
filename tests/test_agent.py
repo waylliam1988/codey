@@ -673,11 +673,22 @@ class RunLoopTests(unittest.TestCase):
 
         self.assertEqual(result.stop_reason, "done")
         self.assertFalse(result.changed)
-        run_events = [event for event in events if event.kind in {"turn", "tool"}]
-        self.assertEqual([event.kind for event in run_events], ["turn", "tool", "turn"])
+        run_events = [
+            event
+            for event in events
+            if event.kind in {"turn", "tool_start", "tool"}
+        ]
+        self.assertEqual(
+            [event.kind for event in run_events],
+            ["turn", "tool_start", "tool", "turn"],
+        )
         self.assertEqual(run_events[1].call.name, "read")
-        self.assertTrue(run_events[1].outcome.ok)
-        self.assertEqual(run_events[1].outcome.output, "VALUE = 1\n")
+        self.assertEqual(run_events[1].message, "Reading app.py")
+        self.assertEqual(run_events[1].metadata["tool_index"], 0)
+        self.assertEqual(run_events[2].call.name, "read")
+        self.assertEqual(run_events[2].metadata["tool_index"], 0)
+        self.assertTrue(run_events[2].outcome.ok)
+        self.assertEqual(run_events[2].outcome.output, "VALUE = 1\n")
 
     def test_references_tool_returns_navigation_before_done(self) -> None:
         provider = FakeProvider(
@@ -1366,11 +1377,29 @@ class RunLoopTests(unittest.TestCase):
             )
 
         tool_events = [event for event in events if event.kind == "tool"]
+        tool_lifecycle = [
+            (event.kind, event.call.args["path"])
+            for event in events
+            if event.kind in {"tool_start", "tool"}
+        ]
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(seen, list(paths))
         self.assertEqual(
             [event.call.args["path"] for event in tool_events],
             list(paths),
+        )
+        self.assertEqual(
+            tool_lifecycle,
+            [
+                ("tool_start", "a.py"),
+                ("tool", "a.py"),
+                ("tool_start", "b.py"),
+                ("tool", "b.py"),
+                ("tool_start", "c.py"),
+                ("tool", "c.py"),
+                ("tool_start", "d.py"),
+                ("tool", "d.py"),
+            ],
         )
 
     def test_same_turn_read_flushes_before_existing_file_edit(self) -> None:
