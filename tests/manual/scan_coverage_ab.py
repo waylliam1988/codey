@@ -1,10 +1,11 @@
 """Live A/B for references coverage hints.
 
-This probe does not change production behavior. The coverage arm monkeypatches
-the Writer's find_references tool result to append a short omission note when
-the bounded lexical reference scan skipped oversized candidate files. The goal
-is to measure whether live web providers avoid a confident "no references"
-answer when the local scan was incomplete.
+The baseline arm reconstructs the old low-level find_reference_hints output
+without Writer coverage rendering. The coverage arm monkeypatches the Writer's
+find_references tool result to append a short omission note when the bounded
+lexical reference scan skipped oversized candidate files. The goal is to
+measure whether live web providers avoid a confident "no references" answer
+when the local scan was incomplete.
 """
 
 from __future__ import annotations
@@ -22,19 +23,15 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey import agent, provider_controls
-from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
-from codey.references import REFERENCE_EXCLUDED_DIRS, REFERENCE_MAX_FILE_BYTES
+from codey.references import find_reference_hints
+from codey.scan_report import render_scan_coverage
 from codey.tool_runtime import ToolOutcome, safe_join
 
 
 ARMS = ("baseline", "coverage")
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-scan-coverage-ab.json"
-MAX_NOTE_EXAMPLES = 3
-MAX_NOTE_SCAN_FILES = 1_200
-MAX_NOTE_SCAN_DIRS = 300
-MAX_NOTE_DIR_ENTRIES = 1_000
 OVERSIZED_SOURCE_MARKER = "LEGACY_PROCESS_PAYMENT_CALL"
 
 
@@ -95,93 +92,57 @@ def _write_project(root: Path) -> None:
     )
 
 
-def _relative(root: Path, path: Path) -> str:
-    try:
-        return path.relative_to(root).as_posix()
-    except ValueError:
-        return ""
-
-
-def _reference_coverage_note(root: Path, rel: str) -> tuple[str, int, tuple[str, ...]]:
+def _reference_scan_outcome(
+    root: Path,
+    rel: str,
+    symbol: str,
+    *,
+    expose_coverage: bool,
+) -> tuple[ToolOutcome, int, tuple[str, ...]]:
     try:
         start = safe_join(root, rel or ".")
     except ValueError:
-        return "", 0, ()
+        return ToolOutcome.error(f"path escapes project root: {rel}"), 0, ()
     if not start.exists():
-        return "", 0, ()
-    resolved_root = root.resolve()
+        return ToolOutcome.error(f"path not found: {rel}"), 0, ()
     try:
-        skip_start_if_excluded = start.resolve() != resolved_root
-    except OSError:
-        skip_start_if_excluded = True
-    budget = BoundedScanBudget(
-        max_files=MAX_NOTE_SCAN_FILES,
-        max_dirs=MAX_NOTE_SCAN_DIRS,
-        max_dir_entries=MAX_NOTE_DIR_ENTRIES,
-    )
-    oversized = 0
-    examples: list[str] = []
-    for path in iter_bounded_files(
-        start,
-        excluded_dirs=REFERENCE_EXCLUDED_DIRS,
-        budget=budget,
-        skip_start_if_excluded=skip_start_if_excluded,
-    ):
-        try:
-            size = path.stat().st_size
-        except OSError:
-            continue
-        if size <= REFERENCE_MAX_FILE_BYTES:
-            continue
-        oversized += 1
-        if len(examples) < MAX_NOTE_EXAMPLES:
-            rel_path = _relative(resolved_root, path)
-            if rel_path:
-                examples.append(rel_path)
-    if oversized <= 0 and not budget.limited:
-        return "", 0, ()
-    lines = ["Scan coverage:"]
-    if oversized:
-        plural = "file" if oversized == 1 else "files"
-        lines.append(
-            f"- reference scan skipped {oversized} oversized {plural} over "
-            f"{REFERENCE_MAX_FILE_BYTES} bytes; omitted files may contain more references"
-        )
-        if examples:
-            lines.append(f"- skipped path examples: {', '.join(examples)}")
-    if budget.limited:
-        lines.append(budget.stop_message("reference coverage scan"))
-    return "\n".join(lines), oversized, tuple(examples)
+        scan = find_reference_hints(root, start, symbol)
+    except ValueError as exc:
+        return ToolOutcome.error(str(exc)), 0, ()
+    report = scan.report
+    coverage = render_scan_coverage(report) if report is not None else ""
+    output = f"{scan.output}\n{coverage}" if expose_coverage and coverage else scan.output
+    incomplete = bool(report and report.incomplete)
+    outcome = ToolOutcome(output, True, truncated=scan.truncated or (expose_coverage and incomplete))
+    oversized = report.oversized if report is not None else 0
+    examples = tuple(report.oversized_examples) if report is not None else ()
+    return outcome, oversized, examples
 
 
 class _CoverageReferencesProbe:
     def __init__(self, *, arm: str) -> None:
         self.arm = arm
-        self.original = agent.find_references
         self.generated_notes = 0
         self.exposed_notes = 0
         self.oversized_files = 0
         self.examples: tuple[str, ...] = ()
 
     def __call__(self, root: Path, rel: str, symbol: str) -> ToolOutcome:
-        outcome = self.original(root, rel, symbol)
+        outcome, oversized, examples = _reference_scan_outcome(
+            root,
+            rel,
+            symbol,
+            expose_coverage=self.arm == "coverage",
+        )
         if not outcome.ok:
             return outcome
-        note, oversized, examples = _reference_coverage_note(root, rel)
-        if note:
+        if oversized:
             self.generated_notes += 1
             self.oversized_files = max(self.oversized_files, oversized)
             self.examples = examples
-        if self.arm != "coverage" or not note:
-            return outcome
-        self.exposed_notes += 1
-        return ToolOutcome(
-            output=f"{outcome.output}\n{note}",
-            ok=outcome.ok,
-            exit_code=outcome.exit_code,
-            changed=outcome.changed,
-            truncated=True,
-        )
+        if self.arm == "coverage" and oversized:
+            self.exposed_notes += 1
+        return outcome
 
 
 def _summary_flags(summary: str) -> dict[str, bool]:
@@ -506,12 +467,17 @@ def run_self_test() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         _write_project(root)
-        note, oversized, examples = _reference_coverage_note(root, ".")
-        assert "Scan coverage:" in note, note
-        assert "oversized" in note, note
+        outcome, oversized, examples = _reference_scan_outcome(
+            root,
+            ".",
+            "process_payment",
+            expose_coverage=True,
+        )
+        assert "Scan coverage:" in outcome.output, outcome.output
+        assert "oversized" in outcome.output, outcome.output
         assert oversized == 1, oversized
         assert examples == ("legacy/z_legacy_batch.py",), examples
-        assert OVERSIZED_SOURCE_MARKER not in note, note
+        assert OVERSIZED_SOURCE_MARKER not in outcome.output, outcome.output
 
         probe = _CoverageReferencesProbe(arm="coverage")
         original = agent.find_references

@@ -15,13 +15,36 @@ class ScanCoverageABTests(unittest.TestCase):
             root = Path(td)
             scan_coverage_ab._write_project(root)
 
-            note, oversized, examples = scan_coverage_ab._reference_coverage_note(root, ".")
+            outcome, oversized, examples = scan_coverage_ab._reference_scan_outcome(
+                root,
+                ".",
+                "process_payment",
+                expose_coverage=True,
+            )
 
-        self.assertIn("Scan coverage:", note)
-        self.assertIn("oversized", note)
+        self.assertIn("Scan coverage:", outcome.output)
+        self.assertIn("oversized", outcome.output)
         self.assertEqual(oversized, 1)
         self.assertEqual(examples, ("legacy/z_legacy_batch.py",))
-        self.assertNotIn(scan_coverage_ab.OVERSIZED_SOURCE_MARKER, note)
+        self.assertNotIn(scan_coverage_ab.OVERSIZED_SOURCE_MARKER, outcome.output)
+
+    def test_reference_baseline_does_not_expose_production_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            scan_coverage_ab._write_project(root)
+
+            outcome, oversized, examples = scan_coverage_ab._reference_scan_outcome(
+                root,
+                ".",
+                "process_payment",
+                expose_coverage=False,
+            )
+
+        self.assertTrue(outcome.ok)
+        self.assertFalse(outcome.truncated)
+        self.assertEqual(oversized, 1)
+        self.assertEqual(examples, ("legacy/z_legacy_batch.py",))
+        self.assertNotIn("Scan coverage:", outcome.output)
 
     def test_coverage_probe_appends_note_and_marks_result_truncated(self) -> None:
         with tempfile.TemporaryDirectory() as td:

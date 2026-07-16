@@ -4,6 +4,23 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.46 - Coverage-aware References
+
+`find_references` 现在会说明有边界的文本引用扫描跳过了哪些可能仍包含引用的文件。
+底层引用扫描器只收集紧凑的 `ScanReport` 事实：oversized 文件、不可读文件、
+非 UTF-8 文件；不会暴露这些文件的源码内容。Writer 可见的工具层会把这些事实渲染成
+很短的 `Scan coverage` 提示，并把工具结果标记为 truncated，让 JSON 工具协议继续提醒
+模型不要把省略内容当成安全或干净。
+
+这是一个刻意收窄的 production slice。隐藏 project-audit advisor 仍然使用旧的低层
+reference 输出；Project Map、Verification Map、持久索引、缓存层和 ScanPolicy profile
+都没有扩张。手工 scan-coverage A/B probe 现在会重建旧的低层 baseline，并和生产 Writer
+coverage renderer 对比。
+
+DeepSeek、MiMo、Qwen 和 GLM 的实机 A/B 已确认这个行为。GLM 的旧 baseline 仍会误称扫描完整，
+并给出自信的 unused 结论；coverage arm 会明确指出跳过的 oversized 文件，并产出安全的
+“扫描不完整，不能确定”回答。
+
 ## 0.1.45 - Provider Adapter 自修复
 
 当网页变化大到 Provider adapter 代码本身也失效，并且控件级恢复和 Flow 级恢复都不够时，

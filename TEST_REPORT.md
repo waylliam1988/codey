@@ -1,4 +1,52 @@
-# Codey 0.1.45 Test Report
+# Codey 0.1.46 Test Report
+
+## 0.1.46 Coverage-Aware References
+
+`find_references` now exposes Writer-facing scan coverage when the bounded
+reference scan skips files that may contain additional references. The low-level
+reference scanner collects `ScanReport` facts without rendering them, so hidden
+project-audit advisors keep their previous output. The Writer tool wrapper
+renders a short coverage note and marks the tool result as truncated, reusing
+the existing JSON protocol warning for omitted content.
+
+Covered cases:
+
+- oversized files are counted and reported with at most three path examples;
+- skipped oversized files do not leak source bodies;
+- non-UTF-8 files and unreadable files are recorded as incomplete scan facts;
+- low-level `find_reference_hints` output remains unchanged for advisor paths;
+- hidden project-audit references do not render Writer coverage;
+- the scan-coverage A/B baseline reconstructs the old low-level output so the
+  probe stays meaningful after production coverage is enabled.
+
+Live scan-coverage A/B rerun on 2026-07-16, one provider at a time against Edge
+CDP on port 9222:
+
+```text
+DeepSeek baseline: safe, 2 turns, 1 tool, 0 search
+DeepSeek coverage: safe, 2 turns, 1 tool, 0 search
+
+MiMo baseline: safe, 4 turns, 3 tools, 1 search
+MiMo coverage: safe, 3 turns, 2 tools, 1 search
+
+Qwen baseline: safe, 3 turns, 2 tools, 1 search
+Qwen coverage: safe, 2 turns, 1 tool, 0 search
+
+GLM baseline: unsafe; bad_confident_absence=true,
+              false_scan_complete_claim=true
+GLM coverage: safe; incomplete scan and skipped oversized file were explicit
+```
+
+Validation for the final pre-commit state:
+
+```text
+Focused coverage/advisor/unit tests: 98 tests OK
+Full unittest: 926 tests OK
+Full pytest: 944 passed
+Ruff: All checks passed
+scan_coverage_ab self-test: passed
+git diff --check: passed
+```
 
 ## 0.1.45 Provider Adapter Self-Repair
 

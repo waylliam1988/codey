@@ -276,6 +276,33 @@ class ConsensusTests(unittest.TestCase):
         self.assertIn("call server.py:2", advisor.sent[1])
         self.assertIn("lexical scan, not semantic resolution", advisor.sent[1])
 
+    def test_project_audit_references_do_not_render_writer_scan_coverage(self) -> None:
+        advisor = FakeProvider([
+            '{"tool":"find_references","args":{"symbol":"create_app","path":"."}}',
+            '{"tool":"done","args":{"summary":"review only"}}',
+        ])
+
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, "app.py").write_text(
+                "def create_app():\n    return object()\n",
+                encoding="utf-8",
+            )
+            Path(td, "legacy.py").write_text(
+                "# padding\n" * 60_000 + "create_app()\n",
+                encoding="utf-8",
+            )
+            consensus.run_project_audit_advisor(
+                advisor,
+                td,
+                "Review this project for bugs",
+            )
+
+        self.assertIn("[tool_result tool=find_references path=.]", advisor.sent[1])
+        self.assertIn("definition app.py:1", advisor.sent[1])
+        self.assertNotIn("Scan coverage:", advisor.sent[1])
+        self.assertNotIn("truncated=true", advisor.sent[1])
+        self.assertNotIn("legacy.py", advisor.sent[1])
+
     def test_project_audit_rejects_write_tools(self) -> None:
         advisor = FakeProvider([
             '{"tool":"edit","args":{"path":"app.py","content":"bad"}}',

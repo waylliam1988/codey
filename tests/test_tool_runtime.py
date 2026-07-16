@@ -462,8 +462,90 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(outcome.truncated)
         self.assertIn("references truncated after 80 matches", outcome.output)
         self.assertNotIn("node_modules", outcome.output)
-        self.assertNotIn("bad.py", outcome.output)
+        self.assertIn("Scan coverage:", outcome.output)
+        self.assertIn("skipped 1 non-UTF-8 file", outcome.output)
+        self.assertIn("bad.py", outcome.output)
         self.assertNotIn("z_over.py", outcome.output)
+
+    def test_writer_find_references_reports_oversized_files_as_incomplete(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            Path(root, "payments.py").write_text(
+                "def process_payment(order):\n    return order\n",
+                encoding="utf-8",
+            )
+            Path(root, "legacy.py").write_text(
+                "# padding\n" * 60_000
+                + "from payments import process_payment\n"
+                + "process_payment({})\n",
+                encoding="utf-8",
+            )
+
+            outcome = find_references(root, ".", "process_payment")
+
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.truncated)
+        self.assertIn("definition payments.py:1", outcome.output)
+        self.assertIn("Scan coverage:", outcome.output)
+        self.assertIn("skipped 1 oversized file over 512 KiB", outcome.output)
+        self.assertIn("oversized path examples: legacy.py", outcome.output)
+        self.assertNotIn("from payments import process_payment", outcome.output)
+
+    def test_low_level_reference_hints_report_omissions_without_rendering_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            Path(root, "payments.py").write_text(
+                "def process_payment(order):\n    return order\n",
+                encoding="utf-8",
+            )
+            Path(root, "legacy.py").write_text(
+                "# padding\n" * 60_000 + "process_payment({})\n",
+                encoding="utf-8",
+            )
+
+            scan = find_reference_hints(root, root, "process_payment")
+
+        self.assertFalse(scan.truncated)
+        self.assertIsNotNone(scan.report)
+        self.assertTrue(scan.report.incomplete)
+        self.assertEqual(scan.report.oversized_examples, ["legacy.py"])
+        self.assertNotIn("Scan coverage:", scan.output)
+
+    def test_reference_report_records_unreadable_files_without_chmod(self) -> None:
+        class UnreadablePath:
+            def __init__(self, root: Path) -> None:
+                self._root = root
+
+            def relative_to(self, root: Path) -> Path:
+                if root != self._root:
+                    raise ValueError
+                return Path("unreadable.py")
+
+            def is_file(self) -> bool:
+                return True
+
+            def stat(self):
+                raise OSError("stat failed")
+
+            def read_text(self, *, encoding: str) -> str:
+                raise AssertionError("read_text should not be called after stat failure")
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            scan = find_reference_hints(
+                root,
+                root,
+                "target_symbol",
+                files=(UnreadablePath(root),),
+                files_budgeted=True,
+            )
+
+        self.assertFalse(scan.truncated)
+        self.assertIsNotNone(scan.report)
+        self.assertTrue(scan.report.incomplete)
+        self.assertEqual(scan.report.unreadable, 1)
+        self.assertEqual(scan.report.unreadable_examples, ["unreadable.py"])
+        self.assertNotIn("Scan coverage:", scan.output)
 
     def test_find_references_skips_direct_excluded_start_directory(self) -> None:
         with tempfile.TemporaryDirectory() as td:

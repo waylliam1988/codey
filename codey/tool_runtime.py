@@ -20,6 +20,7 @@ from codey.bounded_scan import (
     iter_bounded_files,
 )
 from codey.references import find_reference_hints
+from codey.scan_report import render_scan_coverage
 from codey.text_budget import clip_middle, prune_dependency_stack_frames
 
 
@@ -792,7 +793,10 @@ def find_references(root: Path, rel: str, symbol: str) -> ToolOutcome:
         scan = find_reference_hints(root, start, symbol)
     except ValueError as exc:
         return ToolOutcome.error(str(exc))
-    return ToolOutcome(scan.output, True, truncated=scan.truncated)
+    coverage = render_scan_coverage(scan.report) if scan.report is not None else ""
+    output = f"{scan.output}\n{coverage}" if coverage else scan.output
+    incomplete = bool(scan.report and scan.report.incomplete)
+    return ToolOutcome(output, True, truncated=scan.truncated or incomplete)
 
 
 def _raw_path_symlink_reason(root: Path, rel: str, *, tool: str) -> str:

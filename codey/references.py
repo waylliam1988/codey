@@ -19,6 +19,7 @@ from codey.bounded_scan import (
     iter_bounded_files,
     iter_provided_files,
 )
+from codey.scan_report import ScanReport
 
 REFERENCE_MAX_RESULTS = 80
 REFERENCE_MAX_FILE_BYTES = 512 * 1024
@@ -48,6 +49,7 @@ IDENTIFIER_CHARS = r"A-Za-z0-9_$"
 class ReferenceScan:
     output: str
     truncated: bool = False
+    report: ScanReport | None = None
 
 
 def validate_symbol(symbol: object) -> str:
@@ -93,16 +95,33 @@ def find_reference_hints(
     pattern = _symbol_pattern(clean_symbol)
     rows: list[str] = []
     truncated = False
+    report = ScanReport("reference scan", size_limit_bytes=REFERENCE_MAX_FILE_BYTES)
 
     for path in candidates:
-        try:
-            if not path.is_file() or path.stat().st_size > REFERENCE_MAX_FILE_BYTES:
-                continue
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
         rel = _relative(root, path)
         if not rel:
+            continue
+        try:
+            if not path.is_file():
+                continue
+        except OSError:
+            report.add_unreadable(rel)
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:
+            report.add_unreadable(rel)
+            continue
+        if size > REFERENCE_MAX_FILE_BYTES:
+            report.add_oversized(rel)
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            report.add_decode_failed(rel)
+            continue
+        except OSError:
+            report.add_unreadable(rel)
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):
             if not pattern.search(line):
@@ -130,7 +149,7 @@ def find_reference_hints(
             output.append(f"- references truncated after {max_results} matches")
         if budget.limited:
             output.append(budget.stop_message("reference scan"))
-    return ReferenceScan("\n".join(output), truncated)
+    return ReferenceScan("\n".join(output), truncated, report)
 
 
 def _symbol_pattern(symbol: str) -> re.Pattern[str]:

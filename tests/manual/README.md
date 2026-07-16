@@ -241,8 +241,9 @@ python -B tests\manual\verification_review_ab.py `
 
 It is review-only and never opens or changes a local project.
 
-`scan_coverage_ab.py` compares current `find_references` output with a
-probe-only coverage note when the bounded reference scan skips oversized files:
+`scan_coverage_ab.py` compares the old low-level `find_reference_hints` output
+with Writer's production coverage rendering when the bounded reference scan
+skips oversized files:
 
 ```powershell
 python -B tests\manual\scan_coverage_ab.py `
@@ -253,7 +254,10 @@ python -B tests\manual\scan_coverage_ab.py `
 Use `--provider all` to run the same baseline/coverage arms across DeepSeek,
 MiMo, Qwen, and GLM. The fixture is temporary, read-only, and the coverage arm
 does not expose skipped file contents; it only reports skipped path examples
-and omission reasons.
+and omission reasons. The baseline arm reconstructs the old low-level
+`find_reference_hints` output without Writer coverage rendering, so the probe
+remains a real A/B after production `find_references` starts exposing scan
+coverage.
 
 The scorer records `protocol_success` separately from `semantic_safe` so a
 provider can be credited for the right conclusion even when its JSON tool call
@@ -274,4 +278,5 @@ is malformed. It also flags two coverage-specific failure modes:
 
 The result supports a narrow `ScanReport` slice for `find_references`: the
 main value is reducing false certainty when bounded scans skip files, not raw
-speed. Keep this probe-only until production output changes are implemented.
+speed. The probe remains useful as a regression check for the production Writer
+coverage output.

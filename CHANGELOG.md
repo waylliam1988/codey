@@ -4,6 +4,26 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.46 - Coverage-Aware References
+
+`find_references` now reports when its bounded lexical scan skipped files that
+could still contain references. The low-level reference scanner records compact
+`ScanReport` facts for oversized files, unreadable files, and non-UTF-8 files
+without exposing file contents. The Writer-facing tool renders those facts as a
+short `Scan coverage` note and marks the tool result as truncated so the JSON
+tool protocol also warns models not to treat omitted content as clean.
+
+This is intentionally a narrow production slice. Hidden project-audit advisors
+still receive the old low-level reference output, and Project Map, Verification
+Map, persistent indexes, cache layers, and ScanPolicy profiles remain unchanged.
+The manual scan-coverage A/B probe now reconstructs the old low-level baseline
+and compares it with the production Writer coverage renderer.
+
+Live A/B across DeepSeek, MiMo, Qwen, and GLM confirmed the intended behavior.
+GLM's old baseline still made a false complete-scan claim and a confident
+unused conclusion; the coverage arm made the skipped oversized file explicit
+and produced a safe incomplete-scan answer.
+
 ## 0.1.45 - Provider Adapter Self-Repair
 
 Codey can now attempt a bounded background repair when a web provider adapter
