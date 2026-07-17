@@ -39,7 +39,7 @@ from codey.review_coordinator import ReviewCoordinator, change_state
 from codey.shell_risk import classify_shell_risk
 from codey.verification_map import render_verification_map
 from codey.verification_policy import (
-    check_matches_candidate,
+    check_covers_selected_candidate,
     select_verification_candidate,
 )
 from codey.work_checkpoint import (
@@ -928,10 +928,11 @@ class TaskRunner:
                     )
                     if selected_check is not None and evidence.observed_tool_events:
                         relevant_green = any(
-                            check_matches_candidate(
+                            check_covers_selected_candidate(
                                 selected_check,
                                 item.command,
                                 item.cwd,
+                                files,
                             )
                             for item in evidence.successful_checks
                         )

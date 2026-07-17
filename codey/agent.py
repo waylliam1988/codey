@@ -35,7 +35,7 @@ from codey.tool_runtime import (
 )
 from codey.verification_policy import (
     VerificationCandidate,
-    check_matches_candidate,
+    check_covers_selected_candidate,
     select_verification_candidate,
 )
 
@@ -600,7 +600,12 @@ def run(
                 )
                 trusted_green = candidate is not None and any(
                     epoch == edit_epoch
-                    and check_matches_candidate(candidate, command, cwd)
+                    and check_covers_selected_candidate(
+                        candidate,
+                        command,
+                        cwd,
+                        tuple(verification_paths),
+                    )
                     for command, cwd, epoch in successful_verifications
                 )
                 if candidate is not None:

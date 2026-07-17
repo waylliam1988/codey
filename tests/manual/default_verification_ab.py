@@ -21,7 +21,7 @@ from codey.project_map import render_project_map
 from codey.providers.registry import connect_provider, provider_ids
 from codey.verification_policy import (
     VerificationCandidate,
-    check_matches_candidate,
+    check_covers_selected_candidate,
     discover_verification_candidates,
     select_verification_candidate,
 )
@@ -193,10 +193,11 @@ def _run_arm(provider, case: Case, arm: str, max_turns: int) -> dict[str, Any]:
         event
         for event in runs_after_edit
         if selected is not None
-        and check_matches_candidate(
+        and check_covers_selected_candidate(
             selected,
             str(event.call.args.get("command") or ""),
             str(event.call.args.get("path") or "."),
+            changed or case.expected_changes,
         )
     ]
     selected_passed = any(

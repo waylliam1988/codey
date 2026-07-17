@@ -1,5 +1,49 @@
 # Codey Test Report
 
+## 0.1.54 Trusted Verification Discovery
+
+Codey now discovers a wider set of trusted verification commands that were
+already permitted by the local `run` tool, without adding UI, shell permissions,
+automatic installs, or automatic execution behavior.
+
+Production changes:
+
+- `verification_policy.py` now discovers package scripts selected via
+  `packageManager`, current-directory lockfiles, or the nearest parent lockfile;
+  `[tool.pytest.ini_options]`; `tests/` unittest discovery; `ruff`/`mypy`
+  configs; and simple safe Makefile targets.
+- Verification selection now includes a command priority so discovering more
+  safe checks does not make common projects ambiguous. Package/Python ecosystem
+  checks outrank Makefile fallbacks, and build commands remain lowest priority.
+- Task receipt verification now accepts successful same-family full-suite
+  checks that cover the changed files, while still rejecting scoped or unrelated
+  green commands such as `pytest tests/old.py` or `py_compile other.py` in place
+  of a selected pytest/unittest check.
+- Follow-up review fixes aligned the Agent default verification gate with the
+  same full-suite replacement policy, recognized `bun test` as a Bun test-family
+  command without requiring a package script, and prevented Makefile variable
+  assignments such as `check := ...` from being discovered as targets.
+- The same-family replacement rule is intentionally conservative: full-suite
+  commands such as `python -m pytest` may satisfy a discovered unittest
+  candidate, but scoped commands such as `python -m pytest tests/old.py` do not
+  claim coverage for unrelated changed source files. Pytest replacement only
+  allows a small output/verbosity flag whitelist; selection and exclusion flags
+  such as `--ignore`, `-k`, `-m`, and `--collect-only` are not treated as
+  full-suite verification. Manual default-verification A/B accounting uses the
+  same helper.
+
+Validation:
+
+```text
+python -B -m unittest tests.test_verification_policy: 35 tests OK
+python -B -m unittest tests.test_shell_followup tests.test_work_checkpoint_flow: 27 tests OK
+python -B -m unittest tests.test_agent tests.test_tool_runtime tests.test_project_task_context tests.test_server: 258 tests OK
+python -B tests\manual\default_verification_ab.py --self-test: passed
+python -B -m py_compile codey\agent.py codey\verification_policy.py codey\task_runner.py tests\test_agent.py tests\test_verification_policy.py tests\test_work_checkpoint_flow.py tests\manual\default_verification_ab.py: passed
+python -B -m pytest -q: 1064 tests OK, 111 subtests OK
+git diff --check: passed
+```
+
 ## Post-0.1.53 Impact Guard Probe - Not Shipped
 
 `tests/manual/impact_guard_ab.py` was added as a probe-only A/B harness for a

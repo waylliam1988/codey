@@ -1712,6 +1712,56 @@ class RunLoopTests(unittest.TestCase):
         self.assertTrue(result.checks_passed)
         self.assertFalse(any("trusted local check" in prompt for prompt in provider.sent))
 
+    def test_scoped_pytest_does_not_satisfy_default_unittest_candidate(self) -> None:
+        candidate = agent.VerificationCandidate("python -m unittest discover")
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"src/app.py"}}',
+            '{"tool":"edit","args":{"path":"src/app.py","old_string":"return 1","new_string":"return 2"}}',
+            '{"tool":"run","args":{"command":"python -m pytest tests/old.py","path":"."}}',
+            '{"tool":"done","args":{"summary":"checked"}}',
+            '{"tool":"run","args":{"command":"python -m unittest discover","path":"."}}',
+            '{"tool":"done","args":{"summary":"checked with suite"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "src").mkdir()
+            (root / "tests").mkdir()
+            (root / "src" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "tests" / "__init__.py").write_text("", encoding="utf-8")
+            (root / "src" / "app.py").write_text(
+                "def value():\n    return 1\n",
+                encoding="utf-8",
+            )
+            (root / "tests" / "test_app.py").write_text(
+                "from src.app import value\n\n"
+                "import unittest\n\n"
+                "class AppTests(unittest.TestCase):\n"
+                "    def test_value(self):\n"
+                "        self.assertEqual(value(), 2)\n",
+                encoding="utf-8",
+            )
+            (root / "tests" / "old.py").write_text(
+                "def test_value():\n"
+                "    assert True\n",
+                encoding="utf-8",
+            )
+
+            result = agent.run(
+                provider,
+                root,
+                "update app",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                verification_candidates=(candidate,),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertTrue(result.checks_passed)
+        self.assertEqual(
+            sum("trusted local check" in prompt for prompt in provider.sent),
+            1,
+        )
+
     def test_default_verification_does_not_repeat_after_failure(self) -> None:
         candidate = agent.VerificationCandidate("python -m py_compile app.py")
         provider = FakeProvider(

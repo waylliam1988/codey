@@ -574,7 +574,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 ))
                 on_event(RunEvent.tool_finished(
                     3,
-                    ToolCall("run", {"path": ".", "command": "python -m pytest tests/test_auth.py"}),
+                    ToolCall("run", {"path": ".", "command": "python -m pytest"}),
                     ToolOutcome("ok", True, exit_code=0),
                 ))
                 return RunResult("finished", "done", 3, True, True, True)
@@ -604,15 +604,15 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "Observed successful checks after the latest edit:\n",
                 1,
             )[1].split("Broader check candidates", 1)[0]
-            self.assertIn("python -m pytest tests/test_auth.py", observed)
+            self.assertIn("python -m pytest", observed)
             self.assertNotIn("python -m pytest tests/old.py", observed)
             self.assertIn("Latest edit epoch: 1", execution)
-            self.assertIn("python -m pytest tests/test_auth.py", execution)
+            self.assertIn("python -m pytest", execution)
             self.assertNotIn("python -m pytest tests/old.py", execution)
             facts = state.project_facts.load(project)
             self.assertEqual(
                 facts.successful_changes[-1].checks,
-                ("python -m pytest tests/test_auth.py",),
+                ("python -m pytest",),
             )
 
     def test_verification_map_failure_does_not_block_review(self) -> None:

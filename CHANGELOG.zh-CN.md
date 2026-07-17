@@ -4,6 +4,17 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.54 - 可信验证发现增强
+
+- 可靠性：改完代码后的可信验证发现现在能识别更多本来就已被本地 `run`
+  工具允许的安全检查，包括按 `packageManager`/lockfile 选择的 package
+  scripts、`pytest` 配置、`tests/` unittest discovery、`ruff`/`mypy` 配置，
+  以及简单安全的 Makefile target。
+- 选择策略：completion 阶段的验证候选现在有一层很小的命令优先级，避免发现
+  `test`、`typecheck`、`lint`、`build` 和 Makefile target 后让常见项目变成
+  ambiguous。更具体的生态命令会优先于 Makefile fallback。
+- 安全：没有 UI 改动，没有自动安装，没有扩大 shell 权限，也没有新增自动执行行为。
+
 ## 0.1.53 - CDP 浏览器预热
 
 - UX：启动 UI 后会排队执行一次 best-effort 浏览器预热；当没有任何 provider

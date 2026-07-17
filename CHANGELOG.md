@@ -4,6 +4,20 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.54 - Trusted Verification Discovery
+
+- Reliability: trusted post-edit verification discovery now recognizes more
+  safe project checks that were already permitted by the local `run` tool,
+  including package-manager scripts selected from `packageManager`/lockfiles,
+  `pytest` config, `tests/` unittest discovery, `ruff`/`mypy` config, and simple
+  safe Makefile targets.
+- Selection: completion-time verification candidates now use a small command
+  priority so discovering `test`, `typecheck`, `lint`, `build`, and Makefile
+  targets does not make common projects ambiguous. More specific ecosystem
+  checks beat Makefile fallbacks.
+- Safety: no UI changes, no automatic installs, no shell permission expansion,
+  and no automatic execution behavior were added.
+
 ## 0.1.53 - CDP Browser Warmup
 
 - UX: launching the UI now schedules a best-effort browser warmup that prepares
