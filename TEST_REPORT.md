@@ -1,6 +1,43 @@
 # Codey Test Report
 
-## Unreleased Provider Send Loop Consolidation
+## 0.1.53 CDP Browser Warmup
+
+Codey UI startup now schedules a best-effort provider browser warmup on the
+shared browser worker. The warmup prepares the durable Codey-controlled CDP
+browser and opens DeepSeek, Qwen, MiMo, and GLM provider pages when no provider
+tab is already visible.
+
+Safety boundaries for this patch:
+
+- No login-state check.
+- No test message is sent.
+- No UI changes or onboarding flow changes.
+- Provider availability exposed to the UI still goes through provider supervisor
+  health filtering.
+- Warmup reuses remembered Codey CDP ports only; it does not reuse unrelated
+  external CDP browsers.
+- Warmup uses short best-effort timeouts and closes failed blank tabs while
+  keeping slow provider pages that reached the target URL.
+
+Validation for this patch:
+
+```text
+focused pytest: 135 passed, 3 subtests passed
+full pytest: 1040 passed, 106 subtests passed
+ruff: All checks passed
+git diff --check: passed
+```
+
+Live smoke on 2026-07-17:
+
+```text
+no Edge / no CDP: warmup opened DeepSeek, Qwen, MiMo, and GLM provider pages
+existing Codey CDP with about:blank: warmup opened all four provider pages
+ordinary Edge about:blank without CDP: warmup started Codey CDP and opened all four provider pages
+existing provider pages: warmup returned existing statuses and did not duplicate tabs
+```
+
+## 0.1.52 Provider Send Loop Consolidation
 
 This patch adds `provider_send_loop.py`, a small shared helper module for web
 provider send-loop lifecycle concerns: response-watch lifetime, response

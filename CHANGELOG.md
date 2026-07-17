@@ -4,6 +4,18 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.53 - CDP Browser Warmup
+
+- UX: launching the UI now schedules a best-effort browser warmup that prepares
+  the Codey-controlled CDP browser and opens DeepSeek, Qwen, MiMo, and GLM tabs
+  when no provider tab is already visible.
+- Safety: warmup does not check login state, send test messages, change UI, or
+  bypass provider supervisor health filtering. Existing provider tabs are reused
+  and no duplicate provider pages are opened.
+- Reliability: warmup runs on the shared browser worker with short timeouts,
+  avoids reusing unrelated external CDP browsers, keeps slow provider pages when
+  they reached the target URL, and closes failed blank warmup tabs.
+
 ## 0.1.52 - Provider Send Loop Consolidation
 
 - Maintainability: added shared provider send-loop helpers for response-watch

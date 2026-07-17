@@ -56,6 +56,7 @@ from codey.providers import (
     connect_existing_provider,
     connect_provider,
     provider_tab_availability,
+    warm_provider_tabs,
 )
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
 from codey.provider_supervisor import ProviderSupervisor
@@ -102,7 +103,10 @@ def review_label(provider_id: str) -> str:
 
 
 def provider_availability() -> dict[str, bool]:
-    statuses = provider_tab_availability()
+    return provider_availability_from_statuses(provider_tab_availability())
+
+
+def provider_availability_from_statuses(statuses: dict[str, bool]) -> dict[str, bool]:
     supervisor = getattr(globals().get("STATE"), "provider_supervisor", None)
     if supervisor is None:
         return statuses
@@ -126,6 +130,19 @@ def provider_status_update(provider_id: str, available: bool) -> list[dict]:
         "label": PROVIDER_LABELS.get(provider_id, provider_id),
         "available": available,
     }]
+
+
+def _run_provider_warmup(runner=warm_provider_tabs) -> None:
+    try:
+        raw_statuses = runner()
+        statuses = provider_availability_from_statuses(raw_statuses)
+        STATE.emit({"type": "providers", "providers": provider_payload(statuses)})
+    except Exception:
+        pass
+
+
+def _start_provider_warmup(runner=warm_provider_tabs) -> None:
+    submit_browser_task(_run_provider_warmup, runner)
 
 
 def _emit_review(session_id: str, text: str) -> None:
@@ -1400,6 +1417,7 @@ def serve(host: str = "127.0.0.1", port: int = 5173) -> None:
             pass
 
     threading.Thread(target=_run_httpd, daemon=True).start()
+    _start_provider_warmup()
 
     def _run_webview() -> None:
         import webview

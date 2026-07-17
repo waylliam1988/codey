@@ -11,6 +11,7 @@ from codey.browser import (
     DEFAULT_PROFILE,
     PROVIDER_URL_CONTAINS,
     detect_open_provider_tabs,
+    warm_provider_tabs as browser_warm_provider_tabs,
 )
 from codey.providers.base import ChatProvider
 from codey.providers.deepseek_web import DeepSeekWebProvider
@@ -55,6 +56,15 @@ def provider_ids() -> tuple[str, ...]:
 
 def provider_tab_availability() -> dict[str, bool]:
     statuses = detect_open_provider_tabs()
+    return {provider_id: bool(statuses.get(provider_id)) for provider_id in PROVIDER_LABELS}
+
+
+def warm_provider_tabs(
+    *,
+    port: int = DEFAULT_PORT,
+    profile: Path = DEFAULT_PROFILE,
+) -> dict[str, bool]:
+    statuses = browser_warm_provider_tabs(port=port, profile=profile)
     return {provider_id: bool(statuses.get(provider_id)) for provider_id in PROVIDER_LABELS}
 
 

@@ -29,6 +29,9 @@ MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
 DEFAULT_PORT = 9222
 CDP_CONNECT_TIMEOUT_MS = 30_000
+WARMUP_CDP_CONNECT_TIMEOUT_MS = 8_000
+WARMUP_NAVIGATION_TIMEOUT_MS = 10_000
+WARMUP_PORT_TIMEOUT = 10.0
 EDGE_PROFILE = DEFAULT_STATE_HOME / "edge-profile"
 CHROME_PROFILE = DEFAULT_STATE_HOME / "chrome-profile"
 DEFAULT_PROFILE = EDGE_PROFILE
@@ -39,6 +42,12 @@ PROVIDER_URL_CONTAINS = {
     "qwen": "chat.qwen.ai",
     "mimo": "aistudio.xiaomimimo.com",
     "glm": "chatglm.cn",
+}
+PROVIDER_START_URLS = {
+    "deepseek": DEEPSEEK_URL,
+    "qwen": QWEN_URL,
+    "mimo": MIMO_URL,
+    "glm": GLM_URL,
 }
 
 EDGE_PATHS = [
@@ -232,6 +241,28 @@ def _find_existing_cdp_port(preferred: int = DEFAULT_PORT) -> int | None:
     return None
 
 
+def _remembered_cdp_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
+    ports: list[int] = []
+    if preferred == DEFAULT_PORT:
+        allowed_ports = set(CDP_PORT_CANDIDATES)
+    else:
+        allowed_ports = set(range(preferred, min(preferred + 9, 65536)))
+    for item in (_active_cdp_port, _load_saved_cdp_port()):
+        if item is None or item in ports:
+            continue
+        port = int(item)
+        if port in allowed_ports:
+            ports.append(port)
+    return tuple(ports)
+
+
+def _find_remembered_cdp_port(preferred: int = DEFAULT_PORT) -> int | None:
+    for cdp_port in _remembered_cdp_ports(preferred):
+        if _cdp_available(cdp_port):
+            return _remember_cdp_port(cdp_port)
+    return None
+
+
 def _find_free_cdp_port(preferred: int = DEFAULT_PORT) -> int:
     for cdp_port in _candidate_ports(preferred):
         if not _port_open(cdp_port):
@@ -281,6 +312,122 @@ def _ensure_cdp_endpoint(
     _launch_browser(cdp_port, profile, start_url)
     _wait_port(cdp_port)
     return CdpEndpoint(_remember_cdp_port(cdp_port))
+
+
+def _ensure_cdp_browser_endpoint(
+    *,
+    preferred: int,
+    profile: Path,
+    start_url: str,
+    open_if_missing: bool = True,
+    wait_timeout: float = 20.0,
+) -> CdpEndpoint:
+    existing = _find_remembered_cdp_port(preferred)
+    if existing is not None:
+        return CdpEndpoint(existing)
+
+    if not open_if_missing:
+        raise RuntimeError(f"CDP port {preferred} is not open")
+
+    cdp_port = _find_free_cdp_port(preferred)
+    process = _launch_browser(cdp_port, profile, start_url)
+    try:
+        _wait_port(cdp_port, timeout=wait_timeout)
+    except Exception:
+        _terminate_browser_process(process)
+        raise
+    return CdpEndpoint(_remember_cdp_port(cdp_port), process)
+
+
+def _page_urls(browser: Browser) -> tuple[str, ...]:
+    urls: list[str] = []
+    for ctx in browser.contexts:
+        for page in ctx.pages:
+            try:
+                urls.append(str(page.url or ""))
+            except Exception:
+                pass
+    return tuple(urls)
+
+
+def _has_provider_url(urls: tuple[str, ...], provider_id: str) -> bool:
+    marker = PROVIDER_URL_CONTAINS.get(provider_id)
+    return bool(marker) and any(marker in url for url in urls)
+
+
+def _close_failed_warmup_page(page: Page | None, provider_id: str) -> None:
+    if page is None:
+        return
+    marker = PROVIDER_URL_CONTAINS.get(provider_id)
+    try:
+        url = str(page.url or "")
+    except Exception:
+        url = ""
+    if marker and marker in url:
+        return
+    try:
+        page.close()
+    except Exception:
+        pass
+
+
+def warm_provider_tabs(
+    *,
+    port: int = DEFAULT_PORT,
+    profile: Path = DEFAULT_PROFILE,
+) -> dict[str, bool]:
+    """Best-effort provider tab warmup without login or readiness checks."""
+    statuses = detect_open_provider_tabs(port)
+    if any(statuses.values()):
+        return statuses
+
+    first_url = next(iter(PROVIDER_START_URLS.values()))
+    endpoint = _ensure_cdp_browser_endpoint(
+        preferred=port,
+        profile=profile,
+        start_url=first_url,
+        wait_timeout=WARMUP_PORT_TIMEOUT,
+    )
+
+    pw: Playwright | None = None
+    try:
+        pw = _start_playwright_with_retry()
+        browser = pw.chromium.connect_over_cdp(
+            f"http://127.0.0.1:{endpoint.port}",
+            timeout=WARMUP_CDP_CONNECT_TIMEOUT_MS,
+        )
+        _check_cancelled_connection(pw)
+        ctx = browser.contexts[0] if browser.contexts else browser.new_context()
+        urls = _page_urls(browser)
+
+        for provider_id, url in PROVIDER_START_URLS.items():
+            if _has_provider_url(urls, provider_id):
+                continue
+            page: Page | None = None
+            try:
+                page = ctx.new_page()
+                _check_cancelled_connection(pw)
+                page.goto(
+                    url,
+                    wait_until="domcontentloaded",
+                    timeout=WARMUP_NAVIGATION_TIMEOUT_MS,
+                )
+                urls = (*urls, str(page.url or url))
+            except cancellation.TaskCancelled:
+                _close_failed_warmup_page(page, provider_id)
+                raise
+            except Exception:
+                _close_failed_warmup_page(page, provider_id)
+                continue
+        _check_cancelled_connection(pw)
+    finally:
+        if pw is not None:
+            try:
+                pw.stop()
+            except Exception:
+                pass
+
+    return detect_open_provider_tabs(endpoint.port)
 
 
 @dataclass

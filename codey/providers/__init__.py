@@ -13,6 +13,7 @@ from codey.providers.registry import (
     connect_provider,
     provider_tab_availability,
     provider_ids,
+    warm_provider_tabs,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
     "connect_provider",
     "provider_tab_availability",
     "provider_ids",
+    "warm_provider_tabs",
 ]

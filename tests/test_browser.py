@@ -243,6 +243,30 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             self.assertEqual(browser._active_cdp_port, 9333)
         save.assert_called_once_with(9333)
 
+    def test_find_remembered_cdp_port_ignores_default_port_for_custom_preferred(self) -> None:
+        with (
+            mock.patch.object(browser, "_active_cdp_port", 9222),
+            mock.patch.object(browser, "_load_saved_cdp_port", return_value=None),
+            mock.patch.object(browser, "_cdp_available") as available,
+        ):
+            port = browser._find_remembered_cdp_port(9444)
+
+        self.assertIsNone(port)
+        available.assert_not_called()
+
+    def test_find_remembered_cdp_port_accepts_custom_preferred_family(self) -> None:
+        with (
+            mock.patch.object(browser, "_active_cdp_port", 9445),
+            mock.patch.object(browser, "_load_saved_cdp_port", return_value=None),
+            mock.patch.object(browser, "_cdp_available", return_value=True) as available,
+            mock.patch.object(browser, "_save_cdp_port") as save,
+        ):
+            port = browser._find_remembered_cdp_port(9444)
+
+        self.assertEqual(port, 9445)
+        available.assert_called_once_with(9445)
+        save.assert_called_once_with(9445)
+
     def test_find_cdp_port_with_target_scans_saved_port(self) -> None:
         def available(port: int) -> bool:
             return port == 9333
@@ -468,6 +492,235 @@ class BrowserProviderWrapperTests(unittest.TestCase):
 
         process.terminate.assert_called_once()
         process.wait.assert_called_once_with(timeout=2)
+
+    def test_ensure_cdp_browser_endpoint_reuses_existing_browser(self) -> None:
+        with (
+            mock.patch.object(browser, "_find_remembered_cdp_port", return_value=9333),
+            mock.patch.object(browser, "_launch_browser") as launch,
+        ):
+            endpoint = browser._ensure_cdp_browser_endpoint(
+                preferred=9222,
+                profile=Path("profile"),
+                start_url=browser.DEEPSEEK_URL,
+            )
+
+        self.assertEqual(endpoint.port, 9333)
+        self.assertIsNone(endpoint.process)
+        launch.assert_not_called()
+
+    def test_ensure_cdp_browser_endpoint_does_not_reuse_unremembered_cdp(self) -> None:
+        process = mock.Mock()
+        with (
+            mock.patch.object(browser, "_find_existing_cdp_port", return_value=9333) as find_existing,
+            mock.patch.object(browser, "_find_remembered_cdp_port", return_value=None),
+            mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
+            mock.patch.object(browser, "_launch_browser", return_value=process) as launch,
+            mock.patch.object(browser, "_wait_port"),
+            mock.patch.object(browser, "_remember_cdp_port", return_value=9444),
+        ):
+            endpoint = browser._ensure_cdp_browser_endpoint(
+                preferred=9222,
+                profile=Path("profile"),
+                start_url=browser.DEEPSEEK_URL,
+            )
+
+        self.assertEqual(endpoint, browser.CdpEndpoint(9444, process))
+        find_existing.assert_not_called()
+        launch.assert_called_once_with(9444, Path("profile"), browser.DEEPSEEK_URL)
+
+    def test_ensure_cdp_browser_endpoint_launches_browser_when_missing(self) -> None:
+        process = mock.Mock()
+        with (
+            mock.patch.object(browser, "_find_remembered_cdp_port", return_value=None),
+            mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
+            mock.patch.object(browser, "_launch_browser", return_value=process) as launch,
+            mock.patch.object(browser, "_wait_port") as wait_port,
+            mock.patch.object(browser, "_remember_cdp_port", return_value=9444) as remember,
+        ):
+            endpoint = browser._ensure_cdp_browser_endpoint(
+                preferred=9222,
+                profile=Path("profile"),
+                start_url=browser.DEEPSEEK_URL,
+            )
+
+        self.assertEqual(endpoint, browser.CdpEndpoint(9444, process))
+        launch.assert_called_once_with(9444, Path("profile"), browser.DEEPSEEK_URL)
+        wait_port.assert_called_once_with(9444, timeout=20.0)
+        remember.assert_called_once_with(9444)
+
+    def test_warm_provider_tabs_returns_existing_tabs_without_opening_pages(self) -> None:
+        statuses = {"deepseek": True, "mimo": False, "qwen": False, "glm": False}
+        with (
+            mock.patch.object(browser, "detect_open_provider_tabs", return_value=statuses),
+            mock.patch.object(browser, "_ensure_cdp_browser_endpoint") as ensure,
+            mock.patch.object(browser, "_start_playwright_with_retry") as start_pw,
+        ):
+            result = browser.warm_provider_tabs()
+
+        self.assertEqual(result, statuses)
+        ensure.assert_not_called()
+        start_pw.assert_not_called()
+
+    def test_warm_provider_tabs_opens_all_provider_pages_on_empty_existing_cdp(self) -> None:
+        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
+        final = {"deepseek": True, "mimo": True, "qwen": True, "glm": True}
+        pages = [mock.Mock(url=url) for url in browser.PROVIDER_START_URLS.values()]
+        ctx = mock.Mock(pages=[])
+        ctx.new_page.side_effect = pages
+        browser_obj = mock.Mock(contexts=[ctx])
+        pw = mock.Mock()
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+
+        with (
+            mock.patch.object(browser, "detect_open_provider_tabs", side_effect=[empty, final]),
+            mock.patch.object(
+                browser,
+                "_ensure_cdp_browser_endpoint",
+                return_value=browser.CdpEndpoint(9333),
+            ) as ensure,
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            result = browser.warm_provider_tabs()
+
+        self.assertEqual(result, final)
+        ensure.assert_called_once_with(
+            preferred=browser.DEFAULT_PORT,
+            profile=browser.DEFAULT_PROFILE,
+            start_url=browser.DEEPSEEK_URL,
+            wait_timeout=browser.WARMUP_PORT_TIMEOUT,
+        )
+        pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://127.0.0.1:9333",
+            timeout=browser.WARMUP_CDP_CONNECT_TIMEOUT_MS,
+        )
+        self.assertEqual(ctx.new_page.call_count, 4)
+        self.assertEqual(
+            [page.goto.call_args.args[0] for page in pages],
+            list(browser.PROVIDER_START_URLS.values()),
+        )
+        self.assertTrue(
+            all(
+                page.goto.call_args.kwargs["timeout"]
+                == browser.WARMUP_NAVIGATION_TIMEOUT_MS
+                for page in pages
+            )
+        )
+        pw.stop.assert_called_once_with()
+
+    def test_warm_provider_tabs_opens_first_provider_when_launch_page_is_not_visible(self) -> None:
+        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
+        final = {"deepseek": True, "mimo": True, "qwen": True, "glm": True}
+        pages = [mock.Mock(url=url) for url in browser.PROVIDER_START_URLS.values()]
+        ctx = mock.Mock(pages=[])
+        ctx.new_page.side_effect = pages
+        browser_obj = mock.Mock(contexts=[ctx])
+        pw = mock.Mock()
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+
+        with (
+            mock.patch.object(browser, "detect_open_provider_tabs", side_effect=[empty, final]),
+            mock.patch.object(
+                browser,
+                "_ensure_cdp_browser_endpoint",
+                return_value=browser.CdpEndpoint(9444, mock.Mock()),
+            ),
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            result = browser.warm_provider_tabs()
+
+        self.assertEqual(result, final)
+        self.assertEqual(ctx.new_page.call_count, 4)
+        self.assertEqual(
+            [page.goto.call_args.args[0] for page in pages],
+            list(browser.PROVIDER_START_URLS.values()),
+        )
+
+    def test_warm_provider_tabs_skips_launch_start_page_when_visible(self) -> None:
+        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
+        final = {"deepseek": True, "mimo": True, "qwen": True, "glm": True}
+        launch_page = mock.Mock(url=browser.DEEPSEEK_URL)
+        pages = [mock.Mock(url=url) for url in list(browser.PROVIDER_START_URLS.values())[1:]]
+        ctx = mock.Mock(pages=[launch_page])
+        ctx.new_page.side_effect = pages
+        browser_obj = mock.Mock(contexts=[ctx])
+        pw = mock.Mock()
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+
+        with (
+            mock.patch.object(browser, "detect_open_provider_tabs", side_effect=[empty, final]),
+            mock.patch.object(
+                browser,
+                "_ensure_cdp_browser_endpoint",
+                return_value=browser.CdpEndpoint(9444, mock.Mock()),
+            ),
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            result = browser.warm_provider_tabs()
+
+        self.assertEqual(result, final)
+        self.assertEqual(ctx.new_page.call_count, 3)
+        self.assertEqual(
+            [page.goto.call_args.args[0] for page in pages],
+            list(browser.PROVIDER_START_URLS.values())[1:],
+        )
+
+    def test_warm_provider_tabs_continues_when_one_provider_page_fails(self) -> None:
+        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
+        final = {"deepseek": True, "mimo": False, "qwen": True, "glm": True}
+        pages = [mock.Mock(url=url) for url in browser.PROVIDER_START_URLS.values()]
+        pages[1].url = "about:blank"
+        pages[1].goto.side_effect = RuntimeError("navigation failed")
+        ctx = mock.Mock(pages=[])
+        ctx.new_page.side_effect = pages
+        browser_obj = mock.Mock(contexts=[ctx])
+        pw = mock.Mock()
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+
+        with (
+            mock.patch.object(browser, "detect_open_provider_tabs", side_effect=[empty, final]),
+            mock.patch.object(
+                browser,
+                "_ensure_cdp_browser_endpoint",
+                return_value=browser.CdpEndpoint(9333),
+            ),
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            result = browser.warm_provider_tabs()
+
+        self.assertEqual(result, final)
+        self.assertEqual(ctx.new_page.call_count, 4)
+        self.assertEqual(pages[0].goto.call_count, 1)
+        pages[1].close.assert_called_once_with()
+        self.assertEqual(pages[2].goto.call_count, 1)
+        self.assertEqual(pages[3].goto.call_count, 1)
+
+    def test_warm_provider_tabs_keeps_slow_page_when_provider_url_is_reached(self) -> None:
+        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
+        final = {"deepseek": True, "mimo": True, "qwen": True, "glm": True}
+        pages = [mock.Mock(url=url) for url in browser.PROVIDER_START_URLS.values()]
+        pages[1].goto.side_effect = TimeoutError("domcontentloaded timed out")
+        ctx = mock.Mock(pages=[])
+        ctx.new_page.side_effect = pages
+        browser_obj = mock.Mock(contexts=[ctx])
+        pw = mock.Mock()
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+
+        with (
+            mock.patch.object(browser, "detect_open_provider_tabs", side_effect=[empty, final]),
+            mock.patch.object(
+                browser,
+                "_ensure_cdp_browser_endpoint",
+                return_value=browser.CdpEndpoint(9333),
+            ),
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            result = browser.warm_provider_tabs()
+
+        self.assertEqual(result, final)
+        self.assertEqual(ctx.new_page.call_count, 4)
+        pages[1].close.assert_not_called()
+        self.assertEqual(pages[2].goto.call_count, 1)
+        self.assertEqual(pages[3].goto.call_count, 1)
 
 
 class PlaywrightStartupTests(unittest.TestCase):

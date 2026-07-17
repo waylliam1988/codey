@@ -325,6 +325,62 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertNotIn("qwen", reviewers)
         self.assertIn("mimo", reviewers)
 
+    def test_provider_warmup_emits_filtered_provider_statuses(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            state.provider_supervisor.record_failure(
+                "qwen",
+                ProviderFailure(
+                    "Qwen",
+                    "send",
+                    "",
+                    "",
+                    "limited",
+                    "now",
+                    "rate_limited",
+                ),
+            )
+            events = state.subscribe()
+
+            with mock.patch.object(server, "STATE", state):
+                server._run_provider_warmup(
+                    runner=lambda: {
+                        "deepseek": True,
+                        "mimo": True,
+                        "qwen": True,
+                        "glm": False,
+                    }
+                )
+
+        event = events.get_nowait()
+        by_id = {item["id"]: item for item in event["providers"]}
+        self.assertEqual(event["type"], "providers")
+        self.assertTrue(by_id["deepseek"]["available"])
+        self.assertTrue(by_id["mimo"]["available"])
+        self.assertFalse(by_id["qwen"]["available"])
+        self.assertFalse(by_id["glm"]["available"])
+
+    def test_provider_warmup_failure_does_not_emit_or_raise(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+
+        def fail() -> dict[str, bool]:
+            raise RuntimeError("browser unavailable")
+
+        with mock.patch.object(server, "STATE", state):
+            server._run_provider_warmup(runner=fail)
+
+        self.assertTrue(events.empty())
+
+    def test_start_provider_warmup_uses_browser_worker(self) -> None:
+        runner = mock.Mock()
+
+        with mock.patch.object(server, "submit_browser_task") as submit:
+            result = server._start_provider_warmup(runner=runner)
+
+        self.assertIsNone(result)
+        submit.assert_called_once_with(server._run_provider_warmup, runner)
+
     def test_failover_order_prefers_open_tabs_then_registry_order(self) -> None:
         state = server.State()
         with mock.patch.object(
@@ -2503,6 +2559,7 @@ class UiLaunchTests(unittest.TestCase):
         with (
             mock.patch.dict("sys.modules", {"webview": fake_webview}),
             mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
+            mock.patch.object(server, "_start_provider_warmup") as warmup,
         ):
             httpd = mock.Mock()
             httpd.server_address = ("127.0.0.1", 43210)
@@ -2517,6 +2574,7 @@ class UiLaunchTests(unittest.TestCase):
 
         fake_webview.create_window.assert_called_once()
         fake_webview.start.assert_called_once()
+        warmup.assert_called_once_with()
         _, kwargs = fake_webview.start.call_args
         self.assertFalse(kwargs["private_mode"])
         self.assertEqual(kwargs["storage_path"], str(server.DEFAULT_STATE_HOME / "webview"))
@@ -2529,6 +2587,7 @@ class UiLaunchTests(unittest.TestCase):
         with (
             mock.patch.dict("sys.modules", {"webview": fake_webview}),
             mock.patch.object(server, "CodeyHTTPServer") as httpd_cls,
+            mock.patch.object(server, "_start_provider_warmup") as warmup,
             mock.patch.object(server, "_wait_for_manual_browser", side_effect=KeyboardInterrupt) as fallback,
             mock.patch("builtins.print") as printed,
         ):
@@ -2540,6 +2599,7 @@ class UiLaunchTests(unittest.TestCase):
 
         fake_webview.create_window.assert_called_once()
         fake_webview.start.assert_called_once()
+        warmup.assert_called_once_with()
         fallback.assert_called_once()
         self.assertEqual(fallback.call_args.args[0], "http://127.0.0.1:43210/")
         self.assertIn("missing webview runtime", str(fallback.call_args.args[1]))

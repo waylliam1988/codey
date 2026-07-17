@@ -4,6 +4,15 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.53 - CDP 浏览器预热
+
+- UX：启动 UI 后会排队执行一次 best-effort 浏览器预热；当没有任何 provider
+  标签页可见时，Codey 会准备受控 CDP 浏览器并打开 DeepSeek、Qwen、MiMo 和 GLM。
+- 安全：预热不会检查登录态、不会发送测试消息、不会改 UI，也不会绕过 provider
+  supervisor 的健康状态过滤。已有 provider 标签页会被复用，不会重复打开 provider 页面。
+- 可靠性：预热运行在统一 browser worker 上，使用较短超时，不复用无关外部 CDP
+  浏览器；慢加载但已到达目标 URL 的 provider 页会保留，失败的空白预热页会关闭。
+
 ## 0.1.52 - Provider Send Loop 收拢
 
 - 可维护性：新增共享的 provider send-loop 小原语，收拢 response watch 生命周期、
