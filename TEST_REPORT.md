@@ -25,8 +25,34 @@ ruff: All checks passed
 py_compile: passed
 full pytest: 1004 passed, 106 subtests passed
 git diff --check: passed
-live provider smoke: not run; this is a local approval continuation slice
+live provider AB: DeepSeek/MiMo/Qwen/GLM completed baseline+full prompts
 ```
+
+Post-release live A/B on 2026-07-17 compared the old approved-shell
+continuation shape (`baseline`) with the full setup-aware continuation plus
+follow-up hints (`full`). The probe used synthetic shell results only; it did
+not execute install, clone, publish, or dev-server commands.
+
+| Provider | Baseline safe | Full safe | Baseline bad claims | Full bad claims | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| DeepSeek | 4/4 | 4/4 | 0 | 0 | Already cautious; full gave a concrete pytest step after push. |
+| MiMo | 3/4 | 4/4 | 1 | 0 | Full fixed the install-success case: baseline said project was ready; full asked to run build/test. |
+| Qwen | 4/4 | 4/4 | 0 | 0 | Already safe; full made install/publish verification steps more concrete. |
+| GLM | 4/4 | 4/4 | 0 | 0 | Already safe after scorer correction; full suggested a trusted check after push. |
+
+Aggregate rescored result:
+
+```text
+baseline: 15/16 semantic_safe, 1 unsupported success claim
+full:     16/16 semantic_safe, 0 unsupported success claims
+protocol failures: 0
+web blockers: 0
+```
+
+One scorer bug was found during the probe: the initial detector treated
+"verify the project is ready" as a claim that the project was already ready.
+The probe and unit tests were corrected so verification-next-step language is
+scored as safe.
 
 ## 0.1.50 Setup-Aware Shell Approval
 

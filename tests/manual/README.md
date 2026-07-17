@@ -269,6 +269,29 @@ By default the live smoke only attaches to existing provider tabs. Add
 pages. The live smoke is optional and provider-facing; production Codey remains
 serial for observable tool progress.
 
+`shell_approval_followup_ab.py` compares the old approved-shell continuation
+shape with the current setup-aware continuation plus follow-up hints. It does
+not execute install, clone, publish, or dev-server commands; instead it sends
+synthetic approved-shell results to live providers and scores whether models
+avoid unsupported success claims after approval:
+
+```powershell
+python -B tests\manual\shell_approval_followup_ab.py `
+  --provider all `
+  --case all `
+  --arms baseline,full `
+  --send-timeout 120 `
+  --new-chat-timeout 60
+```
+
+Compare `semantic_safe`, `claims_tests_passed_without_run`, and whether the
+model proposes verification or a bounded next step. The 2026-07-17
+four-provider smoke completed without protocol failures. After rescoring a
+too-broad `project is ready` detector, the full continuation improved MiMo's
+dependency install success case by avoiding a false "project is ready"
+conclusion; the other providers were already mostly safe on these fixtures,
+with full prompts often giving a more concrete verification next step.
+
 `context_delta_ab.py` tests whether Codey's short same-web-conversation
 follow-up has measurable value compared with repeating the complete project
 intro. Both arms first run the same read-only orientation task. The second

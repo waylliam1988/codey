@@ -11,3 +11,4 @@ __pycache__/
 .task-lens-ab*.json
 .search-coverage-ab*.json
 .readonly-parallel-ab*.json
+.shell-approval-followup-ab*.json
