@@ -12,3 +12,4 @@ __pycache__/
 .search-coverage-ab*.json
 .readonly-parallel-ab*.json
 .shell-approval-followup-ab*.json
+tests/manual/results/impact_guard*.json

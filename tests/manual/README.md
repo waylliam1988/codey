@@ -214,6 +214,26 @@ Available cases are `python-function-rename`, `python-class-rename`,
 a shorter user-style rename request; the control case checks whether the hint
 causes a model to over-rename an external string contract.
 
+`impact_guard_ab.py` is a newer probe-only harness for a post-edit Impact Guard.
+The guard arm wraps `edit_file` only inside the script: after a changed
+definition is detected, it runs a bounded read-only lexical reference scan and
+appends a short `path:line` note marked as not coverage proof. It does not
+change production prompts, tools, UI, or verification behavior:
+
+```powershell
+python -B tests\manual\impact_guard_ab.py --self-test
+python -B tests\manual\impact_guard_ab.py `
+  --provider deepseek `
+  --case python-function-rename `
+  --case ts-exported-function-rename `
+  --out tests\manual\results\impact_guard_deepseek.json
+```
+
+The July 2026 live A/B found a strong TypeScript exported-function rename win,
+but Python rename was already handled by current production and the sample was
+too small. Keep this as a manual probe only; do not promote it to production
+without broader Python/refactor evidence and clean control cases.
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 

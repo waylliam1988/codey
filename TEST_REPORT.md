@@ -1,5 +1,45 @@
 # Codey Test Report
 
+## Post-0.1.53 Impact Guard Probe - Not Shipped
+
+`tests/manual/impact_guard_ab.py` was added as a probe-only A/B harness for a
+post-edit Impact Guard. The guard arm wraps `edit_file` only inside the manual
+script: after an edit changes a small set of function, class, export, or
+constant definitions, it runs a bounded read-only lexical reference scan and
+appends a short `path:line` note to the edit result. The note always says it is
+not coverage proof and does not include source bodies.
+
+This probe did not change production code, prompts, protocols, UI, automatic
+verification, or runtime tool permissions.
+
+Validation:
+
+```text
+python -B tests\manual\impact_guard_ab.py --self-test: passed
+python -B -m py_compile tests\manual\impact_guard_ab.py: passed
+python -B -m unittest tests.test_agent tests.test_tool_runtime: 156 tests OK
+```
+
+Live A/B across DeepSeek, MiMo, Qwen, and GLM showed mixed but useful evidence:
+
+- `python-function-rename`: both arms succeeded for all four providers. The
+  guard arm reduced turns/tool calls for DeepSeek, MiMo, and Qwen, while GLM was
+  neutral.
+- `ts-exported-function-rename`: strong positive signal. The current arm missed
+  the `src/view.ts` caller for all four providers; the guard arm fixed it for
+  DeepSeek, MiMo, and Qwen. GLM still failed, though with fewer turns/tools.
+- `public-string-control`: DeepSeek, MiMo, and Qwen did not over-rename the
+  public string contract. GLM's guard arm failed before any guard was generated
+  or exposed, so it was recorded as a provider/protocol failure rather than an
+  Impact Guard regression.
+
+Decision: keep the probe and result notes for future refactor testing, but do
+not promote Impact Guard to production on the current evidence. The strongest
+win was a TypeScript export case, which is not the primary local usage target
+for the current project. The Python rename case was already solved by the
+current stack, and the sample set is still too small to justify adding a new
+post-edit production prompt path.
+
 ## 0.1.53 CDP Browser Warmup
 
 Codey UI startup now schedules a best-effort provider browser warmup on the
