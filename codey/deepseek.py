@@ -19,7 +19,12 @@ import time
 
 from playwright.sync_api import Page
 
-from codey import cancellation, provider_controls as controls, provider_flow
+from codey import (
+    cancellation,
+    provider_controls as controls,
+    provider_flow,
+    provider_send_loop as send_loop,
+)
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, RateLimited, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
@@ -411,8 +416,7 @@ def chat(
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
 
-    controls.start_response_watch(page, PROVIDER_ID)
-    try:
+    with send_loop.response_watch(page, PROVIDER_ID):
         ta = _message_box(page, teach=True)
         if ta is None:
             controls.reject_control(
@@ -437,12 +441,14 @@ def chat(
 
         attempt = _submit(page, ta, baseline, baseline_text, text)
 
-        sent_at = time.time()
-        start_deadline = sent_at + response_timeout
-        last = ""
+        ctx = send_loop.ProviderSendContext(
+            page=page,
+            provider_id=PROVIDER_ID,
+            display_name="DeepSeek",
+            sent_at=time.time(),
+        )
+        start_deadline = ctx.sent_at + response_timeout
         stable = 0
-        appeared = False
-        flow_trace = provider_flow.FlowTrace()
         while time.time() < start_deadline:
             cancellation.wait(tick)
             if (
@@ -450,26 +456,24 @@ def chat(
                 and _rate_limit_visible(page)
             ):
                 if _click_rate_limit_retry(page):
-                    sent_at = time.time()
-                    last = ""
+                    ctx.reset_text_progress(sent_at=time.time())
                     stable = 0
-                    appeared = False
                     continue
             current = _last_text(page)
             if _response_count(page) <= baseline and current == baseline_text:
                 continue
             confirm_submission(attempt, PROVIDER_ID)
-            appeared = True
+            ctx.appeared = True
             if not current:
                 stable = 0
                 continue
-            same = current == last
+            same = ctx.same_as_last(current)
             observation = provider_flow.FlowObservation(
                 response_stable=same,
                 response_nonempty=bool(current),
             )
-            flow_trace.add(observation)
-            if same and (time.time() - sent_at) >= min_wait:
+            ctx.trace.add(observation)
+            if same and (time.time() - ctx.sent_at) >= min_wait:
                 is_json_tool = _is_json_tool_reply(current)
                 repairable_json_tool = False
                 if _looks_like_json_tool_reply(current) and not is_json_tool:
@@ -480,43 +484,37 @@ def chat(
                         continue
                 stable += 1
                 if stable >= JSON_TOOL_STABLE_TICKS and is_json_tool:
-                    return controls.read_flow_response(
-                        PROVIDER_ID,
-                        provider_flow.STAGE_COMPLETION,
+                    return send_loop.read_completion(
+                        ctx,
                         lambda: _final_text(page),
                     )
                 if repairable_json_tool and stable < stable_ticks:
                     continue
                 if repairable_json_tool:
-                    return controls.read_flow_response(
-                        PROVIDER_ID,
-                        provider_flow.STAGE_COMPLETION,
+                    return send_loop.read_completion(
+                        ctx,
                         lambda: _final_text(page),
                     )
-                ready = controls.flow_stage_ready(
-                    page,
-                    PROVIDER_ID,
-                    provider_flow.STAGE_COMPLETION,
-                    flow_trace,
+                ready = send_loop.completion_ready(
+                    ctx,
                     observation,
                     built_in_ready=stable >= stable_ticks,
                 )
                 if ready:
-                    return controls.read_flow_response(
-                        PROVIDER_ID,
-                        provider_flow.STAGE_COMPLETION,
+                    return send_loop.read_completion(
+                        ctx,
                         lambda: _final_text(page),
                     )
             else:
                 stable = 0
-                last = current
+                ctx.last = current
         if _rate_limit_visible(page):
             raise RateLimited("DeepSeek is rate limited")
         late = _wait_late_response(page, baseline, baseline_text=baseline_text, grace=TIMEOUT_GRACE, tick=tick)
         if late:
             confirm_submission(attempt, PROVIDER_ID)
             return late
-        if appeared and last:
+        if ctx.appeared and ctx.last:
             return _final_text(page)
         recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
         if recovered is not None:
@@ -527,5 +525,3 @@ def chat(
                 controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
             raise SubmissionUncertain("DeepSeek submission status is uncertain")
         raise ResponseMissing(f"DeepSeek response timed out after {response_timeout:.0f}s")
-    finally:
-        controls.stop_response_watch(page, PROVIDER_ID)

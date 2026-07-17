@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.51-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.52-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.51`
+Version: `0.1.52`
 
 [Version history](CHANGELOG.md)
 
@@ -414,6 +414,7 @@ codey/
   provider_flow.py          bounded boolean web-chat state rules
   provider_revival.py       atomic control bundles, promotion, and rollback
   provider_submission.py    shared one-shot remote submission boundary
+  provider_send_loop.py     shared send-loop lifecycle helpers for web providers
   provider_supervisor.py    passive health circuit, Writer selection, and canary
   adapter_overrides.py      local adapter candidates, promotion, and rollback
   adapter_repair.py         sandboxed provider adapter repair runner

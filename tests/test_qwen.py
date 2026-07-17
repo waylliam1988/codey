@@ -547,12 +547,30 @@ class QwenDriverTests(unittest.TestCase):
             mock.patch.object(qwen.cancellation, "wait"),
         ):
             with self.assertRaisesRegex(
-                qwen.SubmissionUncertain,
+                SubmissionUncertain,
                 "click failed with ValueError",
             ) as caught:
                 qwen.chat(page, "hello", response_timeout=0)
 
         self.assertNotIn("private", str(caught.exception))
+
+    def test_chat_stops_response_watch_once_after_driver_error(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        with (
+            mock.patch.object(qwen, "wait_ready"),
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_fill_message", side_effect=RuntimeError("fill failed")),
+            mock.patch.object(qwen, "_response_count", return_value=0),
+            mock.patch.object(qwen.controls, "start_response_watch") as start_watch,
+            mock.patch.object(qwen.controls, "stop_response_watch") as stop_watch,
+            mock.patch.object(qwen.controls, "reject_control"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "fill failed"):
+                qwen.chat(page, "hello", response_timeout=1, tick=0)
+
+        start_watch.assert_called_once_with(page, qwen.PROVIDER_ID)
+        stop_watch.assert_called_once_with(page, qwen.PROVIDER_ID)
 
     def test_uncertain_submission_continues_until_delayed_answer(self) -> None:
         page = mock.Mock()
@@ -626,25 +644,21 @@ class QwenDriverTests(unittest.TestCase):
                     "retry reply",
                 ],
             ) as chat_once,
-            mock.patch.object(qwen.controls, "stop_response_watch") as stop_watch,
         ):
             reply = qwen.chat(page, "hello", response_timeout=1)
 
         self.assertEqual(reply, "retry reply")
         self.assertEqual(chat_once.call_count, 2)
-        self.assertEqual(stop_watch.call_count, 2)
 
     def test_chat_does_not_retry_unrelated_timeout(self) -> None:
         page = mock.Mock()
         with (
             mock.patch.object(qwen, "_chat", side_effect=TimeoutError("input missing")) as chat_once,
-            mock.patch.object(qwen.controls, "stop_response_watch") as stop_watch,
         ):
             with self.assertRaisesRegex(TimeoutError, "input missing"):
                 qwen.chat(page, "hello", response_timeout=1)
 
         chat_once.assert_called_once()
-        stop_watch.assert_called_once_with(page, qwen.PROVIDER_ID)
 
     def test_submission_started_requires_generation_or_new_response(self) -> None:
         with (

@@ -6,7 +6,12 @@ import time
 
 from playwright.sync_api import Locator, Page
 
-from codey import cancellation, provider_controls as controls, provider_flow
+from codey import (
+    cancellation,
+    provider_controls as controls,
+    provider_flow,
+    provider_send_loop as send_loop,
+)
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
@@ -589,138 +594,124 @@ def _chat(
 
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
-    controls.start_response_watch(page, PROVIDER_ID)
 
-    textarea = _message_box(page, teach=True)
-    if textarea is None:
-        controls.reject_control(
-            PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
-        )
-        raise ControlMissing("Xiaomi MiMo Chat input is not visible")
-    try:
-        cancellation.check()
-        textarea.click()
-        cancellation.check()
-        textarea.fill(text)
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception:
-        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-        raise
-    if not controls.control_has_text(textarea, text):
-        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-        raise ControlMissing("Xiaomi MiMo Chat input did not accept the complete message")
-    controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-    cancellation.wait(0.2)
-    attempt = _submit(page, baseline, baseline_text, text)
+    with send_loop.response_watch(page, PROVIDER_ID):
+        textarea = _message_box(page, teach=True)
+        if textarea is None:
+            controls.reject_control(
+                PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
+            )
+            raise ControlMissing("Xiaomi MiMo Chat input is not visible")
+        try:
+            cancellation.check()
+            textarea.click()
+            cancellation.check()
+            textarea.fill(text)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception:
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+            raise
+        if not controls.control_has_text(textarea, text):
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+            raise ControlMissing("Xiaomi MiMo Chat input did not accept the complete message")
+        controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+        cancellation.wait(0.2)
+        attempt = _submit(page, baseline, baseline_text, text)
 
-    sent_at = time.time()
-    deadline = sent_at + response_timeout
-    last = ""
-    stable = 0
-    appeared = False
-    answer_text_seen = False
-    flow_trace = provider_flow.FlowTrace()
-    while time.time() < deadline:
-        cancellation.wait(min(tick, 0.2) if not answer_text_seen else tick)
-        count = _response_count(page)
-        response = (
-            controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
-            if count
-            else None
+        ctx = send_loop.ProviderSendContext(
+            page=page,
+            provider_id=PROVIDER_ID,
+            display_name="Xiaomi MiMo",
+            sent_at=time.time(),
         )
-        current = _response_text(response) if response is not None else ""
-        if count <= baseline and current == baseline_text:
-            continue
-        confirm_submission(attempt, PROVIDER_ID)
-        appeared = True
-        same = bool(current) and current == last
-        observation = _completion_observation(
-            response,
-            current=current,
-            stable=same,
+        deadline = ctx.sent_at + response_timeout
+        answer_text_seen = False
+        while time.time() < deadline:
+            cancellation.wait(min(tick, 0.2) if not answer_text_seen else tick)
+            count = _response_count(page)
+            response = (
+                controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
+                if count
+                else None
+            )
+            current = _response_text(response) if response is not None else ""
+            if count <= baseline and current == baseline_text:
+                continue
+            confirm_submission(attempt, PROVIDER_ID)
+            same = ctx.same_as_last(current)
+            observation = _completion_observation(
+                response,
+                current=current,
+                stable=same,
+            )
+            ctx.record_response(current, observation)
+            if not current:
+                continue
+            answer_text_seen = True
+            if ctx.stable >= stable_ticks and (time.time() - ctx.sent_at) >= min_wait:
+                built_in_ready = _generation_complete(page)
+                completion_ready = send_loop.completion_ready(
+                    ctx,
+                    observation,
+                    built_in_ready=built_in_ready,
+                    allow_recovery=attempt.confirmed,
+                )
+                if completion_ready:
+                    return send_loop.read_completion(
+                        ctx,
+                        lambda: _final_text(
+                            page,
+                            completion_verified=not built_in_ready,
+                        ),
+                    )
+
+        late = _wait_late_response(
+            page,
+            baseline,
+            baseline_text=baseline_text,
+            grace=TIMEOUT_GRACE,
+            tick=tick,
         )
-        flow_trace.add(observation)
-        if not current:
-            stable = 0
-            continue
-        answer_text_seen = True
-        if same:
-            stable += 1
-        else:
-            stable = 0
-            last = current
-        if stable >= stable_ticks and (time.time() - sent_at) >= min_wait:
-            built_in_ready = _generation_complete(page)
-            completion_ready = controls.flow_stage_ready(
+        if late:
+            confirm_submission(attempt, PROVIDER_ID)
+            return late
+        if ctx.appeared and ctx.last:
+            response = controls.locate_response(
                 page,
                 PROVIDER_ID,
-                provider_flow.STAGE_COMPLETION,
-                flow_trace,
+                PROFILE.selectors("response"),
+            )
+            observation = _completion_observation(
+                response,
+                current=ctx.last,
+                stable=True,
+            )
+            ctx.trace.add(observation)
+            built_in_ready = _generation_complete(page)
+            completion_ready = send_loop.completion_ready(
+                ctx,
                 observation,
                 built_in_ready=built_in_ready,
                 allow_recovery=attempt.confirmed,
             )
             if completion_ready:
-                return controls.read_flow_response(
-                    PROVIDER_ID,
-                    provider_flow.STAGE_COMPLETION,
+                return send_loop.read_completion(
+                    ctx,
                     lambda: _final_text(
                         page,
                         completion_verified=not built_in_ready,
                     ),
                 )
-
-    late = _wait_late_response(
-        page,
-        baseline,
-        baseline_text=baseline_text,
-        grace=TIMEOUT_GRACE,
-        tick=tick,
-    )
-    if late:
-        confirm_submission(attempt, PROVIDER_ID)
-        return late
-    if appeared and last:
-        response = controls.locate_response(
-            page,
-            PROVIDER_ID,
-            PROFILE.selectors("response"),
-        )
-        observation = _completion_observation(
-            response,
-            current=last,
-            stable=True,
-        )
-        flow_trace.add(observation)
-        built_in_ready = _generation_complete(page)
-        completion_ready = controls.flow_stage_ready(
-            page,
-            PROVIDER_ID,
-            provider_flow.STAGE_COMPLETION,
-            flow_trace,
-            observation,
-            built_in_ready=built_in_ready,
-            allow_recovery=attempt.confirmed,
-        )
-        if completion_ready:
-            return controls.read_flow_response(
-                PROVIDER_ID,
-                provider_flow.STAGE_COMPLETION,
-                lambda: _final_text(
-                    page,
-                    completion_verified=not built_in_ready,
-                ),
-            )
-    recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
-    if recovered is not None:
-        confirm_submission(attempt, PROVIDER_ID)
-        return recovered
-    if not attempt.confirmed:
-        if attempt.method == "click" and attempt.action_error is not None:
-            controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-        raise SubmissionUncertain("Xiaomi MiMo Chat submission status is uncertain")
-    raise ResponseMissing(f"Xiaomi MiMo response timed out after {response_timeout:.0f}s")
+        recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
+        if recovered is not None:
+            confirm_submission(attempt, PROVIDER_ID)
+            return recovered
+        if not attempt.confirmed:
+            if attempt.method == "click" and attempt.action_error is not None:
+                controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
+            raise SubmissionUncertain("Xiaomi MiMo Chat submission status is uncertain")
+        raise ResponseMissing(f"Xiaomi MiMo response timed out after {response_timeout:.0f}s")
 
 
 @controls.revival_send(PROVIDER_ID)
@@ -732,7 +723,4 @@ def chat(
     tick: float = 0.8,
     min_wait: float = 1.5,
 ) -> str:
-    try:
-        return _chat(page, text, response_timeout, stable_ticks, tick, min_wait)
-    finally:
-        controls.stop_response_watch(page, PROVIDER_ID)
+    return _chat(page, text, response_timeout, stable_ticks, tick, min_wait)

@@ -4,6 +4,15 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.52 - Provider Send Loop 收拢
+
+- 可维护性：新增共享的 provider send-loop 小原语，收拢 response watch 生命周期、
+  响应稳定状态、completion flow 检查、flow response 读取和标准 timeout recovery。
+- 范围：GLM、Qwen、DeepSeek 和 MiMo 都已迁到共享 helper，但各自的提交、
+  completion、重试和 response 读取差异仍保留在对应网页 driver 内。
+- 安全：没有 UI 改动，没有 selector 改动，没有 provider 基类，也没有引入宽泛的
+  `run_send_flow` callback 框架。
+
 ## 0.1.51 - Shell 审批后续提示
 
 - 后续提示：已批准的 shell 结果现在会附带短小的内部提示，提醒 Writer 注意命令失败、

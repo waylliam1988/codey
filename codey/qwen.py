@@ -7,13 +7,17 @@ import time
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page
 
-from codey import cancellation, provider_controls as controls, provider_flow
+from codey import (
+    cancellation,
+    provider_controls as controls,
+    provider_flow,
+    provider_send_loop as send_loop,
+)
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.provider_submission import (
     SendAttempt,
-    SubmissionUncertain,
     confirm_submission,
 )
 from codey.web_clipboard import copy_action_text
@@ -447,111 +451,93 @@ def _chat(
 
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
-    controls.start_response_watch(page, PROVIDER_ID)
 
-    textarea = _message_box(page, teach=True)
-    if textarea is None:
-        controls.reject_control(
-            PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
-        )
-        raise ControlMissing("Qwen Studio chat input is not visible")
-    try:
-        submitted_text = _fill_message(page, textarea, text)
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception:
-        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-        raise
-    if not controls.control_has_text(textarea, submitted_text):
-        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-        raise ControlMissing("Qwen Studio chat input did not accept the complete message")
-    controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-    attempt = _submit(page, baseline, submitted_text)
-
-    sent_at = time.time()
-    deadline = sent_at + response_timeout
-    last = ""
-    stable = 0
-    appeared = False
-    regenerated = False
-    flow_trace = provider_flow.FlowTrace()
-    while time.time() < deadline:
-        cancellation.wait(tick)
-        if _empty_response_visible(page) and _generation_complete(page):
-            confirm_submission(attempt, PROVIDER_ID)
-            if regenerated or not _regenerate_empty_response(page):
-                raise RuntimeError("Qwen Studio returned an empty response")
-            regenerated = True
-            sent_at = time.time()
-            deadline = sent_at + response_timeout
-            last = ""
-            stable = 0
-            appeared = False
-            continue
-        count = _response_count(page)
-        current = _last_text(page) if count else ""
-        if count <= baseline and current == baseline_text:
-            continue
-        confirm_submission(attempt, PROVIDER_ID)
-        appeared = True
-        if not current:
-            stable = 0
-            continue
-        same = current == last
-        if same:
-            stable += 1
-        else:
-            stable = 0
-            last = current
-        stop_visible = _visible_locator(page, STOP_ACTIVE) is not None
-        observation = provider_flow.FlowObservation(
-            stop_visible=stop_visible,
-            stop_hidden=not stop_visible,
-            response_stable=same,
-            response_nonempty=bool(current),
-        )
-        flow_trace.add(observation)
-        if stable >= stable_ticks and (time.time() - sent_at) >= min_wait:
-            completion_ready = controls.flow_stage_ready(
-                page,
-                PROVIDER_ID,
-                provider_flow.STAGE_COMPLETION,
-                flow_trace,
-                observation,
-                built_in_ready=_generation_complete(page),
-                allow_recovery=attempt.confirmed,
+    with send_loop.response_watch(page, PROVIDER_ID):
+        textarea = _message_box(page, teach=True)
+        if textarea is None:
+            controls.reject_control(
+                PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
             )
-            if completion_ready:
-                return controls.read_flow_response(
-                    PROVIDER_ID,
-                    provider_flow.STAGE_COMPLETION,
-                    lambda: _final_text(page),
-                )
+            raise ControlMissing("Qwen Studio chat input is not visible")
+        try:
+            submitted_text = _fill_message(page, textarea, text)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception:
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+            raise
+        if not controls.control_has_text(textarea, submitted_text):
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+            raise ControlMissing("Qwen Studio chat input did not accept the complete message")
+        controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+        attempt = _submit(page, baseline, submitted_text)
 
-    late = _wait_late_response(
-        page,
-        baseline,
-        baseline_text=baseline_text,
-        grace=TIMEOUT_GRACE,
-        tick=tick,
-    )
-    if late:
-        confirm_submission(attempt, PROVIDER_ID)
-        return late
-    if appeared and last:
-        return _final_text(page)
-    recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
-    if recovered is not None:
-        confirm_submission(attempt, PROVIDER_ID)
-        return recovered
-    if not attempt.confirmed:
-        if attempt.method == "click" and attempt.action_error is not None:
-            controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
+        ctx = send_loop.ProviderSendContext(
+            page=page,
+            provider_id=PROVIDER_ID,
+            display_name="Qwen Studio",
+            sent_at=time.time(),
+        )
+        deadline = ctx.sent_at + response_timeout
+        regenerated = False
+        while time.time() < deadline:
+            cancellation.wait(tick)
+            if _empty_response_visible(page) and _generation_complete(page):
+                confirm_submission(attempt, PROVIDER_ID)
+                if regenerated or not _regenerate_empty_response(page):
+                    raise RuntimeError("Qwen Studio returned an empty response")
+                regenerated = True
+                ctx.reset_text_progress(sent_at=time.time())
+                deadline = ctx.sent_at + response_timeout
+                continue
+            count = _response_count(page)
+            current = _last_text(page) if count else ""
+            if count <= baseline and current == baseline_text:
+                continue
+            confirm_submission(attempt, PROVIDER_ID)
+            ctx.appeared = True
+            if not current:
+                ctx.stable = 0
+                continue
+            same = ctx.same_as_last(current)
+            stop_visible = _visible_locator(page, STOP_ACTIVE) is not None
+            observation = provider_flow.FlowObservation(
+                stop_visible=stop_visible,
+                stop_hidden=not stop_visible,
+                response_stable=same,
+                response_nonempty=bool(current),
+            )
+            ctx.record_response(current, observation)
+            if ctx.stable >= stable_ticks and (time.time() - ctx.sent_at) >= min_wait:
+                completion_ready = send_loop.completion_ready(
+                    ctx,
+                    observation,
+                    built_in_ready=_generation_complete(page),
+                    allow_recovery=attempt.confirmed,
+                )
+                if completion_ready:
+                    return send_loop.read_completion(
+                        ctx,
+                        lambda: _final_text(page),
+                    )
+
         action = ""
         if attempt.action_error is not None:
             action = f"; click failed with {type(attempt.action_error).__name__}"
-        raise SubmissionUncertain(f"Qwen Studio submission status is uncertain{action}")
-    raise ResponseMissing(f"Qwen Studio response timed out after {response_timeout:.0f}s")
+        return send_loop.recover_or_raise(
+            ctx,
+            attempt,
+            read_final=lambda: _final_text(page),
+            read_late=lambda: _wait_late_response(
+                page,
+                baseline,
+                baseline_text=baseline_text,
+                grace=TIMEOUT_GRACE,
+                tick=tick,
+            ),
+            response_timeout=response_timeout,
+            uncertain_message=f"Qwen Studio submission status is uncertain{action}",
+        )
 
 
 @controls.revival_send(PROVIDER_ID)
@@ -572,6 +558,4 @@ def chat(
                 or "response timed out" not in str(exc)
             ):
                 raise
-        finally:
-            controls.stop_response_watch(page, PROVIDER_ID)
     raise ResponseMissing(f"Qwen Studio response timed out after {response_timeout:.0f}s")

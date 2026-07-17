@@ -7,13 +7,17 @@ import time
 
 from playwright.sync_api import Locator, Page
 
-from codey import cancellation, provider_controls as controls, provider_flow
+from codey import (
+    cancellation,
+    provider_controls as controls,
+    provider_flow,
+    provider_send_loop as send_loop,
+)
 from codey.provider_profiles import get_profile
-from codey.provider_diagnostics import ControlMissing, RateLimited, ResponseMissing
+from codey.provider_diagnostics import ControlMissing, RateLimited
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.provider_submission import (
     SendAttempt,
-    SubmissionUncertain,
     confirm_submission,
 )
 
@@ -453,117 +457,99 @@ def _chat(
     baseline_text = _last_text(page) if response_baseline else ""
     question_baseline = _question_count(page)
     submitted_question_baseline = _submitted_question_count(page, text)
-    controls.start_response_watch(page, PROVIDER_ID)
 
-    textarea = _message_box(page, teach=True)
-    if textarea is None:
-        controls.reject_control(
-            PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
-        )
-        raise ControlMissing("GLM chat input is not visible")
-    try:
-        cancellation.check()
-        textarea.click()
-        textarea.fill(text)
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception:
-        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-        raise
-    if not controls.control_has_text(textarea, text):
-        controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-        raise RuntimeError("GLM chat input did not accept the complete message")
-    controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-
-    attempt = _submit(
-        page,
-        response_baseline,
-        question_baseline,
-        text,
-        baseline_text,
-    )
-    sent_at = time.time()
-    deadline = sent_at + response_timeout
-    last = ""
-    stable = 0
-    appeared = False
-    flow_trace = provider_flow.FlowTrace()
-
-    while time.time() < deadline:
-        cancellation.wait(tick)
-        if _submitted_question_count(page, text) > submitted_question_baseline + 1:
-            raise RuntimeError("GLM page submitted the message more than once")
-        count = _response_count(page)
-        current = _last_text(page) if count else ""
-        if (
-            count <= response_baseline
-            and current == baseline_text
-            and _rate_limit_visible(page)
-        ):
-            if _click_rate_limit_retry(page):
-                sent_at = time.time()
-                last = ""
-                stable = 0
-                appeared = False
-                continue
-        if count <= response_baseline and current == baseline_text:
-            continue
-        confirm_submission(attempt, PROVIDER_ID)
-        appeared = True
-        if not current:
-            stable = 0
-            continue
-        same = current == last
-        if same:
-            stable += 1
-        else:
-            stable = 0
-            last = current
-        observation = provider_flow.FlowObservation(
-            response_stable=same,
-            response_nonempty=bool(current),
-        )
-        flow_trace.add(observation)
-        if stable >= stable_ticks and (time.time() - sent_at) >= min_wait:
-            completion_ready = controls.flow_stage_ready(
-                page,
-                PROVIDER_ID,
-                provider_flow.STAGE_COMPLETION,
-                flow_trace,
-                observation,
-                built_in_ready=_generation_complete(page),
-                allow_recovery=attempt.confirmed,
+    with send_loop.response_watch(page, PROVIDER_ID):
+        textarea = _message_box(page, teach=True)
+        if textarea is None:
+            controls.reject_control(
+                PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
             )
-            if completion_ready:
-                return controls.read_flow_response(
-                    PROVIDER_ID,
-                    provider_flow.STAGE_COMPLETION,
-                    lambda: _final_text(page),
-                )
+            raise ControlMissing("GLM chat input is not visible")
+        try:
+            cancellation.check()
+            textarea.click()
+            textarea.fill(text)
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception:
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+            raise
+        if not controls.control_has_text(textarea, text):
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
+            raise RuntimeError("GLM chat input did not accept the complete message")
+        controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
 
-    if _rate_limit_visible(page):
-        raise RateLimited("GLM is rate limited")
-    late = _wait_late_response(
-        page,
-        response_baseline,
-        baseline_text=baseline_text,
-        grace=RESPONSE_TIMEOUT_GRACE,
-        tick=tick,
-    )
-    if late:
-        confirm_submission(attempt, PROVIDER_ID)
-        return late
-    if appeared and last:
-        return _final_text(page)
-    recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
-    if recovered is not None:
-        confirm_submission(attempt, PROVIDER_ID)
-        return recovered
-    if not attempt.confirmed:
-        if attempt.method == "click" and attempt.action_error is not None:
-            controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
-        raise SubmissionUncertain("GLM submission status is uncertain")
-    raise ResponseMissing(f"GLM response timed out after {response_timeout:.0f}s")
+        attempt = _submit(
+            page,
+            response_baseline,
+            question_baseline,
+            text,
+            baseline_text,
+        )
+        ctx = send_loop.ProviderSendContext(
+            page=page,
+            provider_id=PROVIDER_ID,
+            display_name="GLM",
+            sent_at=time.time(),
+        )
+        deadline = ctx.sent_at + response_timeout
+
+        while time.time() < deadline:
+            cancellation.wait(tick)
+            if _submitted_question_count(page, text) > submitted_question_baseline + 1:
+                raise RuntimeError("GLM page submitted the message more than once")
+            count = _response_count(page)
+            current = _last_text(page) if count else ""
+            if (
+                count <= response_baseline
+                and current == baseline_text
+                and _rate_limit_visible(page)
+            ):
+                if _click_rate_limit_retry(page):
+                    ctx.reset_text_progress(sent_at=time.time())
+                    continue
+            if count <= response_baseline and current == baseline_text:
+                continue
+            confirm_submission(attempt, PROVIDER_ID)
+            ctx.appeared = True
+            if not current:
+                ctx.stable = 0
+                continue
+            same = ctx.same_as_last(current)
+            observation = provider_flow.FlowObservation(
+                response_stable=same,
+                response_nonempty=bool(current),
+            )
+            ctx.record_response(current, observation)
+            if ctx.stable >= stable_ticks and (time.time() - ctx.sent_at) >= min_wait:
+                completion_ready = send_loop.completion_ready(
+                    ctx,
+                    observation,
+                    built_in_ready=_generation_complete(page),
+                    allow_recovery=attempt.confirmed,
+                )
+                if completion_ready:
+                    return send_loop.read_completion(
+                        ctx,
+                        lambda: _final_text(page),
+                    )
+
+        if _rate_limit_visible(page):
+            raise RateLimited("GLM is rate limited")
+        return send_loop.recover_or_raise(
+            ctx,
+            attempt,
+            read_final=lambda: _final_text(page),
+            read_late=lambda: _wait_late_response(
+                page,
+                response_baseline,
+                baseline_text=baseline_text,
+                grace=RESPONSE_TIMEOUT_GRACE,
+                tick=tick,
+            ),
+            response_timeout=response_timeout,
+            uncertain_message="GLM submission status is uncertain",
+        )
 
 
 @controls.revival_send(PROVIDER_ID)
@@ -575,12 +561,9 @@ def chat(
     tick: float = 0.8,
     min_wait: float = 1.5,
 ) -> str:
-    try:
-        cancellation.check()
-        if not text.strip():
-            raise ValueError("GLM message cannot be blank")
-        prompt = prepare_prompt(text)
-        reply = _chat(page, prompt, response_timeout, stable_ticks, tick, min_wait)
-        return normalize_tool_json_reply(reply)
-    finally:
-        controls.stop_response_watch(page, PROVIDER_ID)
+    cancellation.check()
+    if not text.strip():
+        raise ValueError("GLM message cannot be blank")
+    prompt = prepare_prompt(text)
+    reply = _chat(page, prompt, response_timeout, stable_ticks, tick, min_wait)
+    return normalize_tool_json_reply(reply)

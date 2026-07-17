@@ -189,6 +189,24 @@ class DeepSeekTimeoutTests(unittest.TestCase):
         self.assertTrue(attempt.confirmed)
         recover_flow.assert_not_called()
 
+    def test_chat_stops_response_watch_once_after_driver_error(self) -> None:
+        page = mock.Mock()
+        message_box = mock.Mock()
+        message_box.click.side_effect = RuntimeError("click failed")
+        with (
+            mock.patch.object(deepseek, "wait_ready"),
+            mock.patch.object(deepseek, "_message_box", return_value=message_box),
+            mock.patch.object(deepseek, "_response_count", return_value=0),
+            mock.patch.object(deepseek.controls, "start_response_watch") as start_watch,
+            mock.patch.object(deepseek.controls, "stop_response_watch") as stop_watch,
+            mock.patch.object(deepseek.controls, "reject_control"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "click failed"):
+                deepseek.chat(page, "hello", response_timeout=1, tick=0)
+
+        start_watch.assert_called_once_with(page, deepseek.PROVIDER_ID)
+        stop_watch.assert_called_once_with(page, deepseek.PROVIDER_ID)
+
     def test_chat_returns_stable_json_before_general_stable_ticks(self) -> None:
         page = mock.Mock()
         message_box = mock.Mock()

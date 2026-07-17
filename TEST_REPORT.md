@@ -1,4 +1,46 @@
-# Codey 0.1.51 Test Report
+# Codey Test Report
+
+## Unreleased Provider Send Loop Consolidation
+
+This patch adds `provider_send_loop.py`, a small shared helper module for web
+provider send-loop lifecycle concerns: response-watch lifetime, response
+stability state, completion-flow checks, flow response reads, and standard
+timeout recovery. GLM, Qwen, DeepSeek, and MiMo now use the shared helpers,
+while provider-specific behavior remains visible inside each web driver.
+
+Safety boundaries for this patch:
+
+- No UI changes.
+- No selector changes.
+- No provider base class or broad `run_send_flow` callback framework.
+- GLM keeps its duplicate-submission guard, rate-limit retry, generation
+  completion check, final response reader, and JSON normalization locally.
+- Qwen keeps empty-response regeneration and its sanitized click-error
+  `SubmissionUncertain` wording.
+- DeepSeek keeps JSON-tool stability shortcuts, missing-brace repair,
+  rate-limit retry, and its local late-response fallback.
+- MiMo keeps typed completion observation and its timeout fallback completion
+  gate before response recovery.
+
+Validation for this patch:
+
+```text
+provider send loop focused pytest: 63 passed, 4 subtests passed
+Qwen focused pytest: 77 passed, 4 subtests passed
+DeepSeek focused pytest: 52 passed, 4 subtests passed
+MiMo focused pytest: 72 passed, 15 subtests passed
+provider recovery focused pytest: 149 passed, 23 subtests passed
+combined provider focused pytest: 254 passed, 34 subtests passed
+provider send loop focused ruff: All checks passed
+ruff: All checks passed
+py_compile: passed
+full pytest: 1026 passed, 106 subtests passed
+git diff --check: passed
+GLM live smoke: passed; direct marker send returned the expected nonce in 9.329s
+Qwen live smoke: passed; direct marker send returned the expected nonce in 12.090s
+DeepSeek live smoke: passed; direct marker send returned the expected nonce in 7.080s
+MiMo live smoke: passed; direct marker send returned the expected nonce in 7.274s
+```
 
 ## 0.1.51 Shell Approval Follow-up
 

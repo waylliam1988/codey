@@ -491,6 +491,24 @@ class MimoDriverTests(unittest.TestCase):
         self.assertTrue(attempt.confirmed)
         recover_flow.assert_not_called()
 
+    def test_chat_stops_response_watch_once_after_driver_error(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        textarea.click.side_effect = RuntimeError("click failed")
+        with (
+            mock.patch.object(mimo, "wait_ready"),
+            mock.patch.object(mimo, "_message_box", return_value=textarea),
+            mock.patch.object(mimo, "_response_count", return_value=0),
+            mock.patch.object(mimo.controls, "start_response_watch") as start_watch,
+            mock.patch.object(mimo.controls, "stop_response_watch") as stop_watch,
+            mock.patch.object(mimo.controls, "reject_control"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "click failed"):
+                mimo.chat(page, "hello", response_timeout=1, tick=0)
+
+        start_watch.assert_called_once_with(page, mimo.PROVIDER_ID)
+        stop_watch.assert_called_once_with(page, mimo.PROVIDER_ID)
+
     def test_stable_response_without_terminal_evidence_cannot_recover_flow(self) -> None:
         trace = mimo.provider_flow.FlowTrace()
         observation = mimo.provider_flow.FlowObservation(

@@ -4,6 +4,17 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.52 - Provider Send Loop Consolidation
+
+- Maintainability: added shared provider send-loop helpers for response-watch
+  lifetime, response stability state, completion-flow checks, flow response
+  reads, and standard timeout recovery.
+- Scope: migrated GLM, Qwen, DeepSeek, and MiMo to the shared helpers while
+  keeping provider-specific submission, completion, retry, and response-reading
+  behavior inside each web driver.
+- Safety: no UI changes, no selector changes, no provider base class, and no
+  broad `run_send_flow` callback framework were introduced.
+
 ## 0.1.51 - Shell Approval Follow-up
 
 - Follow-up: approved shell results now include short internal hints about

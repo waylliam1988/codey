@@ -387,6 +387,26 @@ class GlmDriverTests(unittest.TestCase):
         self.assertTrue(sent.startswith("hello\n\n"))
         self.assertIn("ASCII U+0022", sent)
 
+    def test_chat_stops_response_watch_once_after_driver_error(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        textarea.click.side_effect = RuntimeError("click failed")
+        with (
+            mock.patch.object(glm, "wait_ready"),
+            mock.patch.object(glm, "_message_box", return_value=textarea),
+            mock.patch.object(glm, "_response_count", return_value=0),
+            mock.patch.object(glm, "_question_count", return_value=0),
+            mock.patch.object(glm, "_submitted_question_count", return_value=0),
+            mock.patch.object(glm.controls, "start_response_watch") as start_watch,
+            mock.patch.object(glm.controls, "stop_response_watch") as stop_watch,
+            mock.patch.object(glm.controls, "reject_control"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "click failed"):
+                glm.chat(page, "hello", response_timeout=1, tick=0)
+
+        start_watch.assert_called_once_with(page, glm.PROVIDER_ID)
+        stop_watch.assert_called_once_with(page, glm.PROVIDER_ID)
+
     def test_stable_response_without_terminal_evidence_cannot_recover_flow(self) -> None:
         trace = glm.provider_flow.FlowTrace()
         observation = glm.provider_flow.FlowObservation(
