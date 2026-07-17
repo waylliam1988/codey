@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.51-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.1.52-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.51`
+版本：`0.1.52`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -388,6 +388,7 @@ codey/
   provider_flow.py          有边界的网页布尔状态规则
   provider_revival.py       控件恢复包的原子保存、晋级和回滚
   provider_submission.py    共享的单次远程提交边界
+  provider_send_loop.py     网页模型发送循环生命周期 helper
   provider_supervisor.py    被动健康熔断、Writer 选择和 canary
   adapter_overrides.py      本地 adapter 候选、晋级和回滚
   adapter_repair.py         sandbox 中的 Provider adapter 修复执行器
