@@ -1290,6 +1290,82 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("UI-HISTORY-MARKER", consensus_kwargs["owner_prompt"])
         self.assertNotIn("User: Add a migration plan", consensus_kwargs["owner_prompt"])
 
+    def test_chat_to_project_handoff_reaches_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as state_home, tempfile.TemporaryDirectory() as td:
+            state = server.State(state_home)
+            project = Path(td)
+            (project / "app.py").write_text("print('existing')\n", encoding="utf-8")
+            context = state.conversation_for("session-1")
+            context.begin_window("deepseek", "chat")
+            context.update_snapshot(ConversationSnapshot(
+                mode="chat",
+                goal="Build a small notes app",
+                provider_id="deepseek",
+                latest_user="Pick storage",
+                latest_reply="Use SQLite for simple local persistence.",
+            ))
+            state.save_ui_state({
+                "active_id": "session-1",
+                "updated_at": 1,
+                "revision": 1,
+                "sessions": [{
+                    "id": "session-1",
+                    "title": "Notes plan",
+                    "messages": [
+                        {"type": "user", "text": "Pick storage"},
+                        {"type": "asst", "text": "Keep WRITER-HANDOFF-MARKER with SQLite."},
+                        {"type": "user", "text": "Apply the plan here."},
+                    ],
+                    "terminalRuns": [],
+                    "createdAt": 0,
+                    "projectId": "project-1",
+                    "provider": "deepseek",
+                }],
+                "projects": [{
+                    "id": "project-1",
+                    "name": "notes-app",
+                    "path": str(project),
+                    "expanded": True,
+                    "createdAt": 0,
+                }],
+            })
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(
+                    server,
+                    "agent_run",
+                    return_value=RunResult("Writer done", "done", 1, False, False),
+                ) as agent_run,
+                mock.patch.object(
+                    server,
+                    "collect_changes",
+                    return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+                ),
+            ):
+                server._run_task(
+                    "session-1",
+                    str(project),
+                    "Apply the plan here.",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+        self.assertEqual(agent_run.call_count, 1)
+        self.assertEqual(agent_run.call_args.args[2], "Apply the plan here.")
+        self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
+        handoff = agent_run.call_args.kwargs["handoff"]
+        self.assertIn("Build a small notes app", handoff)
+        self.assertIn("Use SQLite", handoff)
+        self.assertIn("recent_visible_conversation", handoff)
+        self.assertIn("WRITER-HANDOFF-MARKER", handoff)
+        self.assertNotIn("User: Apply the plan here.", handoff)
+
     def test_plain_chat_model_switch_uses_hidden_handoff(self) -> None:
         state = server.State()
         writer = mock.Mock()

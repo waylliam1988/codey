@@ -564,6 +564,17 @@
     padding: 0 4px 6px;
     display: flex; align-items: center; gap: 6px;
   }
+  .composer-context.clickable {
+    cursor: pointer;
+  }
+  .composer-context.clickable:hover {
+    color: var(--text-dim);
+  }
+  .composer-context.clickable:focus-visible {
+    outline: 1px solid var(--faint);
+    outline-offset: 2px;
+    border-radius: 5px;
+  }
   .composer-context .ctx-sep { color: var(--faint); }
   .composer-box {
     background: var(--bg-2);
@@ -1064,9 +1075,11 @@ cacheUiState();
 // ============================ helpers ============================
 function activeSession() { return sessions.find(s => s.id === activeId); }
 function projectById(id) { return projects.find(p => p.id === id) || null; }
-function activeProject() {
-  const s = activeSession();
+function sessionProject(s) {
   return s && s.projectId ? projectById(s.projectId) : null;
+}
+function activeProject() {
+  return sessionProject(activeSession());
 }
 function currentProjectPath() {
   const p = activeProject();
@@ -1137,9 +1150,21 @@ function persistActiveNow() {
 function updateComposerContext() {
   const el = $('composer-context');
   const p = activeProject();
-  const proj = p ? p.name : 'No project';
+  const draft = $('task').value.trim();
+  const proj = p ? p.name : (draft ? 'Choose folder to send' : 'Choose folder');
   const prov = providerLabel(currentProviderId());
   el.innerHTML = `<span>${escapeHtml(proj)}</span><span class="ctx-sep">·</span><span>${escapeHtml(prov)}</span>`;
+  const clickable = !p && !runningSessionId && !projectPickerBusy;
+  el.classList.toggle('clickable', clickable);
+  if (clickable) {
+    el.setAttribute('role', 'button');
+    el.setAttribute('tabindex', '0');
+    el.title = draft ? 'Choose folder and send' : 'Choose folder';
+  } else {
+    el.removeAttribute('role');
+    el.removeAttribute('tabindex');
+    el.title = p ? p.path : '';
+  }
 }
 
 // ============================ sidebar rendering ============================
@@ -1230,7 +1255,7 @@ function renderSidebar() {
   looseLabel.className = 'group-label';
   looseLabel.textContent = 'CHATS';
   list.appendChild(looseLabel);
-  const loose = sessions.filter(s => !s.projectId);
+  const loose = sessions.filter(s => !sessionProject(s));
   if (!loose.length) {
     const empty = document.createElement('div');
     empty.className = 'project-empty';
@@ -1901,46 +1926,90 @@ function ensureProject(path, name) {
   persistActive();
   return p;
 }
-async function pickProject() {
+let projectPickerBusy = false;
+async function pickProjectPath(mode = 'open', initial = '') {
+  if (projectPickerBusy) return null;
+  projectPickerBusy = true;
   $('btn-add-project').disabled = true;
+  updateComposerContext();
   try {
     const r = await fetch('/api/pick_folder', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'open', initial: currentProjectPath() }),
+      body: JSON.stringify({ mode, initial }),
     });
     let data = {};
     try { data = await r.json(); } catch {}
     if (!r.ok) {
       setStatus('Could not add project', 'err');
-      return;
+      return null;
     }
-    if (!data.ok || !data.path) return;
-    const p = ensureProject(data.path, data.name);
-    newSession(p.id);
+    if (!data.ok || !data.path) return null;
+    return data;
   } finally {
+    projectPickerBusy = false;
     $('btn-add-project').disabled = false;
+    updateComposerContext();
   }
 }
-
-function pushMsg(m) {
+function attachSessionToProject(projectId, sessionId = activeId) {
+  const s = sessions.find(x => x.id === sessionId);
+  const p = projectById(projectId);
+  if (!s || !p || sessionProject(s)) return false;
+  s.projectId = p.id;
+  p.expanded = true;
+  persistActiveNow();
+  renderSidebar();
+  if (sessionId === activeId) renderChat();
+  else updateComposerContext();
+  return true;
+}
+async function pickProject() {
   const s = activeSession();
-  if (!s) return;
+  const shouldAttach = !!s && !sessionProject(s);
+  const data = await pickProjectPath(shouldAttach ? 'new' : 'open', currentProjectPath());
+  if (!data) return;
+  const p = ensureProject(data.path, data.name);
+  if (shouldAttach) attachSessionToProject(p.id, s.id);
+  else newSession(p.id);
+}
+
+async function attachCurrentChatToPickedProject({ sendDraft = false } = {}) {
+  if (runningSessionId) return;
+  const sid = activeId;
+  const s = sessions.find(x => x.id === sid);
+  if (!s || sessionProject(s)) return;
+  const draft = $('task').value.trim();
+  const provider = PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER;
+  const data = await pickProjectPath('new', currentProjectPath());
+  if (!data) return;
+  const p = ensureProject(data.path, data.name);
+  if (!attachSessionToProject(p.id, sid)) return;
+  if (!sendDraft || !draft) return;
+  await sendTaskFromSession(sid, draft, provider, () => clearDraftIfUnchanged(sid, draft));
+}
+
+function pushMsgToSession(sid, m) {
+  const s = sessions.find(x => x.id === sid);
+  if (!s) return false;
   const wasEmpty = s.messages.length === 0;
   s.messages.push(m);
   if (s.title === 'New chat' && m.type === 'user' && m.text) {
     s.title = m.text.slice(0, 28) + (m.text.length > 28 ? '…' : '');
     persistActiveNow();
     renderSidebar();
-    renderChat();
-    return;
+    if (sid === activeId) renderChat();
+    return true;
   }
   persistActiveNow();
-  if (wasEmpty) renderChat();
-  else {
-    appendMessageNode($('chat'), m);
-    scrollChat();
+  if (sid === activeId) {
+    if (wasEmpty) renderChat();
+    else {
+      appendMessageNode($('chat'), m);
+      scrollChat();
+    }
   }
+  return true;
 }
 
 // ============================ context menus ============================
@@ -2116,6 +2185,7 @@ function handleServerEvent(data) {
     $('send').disabled = true;
     $('provider-button').disabled = true;
     updateSend();
+    updateComposerContext();
     return;
   }
   if (data.type === 'task_done') {
@@ -2126,6 +2196,7 @@ function handleServerEvent(data) {
       setStatus('', 'ok');
       $('provider-button').disabled = false;
       updateSend();
+      updateComposerContext();
     }
     if (!markTerminalRun(sid, runId)) return;
     const summary = (data.summary || '').toString();
@@ -2251,6 +2322,7 @@ function applyRunState(data) {
   }
   $('provider-button').disabled = busy;
   updateSend();
+  updateComposerContext();
 }
 
 function reconcileRunState() {
@@ -2290,6 +2362,7 @@ async function acceptRunResponse(response, sessionId) {
     setStatus('Running', 'run');
     $('provider-button').disabled = true;
     updateSend();
+    updateComposerContext();
   }
   await reconcileRunState();
 }
@@ -2396,7 +2469,7 @@ function retryTask(sessionId) {
 
 function sessionProjectPath(sid) {
   const s = sessions.find(x => x.id === sid);
-  const p = s && s.projectId ? projectById(s.projectId) : null;
+  const p = sessionProject(s);
   return p ? p.path : '';
 }
 
@@ -2627,12 +2700,24 @@ function updateSend() {
   $('stop').style.display = running ? '' : 'none';
   $('send-hint').textContent = running ? 'Stop' : 'Enter';
 }
-$('task').addEventListener('input', () => { resizeTask(); updateSend(); });
+$('task').addEventListener('input', () => { resizeTask(); updateSend(); updateComposerContext(); });
 $('task').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
     e.preventDefault();
     if (!$('send').disabled) $('send').click();
   }
+});
+$('composer-context').onclick = () => {
+  const s = activeSession();
+  if (!s || sessionProject(s) || runningSessionId || projectPickerBusy) return;
+  attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });
+};
+$('composer-context').addEventListener('keydown', (e) => {
+  if ((e.key !== 'Enter' && e.key !== ' ') || runningSessionId || projectPickerBusy) return;
+  const s = activeSession();
+  if (!s || sessionProject(s)) return;
+  e.preventDefault();
+  $('composer-context').click();
 });
 function setActiveProvider(id) {
   const provider = PROVIDERS.includes(id) ? id : DEFAULT_PROVIDER;
@@ -2665,29 +2750,51 @@ document.querySelectorAll('.provider-item').forEach((btn) => {
   };
 });
 
-$('send').onclick = async () => {
-  const project = currentProjectPath();
-  const task = $('task').value.trim();
-  if (!task) return;
-  pushMsg({ type: 'user', text: task });
-  $('task').value = ''; resizeTask(); updateSend();
+function clearDraftIfUnchanged(sessionId, draft) {
+  if (activeId !== sessionId || $('task').value.trim() !== draft) return;
+  $('task').value = '';
+  resizeTask();
+  updateSend();
+  updateComposerContext();
+}
+
+async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null) {
+  const text = String(task || '').trim();
+  if (!text || runningSessionId) return false;
+  const s = sessions.find(x => x.id === sessionId);
+  if (!s) return false;
+  const provider = PROVIDERS.includes(providerId)
+    ? providerId
+    : (PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER);
+  if (typeof onSendStarted === 'function') onSendStarted();
+  pushMsgToSession(sessionId, { type: 'user', text });
+  const project = sessionProjectPath(sessionId);
   const r = await fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: activeId, project, task, provider: currentProviderId() }),
+    body: JSON.stringify({ session_id: sessionId, project, task: text, provider }),
   });
-  if (r.status === 409) { addSendError(activeId); return; }
+  if (r.status === 409) { addSendError(sessionId); return true; }
   if (!r.ok) {
-    addSendError(activeId);
-    return;
+    addSendError(sessionId);
+    return true;
   }
-  await acceptRunResponse(r, activeId);
+  await acceptRunResponse(r, sessionId);
+  return true;
+}
+
+$('send').onclick = async () => {
+  const sessionId = activeId;
+  const task = $('task').value.trim();
+  const provider = currentProviderId();
+  if (!task) return;
+  await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));
 };
 async function continueTask(sessionId) {
   if (runningSessionId) return;
   const s = sessions.find(x => x.id === sessionId);
   if (!s) return;
-  const p = s.projectId ? projectById(s.projectId) : null;
+  const p = sessionProject(s);
   if (!p) {
     addToSession(sessionId, { type: 'err', text: 'Only project tasks can be continued; plain chats have no tool loop.', sessionId });
     return;

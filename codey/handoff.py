@@ -283,6 +283,8 @@ class ConversationContext:
         if not self.initialized:
             return True, ""
         if self.mode != mode or self.project != project:
+            if self.mode == "chat" and mode == "project" and project:
+                return True, self.prepare_handoff()
             self.clear()
             return True, ""
         if (

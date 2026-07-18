@@ -1,5 +1,46 @@
 # Codey Test Report
 
+## 0.1.55 Draft-to-Project Send
+
+Codey now lets a no-project chat become a project task only through an explicit
+folder choice in the composer context. This keeps normal chat free of project
+access while making the common "discuss first, then apply it here" path direct.
+
+Production changes:
+
+- The composer context now says `Choose folder` when a chat has no project, and
+  `Choose folder to send` when there is a draft waiting in the composer. It is
+  clickable only while idle and only when the active session has no resolvable
+  project.
+- `Add project` attaches the current no-project chat in place instead of always
+  creating a new chat. Stale `projectId` values are treated as no resolvable
+  project, so those chats remain visible under `CHATS` and can be attached
+  again.
+- Draft-to-project sending uses a stable `sessionId`, clears the draft only
+  after local send start, and leaves the draft alone if another run starts or
+  the session changes while the folder picker is open.
+- Chat-to-project transitions preserve the prior conversation handoff and a
+  bounded visible excerpt, so the Writer receives the discussion facts that led
+  to the project task.
+
+Safety and scope:
+
+- No natural-language or keyword intent detector was added.
+- Pressing Enter in a no-project chat remains a normal chat send.
+- No model tool, shell permission, provider flow, or project access policy was
+  changed.
+
+Validation:
+
+```text
+python -m pytest tests\test_ui.py -q: 46 passed
+python -m pytest tests\test_ui.py tests\test_handoff.py tests\test_server.py tests\test_ui_browser_e2e.py -q: 149 passed
+python -m ruff check codey\handoff.py tests\test_ui.py tests\test_handoff.py tests\test_server.py tools\ui_e2e.py: passed
+python -m py_compile codey\handoff.py: passed
+python -m pytest -q: 1070 passed, 111 subtests passed
+git diff --check: passed
+```
+
 ## 0.1.54 Trusted Verification Discovery
 
 Codey now discovers a wider set of trusted verification commands that were

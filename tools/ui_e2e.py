@@ -191,7 +191,7 @@ def _exercise_page(
     done_before_discussion = done_prefixes.count()
     page.locator("#task").fill("Discuss a breathing app without changing files.")
     page.locator("#send").click()
-    expect(page.locator(".msg.asst .body")).to_contain_text(
+    expect(page.locator(".msg.asst .body").last).to_contain_text(
         "Combined project breathing answer",
         timeout=15_000,
     )

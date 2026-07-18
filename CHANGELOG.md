@@ -4,6 +4,18 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.55 - Draft-to-Project Send
+
+- UX: a plain New Chat can now be attached to a project folder in place from
+  the composer context. If the composer has a draft, `Choose folder to send`
+  keeps that draft and sends it in the same session after the folder is chosen.
+- Continuity: chat-to-project transitions now preserve the prior conversation
+  handoff and visible recent chat facts for the Writer, instead of starting the
+  project task without the discussion that led to it.
+- Safety: there is no natural-language intent detector and no automatic project
+  access. The user must explicitly choose the folder context; pressing Enter in
+  a no-project chat remains a normal chat send.
+
 ## 0.1.54 - Trusted Verification Discovery
 
 - Reliability: trusted post-edit verification discovery now recognizes more

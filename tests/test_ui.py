@@ -37,7 +37,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertLess(qwen, glm)
 
     def test_run_and_continue_requests_keep_session_provider(self) -> None:
-        self.assertIn("provider: currentProviderId()", HTML)
+        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", HTML)
+        send_click = HTML[HTML.index("$('send').onclick"):HTML.index("async function continueTask")]
+        self.assertIn("const provider = currentProviderId();", send_click)
         self.assertIn("provider: s.provider || DEFAULT_PROVIDER", HTML)
         self.assertIn("provider: PROVIDERS.includes(s.provider)", HTML)
         self.assertIn("Continue the unfinished task in this same conversation.", HTML)
@@ -65,7 +67,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         retry_block = HTML[retry_start:retry_end]
         self.assertIn("syncProviderUI(s.provider || DEFAULT_PROVIDER)", retry_block)
         self.assertIn("$('send').click()", retry_block)
-        self.assertIn("provider: currentProviderId()", HTML)
+        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", HTML)
 
     def test_provider_selector_is_enabled_when_idle(self) -> None:
         self.assertIn("$('provider-button').disabled = busy", HTML)
@@ -214,7 +216,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_send_failures_render_inline_error(self) -> None:
         self.assertIn("function addSendError(sessionId, eventKey = '', runId = '')", HTML)
         self.assertIn("Could not send the message", HTML)
-        self.assertIn("if (r.status === 409) { addSendError(activeId); return; }", HTML)
+        self.assertIn("if (r.status === 409) { addSendError(sessionId); return true; }", HTML)
         self.assertIn("if (r.status === 409 || !r.ok) {", HTML)
         self.assertIn("await acceptRunResponse(r, sessionId)", HTML)
         self.assertIn("action: { label: 'Retry'", HTML)
@@ -436,7 +438,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("persistActiveNow(", add_block)
 
         # User-visible / discrete mutations flush immediately.
-        push_start = HTML.index("function pushMsg(m)")
+        self.assertNotIn("function pushMsg(m)", HTML)
+        self.assertNotIn("pushMsg(", HTML)
+        push_start = HTML.index("function pushMsgToSession(sid, m)")
         push_end = HTML.index("function openMenuAt", push_start)
         push_block = HTML[push_start:push_end]
         self.assertIn("persistActiveNow();", push_block)
@@ -469,6 +473,108 @@ class ProviderSelectorUiTests(unittest.TestCase):
             "persistActive();",
             HTML[HTML.index("function ensureProject"):HTML.index("async function pickProject")],
         )
+
+    def test_start_coding_from_this_chat_attaches_without_new_chat(self) -> None:
+        self.assertIn("function sessionProject(s)", HTML)
+        self.assertIn("return sessionProject(activeSession());", HTML)
+        self.assertIn("const loose = sessions.filter(s => !sessionProject(s));", HTML)
+        self.assertIn("const p = sessionProject(s);", HTML[HTML.index("function sessionProjectPath"):HTML.index("async function fetchChanges")])
+        self.assertIn("const p = sessionProject(s);", HTML[HTML.index("async function continueTask"):HTML.index("$('stop').onclick")])
+        self.assertIn("function attachSessionToProject(projectId, sessionId = activeId)", HTML)
+        attach_start = HTML.index("function attachSessionToProject")
+        attach_end = HTML.index("async function pickProject", attach_start)
+        attach_block = HTML[attach_start:attach_end]
+        self.assertIn("if (!s || !p || sessionProject(s)) return false;", attach_block)
+        self.assertIn("s.projectId = p.id;", attach_block)
+        self.assertIn("persistActiveNow();", attach_block)
+        self.assertNotIn("/api/new_chat", attach_block)
+
+        pick_start = HTML.index("async function pickProject()")
+        pick_end = HTML.index("async function attachCurrentChatToPickedProject", pick_start)
+        pick_block = HTML[pick_start:pick_end]
+        self.assertIn("const shouldAttach = !!s && !sessionProject(s);", pick_block)
+        self.assertIn("pickProjectPath(shouldAttach ? 'new' : 'open'", pick_block)
+        self.assertIn("if (shouldAttach) attachSessionToProject(p.id, s.id);", pick_block)
+        self.assertIn("else newSession(p.id);", pick_block)
+
+    def test_composer_context_is_the_only_draft_to_project_send_trigger(self) -> None:
+        self.assertIn("'Choose folder to send'", HTML)
+        self.assertIn("'Choose folder'", HTML)
+        self.assertIn("const clickable = !p && !runningSessionId && !projectPickerBusy;", HTML)
+        self.assertIn("$('task').addEventListener('input', () => { resizeTask(); updateSend(); updateComposerContext(); });", HTML)
+
+        context_start = HTML.index("$('composer-context').onclick")
+        context_end = HTML.index("function setActiveProvider", context_start)
+        context_block = HTML[context_start:context_end]
+        self.assertIn("if (!s || sessionProject(s) || runningSessionId || projectPickerBusy) return;", context_block)
+        self.assertIn("attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });", context_block)
+        self.assertIn("e.key !== 'Enter' && e.key !== ' '", context_block)
+        self.assertIn("if (!s || sessionProject(s)) return;", context_block)
+
+        key_start = HTML.index("$('task').addEventListener('keydown'")
+        key_end = HTML.index("$('composer-context').onclick", key_start)
+        key_block = HTML[key_start:key_end]
+        self.assertIn("$('send').click()", key_block)
+        self.assertNotIn("pickProjectPath", key_block)
+        self.assertNotIn("attachCurrentChatToPickedProject", key_block)
+
+        send_start = HTML.index("$('send').onclick")
+        send_end = HTML.index("async function continueTask", send_start)
+        send_block = HTML[send_start:send_end]
+        self.assertIn("const sessionId = activeId;", send_block)
+        self.assertIn("const provider = currentProviderId();", send_block)
+        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", send_block)
+        self.assertNotIn("pickProjectPath", send_block)
+        self.assertNotIn("attachCurrentChatToPickedProject", send_block)
+
+    def test_draft_to_project_send_uses_stable_session_id(self) -> None:
+        self.assertIn("async function sendTaskFromSession(sessionId, task, providerId = '', onSendStarted = null)", HTML)
+        self.assertIn("function clearDraftIfUnchanged(sessionId, draft)", HTML)
+        send_start = HTML.index("async function sendTaskFromSession")
+        send_end = HTML.index("$('send').onclick", send_start)
+        send_block = HTML[send_start:send_end]
+        self.assertIn("if (!text || runningSessionId) return false;", send_block)
+        self.assertIn("if (!s) return false;", send_block)
+        self.assertIn("if (typeof onSendStarted === 'function') onSendStarted();", send_block)
+        self.assertIn("pushMsgToSession(sessionId, { type: 'user', text });", send_block)
+        self.assertIn("const project = sessionProjectPath(sessionId);", send_block)
+        self.assertIn("JSON.stringify({ session_id: sessionId, project, task: text, provider })", send_block)
+        self.assertIn("await acceptRunResponse(r, sessionId);", send_block)
+        self.assertIn("return true;", send_block)
+
+        attach_start = HTML.index("async function attachCurrentChatToPickedProject")
+        attach_end = HTML.index("function pushMsgToSession", attach_start)
+        attach_block = HTML[attach_start:attach_end]
+        self.assertIn("const sid = activeId;", attach_block)
+        self.assertIn("if (!s || sessionProject(s)) return;", attach_block)
+        self.assertIn("const draft = $('task').value.trim();", attach_block)
+        self.assertIn("if (!data) return;", attach_block)
+        self.assertIn("if (!attachSessionToProject(p.id, sid)) return;", attach_block)
+        self.assertIn("await sendTaskFromSession(sid, draft, provider, () => clearDraftIfUnchanged(sid, draft));", attach_block)
+        self.assertNotIn("/api/new_chat", attach_block)
+
+        clear_start = HTML.index("function clearDraftIfUnchanged")
+        clear_end = HTML.index("async function sendTaskFromSession", clear_start)
+        clear_block = HTML[clear_start:clear_end]
+        self.assertIn("if (activeId !== sessionId || $('task').value.trim() !== draft) return;", clear_block)
+        self.assertIn("$('task').value = '';", clear_block)
+
+        send_click = HTML[HTML.index("$('send').onclick"):HTML.index("async function continueTask")]
+        self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", send_click)
+        self.assertNotIn("$('task').value = '';", send_click)
+
+    def test_no_content_based_implementation_trigger_in_send_flow(self) -> None:
+        self.assertNotIn("IMPLEMENTATION_REQUEST_RE", HTML)
+        self.assertNotIn("implementationIntent", HTML)
+        self.assertNotIn("detectImplementation", HTML)
+        self.assertNotIn("startBuilding", HTML)
+
+        send_start = HTML.index("$('send').onclick")
+        send_end = HTML.index("async function continueTask", send_start)
+        send_block = HTML[send_start:send_end]
+        self.assertNotIn("RegExp", send_block)
+        self.assertNotIn(".match(", send_block)
+        self.assertNotIn(".includes(", send_block)
 
     def test_pagehide_flushes_pending_ui_state_before_beacon(self) -> None:
         page_start = HTML.index("window.addEventListener('pagehide'")
