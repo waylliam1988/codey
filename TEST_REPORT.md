@@ -1,5 +1,22 @@
 # Codey Test Report
 
+## 0.1.56 Composer Folder Label Cleanup
+
+The no-project composer context now always shows the shorter `Choose folder`
+label. Draft-to-project send still uses the same explicit folder click, but the
+visible composer chrome no longer switches to the longer `Choose folder to send`
+wording.
+
+Validation:
+
+```text
+python -m pytest tests\test_ui.py -q: 46 passed
+python -m pytest tests\test_ui.py tests\test_handoff.py tests\test_server.py tests\test_ui_browser_e2e.py -q: 149 passed
+python -m ruff check codey\handoff.py tests\test_ui.py tests\test_handoff.py tests\test_server.py tools\ui_e2e.py: passed
+python -m py_compile codey\handoff.py: passed
+git diff --check: passed
+```
+
 ## 0.1.55 Draft-to-Project Send
 
 Codey now lets a no-project chat become a project task only through an explicit
@@ -8,10 +25,9 @@ access while making the common "discuss first, then apply it here" path direct.
 
 Production changes:
 
-- The composer context now says `Choose folder` when a chat has no project, and
-  `Choose folder to send` when there is a draft waiting in the composer. It is
-  clickable only while idle and only when the active session has no resolvable
-  project.
+- The composer context now provides a `Choose folder` affordance when a chat has
+  no project. It is clickable only while idle and only when the active session
+  has no resolvable project.
 - `Add project` attaches the current no-project chat in place instead of always
   creating a new chat. Stale `projectId` values are treated as no resolvable
   project, so those chats remain visible under `CHATS` and can be attached

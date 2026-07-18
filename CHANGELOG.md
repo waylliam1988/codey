@@ -4,11 +4,22 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.56 - Composer Folder Label Cleanup
+
+- UX: no-project chats now keep the composer context label as `Choose folder`
+  even when the composer contains a draft. The draft-send behavior remains
+  explicit through the same folder click, with the longer wording kept out of
+  the visible composer chrome.
+- Safety: no behavior change to project access. The user still has to choose a
+  folder explicitly, and pressing Enter in a no-project chat remains a normal
+  chat send.
+
 ## 0.1.55 - Draft-to-Project Send
 
 - UX: a plain New Chat can now be attached to a project folder in place from
-  the composer context. If the composer has a draft, `Choose folder to send`
-  keeps that draft and sends it in the same session after the folder is chosen.
+  the composer context. If the composer has a draft, the same explicit folder
+  click keeps that draft and sends it in the same session after the folder is
+  chosen.
 - Continuity: chat-to-project transitions now preserve the prior conversation
   handoff and visible recent chat facts for the Writer, instead of starting the
   project task without the discussion that led to it.

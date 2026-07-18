@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.55-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.56-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.55`
+Version: `0.1.56`
 
 [Version history](CHANGELOG.md)
 
@@ -238,8 +238,8 @@ Codey will ask the web AI for structured tool calls, apply edits locally, and sh
 
 You can also start in **New Chat** with no project access, discuss a plan, then
 click the composer project context (`Choose folder`) to attach that same chat to
-a folder. If there is a draft in the composer, `Choose folder to send` keeps the
-draft and sends it after the folder is chosen. If you only want a general
+a folder. If there is a draft in the composer, clicking the same context keeps
+the draft and sends it after the folder is chosen. If you only want a general
 conversation with no project access, keep using **New Chat**.
 
 When a task finishes, Codey summarizes the local facts in one quiet line:

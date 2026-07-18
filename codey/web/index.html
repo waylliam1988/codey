@@ -1151,7 +1151,7 @@ function updateComposerContext() {
   const el = $('composer-context');
   const p = activeProject();
   const draft = $('task').value.trim();
-  const proj = p ? p.name : (draft ? 'Choose folder to send' : 'Choose folder');
+  const proj = p ? p.name : 'Choose folder';
   const prov = providerLabel(currentProviderId());
   el.innerHTML = `<span>${escapeHtml(proj)}</span><span class="ctx-sep">·</span><span>${escapeHtml(prov)}</span>`;
   const clickable = !p && !runningSessionId && !projectPickerBusy;
@@ -1159,7 +1159,7 @@ function updateComposerContext() {
   if (clickable) {
     el.setAttribute('role', 'button');
     el.setAttribute('tabindex', '0');
-    el.title = draft ? 'Choose folder and send' : 'Choose folder';
+    el.title = draft ? 'Choose folder and send draft' : 'Choose folder';
   } else {
     el.removeAttribute('role');
     el.removeAttribute('tabindex');

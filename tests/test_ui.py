@@ -498,8 +498,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("else newSession(p.id);", pick_block)
 
     def test_composer_context_is_the_only_draft_to_project_send_trigger(self) -> None:
-        self.assertIn("'Choose folder to send'", HTML)
+        self.assertNotIn("'Choose folder to send'", HTML)
+        self.assertIn("const proj = p ? p.name : 'Choose folder';", HTML)
         self.assertIn("'Choose folder'", HTML)
+        self.assertIn("el.title = draft ? 'Choose folder and send draft' : 'Choose folder';", HTML)
         self.assertIn("const clickable = !p && !runningSessionId && !projectPickerBusy;", HTML)
         self.assertIn("$('task').addEventListener('input', () => { resizeTask(); updateSend(); updateComposerContext(); });", HTML)
 
