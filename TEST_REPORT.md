@@ -1,5 +1,38 @@
 # Codey Test Report
 
+## 0.1.57 Policy-Sourced Verification Candidates
+
+Codey now has a single source of truth for trusted local check candidates.
+`ProjectTaskContextBuilder` discovers commands through `verification_policy`
+and injects those explicit lines into Project Map. Direct `render_project_map()`
+continues to render bounded project structure, but no longer guesses candidate
+commands from manifests by itself.
+
+Production changes:
+
+- Project Map candidate commands now come from the same trusted policy discovery
+  used by the Writer completion gate.
+- Review Verification Map shows only the uniquely selected, change-relevant
+  candidate under `Recommended local check candidates`.
+- When there is no unique selected candidate, Review keeps the weaker `Broader
+  check candidates` wording instead of over-recommending unrelated monorepo
+  commands.
+- Manual probes that evaluate production Project Map now use a shared
+  `ProjectTaskContextBuilder` helper instead of direct `render_project_map()`.
+
+Validation:
+
+```text
+python -m pytest tests\test_project_map.py tests\test_project_task_context.py tests\test_manual_project_task_context.py tests\test_task_runner_project_map.py tests\test_verification_map.py tests\test_server.py tests\test_verification_policy.py -q: 180 passed, 5 subtests passed
+python -B tests\manual\default_verification_ab.py --self-test: passed
+python -B tests\manual\task_lens_ab.py --self-test: passed
+python -B tests\manual\zoom_project_map_ab.py --self-test: passed
+python -m ruff check codey tests tools: passed
+python -m py_compile codey\verification_policy.py codey\project_map.py codey\project_task_context.py codey\verification_map.py codey\task_runner.py tests\manual\project_task_context.py: passed
+git diff --check: passed
+python -m pytest -q: 1081 passed, 111 subtests passed
+```
+
 ## 0.1.56 Composer Folder Label Cleanup
 
 The no-project composer context now always shows the shorter `Choose folder`

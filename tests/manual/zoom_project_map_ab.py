@@ -36,10 +36,10 @@ from codey import provider_controls
 from codey.project_map import (
     build_project_map,
     build_symbol_overview,
-    render_project_map,
 )
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.tool_runtime import list_directory
+from tests.manual.project_task_context import render_production_project_map
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-zoom-project-map-ab.json"
 ARMS = ("current", "zoom")
@@ -517,7 +517,7 @@ def render_legacy_project_map(root: Path, task: str) -> str:
 
 
 def render_zoom_project_map(root: Path, task: str) -> str:
-    return render_project_map(root, task=task)
+    return render_production_project_map(root, task=task)
 
 
 def _selection_prompt(case: ProbeCase, root: Path, *, arm: str) -> str:

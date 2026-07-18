@@ -63,6 +63,7 @@ class VerificationMap:
     changed_tests: tuple[str, ...] = ()
     test_candidates: tuple[VerificationCandidate, ...] = ()
     observed_checks: tuple[ObservedCheck, ...] = ()
+    recommended_commands: tuple[str, ...] = ()
     broader_commands: tuple[str, ...] = ()
     truncated: bool = False
 
@@ -83,12 +84,15 @@ class VerificationMap:
                 lines.append(f"- {item.command}{suffix}")
         else:
             lines.append("- (none observed)")
-        _section(
-            lines,
-            "Broader check candidates (inspect relevance before requesting)",
-            self.broader_commands,
-            fallback="(none found)",
-        )
+        if self.recommended_commands:
+            _section(lines, "Recommended local check candidates", self.recommended_commands)
+        else:
+            _section(
+                lines,
+                "Broader check candidates (inspect relevance before requesting)",
+                self.broader_commands,
+                fallback="(none found)",
+            )
         if self.truncated:
             lines.append(
                 "- Candidate discovery was truncated; additional relevant tests may exist."
@@ -105,6 +109,7 @@ def build_verification_map(
     *,
     checks_after_last_change: Sequence[object] = (),
     project_map: str = "",
+    recommended_commands: Sequence[str] = (),
 ) -> VerificationMap:
     root = Path(project).expanduser().resolve()
     changed = _changed_paths(changes)
@@ -160,12 +165,14 @@ def build_verification_map(
         or byte_limited
         or len(candidates) > MAX_CANDIDATES
     )
+    safe_recommended = _recommended_commands(recommended_commands)
     return VerificationMap(
         changed_files=changed,
         changed_tests=changed_tests,
         test_candidates=tuple(candidates.values())[:MAX_CANDIDATES],
         observed_checks=_observed_checks(checks_after_last_change),
-        broader_commands=_broader_commands(project_map),
+        recommended_commands=safe_recommended,
+        broader_commands=() if safe_recommended else _broader_commands(project_map),
         truncated=truncated,
     )
 
@@ -352,6 +359,17 @@ def _observed_checks(values: Sequence[object]) -> tuple[ObservedCheck, ...]:
             if item not in result:
                 result.append(item)
         if len(result) >= MAX_OBSERVED_CHECKS:
+            break
+    return tuple(result)
+
+
+def _recommended_commands(values: Sequence[str]) -> tuple[str, ...]:
+    result: list[str] = []
+    for value in values:
+        command = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+        if command and command not in result:
+            result.append(command[:500])
+        if len(result) >= MAX_BROADER_COMMANDS:
             break
     return tuple(result)
 

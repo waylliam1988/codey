@@ -41,7 +41,7 @@ monorepo with most target filenames omitted from the task text, then compares:
 
 - `current`: the legacy task-aware map shape, with the ordinary Symbol overview
   and without Focused subtree.
-- `zoom`: production `render_project_map(..., task=...)`, including the
+- `zoom`: production `ProjectTaskContextBuilder` Project Map, including the
   bounded `Focused subtree` section.
 
 ```powershell
@@ -58,8 +58,8 @@ targets while the full Project Map remains under the bounded map character
 budget.
 
 `task_lens_ab.py` is a probe-only benchmark for a possible Coverage-aware Task
-Lens. It compares the current production `render_project_map(..., task=task)`
-against a prototype that replaces Focused subtree / Symbol overview with a
+Lens. It compares the current production `ProjectTaskContextBuilder` Project
+Map against a prototype that replaces Focused subtree / Symbol overview with a
 short `Task Lens` block. It supports a cheap first-file selection mode and a
 read-only agent navigation mode:
 

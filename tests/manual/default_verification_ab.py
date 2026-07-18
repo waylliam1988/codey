@@ -17,7 +17,6 @@ if __package__ in (None, ""):
 
 from codey import agent, provider_controls
 from codey.events import RunEvent, render_run_event
-from codey.project_map import render_project_map
 from codey.providers.registry import connect_provider, provider_ids
 from codey.verification_policy import (
     VerificationCandidate,
@@ -25,6 +24,7 @@ from codey.verification_policy import (
     discover_verification_candidates,
     select_verification_candidate,
 )
+from tests.manual.project_task_context import render_production_project_map
 
 
 ARMS = ("baseline", "current")
@@ -170,7 +170,7 @@ def _run_arm(provider, case: Case, arm: str, max_turns: int) -> dict[str, Any]:
             on_event=events.append,
             fresh_chat=True,
             provider_id=getattr(provider, "id", ""),
-            project_map=render_project_map(root, task=case.task),
+            project_map=render_production_project_map(root, task=case.task),
             verification_candidates=candidates if arm == "current" else (),
             verification_candidate_loader=(
                 (lambda: discover_verification_candidates(root, case.facts))

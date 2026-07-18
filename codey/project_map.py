@@ -8,9 +8,7 @@ and Reviewer start from the same basic project facts.
 from __future__ import annotations
 
 import ast
-import json
 import re
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
@@ -20,7 +18,6 @@ from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 
 MAX_PROJECT_MAP_CHARS = 7_000
 MAX_DIRECTORY_ENTRIES = 180
-MAX_MANIFEST_BYTES = 64 * 1024
 MAX_LISTED_DIRS = 40
 MAX_LISTED_FILES = 80
 MAX_CANDIDATE_COMMANDS = 12
@@ -204,6 +201,7 @@ def build_project_map(
     project: str | Path,
     verified_facts: str = "",
     task: str = "",
+    candidate_commands: Sequence[str] | None = None,
 ) -> ProjectMap:
     root = Path(project).expanduser().resolve()
     dirs: list[str] = []
@@ -212,7 +210,6 @@ def build_project_map(
     docs: list[str] = []
     source_roots: list[str] = []
     test_roots: list[str] = []
-    candidate_commands: list[str] = []
     truncated = False
 
     entries_seen = 0
@@ -255,7 +252,6 @@ def build_project_map(
                         continue
                     if name in MANIFEST_NAMES:
                         _append_unique(manifests, rel)
-                        candidate_commands.extend(_manifest_commands(entry, rel))
                     if name in DOC_NAMES:
                         _append_unique(docs, rel)
                     if len(files) < MAX_LISTED_FILES:
@@ -270,6 +266,7 @@ def build_project_map(
     symbol_overview = ""
     if task.strip() and not focused_subtree:
         symbol_overview = build_symbol_overview(root, task)
+    commands = candidate_commands or ()
     return ProjectMap(
         directories=tuple(dirs[:MAX_LISTED_DIRS]),
         files=tuple(files[:MAX_LISTED_FILES]),
@@ -277,7 +274,7 @@ def build_project_map(
         source_roots=tuple(source_roots),
         test_roots=tuple(test_roots),
         docs=tuple(docs),
-        candidate_commands=tuple(_dedupe(candidate_commands)[:MAX_CANDIDATE_COMMANDS]),
+        candidate_commands=tuple(_dedupe(commands)[:MAX_CANDIDATE_COMMANDS]),
         observed_successful_checks=tuple(observed[:MAX_SUCCESSFUL_CHECK_LINES]),
         symbol_overview=symbol_overview,
         focused_subtree=focused_subtree,
@@ -289,8 +286,14 @@ def render_project_map(
     project: str | Path,
     verified_facts: str = "",
     task: str = "",
+    candidate_commands: Sequence[str] | None = None,
 ) -> str:
-    return build_project_map(project, verified_facts, task).render()
+    return build_project_map(
+        project,
+        verified_facts,
+        task,
+        candidate_commands=candidate_commands,
+    ).render()
 
 
 def build_symbol_overview(
@@ -737,73 +740,3 @@ def _symbol_score(rel: str, symbols: tuple[str, ...], task: str) -> int:
         if lower_rel.startswith("tests/") or "/test_" in lower_rel:
             score += 4
     return score
-
-
-def _manifest_commands(path: Path, rel: str) -> list[str]:
-    try:
-        if path.stat().st_size > MAX_MANIFEST_BYTES:
-            return []
-    except OSError:
-        return []
-    name = path.name
-    try:
-        if name == "package.json":
-            commands = _package_json_commands(path)
-        elif name == "pyproject.toml":
-            commands = _pyproject_commands(path)
-        elif name == "Cargo.toml":
-            commands = ["cargo test"]
-        elif name == "go.mod":
-            commands = ["go test ./..."]
-        elif name == "pytest.ini":
-            commands = ["python -m pytest"]
-        elif name == "tox.ini":
-            commands = ["tox"]
-        elif name == "Makefile":
-            commands = ["make test"]
-        elif name == "requirements.txt":
-            commands = ["python -m unittest"]
-        elif name == "setup.cfg":
-            commands = ["python -m pytest"]
-        else:
-            commands = []
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, tomllib.TOMLDecodeError):
-        return []
-    return [_scope_command(rel, command) for command in commands]
-
-
-def _scope_command(rel: str, command: str) -> str:
-    parent = PurePosixPath(rel).parent
-    if str(parent) == ".":
-        return command
-    return f"{parent.as_posix()}/: {command}"
-
-
-def _package_json_commands(path: Path) -> list[str]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    scripts = payload.get("scripts") if isinstance(payload, dict) else None
-    if not isinstance(scripts, dict):
-        return []
-    commands: list[str] = []
-    for name in ("test", "lint", "typecheck", "build"):
-        value = scripts.get(name)
-        if isinstance(value, str) and value.strip():
-            commands.append(f"npm run {name}" if name != "test" else "npm test")
-    return commands
-
-
-def _pyproject_commands(path: Path) -> list[str]:
-    payload = tomllib.loads(path.read_text(encoding="utf-8"))
-    tool = payload.get("tool")
-    if not isinstance(tool, dict):
-        tool = {}
-    commands: list[str] = []
-    if "pytest" in tool:
-        commands.append("python -m pytest")
-    if "ruff" in tool:
-        commands.append("python -m ruff check .")
-    if "mypy" in tool:
-        commands.append("python -m mypy .")
-    if not commands:
-        commands.append("python -m unittest")
-    return commands

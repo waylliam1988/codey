@@ -41,6 +41,8 @@ from codey.verification_map import render_verification_map
 from codey.verification_policy import (
     check_covers_selected_candidate,
     select_verification_candidate,
+    selected_verification_candidate_lines,
+    verification_candidate_lines,
 )
 from codey.work_checkpoint import (
     WorkCheckpoint,
@@ -118,6 +120,7 @@ def _safe_verification_map(
     changes: dict,
     checks: tuple[object, ...],
     project_map: str,
+    recommended_commands: tuple[str, ...] = (),
 ) -> str:
     try:
         return render_verification_map(
@@ -125,9 +128,19 @@ def _safe_verification_map(
             changes,
             checks_after_last_change=checks,
             project_map=project_map,
+            recommended_commands=recommended_commands,
         )
     except Exception:
         return ""
+
+
+def _changed_file_paths(changes: object) -> tuple[str, ...]:
+    if not isinstance(changes, dict):
+        return ()
+    files = changes.get("files")
+    if not isinstance(files, list):
+        return ()
+    return tuple(str(item.get("path") or "") for item in files if isinstance(item, dict) and item.get("path"))
 
 
 class TaskRunner:
@@ -761,12 +774,23 @@ class TaskRunner:
                 def refresh_review_project_map() -> str:
                     nonlocal verified_facts
                     nonlocal project_map
+                    nonlocal verification_candidates
                     verified_facts = (
                         self.project_facts.render(project)
                         if self.project_facts is not None
                         else ""
                     )
-                    project_map = safe_project_map(project, verified_facts, task)
+                    verification_candidates = safe_verification_candidates(
+                        project,
+                        verification_verified_commands,
+                        resumed_verification_commands,
+                    )
+                    project_map = safe_project_map(
+                        project,
+                        verified_facts,
+                        task,
+                        verification_candidate_lines(verification_candidates),
+                    )
                     return project_map
 
                 def close_writer_for_review() -> None:
@@ -842,6 +866,10 @@ class TaskRunner:
                             changes,
                             evidence.successful_checks,
                             current_project_map,
+                            selected_verification_candidate_lines(
+                                verification_candidates,
+                                _changed_file_paths(changes),
+                            ),
                         )
                     ),
                     run_review=self.run_review,

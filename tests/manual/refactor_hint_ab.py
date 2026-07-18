@@ -25,10 +25,10 @@ from codey import agent, provider_controls
 from codey.agent_tools import AgentToolFns
 from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.events import RunEvent, render_run_event
-from codey.project_map import render_project_map
 from codey.providers.registry import connect_provider, provider_ids
 from codey.tool_runtime import SEARCH_EXCLUDED_DIRS, ToolOutcome
 from codey.tool_runtime import edit_file as runtime_edit_file
+from tests.manual.project_task_context import render_production_project_map
 
 
 ARMS = ("baseline", "hint")
@@ -431,7 +431,7 @@ def _run_arm(provider, case: ProbeCase, *, arm: str, max_turns: int) -> dict[str
             on_event=events.append,
             fresh_chat=True,
             provider_id=getattr(provider, "id", ""),
-            project_map=render_project_map(root, task=case.task),
+            project_map=render_production_project_map(root, task=case.task),
             tool_fns=AgentToolFns(edit_file=probe),
         )
 

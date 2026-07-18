@@ -102,7 +102,7 @@ class ProjectMapTests(unittest.TestCase):
         self.assertEqual(directory.seen, 4)
         self.assertEqual(len(entries), 3)
 
-    def test_node_project_detects_manifest_scripts_and_roots(self) -> None:
+    def test_node_project_lists_manifest_and_roots_without_candidate_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "src").mkdir()
@@ -128,12 +128,12 @@ class ProjectMapTests(unittest.TestCase):
         self.assertIn("tests/", rendered)
         self.assertIn("package.json", rendered)
         self.assertIn("README.md", rendered)
-        self.assertIn("npm test", rendered)
-        self.assertIn("npm run lint", rendered)
-        self.assertIn("npm run build", rendered)
-        self.assertIn("Candidate commands (inspect before running)", rendered)
+        self.assertNotIn("npm test", rendered)
+        self.assertNotIn("npm run lint", rendered)
+        self.assertNotIn("npm run build", rendered)
+        self.assertNotIn("Candidate commands (inspect before running)", rendered)
 
-    def test_nested_manifest_candidate_commands_include_working_directory(self) -> None:
+    def test_explicit_candidate_commands_include_working_directory(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "web").mkdir()
@@ -142,7 +142,10 @@ class ProjectMapTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            rendered = project_map.render_project_map(root)
+            rendered = project_map.render_project_map(
+                root,
+                candidate_commands=("web/: npm test", "web/: npm run build"),
+            )
 
         self.assertIn("web/package.json", rendered)
         self.assertIn("web/: npm test", rendered)
@@ -160,7 +163,9 @@ class ProjectMapTests(unittest.TestCase):
         self.assertEqual(rendered.count("- src/"), 1)
         self.assertEqual(rendered.count("- tests/"), 1)
 
-    def test_python_project_detects_pyproject_and_verified_checks(self) -> None:
+    def test_python_project_lists_pyproject_and_verified_checks_without_candidate_fallback(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "app").mkdir()
@@ -174,8 +179,8 @@ class ProjectMapTests(unittest.TestCase):
             rendered = project_map.render_project_map(root, facts)
 
         self.assertIn("pyproject.toml", rendered)
-        self.assertIn("python -m pytest", rendered)
-        self.assertIn("python -m ruff check .", rendered)
+        self.assertNotIn("- python -m pytest", rendered)
+        self.assertNotIn("- python -m ruff check .", rendered)
         self.assertIn("Observed successful checks", rendered)
         self.assertIn("successful check: python -m unittest", rendered)
         self.assertNotIn("successful run: python app.py", rendered)

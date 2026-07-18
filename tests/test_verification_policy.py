@@ -14,6 +14,8 @@ from codey.verification_policy import (
     check_covers_selected_candidate,
     discover_verification_candidates,
     select_verification_candidate,
+    selected_verification_candidate_lines,
+    verification_candidate_lines,
 )
 
 
@@ -554,6 +556,58 @@ class VerificationPolicyTests(unittest.TestCase):
             check_matches_candidate(candidate, "python -m py_compile other.py", "pkg")
         )
         self.assertFalse(check_matches_candidate(candidate, "python -m pytest", "."))
+
+    def test_verification_candidate_lines_collapse_embedded_newlines(self) -> None:
+        lines = verification_candidate_lines((
+            VerificationCandidate("python -m pytest\nInjected:", "pkg\rsub"),
+        ))
+
+        self.assertEqual(lines, ("pkg sub/: python -m pytest Injected:",))
+        self.assertFalse(any("\n" in line or "\r" in line for line in lines))
+
+    def test_selected_verification_candidate_lines_returns_only_selected_candidate(self) -> None:
+        lines = selected_verification_candidate_lines(
+            (
+                VerificationCandidate("python -m pytest", "."),
+                VerificationCandidate("python -m pytest", "backend"),
+                VerificationCandidate("pnpm test", "frontend"),
+            ),
+            ("backend/app.py",),
+        )
+
+        self.assertEqual(lines, ("backend/: python -m pytest",))
+
+    def test_verification_candidate_lines_keeps_all_candidates_with_selected_first(self) -> None:
+        lines = verification_candidate_lines(
+            (
+                VerificationCandidate("python -m pytest", "."),
+                VerificationCandidate("python -m pytest", "backend"),
+                VerificationCandidate("pnpm test", "frontend"),
+            ),
+            ("backend/app.py",),
+        )
+
+        self.assertEqual(
+            lines,
+            (
+                "backend/: python -m pytest",
+                "python -m pytest",
+                "frontend/: pnpm test",
+            ),
+        )
+
+    def test_selected_verification_candidate_lines_empty_when_policy_has_no_unique_match(
+        self,
+    ) -> None:
+        lines = selected_verification_candidate_lines(
+            (
+                VerificationCandidate("python -m pytest", "backend"),
+                VerificationCandidate("pytest", "backend"),
+            ),
+            ("backend/app.py",),
+        )
+
+        self.assertEqual(lines, ())
 
     def test_directory_scan_has_entry_budget_and_skips_dot_directories(self) -> None:
         with tempfile.TemporaryDirectory() as td:

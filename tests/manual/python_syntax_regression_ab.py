@@ -24,8 +24,8 @@ if __package__ in (None, ""):
 from codey import agent, provider_controls
 from codey.agent_tools import AgentToolFns
 from codey.events import RunEvent, render_run_event
-from codey.project_map import render_project_map
 from codey.providers.registry import connect_provider, provider_ids
+from tests.manual.project_task_context import render_production_project_map
 from codey.tool_runtime import ToolOutcome, _python_syntax_regression_hint
 from codey.tool_runtime import edit_file as runtime_edit_file
 
@@ -142,7 +142,7 @@ def _run_arm(
             on_event=events.append,
             fresh_chat=True,
             provider_id=getattr(provider, "id", ""),
-            project_map=render_project_map(root, task=TASK),
+            project_map=render_production_project_map(root, task=TASK),
             tool_fns=AgentToolFns(edit_file=probe),
         )
 

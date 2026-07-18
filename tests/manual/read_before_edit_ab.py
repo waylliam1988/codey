@@ -15,8 +15,8 @@ if __package__ in (None, ""):
 
 from codey import agent, provider_controls
 from codey.events import RunEvent, render_run_event
-from codey.project_map import render_project_map
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
+from tests.manual.project_task_context import render_production_project_map
 
 
 GUARD_MESSAGE = "read_file required before editing existing file:"
@@ -198,7 +198,7 @@ def _run_case(provider, root: Path, case: GuardCase, arm: str, max_turns: int) -
             on_event=events.append,
             fresh_chat=True,
             provider_id=getattr(provider, "id", ""),
-            project_map=render_project_map(root, task=case.task),
+            project_map=render_production_project_map(root, task=case.task),
         )
     finally:
         _restore_guard(original_guard)

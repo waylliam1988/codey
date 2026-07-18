@@ -4,6 +4,20 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.57 - Policy-Sourced Verification Candidates
+
+- Reliability: Project Map and Review Verification Map now receive candidate
+  check commands from the same trusted `verification_policy` discovery path,
+  instead of letting Project Map infer commands from manifests on its own.
+- Review: Verification Map now labels only the uniquely selected, change-relevant
+  command as `Recommended local check candidates`; broader commands remain
+  available under the weaker broader-candidate label when no unique choice
+  exists.
+- Cleanup: direct `render_project_map()` calls no longer guess candidate
+  commands. Manual probes that need production context now use
+  `ProjectTaskContextBuilder`, keeping evaluation scripts aligned with the
+  real Writer path.
+
 ## 0.1.56 - Composer Folder Label Cleanup
 
 - UX: no-project chats now keep the composer context label as `Choose folder`

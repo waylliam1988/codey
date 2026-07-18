@@ -16,10 +16,10 @@ from codey.project_map import (
     MAX_SYMBOL_FILE_BYTES,
     MAX_SYMBOL_MAP_CHARS,
     build_symbol_overview,
-    render_project_map,
 )
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.tool_runtime import list_directory
+from tests.manual.project_task_context import render_production_project_map
 
 
 @dataclass(frozen=True)
@@ -95,7 +95,13 @@ def _prompt(case: ProbeCase, root: Path, *, arm: str) -> str:
         listing,
     ]
     if arm in {"project_map", "symbol_map"}:
-        parts.extend(["", render_project_map(root, task=case.task if arm == "symbol_map" else "")])
+        parts.extend([
+            "",
+            render_production_project_map(
+                root,
+                task=case.task if arm == "symbol_map" else "",
+            ),
+        ])
     parts.extend(["", "Task:", case.task])
     return "\n".join(parts)
 

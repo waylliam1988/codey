@@ -27,10 +27,10 @@ from codey import provider_controls
 from codey.agent import run
 from codey.agent_tools import AgentToolFns
 from codey.handoff import ConversationContext
-from codey.project_map import render_project_map
 from codey.protocols.json_codec import JsonToolCodec
 from codey.providers.registry import connect_provider
 from codey.tool_runtime import ToolOutcome
+from tests.manual.project_task_context import render_production_project_map
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-context-delta-ab.json"
 
@@ -202,7 +202,7 @@ def run_arm(case: Case, arm: str, provider_id: str, port: int, max_turns: int) -
         raw = connect_provider(provider_id, port=port)
         provider = CountingProvider(raw)
         conversation = ConversationContext()
-        project_map = render_project_map(case.project)
+        project_map = render_production_project_map(case.project, task=case.warmup_task)
         warmup_events = []
         warmup = run(
             provider,

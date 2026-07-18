@@ -38,10 +38,10 @@ from codey.project_map import (
     _safe_relative,
     _symbol_score,
     _symbols_for_file,
-    render_project_map,
 )
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.tool_runtime import list_directory
+from tests.manual.project_task_context import render_production_project_map
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-scoped-task-plan-ab.json"
 ARMS = ("current", "hint", "scoped")
@@ -357,7 +357,7 @@ def _project_context(root: Path, task: str) -> str:
     return "\n\n".join([
         "Initial listing:",
         list_directory(root, ".").output,
-        render_project_map(root, task=task),
+        render_production_project_map(root, task=task),
     ])
 
 

@@ -2,7 +2,7 @@
 
 This does not change production Project Map behavior. It compares:
 
-* current: production render_project_map(..., task=task)
+* current: production ProjectTaskContextBuilder Project Map
 * lens: the same bounded Project Map, but with Focused subtree/Symbol overview
   replaced by a compact Task Lens prototype.
 
@@ -49,11 +49,14 @@ from codey.project_map import (
     _symbol_score,
     _tokens,
     build_project_map,
-    render_project_map,
 )
 from codey.protocols.json_codec import JsonToolCodec
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.tool_runtime import ToolOutcome, list_directory
+from tests.manual.project_task_context import (
+    production_candidate_command_lines,
+    render_production_project_map,
+)
 from tests.manual.zoom_project_map_ab import ProbeCase, build_deep_fixture
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-task-lens-ab.json"
@@ -179,11 +182,15 @@ def build_task_lens(
 
 
 def render_current_project_map(root: Path, task: str) -> str:
-    return render_project_map(root, task=task)
+    return render_production_project_map(root, task=task)
 
 
 def render_lens_project_map(root: Path, task: str) -> str:
-    project_map = build_project_map(root, task=task)
+    project_map = build_project_map(
+        root,
+        task=task,
+        candidate_commands=production_candidate_command_lines(root, task=task),
+    )
     lens = build_task_lens(
         root,
         task,

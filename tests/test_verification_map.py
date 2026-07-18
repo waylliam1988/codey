@@ -123,6 +123,25 @@ class VerificationMapTests(unittest.TestCase):
             ("web/: npm test", "python -m pytest", "python -m ruff check ."),
         )
 
+    def test_recommended_commands_replace_project_map_broader_commands(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            result = build_verification_map(
+                td,
+                _changes("app.py"),
+                recommended_commands=("pnpm test",),
+                project_map=(
+                    "Project Map:\n"
+                    "Candidate commands (inspect before running):\n"
+                    "- npm test\n"
+                ),
+            )
+
+        rendered = result.render()
+        self.assertIn("Recommended local check candidates:", rendered)
+        self.assertIn("- pnpm test", rendered)
+        self.assertNotIn("- npm test", rendered)
+        self.assertNotIn("Broader check candidates", rendered)
+
     def test_empty_result_is_honest(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             rendered = build_verification_map(td, _changes("app.py")).render()

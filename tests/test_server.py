@@ -2347,6 +2347,79 @@ class SessionThreadingTests(unittest.TestCase):
         review_event = next(event for event in emitted if event["type"] == "review")
         self.assertEqual(review_event["text"], "MiMo approved")
 
+    def test_review_verification_map_uses_policy_candidate_command_lines(self) -> None:
+        state = server.State()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        reviewer = mock.Mock()
+        reviewer.name = "Xiaomi MiMo Chat"
+        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [
+                {
+                    "path": "backend/src/app.ts",
+                    "status": "M",
+                    "additions": 1,
+                    "deletions": 0,
+                }
+            ],
+            "diff": (
+                "diff --git a/backend/src/app.ts b/backend/src/app.ts\n"
+                "+export const value = 2;\n"
+            ),
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("implemented", "done", 1, False, True),
+            ),
+            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch(
+                "codey.verification_policy.shutil.which",
+                return_value="exe",
+            ),
+        ):
+            root = Path(td)
+            (root / "backend" / "src").mkdir(parents=True)
+            (root / "backend" / "src" / "app.ts").write_text(
+                "export const value = 1;\n",
+                encoding="utf-8",
+            )
+            (root / "backend" / "package.json").write_text(
+                '{"scripts":{"test":"vitest"}}',
+                encoding="utf-8",
+            )
+            (root / "frontend").mkdir()
+            (root / "frontend" / "package.json").write_text(
+                '{"scripts":{"test":"vitest"}}',
+                encoding="utf-8",
+            )
+            (root / "pnpm-lock.yaml").write_text(
+                "lockfileVersion: 9\n",
+                encoding="utf-8",
+            )
+            server._run_task("session-1", td, "Build the feature", 8, False, "deepseek")
+
+        prompt = reviewer.send.call_args.args[0]
+        verification_map = prompt.split(
+            "Verification Map (bounded candidates; not coverage proof):",
+            1,
+        )[1].split("Recent tool log:", 1)[0]
+        self.assertIn("Candidate commands (inspect before running)", prompt)
+        self.assertIn("Recommended local check candidates", prompt)
+        self.assertIn("- backend/: pnpm test", verification_map)
+        self.assertNotIn("- frontend/: pnpm test", verification_map)
+
     def test_empty_project_uses_hidden_plan_before_writer(self) -> None:
         state = server.State()
         writer = mock.Mock()

@@ -667,3 +667,41 @@ def check_matches_candidate(
 ) -> bool:
     normalized_cwd = PurePosixPath(str(cwd or ".").replace("\\", "/")).as_posix()
     return command.strip() == candidate.command and normalized_cwd == candidate.cwd
+
+
+def verification_candidate_lines(
+    candidates: Sequence[VerificationCandidate],
+    changed_paths: Sequence[str] = (),
+) -> tuple[str, ...]:
+    selected = select_verification_candidate(candidates, changed_paths) if changed_paths else None
+    ordered = list(candidates)
+    if selected is not None:
+        ordered = [selected, *(item for item in ordered if item != selected)]
+    lines: list[str] = []
+    for item in ordered:
+        line = _verification_candidate_line(item)
+        if not line:
+            continue
+        if line not in lines:
+            lines.append(line)
+    return tuple(lines)
+
+
+def selected_verification_candidate_lines(
+    candidates: Sequence[VerificationCandidate],
+    changed_paths: Sequence[str],
+) -> tuple[str, ...]:
+    selected = select_verification_candidate(candidates, changed_paths)
+    if selected is None:
+        return ()
+    line = _verification_candidate_line(selected)
+    return (line,) if line else ()
+
+
+def _verification_candidate_line(item: VerificationCandidate) -> str:
+    command = str(item.command or "").replace("\r", " ").replace("\n", " ").strip()
+    if not command:
+        return ""
+    cwd_text = str(item.cwd or ".").replace("\r", " ").replace("\n", " ").strip() or "."
+    cwd = PurePosixPath(cwd_text.replace("\\", "/")).as_posix()
+    return command if cwd == "." else f"{cwd.rstrip('/')}/: {command}"

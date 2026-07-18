@@ -10,6 +10,7 @@ from codey.project_map import render_project_map
 from codey.verification_policy import (
     VerificationCandidate,
     discover_verification_candidates,
+    verification_candidate_lines,
 )
 from codey.work_checkpoint import (
     CheckpointCheck,
@@ -78,9 +79,15 @@ class ProjectTaskContextBuilder:
             verified_commands,
             checkpoint.resumed_verification_commands,
         )
+        command_lines = verification_candidate_lines(verification_candidates)
         return ProjectTaskContext(
             verified_facts=verified_facts,
-            project_map=safe_project_map(project, verified_facts, task),
+            project_map=safe_project_map(
+                project,
+                verified_facts,
+                task,
+                command_lines,
+            ),
             verification_verified_commands=verified_commands,
             resumed_verification_commands=checkpoint.resumed_verification_commands,
             verification_candidates=verification_candidates,
@@ -184,8 +191,20 @@ def safe_verification_candidates(
         return ()
 
 
-def safe_project_map(project: str | Path, verified_facts: str, task: str = "") -> str:
+def safe_project_map(
+    project: str | Path,
+    verified_facts: str,
+    task: str = "",
+    candidate_commands: tuple[str, ...] | None = None,
+) -> str:
     try:
-        return render_project_map(project, verified_facts, task=task)
+        if candidate_commands is None:
+            return render_project_map(project, verified_facts, task=task)
+        return render_project_map(
+            project,
+            verified_facts,
+            task=task,
+            candidate_commands=candidate_commands,
+        )
     except Exception:
         return ""

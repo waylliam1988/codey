@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import fields
 from pathlib import Path
 from unittest import mock
 
 from codey import project_task_context
 from codey.project_facts import ProjectFactsStore
-from codey.project_task_context import ProjectTaskContextBuilder
+from codey.project_task_context import ProjectTaskContext, ProjectTaskContextBuilder
 from codey.work_checkpoint import WorkCheckpointStore
 
 
@@ -31,6 +32,12 @@ class BrokenCheckpointStore:
 
 
 class ProjectTaskContextBuilderTests(unittest.TestCase):
+    def test_context_does_not_store_rendered_candidate_command_lines(self) -> None:
+        self.assertNotIn(
+            "verification_command_lines",
+            {item.name for item in fields(ProjectTaskContext)},
+        )
+
     def test_build_without_stores_still_returns_project_map(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -214,6 +221,66 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
                 )
 
         self.assertEqual(context.project_map, "")
+
+    def test_project_map_uses_policy_candidate_commands_for_node_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "codey.verification_policy.shutil.which",
+            return_value="exe",
+        ):
+            root = Path(td)
+            (root / "package.json").write_text(
+                '{"scripts":{"test":"vitest","lint":"eslint ."}}',
+                encoding="utf-8",
+            )
+            (root / "pnpm-lock.yaml").write_text(
+                "lockfileVersion: 9\n",
+                encoding="utf-8",
+            )
+
+            context = ProjectTaskContextBuilder().build(
+                project=root,
+                task="update app",
+                session_id="s",
+                run_id="r",
+                continue_task=False,
+                provider_session_changed=False,
+            )
+
+        self.assertTrue(
+            any(item.command == "pnpm test" for item in context.verification_candidates)
+        )
+        self.assertIn("- pnpm test", context.project_map)
+        self.assertIn("- pnpm run lint", context.project_map)
+        self.assertNotIn("- npm test", context.project_map)
+        self.assertNotIn("- npm run lint", context.project_map)
+
+    def test_project_map_uses_policy_candidate_commands_for_python_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "codey.verification_policy.shutil.which",
+            return_value="exe",
+        ):
+            root = Path(td)
+            (root / "pyproject.toml").write_text(
+                "[tool.ruff]\n[tool.mypy]\n",
+                encoding="utf-8",
+            )
+
+            context = ProjectTaskContextBuilder().build(
+                project=root,
+                task="update app",
+                session_id="s",
+                run_id="r",
+                continue_task=False,
+                provider_session_changed=False,
+            )
+
+        commands = {item.command for item in context.verification_candidates}
+        self.assertIn("ruff check .", commands)
+        self.assertIn("mypy .", commands)
+        self.assertIn("- ruff check .", context.project_map)
+        self.assertIn("- mypy .", context.project_map)
+        self.assertNotIn("- python -m ruff check .", context.project_map)
+        self.assertNotIn("- python -m mypy .", context.project_map)
 
     def test_verified_project_facts_feed_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as td:

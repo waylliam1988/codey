@@ -4,6 +4,18 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.57 - 验证候选命令来源统一
+
+- 可靠性：Project Map 和 Review Verification Map 现在都从同一套可信的
+  `verification_policy` 发现路径接收候选检查命令，不再由 Project Map 自己
+  根据 manifest 另猜一套命令。
+- Review：Verification Map 只会把唯一选中、和本次改动相关的检查命令标为
+  `Recommended local check candidates`；没有唯一选择时，其他命令仍会放在更弱的
+  broader candidate 标签下。
+- 清理：直接调用 `render_project_map()` 不再推断候选命令。需要生产上下文的
+  manual probe 现在改用 `ProjectTaskContextBuilder`，让评测脚本和真实 Writer
+  路径保持一致。
+
 ## 0.1.56 - Composer 文件夹文案收敛
 
 - UX：无项目聊天里的 composer context 现在始终显示 `Choose folder`，即使输入框里有

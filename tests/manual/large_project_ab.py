@@ -24,10 +24,10 @@ if str(ROOT) not in sys.path:
 from codey import provider_controls
 from codey.agent import run
 from codey.agent_tools import AgentToolFns
-from codey.project_map import render_project_map
 from codey.protocols.json_codec import JsonToolCodec, SYSTEM_PROMPT, TOOL_SPEC_BY_NAME
 from codey.providers.registry import connect_provider
 from codey.tool_runtime import ToolOutcome
+from tests.manual.project_task_context import render_production_project_map
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-large-project-ab.json"
 NAVIGATION_TOOLS = ("find_references",)
@@ -156,7 +156,11 @@ def run_arm(
             max_turns=max_turns,
             on_event=events.append,
             fresh_chat=True,
-            project_map="" if arm == "baseline" else render_project_map(case.project),
+            project_map=(
+                ""
+                if arm == "baseline"
+                else render_production_project_map(case.project, task=case.task)
+            ),
             tool_fns=tool_fns,
         )
         tool_events = [
