@@ -26,7 +26,7 @@ class ShellFollowupTests(unittest.TestCase):
         self.assertIn("Follow-up hints:", text)
         self.assertIn("exited with code 0", text)
         self.assertIn("manifest or lockfiles", text)
-        self.assertIn("npm run lint in frontend/.", text)
+        self.assertIn("frontend/: npm run lint.", text)
         self.assertIn("Do not claim tests passed", text)
         self.assertIn("internal guidance", text)
 
@@ -47,7 +47,7 @@ class ShellFollowupTests(unittest.TestCase):
         ))
 
         self.assertIn("Do not claim tests passed until a run tool result shows it.", text)
-        self.assertIn("npm test in the project root.", text)
+        self.assertIn("A trusted local check is available: npm test.", text)
         self.assertNotIn("npm test in ..", text)
 
     def test_dependency_install_failure_with_missing_executable(self) -> None:
@@ -122,7 +122,7 @@ class ShellFollowupTests(unittest.TestCase):
         ))
 
         self.assertIn("pushed or released", text)
-        self.assertIn("python -m pytest in the project root.", text)
+        self.assertIn("A trusted local check is available: python -m pytest.", text)
         self.assertNotIn("python -m pytest in ..", text)
 
     def test_verification_candidates_keep_discovery_order_after_prior_success(self) -> None:
@@ -136,6 +136,8 @@ class ShellFollowupTests(unittest.TestCase):
         ))
 
         self.assertLess(text.index("npm run z"), text.index("npm run a"))
+        self.assertIn("z/: npm run z", text)
+        self.assertIn("a/: npm run a", text)
 
     def test_not_found_text_does_not_imply_missing_executable(self) -> None:
         text = render_shell_followup(ShellFollowupInput(

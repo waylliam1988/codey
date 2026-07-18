@@ -41,7 +41,7 @@ class SetupContextTests(unittest.TestCase):
         self.assertIn("- node: missing", rendered)
         self.assertIn("package.json: scripts test, build, dev", rendered)
         self.assertIn("requirements.txt: Python requirements", rendered)
-        self.assertIn("package.json: package install commands should use the project root", rendered)
+        self.assertIn("package.json: npm install should use the project root", rendered)
         self.assertIn("requirements.txt: Python dependency install should reference this manifest", rendered)
         self.assertNotIn("C:/Tools", rendered)
 
@@ -59,10 +59,43 @@ class SetupContextTests(unittest.TestCase):
             rendered = render_setup_context(root)
 
         self.assertIn("frontend/package.json: scripts test", rendered)
-        self.assertIn("frontend/package.json: package install commands should use frontend/", rendered)
+        self.assertIn("frontend/package.json: npm install should use frontend/", rendered)
         self.assertIn("backend/requirements.txt: Python dependency install", rendered)
         self.assertIn("backend/ as the working directory", rendered)
         self.assertNotIn("python -m pip install -r requirements.txt", rendered)
+
+    def test_node_setup_notes_use_package_manager_and_parent_lockfile(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "pnpm-lock.yaml").write_text("lockfileVersion: '9'\n", encoding="utf-8")
+            frontend = root / "frontend"
+            frontend.mkdir()
+            (frontend / "package.json").write_text(
+                json.dumps({"scripts": {"test": "vitest"}}),
+                encoding="utf-8",
+            )
+            admin = root / "admin"
+            admin.mkdir()
+            (admin / "package.json").write_text(
+                json.dumps({"packageManager": "yarn@4.0.0"}),
+                encoding="utf-8",
+            )
+
+            rendered = render_setup_context(root)
+
+        self.assertIn("frontend/package.json: pnpm install should use frontend/", rendered)
+        self.assertIn("admin/package.json: yarn install should use admin/", rendered)
+        self.assertNotIn("package install commands", rendered)
+
+    def test_node_setup_notes_keep_npm_ci_for_local_package_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "package.json").write_text("{}", encoding="utf-8")
+            (root / "package-lock.json").write_text("{}", encoding="utf-8")
+
+            rendered = render_setup_context(root)
+
+        self.assertIn("package.json: npm ci or npm install should use the project root", rendered)
 
     def test_sensitive_manifest_paths_are_omitted(self) -> None:
         with tempfile.TemporaryDirectory() as td:

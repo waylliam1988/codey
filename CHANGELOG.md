@@ -4,6 +4,18 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.59 - Package Manager Setup Hints
+
+- Reliability: setup context now uses the same Node package-manager detection
+  as trusted verification discovery: `packageManager` first, then local
+  lockfiles, then parent lockfiles, then `npm`.
+- UX: setup hints now recommend concrete install commands such as `pnpm install`,
+  `yarn install`, or `npm ci or npm install` instead of generic package-install
+  wording.
+- Consistency: shell approval follow-up now renders trusted check candidates
+  through the shared verification candidate formatter, keeping cwd-scoped
+  command lines aligned with Project Map and Verification Map.
+
 ## 0.1.58 - Scoped Successful Change Checks
 
 - Reliability: successful-change facts now preserve the working directory for

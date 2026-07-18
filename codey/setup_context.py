@@ -10,6 +10,7 @@ from pathlib import PurePosixPath
 
 from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.project_map import EXCLUDED_DIRS, LOCK_FILENAMES, MANIFEST_NAMES, _path_blocked
+from codey.verification_policy import node_package_manager_for_directory
 
 
 MAX_SETUP_CONTEXT_CHARS = 2_200
@@ -77,7 +78,7 @@ def render_setup_context(project: str | Path) -> str:
             "or lockfile entries; more may exist"
         )
 
-    setup_notes = _manifest_setup_notes(manifests, lockfiles)
+    setup_notes = _manifest_setup_notes(root, manifests)
     if setup_notes:
         lines.append("")
         lines.append("Manifest setup notes:")
@@ -199,25 +200,19 @@ def _pyproject_detail(path: Path) -> str:
 
 
 def _manifest_setup_notes(
+    root: Path,
     manifests: tuple[str, ...],
-    lockfiles: tuple[str, ...],
 ) -> tuple[str, ...]:
     notes: list[str] = []
-    lock_names_by_dir = {
-        (_parent_dir(rel), PurePosixPath(rel).name)
-        for rel in lockfiles
-    }
 
     for rel in manifests:
         name = PurePosixPath(rel).name
         parent = _parent_dir(rel)
         scope = _scope_note(parent)
         if name == "package.json":
-            command_family = (
-                "npm ci or npm install"
-                if (parent, "package-lock.json") in lock_names_by_dir
-                else "package install commands"
-            )
+            directory = root if parent == "." else root / parent
+            manager = node_package_manager_for_directory(root, directory)
+            command_family = _node_install_command(directory, manager)
             notes.append(
                 f"{rel}: {command_family} should use {scope}; may download "
                 "packages, write dependency folders or lockfiles, and run "
@@ -250,6 +245,12 @@ def _manifest_setup_notes(
             "Commands outside the run allowlist still require shell approval."
         )
     return tuple(dict.fromkeys(notes))
+
+
+def _node_install_command(directory: Path, manager: str) -> str:
+    if manager == "npm" and (directory / "package-lock.json").is_file():
+        return "npm ci or npm install"
+    return f"{manager} install"
 
 
 def _parent_dir(rel: str) -> str:

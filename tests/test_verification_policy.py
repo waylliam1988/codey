@@ -13,6 +13,7 @@ from codey.verification_policy import (
     check_covers_changes,
     check_covers_selected_candidate,
     discover_verification_candidates,
+    node_package_manager_for_directory,
     select_verification_candidate,
     selected_verification_candidate_lines,
     verification_candidate_lines,
@@ -162,6 +163,37 @@ class VerificationPolicyTests(unittest.TestCase):
 
         self.assertTrue(any(item.command == "yarn test" for item in candidates))
         self.assertFalse(any(item.command == "pnpm test" for item in candidates))
+
+    def test_node_package_manager_helper_uses_project_metadata_without_which(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "pnpm-lock.yaml").write_text("lockfileVersion: '9'\n", encoding="utf-8")
+            frontend = root / "frontend"
+            frontend.mkdir()
+            (frontend / "package.json").write_text(
+                '{"packageManager":"yarn@4.0.0"}',
+                encoding="utf-8",
+            )
+
+            with mock.patch(
+                "codey.verification_policy.shutil.which",
+                side_effect=AssertionError("which should not be called"),
+            ):
+                manager = node_package_manager_for_directory(root, frontend)
+
+        self.assertEqual(manager, "yarn")
+
+    def test_node_package_manager_helper_uses_nearest_parent_lockfile(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "pnpm-lock.yaml").write_text("lockfileVersion: '9'\n", encoding="utf-8")
+            frontend = root / "frontend"
+            frontend.mkdir()
+            (frontend / "package.json").write_text("{}", encoding="utf-8")
+
+            manager = node_package_manager_for_directory(root, frontend)
+
+        self.assertEqual(manager, "pnpm")
 
     def test_nearest_parent_lockfile_selects_package_manager_for_monorepo(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(

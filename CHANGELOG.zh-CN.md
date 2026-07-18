@@ -4,6 +4,16 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.59 - Package Manager Setup 提示
+
+- 可靠性：setup context 现在和可信验证发现使用同一套 Node package manager
+  识别规则：先看 `packageManager`，再看当前 lockfile，再向上找 lockfile，
+  最后才退回 `npm`。
+- UX：setup 提示现在会给出更具体的安装命令，比如 `pnpm install`、
+  `yarn install`，或 `npm ci or npm install`，不再只是泛泛地说 package install。
+- 一致性：shell 审批后的 follow-up 现在复用统一的 verification candidate
+  formatter，带 cwd 的检查命令格式会和 Project Map / Verification Map 保持一致。
+
 ## 0.1.58 - 成功改动检查保留工作目录
 
 - 可靠性：successful-change facts 现在会保留本地检查命令的工作目录，所以 scoped

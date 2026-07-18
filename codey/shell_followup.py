@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from codey.verification_policy import VerificationCandidate
+from codey.verification_policy import VerificationCandidate, verification_candidate_lines
 
 
 MAX_OUTPUT_SCAN_CHARS = 4_000
@@ -177,17 +177,9 @@ def _verification_hints(
         key=lambda item: not item.previously_passed,
     )
     hints: list[str] = []
-    for candidate in preferred[:MAX_VERIFICATION_HINTS]:
-        hints.append(
-            f"A trusted local check is available: {candidate.command} "
-            f"{_cwd_phrase(candidate.cwd)}."
-        )
+    for line in verification_candidate_lines(preferred)[:MAX_VERIFICATION_HINTS]:
+        hints.append(f"A trusted local check is available: {line}.")
     return hints
-
-
-def _cwd_phrase(cwd: str) -> str:
-    clean = str(cwd or ".").strip().replace("\\", "/") or "."
-    return "in the project root" if clean == "." else f"in {clean}/"
 
 
 def _dedupe(items: Sequence[str]) -> list[str]:

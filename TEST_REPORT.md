@@ -1,5 +1,35 @@
 # Codey Test Report
 
+## 0.1.59 Package Manager Setup Hints
+
+Setup context and shell follow-up now share command-formatting and package
+manager selection with trusted verification discovery. This keeps install and
+follow-up hints from drifting away from the commands Codey would trust for
+verification.
+
+Production changes:
+
+- `verification_policy.node_package_manager_for_directory()` exposes the
+  existing package-manager selection rule without checking executable
+  availability.
+- `setup_context.py` uses that rule for Node install hints, including parent
+  lockfiles and `packageManager` overrides.
+- `shell_followup.py` renders trusted check candidates via
+  `verification_candidate_lines()`, so cwd-scoped hints use the same format as
+  Project Map and Verification Map.
+
+Validation:
+
+```text
+python -m pytest tests\test_verification_policy.py tests\test_setup_context.py tests\test_shell_followup.py -q: 62 passed, 5 subtests passed
+python -m pytest tests\test_server.py tests\test_shell_risk.py -q: 100 passed, 39 subtests passed
+python -B tests\manual\shell_approval_followup_ab.py --self-test: passed
+python -m ruff check codey tests: passed
+python -m py_compile codey\verification_policy.py codey\setup_context.py codey\shell_followup.py: passed
+git diff --check: passed
+python -m pytest -q: 1089 passed, 111 subtests passed
+```
+
 ## 0.1.58 Scoped Successful Change Checks
 
 Successful-change project facts now preserve the working directory for the

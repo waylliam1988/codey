@@ -200,6 +200,29 @@ def _package_manager(root: Path, directory: Path, package: object) -> str:
     )
 
 
+def node_package_manager_for_directory(
+    root: str | Path,
+    directory: str | Path,
+    package: object | None = None,
+) -> str:
+    """Return the Node package manager implied by package metadata and lockfiles."""
+
+    root_path = Path(root).expanduser().resolve()
+    directory_path = Path(directory).expanduser()
+    if not directory_path.is_absolute():
+        directory_path = root_path / directory_path
+    directory_path = directory_path.resolve()
+
+    package_data = package
+    if package_data is None:
+        package_text = _read_manifest(directory_path / "package.json")
+        try:
+            package_data = json.loads(package_text) if package_text else {}
+        except ValueError:
+            package_data = {}
+    return _package_manager(root_path, directory_path, package_data)
+
+
 def _node_script_command(manager: str, script: str) -> str:
     if manager == "bun":
         return f"bun run {script}"
