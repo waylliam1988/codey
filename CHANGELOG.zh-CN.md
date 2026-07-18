@@ -4,6 +4,17 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.60 - CLI Agent JSONL
+
+- CLI：`python -m codey agent --json ...` 现在会在 stdout 按 JSONL
+  输出事件流，包括 session header、agent start/end、turn、status/info、
+  以及有边界的 tool start/result 记录。
+- 集成：JSONL 输出给脚本、CI wrapper、benchmark 和外部启动器使用，让它们
+  不用解析给人看的 stderr 日志，也能稳定读取进度和最终结果。
+- 安全：普通 CLI 模式不变。JSONL 的工具记录只包含紧凑 result 摘要、
+  有边界的文本字段和 command/status 元数据；provider、server、UI、
+  agent 和工具执行行为都没有变化。
+
 ## 0.1.59 - Package Manager Setup 提示
 
 - 可靠性：setup context 现在和可信验证发现使用同一套 Node package manager

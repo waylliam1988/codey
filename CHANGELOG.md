@@ -4,6 +4,18 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.60 - CLI Agent JSONL
+
+- CLI: `python -m codey agent --json ...` now emits one JSON object per stdout
+  line, including a session header, agent start/end records, turn events,
+  status/info events, and bounded tool start/result records.
+- Integration: JSONL output is intended for scripts, CI wrappers, benchmarks,
+  and external launchers that need stable progress and final-result fields
+  without parsing human-readable stderr logs.
+- Safety: normal CLI mode is unchanged. JSONL tool records include only compact
+  result summaries, bounded text fields, and command/status metadata; provider,
+  server, UI, agent, and tool execution behavior are unchanged.
+
 ## 0.1.59 - Package Manager Setup Hints
 
 - Reliability: setup context now uses the same Node package-manager detection

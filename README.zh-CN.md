@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.59-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.1.60-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.59`
+版本：`0.1.60`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -333,6 +333,9 @@ python -m codey chat --provider qwen "用一句话解释 Python 的 GIL"
 
 # 直接运行 agent
 python -m codey agent --provider qwen --project E:\my-project --max-turns 10 "修复失败的测试"
+
+# 输出 JSONL 事件流，方便脚本、CI 或 benchmark 消费
+python -m codey agent --json --provider qwen --project E:\my-project "修复失败的测试"
 ```
 
 ---

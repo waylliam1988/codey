@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -18,6 +20,13 @@ def _safe_print(value, *, file=sys.stdout) -> None:
     encoding = getattr(file, "encoding", None) or "utf-8"
     safe = text.encode(encoding, errors="replace").decode(encoding, errors="replace")
     file.write(safe + "\n")
+
+
+def _print_jsonl(payload: dict, *, file=sys.stdout) -> None:
+    _safe_print(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+        file=file,
+    )
 
 
 def cmd_ui(args: argparse.Namespace) -> int:
@@ -51,24 +60,45 @@ def cmd_chat(args: argparse.Namespace) -> int:
 def cmd_agent(args: argparse.Namespace) -> int:
     from codey import provider_controls
     from codey.agent import run
-    from codey.events import render_run_event
+    from codey.events import clip_event_text, render_run_event, run_event_payload
     from codey.providers import connect_provider
 
     task = " ".join(args.task)
     project = Path(args.project).resolve()
     project.mkdir(parents=True, exist_ok=True)
+    json_mode = getattr(args, "json", False) is True
+    run_id = "cli_" + uuid.uuid4().hex[:12]
 
     _safe_print(f"[codey] project: {project}", file=sys.stderr)
+    if json_mode:
+        _print_jsonl({
+            "type": "session",
+            "schema_version": 1,
+            "run_id": run_id,
+            "project": project.as_posix(),
+            "provider": args.provider,
+        }, file=sys.stdout)
     provider_controls.begin_task_context(f"cli-agent:{args.provider}")
     provider = None
     try:
         provider = connect_provider(args.provider, port=args.port)
+        if json_mode:
+            _print_jsonl({"type": "agent_start", "run_id": run_id}, file=sys.stdout)
+
+            def on_event(event) -> None:
+                payload = run_event_payload(event, run_id=run_id)
+                if payload is not None:
+                    _print_jsonl(payload, file=sys.stdout)
+        else:
+            def on_event(event) -> None:
+                _safe_print(render_run_event(event), file=sys.stderr)
+
         result = run(
             provider,
             project,
             task,
             max_turns=args.max_turns,
-            on_event=lambda event: _safe_print(render_run_event(event), file=sys.stderr),
+            on_event=on_event,
         )
     finally:
         try:
@@ -76,7 +106,19 @@ def cmd_agent(args: argparse.Namespace) -> int:
                 provider.close()
         finally:
             provider_controls.end_task_context()
-    _safe_print(result.summary)
+    if json_mode:
+        _print_jsonl({
+            "type": "agent_end",
+            "run_id": run_id,
+            "stop_reason": result.stop_reason,
+            "summary": clip_event_text(result.summary),
+            "turns": result.turns,
+            "changed": result.changed,
+            "checks_passed": result.checks_passed,
+            "checks_ran": result.checks_ran,
+        }, file=sys.stdout)
+    else:
+        _safe_print(result.summary, file=sys.stdout)
     return 0
 
 
@@ -109,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
     sp_agent.add_argument("--max-turns", type=int, default=DEFAULT_MAX_TURNS)
     sp_agent.add_argument("--port", type=int, default=9222)
     sp_agent.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
+    sp_agent.add_argument("--json", action="store_true", help="emit JSONL events on stdout")
     sp_agent.add_argument("task", nargs="+")
     sp_agent.set_defaults(func=cmd_agent)
 

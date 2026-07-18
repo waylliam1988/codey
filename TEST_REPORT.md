@@ -1,5 +1,36 @@
 # Codey Test Report
 
+## 0.1.60 CLI Agent JSONL
+
+CLI agent mode now has an opt-in machine-readable output path. `python -m
+codey agent --json ...` writes one JSON object per stdout line for scripts,
+CI wrappers, benchmark harnesses, and external launchers, while the default
+human-readable CLI behavior remains unchanged.
+
+Production changes:
+
+- `events.run_event_payload()` renders `RunEvent` objects as compact JSON-ready
+  payloads, including status/info events, turn events, tool start records, and
+  bounded tool result records.
+- `codey agent --json` emits a session header, an `agent_start` event, the
+  event stream, and an `agent_end` record with final stop reason, summary,
+  turn count, change state, and verification flags.
+- JSONL payload text fields, command metadata, tool result previews, and final
+  summaries are clipped so one event cannot grow into an unbounded stdout line.
+- Provider, server, UI, agent runtime, and tool execution behavior are
+  unchanged.
+
+Validation:
+
+```text
+python -m pytest tests\test_cli.py tests\test_agent.py tests\test_protocols.py -q: 130 passed, 25 subtests passed
+python -m ruff check codey\cli.py codey\events.py tests\test_cli.py: passed
+python -m py_compile codey\cli.py codey\events.py: passed
+python -m ruff check codey tests: passed
+git diff --check: passed
+python -m pytest -q: 1092 passed, 111 subtests passed
+```
+
 ## 0.1.59 Package Manager Setup Hints
 
 Setup context and shell follow-up now share command-formatting and package
