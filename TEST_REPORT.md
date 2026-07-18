@@ -11,7 +11,7 @@ Validation:
 
 ```text
 python -m pytest tests\test_ui.py -q: 46 passed
-python -m pytest tests\test_ui.py tests\test_handoff.py tests\test_server.py tests\test_ui_browser_e2e.py -q: 149 passed
+python -m pytest tests\test_ui.py tests\test_handoff.py tests\test_server.py tests\test_ui_browser_e2e.py -q: 150 passed
 python -m ruff check codey\handoff.py tests\test_ui.py tests\test_handoff.py tests\test_server.py tools\ui_e2e.py: passed
 python -m py_compile codey\handoff.py: passed
 git diff --check: passed
@@ -49,13 +49,20 @@ Safety and scope:
 Validation:
 
 ```text
+python -m pytest tests\test_server.py::SessionThreadingTests::test_restart_after_chat_attach_preserves_project_handoff_for_writer -q: 1 passed
 python -m pytest tests\test_ui.py -q: 46 passed
-python -m pytest tests\test_ui.py tests\test_handoff.py tests\test_server.py tests\test_ui_browser_e2e.py -q: 149 passed
+python -m pytest tests\test_ui.py tests\test_handoff.py tests\test_server.py tests\test_ui_browser_e2e.py -q: 150 passed
 python -m ruff check codey\handoff.py tests\test_ui.py tests\test_handoff.py tests\test_server.py tools\ui_e2e.py: passed
 python -m py_compile codey\handoff.py: passed
-python -m pytest -q: 1070 passed, 111 subtests passed
+python -m pytest -q: 1071 passed, 111 subtests passed
 git diff --check: passed
 ```
+
+The restart regression covers this path: a New Chat with planning facts is
+attached to a project, the UI state is persisted, Codey restarts, and the first
+project Writer still receives the factual handoff plus bounded visible chat
+excerpt. The current request is not duplicated into the handoff, and tool/shell
+outputs from the visible chat are not included.
 
 ## 0.1.54 Trusted Verification Discovery
 

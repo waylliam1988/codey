@@ -1366,6 +1366,99 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("WRITER-HANDOFF-MARKER", handoff)
         self.assertNotIn("User: Apply the plan here.", handoff)
 
+    def test_restart_after_chat_attach_preserves_project_handoff_for_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as state_home, tempfile.TemporaryDirectory() as td:
+            project = Path(td)
+            (project / "app.py").write_text("print('existing')\n", encoding="utf-8")
+            first = server.State(state_home)
+            context = first.conversation_for("session-1")
+            context.begin_window("deepseek", "chat")
+            context.record_exchange(
+                "Pick storage",
+                "Use SQLite for simple local persistence.",
+                ConversationSnapshot(
+                    mode="chat",
+                    goal="Build a small notes app",
+                    provider_id="deepseek",
+                    latest_user="Pick storage",
+                    latest_reply="Use SQLite for simple local persistence.",
+                ),
+            )
+            first.save_ui_state({
+                "active_id": "session-1",
+                "updated_at": 1,
+                "revision": 1,
+                "sessions": [{
+                    "id": "session-1",
+                    "title": "Notes plan",
+                    "messages": [
+                        {"type": "user", "text": "Pick storage"},
+                        {
+                            "type": "asst",
+                            "text": "Keep RESTART-ATTACH-MARKER with SQLite.",
+                        },
+                        {
+                            "type": "tool",
+                            "kind": "read_file",
+                            "result": "secret tool output",
+                        },
+                        {"type": "shell_result", "output": "secret shell output"},
+                        {"type": "user", "text": "Apply the plan here."},
+                    ],
+                    "terminalRuns": [],
+                    "createdAt": 0,
+                    "projectId": "project-1",
+                    "provider": "deepseek",
+                }],
+                "projects": [{
+                    "id": "project-1",
+                    "name": "notes-app",
+                    "path": str(project),
+                    "expanded": True,
+                    "createdAt": 0,
+                }],
+            })
+
+            restarted = server.State(state_home)
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+
+            with (
+                mock.patch.object(server, "STATE", restarted),
+                mock.patch.object(restarted, "get_provider", return_value=provider),
+                mock.patch.object(
+                    server,
+                    "agent_run",
+                    return_value=RunResult("Writer done", "done", 1, False, False),
+                ) as agent_run,
+                mock.patch.object(
+                    server,
+                    "collect_changes",
+                    return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
+                ),
+            ):
+                server._run_task(
+                    "session-1",
+                    str(project),
+                    "Apply the plan here.",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+        self.assertEqual(agent_run.call_count, 1)
+        self.assertEqual(agent_run.call_args.args[2], "Apply the plan here.")
+        self.assertTrue(agent_run.call_args.kwargs["fresh_chat"])
+        handoff = agent_run.call_args.kwargs["handoff"]
+        self.assertIn("Build a small notes app", handoff)
+        self.assertIn("Use SQLite", handoff)
+        self.assertIn("recent_visible_conversation", handoff)
+        self.assertIn("RESTART-ATTACH-MARKER", handoff)
+        self.assertNotIn("User: Apply the plan here.", handoff)
+        self.assertNotIn("secret tool output", handoff)
+        self.assertNotIn("secret shell output", handoff)
+
     def test_plain_chat_model_switch_uses_hidden_handoff(self) -> None:
         state = server.State()
         writer = mock.Mock()
