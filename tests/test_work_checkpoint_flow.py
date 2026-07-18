@@ -611,8 +611,8 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             self.assertNotIn("python -m pytest tests/old.py", execution)
             facts = state.project_facts.load(project)
             self.assertEqual(
-                facts.successful_changes[-1].checks,
-                ("python -m pytest",),
+                [item.command for item in facts.successful_changes[-1].checks],
+                ["python -m pytest"],
             )
 
     def test_verification_map_failure_does_not_block_review(self) -> None:

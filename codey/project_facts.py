@@ -54,17 +54,26 @@ class VerifiedCommand:
 
 
 @dataclass(frozen=True)
+class SuccessfulCheck:
+    command: str
+    cwd: str = "."
+
+    def to_payload(self) -> dict:
+        return {"command": self.command, "cwd": self.cwd}
+
+
+@dataclass(frozen=True)
 class SuccessfulChange:
     task: str
     files: tuple[str, ...] = ()
-    checks: tuple[str, ...] = ()
+    checks: tuple[SuccessfulCheck, ...] = ()
     receipt: str = ""
 
     def to_payload(self) -> dict:
         payload = {
             "task": self.task,
             "files": list(self.files),
-            "checks": list(self.checks),
+            "checks": [item.to_payload() for item in self.checks],
         }
         if self.receipt:
             payload["receipt"] = self.receipt
@@ -140,11 +149,27 @@ def _safe_receipt(value: object) -> str:
     return text[:240].rstrip()
 
 
+def _successful_check_from_object(value: object) -> SuccessfulCheck | None:
+    if isinstance(value, dict):
+        command = value.get("command", "")
+        cwd = value.get("cwd", ".")
+    elif isinstance(value, str):
+        command = value
+        cwd = "."
+    else:
+        command = getattr(value, "command", "")
+        cwd = getattr(value, "cwd", ".")
+    fact = _verified_command(str(command or ""), str(cwd or "."))
+    if fact is None or fact.kind != "check":
+        return None
+    return SuccessfulCheck(fact.command, fact.cwd)
+
+
 def _successful_change(
     *,
     task: object,
     files: Sequence[object],
-    checks: Sequence[VerifiedCommand],
+    checks: Sequence[object],
     receipt: object = "",
 ) -> SuccessfulChange | None:
     task_excerpt = _safe_task_excerpt(task)
@@ -155,26 +180,29 @@ def _successful_change(
         for path in (_safe_rel_path(item) for item in files)
         if path is not None
     )[:MAX_CHANGE_FILES]
-    check_commands = tuple(item.command for item in checks if item.kind == "check")[:MAX_VERIFIED_COMMANDS]
-    if not safe_files or not check_commands:
+    safe_checks = tuple(
+        item
+        for item in (_successful_check_from_object(check) for check in checks)
+        if item is not None
+    )[:MAX_VERIFIED_COMMANDS]
+    if not safe_files or not safe_checks:
         return None
     return SuccessfulChange(
         task=task_excerpt,
         files=safe_files,
-        checks=check_commands,
+        checks=safe_checks,
         receipt=_safe_receipt(receipt),
     )
 
 
-def _check_facts_from_payload(value: object) -> tuple[VerifiedCommand, ...]:
+def _successful_checks_from_payload(value: object) -> tuple[SuccessfulCheck, ...]:
     if not isinstance(value, (list, tuple)):
         return ()
-    facts = []
-    for command in value:
-        fact = _verified_command(str(command or ""), ".")
-        if fact is not None and fact.kind == "check":
-            facts.append(fact)
-    return tuple(facts)
+    return tuple(
+        item
+        for item in (_successful_check_from_object(check) for check in value)
+        if item is not None
+    )
 
 
 def _successful_change_from_payload(value: object) -> SuccessfulChange | None:
@@ -183,7 +211,7 @@ def _successful_change_from_payload(value: object) -> SuccessfulChange | None:
     return _successful_change(
         task=value.get("task"),
         files=value.get("files") if isinstance(value.get("files"), (list, tuple)) else (),
-        checks=_check_facts_from_payload(value.get("checks")),
+        checks=_successful_checks_from_payload(value.get("checks")),
         receipt=value.get("receipt", ""),
     )
 
@@ -250,19 +278,15 @@ class ProjectFactsStore:
         *,
         task: object,
         files: Sequence[object],
-        check_commands: Sequence[object],
+        checks: Sequence[object] | None = None,
+        check_commands: Sequence[object] | None = None,
         receipt: object = "",
     ) -> bool:
-        checks = [
-            fact
-            for command in check_commands
-            if (fact := _verified_command(str(command or ""), ".")) is not None
-            and fact.kind == "check"
-        ]
+        raw_checks = checks if checks is not None else check_commands
         change = _successful_change(
             task=task,
             files=files,
-            checks=checks,
+            checks=raw_checks or (),
             receipt=receipt,
         )
         if change is None:
@@ -301,9 +325,13 @@ class ProjectFactsStore:
             files = ", ".join(change.files[:4])
             if len(change.files) > 4:
                 files += ", ..."
-            checks = "; ".join(change.checks[:2])
+            checks = "; ".join(_format_check(item) for item in change.checks[:2])
             receipt = f" ({change.receipt})" if change.receipt else ""
             lines.append(
                 f"- successful change: {change.task}; files: {files}; checks: {checks}{receipt}"
             )
         return "\n".join(lines)
+
+
+def _format_check(item: SuccessfulCheck) -> str:
+    return item.command if item.cwd == "." else f"{item.cwd}/: {item.command}"

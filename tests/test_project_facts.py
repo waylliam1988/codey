@@ -9,6 +9,7 @@ from codey import agent
 from codey import server
 from codey.agent import RunResult
 from codey.events import RunEvent
+from codey.execution_evidence import CheckEvidence
 from codey.models import ToolCall
 from codey.project_facts import MAX_VERIFIED_COMMANDS, ProjectFactsStore
 from codey.tool_runtime import ToolOutcome
@@ -114,6 +115,80 @@ class ProjectFactsTests(unittest.TestCase):
         self.assertIn("checks: python -m unittest", rendered)
         self.assertNotIn("../secret.py", rendered)
 
+    def test_successful_change_keeps_check_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            store = ProjectFactsStore(state_td)
+
+            self.assertFalse(store.record_successful_change(
+                td,
+                task="Implement backend feature",
+                files=["backend/app.js"],
+                checks=[CheckEvidence("pnpm test", "../outside")],
+            ))
+            self.assertTrue(store.record_successful_change(
+                td,
+                task="Implement backend feature",
+                files=["backend/app.js"],
+                checks=[
+                    CheckEvidence("pnpm test", "backend"),
+                    CheckEvidence("python app.py", "backend"),
+                ],
+            ))
+
+            facts = store.load(td)
+            rendered = store.render(td)
+
+        self.assertEqual(len(facts.successful_changes), 1)
+        self.assertEqual(facts.successful_changes[0].checks[0].command, "pnpm test")
+        self.assertEqual(facts.successful_changes[0].checks[0].cwd, "backend")
+        self.assertIn("checks: backend/: pnpm test", rendered)
+        self.assertNotIn("python app.py", rendered)
+
+    def test_successful_change_loads_legacy_check_strings(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            store = ProjectFactsStore(state_td)
+            path = store.path_for(td)
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                '{"schema_version":1,"commands":[],"successful_changes":['
+                '{"task":"Legacy task","files":["app.py"],'
+                '"checks":["python -m unittest"]}]}',
+                encoding="utf-8",
+            )
+
+            facts = store.load(td)
+            rendered = store.render(td)
+
+        self.assertEqual(facts.successful_changes[0].checks[0].command, "python -m unittest")
+        self.assertEqual(facts.successful_changes[0].checks[0].cwd, ".")
+        self.assertIn("checks: python -m unittest", rendered)
+
+    def test_successful_change_loads_structured_checks_safely(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            store = ProjectFactsStore(state_td)
+            path = store.path_for(td)
+            path.parent.mkdir(parents=True)
+            path.write_text(
+                '{"schema_version":1,"commands":[],"successful_changes":['
+                '{"task":"Structured task","files":["backend/app.js"],'
+                '"checks":['
+                '{"command":"pnpm test","cwd":"backend"},'
+                '{"command":"python app.py","cwd":"backend"},'
+                '{"command":"python -m unittest","cwd":"../outside"}'
+                ']}]}',
+                encoding="utf-8",
+            )
+
+            facts = store.load(td)
+            rendered = store.render(td)
+
+        self.assertEqual(len(facts.successful_changes), 1)
+        self.assertEqual(len(facts.successful_changes[0].checks), 1)
+        self.assertEqual(facts.successful_changes[0].checks[0].command, "pnpm test")
+        self.assertEqual(facts.successful_changes[0].checks[0].cwd, "backend")
+        self.assertIn("checks: backend/: pnpm test", rendered)
+        self.assertNotIn("python app.py", rendered)
+
     def test_projects_are_isolated_and_invalid_state_is_ignored(self) -> None:
         with (
             tempfile.TemporaryDirectory() as first,
@@ -191,8 +266,67 @@ class ProjectFactsTests(unittest.TestCase):
                 server._run_task("session-1", td, "first", 4, False, "deepseek")
                 server._run_task("session-1", td, "second", 4, False, "deepseek")
 
-        self.assertEqual(captured_facts[0], "")
-        self.assertIn("python -m unittest", captured_facts[1])
+            self.assertEqual(captured_facts[0], "")
+            self.assertIn("python -m unittest", captured_facts[1])
+
+    def test_task_runner_records_successful_change_with_check_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            backend = project / "backend"
+            backend.mkdir(parents=True)
+            (backend / "package.json").write_text(
+                '{"scripts":{"test":"node test.js"}}',
+                encoding="utf-8",
+            )
+            (backend / "app.js").write_text("before\n", encoding="utf-8")
+            state = server.State(root / "state")
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+
+            def fake_agent_run(*args, **kwargs):
+                target = Path(args[1]) / "backend" / "app.js"
+                target.write_text("after\n", encoding="utf-8")
+                kwargs["on_event"](RunEvent.tool_finished(
+                    1,
+                    ToolCall("edit", {"path": "backend/app.js"}),
+                    ToolOutcome("edited", True, changed=True),
+                ))
+                kwargs["on_event"](RunEvent.tool_finished(
+                    2,
+                    ToolCall("run", {"path": "backend", "command": "npm test"}),
+                    ToolOutcome("ok", True, exit_code=0),
+                ))
+                return RunResult("complete", "done", 2, True, True, True)
+
+            changes = {
+                "ok": True,
+                "mode": "git",
+                "changed_count": 1,
+                "files": [{"path": "backend/app.js", "status": "M"}],
+                "diff": "diff --git a/backend/app.js b/backend/app.js\n+after\n",
+            }
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch.object(server, "_run_review", return_value=None),
+                mock.patch(
+                    "codey.verification_policy.shutil.which",
+                    return_value="npm",
+                ),
+            ):
+                server._run_task("session-1", str(project), "Update backend", 8, False, "deepseek")
+
+            facts = state.project_facts.load(project)
+            rendered = state.project_facts.render(project)
+
+        self.assertEqual(facts.successful_changes[-1].checks[0].command, "npm test")
+        self.assertEqual(facts.successful_changes[-1].checks[0].cwd, "backend")
+        self.assertIn("checks: backend/: npm test", rendered)
 
     def test_task_runner_does_not_record_failed_run(self) -> None:
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:

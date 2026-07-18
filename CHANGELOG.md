@@ -4,6 +4,17 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.58 - Scoped Successful Change Checks
+
+- Reliability: successful-change facts now preserve the working directory for
+  local checks, so scoped validations render as `backend/: npm test` instead of
+  losing the path context.
+- Compatibility: existing project fact files with legacy string-only
+  `successful_changes[].checks` continue to load with `cwd="."`; new writes use
+  structured `{command, cwd}` check records.
+- Safety: non-check commands, sensitive commands, and unsafe working-directory
+  values remain filtered before they can become durable project facts.
+
 ## 0.1.57 - Policy-Sourced Verification Candidates
 
 - Reliability: Project Map and Review Verification Map now receive candidate

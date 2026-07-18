@@ -4,6 +4,14 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.58 - 成功改动检查保留工作目录
+
+- 可靠性：successful-change facts 现在会保留本地检查命令的工作目录，所以 scoped
+  验证会渲染成 `backend/: npm test`，不再丢掉“这个检查是在 backend 里跑的”。
+- 兼容性：旧的 `successful_changes[].checks` 字符串格式仍然可以读取，并默认
+  `cwd="."`；新写入会使用 `{command, cwd}` 结构化 check 记录。
+- 安全：非检查命令、敏感命令和不安全的工作目录仍然会被过滤，不会进入持久项目事实。
+
 ## 0.1.57 - 验证候选命令来源统一
 
 - 可靠性：Project Map 和 Review Verification Map 现在都从同一套可信的

@@ -1,5 +1,32 @@
 # Codey Test Report
 
+## 0.1.58 Scoped Successful Change Checks
+
+Successful-change project facts now preserve the working directory for the
+checks that justified the change. A scoped run such as `npm test` from
+`backend/` is stored and rendered as `backend/: npm test`, instead of being
+persisted as a root-level command with no path context.
+
+Production changes:
+
+- `ProjectFactsStore.record_successful_change()` accepts structured check
+  evidence with both `command` and `cwd`.
+- New `successful_changes[].checks` payloads are written as `{command, cwd}`.
+- Legacy string-only check payloads remain readable and are treated as
+  project-root checks.
+- TaskRunner passes `ExecutionEvidence.successful_checks` through without
+  stripping `cwd`.
+
+Validation:
+
+```text
+python -m pytest tests\test_project_facts.py tests\test_work_checkpoint_flow.py tests\test_project_task_context.py tests\test_verification_policy.py tests\test_server.py -q: 175 passed, 5 subtests passed
+python -m ruff check codey tests: passed
+python -m py_compile codey\project_facts.py codey\task_runner.py: passed
+git diff --check: passed
+python -m pytest -q: 1085 passed, 111 subtests passed
+```
+
 ## 0.1.57 Policy-Sourced Verification Candidates
 
 Codey now has a single source of truth for trusted local check candidates.

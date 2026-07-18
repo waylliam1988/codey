@@ -990,9 +990,7 @@ class TaskRunner:
                                 project,
                                 task=fact_task,
                                 files=files,
-                                check_commands=[
-                                    item.command for item in evidence.successful_checks
-                                ],
+                                checks=evidence.successful_checks,
                                 receipt=receipt.text,
                             )
                         )
