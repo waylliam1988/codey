@@ -35,6 +35,84 @@ class ReviewProtocolTests(unittest.TestCase):
 
         self.assertEqual(result.verdict, "changes_requested")
 
+    def test_parse_review_keeps_valid_optional_anchor(self) -> None:
+        result = review.parse_review_response(
+            '{"verdict":"changes_requested","summary":"Fix one edge case",'
+            '"findings":[{"path":"app.py","hunk_index":1,"new_line":12,'
+            '"issue":"Empty input fails"}]}',
+            changes={
+                "ok": True,
+                "changed_count": 1,
+                "files": [{"path": "app.py", "status": "M"}],
+                "diff": (
+                    "diff --git a/app.py b/app.py\n"
+                    "--- a/app.py\n"
+                    "+++ b/app.py\n"
+                    "@@ -10,4 +10,4 @@\n"
+                    "-old\n"
+                    "+new\n"
+                ),
+            },
+        )
+
+        finding = result.findings[0]
+        self.assertEqual(finding.path, "app.py")
+        self.assertEqual(finding.hunk_index, 1)
+        self.assertEqual(finding.new_line, 12)
+        self.assertIsNone(finding.old_line)
+
+    def test_parse_review_clears_invalid_anchor_without_dropping_finding(self) -> None:
+        result = review.parse_review_response(
+            '{"verdict":"changes_requested","summary":"Fix one edge case",'
+            '"findings":[{"path":"app.py","hunk_index":99,"new_line":500,'
+            '"old_line":600,"issue":"Empty input fails"}]}',
+            changes={
+                "ok": True,
+                "changed_count": 1,
+                "files": [{"path": "app.py", "status": "M"}],
+                "diff": (
+                    "diff --git a/app.py b/app.py\n"
+                    "--- a/app.py\n"
+                    "+++ b/app.py\n"
+                    "@@ -10,4 +10,4 @@\n"
+                    "-old\n"
+                    "+new\n"
+                ),
+            },
+        )
+
+        finding = result.findings[0]
+        self.assertEqual(finding.path, "app.py")
+        self.assertEqual(finding.issue, "Empty input fails")
+        self.assertIsNone(finding.hunk_index)
+        self.assertIsNone(finding.new_line)
+        self.assertIsNone(finding.old_line)
+
+    def test_parse_review_clears_anchor_for_unknown_changed_path(self) -> None:
+        result = review.parse_review_response(
+            '{"verdict":"changes_requested","summary":"Fix one edge case",'
+            '"findings":[{"path":"invented.py","hunk_index":1,"new_line":1,'
+            '"issue":"Wrong file"}]}',
+            changes={
+                "ok": True,
+                "changed_count": 1,
+                "files": [{"path": "app.py", "status": "M"}],
+                "diff": (
+                    "diff --git a/app.py b/app.py\n"
+                    "--- a/app.py\n"
+                    "+++ b/app.py\n"
+                    "@@ -1,1 +1,1 @@\n"
+                    "-old\n"
+                    "+new\n"
+                ),
+            },
+        )
+
+        finding = result.findings[0]
+        self.assertEqual(finding.path, "invented.py")
+        self.assertIsNone(finding.hunk_index)
+        self.assertIsNone(finding.new_line)
+
     def test_render_review_prompt_is_read_only_and_json_only(self) -> None:
         prompt = review.render_review_prompt(
             project="E:/demo",
@@ -55,6 +133,10 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("Return only JSON. No analysis. No explanation.", prompt)
         self.assertIn("Return exactly one JSON object", prompt)
         self.assertIn("M app.py +1 -1", prompt)
+        self.assertIn("ChangeSet Summary", prompt)
+        self.assertIn("Do not invent anchors", prompt)
+        self.assertIn('"hunk_index":1', prompt)
+        self.assertIn('"new_line":41', prompt)
         self.assertIn("<copy path from Changed files>", prompt)
         self.assertNotIn("relative/file.py", prompt)
         self.assertIn("exit 0: python -m unittest", prompt)
@@ -168,7 +250,15 @@ class ReviewProtocolTests(unittest.TestCase):
         result = review.ReviewResult(
             verdict="changes_requested",
             summary="Fix one issue",
-            findings=[review.ReviewFinding("app.py", "Missing test", "Add a unittest")],
+            findings=[
+                review.ReviewFinding(
+                    "app.py",
+                    "Missing test",
+                    "Add a unittest",
+                    hunk_index=2,
+                    new_line=41,
+                )
+            ],
         )
 
         prompt = review.render_writer_followup("Original task", result)
@@ -180,6 +270,7 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("do not invent a change", prompt)
         self.assertIn("Original task", prompt)
         self.assertIn("app.py", prompt)
+        self.assertIn("app.py hunk 2 new line 41", prompt)
         self.assertIn("Missing test", prompt)
         self.assertNotIn("Continue the Codey task", prompt)
 
@@ -206,6 +297,7 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("Return only the JSON object now", prompt)
         self.assertIn("preserving your previous verdict", prompt)
         self.assertIn("must still be copied from the Changed files list", prompt)
+        self.assertIn("do not invent filenames or anchors", prompt)
         self.assertIn("<copy path from Changed files>", prompt)
         self.assertNotIn("relative/file.py", prompt)
         self.assertIn('"verdict":"approved"', prompt)

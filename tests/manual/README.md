@@ -1,5 +1,21 @@
 # Manual live benchmarks
 
+`changeset_review_ab.py` compares the old path-only Review prompt with the
+current ChangeSet-summary prompt. It sends fixed review-only diffs to one live
+provider at a time and scores whether the model catches the seeded issue,
+uses a changed path, and returns a valid optional hunk/line anchor:
+
+```powershell
+python -B tests\manual\changeset_review_ab.py --self-test
+python -B tests\manual\changeset_review_ab.py --provider deepseek --timeout 90
+python -B tests\manual\changeset_review_ab.py --provider qwen --timeout 90
+python -B tests\manual\changeset_review_ab.py --provider mimo --timeout 90
+python -B tests\manual\changeset_review_ab.py --provider glm --timeout 90
+```
+
+Run providers one at a time to keep web stalls isolated. The script writes its
+JSON report to the system temporary directory by default.
+
 `project_map_symbol_ab.py` compares first-file selection with only the initial
 listing, with the current Project Map, and with Project Map plus the
 task-aware Symbol overview:

@@ -188,6 +188,7 @@ def _run_review(
                 review = parse_review_with_repair(
                     reply,
                     lambda repair: reviewer.send(repair, timeout=REVIEW_TIMEOUT),
+                    changes=changes,
                 )
             label = review_label(reviewer_id)
             if review.approved:

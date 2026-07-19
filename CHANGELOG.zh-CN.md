@@ -4,6 +4,18 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.61 - ChangeSet 锚点审查
+
+- Review：最终 diff review 现在会先收到结构化 ChangeSet 摘要，再看到原始
+  diff；摘要包含 changed files 和解析出来的 hunk 范围。
+- 可靠性：reviewer finding 可以带可选的 `hunk_index`、`new_line` 或
+  `old_line` 锚点。Codey 会先用真实 changed hunks 校验这些锚点，再交给
+  Writer；只包含 path 的 finding 仍然有效。
+- 兼容性：`/api/changes`、UI diff drawer、receipt、restore，以及
+  `changes.py` 的底层 dict 输出都不变。Git rename 的 `old.py -> new.py`
+  展示标签只会在 ChangeSet 解释层规范成新路径，让 review hunk 能正确挂到
+  rename 后的文件上。
+
 ## 0.1.60 - CLI Agent JSONL
 
 - CLI：`python -m codey agent --json ...` 现在会在 stdout 按 JSONL

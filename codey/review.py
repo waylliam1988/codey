@@ -10,6 +10,8 @@ import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from codey.change_set import ChangeAnchor, ChangeSet
+
 
 MAX_REVIEW_DIFF_CHARS = 60_000
 MAX_REVIEW_LOG_CHARS = 8_000
@@ -20,11 +22,11 @@ REVIEW_REPAIR_PROMPT = (
     "Return only the JSON object now, preserving your previous verdict and "
     "concrete findings. No analysis, no explanation, no markdown. "
     "Every findings[].path must still be copied from the Changed files list; "
-    "do not invent filenames. "
+    "do not invent filenames or anchors. "
     '{"verdict":"approved","summary":"Looks good","findings":[]} or '
     '{"verdict":"changes_requested","summary":"One issue found","findings":'
     '[{"path":"<copy path from Changed files>","issue":"Concrete problem",'
-    '"suggested_fix":"Small fix"}]}'
+    '"suggested_fix":"Small fix","hunk_index":1,"new_line":41}]}'
 )
 
 
@@ -33,6 +35,9 @@ class ReviewFinding:
     path: str
     issue: str
     suggested_fix: str = ""
+    hunk_index: int | None = None
+    new_line: int | None = None
+    old_line: int | None = None
 
 
 @dataclass(frozen=True)
@@ -89,10 +94,15 @@ def _json_objects(text: str) -> list[dict[str, Any]]:
     return objects
 
 
-def parse_review_response(text: str) -> ReviewResult:
+def parse_review_response(
+    text: str,
+    *,
+    changes: dict | ChangeSet | None = None,
+) -> ReviewResult:
     """Parse a review response while tolerating light prose around JSON."""
+    change_set = _change_set(changes)
     for obj in _json_objects(text):
-        findings = _parse_findings(obj.get("findings"))
+        findings = _parse_findings(obj.get("findings"), change_set)
         verdict = _normalize_verdict(obj.get("verdict") or obj.get("status"), findings)
         summary = _clip(
             obj.get("summary")
@@ -110,15 +120,23 @@ def review_repair_prompt() -> str:
 def parse_review_with_repair(
     first_reply: str,
     send_repair_prompt: Callable[[str], str],
+    *,
+    changes: dict | ChangeSet | None = None,
 ) -> ReviewResult:
     """Parse a reviewer reply, allowing one JSON-only repair turn."""
     try:
-        return parse_review_response(first_reply)
+        return parse_review_response(first_reply, changes=changes)
     except ValueError:
-        return parse_review_response(send_repair_prompt(REVIEW_REPAIR_PROMPT))
+        return parse_review_response(
+            send_repair_prompt(REVIEW_REPAIR_PROMPT),
+            changes=changes,
+        )
 
 
-def _parse_findings(value: object) -> list[ReviewFinding]:
+def _parse_findings(
+    value: object,
+    change_set: ChangeSet | None = None,
+) -> list[ReviewFinding]:
     if not isinstance(value, list):
         return []
     findings: list[ReviewFinding] = []
@@ -128,15 +146,26 @@ def _parse_findings(value: object) -> list[ReviewFinding]:
         issue = _clip(item.get("issue") or item.get("problem") or item.get("message"))
         if not issue:
             continue
+        path = _clip(item.get("path") or item.get("file"), 400)
+        anchor = _normalized_anchor(
+            change_set,
+            path,
+            item.get("hunk_index") or item.get("hunk") or item.get("hunk_number"),
+            item.get("new_line") or item.get("line"),
+            item.get("old_line"),
+        )
         findings.append(
             ReviewFinding(
-                path=_clip(item.get("path") or item.get("file"), 400),
+                path=path,
                 issue=issue,
                 suggested_fix=_clip(
                     item.get("suggested_fix")
                     or item.get("fix")
                     or item.get("suggestion")
                 ),
+                hunk_index=anchor.hunk_index,
+                new_line=anchor.new_line,
+                old_line=anchor.old_line,
             )
         )
     return findings
@@ -160,12 +189,7 @@ def _normalize_verdict(value: object, findings: list[ReviewFinding]) -> str:
 
 
 def has_reviewable_changes(changes: dict) -> bool:
-    return bool(
-        changes
-        and changes.get("ok")
-        and int(changes.get("changed_count") or 0) > 0
-        and str(changes.get("diff") or "").strip()
-    )
+    return ChangeSet.from_changes(changes).has_reviewable_diff()
 
 
 def render_review_prompt(
@@ -180,18 +204,18 @@ def render_review_prompt(
     verification_map: str = "",
     execution_evidence: str = "",
 ) -> str:
-    files = changes.get("files") if isinstance(changes.get("files"), list) else []
+    change_set = ChangeSet.from_changes(changes)
+    files = change_set.files
     file_lines = []
     for file in files[:20]:
-        if not isinstance(file, dict):
-            continue
-        path = _clip(file.get("path"), 400)
-        status = _clip(file.get("status") or "M", 20)
-        additions = int(file.get("additions") or 0)
-        deletions = int(file.get("deletions") or 0)
+        path = _clip(file.path, 400)
+        status = _clip(file.status or "M", 20)
+        additions = file.additions
+        deletions = file.deletions
         file_lines.append(f"- {status} {path} +{additions} -{deletions}")
     changed_files = "\n".join(file_lines) if file_lines else "(not listed)"
-    raw_diff = "" if changes.get("diff") is None else str(changes.get("diff"))
+    change_summary = _clip(change_set.render_summary(), 8_000)
+    raw_diff = change_set.raw_diff
     diff_was_truncated = bool(changes.get("truncated")) or len(raw_diff) > MAX_REVIEW_DIFF_CHARS
     diff = _clip(raw_diff, MAX_REVIEW_DIFF_CHARS)
     diff_note = (
@@ -245,6 +269,9 @@ def render_review_prompt(
         "local file; absence from Changed files means it was not modified, not "
         "that it is missing. Paths from the Verification Map do not relax the "
         "Changed-files-only findings rule.\n\n"
+        "If a finding is tied to a specific changed hunk or line, include optional "
+        "findings[].hunk_index, findings[].new_line, or findings[].old_line. "
+        "Do not invent anchors. Omit them when unsure; path-only findings are valid.\n\n"
         "Return only JSON. No analysis. No explanation. The first character "
         "must be { and the last character must be }.\n"
         "Return exactly one JSON object and no markdown fences:\n"
@@ -252,13 +279,14 @@ def render_review_prompt(
         "or\n"
         '{"verdict":"changes_requested","summary":"One issue found","findings":'
         '[{"path":"<copy path from Changed files>","issue":"Concrete problem",'
-        '"suggested_fix":"Small fix"}]}\n\n'
+        '"suggested_fix":"Small fix","hunk_index":1,"new_line":41}]}\n\n'
         f"Project: {project}\n\n"
         f"Original user task:\n{_clip(task, 6_000)}\n\n"
         f"{brief_block}"
         f"{map_block}"
         f"Writer summary:\n{_clip(writer_summary, 2_000)}\n\n"
         f"Changed files:\n{changed_files}\n\n"
+        f"{change_summary}\n\n"
         f"{evidence_block}"
         f"{verification_block}"
         f"Recent tool log:\n{log}\n\n"
@@ -277,7 +305,7 @@ def render_writer_followup(
         "Continue the task in this same project.",
         "A second model reviewed the current diff and found concrete issues.",
         "Treat the review as advisory: verify it against the files, fix only valid issues, run relevant tests, then call done.",
-        "Reviewer paths are only clues. If a referenced path does not exist, do not keep using it; list/search/read the real project files instead.",
+        "Reviewer paths are only clues; anchors are only clues too. If a referenced path does not exist, do not keep using it; list/search/read the real project files instead.",
         "If a finding is invalid after verification and the relevant tests pass, do not invent a change; explain that briefly in done.",
         "",
         "Original user task:",
@@ -298,10 +326,55 @@ def render_writer_followup(
     ])
     if review.findings:
         for index, finding in enumerate(review.findings, start=1):
-            lines.append(f"{index}. {finding.path or '(unknown path)'}")
+            lines.append(f"{index}. {_finding_location(finding)}")
             lines.append(f"   Issue: {finding.issue}")
             if finding.suggested_fix:
                 lines.append(f"   Suggested fix: {finding.suggested_fix}")
     else:
         lines.append("1. " + review.summary)
     return "\n".join(lines)
+
+
+def _change_set(changes: dict | ChangeSet | None) -> ChangeSet | None:
+    if isinstance(changes, ChangeSet):
+        return changes
+    if isinstance(changes, dict):
+        return ChangeSet.from_changes(changes)
+    return None
+
+
+def _normalized_anchor(
+    change_set: ChangeSet | None,
+    path: str,
+    hunk_index: object,
+    new_line: object,
+    old_line: object,
+) -> ChangeAnchor:
+    if change_set is not None:
+        return change_set.normalize_anchor(path, hunk_index, new_line, old_line)
+    return ChangeAnchor(
+        _positive_int(hunk_index),
+        _positive_int(new_line),
+        _positive_int(old_line),
+    )
+
+
+def _positive_int(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _finding_location(finding: ReviewFinding) -> str:
+    parts = [finding.path or "(unknown path)"]
+    if finding.hunk_index is not None:
+        parts.append(f"hunk {finding.hunk_index}")
+    if finding.new_line is not None:
+        parts.append(f"new line {finding.new_line}")
+    if finding.old_line is not None:
+        parts.append(f"old line {finding.old_line}")
+    return " ".join(parts)

@@ -4,6 +4,19 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.61 - ChangeSet Anchored Review
+
+- Review: final diff review now receives a structured ChangeSet summary before
+  the raw diff, including changed files and parsed hunk ranges.
+- Reliability: reviewer findings may include optional `hunk_index`,
+  `new_line`, or `old_line` anchors. Codey validates those anchors against the
+  actual changed hunks before passing them back to the Writer; path-only
+  findings remain valid.
+- Compatibility: `/api/changes`, the UI diff drawer, receipts, restore, and the
+  underlying `changes.py` dict output are unchanged. Git rename labels such as
+  `old.py -> new.py` are normalized only inside the ChangeSet interpretation
+  layer so review hunks attach to the new path.
+
 ## 0.1.60 - CLI Agent JSONL
 
 - CLI: `python -m codey agent --json ...` now emits one JSON object per stdout

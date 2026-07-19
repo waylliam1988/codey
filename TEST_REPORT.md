@@ -1,5 +1,56 @@
 # Codey Test Report
 
+## 0.1.61 ChangeSet Anchored Review
+
+Final diff review now receives a structured ChangeSet summary before the raw
+diff, and reviewer findings can carry optional, validated anchors. This gives
+the Reviewer a file/hunk map and gives the Writer better repair clues while
+keeping path-only findings valid for model output that does not include anchors.
+
+Production changes:
+
+- `change_set.py` adds a bounded ChangeSet interpretation layer over the
+  existing `changes.py` dict output. It parses unified diff hunk headers,
+  renders a structure-first summary, and validates anchors without changing the
+  existing changes payload.
+- `review.py` accepts optional `hunk_index`, `new_line`, and `old_line` fields
+  on findings, validates them against the current ChangeSet when available, and
+  renders anchored review follow-ups as clues rather than facts.
+- `server.py` passes the reviewed `changes` payload into review parsing so
+  production reviewer anchors are cleaned before any repair turn reaches the
+  Writer.
+- Git rename labels such as `old.py -> new.py` are normalized inside ChangeSet
+  only, preserving old `/api/changes` behavior while attaching hunks to the new
+  path for review.
+
+Validation:
+
+```text
+python -B tests\manual\changeset_review_ab.py --self-test: passed
+python -m pytest tests\test_change_set.py tests\test_review.py -q: 25 passed
+python -m pytest tests\test_review_coordinator.py tests\test_server.py -q: 106 passed
+python -m pytest tests\test_changes.py tests\test_task_runner_project_map.py tests\test_work_checkpoint_flow.py tests\test_project_task_context.py -q: 45 passed
+python -m pytest tests\test_cli.py tests\test_agent.py tests\test_protocols.py -q: 130 passed, 25 subtests passed
+python -m ruff check codey tests: passed
+python -m pytest -q: 1103 passed, 111 subtests passed
+git diff --check: passed
+```
+
+Live web-model Review A/B:
+
+```text
+python -B tests\manual\changeset_review_ab.py --provider deepseek --timeout 90: baseline avg 4.5, current avg 7.0
+python -B tests\manual\changeset_review_ab.py --provider qwen --timeout 90: baseline avg 5.0, current avg 7.0
+python -B tests\manual\changeset_review_ab.py --provider mimo --timeout 90: baseline avg 5.0, current avg 7.0
+python -B tests\manual\changeset_review_ab.py --provider glm --timeout 90: baseline avg 5.0, current avg 7.0
+```
+
+Across DeepSeek, Qwen, MiMo, and GLM on two seeded review cases each,
+baseline caught the issue in 8/8 runs and current caught the issue in 8/8
+runs. Current improved path correctness from 7/8 to 8/8 and valid anchor
+production from 0/8 to 8/8. No provider timed out or required page debugging
+during this run.
+
 ## 0.1.60 CLI Agent JSONL
 
 CLI agent mode now has an opt-in machine-readable output path. `python -m
