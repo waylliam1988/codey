@@ -4,6 +4,19 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.63 - Single Provider Self-Review
+
+- Review: when no different provider is available for final diff review, Codey
+  now opens a temporary fresh tab for the Writer's same provider and runs a
+  clearly labelled self-review pass.
+- Repair loop: self-review findings reuse the existing Reviewer-to-Writer
+  repair path, but Writer follow-up wording no longer claims that a second
+  model reviewed the diff.
+- Safety: true second-model review is still preferred. Self-review does not
+  clear the Writer provider session, closes the temporary reviewer tab in a
+  `finally` block, and failures continue to fall back to the existing
+  single-model result.
+
 ## 0.1.62 - Review Impact Map
 
 - Review: final diff review now receives a short, bounded Review Impact Map

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey import cancellation
+from codey.adapter_overrides import AdapterOverride
 from codey.provider_diagnostics import ProviderActionError
 from codey.providers import (
     DeepSeekWebProvider,
@@ -302,6 +303,43 @@ class ProviderRegistryTests(unittest.TestCase):
             open_if_missing=False,
             bring_to_front=False,
         )
+
+    def test_connect_fresh_provider_tab_opens_isolated_background_tab(self) -> None:
+        qwen = object()
+        with (
+            mock.patch.object(registry, "load_enabled_override", return_value=None),
+            mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen) as connected,
+        ):
+            self.assertIs(registry.connect_fresh_provider_tab("qwen"), qwen)
+
+        connected.assert_called_once_with(
+            port=registry.DEFAULT_PORT,
+            profile=registry.DEFAULT_PROFILE,
+            open_if_missing=True,
+            bring_to_front=False,
+            fresh_tab=True,
+        )
+
+    def test_connect_fresh_provider_tab_uses_enabled_adapter_override_worker(self) -> None:
+        override = AdapterOverride(
+            "qwen",
+            7,
+            "active",
+            Path("override-root"),
+        )
+        with (
+            mock.patch.object(registry, "load_enabled_override", return_value=override),
+            mock.patch.object(registry, "WorkerChatProvider", return_value="worker") as worker,
+            mock.patch.object(registry.QwenWebProvider, "connect") as connected,
+        ):
+            self.assertEqual(registry.connect_fresh_provider_tab("qwen"), "worker")
+
+        worker.assert_called_once_with(
+            "qwen",
+            override,
+            port=registry.DEFAULT_PORT + registry.PROVIDER_WORKER_PORT_OFFSETS["qwen"],
+        )
+        connected.assert_not_called()
 
     def test_borrow_open_provider_reuses_sibling_page_without_closing_context(self) -> None:
         owner = SimpleNamespace(url="https://chat.deepseek.com/")

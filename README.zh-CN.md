@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.62-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.1.63-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
 
-版本：`0.1.62`
+版本：`0.1.63`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -25,7 +25,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 - **使用你已经登录的网页 AI**：支持 DeepSeek、Qwen、小米 MiMo 和 GLM。
 - **代码留在本机**：模型只能访问你选择的项目目录。
 - **受控工具循环**：读取、编辑、测试、diff、Review 和 Restore 都有边界。
-- **需要时多模型协作**：一个模型写代码，另一个模型审查最终 diff。
+- **改完后再审查**：一个模型写代码，另一个模型审查最终 diff；如果没有第二个可用模型，也可以让写代码的模型做一次明确标注的 self-review。
 - **对新手友好**：有 Git 会增强体验，但没有 Git 也能开始。
 
 ---
@@ -69,7 +69,7 @@ Codey 想解决的是一个很朴素的问题：
 - 有 Git 时自动增强为 Git diff / commit 工作流
 - 一个模型失败时，可以换另一个模型再试
 - 已打开的其他模型可以作为隐藏顾问，参与普通聊天、空项目规划和项目只读审查
-- 两个网页模型可以一起协作：一个写代码，另一个帮忙检查
+- 两个网页模型可以一起协作：一个写代码，另一个帮忙检查；没有第二个可用模型时，会用写代码的模型在临时 self-review 标签页里再检查一次，而不是完全跳过 Review
 - 用隐藏任务 brief 让 Writer 和 Reviewer 共享同一份有边界的意图
 - 在模型真正读文件前，给 Writer、隐藏顾问和 Reviewer 一份有边界的本地项目地图
 - 让模型在改某个符号前，先请求有边界的文本引用提示
@@ -164,9 +164,13 @@ MoA（Mixture of Agents，多模型协作）是 Codey 的隐藏顾问层，不�
 只有所选模型在本次任务里真的改了文件，第二个模型才会开始检查。项目内的
 普通问答和只读分析会直接显示所选模型的完整回答，不会把聊天强行变成 Review。
 
-如果你只打开了一个模型网页，Codey 就保持单模型模式。如果第二个模型没有打开、没有登录、或者中途失败，Codey 会安静地退回单模型结果。
+如果没有可用的不同 reviewer 模型，Codey 仍然可以打开一个临时 fresh tab，用同一个
+Writer 模型做 same-model self-review。这不是独立的第二意见，但会让写代码的模型用同一套有边界的
+Review prompt、Impact Map、Verification Map 和执行证据，再认真检查最终 diff。若 self-review
+也失败，Codey 才会安静地保留原来的单模型结果。
 
-一句话：简单任务开一个模型就够；想更稳一点，就多打开一个支持的模型网页。没有群聊界面，没有额外开关，也不会把主界面变复杂。
+一句话：两个不同模型最好，像第二位老师帮忙检查；只有一个模型时，也可以让同一位老师换张纸再认真看一遍；如果 Review
+都不可用，就退回原结果。没有群聊界面，没有额外开关，也不会把主界面变复杂。
 
 ---
 

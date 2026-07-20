@@ -128,3 +128,32 @@ def connect_existing_provider(provider_id: str) -> ChatProvider:
         open_if_missing=False,
         bring_to_front=False,
     )
+
+
+def connect_fresh_provider_tab(
+    provider_id: str,
+    *,
+    port: int = DEFAULT_PORT,
+    profile: Path = DEFAULT_PROFILE,
+) -> ChatProvider:
+    """Open a temporary provider tab for isolated review-style work."""
+
+    normalized = (provider_id or DEFAULT_PROVIDER_ID).strip().lower()
+    provider_type = PROVIDER_TYPES.get(normalized)
+    if provider_type is None:
+        raise ValueError(f"unsupported provider: {provider_id}")
+    if os.environ.get(WORKER_CHILD_ENV) != "1":
+        override = load_enabled_override(normalized)
+        if override is not None:
+            return WorkerChatProvider(
+                normalized,
+                override,
+                port=port + PROVIDER_WORKER_PORT_OFFSETS.get(normalized, 100),
+            )
+    return provider_type.connect(
+        port=port,
+        profile=profile,
+        open_if_missing=True,
+        bring_to_front=False,
+        fresh_tab=True,
+    )

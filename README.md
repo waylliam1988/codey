@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.62-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.63-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.62`
+Version: `0.1.63`
 
 [Version history](CHANGELOG.md)
 
@@ -25,7 +25,9 @@ Version: `0.1.62`
 - **Use web AI accounts you already have**: DeepSeek, Qwen, Xiaomi MiMo, and GLM are supported.
 - **Keep code local**: models access only the project folder you choose.
 - **Controlled tool loop**: read, edit, test, diff, review, and restore.
-- **Multi-model when useful**: one model can write while another reviews the final diff.
+- **Review after edits**: one model can write while another reviews the final
+  diff; if no second model is available, the writer can run a labelled
+  self-review pass.
 - **Beginner-friendly by design**: Git helps, but it is not required.
 
 ---
@@ -70,7 +72,9 @@ This is not about replacing professional tools. It is about making the first ste
 - Use Git when available, but not require it
 - Retry with another model when one model fails
 - Use already-open models as hidden advisors for chat, empty-project planning, and read-only project audits
-- Use two open web models together: one writes, the other reviews
+- Use two open web models together: one writes, the other reviews; when no
+  second model is available, use the writer model in a temporary self-review
+  tab instead of skipping review entirely
 - Use hidden task briefs so Writer and Reviewer share the same bounded intent
 - Give Writer, hidden advisors, and Reviewer a bounded local Project Map before
   they inspect files
@@ -193,9 +197,17 @@ The reviewer runs only after the selected model actually changes a file. Project
 questions and read-only analysis return the selected model's answer directly,
 without turning a conversation into a code review.
 
-If only one model page is open, Codey simply works in single-model mode. If the second model is closed, logged out, or fails to answer, Codey quietly falls back to the single-model result.
+If no different reviewer model is available, Codey can still run a same-model
+self-review in a temporary fresh tab. This is not an independent second
+opinion, but it asks the writer model to inspect the final diff again with the
+same bounded Review prompt, Impact Map, Verification Map, and evidence. If that
+self-review also fails, Codey quietly keeps the single-model result.
 
-In plain words: open one model for simple work; open two model pages when you want a little extra confidence. No group chat, no extra switch, no new concepts on the main screen.
+In plain words: two different models are best, because it is like a second
+teacher checking the work. One model can still do a self-review, which is like
+asking the same teacher to read it again carefully. If review is unavailable,
+Codey falls back to the original result. No group chat, no extra switch, no new
+concepts on the main screen.
 
 ---
 

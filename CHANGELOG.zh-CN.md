@@ -4,6 +4,17 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.63 - 单 Provider Self-Review
+
+- Review：当没有可用的不同 provider 来做最终 diff review 时，Codey
+  现在会为 Writer 的同一个 provider 打开一个临时 fresh tab，并运行明确标注的
+  self-review。
+- 修复链路：self-review 的 finding 继续复用现有 Reviewer 到 Writer 的
+  repair 流程，但 Writer follow-up 文案不再声称是“第二模型”审查。
+- 安全：真正的双模型 review 仍然优先。self-review 不会清空 Writer 的
+  provider session，临时 reviewer tab 会在 `finally` 中关闭；如果
+  self-review 也失败，仍然沿用原来的单模型结果降级。
+
 ## 0.1.62 - Review Impact Map
 
 - Review：最终 diff review 现在会在 ChangeSet 摘要后收到一段短小、有边界

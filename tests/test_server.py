@@ -454,6 +454,106 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertIn("Review Impact Map (bounded hints; not coverage proof)", prompt)
         reviewer.close.assert_called_once_with()
 
+    def test_run_review_uses_self_review_after_external_reviewers_fail(self) -> None:
+        state = server.State()
+        state.set_provider_session("deepseek", "session-1")
+        events = state.subscribe()
+        reviewer = mock.Mock()
+        reviewer.send.return_value = (
+            '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        )
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M"}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "reviewer_candidates", return_value=("mimo",)),
+            mock.patch.object(
+                server,
+                "connect_existing_provider",
+                side_effect=RuntimeError("not open"),
+            ) as connect_existing,
+            mock.patch.object(
+                server,
+                "connect_fresh_provider_tab",
+                return_value=reviewer,
+            ) as connect_self_review,
+        ):
+            reviewed = server._run_review(
+                session_id="session-1",
+                project="E:/demo",
+                task="task",
+                writer_summary="done",
+                changes=changes,
+                recent_log="",
+                writer_id="DeepSeek",
+            )
+
+        self.assertIsNotNone(reviewed)
+        self.assertEqual(reviewed[0], "deepseek")
+        connect_existing.assert_called_once_with("mimo")
+        connect_self_review.assert_called_once_with("deepseek")
+        self.assertEqual(state.provider_sessions["deepseek"], "session-1")
+        reviewer.new_chat.assert_called_once_with()
+        reviewer.close.assert_called_once_with()
+        review_event = events.get_nowait()
+        self.assertEqual(review_event["text"], "DeepSeek self-review approved")
+
+    def test_run_review_self_review_cancellation_closes_temp_reviewer(self) -> None:
+        state = server.State()
+        reviewer = mock.Mock()
+        reviewer.send.side_effect = cancellation.TaskCancelled("task stopped")
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "reviewer_candidates", return_value=()),
+            mock.patch.object(server, "connect_fresh_provider_tab", return_value=reviewer),
+        ):
+            with self.assertRaises(cancellation.TaskCancelled):
+                server._run_review(
+                    session_id="session-1",
+                    project="E:/demo",
+                    task="task",
+                    writer_summary="done",
+                    changes={"ok": True, "changed_count": 1, "diff": "+x"},
+                    recent_log="",
+                    writer_id="deepseek",
+                )
+
+        reviewer.close.assert_called_once_with()
+
+    def test_run_review_cancellation_before_self_review_does_not_open_fresh_tab(self) -> None:
+        state = server.State()
+        event = threading.Event()
+
+        def fail_and_cancel(_provider_id: str):
+            event.set()
+            raise RuntimeError("not open")
+
+        with (
+            cancellation.scope(event),
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "reviewer_candidates", return_value=("mimo",)),
+            mock.patch.object(server, "connect_existing_provider", side_effect=fail_and_cancel),
+            mock.patch.object(server, "connect_fresh_provider_tab") as connect_self_review,
+        ):
+            with self.assertRaises(cancellation.TaskCancelled):
+                server._run_review(
+                    session_id="session-1",
+                    project="E:/demo",
+                    task="task",
+                    writer_summary="done",
+                    changes={"ok": True, "changed_count": 1, "diff": "+x"},
+                    recent_log="",
+                    writer_id="deepseek",
+                )
+
+        connect_self_review.assert_not_called()
+
 
 class ConsensusConnectionTests(unittest.TestCase):
     def test_consensus_borrows_sibling_tab_from_selected_provider(self) -> None:
@@ -1728,12 +1828,14 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=changes,
             ) as collect_changes,
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer) as connect_review,
+            mock.patch.object(server, "connect_fresh_provider_tab") as connect_self_review,
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
         self.assertEqual(agent_run.call_count, 1)
         collect_changes.assert_called_once()
         connect_review.assert_called_once_with("mimo")
+        connect_self_review.assert_not_called()
         reviewer.new_chat.assert_called_once_with()
         reviewer.send.assert_called_once()
         reviewer.close.assert_called_once_with()
@@ -1785,7 +1887,8 @@ class SessionThreadingTests(unittest.TestCase):
 
         self.assertEqual(agent_run.call_count, 2)
         followup = agent_run.call_args_list[1].args[2]
-        self.assertIn("second model reviewed", followup)
+        self.assertIn("A review pass inspected the current diff", followup)
+        self.assertNotIn("second model reviewed", followup)
         self.assertIn("Missing empty case", followup)
         self.assertFalse(agent_run.call_args_list[1].kwargs["fresh_chat"])
         self.assertLessEqual(agent_run.call_args_list[1].kwargs["max_turns"], server.REVIEW_FIX_TURNS)
@@ -1796,6 +1899,70 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(review_event["text"], "MiMo suggested changes")
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["summary"], "review fixed")
+
+    def test_run_task_self_review_findings_repair_writer_once(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        writer = mock.Mock()
+        writer.name = "DeepSeek Web"
+        writer.location = "https://chat.deepseek.com/"
+        reviewer = mock.Mock()
+        reviewer.name = "DeepSeek Web"
+        reviewer.location = "https://chat.deepseek.com/"
+        reviewer.send.return_value = (
+            '{"verdict":"changes_requested","summary":"Fix one issue",'
+            '"findings":[{"path":"app.py","issue":"Missing empty case",'
+            '"suggested_fix":"Add a guard"}]}'
+        )
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=writer),
+            mock.patch.object(
+                server,
+                "agent_run",
+                side_effect=[
+                    RunResult("first pass", "done", 3, False, True),
+                    RunResult("self-review fixed", "done", 2, False, True),
+                ],
+            ) as agent_run,
+            mock.patch.object(server, "collect_changes", return_value=changes),
+            mock.patch.object(
+                server,
+                "connect_existing_provider",
+                side_effect=RuntimeError("not open"),
+            ),
+            mock.patch.object(
+                server,
+                "connect_fresh_provider_tab",
+                return_value=reviewer,
+            ) as connect_self_review,
+        ):
+            server._run_task("session-1", td, "task", 20, False, "deepseek")
+
+        connect_self_review.assert_called_once_with("deepseek")
+        reviewer.new_chat.assert_called_once_with()
+        reviewer.close.assert_called_once_with()
+        self.assertEqual(agent_run.call_count, 2)
+        followup = agent_run.call_args_list[1].args[2]
+        self.assertIn("A review pass inspected the current diff", followup)
+        self.assertNotIn("second model reviewed", followup)
+        self.assertIn("Missing empty case", followup)
+        self.assertFalse(agent_run.call_args_list[1].kwargs["fresh_chat"])
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        review_event = next(event for event in emitted if event["type"] == "review")
+        self.assertEqual(review_event["text"], "DeepSeek self-review suggested changes")
+        task_done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(task_done["summary"], "self-review fixed")
 
     def test_review_repair_uses_writer_failover(self) -> None:
         state = server.State()
@@ -2044,10 +2211,16 @@ class SessionThreadingTests(unittest.TestCase):
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            mock.patch.object(
+                server,
+                "connect_fresh_provider_tab",
+                side_effect=RuntimeError("self-review failed"),
+            ) as connect_self_review,
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
         self.assertEqual(agent_run.call_count, 1)
+        connect_self_review.assert_called_once_with("deepseek")
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())

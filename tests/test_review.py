@@ -293,6 +293,8 @@ class ReviewProtocolTests(unittest.TestCase):
         prompt = review.render_writer_followup("Original task", result)
 
         self.assertIn("Treat the review as advisory", prompt)
+        self.assertIn("A review pass inspected the current diff", prompt)
+        self.assertNotIn("second model reviewed", prompt)
         self.assertIn("Continue the task in this same project.", prompt)
         self.assertIn("Reviewer paths are only clues", prompt)
         self.assertIn("If a referenced path does not exist", prompt)

@@ -321,7 +321,7 @@ def render_writer_followup(
 ) -> str:
     lines = [
         "Continue the task in this same project.",
-        "A second model reviewed the current diff and found concrete issues.",
+        "A review pass inspected the current diff and found concrete issues.",
         "Treat the review as advisory: verify it against the files, fix only valid issues, run relevant tests, then call done.",
         "Reviewer paths are only clues; anchors are only clues too. If a referenced path does not exist, do not keep using it; list/search/read the real project files instead.",
         "If a finding is invalid after verification and the relevant tests pass, do not invent a change; explain that briefly in done.",

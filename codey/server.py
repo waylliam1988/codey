@@ -54,6 +54,7 @@ from codey.providers import (
     PROVIDER_LABELS,
     borrow_open_provider,
     connect_existing_provider,
+    connect_fresh_provider_tab,
     connect_provider,
     provider_tab_availability,
     warm_provider_tabs,
@@ -88,6 +89,8 @@ REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
 PROFILE_DOCTOR_TIMEOUT = 90.0
 MAX_CONVERSATION_STATES = 32
+
+
 def reviewer_candidates(writer_id: str) -> tuple[str, ...]:
     writer = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
     supervisor = getattr(globals().get("STATE"), "provider_supervisor", None)
@@ -150,6 +153,58 @@ def _emit_review(session_id: str, text: str) -> None:
     STATE.emit({"type": "review", "session_id": session_id, "text": text})
 
 
+def _run_review_attempt(
+    *,
+    session_id: str,
+    project: str,
+    task: str,
+    writer_summary: str,
+    changes: dict,
+    recent_log: str,
+    change_brief: str,
+    project_map: str,
+    verification_map: str,
+    review_impact_map: str,
+    execution_evidence: str,
+    reviewer_id: str,
+    reviewer,
+    self_review: bool,
+) -> tuple[str, ReviewResult]:
+    try:
+        reviewer.new_chat()
+        prompt = render_review_prompt(
+            project=project,
+            task=task,
+            writer_summary=writer_summary,
+            changes=changes,
+            recent_log=recent_log,
+            change_brief=change_brief,
+            project_map=project_map,
+            verification_map=verification_map,
+            review_impact_map=review_impact_map,
+            execution_evidence=execution_evidence,
+        )
+        with provider_controls.suppress_assistance():
+            reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
+            review = parse_review_with_repair(
+                reply,
+                lambda repair: reviewer.send(repair, timeout=REVIEW_TIMEOUT),
+                changes=changes,
+            )
+        label = review_label(reviewer_id)
+        prefix = f"{label} self-review" if self_review else label
+        if review.approved:
+            _emit_review(session_id, f"{prefix} approved")
+        else:
+            _emit_review(session_id, f"{prefix} suggested changes")
+        return reviewer_id, review
+    finally:
+        try:
+            reviewer.close()
+        except Exception:
+            pass
+
+
 def _run_review(
     *,
     session_id: str,
@@ -169,12 +224,11 @@ def _run_review(
     review_impact_map = safe_review_impact_map(project, changes)
     for reviewer_id in reviewer_candidates(writer_id):
         cancellation.check()
-        reviewer = None
         try:
             reviewer = connect_existing_provider(reviewer_id)
             STATE.set_provider_session(reviewer_id, None)
-            reviewer.new_chat()
-            prompt = render_review_prompt(
+            return _run_review_attempt(
+                session_id=session_id,
                 project=project,
                 task=task,
                 writer_summary=writer_summary,
@@ -185,30 +239,38 @@ def _run_review(
                 verification_map=verification_map,
                 review_impact_map=review_impact_map,
                 execution_evidence=execution_evidence,
+                reviewer_id=reviewer_id,
+                reviewer=reviewer,
+                self_review=False,
             )
-            with provider_controls.suppress_assistance():
-                reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
-                review = parse_review_with_repair(
-                    reply,
-                    lambda repair: reviewer.send(repair, timeout=REVIEW_TIMEOUT),
-                    changes=changes,
-                )
-            label = review_label(reviewer_id)
-            if review.approved:
-                _emit_review(session_id, f"{label} approved")
-            else:
-                _emit_review(session_id, f"{label} suggested changes")
-            return reviewer_id, review
         except cancellation.TaskCancelled:
             raise
         except Exception as exc:
             last_error = exc
-        finally:
-            if reviewer is not None:
-                try:
-                    reviewer.close()
-                except Exception:
-                    pass
+    cancellation.check()
+    try:
+        reviewer_id = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
+        reviewer = connect_fresh_provider_tab(reviewer_id)
+        return _run_review_attempt(
+            session_id=session_id,
+            project=project,
+            task=task,
+            writer_summary=writer_summary,
+            changes=changes,
+            recent_log=recent_log,
+            change_brief=change_brief,
+            project_map=project_map,
+            verification_map=verification_map,
+            review_impact_map=review_impact_map,
+            execution_evidence=execution_evidence,
+            reviewer_id=reviewer_id,
+            reviewer=reviewer,
+            self_review=True,
+        )
+    except cancellation.TaskCancelled:
+        raise
+    except Exception as exc:
+        last_error = exc
     if last_error is not None:
         raise last_error
     raise RuntimeError("no review model available")

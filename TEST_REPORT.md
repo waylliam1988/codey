@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## 0.1.63 Single Provider Self-Review
+
+Final diff review now has a same-provider fallback. Codey still prefers a
+different open reviewer provider, but when all external reviewers are
+unavailable it opens the Writer provider in a temporary fresh tab and runs a
+clearly labelled self-review pass.
+
+Production changes:
+
+- `providers.registry.connect_fresh_provider_tab()` opens a background fresh tab
+  for isolated review-style work while preserving provider-worker overrides.
+- `server._run_review()` now tries external reviewers first, then falls back to
+  Writer-provider self-review. External reviewer sessions may still be cleared;
+  self-review does not clear the Writer provider session.
+- `server._run_review_attempt()` centralizes review prompt/send/parse/event
+  logic and closes reviewer connections in a `finally` block.
+- Cancellation is checked again immediately before opening the self-review
+  fresh tab, so a stop request between external-review failure and fallback
+  does not create another temporary page.
+- Writer repair follow-up wording is neutral: it says a review pass inspected
+  the diff, not that a second model did.
+
+Validation:
+
+```text
+python -m pytest tests\test_providers.py tests\test_review.py tests\test_server.py tests\test_review_coordinator.py -q: 152 passed, 4 subtests passed
+python -m py_compile codey\__init__.py codey\providers\registry.py codey\providers\__init__.py codey\server.py codey\review.py: passed
+python -m ruff check codey tests: passed
+git diff --check: passed
+python -m pytest -q: 1131 passed, 111 subtests passed
+```
+
 ## 0.1.62 Review Impact Map
 
 Final diff review now receives a short, bounded Review Impact Map after the
@@ -2402,7 +2434,8 @@ The advantage is confidence and failure recovery:
 
 - reviewer sees the actual diff, not just the writer's summary
 - reviewer can catch concrete mistakes before the user accepts the result
-- if reviewer is unavailable, Codey falls back to single-model mode
+- if no different reviewer is available, Codey can try same-model self-review
+  before falling back to the single-model result
 - no extra UI switch is exposed to beginners
 
 So the two-model feature is useful, but it should stay quiet and automatic. It is a safety layer, not a new product surface.
