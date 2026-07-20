@@ -4,6 +4,18 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.1.62 - Review Impact Map
+
+- Review: final diff review now receives a short, bounded Review Impact Map
+  after the ChangeSet summary. It lists obvious changed symbols plus local
+  caller/test reference hints so reviewers can inspect likely blast radius.
+- Reliability: changed-symbol extraction is centralized in `changed_symbols.py`
+  and is reused by Verification Map. Rename cases use the old symbol name for
+  reference scans while preserving the new changed-file path from ChangeSet.
+- Safety: the map is review-only, source-body-free, best-effort, and explicitly
+  labelled as not coverage proof. Writer behavior, UI, tools, provider logic,
+  and `/api/changes` remain unchanged.
+
 ## 0.1.61 - ChangeSet Anchored Review
 
 - Review: final diff review now receives a structured ChangeSet summary before

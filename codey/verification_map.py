@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import Sequence
 
 from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
+from codey.changed_symbols import changed_symbol_names
 from codey.project_map import (
     EXCLUDED_DIRS,
     LOCK_FILENAMES,
@@ -23,7 +24,6 @@ from codey.project_map import (
 
 
 MAX_CHANGED_FILES = 20
-MAX_CHANGED_SYMBOLS = 8
 MAX_SCAN_FILES = 400
 MAX_SCAN_DIRS = 160
 MAX_DIR_ENTRIES = 800
@@ -34,11 +34,6 @@ MAX_OBSERVED_CHECKS = 8
 MAX_BROADER_COMMANDS = 6
 MAX_RENDER_CHARS = 5_000
 
-PY_DECL_RE = re.compile(r"^\+\s*(?:async\s+)?(?:def|class)\s+([A-Za-z_]\w*)")
-JS_DECL_RE = re.compile(
-    r"^\+\s*(?:(?:export\s+)?(?:async\s+)?function|class)\s+([A-Za-z_$][\w$]*)"
-    r"|^\+\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*="
-)
 JS_IMPORT_RE = re.compile(
     r"(?:from\s*|require\s*\(|import\s*\()\s*['\"]([^'\"]+)['\"]"
 )
@@ -115,7 +110,7 @@ def build_verification_map(
     changed = _changed_paths(changes)
     changed_tests = tuple(path for path in changed if _is_test_path(path))
     changed_sources = tuple(path for path in changed if path not in changed_tests)
-    symbols = _changed_symbols(str(changes.get("diff") or ""))
+    symbols = changed_symbol_names(changes, include_old_names=True)
     candidates: dict[str, VerificationCandidate] = {}
     bytes_read = 0
     byte_limited = False
@@ -246,20 +241,6 @@ def _allowed_test_dir(root: Path, path: Path) -> bool:
         if any(lower.endswith(suffix) for suffix in SECRET_SUFFIXES):
             return False
     return True
-
-
-def _changed_symbols(diff: str) -> tuple[str, ...]:
-    symbols: list[str] = []
-    for line in diff.splitlines():
-        match = PY_DECL_RE.match(line) or JS_DECL_RE.match(line)
-        if not match:
-            continue
-        symbol = next((item for item in match.groups() if item), "")
-        if symbol and symbol not in symbols:
-            symbols.append(symbol)
-        if len(symbols) >= MAX_CHANGED_SYMBOLS:
-            break
-    return tuple(symbols)
 
 
 def _candidate_for_test(

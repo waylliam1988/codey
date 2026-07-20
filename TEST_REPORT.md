@@ -1,5 +1,65 @@
 # Codey Test Report
 
+## 0.1.62 Review Impact Map
+
+Final diff review now receives a short, bounded Review Impact Map after the
+ChangeSet summary and before the raw diff. The map lists obvious changed
+symbols, local caller reference hints, and local test reference hints so the
+Reviewer can inspect likely blast radius without a graph database or new UI.
+
+Production changes:
+
+- `changed_symbols.py` centralizes lexical changed-symbol extraction from the
+  collected changes payload, including rename old-name lookup and ChangeSet path
+  normalization.
+- `verification_map.py` reuses the shared changed-symbol helper, so rename cases
+  can find tests that still reference the old symbol name.
+- `review_impact_map.py` builds a review-only, best-effort, bounded map from
+  changed symbols and `find_reference_hints()`. It keeps only symbol/path/line
+  metadata, reserves test-reference slots when available, prefers test hints
+  during final bounding, uses a symbol-aware fair cap for rendered references,
+  and never includes source bodies.
+- `review.py` accepts `review_impact_map` as an explicit prompt input and keeps
+  the changed-files-only finding rule unchanged.
+- `server.py` computes the map through `safe_review_impact_map()` before sending
+  review prompts. Failures return an empty map and do not block review.
+
+No Writer behavior, UI, tools, provider logic, runtime permissions, or
+`/api/changes` output changed.
+
+Validation:
+
+```text
+python -B tests\manual\review_impact_map_ab.py --self-test: passed
+python -m pytest tests\test_change_set.py tests\test_changed_symbols.py tests\test_review_impact_map.py tests\test_review_impact_map_ab.py tests\test_review.py tests\test_review_coordinator.py tests\test_verification_map.py tests\test_server.py tests\test_task_runner_project_map.py tests\test_work_checkpoint_flow.py -q: 183 passed
+python -m ruff check codey tests: passed
+python -m py_compile codey\__init__.py codey\change_set.py codey\changed_symbols.py codey\review_impact_map.py codey\verification_map.py codey\review.py codey\server.py tests\manual\review_impact_map_ab.py tests\test_change_set.py tests\test_changed_symbols.py tests\test_review_impact_map.py tests\test_review_impact_map_ab.py: passed
+git diff --check: passed
+python -m pytest -q: 1125 passed, 111 subtests passed
+```
+
+Live web-model Review A/B was run one provider per process against the Codey
+CDP browser on port 9222, with a 90-second timeout per send:
+
+```text
+python -B tests\manual\review_impact_map_ab.py --provider deepseek --timeout 90
+python -B tests\manual\review_impact_map_ab.py --provider qwen --timeout 90
+python -B tests\manual\review_impact_map_ab.py --provider mimo --timeout 90
+python -B tests\manual\review_impact_map_ab.py --provider glm --timeout 90
+```
+
+Across DeepSeek, Qwen, MiMo, and GLM on three seeded cases each, both arms
+caught the intended correctness issue whenever one existed: `issue_hit` stayed
+12/12 for both current and impact-map prompts. The impact-map arm improved
+specific affected-caller mentions from 0/8 to 8/8 and relevant test mentions
+from 2/4 to 4/4, with no false-positive review on the safe private-helper
+control case. Average quality score rose from 4.833 to 6.333. The prompt grew
+by about 549 characters on average.
+
+Decision: ship the review-only slice. The measured gain is better reviewer
+specificity around affected callers and tests, not better raw bug detection, so
+the map stays advisory and explicitly labelled as not coverage proof.
+
 ## 0.1.61 ChangeSet Anchored Review
 
 Final diff review now receives a structured ChangeSet summary before the raw

@@ -79,6 +79,10 @@ def _verification_map_section(verification_map: str) -> str:
     return _clip(verification_map, 5_000)
 
 
+def _review_impact_map_section(review_impact_map: str) -> str:
+    return _clip(review_impact_map, 3_000)
+
+
 def _json_objects(text: str) -> list[dict[str, Any]]:
     decoder = json.JSONDecoder()
     objects: list[dict[str, Any]] = []
@@ -202,6 +206,7 @@ def render_review_prompt(
     change_brief: str = "",
     project_map: str = "",
     verification_map: str = "",
+    review_impact_map: str = "",
     execution_evidence: str = "",
 ) -> str:
     change_set = ChangeSet.from_changes(changes)
@@ -232,6 +237,17 @@ def render_review_prompt(
     verification_section = _verification_map_section(verification_map)
     verification_block = (
         f"{verification_section}\n\n" if verification_section else ""
+    )
+    impact_section = _review_impact_map_section(review_impact_map)
+    impact_block = f"{impact_section}\n\n" if impact_section else ""
+    impact_guidance = (
+        "The impact map contains bounded local reference hints, not "
+        "proof of impact or coverage. Use it to inspect possible affected "
+        "callers and tests, but request changes only for concrete issues in "
+        "the actual diff. Impact-map paths do not relax the "
+        "Changed-files-only findings rule.\n\n"
+        if impact_section
+        else ""
     )
     evidence = _clip(execution_evidence, 5_000)
     evidence_block = f"{evidence}\n\n" if evidence else ""
@@ -269,6 +285,7 @@ def render_review_prompt(
         "local file; absence from Changed files means it was not modified, not "
         "that it is missing. Paths from the Verification Map do not relax the "
         "Changed-files-only findings rule.\n\n"
+        f"{impact_guidance}"
         "If a finding is tied to a specific changed hunk or line, include optional "
         "findings[].hunk_index, findings[].new_line, or findings[].old_line. "
         "Do not invent anchors. Omit them when unsure; path-only findings are valid.\n\n"
@@ -287,6 +304,7 @@ def render_review_prompt(
         f"Writer summary:\n{_clip(writer_summary, 2_000)}\n\n"
         f"Changed files:\n{changed_files}\n\n"
         f"{change_summary}\n\n"
+        f"{impact_block}"
         f"{evidence_block}"
         f"{verification_block}"
         f"Recent tool log:\n{log}\n\n"

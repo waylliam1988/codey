@@ -49,7 +49,7 @@ SOURCE_SUFFIXES = {
 }
 MAX_CHANGED_SYMBOLS = 3
 MAX_REFS_PER_SYMBOL = 4
-MAX_TOTAL_REFS = 8
+MAX_RENDERED_REFS = 8
 MAX_SCAN_FILES = 800
 MAX_SCAN_DIRS = 200
 MAX_SCAN_DIR_ENTRIES = 800
@@ -280,8 +280,8 @@ def _render_impact_guard(root: Path, rel: str, blocks: list[EditBlock], changed_
         refs, symbol_incomplete = _external_references(root, symbol, excluded)
         incomplete = incomplete or symbol_incomplete
         all_refs.extend(refs)
-        if len(all_refs) >= MAX_TOTAL_REFS:
-            all_refs = all_refs[:MAX_TOTAL_REFS]
+        if len(all_refs) >= MAX_RENDERED_REFS:
+            all_refs = all_refs[:MAX_RENDERED_REFS]
             incomplete = True
             break
 

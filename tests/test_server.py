@@ -412,6 +412,48 @@ class ProviderStatusTests(unittest.TestCase):
 
         connected.assert_not_called()
 
+    def test_run_review_includes_safe_review_impact_map(self) -> None:
+        state = server.State()
+        reviewer = mock.Mock()
+        reviewer.send.return_value = (
+            '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        )
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "src/api.ts", "status": "M"}],
+            "diff": "diff --git a/src/api.ts b/src/api.ts\n+export function renamed() {}\n",
+        }
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "reviewer_candidates", return_value=("mimo",)),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(
+                server,
+                "safe_review_impact_map",
+                return_value=(
+                    "Review Impact Map (bounded hints; not coverage proof):\n"
+                    "- oldName: src/view.ts:2 (call)"
+                ),
+            ) as impact_map,
+        ):
+            reviewed = server._run_review(
+                session_id="session-1",
+                project="E:/demo",
+                task="task",
+                writer_summary="done",
+                changes=changes,
+                recent_log="",
+                writer_id="deepseek",
+            )
+
+        self.assertIsNotNone(reviewed)
+        impact_map.assert_called_once_with("E:/demo", changes)
+        prompt = reviewer.send.call_args.args[0]
+        self.assertIn("Review Impact Map (bounded hints; not coverage proof)", prompt)
+        reviewer.close.assert_called_once_with()
+
 
 class ConsensusConnectionTests(unittest.TestCase):
     def test_consensus_borrows_sibling_tab_from_selected_provider(self) -> None:

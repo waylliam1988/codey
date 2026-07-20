@@ -170,12 +170,18 @@ class ChangeSet:
         )
 
     def file_for_path(self, path: object) -> ChangeFile | None:
-        target, _previous = _change_file_paths(_text(path), "")
+        raw_path = _text(path)
+        target = _safe_relpath(raw_path)
         if not target:
             return None
         for file in self.files:
             if file.path == target:
                 return file
+        if " -> " in raw_path:
+            rename_target, _previous = _change_file_paths(raw_path, "", "R")
+            for file in self.files:
+                if file.path == rename_target:
+                    return file
         return None
 
 
@@ -188,9 +194,11 @@ def _files_from_changes(changes: Mapping[str, object]) -> tuple[ChangeFile, ...]
     for item in raw_files:
         if not isinstance(item, Mapping):
             continue
+        status = _text(item.get("status") or "M")[:20]
         path, previous_path = _change_file_paths(
             _text(item.get("path")),
             _text(item.get("previous_path")),
+            status,
         )
         if not path or path in seen:
             continue
@@ -198,7 +206,7 @@ def _files_from_changes(changes: Mapping[str, object]) -> tuple[ChangeFile, ...]
         files.append(
             ChangeFile(
                 path=path,
-                status=_text(item.get("status") or "M")[:20],
+                status=status,
                 additions=_nonnegative_int(item.get("additions")),
                 deletions=_nonnegative_int(item.get("deletions")),
                 previous_path=previous_path,
@@ -277,9 +285,16 @@ def _strip_diff_prefix(path: str) -> str:
     return _safe_relpath(value)
 
 
-def _change_file_paths(raw_path: str, raw_previous_path: str) -> tuple[str, str]:
+def _change_file_paths(
+    raw_path: str,
+    raw_previous_path: str,
+    raw_status: str,
+) -> tuple[str, str]:
     previous_path = _safe_relpath(raw_previous_path)
-    if " -> " not in raw_path:
+    status = raw_status.strip().upper()
+    if " -> " not in raw_path or (
+        not previous_path and not status.startswith(("R", "C"))
+    ):
         return _safe_relpath(raw_path), previous_path
     before, after = raw_path.split(" -> ", 1)
     path = _safe_relpath(after)

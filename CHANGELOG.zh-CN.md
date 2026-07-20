@@ -4,6 +4,18 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.1.62 - Review Impact Map
+
+- Review：最终 diff review 现在会在 ChangeSet 摘要后收到一段短小、有边界
+  的 Review Impact Map。它列出明显变化的 symbol，以及本地 caller/test
+  引用提示，让 reviewer 更容易检查影响半径。
+- 可靠性：changed symbol 提取集中到 `changed_symbols.py`，并被 Verification
+  Map 复用。rename 场景会用旧 symbol 名做引用扫描，同时保留 ChangeSet 解释
+  出来的新文件路径。
+- 安全：这张 map 只给 Review 使用，不包含源码正文，失败时静默跳过，并明确标注
+  不是 coverage proof。Writer 行为、UI、工具、provider 逻辑和 `/api/changes`
+  都不变。
+
 ## 0.1.61 - ChangeSet 锚点审查
 
 - Review：最终 diff review 现在会先收到结构化 ChangeSet 摘要，再看到原始

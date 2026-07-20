@@ -99,6 +99,36 @@ class ChangeSetTests(unittest.TestCase):
         self.assertEqual(anchor.new_line, 2)
         self.assertEqual(raw_label_anchor.hunk_index, 1)
 
+    def test_arrow_in_modified_filename_is_not_treated_as_rename(self) -> None:
+        changes = {
+            "ok": True,
+            "mode": "git",
+            "changed_count": 1,
+            "files": [
+                {
+                    "path": "notes/foo -> bar.md",
+                    "status": "M",
+                    "additions": 1,
+                    "deletions": 1,
+                }
+            ],
+            "diff": (
+                "diff --git a/notes/foo -> bar.md b/notes/foo -> bar.md\n"
+                "--- a/notes/foo -> bar.md\n"
+                "+++ b/notes/foo -> bar.md\n"
+                "@@ -1,1 +1,1 @@\n"
+                "-old\n"
+                "+new\n"
+            ),
+        }
+
+        change_set = ChangeSet.from_changes(changes)
+
+        self.assertEqual(change_set.changed_paths(), ("notes/foo -> bar.md",))
+        self.assertEqual(change_set.files[0].previous_path, "")
+        self.assertEqual(change_set.files[0].hunks[0].index, 1)
+        self.assertIn("- M notes/foo -> bar.md +1 -1", change_set.render_summary())
+
     def test_malformed_diff_still_counts_as_reviewable_when_raw_diff_exists(self) -> None:
         change_set = ChangeSet.from_changes({
             "ok": True,

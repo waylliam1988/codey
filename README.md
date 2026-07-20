@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.61-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.1.62-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding workspace for people who want useful cod
 
 No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
 
-Version: `0.1.61`
+Version: `0.1.62`
 
 [Version history](CHANGELOG.md)
 
@@ -183,7 +183,9 @@ You do not need to learn a new mode. If you open two supported AI pages in the C
 - The model you select in Codey is the writer.
 - Another open supported model becomes the reviewer.
 - The writer reads files, edits code, and runs tests.
-- The reviewer does not touch your files. It only reads the diff and points out concrete problems.
+- The reviewer does not touch your files. It reads the diff plus a short bounded
+  impact map of changed symbols, likely callers, and related tests, then points
+  out concrete problems.
 - If the reviewer approves, Codey finishes.
 - If the reviewer finds a real issue, Codey asks the writer to repair it once more.
 
@@ -401,9 +403,11 @@ codey/
   tool_runtime.py           local tools and structured outcomes
   execution_evidence.py     bounded in-memory execution fact ledger
   references.py             bounded lexical reference hints
+  changed_symbols.py        lexical changed-symbol extraction from visible diffs
   project_map.py            deterministic bounded project orientation
   project_task_context.py   project facts, map, checkpoint, and verification context
   verification_map.py       bounded review-time verification candidates
+  review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief
   review_coordinator.py     bounded diff review lifecycle
   task_runner.py            task, conversation, review, and receipt orchestration

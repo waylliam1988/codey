@@ -99,6 +99,36 @@ class VerificationMapTests(unittest.TestCase):
         candidate = next(item for item in result.test_candidates if item.path == "tests/test_session.py")
         self.assertEqual(candidate.evidence, "reference")
 
+    def test_rename_uses_old_symbol_name_for_reference_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "src").mkdir()
+            (root / "tests").mkdir()
+            (root / "tests" / "render.test.ts").write_text(
+                "expect(formatTotal(1234)).toBe('$12.34')\n",
+                encoding="utf-8",
+            )
+
+            result = build_verification_map(
+                root,
+                _changes(
+                    "src/format.ts",
+                    diff=(
+                        "diff --git a/src/format.ts b/src/format.ts\n"
+                        "--- a/src/format.ts\n"
+                        "+++ b/src/format.ts\n"
+                        "@@ -1,1 +1,1 @@\n"
+                        "-export function formatTotal(cents: number): string {}\n"
+                        "+export function formatCurrency(cents: number): string {}\n"
+                    ),
+                ),
+            )
+
+        candidate = result.test_candidates[0]
+        self.assertEqual(candidate.path, "tests/render.test.ts")
+        self.assertEqual(candidate.evidence, "reference")
+        self.assertIn("formatTotal", candidate.reason)
+
     def test_observed_checks_and_broader_commands_are_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             result = build_verification_map(

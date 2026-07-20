@@ -73,6 +73,7 @@ from codey.review import (
     parse_review_with_repair,
     render_review_prompt,
 )
+from codey.review_impact_map import safe_review_impact_map
 from codey.task_runner import TaskRequest, TaskRunner
 from codey.text_budget import clip_middle
 from codey.ui_state_store import UiStateStore
@@ -165,6 +166,7 @@ def _run_review(
 ) -> tuple[str, ReviewResult] | None:
     cancellation.check()
     last_error: Exception | None = None
+    review_impact_map = safe_review_impact_map(project, changes)
     for reviewer_id in reviewer_candidates(writer_id):
         cancellation.check()
         reviewer = None
@@ -181,6 +183,7 @@ def _run_review(
                 change_brief=change_brief,
                 project_map=project_map,
                 verification_map=verification_map,
+                review_impact_map=review_impact_map,
                 execution_evidence=execution_evidence,
             )
             with provider_controls.suppress_assistance():

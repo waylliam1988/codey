@@ -13,3 +13,4 @@ __pycache__/
 .readonly-parallel-ab*.json
 .shell-approval-followup-ab*.json
 tests/manual/results/impact_guard*.json
+tests/manual/results/review_impact_map*.json

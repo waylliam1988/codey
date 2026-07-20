@@ -227,6 +227,35 @@ class ReviewProtocolTests(unittest.TestCase):
         self.assertIn("not modified, not that it is missing", prompt)
         self.assertIn("do not relax the Changed-files-only", prompt)
 
+    def test_render_review_prompt_includes_review_impact_map_as_advisory(self) -> None:
+        prompt = review.render_review_prompt(
+            project="E:/demo",
+            task="Rename exported helper",
+            writer_summary="done",
+            changes={
+                "files": [{"path": "src/api.ts", "status": "M"}],
+                "diff": "diff --git a/src/api.ts b/src/api.ts\n+export function newName() {}\n",
+            },
+            review_impact_map=(
+                "Review Impact Map (bounded hints; not coverage proof):\n"
+                "External reference hints outside changed files:\n"
+                "- oldName: src/view.ts:2 (call)"
+            ),
+        )
+
+        self.assertIn("Review Impact Map (bounded hints", prompt)
+        self.assertIn("not proof of impact or coverage", prompt)
+        self.assertIn("possible affected callers and tests", prompt)
+        self.assertIn("Impact-map paths do not relax", prompt)
+        self.assertLess(
+            prompt.index("ChangeSet Summary"),
+            prompt.index("Review Impact Map (bounded hints"),
+        )
+        self.assertLess(
+            prompt.index("Review Impact Map (bounded hints"),
+            prompt.index("Recent tool log"),
+        )
+
     def test_render_review_prompt_includes_bounded_execution_evidence(self) -> None:
         prompt = review.render_review_prompt(
             project="E:/demo",

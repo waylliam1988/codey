@@ -250,6 +250,25 @@ but Python rename was already handled by current production and the sample was
 too small. Keep this as a manual probe only; do not promote it to production
 without broader Python/refactor evidence and clean control cases.
 
+`review_impact_map_ab.py` is a review-only A/B probe for the production Review
+Impact Map. The `impact_map` arm builds a short, bounded caller/test reference
+hint from temporary fixture files and passes it through the production review
+prompt path. It does not change Writer behavior, tools, UI, or verification:
+
+```powershell
+python -B tests\manual\review_impact_map_ab.py --self-test
+python -B tests\manual\review_impact_map_ab.py `
+  --provider qwen `
+  --timeout 90 `
+  --output tests\manual\results\review_impact_map_qwen.json
+```
+
+Run one provider per process when collecting live results. The scorer tracks
+`issue_hit`, changed-path compliance, whether the reviewer mentions affected
+callers/tests, false-positive review on a safe control case, and prompt-size
+delta. Keep this as a regression probe for affected-caller/test awareness and
+false-positive review noise.
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 
