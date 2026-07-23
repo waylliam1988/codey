@@ -4,6 +4,19 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.3 - Research Provenance 收口
+
+- Research provenance：显式 URL 引用仍然严格匹配实际打开过的 final URL；但
+  `来源质量` 这类文本里的裸站点域名现在更自然。比如打开了 `docs.python.org`
+  后可以写 `python.org`，但只打开 `python.org` 不能反过来声称已经打开
+  `docs.python.org`。
+- Research 质量门：URL 片段不再参与裸域名扫描，所以 `pathlib.html` 这类路径不会被
+  误判成没有打开过的来源域名。
+- 项目记忆：新增集成回归，锁住验证通过后的实现记忆路径，包括 implementation note、
+  verification note，以及从 research synthesis 指向实现的 `implements` link、从实现指向
+  验证记录的 `verifies` link。
+- 卫生：删除 task runner 里残留的未使用 `EvidencePack` import。
+
 ## 0.2.2 - Research 报告质量门
 
 - Evidence Ledger：每次 Research 现在会记录搜索 query、排序后的搜索结果、实际打开的

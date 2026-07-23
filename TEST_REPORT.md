@@ -1,5 +1,64 @@
 # Codey Test Report
 
+## 0.2.3 Research Provenance and Project Memory Hygiene
+
+Codey 0.2.3 tightens the Research quality gate added in 0.2.2 and locks the
+research-to-project memory loop with an integration regression.
+
+Production changes:
+
+- Provenance keeps explicit URL citations exact, but bare site-domain mentions
+  such as `python.org` are allowed when Codey opened a child host such as
+  `docs.python.org`.
+- URL spans are excluded from bare-domain scanning so paths like `pathlib.html`
+  are not misread as source domains.
+- Verified project work now has direct integration coverage for implementation
+  notes, verification notes, and `implements` / `verifies` links back to the
+  research synthesis.
+- Removed a stale unused `EvidencePack` import from `task_runner.py`.
+
+Validation:
+
+```text
+python -m unittest tests.test_server.SessionThreadingTests.test_verified_project_run_records_implementation_and_verification_memory -v: passed
+python -m unittest tests.test_research tests.test_server tests.test_ui tests.test_knowledge tests.test_project_task_context: 208 tests OK
+python -m unittest discover: 1157 tests OK
+python -m py_compile codey\research\provenance.py codey\research\report_quality.py codey\research\ledger.py codey\research\tools.py codey\research\runner.py codey\task_runner.py: passed
+python -m ruff check codey tests: passed
+git diff --check: passed
+```
+
+## 0.2.2 Research Report Quality Gate
+
+Codey 0.2.2 turns Research output into an auditable report pipeline instead of
+an unstructured sourced answer.
+
+Production changes:
+
+- Research writes a per-run Evidence Ledger with search queries, ranked search
+  results, opened requested/final URLs, source-quality hints, short snippets,
+  citation maps, counterpoints, and quality warnings.
+- `report_quality.py` is the single deterministic report gate. It requires the
+  final report to include conclusion, evidence, counter-evidence/limitations,
+  source quality, search coverage, and source sections before saving a
+  synthesis note.
+- `provenance.py` owns opened-source provenance checks. The old
+  `evidence_review.py` compatibility layer was removed.
+- The final report can cite only sources opened as final URLs in the run, and
+  each cited source must have snippet-backed evidence. Numbered headings and
+  Markdown-link source rows are accepted without relaxing provenance.
+- Unreadable sources such as PDFs become neutral `SKIPPED` tool results, so
+  Research can continue with readable HTML sources. Paraphrased evidence
+  excerpts are replaced with exact opened-page snippets and saved with a
+  warning.
+- The Research drawer is canonicalized around `Evidence`, `Sources`, and
+  `Notes`; search coverage is shown inside `Evidence`, leaving room for a
+  future graph view.
+- Project handoff carries citation maps, evidence snippets, counterpoints, and
+  source-quality risks through a bounded Research Brief. Verified project work
+  records implementation and verification notes, linked back to the research
+  synthesis.
+
 ## 0.2.1 Research Polish and UI Follow-through
 
 Codey 0.2.1 tightens the Research and Local-model UX added in 0.2.0 without

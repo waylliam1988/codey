@@ -39,7 +39,6 @@ from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
 from codey.receipt import build_task_receipt
 from codey.research.browser_search import BrowserSearchProvider
-from codey.research.advisors import EvidencePack
 from codey.research.runner import ResearchRunner
 from codey.review_coordinator import ReviewCoordinator, change_state
 from codey.shell_risk import classify_shell_risk

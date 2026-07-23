@@ -40,7 +40,11 @@ def provenance_problem(
         )
     opened_hosts = {_source_host(url) for url in opened_sources}
     opened_hosts.discard("")
-    unopened_domains = [domain for domain in _domains_in_text(text) if not _host_was_opened(domain, opened_hosts)]
+    unopened_domains = [
+        domain
+        for domain in _domains_in_text(text)
+        if not _site_domain_was_opened(domain, opened_hosts)
+    ]
     if unopened_domains:
         return (
             "Final report names source domain(s) you did not open: "
@@ -69,8 +73,11 @@ def _urls_in_text(text: str) -> list[str]:
 def _domains_in_text(text: str) -> list[str]:
     domains: list[str] = []
     seen: set[str] = set()
-    for match in _DOMAIN_RE.findall(text.lower()):
-        domain = match.strip(".").removeprefix("www.")
+    url_spans = [match.span() for match in _URL_RE.finditer(text)]
+    for match in _DOMAIN_RE.finditer(text.lower()):
+        if _overlaps(match.span(), url_spans):
+            continue
+        domain = match.group(0).strip(".").removeprefix("www.")
         if domain and domain not in seen:
             seen.add(domain)
             domains.append(domain)
@@ -83,7 +90,7 @@ def _unopened_search_source_mentions(text: str, search_result_urls: set[str], op
     seen: set[str] = set()
     for url in search_result_urls:
         host = _source_host(url)
-        if not host or _host_was_opened(host, opened_hosts):
+        if not host or _site_domain_was_opened(host, opened_hosts):
             continue
         if any(label in lower for label in _host_labels(host)):
             if host not in seen:
@@ -104,6 +111,20 @@ def _host_was_opened(host: str, opened_hosts: set[str]) -> bool:
     if not host:
         return False
     return host in opened_hosts
+
+
+def _site_domain_was_opened(host: str, opened_hosts: set[str]) -> bool:
+    host = (host or "").lower().removeprefix("www.")
+    if not host:
+        return False
+    return _host_was_opened(host, opened_hosts) or any(
+        opened.endswith("." + host) for opened in opened_hosts
+    )
+
+
+def _overlaps(span: tuple[int, int], spans: list[tuple[int, int]]) -> bool:
+    start, end = span
+    return any(start < other_end and other_start < end for other_start, other_end in spans)
 
 
 def _source_host(url: str) -> str:

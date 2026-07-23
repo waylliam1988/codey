@@ -23,11 +23,13 @@ from codey.changes import ChangeTracker
 from codey.consensus import ConsensusAdvice, ConsensusResult
 from codey.events import RunEvent
 from codey.handoff import ConversationSnapshot
+from codey.knowledge import KnowledgeNote, KnowledgeStore
 from codey.models import ToolCall
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_discovery import Discovery
 from codey.providers.local_openai import LocalEndpoint
 from codey.task_runner import TaskRunner, _project_has_user_files
+from codey.tool_runtime import ToolOutcome
 from codey.verification_policy import VerificationCandidate
 
 
@@ -2197,6 +2199,108 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(task_done["changes"]["changed_count"], 2)
         self.assertEqual(len(task_done["changes"]["files"]), 3)
         self.assertEqual(task_done["changes"]["project"], td)
+
+    def test_verified_project_run_records_implementation_and_verification_memory(self) -> None:
+        changes = {
+            "ok": True,
+            "mode": "snapshot",
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M", "additions": 1, "deletions": 1}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(Path(td, "state"))
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            project = Path(td, "project")
+            project.mkdir()
+            (project / "app.py").write_text("old\n", encoding="utf-8")
+            synthesis = KnowledgeNote.create(
+                type="synthesis",
+                title="Research API choice",
+                body=(
+                    "## 结论\n"
+                    "- Use the documented API [1]\n\n"
+                    "## 关键证据\n"
+                    "- [1] The source documents the API.\n\n"
+                    "## 来源\n"
+                    "[1] API docs - https://example.com/api"
+                ),
+                tags=["research", "session:session-memory"],
+                sources=["https://example.com/api"],
+                session_id="session-memory",
+            )
+            state.knowledge_store.write_note(synthesis)
+            events = state.subscribe()
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+
+            def fake_agent_run(*_args, **kwargs):
+                on_event = kwargs["on_event"]
+                on_event(RunEvent.tool_finished(
+                    1,
+                    ToolCall("edit", {"path": "app.py"}),
+                    ToolOutcome("edited", True, changed=True),
+                ))
+                on_event(RunEvent.tool_finished(
+                    2,
+                    ToolCall("run", {"command": "python -m unittest", "path": "."}),
+                    ToolOutcome("OK", True, exit_code=0),
+                ))
+                return RunResult("implemented", "done", 2, True, True)
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(server, "collect_changes", return_value=changes),
+                mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            ):
+                server._run_task(
+                    "session-memory",
+                    str(project),
+                    "Implement researched API",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+            done = next(event for event in emitted if event["type"] == "task_done")
+            rows = state.knowledge_store.index.recent(10, session_id="session-memory")
+            impl_rows = [row for row in rows if row["type"] == "implementation"]
+            verification_rows = [row for row in rows if row["type"] == "verification"]
+            impl = state.knowledge_store.read_note(impl_rows[0]["id"])
+            verification = state.knowledge_store.read_note(verification_rows[0]["id"])
+            links = state.knowledge_store.index.links_for([synthesis.id, impl.id])
+            state.knowledge_store.close()
+
+        self.assertEqual(done["stop_reason"], "done")
+        self.assertEqual(done["receipt"]["text"], "1 file changed · checks passed · restore available")
+        self.assertEqual(len(impl_rows), 1)
+        self.assertEqual(len(verification_rows), 1)
+        self.assertIsNotNone(impl)
+        self.assertIsNotNone(verification)
+        assert impl is not None
+        assert verification is not None
+        self.assertEqual(impl.type, "implementation")
+        self.assertEqual(impl.sources, [synthesis.id])
+        self.assertIn("Files changed:\n- app.py", impl.body)
+        self.assertIn("1 file changed · checks passed", impl.body)
+        self.assertEqual(verification.type, "verification")
+        self.assertEqual(verification.sources, [impl.id])
+        self.assertIn("python -m unittest (cwd .)", verification.body)
+        self.assertIn(
+            {"src_id": synthesis.id, "dst_id": impl.id, "kind": "implements"},
+            links,
+        )
+        self.assertIn(
+            {"src_id": impl.id, "dst_id": verification.id, "kind": "verifies"},
+            links,
+        )
 
     def test_run_task_recovers_failed_diff_before_review_and_receipt(self) -> None:
         state = server.State()

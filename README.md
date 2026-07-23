@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.2-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.3-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.2`
+Version: `0.2.3`
 
 [Version history](CHANGELOG.md)
 
@@ -200,7 +200,7 @@ note writes, restore, and evidence checks are always local Codey tools. Models
 do not get hidden network access. A final synthesis can cite only sources that
 Codey actually opened in the run.
 
-In 0.2.2, Research keeps an Evidence Ledger and applies a deterministic report
+In 0.2.3, Research keeps an Evidence Ledger and applies a deterministic report
 quality gate before saving the final synthesis. The report must include:
 
 - `Conclusion`
@@ -217,7 +217,11 @@ until Codey opens them.
 
 The validator accepts common report formatting such as `1. Conclusion`,
 `一、结论`, and source rows written as `[1] [Title](https://...)`, but it does
-not relax source provenance or snippet matching.
+not relax source provenance or snippet matching. Explicit URL citations must
+still match pages Codey opened as final URLs. Bare site-domain mentions in
+source-quality text are more natural: opening `docs.python.org` allows a
+quality note to say `python.org`, while opening `python.org` does not let the
+report claim `docs.python.org`.
 
 When a result points to a page Codey cannot read, such as a PDF, Research marks
 that tool result as `SKIPPED` instead of a hard failure and continues with other

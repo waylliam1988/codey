@@ -222,14 +222,78 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("did not open", problem)
 
-    def test_final_summary_bare_domain_requires_exact_opened_host(self) -> None:
+    def test_final_summary_bare_domain_allows_opened_subdomain_parent_site(self) -> None:
         problem = provenance_problem(
-            "来源: example.com",
-            opened_sources={"https://foo.example.com/a"},
+            "来源质量: [1] primary · official · fresh · python.org",
+            opened_sources={"https://docs.python.org/3/library/pathlib.html"},
+            search_result_urls=set(),
+        )
+
+        self.assertIsNone(problem)
+
+    def test_final_summary_bare_domain_does_not_allow_parent_to_claim_unopened_child(self) -> None:
+        problem = provenance_problem(
+            "来源质量: [1] primary · official · fresh · docs.python.org",
+            opened_sources={"https://www.python.org/"},
             search_result_urls=set(),
         )
 
         self.assertIn("did not open", problem)
+
+    def test_report_quality_allows_source_quality_parent_domain_for_opened_subdomain(self) -> None:
+        url = "https://docs.python.org/3/library/pathlib.html"
+        ledger = ResearchLedger()
+        ledger.record_search("python pathlib docs", [{
+            "title": "pathlib docs",
+            "url": url,
+            "snippet": "Python pathlib documentation.",
+        }])
+        ledger.record_open(
+            requested_url=url,
+            final_url=url,
+            title="pathlib docs",
+            text="The pathlib module offers classes representing filesystem paths.",
+        )
+        evidence = ledger.prepare_evidence_items(
+            [{
+                "claim": "pathlib provides filesystem path classes.",
+                "source_url": url,
+                "excerpt": "classes representing filesystem paths",
+                "stance": "supports",
+            }],
+            fallback_sources=[url],
+            fallback_claim="pathlib provides filesystem path classes.",
+            fallback_body="The pathlib module offers classes representing filesystem paths.",
+            note_type="fact",
+        )
+        self.assertFalse(evidence.error)
+        ledger.add_evidence_items(list(evidence.items), note_id="fact-python")
+        report = (
+            "## 结论\n"
+            "- pathlib provides filesystem path classes. [1]\n\n"
+            "## 关键证据\n"
+            "- [1] The opened docs page says pathlib has classes representing filesystem paths.\n\n"
+            "## 反证与限制\n"
+            "- 未找到强反证；本轮搜索了 python pathlib docs，若官方文档变更会推翻当前结论。\n\n"
+            "## 来源质量\n"
+            "- [1] primary · official · fresh · python.org\n\n"
+            "## 搜索覆盖\n"
+            "- query: python pathlib docs\n"
+            "- opened: Python docs\n"
+            "- skipped: none representative\n"
+            "- stop: official docs directly answer the question\n\n"
+            "## 来源\n"
+            f"[1] pathlib docs - {url}"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
 
     def test_report_quality_requires_counter_section(self) -> None:
         url = "https://example.com/helium"

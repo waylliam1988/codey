@@ -4,6 +4,20 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.3 - Research Provenance Polish
+
+- Research provenance: explicit URL citations remain exact, but source-quality
+  text can now name a parent site domain for an opened child host. For example,
+  opening `docs.python.org` allows a quality note to say `python.org`, while
+  opening `python.org` still does not allow a report to claim
+  `docs.python.org`.
+- Research quality gate: URL spans are excluded from bare-domain scanning, so
+  paths such as `pathlib.html` are not misread as unopened source domains.
+- Project memory: added an integration regression for the verified
+  implementation memory path, covering implementation notes, verification
+  notes, and `implements` / `verifies` links back to the research synthesis.
+- Hygiene: removed a stale `EvidencePack` import from the task runner.
+
 ## 0.2.2 - Research Report Quality
 
 - Evidence Ledger: each Research run now records search queries, ranked search
