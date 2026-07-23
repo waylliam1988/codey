@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.1-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.2-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.1`
+版本：`0.2.2`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -23,9 +23,9 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 ## 一眼看懂
 
 - **使用你已经登录的网页 AI**：支持 DeepSeek、Qwen、小米 MiMo 和 GLM。
-- **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开来源、保存证据笔记并生成 synthesis。
+- **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开来源、保存证据笔记，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
 - **代码留在本机**：模型只能访问你选择的项目目录。
-- **把研究带进项目**：研究结束后选择项目文件夹，Codey 只把有边界的 Research Brief 注入 Writer，不把整个 vault 塞进去。
+- **把研究带进项目**：研究结束后选择项目文件夹，Codey 只把带引用和限制条件的有边界 Research Brief 注入 Writer，不把整个 vault 塞进去。
 - **受控工具循环**：读取、编辑、测试、diff、Review 和 Restore 都有边界。
 - **可选本地模型**：`Local` 可以连接 OpenAI-compatible endpoint，并支持可选 API key。
 - **改完后再审查**：一个模型写代码，另一个模型审查最终 diff；如果没有第二个可用模型，也可以让写代码的模型做一次明确标注的 self-review。
@@ -62,9 +62,10 @@ Codey 想解决的是一个很朴素的问题：
 ## 它能做什么？
 
 - 用 New Chat 正常聊天，不向模型开放任何项目
-- 在输入框上下文里点 `Research`，让 Codey 搜索、读来源、写笔记，并生成带来源约束的研究结论
+- 在输入框上下文里点 `Research`，让 Codey 搜索、读来源、写笔记，并生成带编号引用、evidence snippet、反证/限制、来源质量和搜索覆盖的研究结论
 - 可以先普通聊天讨论方案，再从输入框上方的项目上下文选择文件夹，把同一个聊天接到项目任务
 - 研究结束后选择项目，把 synthesis 压成有边界的 Research Brief 交给 Writer 落地
+- 通过 Research drawer 的 `Evidence`、`Sources`、`Coverage`、`Notes` 四个 tab 查看本轮证据，而不是只看一条 receipt
 - 项目实现和验证成功后，可以把“做了什么、为什么、跑过什么检查”沉淀成实现/验证记忆，而不是把源码全文塞进 vault
 - 在同一个项目对话里讨论、查看和修改；只有明确要求时才改文件
 - 让模型读取和修改你选择的项目目录
@@ -147,7 +148,7 @@ Provider worker 运行；worker 使用同一个已登录 Codey 浏览器 profile
 
 ## Research
 
-`Research` 是 Codey 0.2.0 新增的工作闭环。它不是第二个 app，也不会偷偷自动联网。
+`Research` 是 Codey 的研究工作闭环。它不是第二个 app，也不会偷偷自动联网。
 当你需要 Codey 查资料、读来源、写证据笔记时，明确点击输入框上下文里的 `Research`。
 
 主界面仍然是一条很轻的上下文：
@@ -164,20 +165,43 @@ Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开
 笔记写入、restore 和 evidence review 都由 Codey 本地工具执行。模型没有隐藏联网权。
 最终 synthesis 只能引用本轮 Codey 实际打开过的来源。
 
+从 0.2.2 开始，Research 会维护 Evidence Ledger，并在保存最终 synthesis 前通过确定性的
+报告质量门。报告必须包含：
+
+- `结论`
+- `关键证据`
+- `反证与限制`
+- `来源质量`
+- `搜索覆盖`
+- `来源`
+
+正文里的 `[1]` 这类编号引用必须对应本轮 Codey 实际打开过的 final URL。
+note 附带的 evidence snippet 必须真实出现在打开过的网页正文里；search result
+在 `open_url` 之前不算证据。
+
 典型流程是：
 
 ```text
 先聊想法
 -> 点 Research，提出研究问题
--> Codey 搜索、打开网页、写 notes、保存 synthesis
+-> Codey 搜索、打开网页、记录 evidence、保存带引用的 synthesis
 -> 选择项目文件夹
 -> Codey 把有边界的 Research Brief 注入项目 Writer
 -> 实现和验证成功后，可以把实现事实沉淀回本地记忆
 ```
 
+Research drawer 有四个轻量 tab：
+
+- `Evidence`：claim、snippet、counterpoints 和质量 warning
+- `Sources`：citation map、source title、final URL 和来源质量提示
+- `Coverage`：搜索 query、打开结果、跳过结果和停止理由
+- `Notes`：synthesis、note id、source URL 和 restore 状态
+
 Vault 存在 Codey 本地状态目录里，底层是 Markdown notes 和可重建的 SQLite FTS
 索引。项目源码不会被复制进 vault；implementation note 记录的是做了什么、为什么、
-关联哪个 synthesis/decision、跑过什么检查，以及当前限制。
+关联哪个 synthesis/decision、跑过什么检查，以及当前限制。Project Writer 收到的是
+有边界的 brief，包含关键结论、citation map、evidence items、counterpoints 和
+source-quality risks，而不是整个 vault。
 
 ---
 
@@ -272,8 +296,9 @@ Codey 会让网页 AI 返回结构化工具调用，然后在本地真实读写�
 如果只想普通聊天、不让模型接触任何项目，就继续使用 **New Chat**。
 
 如果要先研究再写代码，在同一条上下文里点击 `Research`，然后提出你要的资料、
-来源、对比、API 背景或方案调研。Codey 会写本地 research notes 和 synthesis。
-之后再选择项目文件夹时，Writer 收到的是有边界的 Research Brief，而不是整个 vault。
+来源、对比、API 背景或方案调研。Codey 会写本地 research notes，并生成带 evidence、
+counterpoints、来源质量和搜索覆盖的 synthesis。之后再选择项目文件夹时，Writer
+收到的是有边界的 Research Brief，而不是整个 vault。
 
 如果要使用本地模型，在模型菜单里选择 `Local`。Codey 会弹出 OpenAI-compatible
 配置框，填写 base URL、model id 和可选 API key。key 留空会保留已有 key；
@@ -436,7 +461,7 @@ codey/
   project_map.py            确定性的有边界项目地图
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
-  research/                 Research runner、网页搜索/打开、URL policy 和 evidence review
+  research/                 Research runner、网页搜索/打开、evidence ledger 和 report quality gate
   verification_map.py       Review 阶段的有边界验证候选
   review_impact_map.py      只给 Review 使用的 caller/test 影响提示
   change_brief.py           隐藏任务意图 brief

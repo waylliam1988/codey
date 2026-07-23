@@ -8,6 +8,7 @@ from codey import cancellation
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
 from codey.knowledge.store import KnowledgeStore
+from codey.research.ledger import ResearchLedger
 from codey.research.url_policy import check_fetch_url
 from codey.text_budget import clip_middle
 
@@ -31,6 +32,7 @@ class ResearchTools:
     created_ids: list[str] = field(default_factory=list)
     updated_ids: list[str] = field(default_factory=list)
     links_created: int = 0
+    ledger: ResearchLedger = field(default_factory=ResearchLedger)
 
     def web_search(self, query: str) -> str:
         query = (query or "").strip()
@@ -45,6 +47,7 @@ class ResearchTools:
             self._record_failure("search", "search", exc)
             return f"ERROR: search failed: {exc}"
         cancellation.check()
+        self.ledger.record_search(query, results)
         if not results:
             return "no results"
         lines = []
@@ -83,6 +86,12 @@ class ResearchTools:
         self.sources_read.add(url)
         if page_url and page_url != url:
             self.sources_read.add(page_url)
+        self.ledger.record_open(
+            requested_url=url,
+            final_url=page_url,
+            title=str(page.get("title") or ""),
+            text=page_text,
+        )
         window = page_text[offset : offset + limit]
         more = offset + limit < len(page_text)
         header = f"{page.get('title')}\n{page_url}".strip()
@@ -135,6 +144,15 @@ class ResearchTools:
             problem = self._provenance_problem(note_type, sources)
             if problem:
                 return problem if problem.startswith("NEEDS_OPEN:") else f"ERROR: {problem}"
+        evidence_items, evidence_problem = self.ledger.prepare_evidence_items(
+            args.get("evidence"),
+            fallback_sources=sources,
+            fallback_claim=title,
+            fallback_body=body,
+            note_type=note_type,
+        )
+        if evidence_problem:
+            return f"ERROR: {evidence_problem}"
         status = str(args.get("status") or "active").strip().lower()
         if status not in NOTE_STATUSES:
             status = "active"
@@ -162,6 +180,8 @@ class ResearchTools:
         rel = self.store.write_note(note, changes=self.changes)
         if note_type == "source":
             self.grounded_ids.add(note.id)
+        if evidence_items:
+            self.ledger.add_evidence_items(evidence_items, note_id=note.id)
         if updating:
             if note.id not in self.updated_ids:
                 self.updated_ids.append(note.id)

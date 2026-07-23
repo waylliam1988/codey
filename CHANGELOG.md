@@ -4,6 +4,27 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.2 - Research Report Quality
+
+- Evidence Ledger: each Research run now records search queries, ranked search
+  results, opened requested/final URLs, retrieval timestamps, source-quality
+  hints, and short evidence snippets.
+- Report quality gate: final Research reports must include `Conclusion`, `Key
+  evidence`, `Counter-evidence / limitations`, `Source quality`, `Search
+  coverage`, and `Sources`. Numbered citations must map to sources Codey
+  actually opened as final URLs in the run.
+- Evidence discipline: evidence snippets attached to notes must appear in the
+  opened page text. Search results are still not evidence until `open_url`
+  reads them, and low-quality reports are sent back to the researcher for
+  revision instead of being saved as synthesis.
+- Advisors: Research MoA advisors now receive a richer read-only EvidencePack
+  with citations, evidence items, coverage, notes, and source URLs; advisors
+  still cannot browse or write the vault.
+- UI and handoff: the Research drawer now has `Evidence`, `Sources`,
+  `Coverage`, and `Notes` tabs. Project handoff carries a bounded Research
+  Brief with citation map, evidence items, counterpoints, and source-quality
+  risks instead of the full vault.
+
 ## 0.2.1 - Research Polish and UI Follow-through
 
 - Local provider: removed the explicit saved-key clearing checkbox. Leaving the

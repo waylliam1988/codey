@@ -31,6 +31,26 @@ from codey.task_runner import TaskRunner, _project_has_user_files
 from codey.verification_policy import VerificationCandidate
 
 
+def valid_research_report(url: str, conclusion: str = "Helium conclusion.") -> str:
+    return (
+        "## 结论\n"
+        f"- {conclusion} [1]\n\n"
+        "## 关键证据\n"
+        "- [1] The opened source provides direct support.\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证；本轮搜索覆盖了用户问题，新的 primary data 会推翻当前结论。\n\n"
+        "## 来源质量\n"
+        "- [1] secondary · web · undated · example.com\n\n"
+        "## 搜索覆盖\n"
+        "- query: helium\n"
+        "- opened: Helium source\n"
+        "- skipped: none representative\n"
+        "- stop: enough for test fixture\n\n"
+        "## 来源\n"
+        f"[1] Helium source - {url}"
+    )
+
+
 class GitChangesTests(unittest.TestCase):
     def test_parse_git_status(self) -> None:
         files = changes.parse_git_status(" M codey/server.py\n?? new.txt\nR  old.py -> new.py\n")
@@ -1408,9 +1428,11 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
-                '{"tool":"web_search","args":{"query":"helium"}}',
                 '{"tool":"open_url","args":{"url":"https://example.com/helium"}}',
-                '{"tool":"done","args":{"answer":"关键证据\\n- https://example.com/helium"}}',
+                json.dumps({
+                    "tool": "done",
+                    "args": {"answer": valid_research_report("https://example.com/helium", "Helium data are sufficient for this fixture.")},
+                }),
             ]
 
             with (
@@ -1430,14 +1452,31 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(done["mode"], "research")
         self.assertEqual(done["stop_reason"], "done")
         self.assertTrue(done["research"]["synthesis_id"])
-        self.assertIn("search", tool_kinds)
         self.assertIn("read", tool_kinds)
+        self.assertIn("citation_map", done["research"])
+        self.assertTrue(done["research"]["citation_map"])
+        self.assertIn("coverage", done["research"])
         research_intro = provider.send.call_args_list[0].args[0]
         self.assertIn("Conversation context from this chat", research_intro)
         self.assertIn("Choose the storage layer", research_intro)
         agent_run.assert_not_called()
 
     def test_followup_research_intent_includes_previous_research_context(self) -> None:
+        class Search:
+            def search(self, query, limit=8):
+                return []
+
+            def fetch(self, url):
+                return {
+                    "url": url,
+                    "title": "Helium source",
+                    "text": "The storage plan source supports the SQLite-backed plan.",
+                    "truncated": False,
+                }
+
+            def close(self):
+                pass
+
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
             from codey.knowledge import KnowledgeStore
@@ -1446,13 +1485,22 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
-                '{"tool":"done","args":{"answer":"First research summary: prefer the SQLite-backed plan."}}',
-                '{"tool":"done","args":{"answer":"Second research summary."}}',
+                '{"tool":"open_url","args":{"url":"https://example.com/storage"}}',
+                json.dumps({
+                    "tool": "done",
+                    "args": {"answer": valid_research_report("https://example.com/storage", "First research summary: prefer the SQLite-backed plan.")},
+                }),
+                '{"tool":"open_url","args":{"url":"https://example.com/storage"}}',
+                json.dumps({
+                    "tool": "done",
+                    "args": {"answer": valid_research_report("https://example.com/storage", "Second research summary.")},
+                }),
             ]
 
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch("codey.task_runner.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
                 server._run_task("session-research", None, "Research the storage plan", 4, False, "deepseek", "research")
@@ -1460,7 +1508,7 @@ class SessionThreadingTests(unittest.TestCase):
 
             state.knowledge_store.close()
 
-        second_intro = provider.send.call_args_list[1].args[0]
+        second_intro = provider.send.call_args_list[2].args[0]
         self.assertIn("Conversation context from this chat", second_intro)
         self.assertIn("First research summary", second_intro)
         agent_run.assert_not_called()

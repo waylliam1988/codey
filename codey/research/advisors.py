@@ -31,7 +31,10 @@ class EvidencePack:
     draft: str
     opened_urls: tuple[str, ...] = ()
     search_result_urls: tuple[str, ...] = ()
+    citation_map: tuple[dict[str, object], ...] = ()
+    evidence_items: tuple[dict[str, object], ...] = ()
     notes: tuple[EvidenceNote, ...] = ()
+    coverage: dict[str, object] = field(default_factory=dict)
     session_id: str = ""
     project: str = ""
     warnings: tuple[str, ...] = field(default_factory=tuple)
@@ -55,6 +58,34 @@ class EvidencePack:
         if self.search_result_urls:
             lines.extend(["", "Search result URLs (not proof unless also opened):"])
             lines.extend(f"- {url}" for url in self.search_result_urls[:MAX_ADVISOR_SOURCE_URLS])
+        if self.citation_map:
+            lines.extend(["", "Citation map:"])
+            for item in self.citation_map[:MAX_ADVISOR_SOURCE_URLS]:
+                number = item.get("number")
+                title = item.get("title") or ""
+                url = item.get("url") or ""
+                quality = item.get("quality") or {}
+                quality_text = " · ".join(
+                    part for part in (
+                        str(quality.get("level") or ""),
+                        str(quality.get("kind") or ""),
+                        str(quality.get("freshness") or ""),
+                        str(quality.get("independent_group") or ""),
+                    ) if part
+                )
+                lines.append(f"- [{number}] {title} - {url}" + (f" ({quality_text})" if quality_text else ""))
+        if self.evidence_items:
+            lines.extend(["", "Evidence items:"])
+            for item in self.evidence_items[:MAX_ADVISOR_NOTES]:
+                claim = str(item.get("claim") or "")
+                source_url = str(item.get("source_url") or "")
+                excerpt = str(item.get("excerpt") or "")
+                stance = str(item.get("stance") or "supports")
+                lines.extend((
+                    f"- [{stance}] {claim}",
+                    f"  source: {source_url}",
+                    f"  excerpt: {_clip(excerpt, MAX_NOTE_BODY_CHARS)}",
+                ))
         if self.notes:
             lines.extend(["", "Saved notes:"])
             for note in self.notes[:MAX_ADVISOR_NOTES]:
@@ -64,6 +95,19 @@ class EvidencePack:
                     _clip(note.body, MAX_NOTE_BODY_CHARS),
                     "",
                 ))
+        if self.coverage:
+            lines.extend(["", "Coverage:"])
+            queries = self.coverage.get("queries") or []
+            if queries:
+                lines.extend(f"- query: {item}" for item in list(queries)[:MAX_ADVISOR_SOURCE_URLS])
+            skipped = self.coverage.get("skipped_results") or []
+            if skipped:
+                lines.append("Skipped results:")
+                for item in list(skipped)[:MAX_ADVISOR_SOURCE_URLS]:
+                    lines.append(
+                        f"- {item.get('title') or item.get('url') or ''} "
+                        f"({item.get('reason') or 'skipped'})"
+                    )
         if self.warnings:
             lines.extend(["Warnings:", *[f"- {item}" for item in self.warnings]])
         return _clip("\n".join(lines), MAX_EVIDENCE_PACK_CHARS)

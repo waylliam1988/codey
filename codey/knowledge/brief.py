@@ -16,7 +16,11 @@ class ResearchBrief:
     synthesis_id: str = ""
     original_question: str = ""
     conclusions: tuple[str, ...] = ()
+    counterpoints: tuple[str, ...] = ()
     evidence_urls: tuple[str, ...] = ()
+    citation_map: tuple[str, ...] = ()
+    source_quality_risks: tuple[str, ...] = ()
+    evidence_items: tuple[str, ...] = ()
     risks: tuple[str, ...] = ()
     open_questions: tuple[str, ...] = ()
     source_note_ids: tuple[str, ...] = ()
@@ -37,6 +41,18 @@ class ResearchBrief:
         if self.evidence_urls:
             lines.append("Evidence URLs:")
             lines.extend(f"- {item}" for item in self.evidence_urls)
+        if self.citation_map:
+            lines.append("Citation map:")
+            lines.extend(f"- {item}" for item in self.citation_map)
+        if self.evidence_items:
+            lines.append("Evidence items:")
+            lines.extend(f"- {item}" for item in self.evidence_items)
+        if self.counterpoints:
+            lines.append("Counter-evidence / limitations:")
+            lines.extend(f"- {item}" for item in self.counterpoints)
+        if self.source_quality_risks:
+            lines.append("Source quality risks:")
+            lines.extend(f"- {item}" for item in self.source_quality_risks)
         if self.risks:
             lines.append("Risks:")
             lines.extend(f"- {item}" for item in self.risks)
@@ -89,7 +105,11 @@ class KnowledgeBriefBuilder:
             synthesis_id=note.id,
             original_question=note.title,
             conclusions=_extract_section_lines(note.body, ("结论", "结论候选", "Key conclusions", "Conclusion")),
+            counterpoints=_extract_section_lines(note.body, ("反证与限制", "反证", "Counter-evidence", "Counter", "Limitations")),
             evidence_urls=tuple(note.sources[:8]),
+            citation_map=_extract_sources_section(note.body),
+            source_quality_risks=_extract_section_lines(note.body, ("来源质量", "Source quality")),
+            evidence_items=_extract_section_lines(note.body, ("关键证据", "Evidence", "Evidence Ledger")),
             risks=_extract_section_lines(note.body, ("风险", "Risks")),
             open_questions=_extract_section_lines(note.body, ("继续跟踪指标", "Open questions", "Questions")),
             source_note_ids=related,
@@ -121,3 +141,15 @@ def _extract_section_lines(body: str, headings: tuple[str, ...], limit: int = 5)
         if len(out) >= limit:
             break
     return tuple(out)
+
+
+def _extract_sources_section(body: str) -> tuple[str, ...]:
+    lines = _extract_section_lines(body, ("来源", "Sources", "References"), limit=16)
+    if lines:
+        return lines
+    out: list[str] = []
+    for line in str(body or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and "]" in stripped:
+            out.append(stripped)
+    return tuple(out[:16])

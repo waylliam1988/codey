@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.1-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.2-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.1`
+Version: `0.2.2`
 
 [Version history](CHANGELOG.md)
 
@@ -23,9 +23,9 @@ Version: `0.2.1`
 ## At a Glance
 
 - **Use web AI accounts you already have**: DeepSeek, Qwen, Xiaomi MiMo, and GLM are supported.
-- **Research before building**: click `Research` to let Codey search the web, open sources, save evidence notes, and produce a synthesis.
+- **Research before building**: click `Research` to let Codey search the web, open sources, save evidence notes, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
 - **Keep code local**: models access only the project folder you choose.
-- **Carry research into projects**: after research, choose a folder and Codey injects a bounded Research Brief instead of the whole vault.
+- **Carry research into projects**: after research, choose a folder and Codey injects a bounded Research Brief with citations and limitations instead of the whole vault.
 - **Controlled tool loop**: read, edit, test, diff, review, and restore.
 - **Optional local model**: `Local` connects to an OpenAI-compatible endpoint with optional API key support.
 - **Review after edits**: one model can write while another reviews the final
@@ -64,9 +64,10 @@ This is not about replacing professional tools. It is about making the first ste
 ## What It Can Do
 
 - Use New Chat for normal conversation without granting access to a project
-- Use `Research` from the composer context to search/read sources, save notes, and produce a grounded synthesis without opening a project
+- Use `Research` from the composer context to search/read sources, save notes, and produce a grounded synthesis with numbered citations, evidence snippets, counter-evidence, source quality, and search coverage
 - Turn a plain chat into a project task from the same conversation by choosing a folder from the composer context
 - Turn research into implementation by choosing a folder after the synthesis; Codey carries only a bounded Research Brief into the Writer prompt
+- Inspect a Research run through `Evidence`, `Sources`, `Coverage`, and `Notes` drawer tabs instead of reading a flat receipt
 - Save successful implementation and verification facts back into local research memory without copying source code into the vault
 - Discuss, inspect, and edit inside one project conversation; files change only when requested
 - Let the model read and modify files in a selected project folder
@@ -178,10 +179,10 @@ self-modified by this v1.
 
 ## Research
 
-`Research` is Codey's new work loop in 0.2.0. It is not a separate app and it is
-not automatic background browsing. You explicitly click the `Research` token in
-the composer context when you want Codey to search, read sources, and write
-local evidence notes.
+`Research` is Codey's research work loop. It is not a separate app and it is not
+automatic background browsing. You explicitly click the `Research` token in the
+composer context when you want Codey to search, read sources, and write local
+evidence notes.
 
 The main screen stays the same:
 
@@ -199,21 +200,44 @@ note writes, restore, and evidence checks are always local Codey tools. Models
 do not get hidden network access. A final synthesis can cite only sources that
 Codey actually opened in the run.
 
+In 0.2.2, Research keeps an Evidence Ledger and applies a deterministic report
+quality gate before saving the final synthesis. The report must include:
+
+- `Conclusion`
+- `Key evidence`
+- `Counter-evidence / limitations`
+- `Source quality`
+- `Search coverage`
+- `Sources`
+
+Numbered citations such as `[1]` must map to final URLs opened by Codey during
+that run. Evidence snippets attached to notes must appear in the opened page
+text, and search-result URLs do not count as evidence until Codey opens them.
+
 The flow is:
 
 ```text
 Chat about an idea
 -> click Research and ask the research question
--> Codey searches, opens pages, writes notes, and saves a synthesis
+-> Codey searches, opens pages, records evidence, and saves a cited synthesis
 -> choose a folder
 -> Codey injects a bounded Research Brief into the project Writer
 -> successful implementation/verification can be remembered as project facts
 ```
 
+The Research drawer has four lightweight tabs:
+
+- `Evidence`: claims, snippets, counterpoints, and quality warnings
+- `Sources`: citation map, source titles, final URLs, and quality hints
+- `Coverage`: search queries, opened results, skipped results, and stop rationale
+- `Notes`: synthesis, note ids, source URLs, and restore state
+
 The vault is stored under Codey's local state directory and is implemented as
 Markdown notes plus a rebuildable SQLite FTS index. Project source code is not
 copied into the vault; implementation notes record what changed, why, what was
-checked, and which research synthesis or decision it relates to.
+checked, and which research synthesis or decision it relates to. The Project
+Writer receives a bounded brief with key conclusions, citation map, evidence
+items, counterpoints, and source-quality risks, not the whole vault.
 
 ---
 
@@ -307,7 +331,8 @@ conversation with no project access, keep using **New Chat**.
 
 To research before coding, click the `Research` token in the same composer
 context, then ask for the sources, comparison, market scan, API notes, or design
-background you need. Codey writes local research notes and a synthesis. When you
+background you need. Codey writes local research notes and a cited synthesis
+with evidence, counterpoints, source quality, and search coverage. When you
 then choose a folder, the Writer receives a bounded Research Brief instead of
 the whole vault.
 
@@ -480,7 +505,7 @@ codey/
   project_map.py            deterministic bounded project orientation
   project_task_context.py   project facts, map, checkpoint, and verification context
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
-  research/                 Research runner, web search/open tools, URL policy, evidence review
+  research/                 Research runner, web search/open tools, evidence ledger, report quality gate
   verification_map.py       bounded review-time verification candidates
   review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief

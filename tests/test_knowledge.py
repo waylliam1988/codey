@@ -113,6 +113,41 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertIn("https://example.com/helium", rendered)
         self.assertNotIn(other.id, rendered)
 
+    def test_brief_builder_extracts_report_quality_context(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            note = KnowledgeNote.create(
+                type="synthesis",
+                title="Helium research",
+                body=(
+                    "## 结论\n"
+                    "- Build the tracker [1]\n\n"
+                    "## 关键证据\n"
+                    "- [1] Source supports the feature.\n\n"
+                    "## 反证与限制\n"
+                    "- 未找到强反证；supplier data could overturn this.\n\n"
+                    "## 来源质量\n"
+                    "- [1] secondary · web · undated · example.com\n\n"
+                    "## 搜索覆盖\n"
+                    "- query: helium\n\n"
+                    "## 来源\n"
+                    "[1] Helium source - https://example.com/helium\n"
+                ),
+                sources=["https://example.com/helium"],
+                session_id="s1",
+            )
+            store.write_note(note)
+
+            rendered = KnowledgeBriefBuilder(store).build_for_session("s1").render()
+            store.close()
+
+        self.assertIn("Citation map", rendered)
+        self.assertIn("[1] Helium source", rendered)
+        self.assertIn("Counter-evidence / limitations", rendered)
+        self.assertIn("supplier data could overturn this", rendered)
+        self.assertIn("Source quality risks", rendered)
+        self.assertIn("secondary", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

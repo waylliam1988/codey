@@ -135,7 +135,7 @@ Tools:
 - {"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000}}  read a page's text
 - {"tool":"knowledge_search","args":{"query":"..."}}  search your existing local notes FIRST
 - {"tool":"knowledge_read","args":{"id":"<note id>"}}  read one existing note in full
-- {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}
+- {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"...","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}
 - {"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}
 - {"tool":"done","args":{"answer":"<the full human-readable report>"}}
 
@@ -153,6 +153,9 @@ Discipline:
 - Prefer 2+ independent sources before writing a fact.
 - Every fact/conclusion note must cite sources.
 - The final report may cite or name only pages you opened in this run, or grounded source notes you read.
+- The final report must use these sections: 结论, 关键证据, 反证与限制, 来源质量, 搜索覆盖, 来源.
+- Every cited number in the report must appear in 来源, and every 来源 URL must be a page you opened in this run.
+- If no strong counter-evidence exists, write "未找到强反证" and explain what you searched that would have falsified the conclusion.
 - Keep notes small and single-topic. Link related notes.
 
 Be efficient: a handful of good searches and reads beat many shallow ones. When you have \

@@ -14,7 +14,7 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.models import ToolResult
 from codey.research.advisors import EvidenceNote, EvidencePack
-from codey.research.evidence_review import review_final_summary
+from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
 from codey.research.tools import ResearchTools
 
@@ -39,6 +39,14 @@ class ResearchRunResult:
     summary: str
     stop_reason: str
     turns: int
+    queries: list[str] = field(default_factory=list)
+    search_results: list[dict] = field(default_factory=list)
+    opened_sources: list[dict] = field(default_factory=list)
+    coverage: dict = field(default_factory=dict)
+    citation_map: list[dict] = field(default_factory=list)
+    evidence_items: list[dict] = field(default_factory=list)
+    counterpoints: list[str] = field(default_factory=list)
+    quality_warnings: list[str] = field(default_factory=list)
     notes_created: list[str] = field(default_factory=list)
     notes_updated: list[str] = field(default_factory=list)
     links_created: int = 0
@@ -120,6 +128,7 @@ class ResearchRunner:
         stop_announced = False
         advisor_reviewed = False
         advisor_count = 0
+        final_review: ReportQualityReview | None = None
         for turn in range(1, self.max_turns + 1):
             if self._stop_requested():
                 stop_reason = "stopped"
@@ -172,8 +181,9 @@ class ResearchRunner:
                     )
                     continue
                 summary_candidate = plan.control.body.strip()
-                review = review_final_summary(
+                review = review_report_quality(
                     summary_candidate,
+                    ledger=self.tools.ledger,
                     opened_sources=self.tools.sources_read,
                     search_result_urls=self.tools.search_result_urls,
                 )
@@ -182,7 +192,7 @@ class ResearchRunner:
                     continue
                 if self.review_advisors is not None and not advisor_reviewed:
                     advisor_reviewed = True
-                    advices = self._review_with_advisors(question, summary_candidate, tuple(review.warnings))
+                    advices = self._review_with_advisors(question, summary_candidate, review)
                     advisor_count = len(advices)
                     if advices:
                         yield RunEvent.info("research evidence review completed", names=f"{advisor_count} advisor(s)")
@@ -190,6 +200,7 @@ class ResearchRunner:
                         continue
                 yield RunEvent.info(review.message, warnings=list(review.warnings))
                 summary = summary_candidate
+                final_review = review
                 stop_reason = "done"
                 break
             if not plan.calls:
@@ -211,6 +222,14 @@ class ResearchRunner:
             summary=summary,
             stop_reason=stop_reason,
             turns=turn,
+            queries=[item.query for item in self.tools.ledger.searches],
+            search_results=self.tools.ledger.search_results_payload(),
+            opened_sources=self.tools.ledger.opened_sources_payload(),
+            coverage=self.tools.ledger.coverage_payload(),
+            citation_map=final_review.citation_payload() if final_review else [],
+            evidence_items=self.tools.ledger.evidence_payload(),
+            counterpoints=list(final_review.counterpoints) if final_review else [],
+            quality_warnings=list(final_review.warnings) if final_review else [],
             notes_created=list(self.tools.created_ids),
             notes_updated=list(self.tools.updated_ids),
             links_created=self.tools.links_created,
@@ -320,7 +339,7 @@ class ResearchRunner:
         note = KnowledgeNote.create(
             type="synthesis",
             title=title,
-            body=summary,
+            body=_synthesis_body(summary, self.tools.ledger),
             tags=["research", f"session:{self.session_id}" if self.session_id else "research"],
             sources=sorted(self.tools.sources_read),
             session_id=self.session_id,
@@ -341,7 +360,7 @@ class ResearchRunner:
         self,
         question: str,
         summary: str,
-        warnings: tuple[str, ...],
+        review: ReportQualityReview,
     ) -> tuple[object, ...]:
         if self.review_advisors is None:
             return ()
@@ -350,10 +369,13 @@ class ResearchRunner:
             draft=summary,
             opened_urls=tuple(sorted(self.tools.sources_read)),
             search_result_urls=tuple(sorted(self.tools.search_result_urls)),
+            citation_map=tuple(review.citation_payload()),
+            evidence_items=tuple(self.tools.ledger.evidence_payload()),
             notes=self._evidence_notes(),
+            coverage=self.tools.ledger.coverage_payload(),
             session_id=self.session_id,
             project=self.project,
-            warnings=warnings,
+            warnings=tuple(review.warnings),
         )
         try:
             return tuple(self.review_advisors(pack))
@@ -453,6 +475,57 @@ def _advisor_followup_prompt(summary: str, advices: tuple[object, ...]) -> str:
         if text:
             lines.append(f"{label}:\n{text}")
     return "\n\n".join(lines)
+
+
+def _synthesis_body(summary: str, ledger) -> str:
+    body = (summary or "").strip()
+    appendix = _ledger_appendix(ledger)
+    if not appendix:
+        return body
+    return f"{body}\n\n{appendix}".strip()
+
+
+def _ledger_appendix(ledger) -> str:
+    if ledger is None:
+        return ""
+    lines = ["## Evidence Ledger"]
+    opened = ledger.opened_sources_payload()
+    if opened:
+        lines.append("### Opened Sources")
+        for index, item in enumerate(opened, 1):
+            quality = item.get("quality") or {}
+            quality_text = " · ".join(
+                part for part in (
+                    str(quality.get("level") or ""),
+                    str(quality.get("kind") or ""),
+                    str(quality.get("freshness") or ""),
+                    str(quality.get("independent_group") or ""),
+                ) if part
+            )
+            lines.append(
+                f"- [{index}] {item.get('title') or item.get('final_url') or ''} - {item.get('final_url') or ''}"
+                + (f" ({quality_text})" if quality_text else "")
+            )
+    evidence = ledger.evidence_payload()
+    if evidence:
+        lines.append("### Evidence Items")
+        for item in evidence:
+            lines.extend((
+                f"- [{item.get('stance') or 'supports'}] {item.get('claim') or ''}",
+                f"  source: {item.get('source_url') or ''}",
+                f"  excerpt: {item.get('excerpt') or ''}",
+            ))
+    coverage = ledger.coverage_payload()
+    if coverage.get("queries"):
+        lines.append("### Search Coverage")
+        for query in coverage.get("queries", []):
+            lines.append(f"- query: {query}")
+        skipped = coverage.get("skipped_results") or []
+        if skipped:
+            lines.append("  skipped:")
+            for item in skipped[:8]:
+                lines.append(f"  - {item.get('title') or item.get('url') or ''} ({item.get('reason') or 'skipped'})")
+    return "\n".join(lines).strip()
 
 
 class _Outcome:

@@ -4,6 +4,22 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.2 - Research 报告质量门
+
+- Evidence Ledger：每次 Research 现在会记录搜索 query、排序后的搜索结果、实际打开的
+  requested/final URL、读取时间、来源质量提示，以及短 evidence snippet。
+- 报告质量门：最终 Research 报告必须包含 `结论`、`关键证据`、`反证与限制`、
+  `来源质量`、`搜索覆盖` 和 `来源`。正文里的编号引用必须对应本轮 Codey 实际打开过的
+  final URL。
+- 证据约束：note 里附带的 evidence snippet 必须真实出现在打开过的页面正文中。
+  search result 仍然不算证据，必须先 `open_url`；不合格报告会被退回 Researcher
+  修订，而不是直接保存为 synthesis。
+- 顾问：Research MoA advisor 现在会收到更完整但只读的 EvidencePack，包含 citations、
+  evidence items、coverage、notes 和 source URLs；advisor 仍然不能浏览网页，也不能写 vault。
+- UI 与项目衔接：Research drawer 现在分为 `Evidence`、`Sources`、`Coverage`、`Notes`
+  四个 tab。Project handoff 带入有边界的 Research Brief，包含 citation map、evidence
+  items、counterpoints 和 source-quality risks，而不是整个 vault。
+
 ## 0.2.1 - Research 收口与 UI 体验修正
 
 - Local provider：移除显式清除 saved key 的勾选框。API key 留空会保留旧 key；

@@ -15,7 +15,9 @@ from codey.models import ToolCall, ToolResult
 from codey.research.advisors import EvidencePack, run_research_advisors
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.evidence_review import provenance_problem
+from codey.research.ledger import ResearchLedger
 from codey.research.protocols import JsonToolCodec
+from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner
 from codey.research.tools import ResearchTools
 from codey.research.url_policy import check_fetch_url
@@ -63,6 +65,42 @@ class FakeSearch:
 
     def close(self) -> None:
         pass
+
+
+def valid_research_report(url: str = "https://example.com/helium", *, conclusion: str = "Helium supply depends on gas processing.") -> str:
+    return (
+        "## 结论\n"
+        f"- {conclusion} [1]\n\n"
+        "## 关键证据\n"
+        "- [1] The opened source says helium is separated from natural gas streams.\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证；本轮搜索了 helium，并会被新的 primary supply data 推翻。\n\n"
+        "## 来源质量\n"
+        "- [1] secondary · web · undated · example.com\n\n"
+        "## 搜索覆盖\n"
+        "- query: helium\n"
+        "- opened: Helium article\n"
+        "- skipped: none representative\n"
+        "- stop: enough for this narrow fixture\n\n"
+        "## 来源\n"
+        f"[1] Helium article - {url}"
+    )
+
+
+def helium_ledger(url: str = "https://example.com/helium") -> ResearchLedger:
+    ledger = ResearchLedger()
+    ledger.record_search("helium", [{
+        "title": "Helium article",
+        "url": url,
+        "snippet": "Helium supply.",
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="Helium article",
+        text="Helium is separated from natural gas streams. 2026 supply note.",
+    )
+    return ledger
 
 
 class FakeAdvisorProvider:
@@ -170,6 +208,89 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("did not open", problem)
 
+    def test_report_quality_requires_counter_section(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(url).replace("## 反证与限制\n- 未找到强反证；本轮搜索了 helium，并会被新的 primary supply data 推翻。\n\n", "")
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("反证", review.message)
+
+    def test_report_quality_rejects_unmapped_citation_number(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(url).replace("[1]", "[2]", 1)
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("[2]", review.message)
+
+    def test_report_quality_rejects_source_url_not_opened_as_final_url(self) -> None:
+        url = "https://example.com/final"
+        ledger = helium_ledger(url)
+        report = valid_research_report("https://example.com/search-result")
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={"https://example.com/search-result", url},
+            search_result_urls={"https://example.com/search-result"},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("final URLs", review.message)
+
+    def test_report_quality_extracts_citation_counterpoints_and_warnings(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+
+        review = review_report_quality(
+            valid_research_report(url),
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertEqual(review.citation_map[0].url, url)
+        self.assertTrue(review.counterpoints)
+        self.assertIn("only one cited source", "\n".join(review.warnings))
+
+    def test_ledger_tracks_search_coverage_and_opened_results(self) -> None:
+        ledger = ResearchLedger()
+        ledger.record_search("helium supply", [
+            {"title": "Helium article", "url": "https://example.com/helium", "snippet": "supply note"},
+            {"title": "Other", "url": "https://example.com/other", "snippet": "other"},
+        ])
+        ledger.record_open(
+            requested_url="https://example.com/helium",
+            final_url="https://example.com/helium",
+            title="Helium article",
+            text="Helium is separated from natural gas streams.",
+        )
+
+        coverage = ledger.coverage_payload()
+        payload = ledger.search_results_payload()
+
+        self.assertEqual(coverage["queries"], ["helium supply"])
+        self.assertEqual(payload[0]["query"], "helium supply")
+        self.assertTrue(payload[0]["opened"])
+        self.assertEqual(coverage["opened_count"], 1)
+        self.assertTrue(coverage["skipped_results"])
+
     def test_fact_note_requires_opened_source(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -265,6 +386,50 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertTrue(payload["changed"])
 
+    def test_evidence_excerpt_must_come_from_opened_page_text(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(FakeSearch(), store, KnowledgeChanges(store.root))
+            url = "https://example.com/helium"
+            tools.sources_read.add(url)
+            tools.ledger.record_open(
+                requested_url=url,
+                final_url=url,
+                title="Helium article",
+                text="Helium is separated from natural gas streams.",
+            )
+
+            rejected = tools.knowledge_write({
+                "type": "fact",
+                "title": "Helium",
+                "body": "Helium is useful.",
+                "sources": [url],
+                "evidence": [{
+                    "claim": "Helium is useful.",
+                    "source_url": url,
+                    "excerpt": "This sentence was never opened.",
+                    "stance": "supports",
+                }],
+            })
+            accepted = tools.knowledge_write({
+                "type": "fact",
+                "title": "Helium source",
+                "body": "Helium comes from gas processing.",
+                "sources": [url],
+                "evidence": [{
+                    "claim": "Helium comes from gas processing.",
+                    "source_url": url,
+                    "excerpt": "Helium is separated from natural gas streams.",
+                    "stance": "supports",
+                }],
+            })
+            store.close()
+
+        self.assertTrue(rejected.startswith("ERROR:"))
+        self.assertIn("excerpt is not present", rejected)
+        self.assertIn("saved fact note", accepted)
+        self.assertEqual(len(tools.ledger.evidence_items), 1)
+
     def test_research_protocol_guides_open_url_before_note_write(self) -> None:
         codec = JsonToolCodec()
         prompt = codec.system_prompt()
@@ -277,6 +442,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("A web_search result is not evidence yet", prompt)
         self.assertIn("call open_url", prompt)
+        self.assertIn("反证与限制", prompt)
         self.assertIn("NEEDS_OPEN", followup)
         self.assertIn("call open_url", followup)
 
@@ -354,7 +520,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             }),
             json.dumps({
                 "tool": "done",
-                "args": {"answer": f"关键证据\n- Helium supply: {url}"},
+                "args": {"answer": valid_research_report(url)},
             }),
         )
         with tempfile.TemporaryDirectory() as td:
@@ -369,6 +535,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
             events = list(runner.run("Research helium"))
             result = runner.result
+            synthesis = store.read_note(result.synthesis_id if result else "")
             links = store.index.links_for([result.synthesis_id] if result else [])
             restore = runner.changes.restore_result()
             store.rebuild()
@@ -381,6 +548,13 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertTrue(result.synthesis_id)
         self.assertIn(result.synthesis_id, result.notes_created)
         self.assertEqual(result.source_urls, [url])
+        self.assertEqual(result.queries, ["helium"])
+        self.assertTrue(result.citation_map)
+        self.assertTrue(result.opened_sources)
+        self.assertTrue(result.evidence_items)
+        self.assertIsNotNone(synthesis)
+        assert synthesis is not None
+        self.assertIn("Evidence Ledger", synthesis.body)
         self.assertTrue(any(link["kind"] == "derives" for link in links))
         self.assertTrue(any(event.kind == "tool" for event in events))
         self.assertTrue(restore.ok)
@@ -443,7 +617,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         caller_thread_id = threading.get_ident()
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=1)
 
             list(runner.run("Research thread model"))
             store.close()
@@ -485,11 +659,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             }),
             json.dumps({
                 "tool": "done",
-                "args": {"answer": "Initial draft without enough evidence."},
+                "args": {"answer": valid_research_report(url, conclusion="Initial helium conclusion.")},
             }),
             json.dumps({
                 "tool": "done",
-                "args": {"answer": f"修订版\n- 关键证据\n- {url}"},
+                "args": {"answer": valid_research_report(url, conclusion="Revised helium conclusion.")},
             }),
         )
         seen: list[EvidencePack] = []
@@ -515,9 +689,11 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIsNotNone(result)
         assert result is not None
-        self.assertEqual(result.summary, f"修订版\n- 关键证据\n- {url}")
+        self.assertIn("Revised helium conclusion", result.summary)
         self.assertEqual(len(seen), 1)
         self.assertEqual(seen[0].opened_urls, (url,))
+        self.assertTrue(seen[0].citation_map)
+        self.assertTrue(seen[0].coverage)
         self.assertEqual(len(seen[0].notes), 1)
         self.assertIn("Need a direct evidence citation.", provider.sent[-1])
 
@@ -527,7 +703,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             json.dumps({"tool": "open_url", "args": {"url": url}}),
             json.dumps({
                 "tool": "done",
-                "args": {"answer": f"来源\n- Helium supply: {url}"},
+                "args": {"answer": valid_research_report(url)},
             }),
         )
         with tempfile.TemporaryDirectory() as td:

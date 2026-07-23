@@ -861,6 +861,71 @@
   .diff-line.hunk { color: var(--muted); }
   .diff-line.meta { color: var(--faint); }
 
+  .research-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border-2);
+    margin: 0 0 8px;
+    padding: 0 0 6px;
+  }
+  .research-tab {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 5px;
+    padding: 5px 8px;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+  }
+  .research-tab:hover { color: var(--text-dim); background: var(--hover); }
+  .research-tab.active { color: var(--text); }
+  .research-panel {
+    display: grid;
+    gap: 8px;
+  }
+  .research-card {
+    border-bottom: 1px solid var(--border-2);
+    padding: 9px 4px 10px;
+  }
+  .research-card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .research-card-title {
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .research-card-meta {
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    margin-top: 3px;
+    overflow-wrap: anywhere;
+  }
+  .research-excerpt {
+    color: var(--text-dim);
+    font-size: 12.5px;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .research-list {
+    margin: 0;
+    padding-left: 18px;
+    color: var(--text-dim);
+  }
+  .research-list li { margin: 3px 0; overflow-wrap: anywhere; }
+  .research-copy {
+    padding: 0;
+    font-size: 11.5px;
+    flex-shrink: 0;
+  }
+
   @media (max-width: 720px) {
     aside { position: absolute; z-index: 10; height: 100%; }
     body.sidebar-collapsed aside { display: none; }
@@ -2495,6 +2560,8 @@ function scheduleReconnectStatus() {
   }, 5000);
 }
 
+let researchDrawerTab = 'evidence';
+
 function recordResearchRun(sessionId, runId, research, receipt) {
   const s = sessions.find(x => x.id === sessionId);
   if (!s) return null;
@@ -2505,10 +2572,19 @@ function recordResearchRun(sessionId, runId, research, receipt) {
     notesUpdated: Array.isArray(research.notes_updated) ? research.notes_updated.map(String) : [],
     sourceUrls: Array.isArray(research.source_urls) ? research.source_urls.map(String) : [],
     sourcesRead: Number(research.sources_read || 0),
+    queries: Array.isArray(research.queries) ? research.queries.map(String) : [],
+    searchResults: Array.isArray(research.search_results) ? research.search_results : [],
+    openedSources: Array.isArray(research.opened_sources) ? research.opened_sources : [],
+    coverage: research.coverage && typeof research.coverage === 'object' ? research.coverage : {},
+    citationMap: Array.isArray(research.citation_map) ? research.citation_map : [],
+    evidenceItems: Array.isArray(research.evidence_items) ? research.evidence_items : [],
+    counterpoints: Array.isArray(research.counterpoints) ? research.counterpoints.map(String) : [],
+    qualityWarnings: Array.isArray(research.quality_warnings) ? research.quality_warnings.map(String) : [],
     receipt: receipt && receipt.text ? String(receipt.text) : '',
     restoreable: true,
     createdAt: Date.now(),
   };
+  researchDrawerTab = 'evidence';
   s.researchRuns = Array.isArray(s.researchRuns)
     ? s.researchRuns.filter(run => run.runId !== runId)
     : [];
@@ -2548,11 +2624,193 @@ function renderResearchDrawer(sessionId = activeId) {
   $('research-subtitle').textContent = `${run.notesCreated.length} notes · ${run.sourcesRead || run.sourceUrls.length} sources`;
   $('research-restore').disabled = !run.runId || !run.restoreable;
   body.innerHTML = '';
-  body.appendChild(researchSection('Synthesis', run.synthesisId ? [run.synthesisId] : []));
-  body.appendChild(researchSection('Notes created', run.notesCreated));
-  body.appendChild(researchSection('Notes updated', run.notesUpdated));
-  body.appendChild(researchSection('Sources', run.sourceUrls));
-  loadResearchRunNotes(run, sessionId);
+  body.appendChild(researchTabsNode());
+  const panel = document.createElement('div');
+  panel.className = 'research-panel';
+  body.appendChild(panel);
+  if (researchDrawerTab === 'sources') {
+    renderResearchSources(panel, run);
+  } else if (researchDrawerTab === 'coverage') {
+    renderResearchCoverage(panel, run);
+  } else if (researchDrawerTab === 'notes') {
+    panel.appendChild(researchSection('Synthesis', run.synthesisId ? [run.synthesisId] : []));
+    panel.appendChild(researchSection('Notes created', run.notesCreated));
+    panel.appendChild(researchSection('Notes updated', run.notesUpdated));
+    panel.appendChild(researchSection('Sources', run.sourceUrls));
+    loadResearchRunNotes(run, sessionId);
+  } else {
+    renderResearchEvidence(panel, run);
+  }
+}
+
+function researchTabsNode() {
+  const tabs = document.createElement('div');
+  tabs.className = 'research-tabs';
+  const items = [
+    ['evidence', 'Evidence'],
+    ['sources', 'Sources'],
+    ['coverage', 'Coverage'],
+    ['notes', 'Notes'],
+  ];
+  for (const [id, label] of items) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'research-tab' + (researchDrawerTab === id ? ' active' : '');
+    btn.textContent = label;
+    btn.onclick = () => {
+      researchDrawerTab = id;
+      renderResearchDrawer(activeId);
+    };
+    tabs.appendChild(btn);
+  }
+  return tabs;
+}
+
+function renderResearchEvidence(panel, run) {
+  const items = Array.isArray(run.evidenceItems) ? run.evidenceItems : [];
+  if (!items.length && !(run.counterpoints || []).length && !(run.qualityWarnings || []).length) {
+    if ((run.sourceUrls || []).length || (run.openedSources || []).length) {
+      renderResearchSources(panel, run);
+      return;
+    }
+    panel.appendChild(researchEmpty('No evidence items recorded'));
+    return;
+  }
+  for (const item of items) {
+    const title = item.claim || item.source_url || 'Evidence';
+    const meta = [item.stance || 'supports', item.source_url || '', item.note_id ? `note ${item.note_id}` : '']
+      .filter(Boolean).join(' · ');
+    panel.appendChild(researchCard(title, meta, item.excerpt || ''));
+  }
+  if ((run.counterpoints || []).length) {
+    panel.appendChild(researchListCard('Counter-evidence / limitations', run.counterpoints));
+  }
+  if ((run.qualityWarnings || []).length) {
+    panel.appendChild(researchListCard('Quality warnings', run.qualityWarnings));
+  }
+}
+
+function renderResearchSources(panel, run) {
+  const citations = Array.isArray(run.citationMap) ? run.citationMap : [];
+  const opened = Array.isArray(run.openedSources) ? run.openedSources : [];
+  if (!citations.length && !opened.length && !(run.sourceUrls || []).length) {
+    panel.appendChild(researchEmpty('No sources recorded'));
+    return;
+  }
+  const citationUrls = new Set(citations.map(item => String(item.url || '')));
+  for (const item of citations) panel.appendChild(researchSourceCard(item));
+  for (const source of opened) {
+    const url = String(source.final_url || source.url || '');
+    if (!url || citationUrls.has(url)) continue;
+    panel.appendChild(researchSourceCard({
+      title: source.title || url,
+      url,
+      quality: source.quality || {},
+      retrieved_at: source.retrieved_at || '',
+    }));
+  }
+  if (!citations.length && !opened.length) {
+    for (const url of run.sourceUrls || []) panel.appendChild(researchSourceCard({ title: url, url }));
+  }
+}
+
+function renderResearchCoverage(panel, run) {
+  const coverage = run.coverage || {};
+  const queries = Array.isArray(coverage.queries) ? coverage.queries : (run.queries || []);
+  const results = Array.isArray(run.searchResults) ? run.searchResults : [];
+  const skipped = Array.isArray(coverage.skipped_results) ? coverage.skipped_results : [];
+  if (!queries.length && !results.length && !skipped.length) {
+    panel.appendChild(researchEmpty('No coverage recorded'));
+    return;
+  }
+  if (queries.length) panel.appendChild(researchListCard('Queries', queries));
+  if (results.length) {
+    const rows = results.slice(0, 24).map(item => {
+      const opened = item.opened ? 'opened' : 'not opened';
+      return `${item.query || ''} · #${item.rank || ''} · ${opened} · ${item.title || item.url || ''}`;
+    });
+    panel.appendChild(researchListCard('Search results', rows));
+  }
+  if (skipped.length) {
+    const rows = skipped.slice(0, 16).map(item => `${item.title || item.url || ''} · ${item.reason || 'skipped'}`);
+    panel.appendChild(researchListCard('Skipped results', rows));
+  }
+}
+
+function researchSourceCard(item) {
+  const number = item.number ? `[${item.number}] ` : '';
+  const url = String(item.url || item.final_url || '');
+  const quality = formatSourceQuality(item.quality || {});
+  const meta = [quality, item.retrieved_at || '', url].filter(Boolean).join(' · ');
+  const card = researchCard(number + (item.title || url || 'Source'), meta, '');
+  if (url) {
+    card.style.cursor = 'pointer';
+    card.onclick = () => window.open(url, '_blank', 'noopener,noreferrer');
+    const actions = document.createElement('div');
+    actions.className = 'research-card-meta';
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'drawer-btn research-copy';
+    copy.textContent = 'Copy citation';
+    copy.onclick = (e) => {
+      e.stopPropagation();
+      copyText(`${number}${item.title || 'Source'} - ${url}`);
+    };
+    actions.appendChild(copy);
+    card.appendChild(actions);
+  }
+  return card;
+}
+
+function researchCard(title, meta, bodyText) {
+  const card = document.createElement('div');
+  card.className = 'research-card';
+  const head = document.createElement('div');
+  head.className = 'research-card-head';
+  const titleEl = document.createElement('div');
+  titleEl.className = 'research-card-title';
+  titleEl.textContent = title || '';
+  head.appendChild(titleEl);
+  card.appendChild(head);
+  if (meta) {
+    const metaEl = document.createElement('div');
+    metaEl.className = 'research-card-meta';
+    metaEl.textContent = meta;
+    card.appendChild(metaEl);
+  }
+  if (bodyText) {
+    const body = document.createElement('div');
+    body.className = 'research-excerpt';
+    body.textContent = bodyText;
+    card.appendChild(body);
+  }
+  return card;
+}
+
+function researchListCard(title, values) {
+  const card = researchCard(title, '', '');
+  const list = document.createElement('ul');
+  list.className = 'research-list';
+  for (const value of values || []) {
+    const li = document.createElement('li');
+    li.textContent = String(value || '');
+    list.appendChild(li);
+  }
+  card.appendChild(list);
+  return card;
+}
+
+function researchEmpty(text) {
+  const div = document.createElement('div');
+  div.className = 'changes-empty';
+  div.textContent = text;
+  return div;
+}
+
+function formatSourceQuality(quality) {
+  return [quality.level, quality.kind, quality.freshness, quality.independent_group]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function researchSection(title, values) {

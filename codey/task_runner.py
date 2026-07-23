@@ -190,6 +190,24 @@ def _display_tool(name: str, args: dict, path: str = "") -> tuple[str, str]:
     return name, "" if path == "." else path
 
 
+def _research_payload(result) -> dict:
+    return {
+        "synthesis_id": result.synthesis_id,
+        "notes_created": result.notes_created,
+        "notes_updated": result.notes_updated,
+        "sources_read": result.sources_read,
+        "source_urls": result.source_urls,
+        "queries": result.queries,
+        "search_results": result.search_results,
+        "opened_sources": result.opened_sources,
+        "coverage": result.coverage,
+        "citation_map": result.citation_map,
+        "evidence_items": result.evidence_items,
+        "counterpoints": result.counterpoints,
+        "quality_warnings": result.quality_warnings,
+    }
+
+
 class TaskRunner:
     """Coordinate one task while leaving transport and storage outside."""
 
@@ -589,13 +607,7 @@ class TaskRunner:
                     "provider": provider_id,
                     "mode": "research",
                     "receipt": receipt,
-                    "research": {
-                        "synthesis_id": result.synthesis_id,
-                        "notes_created": result.notes_created,
-                        "notes_updated": result.notes_updated,
-                        "sources_read": result.sources_read,
-                        "source_urls": result.source_urls,
-                    },
+                    "research": _research_payload(result),
                 }
                 state.finish_run(run_id, event)
                 return
@@ -624,13 +636,7 @@ class TaskRunner:
                         "provider": provider_id,
                         "mode": "research",
                         "receipt": {"text": research_result.receipt},
-                        "research": {
-                            "synthesis_id": research_result.synthesis_id,
-                            "notes_created": research_result.notes_created,
-                            "notes_updated": research_result.notes_updated,
-                            "sources_read": research_result.sources_read,
-                            "source_urls": research_result.source_urls,
-                        },
+                        "research": _research_payload(research_result),
                     })
                     return
                 fresh_chat = True
@@ -1225,13 +1231,7 @@ class TaskRunner:
                         "project": project,
                     }
             if "research_result" in locals():
-                event["research"] = {
-                    "synthesis_id": research_result.synthesis_id,
-                    "notes_created": research_result.notes_created,
-                    "notes_updated": research_result.notes_updated,
-                    "sources_read": research_result.sources_read,
-                    "source_urls": research_result.source_urls,
-                }
+                event["research"] = _research_payload(research_result)
             state.finish_run(run_id, event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             state.set_provider_session(provider_id, None)

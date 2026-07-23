@@ -318,7 +318,20 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
             current = KnowledgeNote.create(
                 type="synthesis",
                 title="Current research",
-                body="结论:\n- Use the documented API.\n",
+                body=(
+                    "## 结论\n"
+                    "- Use the documented API. [1]\n\n"
+                    "## 关键证据\n"
+                    "- [1] The API doc confirms the flow.\n\n"
+                    "## 反证与限制\n"
+                    "- 未找到强反证。\n\n"
+                    "## 来源质量\n"
+                    "- [1] primary · official · fresh · example.com\n\n"
+                    "## 搜索覆盖\n"
+                    "- query: documented api\n\n"
+                    "## 来源\n"
+                    "[1] API docs - https://example.com/api\n"
+                ),
                 sources=["https://example.com/api"],
                 session_id="s",
             )
@@ -337,6 +350,8 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
 
         self.assertIn("Research context from this chat", context.research_context)
         self.assertIn("Use the documented API", context.research_context)
+        self.assertIn("Citation map", context.research_context)
+        self.assertIn("Counter-evidence / limitations", context.research_context)
         self.assertNotIn("Other research", context.research_context)
         self.assertEqual(context.knowledge_context, context.research_context)
 
