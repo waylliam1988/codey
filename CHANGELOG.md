@@ -12,18 +12,28 @@ This file records Codey's release history. The newest release appears first.
 - Report quality gate: final Research reports must include `Conclusion`, `Key
   evidence`, `Counter-evidence / limitations`, `Source quality`, `Search
   coverage`, and `Sources`. Numbered citations must map to sources Codey
-  actually opened as final URLs in the run.
+  actually opened as final URLs in the run, and each cited source must have at
+  least one saved evidence snippet copied from the opened page text.
 - Evidence discipline: evidence snippets attached to notes must appear in the
   opened page text. Search results are still not evidence until `open_url`
   reads them, and low-quality reports are sent back to the researcher for
   revision instead of being saved as synthesis.
+- Research UX recovery: unreadable sources such as PDFs are now shown as
+  neutral `SKIPPED` tool results so the researcher can continue with readable
+  HTML sources. If a model supplies a paraphrased evidence excerpt for an
+  opened page, Codey replaces it with an exact opened-page snippet and keeps
+  the quality gate strict.
+- Report parsing: the quality gate accepts common numbered headings such as
+  `1. Conclusion` / `一、结论` and source rows written as Markdown links, while
+  keeping citation provenance strict.
 - Advisors: Research MoA advisors now receive a richer read-only EvidencePack
   with citations, evidence items, coverage, notes, and source URLs; advisors
   still cannot browse or write the vault.
-- UI and handoff: the Research drawer now has `Evidence`, `Sources`,
-  `Coverage`, and `Notes` tabs. Project handoff carries a bounded Research
-  Brief with citation map, evidence items, counterpoints, and source-quality
-  risks instead of the full vault.
+- UI and handoff: the Research drawer now has `Evidence`, `Sources`, and
+  `Notes` tabs, with search coverage shown inside `Evidence` as supporting
+  audit detail. Project handoff carries a bounded Research Brief with citation
+  map, evidence items, counterpoints, and source-quality risks instead of the
+  full vault.
 
 ## 0.2.1 - Research Polish and UI Follow-through
 

@@ -10,15 +10,22 @@
   requested/final URL、读取时间、来源质量提示，以及短 evidence snippet。
 - 报告质量门：最终 Research 报告必须包含 `结论`、`关键证据`、`反证与限制`、
   `来源质量`、`搜索覆盖` 和 `来源`。正文里的编号引用必须对应本轮 Codey 实际打开过的
-  final URL。
+  final URL，并且每个被引用来源都必须有至少一条从打开页面原文复制出来的已保存
+  evidence snippet。
 - 证据约束：note 里附带的 evidence snippet 必须真实出现在打开过的页面正文中。
   search result 仍然不算证据，必须先 `open_url`；不合格报告会被退回 Researcher
   修订，而不是直接保存为 synthesis。
+- Research UX 恢复：PDF 这类不可读来源现在显示为中性的 `SKIPPED` 工具结果，
+  Researcher 可以继续改读 HTML 来源；如果模型给了改写过的 evidence excerpt，
+  Codey 会替换成打开页面里的真实短摘录，同时继续保持质量门严格。
+- 报告解析：质量门现在接受 `1. 结论` / `一、结论` 这类常见编号标题，也接受
+  Markdown link 形式的来源行，同时保持引用 provenance 严格。
 - 顾问：Research MoA advisor 现在会收到更完整但只读的 EvidencePack，包含 citations、
   evidence items、coverage、notes 和 source URLs；advisor 仍然不能浏览网页，也不能写 vault。
-- UI 与项目衔接：Research drawer 现在分为 `Evidence`、`Sources`、`Coverage`、`Notes`
-  四个 tab。Project handoff 带入有边界的 Research Brief，包含 citation map、evidence
-  items、counterpoints 和 source-quality risks，而不是整个 vault。
+- UI 与项目衔接：Research drawer 现在分为 `Evidence`、`Sources`、`Notes` 三个 tab，
+  搜索覆盖作为支持性的审计信息放在 `Evidence` 里。Project handoff 带入有边界的
+  Research Brief，包含 citation map、evidence items、counterpoints 和 source-quality
+  risks，而不是整个 vault。
 
 ## 0.2.1 - Research 收口与 UI 体验修正
 

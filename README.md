@@ -67,7 +67,7 @@ This is not about replacing professional tools. It is about making the first ste
 - Use `Research` from the composer context to search/read sources, save notes, and produce a grounded synthesis with numbered citations, evidence snippets, counter-evidence, source quality, and search coverage
 - Turn a plain chat into a project task from the same conversation by choosing a folder from the composer context
 - Turn research into implementation by choosing a folder after the synthesis; Codey carries only a bounded Research Brief into the Writer prompt
-- Inspect a Research run through `Evidence`, `Sources`, `Coverage`, and `Notes` drawer tabs instead of reading a flat receipt
+- Inspect a Research run through `Evidence`, `Sources`, and `Notes` drawer tabs instead of reading a flat receipt; search coverage appears inside `Evidence`
 - Save successful implementation and verification facts back into local research memory without copying source code into the vault
 - Discuss, inspect, and edit inside one project conversation; files change only when requested
 - Let the model read and modify files in a selected project folder
@@ -211,8 +211,19 @@ quality gate before saving the final synthesis. The report must include:
 - `Sources`
 
 Numbered citations such as `[1]` must map to final URLs opened by Codey during
-that run. Evidence snippets attached to notes must appear in the opened page
-text, and search-result URLs do not count as evidence until Codey opens them.
+that run. Each cited source must also have at least one saved evidence snippet
+copied from the opened page text. Search-result URLs do not count as evidence
+until Codey opens them.
+
+The validator accepts common report formatting such as `1. Conclusion`,
+`一、结论`, and source rows written as `[1] [Title](https://...)`, but it does
+not relax source provenance or snippet matching.
+
+When a result points to a page Codey cannot read, such as a PDF, Research marks
+that tool result as `SKIPPED` instead of a hard failure and continues with other
+readable sources. If a model writes a paraphrased evidence excerpt for an opened
+page, Codey replaces it with an exact opened-page snippet and records the note
+with a warning.
 
 The flow is:
 
@@ -225,12 +236,16 @@ Chat about an idea
 -> successful implementation/verification can be remembered as project facts
 ```
 
-The Research drawer has four lightweight tabs:
+The Research drawer has three lightweight tabs:
 
-- `Evidence`: claims, snippets, counterpoints, and quality warnings
+- `Evidence`: claims, snippets, counterpoints, quality warnings, and search coverage
 - `Sources`: citation map, source titles, final URLs, and quality hints
-- `Coverage`: search queries, opened results, skipped results, and stop rationale
 - `Notes`: synthesis, note ids, source URLs, and restore state
+
+Coverage stays as supporting audit detail inside `Evidence`, rather than a
+first-level concept. A future Graph view can make the broader research process
+and note relationships visible when the library has enough structure to justify
+it.
 
 The vault is stored under Codey's local state directory and is implemented as
 Markdown notes plus a rebuildable SQLite FTS index. Project source code is not

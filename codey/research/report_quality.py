@@ -6,13 +6,24 @@ import re
 from dataclasses import dataclass, field
 from typing import Mapping
 
-from codey.research.evidence_review import provenance_problem
 from codey.research.ledger import ResearchLedger
+from codey.research.provenance import provenance_problem
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
 _CITATION_RE = re.compile(r"(?<![\w!])\[(\d+)\]")
 _SOURCE_LINE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?\[(\d+)\]\s*(.*?)\s*(?:-|–|—)\s*(https?://\S+)\s*$"
+)
+_SOURCE_MARKDOWN_LINK_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?\[(\d+)\]\s*\[(.*?)\]\((https?://[^)\s]+)\)\s*(?:[-–—].*)?$"
+)
+_HEADING_NUMBER_RE = re.compile(
+    r"^(?:"
+    r"\d+(?:\.\d+)*"
+    r"|[一二三四五六七八九十百千万]+"
+    r"|[ivxlcdm]+"
+    r")\s*[\.\)、)）:：、-]\s*",
+    re.IGNORECASE,
 )
 
 SECTION_ALIASES: dict[str, tuple[str, ...]] = {
@@ -109,6 +120,21 @@ def review_report_quality(
             "Report quality failed: 来源 URL(s) were not opened as final URLs in this run: "
             + ", ".join(unopened[:3]),
         )
+    citation_urls = {item.url for item in citations}
+    evidence_urls = {
+        str(item.get("source_url") or "")
+        for item in ledger.evidence_payload()
+        if str(item.get("source_url") or "") and str(item.get("excerpt") or "").strip()
+    }
+    missing_evidence = sorted(citation_urls - evidence_urls)
+    if missing_evidence:
+        return ReportQualityReview(
+            False,
+            "Report quality failed: every cited source needs at least one saved evidence snippet "
+            "copied from opened page text. Use knowledge_write with evidence.source_url and an exact "
+            "evidence.excerpt before done. Missing snippet-backed citation(s): "
+            + ", ".join(missing_evidence[:3]),
+        )
     if not citation_refs(sections["conclusion"]):
         return ReportQualityReview(
             False,
@@ -167,7 +193,8 @@ def parse_citations(sources_section: str, ledger: ResearchLedger | None = None) 
     citations: list[Citation] = []
     seen: set[int] = set()
     for line in str(sources_section or "").splitlines():
-        match = _SOURCE_LINE_RE.match(line.strip())
+        stripped = line.strip()
+        match = _SOURCE_MARKDOWN_LINK_RE.match(stripped) or _SOURCE_LINE_RE.match(stripped)
         if not match:
             continue
         number = int(match.group(1))
@@ -212,7 +239,15 @@ def _heading_key(line: str) -> str:
 
 
 def _normalize_heading(value: str) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip().strip("#:：")).lower()
+    text = str(value or "").strip().strip("#").strip()
+    text = text.strip("*_`[]() ")
+    while True:
+        next_text = _HEADING_NUMBER_RE.sub("", text).strip()
+        if next_text == text:
+            break
+        text = next_text
+    text = text.rstrip(":：").strip()
+    return re.sub(r"\s+", " ", text).lower()
 
 
 def _section_title(key: str) -> str:

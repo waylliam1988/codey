@@ -549,7 +549,7 @@ class _Outcome:
 def _outcome_status(output: str) -> str:
     if output.startswith("ERROR:"):
         return "error"
-    if output.startswith("NEEDS_OPEN:"):
+    if output.startswith(("NEEDS_OPEN:", "SKIPPED:")):
         return "needs_action"
     return "ok"
 

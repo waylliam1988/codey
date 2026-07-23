@@ -1,9 +1,8 @@
-"""Deterministic evidence review for Research final reports."""
+"""Opened-source provenance checks for Research reports."""
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from urllib.parse import urlparse
 
 _URL_RE = re.compile(r"https?://[^\s<>)\]]+", re.IGNORECASE)
@@ -23,32 +22,6 @@ _GENERIC_HOST_LABELS = {
     "google",
     "duckduckgo",
 }
-
-
-@dataclass(frozen=True)
-class EvidenceReviewResult:
-    ok: bool
-    message: str
-    warnings: tuple[str, ...] = ()
-
-
-def review_final_summary(
-    summary: str,
-    *,
-    opened_sources: set[str],
-    search_result_urls: set[str],
-) -> EvidenceReviewResult:
-    problem = provenance_problem(
-        summary,
-        opened_sources=opened_sources,
-        search_result_urls=search_result_urls,
-    )
-    if problem:
-        return EvidenceReviewResult(False, problem)
-    warnings: list[str] = []
-    if opened_sources and not _has_evidence_marker(summary):
-        warnings.append("final report has opened sources but no explicit evidence/source section")
-    return EvidenceReviewResult(True, "evidence review passed", tuple(warnings))
 
 
 def provenance_problem(
@@ -82,11 +55,6 @@ def provenance_problem(
             + ". Open them first, or remove those source claims before calling done."
         )
     return None
-
-
-def _has_evidence_marker(summary: str) -> bool:
-    lower = str(summary or "").lower()
-    return any(marker in lower for marker in ("关键证据", "evidence", "source", "sources", "来源"))
 
 
 def _urls_in_text(text: str) -> list[str]:

@@ -135,7 +135,7 @@ Tools:
 - {"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000}}  read a page's text
 - {"tool":"knowledge_search","args":{"query":"..."}}  search your existing local notes FIRST
 - {"tool":"knowledge_read","args":{"id":"<note id>"}}  read one existing note in full
-- {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"...","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}
+- {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}
 - {"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}
 - {"tool":"done","args":{"answer":"<the full human-readable report>"}}
 
@@ -152,9 +152,11 @@ Discipline:
 - A web_search result is not evidence yet. After web_search, call open_url on useful result URLs before knowledge_write.
 - Prefer 2+ independent sources before writing a fact.
 - Every fact/conclusion note must cite sources.
+- Evidence snippets must be exact short excerpts copied from open_url text. Do not paraphrase evidence.excerpt. If uncertain, omit the evidence field and Codey will attach a source excerpt from the opened URL.
 - The final report may cite or name only pages you opened in this run, or grounded source notes you read.
 - The final report must use these sections: 结论, 关键证据, 反证与限制, 来源质量, 搜索覆盖, 来源.
 - Every cited number in the report must appear in 来源, and every 来源 URL must be a page you opened in this run.
+- Every 来源 citation must also have at least one saved knowledge_write evidence snippet from that opened page before done.
 - If no strong counter-evidence exists, write "未找到强反证" and explain what you searched that would have falsified the conclusion.
 - Keep notes small and single-topic. Link related notes.
 

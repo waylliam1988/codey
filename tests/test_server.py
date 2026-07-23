@@ -1430,6 +1430,15 @@ class SessionThreadingTests(unittest.TestCase):
             provider.send.side_effect = [
                 '{"tool":"open_url","args":{"url":"https://example.com/helium"}}',
                 json.dumps({
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Helium fixture source",
+                        "body": "Helium is separated from natural gas.",
+                        "sources": ["https://example.com/helium"],
+                    },
+                }),
+                json.dumps({
                     "tool": "done",
                     "args": {"answer": valid_research_report("https://example.com/helium", "Helium data are sufficient for this fixture.")},
                 }),
@@ -1461,6 +1470,126 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Choose the storage layer", research_intro)
         agent_run.assert_not_called()
 
+    def test_research_ui_path_skips_pdf_and_recovers_bad_excerpt(self) -> None:
+        html_url = "https://www.aljazeera.com/news/2026/4/21/iran-us-war-four-scenarios-for-whats-next-as-talks-stumble"
+        pdf_url = "https://cmenaf.org/wp-content/uploads/report.pdf"
+
+        class Search:
+            def search(self, query, limit=8):
+                return [
+                    {
+                        "title": "PDF report",
+                        "url": pdf_url,
+                        "snippet": "A PDF result that the browser text reader cannot ingest.",
+                    },
+                    {
+                        "title": "Iran-US war: Four scenarios for what's next as talks stumble",
+                        "url": html_url,
+                        "snippet": "Al Jazeera outlines four possible paths after talks stumble.",
+                    },
+                ]
+
+            def fetch(self, url):
+                if url == pdf_url:
+                    return {
+                        "url": url,
+                        "title": "",
+                        "text": "ERROR: unsupported content type: application/pdf",
+                        "truncated": False,
+                    }
+                return {
+                    "url": html_url,
+                    "title": "Iran-US war: Four scenarios for what's next as talks stumble",
+                    "text": (
+                        "Al Jazeera describes four possible paths after talks stumble. "
+                        "The article frames military escalation, diplomatic reset, proxy conflict, "
+                        "and a managed stalemate as possible scenarios."
+                    ),
+                    "truncated": False,
+                }
+
+            def close(self):
+                pass
+
+        report = (
+            "## 1. 结论\n"
+            "- 这类研究应优先使用可读 HTML 来源，PDF 不可读时跳过并继续查证 [1]\n\n"
+            "## 2. 关键证据\n"
+            "- [1] Al Jazeera 的 HTML 页面提供了四种后续情景的可读材料。\n\n"
+            "## 3. 反证与限制\n"
+            "- 未找到强反证；本轮覆盖了 PDF 与 HTML 搜索结果，若官方原文或谈判公告更新，会推翻当前结论。\n\n"
+            "## 4. 来源质量\n"
+            "- [1] secondary · media · fresh · aljazeera.com\n\n"
+            "## 5. 搜索覆盖\n"
+            "- query: 2026 US Iran war predictions\n"
+            "- opened: Al Jazeera HTML page\n"
+            "- skipped: unreadable PDF result\n"
+            "- stop: one representative readable source is enough for this UX fixture\n\n"
+            "## 6. 来源\n"
+            f"[1] [Iran-US war: Four scenarios for what's next as talks stumble]({html_url})"
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            from codey.knowledge import KnowledgeStore
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            events = state.subscribe()
+            provider = mock.Mock()
+            provider.name = "Local"
+            provider.location = "http://localhost:1234"
+            provider.send.side_effect = [
+                json.dumps({"tool": "web_search", "args": {"query": "2026 US Iran war predictions"}}),
+                json.dumps({"tool": "open_url", "args": {"url": pdf_url}}),
+                json.dumps({"tool": "open_url", "args": {"url": html_url}}),
+                json.dumps({
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Al Jazeera scenario article is readable",
+                        "body": "Al Jazeera describes four possible paths after talks stumble.",
+                        "sources": [html_url],
+                        "evidence": [{
+                            "claim": "Al Jazeera describes four possible paths after talks stumble.",
+                            "source_url": html_url,
+                            "excerpt": "This sentence is not present in the opened page.",
+                            "stance": "supports",
+                        }],
+                    },
+                }),
+                json.dumps({"tool": "done", "args": {"answer": report}}),
+            ]
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch("codey.task_runner.BrowserSearchProvider", return_value=Search()),
+                mock.patch.object(server, "agent_run") as agent_run,
+            ):
+                server._run_task("session-research-ux", None, "Research Iran-US scenarios", 8, False, "local", "research")
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+            state.knowledge_store.close()
+
+        done = next(event for event in emitted if event["type"] == "task_done")
+        tool_events = [event for event in emitted if event["type"] == "tool"]
+        pdf_event = next(event for event in tool_events if event["path"] == pdf_url)
+        note_event = next(event for event in tool_events if event["kind"] == "note")
+
+        self.assertEqual(done["mode"], "research")
+        self.assertEqual(done["stop_reason"], "done")
+        self.assertEqual(pdf_event["status"], "needs_action")
+        self.assertFalse(pdf_event["error"])
+        self.assertTrue(pdf_event["result"].startswith("SKIPPED: unsupported content type: application/pdf"))
+        self.assertEqual(note_event["status"], "ok")
+        self.assertFalse(note_event["error"])
+        self.assertIn("WARNING:", note_event["result"])
+        self.assertEqual(done["research"]["citation_map"][0]["url"], html_url)
+        self.assertEqual(done["research"]["evidence_items"][0]["source_url"], html_url)
+        self.assertIn("Al Jazeera describes four possible paths", done["research"]["evidence_items"][0]["excerpt"])
+        agent_run.assert_not_called()
+
     def test_followup_research_intent_includes_previous_research_context(self) -> None:
         class Search:
             def search(self, query, limit=8):
@@ -1487,10 +1616,28 @@ class SessionThreadingTests(unittest.TestCase):
             provider.send.side_effect = [
                 '{"tool":"open_url","args":{"url":"https://example.com/storage"}}',
                 json.dumps({
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Storage plan source",
+                        "body": "The storage plan source supports the SQLite-backed plan.",
+                        "sources": ["https://example.com/storage"],
+                    },
+                }),
+                json.dumps({
                     "tool": "done",
                     "args": {"answer": valid_research_report("https://example.com/storage", "First research summary: prefer the SQLite-backed plan.")},
                 }),
                 '{"tool":"open_url","args":{"url":"https://example.com/storage"}}',
+                json.dumps({
+                    "tool": "knowledge_write",
+                    "args": {
+                        "type": "fact",
+                        "title": "Storage plan followup",
+                        "body": "The storage plan source supports the SQLite-backed plan.",
+                        "sources": ["https://example.com/storage"],
+                    },
+                }),
                 json.dumps({
                     "tool": "done",
                     "args": {"answer": valid_research_report("https://example.com/storage", "Second research summary.")},
@@ -1508,7 +1655,7 @@ class SessionThreadingTests(unittest.TestCase):
 
             state.knowledge_store.close()
 
-        second_intro = provider.send.call_args_list[2].args[0]
+        second_intro = provider.send.call_args_list[3].args[0]
         self.assertIn("Conversation context from this chat", second_intro)
         self.assertIn("First research summary", second_intro)
         agent_run.assert_not_called()

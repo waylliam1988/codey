@@ -89,6 +89,13 @@ class EvidenceItem:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class EvidencePreparation:
+    items: tuple[EvidenceItem, ...] = ()
+    error: str = ""
+    warning: str = ""
+
+
 class ResearchLedger:
     def __init__(self) -> None:
         self.searches: list[SearchRecord] = []
@@ -144,29 +151,40 @@ class ResearchLedger:
         fallback_claim: str,
         fallback_body: str,
         note_type: str,
-    ) -> tuple[list[EvidenceItem], str | None]:
+    ) -> EvidencePreparation:
         explicit = _coerce_evidence(evidence)
         if explicit:
             prepared: list[EvidenceItem] = []
+            warnings: list[str] = []
             for raw in explicit:
                 source = str(raw.get("source_url") or raw.get("source") or "").strip()
                 if not source:
-                    return [], "evidence needs source_url for each item"
+                    return EvidencePreparation(error="evidence needs source_url for each item")
                 final_url = self.canonical_opened_url(source)
                 if not final_url:
-                    return [], f"evidence cites a source you did not open: {source or '(missing source_url)'}"
+                    return EvidencePreparation(error=f"evidence cites a source you did not open: {source or '(missing source_url)'}")
                 excerpt = str(raw.get("excerpt") or raw.get("quote") or "").strip()
-                if not excerpt:
-                    return [], "evidence excerpt is required"
-                if not self.excerpt_in_source(final_url, excerpt):
-                    return [], f"evidence excerpt is not present in opened source: {final_url}"
+                if not excerpt or not self.excerpt_in_source(final_url, excerpt):
+                    replacement = self.best_excerpt(final_url, fallback_body or fallback_claim)
+                    if not replacement:
+                        return EvidencePreparation(
+                            error=(
+                                "evidence excerpt is not present in opened source and Codey could not "
+                                f"attach a replacement excerpt: {final_url}"
+                            )
+                        )
+                    warnings.append(
+                        "supplied evidence excerpt did not match opened source; "
+                        "Codey attached an exact opened-page excerpt instead"
+                    )
+                    excerpt = replacement
                 prepared.append(EvidenceItem(
                     claim=_clip(str(raw.get("claim") or fallback_claim), MAX_CLAIM_CHARS),
                     source_url=final_url,
                     excerpt=_clip(excerpt, MAX_SNIPPET_CHARS),
                     stance=_normalize_stance(str(raw.get("stance") or "supports")),
                 ))
-            return prepared, None
+            return EvidencePreparation(tuple(prepared), warning="; ".join(dict.fromkeys(warnings)))
 
         prepared = []
         fallback_stance = "context" if note_type == "question" else "supports"
@@ -182,7 +200,7 @@ class ResearchLedger:
                 excerpt=self.best_excerpt(final_url, fallback_body or fallback_claim),
                 stance=fallback_stance,
             ))
-        return prepared, None
+        return EvidencePreparation(tuple(prepared))
 
     def add_evidence_items(self, items: list[EvidenceItem], *, note_id: str = "") -> None:
         for item in items:

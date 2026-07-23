@@ -1119,6 +1119,29 @@ function escapeHtml(text) {
   }[ch]));
 }
 
+function normalizeStoredResearchRun(run) {
+  run = run && typeof run === 'object' ? run : {};
+  return {
+    runId: String(run.runId || ''),
+    synthesisId: String(run.synthesisId || ''),
+    notesCreated: Array.isArray(run.notesCreated) ? run.notesCreated.map(String) : [],
+    notesUpdated: Array.isArray(run.notesUpdated) ? run.notesUpdated.map(String) : [],
+    sourceUrls: Array.isArray(run.sourceUrls) ? run.sourceUrls.map(String) : [],
+    sourcesRead: Number(run.sourcesRead || 0),
+    queries: Array.isArray(run.queries) ? run.queries.map(String) : [],
+    searchResults: Array.isArray(run.searchResults) ? run.searchResults : [],
+    openedSources: Array.isArray(run.openedSources) ? run.openedSources : [],
+    coverage: run.coverage && typeof run.coverage === 'object' ? run.coverage : {},
+    citationMap: Array.isArray(run.citationMap) ? run.citationMap : [],
+    evidenceItems: Array.isArray(run.evidenceItems) ? run.evidenceItems : [],
+    counterpoints: Array.isArray(run.counterpoints) ? run.counterpoints.map(String) : [],
+    qualityWarnings: Array.isArray(run.qualityWarnings) ? run.qualityWarnings.map(String) : [],
+    receipt: run.receipt ? String(run.receipt) : '',
+    restoreable: false,
+    createdAt: Number(run.createdAt || 0) || Date.now(),
+  };
+}
+
 function normalizeSessions(value) {
   return (Array.isArray(value) ? value : []).map(s => ({
     id: s.id || uid(),
@@ -1126,7 +1149,7 @@ function normalizeSessions(value) {
     messages: Array.isArray(s.messages) ? s.messages : [],
     terminalRuns: Array.isArray(s.terminalRuns) ? s.terminalRuns.slice(-32) : [],
     researchRuns: Array.isArray(s.researchRuns)
-      ? s.researchRuns.slice(-32).map(run => ({ ...run, restoreable: false }))
+      ? s.researchRuns.slice(-32).map(normalizeStoredResearchRun)
       : [],
     createdAt: s.createdAt || Date.now(),
     projectId: s.projectId || null,
@@ -2562,10 +2585,8 @@ function scheduleReconnectStatus() {
 
 let researchDrawerTab = 'evidence';
 
-function recordResearchRun(sessionId, runId, research, receipt) {
-  const s = sessions.find(x => x.id === sessionId);
-  if (!s) return null;
-  const item = {
+function normalizeResearchRunArtifact(runId, research, receipt) {
+  return {
     runId,
     synthesisId: (research.synthesis_id || '').toString(),
     notesCreated: Array.isArray(research.notes_created) ? research.notes_created.map(String) : [],
@@ -2584,6 +2605,12 @@ function recordResearchRun(sessionId, runId, research, receipt) {
     restoreable: true,
     createdAt: Date.now(),
   };
+}
+
+function recordResearchRun(sessionId, runId, research, receipt) {
+  const s = sessions.find(x => x.id === sessionId);
+  if (!s) return null;
+  const item = normalizeResearchRunArtifact(runId, research || {}, receipt || {});
   researchDrawerTab = 'evidence';
   s.researchRuns = Array.isArray(s.researchRuns)
     ? s.researchRuns.filter(run => run.runId !== runId)
@@ -2630,8 +2657,6 @@ function renderResearchDrawer(sessionId = activeId) {
   body.appendChild(panel);
   if (researchDrawerTab === 'sources') {
     renderResearchSources(panel, run);
-  } else if (researchDrawerTab === 'coverage') {
-    renderResearchCoverage(panel, run);
   } else if (researchDrawerTab === 'notes') {
     panel.appendChild(researchSection('Synthesis', run.synthesisId ? [run.synthesisId] : []));
     panel.appendChild(researchSection('Notes created', run.notesCreated));
@@ -2646,10 +2671,12 @@ function renderResearchDrawer(sessionId = activeId) {
 function researchTabsNode() {
   const tabs = document.createElement('div');
   tabs.className = 'research-tabs';
+  // TODO(research graph): add a Graph tab here when note/source/conclusion links
+  // have a dedicated Obsidian-style view. Keep coverage as supporting evidence
+  // until then, not as first-level chrome.
   const items = [
     ['evidence', 'Evidence'],
     ['sources', 'Sources'],
-    ['coverage', 'Coverage'],
     ['notes', 'Notes'],
   ];
   for (const [id, label] of items) {
@@ -2667,33 +2694,30 @@ function researchTabsNode() {
 }
 
 function renderResearchEvidence(panel, run) {
-  const items = Array.isArray(run.evidenceItems) ? run.evidenceItems : [];
-  if (!items.length && !(run.counterpoints || []).length && !(run.qualityWarnings || []).length) {
-    if ((run.sourceUrls || []).length || (run.openedSources || []).length) {
-      renderResearchSources(panel, run);
-      return;
-    }
-    panel.appendChild(researchEmpty('No evidence items recorded'));
-    return;
-  }
-  for (const item of items) {
+  let rendered = false;
+  for (const item of run.evidenceItems) {
     const title = item.claim || item.source_url || 'Evidence';
     const meta = [item.stance || 'supports', item.source_url || '', item.note_id ? `note ${item.note_id}` : '']
       .filter(Boolean).join(' · ');
     panel.appendChild(researchCard(title, meta, item.excerpt || ''));
+    rendered = true;
   }
-  if ((run.counterpoints || []).length) {
+  if (run.counterpoints.length) {
     panel.appendChild(researchListCard('Counter-evidence / limitations', run.counterpoints));
+    rendered = true;
   }
-  if ((run.qualityWarnings || []).length) {
+  if (run.qualityWarnings.length) {
     panel.appendChild(researchListCard('Quality warnings', run.qualityWarnings));
+    rendered = true;
   }
+  rendered = appendResearchCoverage(panel, run) || rendered;
+  if (!rendered) panel.appendChild(researchEmpty('No evidence items recorded'));
 }
 
 function renderResearchSources(panel, run) {
-  const citations = Array.isArray(run.citationMap) ? run.citationMap : [];
-  const opened = Array.isArray(run.openedSources) ? run.openedSources : [];
-  if (!citations.length && !opened.length && !(run.sourceUrls || []).length) {
+  const citations = run.citationMap;
+  const opened = run.openedSources;
+  if (!citations.length && !opened.length && !run.sourceUrls.length) {
     panel.appendChild(researchEmpty('No sources recorded'));
     return;
   }
@@ -2710,20 +2734,19 @@ function renderResearchSources(panel, run) {
     }));
   }
   if (!citations.length && !opened.length) {
-    for (const url of run.sourceUrls || []) panel.appendChild(researchSourceCard({ title: url, url }));
+    for (const url of run.sourceUrls) panel.appendChild(researchSourceCard({ title: url, url }));
   }
 }
 
-function renderResearchCoverage(panel, run) {
-  const coverage = run.coverage || {};
-  const queries = Array.isArray(coverage.queries) ? coverage.queries : (run.queries || []);
-  const results = Array.isArray(run.searchResults) ? run.searchResults : [];
+function appendResearchCoverage(panel, run) {
+  const coverage = run.coverage;
+  const queries = Array.isArray(coverage.queries) ? coverage.queries : run.queries;
+  const results = run.searchResults;
   const skipped = Array.isArray(coverage.skipped_results) ? coverage.skipped_results : [];
   if (!queries.length && !results.length && !skipped.length) {
-    panel.appendChild(researchEmpty('No coverage recorded'));
-    return;
+    return false;
   }
-  if (queries.length) panel.appendChild(researchListCard('Queries', queries));
+  if (queries.length) panel.appendChild(researchListCard('Search coverage', queries.map(query => `query: ${query}`)));
   if (results.length) {
     const rows = results.slice(0, 24).map(item => {
       const opened = item.opened ? 'opened' : 'not opened';
@@ -2735,6 +2758,7 @@ function renderResearchCoverage(panel, run) {
     const rows = skipped.slice(0, 16).map(item => `${item.title || item.url || ''} · ${item.reason || 'skipped'}`);
     panel.appendChild(researchListCard('Skipped results', rows));
   }
+  return true;
 }
 
 function researchSourceCard(item) {

@@ -65,7 +65,7 @@ Codey 想解决的是一个很朴素的问题：
 - 在输入框上下文里点 `Research`，让 Codey 搜索、读来源、写笔记，并生成带编号引用、evidence snippet、反证/限制、来源质量和搜索覆盖的研究结论
 - 可以先普通聊天讨论方案，再从输入框上方的项目上下文选择文件夹，把同一个聊天接到项目任务
 - 研究结束后选择项目，把 synthesis 压成有边界的 Research Brief 交给 Writer 落地
-- 通过 Research drawer 的 `Evidence`、`Sources`、`Coverage`、`Notes` 四个 tab 查看本轮证据，而不是只看一条 receipt
+- 通过 Research drawer 的 `Evidence`、`Sources`、`Notes` 三个 tab 查看本轮证据，而不是只看一条 receipt；搜索覆盖放在 `Evidence` 里
 - 项目实现和验证成功后，可以把“做了什么、为什么、跑过什么检查”沉淀成实现/验证记忆，而不是把源码全文塞进 vault
 - 在同一个项目对话里讨论、查看和修改；只有明确要求时才改文件
 - 让模型读取和修改你选择的项目目录
@@ -176,8 +176,15 @@ Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开
 - `来源`
 
 正文里的 `[1]` 这类编号引用必须对应本轮 Codey 实际打开过的 final URL。
-note 附带的 evidence snippet 必须真实出现在打开过的网页正文里；search result
-在 `open_url` 之前不算证据。
+每个被引用来源也必须至少有一条已保存的 evidence snippet，而且 snippet 必须真实出现在
+打开过的网页正文里；search result 在 `open_url` 之前不算证据。
+
+质量门接受常见报告格式，比如 `1. 结论`、`一、结论`，以及 `[1] [Title](https://...)`
+这种 Markdown link 来源行；但不会放宽来源 provenance 或 snippet 原文匹配。
+
+如果某个结果是 Codey 暂时无法读取的页面，比如 PDF，Research 会把工具结果标成
+中性的 `SKIPPED`，然后继续读取其他可用 HTML 来源。若模型给了改写过的 evidence
+excerpt，Codey 会替换成打开页面中的真实短摘录，并带 warning 保存 note。
 
 典型流程是：
 
@@ -190,12 +197,14 @@ note 附带的 evidence snippet 必须真实出现在打开过的网页正文里
 -> 实现和验证成功后，可以把实现事实沉淀回本地记忆
 ```
 
-Research drawer 有四个轻量 tab：
+Research drawer 有三个轻量 tab：
 
-- `Evidence`：claim、snippet、counterpoints 和质量 warning
+- `Evidence`：claim、snippet、counterpoints、质量 warning 和搜索覆盖
 - `Sources`：citation map、source title、final URL 和来源质量提示
-- `Coverage`：搜索 query、打开结果、跳过结果和停止理由
 - `Notes`：synthesis、note id、source URL 和 restore 状态
+
+Coverage 作为支持性的审计信息放在 `Evidence` 里，不做第一层用户概念。等以后本地库里有
+足够多 note/source/conclusion 关系，再把更完整的 Research graph 做成独立视图。
 
 Vault 存在 Codey 本地状态目录里，底层是 Markdown notes 和可重建的 SQLite FTS
 索引。项目源码不会被复制进 vault；implementation note 记录的是做了什么、为什么、

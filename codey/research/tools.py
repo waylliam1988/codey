@@ -78,6 +78,8 @@ class ResearchTools:
         page_text = str(page.get("text") or "")
         if page_text.startswith("ERROR:"):
             message = page_text[len("ERROR:"):].strip()
+            if message.lower().startswith("unsupported content type:"):
+                return f"SKIPPED: {message}. Choose an HTML source or another readable page."
             self._record_failure("browser", "open", message, url=url)
             return f"ERROR: {message}"
         reason = check_fetch_url(page_url)
@@ -144,15 +146,15 @@ class ResearchTools:
             problem = self._provenance_problem(note_type, sources)
             if problem:
                 return problem if problem.startswith("NEEDS_OPEN:") else f"ERROR: {problem}"
-        evidence_items, evidence_problem = self.ledger.prepare_evidence_items(
+        evidence_preparation = self.ledger.prepare_evidence_items(
             args.get("evidence"),
             fallback_sources=sources,
             fallback_claim=title,
             fallback_body=body,
             note_type=note_type,
         )
-        if evidence_problem:
-            return f"ERROR: {evidence_problem}"
+        if evidence_preparation.error:
+            return f"ERROR: {evidence_preparation.error}"
         status = str(args.get("status") or "active").strip().lower()
         if status not in NOTE_STATUSES:
             status = "active"
@@ -180,14 +182,17 @@ class ResearchTools:
         rel = self.store.write_note(note, changes=self.changes)
         if note_type == "source":
             self.grounded_ids.add(note.id)
-        if evidence_items:
-            self.ledger.add_evidence_items(evidence_items, note_id=note.id)
+        if evidence_preparation.items:
+            self.ledger.add_evidence_items(list(evidence_preparation.items), note_id=note.id)
         if updating:
             if note.id not in self.updated_ids:
                 self.updated_ids.append(note.id)
         elif note.id not in self.created_ids:
             self.created_ids.append(note.id)
-        return f"saved {note_type} note id={note.id} at {rel}"
+        output = f"saved {note_type} note id={note.id} at {rel}"
+        if evidence_preparation.warning:
+            output += f"; WARNING: {evidence_preparation.warning}"
+        return output
 
     def knowledge_link(self, src: str, dst: str, kind: str = "relates") -> str:
         src = (src or "").strip()
