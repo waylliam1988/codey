@@ -4,6 +4,25 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.4 - Research PDF Intake
+
+- PDF source intake：`open_url` 现在可以直接读取文本型 PDF。没有 `open_pdf`
+  工具、PDF 模式或额外按钮；PDF 只是 Research 的一种来源类型。
+- 有边界提取：Codey 默认只读取有边界的页码范围，PDF 下载会 streaming 读取并带硬
+  byte cap，同时限制提取文本长度。扫描版、超大、空文本或提取失败的 PDF 会返回
+  中性的 `SKIPPED`。PDF redirect 会由 Codey 手动逐跳处理，每次发起下一跳请求前
+  都先经过 URL policy，公开 PDF URL 不能悄悄跳到本机或内网地址。
+- 页码级证据：Evidence Ledger 会记录 `content_kind`、MIME type、总页数、
+  已读页、截断状态和 snippet 的页码定位。`knowledge_write` 可以接收
+  `evidence.page`，也可以从 snippet 自动推断页码；如果 excerpt 不匹配，
+  Codey 会替换成打开过的 PDF 页里的真实短摘录。
+- 报告质量门：最终报告可以用 `[1 p.4]` 或 `[1 pp.4-5]` 引用 PDF 页码证据。
+  只有对应 PDF 页真的读过，并且该页有 snippet-backed evidence，页码引用才会通过。
+- UI 与项目衔接：Research drawer 的 `Evidence` 会显示 PDF 页码定位，`Sources`
+  会显示 PDF/已读页/截断元信息。Synthesis note 和 Project Brief 会带上同一份
+  页码级证据，但仍不会把整个 vault 注入 Writer。
+- 依赖：新增 `pypdf>=6.0,<7`，用于纯 Python PDF 文本提取。
+
 ## 0.2.3 - Research Provenance 收口
 
 - Research provenance：显式 URL 引用仍然严格匹配实际打开过的 final URL；但

@@ -4,10 +4,12 @@ import http.client
 import json
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from codey import (
@@ -1472,7 +1474,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Choose the storage layer", research_intro)
         agent_run.assert_not_called()
 
-    def test_research_ui_path_skips_pdf_and_recovers_bad_excerpt(self) -> None:
+    def test_research_ui_path_reads_pdf_and_recovers_bad_excerpt(self) -> None:
         html_url = "https://www.aljazeera.com/news/2026/4/21/iran-us-war-four-scenarios-for-whats-next-as-talks-stumble"
         pdf_url = "https://cmenaf.org/wp-content/uploads/report.pdf"
 
@@ -1495,8 +1497,11 @@ class SessionThreadingTests(unittest.TestCase):
                 if url == pdf_url:
                     return {
                         "url": url,
-                        "title": "",
-                        "text": "ERROR: unsupported content type: application/pdf",
+                        "title": "PDF report",
+                        "text": "",
+                        "content_kind": "pdf",
+                        "mime_type": "application/pdf",
+                        "bytes": b"%PDF fixture",
                         "truncated": False,
                     }
                 return {
@@ -1515,20 +1520,20 @@ class SessionThreadingTests(unittest.TestCase):
 
         report = (
             "## 1. 结论\n"
-            "- 这类研究应优先使用可读 HTML 来源，PDF 不可读时跳过并继续查证 [1]\n\n"
+            "- PDF 来源可读时应直接作为页码级证据进入报告 [1 p.1]\n\n"
             "## 2. 关键证据\n"
-            "- [1] Al Jazeera 的 HTML 页面提供了四种后续情景的可读材料。\n\n"
+            "- [1 p.1] PDF 页面文本提供了四种后续情景的可读材料。\n\n"
             "## 3. 反证与限制\n"
             "- 未找到强反证；本轮覆盖了 PDF 与 HTML 搜索结果，若官方原文或谈判公告更新，会推翻当前结论。\n\n"
             "## 4. 来源质量\n"
-            "- [1] secondary · media · fresh · aljazeera.com\n\n"
+            "- [1] secondary · data · fresh · cmenaf.org\n\n"
             "## 5. 搜索覆盖\n"
             "- query: 2026 US Iran war predictions\n"
-            "- opened: Al Jazeera HTML page\n"
-            "- skipped: unreadable PDF result\n"
-            "- stop: one representative readable source is enough for this UX fixture\n\n"
+            "- opened: PDF p.1\n"
+            "- skipped: HTML result after PDF answered the fixture\n"
+            "- stop: one representative readable PDF source is enough for this UX fixture\n\n"
             "## 6. 来源\n"
-            f"[1] [Iran-US war: Four scenarios for what's next as talks stumble]({html_url})"
+            f"[1] [PDF report]({pdf_url})"
         )
 
         with tempfile.TemporaryDirectory() as td:
@@ -1541,20 +1546,20 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "http://localhost:1234"
             provider.send.side_effect = [
                 json.dumps({"tool": "web_search", "args": {"query": "2026 US Iran war predictions"}}),
-                json.dumps({"tool": "open_url", "args": {"url": pdf_url}}),
-                json.dumps({"tool": "open_url", "args": {"url": html_url}}),
+                json.dumps({"tool": "open_url", "args": {"url": pdf_url, "pages": "1"}}),
                 json.dumps({
                     "tool": "knowledge_write",
                     "args": {
                         "type": "fact",
-                        "title": "Al Jazeera scenario article is readable",
-                        "body": "Al Jazeera describes four possible paths after talks stumble.",
-                        "sources": [html_url],
+                        "title": "PDF report is readable",
+                        "body": "The PDF report describes four possible paths after talks stumble.",
+                        "sources": [pdf_url],
                         "evidence": [{
-                            "claim": "Al Jazeera describes four possible paths after talks stumble.",
-                            "source_url": html_url,
+                            "claim": "The PDF report describes four possible paths after talks stumble.",
+                            "source_url": pdf_url,
                             "excerpt": "This sentence is not present in the opened page.",
                             "stance": "supports",
+                            "page": 1,
                         }],
                     },
                 }),
@@ -1566,6 +1571,20 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.task_runner.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "agent_run") as agent_run,
+                mock.patch.dict(sys.modules, {
+                    "pypdf": SimpleNamespace(
+                        PdfReader=lambda _stream: SimpleNamespace(pages=[
+                            SimpleNamespace(
+                                extract_text=lambda: (
+                                    "The PDF report describes four possible paths after talks stumble. "
+                                    "It frames military escalation, diplomatic reset, proxy conflict, "
+                                    "and a managed stalemate as possible scenarios."
+                                ),
+                                get_contents=lambda: [],
+                            )
+                        ])
+                    )
+                }),
             ):
                 server._run_task("session-research-ux", None, "Research Iran-US scenarios", 8, False, "local", "research")
 
@@ -1581,15 +1600,19 @@ class SessionThreadingTests(unittest.TestCase):
 
         self.assertEqual(done["mode"], "research")
         self.assertEqual(done["stop_reason"], "done")
-        self.assertEqual(pdf_event["status"], "needs_action")
+        self.assertEqual(pdf_event["status"], "ok")
         self.assertFalse(pdf_event["error"])
-        self.assertTrue(pdf_event["result"].startswith("SKIPPED: unsupported content type: application/pdf"))
+        self.assertIn("PDF report", pdf_event["result"])
         self.assertEqual(note_event["status"], "ok")
         self.assertFalse(note_event["error"])
         self.assertIn("WARNING:", note_event["result"])
-        self.assertEqual(done["research"]["citation_map"][0]["url"], html_url)
-        self.assertEqual(done["research"]["evidence_items"][0]["source_url"], html_url)
-        self.assertIn("Al Jazeera describes four possible paths", done["research"]["evidence_items"][0]["excerpt"])
+        self.assertEqual(done["research"]["citation_map"][0]["url"], pdf_url)
+        self.assertEqual(done["research"]["citation_map"][0]["pages"], [1])
+        self.assertEqual(done["research"]["opened_sources"][0]["content_kind"], "pdf")
+        self.assertEqual(done["research"]["opened_sources"][0]["pages_read"], [1])
+        self.assertEqual(done["research"]["evidence_items"][0]["source_url"], pdf_url)
+        self.assertEqual(done["research"]["evidence_items"][0]["page"], 1)
+        self.assertIn("The PDF report describes four possible paths", done["research"]["evidence_items"][0]["excerpt"])
         agent_run.assert_not_called()
 
     def test_followup_research_intent_includes_previous_research_context(self) -> None:

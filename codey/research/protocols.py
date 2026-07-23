@@ -132,7 +132,7 @@ Answer ONLY with JSON tool calls. No prose outside JSON. One JSON object per act
 
 Tools:
 - {"tool":"web_search","args":{"query":"..."}}  search the web for ranked results
-- {"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000}}  read a page's text
+- {"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":"1-5"}}  read a page's text; for PDFs, pages selects bounded page ranges
 - {"tool":"knowledge_search","args":{"query":"..."}}  search your existing local notes FIRST
 - {"tool":"knowledge_read","args":{"id":"<note id>"}}  read one existing note in full
 - {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}
@@ -150,12 +150,14 @@ Note types (choose the right one; never mislabel):
 Discipline:
 - Start by calling knowledge_search to see what you already know.
 - A web_search result is not evidence yet. After web_search, call open_url on useful result URLs before knowledge_write.
+- open_url can read text PDFs. For PDFs, pass pages like "1-5" or "4"; default is the first pages.
 - Prefer 2+ independent sources before writing a fact.
 - Every fact/conclusion note must cite sources.
-- Evidence snippets must be exact short excerpts copied from open_url text. Do not paraphrase evidence.excerpt. If uncertain, omit the evidence field and Codey will attach a source excerpt from the opened URL.
+- Evidence snippets must be exact short excerpts copied from open_url text. For PDF-specific evidence, include evidence.page when known. Do not paraphrase evidence.excerpt. If uncertain, omit the evidence field and Codey will attach a source excerpt from the opened URL.
 - The final report may cite or name only pages you opened in this run, or grounded source notes you read.
 - The final report must use these sections: 结论, 关键证据, 反证与限制, 来源质量, 搜索覆盖, 来源.
 - Every cited number in the report must appear in 来源, and every 来源 URL must be a page you opened in this run.
+- Cite PDF page evidence as [1 p.4] when a claim depends on a specific page.
 - Every 来源 citation must also have at least one saved knowledge_write evidence snippet from that opened page before done.
 - If no strong counter-evidence exists, write "未找到强反证" and explain what you searched that would have falsified the conclusion.
 - Keep notes small and single-topic. Link related notes.

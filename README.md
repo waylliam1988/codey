@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.3-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.4-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.3`
+Version: `0.2.4`
 
 [Version history](CHANGELOG.md)
 
@@ -23,7 +23,7 @@ Version: `0.2.3`
 ## At a Glance
 
 - **Use web AI accounts you already have**: DeepSeek, Qwen, Xiaomi MiMo, and GLM are supported.
-- **Research before building**: click `Research` to let Codey search the web, open sources, save evidence notes, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
+- **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
 - **Keep code local**: models access only the project folder you choose.
 - **Carry research into projects**: after research, choose a folder and Codey injects a bounded Research Brief with citations and limitations instead of the whole vault.
 - **Controlled tool loop**: read, edit, test, diff, review, and restore.
@@ -64,10 +64,10 @@ This is not about replacing professional tools. It is about making the first ste
 ## What It Can Do
 
 - Use New Chat for normal conversation without granting access to a project
-- Use `Research` from the composer context to search/read sources, save notes, and produce a grounded synthesis with numbered citations, evidence snippets, counter-evidence, source quality, and search coverage
+- Use `Research` from the composer context to search/read HTML and text PDFs, save notes, and produce a grounded synthesis with numbered citations, evidence snippets, counter-evidence, source quality, and search coverage
 - Turn a plain chat into a project task from the same conversation by choosing a folder from the composer context
 - Turn research into implementation by choosing a folder after the synthesis; Codey carries only a bounded Research Brief into the Writer prompt
-- Inspect a Research run through `Evidence`, `Sources`, and `Notes` drawer tabs instead of reading a flat receipt; search coverage appears inside `Evidence`
+- Inspect a Research run through `Evidence`, `Sources`, and `Notes` drawer tabs instead of reading a flat receipt; PDF page locators and search coverage appear inside the existing evidence/source views
 - Save successful implementation and verification facts back into local research memory without copying source code into the vault
 - Discuss, inspect, and edit inside one project conversation; files change only when requested
 - Let the model read and modify files in a selected project folder
@@ -200,7 +200,7 @@ note writes, restore, and evidence checks are always local Codey tools. Models
 do not get hidden network access. A final synthesis can cite only sources that
 Codey actually opened in the run.
 
-In 0.2.3, Research keeps an Evidence Ledger and applies a deterministic report
+In 0.2.4, Research keeps an Evidence Ledger and applies a deterministic report
 quality gate before saving the final synthesis. The report must include:
 
 - `Conclusion`
@@ -215,6 +215,14 @@ that run. Each cited source must also have at least one saved evidence snippet
 copied from the opened page text. Search-result URLs do not count as evidence
 until Codey opens them.
 
+PDF is part of the same `open_url` source intake. There is no `open_pdf` tool,
+PDF mode, or extra button. When a URL points to a text PDF, Codey reads bounded
+pages by default, records page metadata in the Evidence Ledger, and lets the
+report cite page-specific evidence such as `[1 p.4]`. That page citation passes
+only if Codey actually read the page and saved a snippet from that page. Scanned,
+oversized, or extraction-failing PDFs are neutral `SKIPPED` results and do not
+become opened sources.
+
 The validator accepts common report formatting such as `1. Conclusion`,
 `一、结论`, and source rows written as `[1] [Title](https://...)`, but it does
 not relax source provenance or snippet matching. Explicit URL citations must
@@ -223,11 +231,11 @@ source-quality text are more natural: opening `docs.python.org` allows a
 quality note to say `python.org`, while opening `python.org` does not let the
 report claim `docs.python.org`.
 
-When a result points to a page Codey cannot read, such as a PDF, Research marks
-that tool result as `SKIPPED` instead of a hard failure and continues with other
-readable sources. If a model writes a paraphrased evidence excerpt for an opened
-page, Codey replaces it with an exact opened-page snippet and records the note
-with a warning.
+When a result points to a source Codey cannot read, such as a scanned or very
+large PDF, Research marks that tool result as `SKIPPED` instead of a hard
+failure and continues with other readable sources. If a model writes a
+paraphrased evidence excerpt for an opened page or PDF page, Codey replaces it
+with an exact opened-source snippet and records the note with a warning.
 
 The flow is:
 
@@ -242,8 +250,8 @@ Chat about an idea
 
 The Research drawer has three lightweight tabs:
 
-- `Evidence`: claims, snippets, counterpoints, quality warnings, and search coverage
-- `Sources`: citation map, source titles, final URLs, and quality hints
+- `Evidence`: claims, snippets, PDF page locators, counterpoints, quality warnings, and search coverage
+- `Sources`: citation map, source titles, final URLs, quality hints, and PDF pages read/truncation metadata
 - `Notes`: synthesis, note ids, source URLs, and restore state
 
 Coverage stays as supporting audit detail inside `Evidence`, rather than a

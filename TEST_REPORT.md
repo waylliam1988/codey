@@ -1,5 +1,60 @@
 # Codey Test Report
 
+## 0.2.4 Research PDF Intake
+
+Codey 0.2.4 makes PDF a first-class Research source intake path under
+`open_url`, without adding a new user mode or tool surface.
+
+Production changes:
+
+- Added `SourceDocument` / `SourcePage` as the canonical opened-source model for
+  HTML and PDF intake.
+- Added bounded `pypdf` extraction for text PDFs: default page range, max bytes,
+  max pages per open, max extracted text, scanned/empty PDF skip, and extraction
+  failure skip.
+- `BrowserSearchProvider.fetch()` now streams PDF bytes with a hard cap and
+  returns PDF metadata without running PDF extraction on the browser-worker
+  thread. Known `.pdf` URLs bypass browser page navigation entirely.
+- PDF redirects are handled manually with redirect disabled in urllib. Each
+  target URL is checked before the next request, so a public URL cannot redirect
+  into localhost or private-network targets.
+- Non-`.pdf` URLs that reveal `application/pdf` after browser navigation return
+  a lightweight `pdf_download` sentinel from the browser worker; the actual
+  streaming download then runs back on the Research thread.
+- `ResearchTools.open_url()` now accepts `pages`, converts PDF bytes into a
+  `SourceDocument`, records PDF opened-source metadata, and returns page-marked
+  text such as `[page 4]`.
+- Evidence Ledger records PDF `content_kind`, MIME type, total pages, pages
+  read, truncation state, and snippet locators. Evidence can carry
+  `evidence.page`, infer the page from an exact snippet, and replace bad PDF
+  excerpts with exact opened-page text.
+- `report_quality.py` accepts `[1 p.4]`, `[1 pp.4-5]`, and `[1 page 4]`
+  citations, and rejects page citations whose pages were not read or lack
+  snippet-backed evidence.
+- Research drawer source/evidence cards show PDF page locators and PDF
+  page/truncation metadata. Research advisor packs and Project Briefs carry the
+  same page-aware evidence.
+- Added runtime dependency `pypdf>=6.0,<7`.
+
+Validation:
+
+```text
+python -m unittest tests.test_research -v: 47 tests OK
+python -m unittest tests.test_server tests.test_ui tests.test_project_task_context tests.test_knowledge: 175 tests OK
+python -m unittest discover: 1171 tests OK
+python -m py_compile codey\research\source_document.py codey\research\pdf_extract.py codey\research\browser_search.py codey\research\tools.py codey\research\ledger.py codey\research\report_quality.py codey\research\runner.py codey\research\advisors.py: passed
+python -m ruff check codey tests: passed
+git diff --check: passed
+```
+
+Real PDF smoke:
+
+```text
+https://www.caict.ac.cn/kxyj/qwfb/bps/202408/P020240830315324580655.pdf
+open_url pages=1-2: read page_count=83, pages_read=[1, 2], content_kind=pdf
+extracted title text includes 中国数字经济发展研究报告
+```
+
 ## 0.2.3 Research Provenance and Project Memory Hygiene
 
 Codey 0.2.3 tightens the Research quality gate added in 0.2.2 and locks the

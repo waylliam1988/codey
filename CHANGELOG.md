@@ -4,6 +4,29 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.4 - Research PDF Intake
+
+- PDF source intake: `open_url` can now read text PDFs directly. There is no
+  `open_pdf` tool, PDF mode, or extra UI button; PDF is handled as another
+  Research source type.
+- Bounded extraction: Codey reads a bounded page range by default, streams PDF
+  downloads with a hard byte cap, caps extracted text, and returns neutral
+  `SKIPPED` results for scanned, oversized, empty, or extraction-failing PDFs.
+  PDF redirects are followed manually and checked against URL policy before
+  each next request, so a public PDF URL cannot silently redirect into local or
+  private network targets.
+- Page-aware evidence: the Evidence Ledger records `content_kind`, MIME type,
+  page count, pages read, truncation state, and page locators for snippets.
+  `knowledge_write` can accept `evidence.page`, infer pages from snippets, and
+  replace bad excerpts with exact text from the opened PDF page.
+- Report quality gate: final reports can cite PDF evidence as `[1 p.4]` or
+  `[1 pp.4-5]`. Page citations pass only when the cited PDF page was read and
+  has snippet-backed evidence.
+- UI and handoff: the Research drawer shows PDF page locators in `Evidence`
+  and PDF/page/truncation metadata in `Sources`. Synthesis notes and Project
+  Briefs carry the same page-aware evidence without injecting the full vault.
+- Dependency: added `pypdf>=6.0,<7` for pure-Python PDF text extraction.
+
 ## 0.2.3 - Research Provenance Polish
 
 - Research provenance: explicit URL citations remain exact, but source-quality

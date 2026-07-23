@@ -7,6 +7,7 @@ from typing import Callable, Mapping, Sequence
 
 from codey import cancellation, provider_controls
 from codey.consensus import ConsensusAdvice, MAX_CONSENSUS_ADVISORS, advisor_ids
+from codey.research.source_document import compact_pages
 
 RESEARCH_ADVISOR_TIMEOUT = 60.0
 MAX_EVIDENCE_PACK_CHARS = 12_000
@@ -65,8 +66,10 @@ class EvidencePack:
                 title = item.get("title") or ""
                 url = item.get("url") or ""
                 quality = item.get("quality") or {}
+                pages = compact_pages(item.get("pages") or ())
                 quality_text = " · ".join(
                     part for part in (
+                        f"p.{pages}" if pages else "",
                         str(quality.get("level") or ""),
                         str(quality.get("kind") or ""),
                         str(quality.get("freshness") or ""),
@@ -81,9 +84,10 @@ class EvidencePack:
                 source_url = str(item.get("source_url") or "")
                 excerpt = str(item.get("excerpt") or "")
                 stance = str(item.get("stance") or "supports")
+                locator = str(item.get("locator") or "")
                 lines.extend((
                     f"- [{stance}] {claim}",
-                    f"  source: {source_url}",
+                    f"  source: {source_url}" + (f" {locator}" if locator else ""),
                     f"  excerpt: {_clip(excerpt, MAX_NOTE_BODY_CHARS)}",
                 ))
         if self.notes:

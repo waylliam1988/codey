@@ -320,9 +320,9 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
                 title="Current research",
                 body=(
                     "## 结论\n"
-                    "- Use the documented API. [1]\n\n"
+                    "- Use the documented API. [1 p.4]\n\n"
                     "## 关键证据\n"
-                    "- [1] The API doc confirms the flow.\n\n"
+                    "- [1 p.4] The API doc confirms the flow.\n\n"
                     "## 反证与限制\n"
                     "- 未找到强反证。\n\n"
                     "## 来源质量\n"
@@ -330,7 +330,12 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
                     "## 搜索覆盖\n"
                     "- query: documented api\n\n"
                     "## 来源\n"
-                    "[1] API docs - https://example.com/api\n"
+                    "[1] API docs - https://example.com/api\n\n"
+                    "## Evidence Ledger\n"
+                    "### Evidence Items\n"
+                    "- [supports] Use the documented API\n"
+                    "  source: https://example.com/api p.4\n"
+                    "  excerpt: The API doc confirms the flow.\n"
                 ),
                 sources=["https://example.com/api"],
                 session_id="s",
@@ -350,6 +355,7 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
 
         self.assertIn("Research context from this chat", context.research_context)
         self.assertIn("Use the documented API", context.research_context)
+        self.assertIn("p.4", context.research_context)
         self.assertIn("Citation map", context.research_context)
         self.assertIn("Counter-evidence / limitations", context.research_context)
         self.assertNotIn("Other research", context.research_context)

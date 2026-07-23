@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.3-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.4-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.3`
+版本：`0.2.4`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -23,7 +23,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 ## 一眼看懂
 
 - **使用你已经登录的网页 AI**：支持 DeepSeek、Qwen、小米 MiMo 和 GLM。
-- **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开来源、保存证据笔记，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
+- **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存证据笔记，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
 - **代码留在本机**：模型只能访问你选择的项目目录。
 - **把研究带进项目**：研究结束后选择项目文件夹，Codey 只把带引用和限制条件的有边界 Research Brief 注入 Writer，不把整个 vault 塞进去。
 - **受控工具循环**：读取、编辑、测试、diff、Review 和 Restore 都有边界。
@@ -62,10 +62,10 @@ Codey 想解决的是一个很朴素的问题：
 ## 它能做什么？
 
 - 用 New Chat 正常聊天，不向模型开放任何项目
-- 在输入框上下文里点 `Research`，让 Codey 搜索、读来源、写笔记，并生成带编号引用、evidence snippet、反证/限制、来源质量和搜索覆盖的研究结论
+- 在输入框上下文里点 `Research`，让 Codey 搜索、读取 HTML 和文本型 PDF、写笔记，并生成带编号引用、evidence snippet、反证/限制、来源质量和搜索覆盖的研究结论
 - 可以先普通聊天讨论方案，再从输入框上方的项目上下文选择文件夹，把同一个聊天接到项目任务
 - 研究结束后选择项目，把 synthesis 压成有边界的 Research Brief 交给 Writer 落地
-- 通过 Research drawer 的 `Evidence`、`Sources`、`Notes` 三个 tab 查看本轮证据，而不是只看一条 receipt；搜索覆盖放在 `Evidence` 里
+- 通过 Research drawer 的 `Evidence`、`Sources`、`Notes` 三个 tab 查看本轮证据，而不是只看一条 receipt；PDF 页码定位和搜索覆盖都放在现有证据/来源视图里
 - 项目实现和验证成功后，可以把“做了什么、为什么、跑过什么检查”沉淀成实现/验证记忆，而不是把源码全文塞进 vault
 - 在同一个项目对话里讨论、查看和修改；只有明确要求时才改文件
 - 让模型读取和修改你选择的项目目录
@@ -165,7 +165,7 @@ Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开
 笔记写入、restore 和 evidence review 都由 Codey 本地工具执行。模型没有隐藏联网权。
 最终 synthesis 只能引用本轮 Codey 实际打开过的来源。
 
-从 0.2.3 开始，Research 会维护 Evidence Ledger，并在保存最终 synthesis 前通过确定性的
+从 0.2.4 开始，Research 会维护 Evidence Ledger，并在保存最终 synthesis 前通过确定性的
 报告质量门。报告必须包含：
 
 - `结论`
@@ -179,15 +179,21 @@ Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开
 每个被引用来源也必须至少有一条已保存的 evidence snippet，而且 snippet 必须真实出现在
 打开过的网页正文里；search result 在 `open_url` 之前不算证据。
 
+PDF 是同一个 `open_url` source intake 的能力，不是新工具、新模式或新按钮。
+当 URL 指向可提取文本的 PDF 时，Codey 默认只读取有边界的前几页，记录页数、
+已读页、是否截断等元信息，并允许报告用 `[1 p.4]` 这类页码引用。只有 Codey
+实际读过第 4 页，并且保存了来自该页的 snippet，这个页码引用才会通过质量门。
+扫描版、超大或提取失败的 PDF 会成为中性的 `SKIPPED`，不会污染 opened sources。
+
 质量门接受常见报告格式，比如 `1. 结论`、`一、结论`，以及 `[1] [Title](https://...)`
 这种 Markdown link 来源行；但不会放宽来源 provenance 或 snippet 原文匹配。显式 URL
 引用仍必须匹配 Codey 实际打开过的 final URL；来源质量里的裸站点域名更自然：
 打开 `docs.python.org` 后可以写 `python.org`，但只打开 `python.org` 不能反过来声称
 已经打开 `docs.python.org`。
 
-如果某个结果是 Codey 暂时无法读取的页面，比如 PDF，Research 会把工具结果标成
-中性的 `SKIPPED`，然后继续读取其他可用 HTML 来源。若模型给了改写过的 evidence
-excerpt，Codey 会替换成打开页面中的真实短摘录，并带 warning 保存 note。
+如果某个结果是 Codey 暂时无法读取的来源，比如扫描版或过大的 PDF，Research 会把
+工具结果标成中性的 `SKIPPED`，然后继续读取其他可用来源。若模型给了改写过的
+evidence excerpt，Codey 会替换成打开来源中的真实短摘录，并带 warning 保存 note。
 
 典型流程是：
 
@@ -202,8 +208,8 @@ excerpt，Codey 会替换成打开页面中的真实短摘录，并带 warning �
 
 Research drawer 有三个轻量 tab：
 
-- `Evidence`：claim、snippet、counterpoints、质量 warning 和搜索覆盖
-- `Sources`：citation map、source title、final URL 和来源质量提示
+- `Evidence`：claim、snippet、PDF 页码定位、counterpoints、质量 warning 和搜索覆盖
+- `Sources`：citation map、source title、final URL、来源质量提示，以及 PDF 已读页/截断元信息
 - `Notes`：synthesis、note id、source URL 和 restore 状态
 
 Coverage 作为支持性的审计信息放在 `Evidence` 里，不做第一层用户概念。等以后本地库里有

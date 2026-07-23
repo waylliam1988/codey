@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import threading
 import time
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from codey import browser_worker, cancellation
 from codey.consensus import ConsensusAdvice
@@ -15,10 +19,12 @@ from codey.models import ToolCall, ToolResult
 from codey.research.advisors import EvidencePack, run_research_advisors
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.ledger import ResearchLedger
+from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
 from codey.research.provenance import provenance_problem
 from codey.research.protocols import JsonToolCodec
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner
+from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tools import ResearchTools
 from codey.research.url_policy import check_fetch_url
 
@@ -65,6 +71,32 @@ class FakeSearch:
 
     def close(self) -> None:
         pass
+
+
+class FakePdfPage:
+    def __init__(self, text: str, stream_size: int = 0) -> None:
+        self._text = text
+        self._stream_size = stream_size
+
+    def extract_text(self) -> str:
+        return self._text
+
+    def get_contents(self):
+        if not self._stream_size:
+            return []
+        return [SimpleNamespace(get_data=lambda: b"x" * self._stream_size)]
+
+
+class FakePdfReader:
+    pages: list[FakePdfPage] = []
+
+    def __init__(self, _stream) -> None:
+        self.pages = list(type(self).pages)
+
+
+def fake_pypdf(*page_texts: str):
+    FakePdfReader.pages = [FakePdfPage(text) for text in page_texts]
+    return mock.patch.dict(sys.modules, {"pypdf": SimpleNamespace(PdfReader=FakePdfReader)})
 
 
 def valid_research_report(url: str = "https://example.com/helium", *, conclusion: str = "Helium supply depends on gas processing.") -> str:
@@ -114,6 +146,45 @@ def helium_ledger(url: str = "https://example.com/helium") -> ResearchLedger:
     )
     assert not evidence.error
     ledger.add_evidence_items(list(evidence.items), note_id="fact-1")
+    return ledger
+
+
+def pdf_ledger(url: str = "https://example.com/report.pdf") -> ResearchLedger:
+    ledger = ResearchLedger()
+    ledger.record_search("report pdf", [{
+        "title": "Report PDF",
+        "url": url,
+        "snippet": "Report details.",
+    }])
+    ledger.record_open_document(SourceDocument(
+        requested_url=url,
+        final_url=url,
+        title="Report PDF",
+        content_kind="pdf",
+        mime_type="application/pdf",
+        text="[page 4]\nThe report states that PDF intake supports page-specific evidence.",
+        page_count=12,
+        pages_read=(4,),
+        page_texts=(SourcePage(
+            number=4,
+            text="The report states that PDF intake supports page-specific evidence.",
+        ),),
+    ))
+    evidence = ledger.prepare_evidence_items(
+        [{
+            "claim": "PDF intake supports page-specific evidence.",
+            "source_url": url,
+            "excerpt": "PDF intake supports page-specific evidence",
+            "stance": "supports",
+            "page": 4,
+        }],
+        fallback_sources=[url],
+        fallback_claim="PDF intake supports page-specific evidence.",
+        fallback_body="The report states that PDF intake supports page-specific evidence.",
+        note_type="fact",
+    )
+    assert not evidence.error
+    ledger.add_evidence_items(list(evidence.items), note_id="fact-pdf")
     return ledger
 
 
@@ -184,6 +255,111 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("local", check_fetch_url("http://localhost:8000", resolve=False))
         self.assertIn("non-public", check_fetch_url("http://127.0.0.1/", resolve=False))
         self.assertIsNone(check_fetch_url("https://example.com/page", resolve=False))
+
+    def test_pdf_parse_pages_is_bounded_and_one_based(self) -> None:
+        self.assertEqual(parse_pages("4"), (4,))
+        self.assertEqual(parse_pages("1-12"), tuple(range(1, 11)))
+        self.assertEqual(parse_pages("pages 1 - 5"), (1, 2, 3, 4, 5))
+        self.assertEqual(parse_pages("pp.4-5"), (4, 5))
+        self.assertEqual(parse_pages(""), (1, 2, 3, 4, 5))
+
+    def test_pdf_extract_reads_default_pages_with_markers(self) -> None:
+        with fake_pypdf(*(f"Page {index} text" for index in range(1, 8))):
+            doc = extract_pdf_document(
+                b"%PDF fixture",
+                requested_url="https://example.com/report.pdf",
+                final_url="https://example.com/report.pdf",
+            )
+
+        self.assertIsInstance(doc, SourceDocument)
+        assert isinstance(doc, SourceDocument)
+        self.assertEqual(doc.content_kind, "pdf")
+        self.assertEqual(doc.page_count, 7)
+        self.assertEqual(doc.pages_read, (1, 2, 3, 4, 5))
+        self.assertIn("[page 1]", doc.text)
+        self.assertIn("Page 5 text", doc.text)
+        self.assertNotIn("Page 6 text", doc.text)
+
+    def test_pdf_extract_skips_oversized_and_scanned_pdfs(self) -> None:
+        oversized = extract_pdf_document(
+            b"x" * (PDF_MAX_BYTES + 1),
+            requested_url="https://example.com/report.pdf",
+            final_url="https://example.com/report.pdf",
+        )
+        with fake_pypdf("", ""):
+            scanned = extract_pdf_document(
+                b"%PDF fixture",
+                requested_url="https://example.com/report.pdf",
+                final_url="https://example.com/report.pdf",
+            )
+
+        self.assertIn("too large", oversized.reason)
+        self.assertIn("no extractable text", scanned.reason)
+
+    def test_open_url_reads_pdf_page_selection_and_records_ledger(self) -> None:
+        url = "https://example.com/report.pdf"
+
+        class PdfSearch:
+            def fetch(self, requested: str) -> dict:
+                return {
+                    "url": requested,
+                    "title": "Report PDF",
+                    "text": "",
+                    "content_kind": "pdf",
+                    "mime_type": "application/pdf",
+                    "bytes": b"%PDF fixture",
+                    "truncated": False,
+                }
+
+        with tempfile.TemporaryDirectory() as td, fake_pypdf(
+            "page one",
+            "page two",
+            "page three",
+            "The fourth page contains page-specific PDF evidence.",
+            "page five",
+            "page six",
+        ):
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(PdfSearch(), store, KnowledgeChanges(store.root))
+
+            output = tools.open_url(url, pages="4")
+            opened = tools.ledger.opened_sources_payload()
+            store.close()
+
+        self.assertIn("PDF", output)
+        self.assertIn("pages 4 / 6", output)
+        self.assertIn("[page 4]", output)
+        self.assertIn("page-specific PDF evidence", output)
+        self.assertEqual(tools.sources_read, {url})
+        self.assertEqual(opened[0]["content_kind"], "pdf")
+        self.assertEqual(opened[0]["pages_read"], [4])
+        self.assertEqual(opened[0]["page_count"], 6)
+
+    def test_open_url_skips_pdf_without_extractable_text_without_recording_source(self) -> None:
+        url = "https://example.com/scanned.pdf"
+
+        class PdfSearch:
+            def fetch(self, requested: str) -> dict:
+                return {
+                    "url": requested,
+                    "title": "Scanned PDF",
+                    "text": "",
+                    "content_kind": "pdf",
+                    "mime_type": "application/pdf",
+                    "bytes": b"%PDF fixture",
+                    "truncated": False,
+                }
+
+        with tempfile.TemporaryDirectory() as td, fake_pypdf("", ""):
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(PdfSearch(), store, KnowledgeChanges(store.root))
+
+            output = tools.open_url(url)
+            store.close()
+
+        self.assertTrue(output.startswith("SKIPPED: PDF has no extractable text"))
+        self.assertEqual(tools.sources_read, set())
+        self.assertFalse(tools.ledger.opened_sources_payload())
 
     def test_browser_worker_exposes_module_call_for_research_search(self) -> None:
         self.assertEqual(browser_worker.call(lambda value: value + 1, 4), 5)
@@ -408,6 +584,193 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(review.citation_map[0].title, "Helium article")
         self.assertEqual(review.citation_map[0].url, url)
 
+    def test_report_quality_accepts_pdf_page_citations_with_page_backed_evidence(self) -> None:
+        url = "https://example.com/report.pdf"
+        ledger = pdf_ledger(url)
+        report = (
+            "## 结论\n"
+            "- PDF intake supports page-specific evidence. [1 p.4]\n\n"
+            "## 关键证据\n"
+            "- [1 p.4] The opened PDF page contains the page-specific evidence statement.\n\n"
+            "## 反证与限制\n"
+            "- 未找到强反证；本轮搜索了 report pdf，若 PDF 第 4 页原文不同会推翻当前结论。\n\n"
+            "## 来源质量\n"
+            "- [1] secondary · data · undated · example.com\n\n"
+            "## 搜索覆盖\n"
+            "- query: report pdf\n"
+            "- opened: PDF p.4\n"
+            "- stop: page-level evidence covers the fixture\n\n"
+            "## 来源\n"
+            f"[1] Report PDF - {url}"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertEqual(review.citation_map[0].pages, (4,))
+        self.assertEqual(review.citation_payload()[0]["pages"], [4])
+
+    def test_report_quality_rejects_pdf_page_citation_when_page_was_not_read(self) -> None:
+        url = "https://example.com/report.pdf"
+        ledger = pdf_ledger(url)
+        report = (
+            "## 结论\n"
+            "- PDF intake supports page-specific evidence. [1 p.5]\n\n"
+            "## 关键证据\n"
+            "- [1 p.5] The opened PDF page contains the page-specific evidence statement.\n\n"
+            "## 反证与限制\n"
+            "- 未找到强反证；本轮搜索了 report pdf，若 PDF 第 5 页原文不同会推翻当前结论。\n\n"
+            "## 来源质量\n"
+            "- [1] secondary · data · undated · example.com\n\n"
+            "## 搜索覆盖\n"
+            "- query: report pdf\n\n"
+            "## 来源\n"
+            f"[1] Report PDF - {url}"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("p.5", review.message)
+        self.assertIn("not read", review.message)
+
+    def test_report_quality_accepts_pdf_page_range_when_pages_were_read(self) -> None:
+        url = "https://example.com/report.pdf"
+        ledger = ResearchLedger()
+        ledger.record_open_document(SourceDocument(
+            requested_url=url,
+            final_url=url,
+            title="Report PDF",
+            content_kind="pdf",
+            mime_type="application/pdf",
+            text=(
+                "[page 4]\nThe fourth page contains page-specific PDF evidence.\n\n"
+                "[page 5]\nThe fifth page adds context."
+            ),
+            page_count=12,
+            pages_read=(4, 5),
+            page_texts=(
+                SourcePage(number=4, text="The fourth page contains page-specific PDF evidence."),
+                SourcePage(number=5, text="The fifth page adds context."),
+            ),
+        ))
+        evidence = ledger.prepare_evidence_items(
+            [{
+                "claim": "PDF intake supports page-specific evidence.",
+                "source_url": url,
+                "excerpt": "page-specific PDF evidence",
+                "stance": "supports",
+                "page": 4,
+            }],
+            fallback_sources=[url],
+            fallback_claim="PDF intake supports page-specific evidence.",
+            fallback_body="The fourth page contains page-specific PDF evidence.",
+            note_type="fact",
+        )
+        self.assertFalse(evidence.error)
+        ledger.add_evidence_items(list(evidence.items), note_id="fact-pdf")
+        report = (
+            "## 结论\n"
+            "- PDF intake supports page-specific evidence. [1 pp.4-5]\n\n"
+            "## 关键证据\n"
+            "- [1 pp.4-5] The opened PDF pages contain the evidence and context.\n\n"
+            "## 反证与限制\n"
+            "- 未找到强反证；本轮搜索了 report pdf，若 PDF 第 4-5 页原文不同会推翻当前结论。\n\n"
+            "## 来源质量\n"
+            "- [1] secondary · data · undated · example.com\n\n"
+            "## 搜索覆盖\n"
+            "- query: report pdf\n\n"
+            "## 来源\n"
+            f"[1] Report PDF - {url}"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertEqual(review.citation_map[0].pages, (4, 5))
+
+    def test_report_quality_keeps_pdf_pages_read_across_multiple_opens(self) -> None:
+        url = "https://example.com/report.pdf"
+        ledger = ResearchLedger()
+        ledger.record_open_document(SourceDocument(
+            requested_url=url,
+            final_url=url,
+            title="Report PDF",
+            content_kind="pdf",
+            mime_type="application/pdf",
+            text="[page 4]\nThe fourth page contains page-specific PDF evidence.",
+            page_count=12,
+            pages_read=(4,),
+            page_texts=(
+                SourcePage(number=4, text="The fourth page contains page-specific PDF evidence."),
+            ),
+        ))
+        evidence = ledger.prepare_evidence_items(
+            [{
+                "claim": "PDF intake supports page-specific evidence.",
+                "source_url": url,
+                "excerpt": "page-specific PDF evidence",
+                "stance": "supports",
+                "page": 4,
+            }],
+            fallback_sources=[url],
+            fallback_claim="PDF intake supports page-specific evidence.",
+            fallback_body="The fourth page contains page-specific PDF evidence.",
+            note_type="fact",
+        )
+        self.assertFalse(evidence.error)
+        ledger.add_evidence_items(list(evidence.items), note_id="fact-pdf")
+        ledger.record_open_document(SourceDocument(
+            requested_url=url,
+            final_url=url,
+            title="Report PDF",
+            content_kind="pdf",
+            mime_type="application/pdf",
+            text="[page 5]\nThe fifth page adds context.",
+            page_count=12,
+            pages_read=(5,),
+            page_texts=(SourcePage(number=5, text="The fifth page adds context."),),
+        ))
+        report = (
+            "## 结论\n"
+            "- PDF intake supports page-specific evidence. [1 p.4]\n\n"
+            "## 关键证据\n"
+            "- [1 p.4] The opened PDF page contains the evidence statement.\n\n"
+            "## 反证与限制\n"
+            "- 未找到强反证；本轮搜索了 report pdf，若 PDF 第 4 页原文不同会推翻当前结论。\n\n"
+            "## 来源质量\n"
+            "- [1] secondary · data · undated · example.com\n\n"
+            "## 搜索覆盖\n"
+            "- query: report pdf\n\n"
+            "## 来源\n"
+            f"[1] Report PDF - {url}"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertEqual(ledger.opened_sources_payload()[0]["pages_read"], [4, 5])
+
     def test_report_quality_extracts_citation_counterpoints_and_warnings(self) -> None:
         url = "https://example.com/helium"
         ledger = helium_ledger(url)
@@ -617,6 +980,61 @@ class ResearchBoundaryTests(unittest.TestCase):
             "Helium is separated from natural gas streams.",
         )
 
+    def test_pdf_evidence_page_is_inferred_and_bad_excerpt_replaced_on_that_page(self) -> None:
+        url = "https://example.com/report.pdf"
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(FakeSearch(), store, KnowledgeChanges(store.root))
+            tools.sources_read.add(url)
+            tools.ledger.record_open_document(SourceDocument(
+                requested_url=url,
+                final_url=url,
+                title="Report PDF",
+                content_kind="pdf",
+                mime_type="application/pdf",
+                text="[page 4]\nThe fourth page contains page-specific PDF evidence.",
+                page_count=8,
+                pages_read=(4,),
+                page_texts=(SourcePage(
+                    number=4,
+                    text="The fourth page contains page-specific PDF evidence.",
+                ),),
+            ))
+
+            inferred = tools.knowledge_write({
+                "type": "fact",
+                "title": "PDF page evidence",
+                "body": "The fourth page contains page-specific PDF evidence.",
+                "sources": [url],
+                "evidence": [{
+                    "claim": "The PDF has page-specific evidence.",
+                    "source_url": url,
+                    "excerpt": "page-specific PDF evidence",
+                    "stance": "supports",
+                }],
+            })
+            replaced = tools.knowledge_write({
+                "type": "fact",
+                "title": "PDF page replacement",
+                "body": "The fourth page contains page-specific PDF evidence.",
+                "sources": [url],
+                "evidence": [{
+                    "claim": "The PDF has page-specific evidence.",
+                    "source_url": url,
+                    "excerpt": "not in the PDF",
+                    "stance": "supports",
+                    "page": 4,
+                }],
+            })
+            store.close()
+
+        self.assertIn("saved fact note", inferred)
+        self.assertIn("saved fact note", replaced)
+        self.assertIn("WARNING:", replaced)
+        self.assertEqual(tools.ledger.evidence_items[0].page, 4)
+        self.assertEqual(tools.ledger.evidence_items[0].locator, "p.4")
+        self.assertEqual(tools.ledger.evidence_items[1].page, 4)
+
     def test_research_protocol_guides_open_url_before_note_write(self) -> None:
         codec = JsonToolCodec()
         prompt = codec.system_prompt()
@@ -630,6 +1048,10 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("A web_search result is not evidence yet", prompt)
         self.assertIn("call open_url", prompt)
         self.assertIn("exact short excerpts copied from open_url text", prompt)
+        self.assertIn('"pages":"1-5"', prompt)
+        self.assertIn("open_url can read text PDFs", prompt)
+        self.assertIn("evidence.page", prompt)
+        self.assertIn("[1 p.4]", prompt)
         self.assertIn("Do not paraphrase evidence.excerpt", prompt)
         self.assertIn("omit the evidence field", prompt)
         self.assertIn("反证与限制", prompt)
@@ -964,6 +1386,231 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIsNot(fetch_page, search_page)
         self.assertIn(fetch_page, context.pages)
         self.assertTrue(fetch_page.brought_to_front)
+
+    def test_browser_search_fetch_streams_known_pdf_without_opening_browser_page(self) -> None:
+        class StreamingResponse:
+            headers = {
+                "content-type": "application/pdf",
+                "content-length": str(PDF_MAX_BYTES + 1),
+            }
+            read_calls = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            def geturl(self) -> str:
+                return "https://example.com/report.pdf"
+
+            def read(self, size=-1) -> bytes:
+                self.read_calls += 1
+                return b"unexpected"
+
+        response = StreamingResponse()
+        provider = BrowserSearchProvider()
+        provider._ensure_fetch_page_on_browser_thread = mock.Mock(side_effect=AssertionError("PDF should not open a browser page"))
+
+        with (
+            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=response),
+        ):
+            result = provider.fetch("https://example.com/report.pdf")
+
+        self.assertEqual(result["content_kind"], "pdf")
+        self.assertTrue(result["text"].startswith("SKIPPED: PDF is too large"))
+        self.assertEqual(response.read_calls, 0)
+        provider._ensure_fetch_page_on_browser_thread.assert_not_called()
+
+    def test_browser_search_pdf_streaming_stops_after_cap_without_content_length(self) -> None:
+        class StreamingResponse:
+            headers = {"content-type": "application/pdf"}
+
+            def __init__(self) -> None:
+                self.bytes_sent = 0
+                self.total_bytes = 10 * 1024 * 1024
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            def geturl(self) -> str:
+                return "https://example.com/report.pdf"
+
+            def read(self, size=-1) -> bytes:
+                if self.bytes_sent >= self.total_bytes:
+                    return b""
+                amount = min(size if size > 0 else self.total_bytes, self.total_bytes - self.bytes_sent)
+                self.bytes_sent += amount
+                return b"x" * amount
+
+        response = StreamingResponse()
+        provider = BrowserSearchProvider()
+
+        with (
+            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+            mock.patch("codey.research.browser_search.PDF_MAX_BYTES", 1024),
+            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=response),
+        ):
+            result = provider.fetch("https://example.com/report.pdf")
+
+        self.assertEqual(result["content_kind"], "pdf")
+        self.assertTrue(result["text"].startswith("SKIPPED: PDF is too large"))
+        self.assertLess(response.bytes_sent, response.total_bytes)
+
+    def test_browser_search_pdf_redirect_is_checked_before_following_private_target(self) -> None:
+        class RedirectResponse:
+            status = 302
+            headers = {
+                "location": "http://127.0.0.1/private.pdf",
+                "content-type": "application/pdf",
+            }
+            read_calls = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            def geturl(self) -> str:
+                return "https://example.com/report.pdf"
+
+            def getcode(self) -> int:
+                return 302
+
+            def read(self, size=-1) -> bytes:
+                self.read_calls += 1
+                return b""
+
+        response = RedirectResponse()
+        provider = BrowserSearchProvider()
+
+        def policy(url: str, *, resolve: bool = True):
+            del resolve
+            if url.startswith("http://127.0.0.1"):
+                return "non-public target"
+            return None
+
+        with (
+            mock.patch("codey.research.browser_search.check_fetch_url", side_effect=policy),
+            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=response) as opened,
+        ):
+            result = provider.fetch("https://example.com/report.pdf")
+
+        self.assertEqual(result["text"], "ERROR: non-public target (after redirect)")
+        self.assertEqual(response.read_calls, 0)
+        self.assertEqual(opened.call_count, 1)
+
+    def test_browser_search_pdf_http_error_redirect_is_checked_before_following_private_target(self) -> None:
+        class RedirectHandler(BaseHTTPRequestHandler):
+            hits = 0
+
+            def do_GET(self) -> None:  # noqa: N802
+                type(self).hits += 1
+                self.send_response(302)
+                self.send_header("Location", "http://127.0.0.1/private.pdf")
+                self.end_headers()
+
+            def log_message(self, _format, *_args) -> None:
+                return
+
+        httpd = ThreadingHTTPServer(("127.0.0.1", 0), RedirectHandler)
+        thread = threading.Thread(target=httpd.serve_forever, name="test-pdf-redirect", daemon=True)
+        thread.start()
+        url = f"http://127.0.0.1:{httpd.server_port}/report.pdf"
+        checked_urls: list[str] = []
+
+        def policy(target: str, *, resolve: bool = True):
+            del resolve
+            checked_urls.append(target)
+            if target == url:
+                return None
+            if target.startswith("http://127.0.0.1/private"):
+                return "non-public target"
+            return None
+
+        try:
+            with mock.patch("codey.research.browser_search.check_fetch_url", side_effect=policy):
+                result = BrowserSearchProvider().fetch(url)
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=1.0)
+
+        self.assertEqual(result["text"], "ERROR: non-public target (after redirect)")
+        self.assertEqual(RedirectHandler.hits, 1)
+        self.assertEqual(checked_urls, [url, "http://127.0.0.1/private.pdf"])
+
+    def test_browser_search_pdf_sentinel_download_runs_outside_browser_thread(self) -> None:
+        provider = BrowserSearchProvider()
+        sentinel = {
+            "url": "https://example.com/report.pdf",
+            "title": "Report PDF",
+            "text": "",
+            "content_kind": "pdf_download",
+            "mime_type": "application/pdf",
+            "truncated": False,
+        }
+        streamed = {
+            "url": "https://example.com/report.pdf",
+            "title": "Report PDF",
+            "text": "downloaded",
+            "content_kind": "pdf",
+            "mime_type": "application/pdf",
+            "truncated": False,
+        }
+
+        with (
+            mock.patch("codey.research.browser_search.browser_worker.call", return_value=sentinel),
+            mock.patch("codey.research.browser_search._download_pdf_streaming", return_value=streamed) as download,
+        ):
+            result = provider.fetch("https://example.com/report")
+
+        self.assertEqual(result, streamed)
+        download.assert_called_once_with("https://example.com/report.pdf", mime_type="application/pdf")
+
+    def test_browser_search_pdf_streaming_checks_cancellation_between_chunks(self) -> None:
+        class StreamingResponse:
+            status = 200
+            headers = {"content-type": "application/pdf"}
+
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+            def geturl(self) -> str:
+                return "https://example.com/report.pdf"
+
+            def getcode(self) -> int:
+                return 200
+
+            def read(self, size=-1) -> bytes:
+                self.calls += 1
+                return b"x" * min(size if size > 0 else 8, 8)
+
+        response = StreamingResponse()
+
+        with (
+            mock.patch("codey.research.browser_search.check_fetch_url", return_value=None),
+            mock.patch("codey.research.browser_search._open_url_no_redirect", return_value=response),
+            mock.patch(
+                "codey.research.browser_search.cancellation.check",
+                side_effect=[None, None, None, cancellation.TaskCancelled("stop")],
+            ),
+        ):
+            with self.assertRaises(cancellation.TaskCancelled):
+                BrowserSearchProvider().fetch("https://example.com/report.pdf")
+
+        self.assertEqual(response.calls, 1)
 
 
 if __name__ == "__main__":

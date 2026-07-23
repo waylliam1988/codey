@@ -9,6 +9,8 @@ from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
 from codey.knowledge.store import KnowledgeStore
 from codey.research.ledger import ResearchLedger
+from codey.research.pdf_extract import PDF_DEFAULT_PAGES, PdfSkipped, extract_pdf_document
+from codey.research.source_document import SourceDocument, compact_pages
 from codey.research.url_policy import check_fetch_url
 from codey.text_budget import clip_middle
 
@@ -59,7 +61,7 @@ class ResearchTools:
             lines.append(f"{i}. {r.get('title')}\n   {url}\n   {snippet}".rstrip())
         return "\n".join(lines)
 
-    def open_url(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT) -> str:
+    def open_url(self, url: str, offset: int = 0, limit: int = OPEN_DEFAULT_LIMIT, pages: str = "") -> str:
         url = (url or "").strip()
         if not url:
             return "ERROR: open_url needs a url"
@@ -76,6 +78,8 @@ class ResearchTools:
         cancellation.check()
         page_url = str(page.get("url") or url)
         page_text = str(page.get("text") or "")
+        if page_text.startswith("SKIPPED:"):
+            return page_text
         if page_text.startswith("ERROR:"):
             message = page_text[len("ERROR:"):].strip()
             if message.lower().startswith("unsupported content type:"):
@@ -85,24 +89,44 @@ class ResearchTools:
         reason = check_fetch_url(page_url)
         if reason:
             return f"ERROR: {reason} (after redirect)"
+        document = self._source_document_from_fetch(url, page, pages=pages)
+        if isinstance(document, PdfSkipped):
+            return f"SKIPPED: {document.reason}. Choose an HTML source or another readable PDF."
         self.sources_read.add(url)
         if page_url and page_url != url:
             self.sources_read.add(page_url)
-        self.ledger.record_open(
-            requested_url=url,
-            final_url=page_url,
-            title=str(page.get("title") or ""),
-            text=page_text,
-        )
-        window = page_text[offset : offset + limit]
-        more = offset + limit < len(page_text)
-        header = f"{page.get('title')}\n{page_url}".strip()
+        self.ledger.record_open_document(document)
+        window = document.text[offset : offset + limit]
+        more = offset + limit < len(document.text)
+        header = _document_header(document)
         body = f"{header}\n\n{window}"
         if more:
             body += f"\n\n[more text available: open with offset={offset + limit}]"
         if len(body) > OPEN_MAX_LIMIT:
             body, _truncated = clip_middle(body, OPEN_MAX_LIMIT)
         return body
+
+    def _source_document_from_fetch(self, requested_url: str, page: dict, *, pages: str = "") -> SourceDocument | PdfSkipped:
+        final_url = str(page.get("url") or requested_url)
+        content_kind = str(page.get("content_kind") or "").lower()
+        mime_type = str(page.get("mime_type") or "")
+        if content_kind == "pdf":
+            return extract_pdf_document(
+                bytes(page.get("bytes") or b""),
+                requested_url=requested_url,
+                final_url=final_url,
+                title=str(page.get("title") or ""),
+                mime_type=mime_type or "application/pdf",
+                pages=pages or PDF_DEFAULT_PAGES,
+            )
+        return SourceDocument.html(
+            requested_url=requested_url,
+            final_url=final_url,
+            title=str(page.get("title") or ""),
+            text=str(page.get("text") or ""),
+            mime_type=mime_type or "text/html",
+            truncated=bool(page.get("truncated")),
+        )
 
     def knowledge_search(self, query: str) -> str:
         query = (query or "").strip()
@@ -280,3 +304,21 @@ def _clip_tail(value: str, limit: int) -> str:
     if limit <= 3:
         return text[-limit:]
     return "..." + text[-(limit - 3):]
+
+
+def _document_header(document: SourceDocument) -> str:
+    lines = [document.title, document.final_url]
+    if document.content_kind == "pdf":
+        page_meta = _pages_meta(document.pages_read, document.page_count)
+        bits = ["PDF", page_meta]
+        if document.truncated:
+            bits.append("truncated")
+        lines.append(" · ".join(part for part in bits if part))
+    return "\n".join(str(line or "").strip() for line in lines if str(line or "").strip())
+
+
+def _pages_meta(pages: tuple[int, ...], page_count: int) -> str:
+    if not pages:
+        return ""
+    page_text = compact_pages(pages)
+    return f"pages {page_text} / {page_count}" if page_count else f"pages {page_text}"

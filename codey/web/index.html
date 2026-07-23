@@ -2697,7 +2697,8 @@ function renderResearchEvidence(panel, run) {
   let rendered = false;
   for (const item of run.evidenceItems) {
     const title = item.claim || item.source_url || 'Evidence';
-    const meta = [item.stance || 'supports', item.source_url || '', item.note_id ? `note ${item.note_id}` : '']
+    const locator = item.locator || (item.page ? `p.${item.page}` : '');
+    const meta = [item.stance || 'supports', locator, item.source_url || '', item.note_id ? `note ${item.note_id}` : '']
       .filter(Boolean).join(' · ');
     panel.appendChild(researchCard(title, meta, item.excerpt || ''));
     rendered = true;
@@ -2721,12 +2722,23 @@ function renderResearchSources(panel, run) {
     panel.appendChild(researchEmpty('No sources recorded'));
     return;
   }
+  const openedByUrl = new Map(opened.map(item => [String(item.final_url || item.url || ''), item]));
   const citationUrls = new Set(citations.map(item => String(item.url || '')));
-  for (const item of citations) panel.appendChild(researchSourceCard(item));
+  for (const item of citations) {
+    const url = String(item.url || '');
+    const source = openedByUrl.get(url) || {};
+    panel.appendChild(researchSourceCard({
+      ...source,
+      ...item,
+      quality: item.quality || source.quality || {},
+      final_url: url || source.final_url || '',
+    }));
+  }
   for (const source of opened) {
     const url = String(source.final_url || source.url || '');
     if (!url || citationUrls.has(url)) continue;
     panel.appendChild(researchSourceCard({
+      ...source,
       title: source.title || url,
       url,
       quality: source.quality || {},
@@ -2765,7 +2777,8 @@ function researchSourceCard(item) {
   const number = item.number ? `[${item.number}] ` : '';
   const url = String(item.url || item.final_url || '');
   const quality = formatSourceQuality(item.quality || {});
-  const meta = [quality, item.retrieved_at || '', url].filter(Boolean).join(' · ');
+  const pdf = formatPdfSourceMeta(item);
+  const meta = [quality, pdf, item.retrieved_at || '', url].filter(Boolean).join(' · ');
   const card = researchCard(number + (item.title || url || 'Source'), meta, '');
   if (url) {
     card.style.cursor = 'pointer';
@@ -2835,6 +2848,38 @@ function formatSourceQuality(quality) {
   return [quality.level, quality.kind, quality.freshness, quality.independent_group]
     .filter(Boolean)
     .join(' · ');
+}
+
+function formatPdfSourceMeta(item) {
+  if (String(item.content_kind || '').toLowerCase() !== 'pdf') return '';
+  const pages = compactPages(Array.isArray(item.pages_read) ? item.pages_read : []);
+  const pageCount = Number(item.page_count || 0);
+  const parts = ['PDF'];
+  if (pages) parts.push(pageCount ? `pages ${pages} / ${pageCount}` : `pages ${pages}`);
+  if (item.truncated) parts.push('truncated');
+  return parts.join(' · ');
+}
+
+function compactPages(values) {
+  const pages = Array.from(new Set((values || [])
+    .map(value => Number(value))
+    .filter(value => Number.isInteger(value) && value > 0)))
+    .sort((a, b) => a - b);
+  if (!pages.length) return '';
+  const ranges = [];
+  let start = pages[0];
+  let prev = pages[0];
+  for (const page of pages.slice(1)) {
+    if (page === prev + 1) {
+      prev = page;
+      continue;
+    }
+    ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+    start = page;
+    prev = page;
+  }
+  ranges.push(start === prev ? `${start}` : `${start}-${prev}`);
+  return ranges.join(',');
 }
 
 function researchSection(title, values) {

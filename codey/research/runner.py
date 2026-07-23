@@ -16,6 +16,7 @@ from codey.models import ToolResult
 from codey.research.advisors import EvidenceNote, EvidencePack
 from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
+from codey.research.source_document import compact_pages
 from codey.research.tools import ResearchTools
 
 DEFAULT_MAX_TURNS = 14
@@ -250,6 +251,7 @@ class ResearchRunner:
                 str(args.get("url") or ""),
                 offset=args.get("offset", 0),
                 limit=args.get("limit", 6000),
+                pages=str(args.get("pages") or ""),
             ))
         if call.name == "knowledge_search":
             return _Outcome(self.tools.knowledge_search(str(args.get("query") or "")))
@@ -502,9 +504,10 @@ def _ledger_appendix(ledger) -> str:
                     str(quality.get("independent_group") or ""),
                 ) if part
             )
+            source_meta = _source_meta(item, quality_text)
             lines.append(
                 f"- [{index}] {item.get('title') or item.get('final_url') or ''} - {item.get('final_url') or ''}"
-                + (f" ({quality_text})" if quality_text else "")
+                + (f" ({source_meta})" if source_meta else "")
             )
     evidence = ledger.evidence_payload()
     if evidence:
@@ -512,7 +515,7 @@ def _ledger_appendix(ledger) -> str:
         for item in evidence:
             lines.extend((
                 f"- [{item.get('stance') or 'supports'}] {item.get('claim') or ''}",
-                f"  source: {item.get('source_url') or ''}",
+                f"  source: {item.get('source_url') or ''}{_evidence_locator(item)}",
                 f"  excerpt: {item.get('excerpt') or ''}",
             ))
     coverage = ledger.coverage_payload()
@@ -526,6 +529,26 @@ def _ledger_appendix(ledger) -> str:
             for item in skipped[:8]:
                 lines.append(f"  - {item.get('title') or item.get('url') or ''} ({item.get('reason') or 'skipped'})")
     return "\n".join(lines).strip()
+
+
+def _source_meta(item: dict, quality_text: str = "") -> str:
+    parts = []
+    if quality_text:
+        parts.append(quality_text)
+    if str(item.get("content_kind") or "") == "pdf":
+        parts.append("pdf")
+        pages = compact_pages(item.get("pages_read") or ())
+        page_count = int(item.get("page_count") or 0)
+        if pages:
+            parts.append(f"pages {pages}/{page_count}" if page_count else f"pages {pages}")
+        if item.get("truncated"):
+            parts.append("truncated")
+    return " · ".join(parts)
+
+
+def _evidence_locator(item: dict) -> str:
+    locator = str(item.get("locator") or "")
+    return f" {locator}" if locator else ""
 
 
 class _Outcome:

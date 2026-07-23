@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Mapping
 
 from codey.research.ledger import ResearchLedger
 from codey.research.provenance import provenance_problem
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
-_CITATION_RE = re.compile(r"(?<![\w!])\[(\d+)\]")
+_CITATION_RE = re.compile(
+    r"(?<![\w!])\[(\d+)(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*(\d+(?:\s*-\s*\d+)?))?\]",
+    re.IGNORECASE,
+)
 _SOURCE_LINE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?\[(\d+)\]\s*(.*?)\s*(?:-|–|—)\s*(https?://\S+)\s*$"
 )
@@ -43,6 +46,7 @@ class Citation:
     title: str
     url: str
     quality: dict = field(default_factory=dict)
+    pages: tuple[int, ...] = ()
 
     def to_dict(self) -> dict:
         return {
@@ -50,7 +54,14 @@ class Citation:
             "title": self.title,
             "url": self.url,
             "quality": dict(self.quality),
+            "pages": list(self.pages),
         }
+
+
+@dataclass(frozen=True)
+class CitationRef:
+    number: int
+    pages: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -96,7 +107,12 @@ def review_report_quality(
             "Use web_search/open_url before calling done.",
         )
 
-    citations = parse_citations(sections["sources"], ledger)
+    body_ref_items = citation_ref_items(_without_sources(sections))
+    pages_by_number = _pages_by_number(body_ref_items)
+    citations = [
+        replace(item, pages=pages_by_number.get(item.number, ()))
+        for item in parse_citations(sections["sources"], ledger)
+    ]
     if not citations:
         return ReportQualityReview(
             False,
@@ -104,7 +120,7 @@ def review_report_quality(
             "[1] Title - https://final-url.",
         )
     source_numbers = {item.number for item in citations}
-    body_refs = citation_refs(_without_sources(sections))
+    body_refs = {item.number for item in body_ref_items}
     missing_sources = sorted(body_refs - source_numbers)
     if missing_sources:
         return ReportQualityReview(
@@ -135,6 +151,9 @@ def review_report_quality(
             "evidence.excerpt before done. Missing snippet-backed citation(s): "
             + ", ".join(missing_evidence[:3]),
         )
+    page_problem = _page_citation_problem(citations, ledger)
+    if page_problem:
+        return ReportQualityReview(False, page_problem)
     if not citation_refs(sections["conclusion"]):
         return ReportQualityReview(
             False,
@@ -209,13 +228,69 @@ def parse_citations(sources_section: str, ledger: ResearchLedger | None = None) 
 
 
 def citation_refs(text: str) -> set[int]:
-    out: set[int] = set()
-    for value in _CITATION_RE.findall(str(text or "")):
+    return {item.number for item in citation_ref_items(text)}
+
+
+def citation_ref_items(text: str) -> list[CitationRef]:
+    refs: list[CitationRef] = []
+    for value, pages in _CITATION_RE.findall(str(text or "")):
         try:
-            out.add(int(value))
+            number = int(value)
         except ValueError:
-            pass
-    return out
+            continue
+        refs.append(CitationRef(number=number, pages=_parse_page_ref(pages)))
+    return refs
+
+
+def _pages_by_number(refs: list[CitationRef]) -> dict[int, tuple[int, ...]]:
+    found: dict[int, list[int]] = {}
+    for ref in refs:
+        if not ref.pages:
+            continue
+        bucket = found.setdefault(ref.number, [])
+        for page in ref.pages:
+            if page not in bucket:
+                bucket.append(page)
+    return {number: tuple(pages) for number, pages in found.items()}
+
+
+def _parse_page_ref(value: str) -> tuple[int, ...]:
+    text = str(value or "").strip()
+    if not text:
+        return ()
+    match = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", text)
+    if not match:
+        return ()
+    start = max(1, int(match.group(1)))
+    end = max(1, int(match.group(2) or start))
+    if end < start:
+        start, end = end, start
+    if end - start > 99:
+        end = start + 99
+    return tuple(range(start, end + 1))
+
+
+def _page_citation_problem(citations: list[Citation], ledger: ResearchLedger) -> str:
+    for citation in citations:
+        pages = set(citation.pages)
+        if not pages:
+            continue
+        pages_read = ledger.pages_read_for_url(citation.url)
+        unread = sorted(pages - pages_read)
+        if unread:
+            return (
+                "Report quality failed: page citation(s) reference PDF page(s) not read from "
+                f"[{citation.number}] {citation.url}: "
+                + ", ".join(f"p.{page}" for page in unread[:6])
+            )
+        evidence_pages = ledger.evidence_pages_for_url(citation.url)
+        if not evidence_pages.intersection(pages):
+            return (
+                "Report quality failed: page citation(s) need snippet-backed evidence from the cited page(s) "
+                f"for [{citation.number}] {citation.url}: "
+                + ", ".join(f"p.{page}" for page in sorted(pages)[:6])
+            )
+    return ""
 
 
 def _without_sources(sections: Mapping[str, str]) -> str:
