@@ -3,6 +3,7 @@
 from codey.providers.base import ChatProvider
 from codey.providers.deepseek_web import DeepSeekWebProvider
 from codey.providers.glm_web import GlmWebProvider
+from codey.providers.local_openai import LocalOpenAIProvider
 from codey.providers.mimo_web import MimoWebProvider
 from codey.providers.qwen_web import QwenWebProvider
 from codey.providers.registry import (
@@ -22,6 +23,7 @@ __all__ = [
     "DEFAULT_PROVIDER_ID",
     "DeepSeekWebProvider",
     "GlmWebProvider",
+    "LocalOpenAIProvider",
     "MimoWebProvider",
     "PROVIDER_LABELS",
     "QwenWebProvider",

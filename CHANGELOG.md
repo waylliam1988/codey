@@ -4,6 +4,35 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.0 - Research, Knowledge, and Local Models
+
+This is a major workflow release. Codey is no longer only a local coding loop:
+it can explicitly research a question, save grounded local notes, carry a
+bounded synthesis into a project, and remember verified implementation facts.
+
+- Research: the composer context now includes `Research`. When enabled for a
+  message, Codey can search the web, open pages, enforce URL policy, write
+  source/fact/synthesis notes, and reject final citations that were not opened
+  in the run.
+- Knowledge: research notes are stored in a local Markdown vault with a
+  rebuildable SQLite FTS index, per-run restore, note links, and a bounded
+  Research Brief for project handoff. Project source code is not copied into
+  the vault.
+- Project handoff: after research, choosing a folder injects only the bounded
+  Research Brief into the Writer prompt. Follow-up Research and Project Hybrid
+  runs receive bounded prior chat context so prompts like "continue researching
+  that plan" keep working.
+- Local provider: `Local` connects to OpenAI-compatible endpoints such as LM
+  Studio, Ollama, or llama.cpp. The compact config popover supports base URL,
+  model id, optional API key preservation, and explicit key clearing.
+- Safety and reliability: web provider sends stay on the browser-worker thread;
+  only thread-safe Local sends use cancellable background send. Browser-worker
+  calls are reentrant, preventing Research search self-deadlocks. Headless
+  browser code was removed from Codey's runtime path.
+- UI: Research is a lightweight composer token beside `Choose folder` and the
+  model name, not a separate app or another button beside the model selector.
+  The Research drawer shows notes, source URLs, synthesis, and restore state.
+
 ## 0.1.63 - Single Provider Self-Review
 
 - Review: when no different provider is available for final diff review, Codey

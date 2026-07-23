@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codey.project_facts import ProjectFactsStore, VerifiedCommand
+from codey.knowledge.brief import KnowledgeBriefBuilder
+from codey.knowledge.store import KnowledgeStore
 from codey.project_map import render_project_map
 from codey.verification_policy import (
     VerificationCandidate,
@@ -35,6 +37,8 @@ class CheckpointContext:
 @dataclass(frozen=True)
 class ProjectTaskContext:
     verified_facts: str = ""
+    research_context: str = ""
+    knowledge_context: str = ""
     project_map: str = ""
     verification_verified_commands: tuple[VerifiedCommand, ...] = ()
     resumed_verification_commands: tuple[CheckpointCheck, ...] = ()
@@ -50,9 +54,11 @@ class ProjectTaskContextBuilder:
         *,
         project_facts: ProjectFactsStore | None = None,
         work_checkpoints: WorkCheckpointStore | None = None,
+        knowledge_store: KnowledgeStore | None = None,
     ) -> None:
         self.project_facts = project_facts
         self.work_checkpoints = work_checkpoints
+        self.knowledge_store = knowledge_store
 
     def build(
         self,
@@ -80,8 +86,11 @@ class ProjectTaskContextBuilder:
             checkpoint.resumed_verification_commands,
         )
         command_lines = verification_candidate_lines(verification_candidates)
+        research_context = self._research_context(session_id)
         return ProjectTaskContext(
             verified_facts=verified_facts,
+            research_context=research_context,
+            knowledge_context=research_context,
             project_map=safe_project_map(
                 project,
                 verified_facts,
@@ -120,6 +129,14 @@ class ProjectTaskContextBuilder:
             return self.project_facts.load(project).commands
         except (OSError, ValueError):
             return ()
+
+    def _research_context(self, session_id: str) -> str:
+        if self.knowledge_store is None:
+            return ""
+        try:
+            return KnowledgeBriefBuilder(self.knowledge_store).build_for_session(session_id).render()
+        except (OSError, ValueError):
+            return ""
 
     def _initialize_checkpoint(
         self,

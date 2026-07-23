@@ -1,5 +1,49 @@
 # Codey Test Report
 
+## 0.2.0 Research, Knowledge, and Local Models
+
+Codey 0.2.0 adds an explicit Research work loop, a local knowledge vault, a
+bounded Research-to-Project handoff, and a Local OpenAI-compatible provider.
+This is the first release where Codey can research a topic, save grounded
+notes, carry conclusions into a project Writer, and record verified
+implementation facts without copying source code into the vault.
+
+Production changes:
+
+- `knowledge/` stores Markdown notes, note links, SQLite FTS search, per-run
+  restore snapshots, and bounded Research Briefs for project handoff.
+- `research/` adds the Research runner, JSON research tools, browser search and
+  page open, URL policy, source extraction, evidence review, and read-only
+  advisor packets.
+- `task_runner.py` routes explicit `Research` and `hybrid` runs through
+  `ResearchRunner`, injects bounded research handoff for continuous Research
+  and Project Hybrid work, and keeps project Writers limited to a Research
+  Brief rather than the full vault.
+- `providers/local_openai.py` adds the `Local` provider for OpenAI-compatible
+  endpoints with base URL/model/API-key configuration.
+- `browser_worker.call()` is reentrant so Research browser tools cannot deadlock
+  when the task itself is already running on the browser worker.
+- Web providers keep Playwright `send()` calls on the browser-worker thread.
+  Only `thread_safe_send` providers such as `LocalOpenAIProvider` use the
+  cancellable background-send path.
+- Hidden-browser runtime paths were removed; Codey reuses or launches the
+  normal visible CDP browser.
+- The web UI adds a lightweight composer context:
+  `Choose folder · Research · Provider`, plus a Research drawer and Local
+  configuration popover.
+
+Validation:
+
+```text
+python -m unittest tests.test_server tests.test_research tests.test_handoff: 131 passed
+python -m unittest tests.test_browser tests.test_research tests.test_handoff tests.test_server tests.test_providers tests.test_ui: 245 passed
+python -m unittest discover: 1134 passed
+python -m py_compile codey\browser_worker.py codey\browser.py codey\providers\local_openai.py codey\server.py codey\research\browser_search.py codey\research\runner.py codey\handoff.py codey\task_runner.py: passed
+Node parse codey\web\index.html script: ok
+browser launch cleanup scan: no stale runtime path
+git diff --check: passed
+```
+
 ## 0.1.63 Single Provider Self-Review
 
 Final diff review now has a same-provider fallback. Codey still prefers a
@@ -2242,7 +2286,7 @@ copy and then passed all 219 tests.
 
 ## 2026-06-30 End-to-End Coverage
 
-The UI now has a repeatable browser E2E test that launches real headless Edge
+The UI now has a repeatable browser E2E test that launches real Edge
 against the real local HTTP/SSE server. A deterministic provider drives the
 agent so the test can assert the complete product flow without depending on
 model variability:

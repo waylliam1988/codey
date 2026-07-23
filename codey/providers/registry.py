@@ -16,6 +16,7 @@ from codey.browser import (
 from codey.providers.base import ChatProvider
 from codey.providers.deepseek_web import DeepSeekWebProvider
 from codey.providers.glm_web import GlmWebProvider
+from codey.providers.local_openai import LocalOpenAIProvider, local_endpoint_available
 from codey.providers.mimo_web import MimoWebProvider
 from codey.providers.qwen_web import QwenWebProvider
 from codey.provider_worker import WorkerChatProvider
@@ -26,12 +27,17 @@ PROVIDER_LABELS = {
     "mimo": "MiMo",
     "qwen": "Qwen",
     "glm": "GLM",
+    "local": "Local",
+}
+WEB_PROVIDER_LABELS = {
+    key: label for key, label in PROVIDER_LABELS.items() if key != "local"
 }
 PROVIDER_TYPES = {
     "deepseek": DeepSeekWebProvider,
     "mimo": MimoWebProvider,
     "qwen": QwenWebProvider,
     "glm": GlmWebProvider,
+    "local": LocalOpenAIProvider,
 }
 PROVIDER_WORKER_PORT_OFFSETS = {
     "deepseek": 101,
@@ -56,7 +62,9 @@ def provider_ids() -> tuple[str, ...]:
 
 def provider_tab_availability() -> dict[str, bool]:
     statuses = detect_open_provider_tabs()
-    return {provider_id: bool(statuses.get(provider_id)) for provider_id in PROVIDER_LABELS}
+    payload = {provider_id: bool(statuses.get(provider_id)) for provider_id in WEB_PROVIDER_LABELS}
+    payload["local"] = local_endpoint_available()
+    return payload
 
 
 def warm_provider_tabs(
@@ -65,7 +73,9 @@ def warm_provider_tabs(
     profile: Path = DEFAULT_PROFILE,
 ) -> dict[str, bool]:
     statuses = browser_warm_provider_tabs(port=port, profile=profile)
-    return {provider_id: bool(statuses.get(provider_id)) for provider_id in PROVIDER_LABELS}
+    payload = {provider_id: bool(statuses.get(provider_id)) for provider_id in WEB_PROVIDER_LABELS}
+    payload["local"] = local_endpoint_available()
+    return payload
 
 
 def connect_provider(
@@ -80,6 +90,8 @@ def connect_provider(
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
+    if normalized == "local":
+        return provider_type.connect()
     if open_if_missing and os.environ.get(WORKER_CHILD_ENV) != "1":
         override = load_enabled_override(normalized)
         if override is not None:
@@ -99,6 +111,8 @@ def connect_provider(
 def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | None:
     """Wrap an already-open sibling tab without creating another CDP connection."""
     normalized = (provider_id or "").strip().lower()
+    if normalized == "local":
+        return None
     marker = PROVIDER_URL_CONTAINS.get(normalized)
     if not marker:
         return None
@@ -142,6 +156,8 @@ def connect_fresh_provider_tab(
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
+    if normalized == "local":
+        return provider_type.connect()
     if os.environ.get(WORKER_CHILD_ENV) != "1":
         override = load_enabled_override(normalized)
         if override is not None:

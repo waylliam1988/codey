@@ -636,6 +636,26 @@ class RunLoopTests(unittest.TestCase):
         self.assertIn("Project Map", provider.sent[0])
         self.assertIn("package.json", provider.sent[0])
 
+    def test_project_intro_includes_research_context_when_provided(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Implement the researched tool",
+                on_event=lambda _event: None,
+                research_context=(
+                    "Research context from this chat:\n"
+                    "- synthesis_id: synthesis-1\n"
+                    "Use this as background only."
+                ),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Research context from this chat", provider.sent[0])
+        self.assertIn("synthesis-1", provider.sent[0])
+
     def test_project_intro_includes_local_execution_checkpoint_when_provided(self) -> None:
         provider = FakeProvider('{"tool":"done","args":{"summary":"resumed"}}')
         with tempfile.TemporaryDirectory() as td:

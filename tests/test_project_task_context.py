@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey import project_task_context
+from codey.knowledge import KnowledgeNote, KnowledgeStore
 from codey.project_facts import ProjectFactsStore
 from codey.project_task_context import ProjectTaskContext, ProjectTaskContextBuilder
 from codey.work_checkpoint import WorkCheckpointStore
@@ -302,6 +303,42 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
         self.assertTrue(
             any(item.command == "python -m pytest" for item in context.verification_candidates)
         )
+
+    def test_research_context_is_bounded_session_brief(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td, "project")
+            root.mkdir()
+            store = KnowledgeStore(Path(td, "state", "vault"))
+            other = KnowledgeNote.create(
+                type="synthesis",
+                title="Other research",
+                body="Unrelated",
+                session_id="other",
+            )
+            current = KnowledgeNote.create(
+                type="synthesis",
+                title="Current research",
+                body="结论:\n- Use the documented API.\n",
+                sources=["https://example.com/api"],
+                session_id="s",
+            )
+            store.write_note(other)
+            store.write_note(current)
+
+            context = ProjectTaskContextBuilder(knowledge_store=store).build(
+                project=root,
+                task="build",
+                session_id="s",
+                run_id="r",
+                continue_task=False,
+                provider_session_changed=False,
+            )
+            store.close()
+
+        self.assertIn("Research context from this chat", context.research_context)
+        self.assertIn("Use the documented API", context.research_context)
+        self.assertNotIn("Other research", context.research_context)
+        self.assertEqual(context.knowledge_context, context.research_context)
 
 
 if __name__ == "__main__":

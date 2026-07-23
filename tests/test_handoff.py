@@ -179,9 +179,30 @@ class HandoffTests(unittest.TestCase):
         self.assertTrue(fresh)
         self.assertIn("Build a small notes app", handoff)
         self.assertIn("Use SQLite", handoff)
+
+    def test_chat_to_research_transition_returns_handoff_without_clearing_snapshot(self) -> None:
+        context = ConversationContext(hard_limit=1000)
+        context.begin_window("deepseek", "chat")
+        context.update_snapshot(ConversationSnapshot(
+            mode="chat",
+            goal="Choose the storage layer",
+            provider_id="deepseek",
+            latest_user="SQLite or a flat file?",
+            latest_reply="SQLite is better once querying matters.",
+        ))
+
+        fresh, handoff = context.plan_request(
+            provider_id="deepseek",
+            mode="research",
+            next_prompt="Research that choice.",
+        )
+
+        self.assertTrue(fresh)
+        self.assertIn("Choose the storage layer", handoff)
+        self.assertIn("SQLite is better", handoff)
         self.assertTrue(context.initialized)
         self.assertEqual(context.mode, "chat")
-        self.assertEqual(context.snapshot.goal, "Build a small notes app")
+        self.assertEqual(context.snapshot.goal, "Choose the storage layer")
 
     def test_continuation_prompt_hides_runtime_mechanics_from_model_reply(self) -> None:
         prompt = render_continuation_prompt('{"goal":"Keep going"}', "What next?")

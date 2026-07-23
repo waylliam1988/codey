@@ -564,16 +564,26 @@
     padding: 0 4px 6px;
     display: flex; align-items: center; gap: 6px;
   }
-  .composer-context.clickable {
+  .ctx-token {
+    border: 0;
+    background: transparent;
+    color: inherit;
+    padding: 1px 4px;
+    font: inherit;
     cursor: pointer;
   }
-  .composer-context.clickable:hover {
-    color: var(--text-dim);
+  .ctx-token:hover:not(:disabled) { color: var(--text); }
+  .ctx-token.active {
+    color: var(--text);
+    font-weight: 500;
   }
-  .composer-context.clickable:focus-visible {
+  .ctx-token:disabled {
+    cursor: default;
+    opacity: .55;
+  }
+  .ctx-token:focus-visible {
     outline: 1px solid var(--faint);
     outline-offset: 2px;
-    border-radius: 5px;
   }
   .composer-context .ctx-sep { color: var(--faint); }
   .composer-box {
@@ -665,6 +675,90 @@
   }
   .provider-item.active .check { opacity: 1; }
   .provider-item.active { color: var(--text); }
+
+  .local-config-pop {
+    position: fixed;
+    left: 50%;
+    bottom: 92px;
+    width: min(420px, calc(100vw - 32px));
+    transform: translateX(-50%);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 18px 54px rgba(0,0,0,.5);
+    padding: 12px;
+    display: none;
+    z-index: 50;
+  }
+  .local-config-pop.open { display: block; }
+  .local-config-pop h4 {
+    margin: 0 0 5px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .local-config-pop p {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .local-config-pop input {
+    width: 100%;
+    border: 1px solid var(--border);
+    background: var(--bg-2);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 9px;
+    margin-top: 6px;
+    font: inherit;
+    font-size: 12.5px;
+    outline: none;
+  }
+  .local-config-pop input:focus { border-color: var(--faint); }
+  .local-key-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .local-key-row input {
+    width: auto;
+    margin: 0;
+    accent-color: var(--text-dim);
+  }
+  .local-config-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .local-config-candidates {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .local-config-candidates button {
+    border: 0;
+    background: var(--bg-2);
+    color: var(--text-dim);
+    border-radius: 5px;
+    padding: 2px 6px;
+    cursor: pointer;
+    font: inherit;
+  }
+  .local-config-candidates button:hover { background: var(--hover); color: var(--text); }
+  .local-config-error {
+    min-height: 16px;
+    margin-top: 6px;
+    color: #ff8f8f;
+    font-size: 12px;
+  }
 
   /* the green dot (the only color in the UI) */
   .dot {
@@ -860,6 +954,11 @@
               <span class="label">GLM</span>
               <span class="check">✓</span>
             </button>
+            <button class="provider-item" data-provider="local">
+              <span class="dot" aria-hidden="true"></span>
+              <span class="label">Local</span>
+              <span class="check">✓</span>
+            </button>
           </div>
         </div>
         <span class="send-hint" id="send-hint">Enter</span>
@@ -875,6 +974,24 @@
     </div>
   </div>
 </main>
+
+<div class="local-config-pop" id="local-config-pop" aria-hidden="true">
+  <h4>Local model</h4>
+  <p>Connect an OpenAI-compatible local endpoint.</p>
+  <div class="local-config-candidates" id="local-config-candidates"></div>
+  <input id="local-base-url" placeholder="http://127.0.0.1:1234/v1" autocomplete="off" />
+  <input id="local-model-name" placeholder="model id" autocomplete="off" />
+  <input id="local-api-key" placeholder="API key (blank keeps saved key)" autocomplete="off" />
+  <label class="local-key-row">
+    <input type="checkbox" id="local-clear-api-key" />
+    <span>Clear saved key</span>
+  </label>
+  <div class="local-config-actions">
+    <button class="text-btn" id="local-config-close">Close</button>
+    <button class="text-btn primary" id="local-config-save">Connect</button>
+  </div>
+  <div class="local-config-error" id="local-config-error"></div>
+</div>
 
 <div class="ctx-menu" id="proj-menu">
   <button data-act="newchat">New chat here</button>
@@ -906,6 +1023,21 @@
   </div>
 </section>
 
+<section class="changes-drawer" id="research-drawer" aria-hidden="true">
+  <div class="changes-head">
+    <div class="changes-title">
+      <strong>Research</strong>
+      <span id="research-subtitle">Not loaded</span>
+    </div>
+    <button class="drawer-btn" id="research-use-project">Use in Project</button>
+    <button class="drawer-btn" id="research-restore">Restore</button>
+    <button class="drawer-btn" id="research-close">Close</button>
+  </div>
+  <div class="changes-body" id="research-body">
+    <div class="changes-empty">No research yet</div>
+  </div>
+</section>
+
 <script>
 // ============================ state & storage ============================
 const $ = (id) => document.getElementById(id);
@@ -916,7 +1048,7 @@ const LS_UI_UPDATED = 'codey:ui-updated';
 const LS_UI_REVISION = 'codey:ui-revision';
 const LS_LEGACY_PROJECT = 'codey:project';
 const DEFAULT_PROVIDER = 'deepseek';
-const PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', qwen: 'Qwen', glm: 'GLM' };
+const PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', qwen: 'Qwen', glm: 'GLM', local: 'Local' };
 const PROVIDERS = Object.keys(PROVIDER_LABELS);
 
 function uid() { return Math.random().toString(36).slice(2, 10); }
@@ -926,7 +1058,7 @@ function loadJson(key, fallback) {
 function saveSessions(arr) { localStorage.setItem(LS_SESSIONS, JSON.stringify(arr)); }
 function saveProjects(arr) { localStorage.setItem(LS_PROJECTS, JSON.stringify(arr)); }
 function defaultSession(projectId = null, provider = DEFAULT_PROVIDER) {
-  return { id: uid(), title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), projectId, provider };
+  return { id: uid(), title: 'New chat', messages: [], terminalRuns: [], researchRuns: [], createdAt: Date.now(), projectId, provider, research: false };
 }
 function pathName(path) {
   const trimmed = (path || '').replace(/[\\\/]+$/, '');
@@ -945,9 +1077,13 @@ function normalizeSessions(value) {
     title: s.title || 'New chat',
     messages: Array.isArray(s.messages) ? s.messages : [],
     terminalRuns: Array.isArray(s.terminalRuns) ? s.terminalRuns.slice(-32) : [],
+    researchRuns: Array.isArray(s.researchRuns)
+      ? s.researchRuns.slice(-32).map(run => ({ ...run, restoreable: false }))
+      : [],
     createdAt: s.createdAt || Date.now(),
     projectId: s.projectId || null,
     provider: PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER,
+    research: !!s.research,
   }));
 }
 function normalizeProjects(value) {
@@ -1149,22 +1285,38 @@ function persistActiveNow() {
 }
 function updateComposerContext() {
   const el = $('composer-context');
+  const s = activeSession();
   const p = activeProject();
-  const draft = $('task').value.trim();
   const proj = p ? p.name : 'Choose folder';
+  const providerId = currentProviderId();
   const prov = providerLabel(currentProviderId());
-  el.innerHTML = `<span>${escapeHtml(proj)}</span><span class="ctx-sep">·</span><span>${escapeHtml(prov)}</span>`;
-  const clickable = !p && !runningSessionId && !projectPickerBusy;
-  el.classList.toggle('clickable', clickable);
-  if (clickable) {
-    el.setAttribute('role', 'button');
-    el.setAttribute('tabindex', '0');
-    el.title = draft ? 'Choose folder and send draft' : 'Choose folder';
-  } else {
-    el.removeAttribute('role');
-    el.removeAttribute('tabindex');
-    el.title = p ? p.path : '';
-  }
+  const disabled = !!runningSessionId;
+  const folderDisabled = disabled || !!p || projectPickerBusy;
+  const researchActive = !!(s && s.research);
+  const pieces = [
+    `<button class="ctx-token ctx-folder" id="ctx-folder" ${folderDisabled ? 'disabled' : ''} title="${escapeHtml(p ? p.path : 'Choose folder')}">${escapeHtml(proj)}</button>`,
+    `<span class="ctx-sep">·</span>`,
+    `<button class="ctx-token ctx-research ${researchActive ? 'active' : ''}" id="ctx-research" ${disabled ? 'disabled' : ''} aria-pressed="${researchActive ? 'true' : 'false'}" title="${researchActive ? 'Research is on for this chat' : 'Research'}">Research</button>`,
+    `<span class="ctx-sep">·</span>`,
+    `<button class="ctx-token ctx-provider" id="ctx-provider" ${disabled ? 'disabled' : ''} title="${providerId === 'local' ? 'Configure Local model' : 'Model'}">${escapeHtml(prov)}</button>`,
+  ];
+  el.innerHTML = pieces.join('');
+  el.title = '';
+  syncResearchUI();
+}
+function syncResearchUI() {
+  const btn = $('ctx-research');
+  if (!btn) return;
+  const s = activeSession();
+  const active = !!(s && s.research);
+  btn.classList.toggle('active', active);
+  btn.disabled = !!runningSessionId;
+  btn.title = active ? 'Research is on for this chat' : 'Research';
+}
+function currentIntentForSession(sessionId) {
+  const s = sessions.find(x => x.id === sessionId);
+  if (!s || !s.research) return 'auto';
+  return sessionProjectPath(sessionId) ? 'hybrid' : 'research';
 }
 
 // ============================ sidebar rendering ============================
@@ -1415,6 +1567,16 @@ function statusRow(prefix, text, opts = {}) {
   if (opts.err) body = body.replace(/^ERROR:\s*/i, '');
   txt.textContent = body;
   row.append(pre, txt);
+  if (Array.isArray(opts.actions)) {
+    for (const action of opts.actions) {
+      const btn = document.createElement('button');
+      btn.className = 'link-btn';
+      btn.textContent = action.label;
+      btn.disabled = !!action.disabled;
+      btn.onclick = action.onclick;
+      row.appendChild(btn);
+    }
+  }
   if (opts.action) {
     const btn = document.createElement('button');
     btn.className = 'link-btn';
@@ -1705,6 +1867,16 @@ function appendMessageNode(chat, m) {
     }
   } else if (m.type === 'tool_pending') {
     chat.appendChild(standaloneToolEl(m));
+  } else if (m.type === 'research_done') {
+    const actions = [
+      { label: 'Open', onclick: () => openResearchDrawer(m.sessionId || activeId) },
+      { label: 'Use in Project', onclick: () => attachCurrentChatToPickedProject({ sendDraft: false }) },
+    ];
+    chat.appendChild(statusRow('Research', m.text || 'Research saved', {
+      kind: 'done',
+      actions,
+      copyText: m.text || '',
+    }));
   } else if (m.type === 'done') {
     const action = m.project && m.changed ? {
       label: 'View diff',
@@ -1839,7 +2011,7 @@ function openProject(projectId) {
 }
 function newSession(projectId = null) {
   const provider = currentProviderId();
-  const s = { id: uid(), projectId, title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), provider };
+  const s = defaultSession(projectId, provider);
   sessions.unshift(s); activeId = s.id; persistActiveNow(); renderSidebar(); renderChat();
   fetch('/api/new_chat', {
     method: 'POST',
@@ -1864,7 +2036,7 @@ async function deleteSession(id) {
   const fallbackProvider = currentProviderId();
   sessions = sessions.filter(s => s.id !== id);
   if (!sessions.length) {
-    const s = { id: uid(), title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), projectId: null, provider: fallbackProvider };
+    const s = defaultSession(null, fallbackProvider);
     sessions = [s];
   }
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
@@ -1885,6 +2057,7 @@ async function clearMessages(id) {
   if (!await forgetSessionState(id)) return;
   s.messages = [];
   s.terminalRuns = [];
+  s.researchRuns = [];
   persistActiveNow();
   if (id === activeId) renderChat();
 }
@@ -1905,7 +2078,7 @@ async function deleteProject(id) {
   if (!cleared.every(Boolean)) return;
   projects = projects.filter(x => x.id !== id);
   sessions = sessions.filter(s => s.projectId !== id);
-  if (!sessions.length) sessions = [{ id: uid(), title: 'New chat', messages: [], terminalRuns: [], createdAt: Date.now(), projectId: null, provider: DEFAULT_PROVIDER }];
+  if (!sessions.length) sessions = [defaultSession(null, DEFAULT_PROVIDER)];
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
   persistActiveNow(); renderSidebar(); renderChat();
 }
@@ -1957,6 +2130,7 @@ function attachSessionToProject(projectId, sessionId = activeId) {
   const p = projectById(projectId);
   if (!s || !p || sessionProject(s)) return false;
   s.projectId = p.id;
+  s.research = false;
   p.expanded = true;
   persistActiveNow();
   renderSidebar();
@@ -2206,6 +2380,7 @@ function handleServerEvent(data) {
     const receiptKey = terminalKey ? `${terminalKey}:receipt` : '';
     const project = sessionProjectPath(sid);
     let shownReceipt = false;
+    const researchRun = data.research ? recordResearchRun(sid, runId, data.research, data.receipt) : null;
     if (reason === 'error' && data.provider_failure && data.provider_failure.action === 'connect') {
       if (data.provider && PROVIDERS.includes(data.provider)) {
         providerStatus[data.provider] = false;
@@ -2226,7 +2401,19 @@ function handleServerEvent(data) {
     } else if (reason === 'approval') {
       // shell approval card is emitted separately
     } else if (reason === 'done') {
-      if (project && summary) {
+      if (data.mode === 'research') {
+        if (summary) addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
+        if (data.receipt && data.receipt.text) {
+          addToSession(sid, {
+            type: 'research_done',
+            text: data.receipt.text,
+            runId,
+            sessionId: sid,
+            eventKey: receiptKey,
+          });
+          shownReceipt = true;
+        }
+      } else if (project && summary) {
         addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
       }
       const changes = data.changes || {};
@@ -2242,7 +2429,7 @@ function handleServerEvent(data) {
           eventKey: receiptKey,
         });
         shownReceipt = true;
-      } else if (!project && summary) {
+      } else if (!project && summary && data.mode !== 'research') {
         addToSession(sid, { type: 'done', text: summary, runId, eventKey: terminalKey });
       }
     } else if (summary) {
@@ -2306,6 +2493,196 @@ function scheduleReconnectStatus() {
   }, 5000);
 }
 
+function recordResearchRun(sessionId, runId, research, receipt) {
+  const s = sessions.find(x => x.id === sessionId);
+  if (!s) return null;
+  const item = {
+    runId,
+    synthesisId: (research.synthesis_id || '').toString(),
+    notesCreated: Array.isArray(research.notes_created) ? research.notes_created.map(String) : [],
+    notesUpdated: Array.isArray(research.notes_updated) ? research.notes_updated.map(String) : [],
+    sourceUrls: Array.isArray(research.source_urls) ? research.source_urls.map(String) : [],
+    sourcesRead: Number(research.sources_read || 0),
+    receipt: receipt && receipt.text ? String(receipt.text) : '',
+    restoreable: true,
+    createdAt: Date.now(),
+  };
+  s.researchRuns = Array.isArray(s.researchRuns)
+    ? s.researchRuns.filter(run => run.runId !== runId)
+    : [];
+  s.researchRuns.push(item);
+  s.researchRuns = s.researchRuns.slice(-32);
+  invalidateResearchNoteCache(noteIdsForResearchRun(item));
+  persistActive();
+  return item;
+}
+
+function currentResearchRun(sessionId = activeId) {
+  const s = sessions.find(x => x.id === sessionId);
+  const runs = s && Array.isArray(s.researchRuns) ? s.researchRuns : [];
+  return runs.length ? runs[runs.length - 1] : null;
+}
+
+function openResearchDrawer(sessionId = activeId) {
+  $('research-drawer').classList.add('open');
+  $('research-drawer').setAttribute('aria-hidden', 'false');
+  renderResearchDrawer(sessionId);
+}
+
+function closeResearchDrawer() {
+  $('research-drawer').classList.remove('open');
+  $('research-drawer').setAttribute('aria-hidden', 'true');
+}
+
+function renderResearchDrawer(sessionId = activeId) {
+  const run = currentResearchRun(sessionId);
+  const body = $('research-body');
+  if (!run) {
+    $('research-subtitle').textContent = 'No research yet';
+    $('research-restore').disabled = true;
+    body.innerHTML = '<div class="changes-empty">No research yet</div>';
+    return;
+  }
+  $('research-subtitle').textContent = `${run.notesCreated.length} notes · ${run.sourcesRead || run.sourceUrls.length} sources`;
+  $('research-restore').disabled = !run.runId || !run.restoreable;
+  body.innerHTML = '';
+  body.appendChild(researchSection('Synthesis', run.synthesisId ? [run.synthesisId] : []));
+  body.appendChild(researchSection('Notes created', run.notesCreated));
+  body.appendChild(researchSection('Notes updated', run.notesUpdated));
+  body.appendChild(researchSection('Sources', run.sourceUrls));
+  loadResearchRunNotes(run, sessionId);
+}
+
+function researchSection(title, values) {
+  const wrap = document.createElement('div');
+  wrap.className = 'change-file';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  const status = document.createElement('span');
+  status.className = 'change-status';
+  status.textContent = values.length || 0;
+  const path = document.createElement('span');
+  path.className = 'change-path';
+  path.textContent = title;
+  const add = document.createElement('span');
+  add.className = 'change-stat';
+  add.textContent = '';
+  const del = document.createElement('span');
+  del.className = 'change-stat';
+  del.textContent = '';
+  btn.append(status, path, add, del);
+  const pre = document.createElement('pre');
+  pre.className = 'diff-pre';
+  pre.hidden = false;
+  pre.textContent = values.length ? values.map(researchValueText).join('\n\n') : '(none)';
+  wrap.append(btn, pre);
+  return wrap;
+}
+
+function researchValueText(value) {
+  const text = String(value || '');
+  const note = researchNoteCache[text];
+  if (!note) return text;
+  if (note.__state === 'loading') return `${text}\nLoading note...`;
+  if (note.__state === 'missing') return `${text}\nNote no longer exists`;
+  if (note.__state === 'error') return `${text}\nCould not load note`;
+  const excerpt = note.body ? '\n' + note.body.slice(0, 420) + (note.body.length > 420 ? '\n...' : '') : '';
+  const path = note.path ? `\n${note.path}` : '';
+  return `[${note.type}] ${note.title}\n${note.id}${path}${excerpt}`;
+}
+
+const researchNoteCache = {};
+function noteIdsForResearchRun(run) {
+  if (!run) return [];
+  return [run.synthesisId, ...(run.notesCreated || []), ...(run.notesUpdated || [])].filter(Boolean);
+}
+function invalidateResearchNoteCache(ids) {
+  for (const id of ids || []) delete researchNoteCache[id];
+}
+async function loadResearchRunNotes(run, sessionId) {
+  const ids = noteIdsForResearchRun(run)
+    .filter(id => id && !researchNoteCache[id]);
+  if (!ids.length) return;
+  await Promise.all(ids.map(async (id) => {
+    researchNoteCache[id] = { __state: 'loading' };
+    try {
+      const r = await fetch('/api/research/note?id=' + encodeURIComponent(id));
+      if (r.status === 404) {
+        researchNoteCache[id] = { __state: 'missing' };
+        return;
+      }
+      if (!r.ok) {
+        researchNoteCache[id] = { __state: 'error' };
+        return;
+      }
+      const data = await r.json();
+      researchNoteCache[id] = data.ok && data.note ? data.note : { __state: 'missing' };
+    } catch {
+      researchNoteCache[id] = { __state: 'error' };
+    }
+  }));
+  if (currentResearchRun(sessionId) === run && $('research-drawer').classList.contains('open')) {
+    renderResearchDrawer(sessionId);
+  }
+}
+
+async function restoreResearchRun() {
+  const run = currentResearchRun();
+  if (!run || !run.runId) return;
+  $('research-restore').disabled = true;
+  try {
+    const r = await fetch('/api/research/restore', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ run_id: run.runId }),
+    });
+    let data = {};
+    try { data = await r.json(); } catch {}
+    if (!r.ok || !data.ok) {
+      $('research-subtitle').textContent = data.error || 'Restore failed';
+      if (run && /not found/i.test(data.error || '')) {
+        run.restoreable = false;
+        persistActiveNow();
+        renderResearchDrawer(activeId);
+      }
+      return;
+    }
+    $('research-subtitle').textContent = `${(data.restored || []).length} restored`;
+    invalidateResearchNoteCache(noteIdsForResearchRun(run));
+    const s = activeSession();
+    if (s && Array.isArray(s.researchRuns)) {
+      s.researchRuns = s.researchRuns.filter(item => item.runId !== run.runId);
+      persistActiveNow();
+    }
+    addToSession(activeId, {
+      type: 'done',
+      text: `Research restored: ${(data.restored || []).length} files`,
+      eventKey: `research-restore:${run.runId}`,
+    });
+    renderResearchDrawer(activeId);
+  } finally {
+    const current = currentResearchRun();
+    $('research-restore').disabled = !current || !current.restoreable;
+  }
+}
+
+function markResearchRestoreAvailability(runIds) {
+  const available = new Set(Array.isArray(runIds) ? runIds.map(String) : []);
+  let changed = false;
+  for (const s of sessions) {
+    const runs = Array.isArray(s.researchRuns) ? s.researchRuns : [];
+    for (const run of runs) {
+      const next = available.has(String(run.runId || ''));
+      if (!!run.restoreable !== next) {
+        run.restoreable = next;
+        changed = true;
+      }
+    }
+  }
+  if (changed) persistActive();
+  if ($('research-drawer').classList.contains('open')) renderResearchDrawer(activeId);
+}
+
 function applyRunState(data) {
   if (data.last_shell_result) handleServerEvent(data.last_shell_result);
   if (data.last_terminal_event) handleServerEvent(data.last_terminal_event);
@@ -2321,6 +2698,7 @@ function applyRunState(data) {
     setStatus('', 'ok');
   }
   $('provider-button').disabled = busy;
+  markResearchRestoreAvailability(data.research_restore_runs || []);
   updateSend();
   updateComposerContext();
 }
@@ -2700,6 +3078,80 @@ function updateSend() {
   $('stop').style.display = running ? '' : 'none';
   $('send-hint').textContent = running ? 'Stop' : 'Enter';
 }
+
+function toggleResearchForActive() {
+  if (runningSessionId) return;
+  const s = activeSession();
+  if (!s) return;
+  s.research = !s.research;
+  persistActiveNow();
+  updateComposerContext();
+  renderChat();
+}
+
+async function openLocalProviderConfig() {
+  const pop = $('local-config-pop');
+  pop.classList.add('open');
+  pop.setAttribute('aria-hidden', 'false');
+  $('local-config-error').textContent = '';
+  $('local-api-key').value = '';
+  $('local-clear-api-key').checked = false;
+  try {
+    const r = await fetch('/api/local_provider');
+    if (!r.ok) return;
+    const data = await r.json();
+    const local = data.local || {};
+    if (local.base_url) $('local-base-url').value = local.base_url;
+    if (local.model) $('local-model-name').value = local.model;
+    const cands = Array.isArray(local.candidates) ? local.candidates : [];
+    $('local-config-candidates').innerHTML = cands.length
+      ? cands.map(url => `<button type="button" data-url="${escapeHtml(url)}">${escapeHtml(url)}</button>`).join('')
+      : '';
+    document.querySelectorAll('#local-config-candidates button').forEach((btn) => {
+      btn.onclick = () => { $('local-base-url').value = btn.dataset.url || ''; };
+    });
+  } catch {}
+}
+
+function closeLocalProviderConfig() {
+  $('local-config-pop').classList.remove('open');
+  $('local-config-pop').setAttribute('aria-hidden', 'true');
+}
+
+async function saveLocalProviderConfig() {
+  const base_url = $('local-base-url').value.trim();
+  const model = $('local-model-name').value.trim();
+  const api_key = $('local-api-key').value.trim();
+  const clear_api_key = $('local-clear-api-key').checked;
+  if (!base_url) return;
+  $('local-config-error').textContent = '';
+  $('local-config-save').disabled = true;
+  $('local-config-save').textContent = 'Connecting';
+  try {
+    const payload = { base_url, model, clear_api_key };
+    if (api_key) payload.api_key = api_key;
+    const r = await fetch('/api/local_provider', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data.ok) {
+      $('local-config-error').textContent = data.error || 'could not connect';
+      return;
+    }
+    providerStatus.local = true;
+    syncProviderUI(currentProviderId());
+    closeLocalProviderConfig();
+    refreshProviderStatus();
+  } catch {
+    $('local-config-error').textContent = 'could not reach the server';
+  } finally {
+    $('local-config-save').disabled = false;
+    $('local-config-save').textContent = 'Connect';
+  }
+}
+
 $('task').addEventListener('input', () => { resizeTask(); updateSend(); updateComposerContext(); });
 $('task').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
@@ -2707,17 +3159,25 @@ $('task').addEventListener('keydown', (e) => {
     if (!$('send').disabled) $('send').click();
   }
 });
-$('composer-context').onclick = () => {
-  const s = activeSession();
-  if (!s || sessionProject(s) || runningSessionId || projectPickerBusy) return;
-  attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });
+$('composer-context').onclick = (e) => {
+  const target = e.target.closest('.ctx-token');
+  if (!target || runningSessionId) return;
+  if (target.id === 'ctx-folder') {
+    const s = activeSession();
+    if (!s || sessionProject(s) || projectPickerBusy) return;
+    attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });
+  } else if (target.id === 'ctx-research') {
+    toggleResearchForActive();
+  } else if (target.id === 'ctx-provider') {
+    if (currentProviderId() === 'local') openLocalProviderConfig();
+  }
 };
 $('composer-context').addEventListener('keydown', (e) => {
-  if ((e.key !== 'Enter' && e.key !== ' ') || runningSessionId || projectPickerBusy) return;
-  const s = activeSession();
-  if (!s || sessionProject(s)) return;
+  if ((e.key !== 'Enter' && e.key !== ' ') || runningSessionId) return;
+  const target = e.target.closest('.ctx-token');
+  if (!target) return;
   e.preventDefault();
-  $('composer-context').click();
+  target.click();
 });
 function setActiveProvider(id) {
   const provider = PROVIDERS.includes(id) ? id : DEFAULT_PROVIDER;
@@ -2727,6 +3187,7 @@ function setActiveProvider(id) {
   persistActiveNow();
   syncProviderUI(provider);
   updateComposerContext();
+  if (provider === 'local') openLocalProviderConfig();
 }
 $('provider-button').onclick = (e) => {
   if ($('provider-button').disabled) return;
@@ -2740,6 +3201,14 @@ document.addEventListener('click', (e) => {
   if (!$('provider-menu').contains(e.target) && !$('provider-button').contains(e.target)) {
     $('provider-menu').classList.remove('open');
     $('provider-button').classList.remove('open');
+  }
+  if (
+    $('local-config-pop').classList.contains('open') &&
+    !$('local-config-pop').contains(e.target) &&
+    !e.target.closest('.provider-item') &&
+    e.target.id !== 'ctx-provider'
+  ) {
+    closeLocalProviderConfig();
   }
 });
 document.querySelectorAll('.provider-item').forEach((btn) => {
@@ -2769,10 +3238,11 @@ async function sendTaskFromSession(sessionId, task, providerId = '', onSendStart
   if (typeof onSendStarted === 'function') onSendStarted();
   pushMsgToSession(sessionId, { type: 'user', text });
   const project = sessionProjectPath(sessionId);
+  const intent = currentIntentForSession(sessionId);
   const r = await fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, project, task: text, provider }),
+    body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent }),
   });
   if (r.status === 409) { addSendError(sessionId); return true; }
   if (!r.ok) {
@@ -2814,6 +3284,7 @@ async function continueTask(sessionId) {
       task,
       continue_task: true,
       provider: s.provider || DEFAULT_PROVIDER,
+      intent: 'project',
     }),
   });
   if (r.status === 409 || !r.ok) {
@@ -2824,6 +3295,11 @@ async function continueTask(sessionId) {
 }
 $('stop').onclick = () => fetch('/api/stop', { method: 'POST' });
 $('changes-close').onclick = closeChangesDrawer;
+$('research-close').onclick = closeResearchDrawer;
+$('research-restore').onclick = restoreResearchRun;
+$('research-use-project').onclick = () => attachCurrentChatToPickedProject({ sendDraft: false });
+$('local-config-close').onclick = closeLocalProviderConfig;
+$('local-config-save').onclick = saveLocalProviderConfig;
 $('changes-refresh').onclick = () => {
   if (activeChangesProject) loadChangesDrawer(activeChangesProject);
 };
@@ -2912,6 +3388,7 @@ async function boot() {
   updateSend();
   syncProviderUI(currentProviderId());
   $('provider-button').disabled = false;
+  syncResearchUI();
   setStatus('', 'ok');
   await restoreUiStateFromServer();
   connectEvents();

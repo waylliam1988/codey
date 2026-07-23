@@ -251,6 +251,7 @@ def run(
     provider_id: str = "",
     handoff: str = "",
     project_facts: str = "",
+    research_context: str = "",
     project_map: str = "",
     work_checkpoint: str = "",
     verification_candidates: tuple[VerificationCandidate, ...] = (),
@@ -352,6 +353,11 @@ def run(
             if work_checkpoint
             else ""
         )
+        research_block = (
+            f"{research_context.strip()}\n\n"
+            if research_context.strip()
+            else ""
+        )
         instructions_block = (
             "Project instructions:\n"
             f"{format_project_instructions(project_instructions)}\n\n"
@@ -363,6 +369,7 @@ def run(
             "Project workspace: use paths relative to the project root.\n"
             f"{instructions_block}"
             f"{facts}"
+            f"{research_block}"
             f"{map_block}"
             f"{checkpoint_block}"
             f"Initial listing:\n{tool_fns.list_directory(project, '.').output}\n\n"

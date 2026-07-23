@@ -6,19 +6,21 @@
 
 ## 一句话定位
 
-Codey 是一个本地优先、低成本、多网页模型兼容的 AI 编程工作台。
+Codey 是一个本地优先、低成本、多网页模型兼容的 AI 编程与研究工作台。
 
-它用用户已经能访问的网页版 AI 作为“大脑”，用本地程序提供网页 AI 缺少的能力：读写项目文件、运行测试、显示 diff、恢复改动、审批 shell、双模型 review。
+它用用户已经能访问的网页版 AI 作为“大脑”，用本地程序提供网页 AI 缺少的能力：读写项目文件、运行测试、显示 diff、恢复改动、审批 shell、双模型 review、受控 Research、来源笔记和项目 handoff。
 
 Codey 的目标不是复制 Cursor、Claude Code、OpenClaw、Hermes 或 Pi Agent。它应该保持更小、更克制：
 
-> 网页 AI 负责思考，本地 Codey 负责边界、工具、diff、恢复和验证。
+> 网页 AI 负责思考，本地 Codey 负责边界、工具、来源、diff、恢复和验证。
 
 ## 为什么做 Codey
 
 AI 编程不应该只属于买得起昂贵 API、订阅或大额度套餐的人。
 
 很多人已经能使用网页 AI，但网页 AI 本身不能安全地读写本地项目、跑测试、展示 diff、撤销改动。Codey 要做的就是把这些能力接起来，让普通人可以用更低成本体验真实的 AI 编程闭环。
+
+同样地，网页 AI 可以讨论资料，但它自己说不清哪些网页真实打开过、哪些结论已经落盘、哪些证据可以带进项目。Codey 的 Research 要补上这层边界：搜索、打开网页、写来源笔记、校验证据、生成有上限的 Research Brief，再把结论交给项目 Writer。
 
 Codey 的价值不是“免费替代专业工具”，而是：
 
@@ -28,6 +30,7 @@ Codey 的价值不是“免费替代专业工具”，而是：
 - 可见可控：每次改了什么都能看到。
 - 可恢复：出错时尽量能 restore 或用 Git 回滚。
 - 可验证：鼓励跑测试，而不是只相信模型文字。
+- 可追溯：研究结论必须能回到实际打开过的来源。
 
 ## 目前 Codey 已经是什么
 
@@ -43,6 +46,10 @@ Codey 已经有一个可用的核心闭环：
 8. shell 命令需要用户批准。
 9. 任务失败时可以 retry。
 10. 打开两个模型网页时，可以自动让第二个模型 review 代码改动。
+11. 用户显式打开 Research 后，可以搜索、打开网页、写来源笔记和 synthesis。
+12. Research 结束后，可以把 Research Brief 带进项目 Writer。
+13. 项目成功实现并验证后，可以保存 implementation / verification note。
+14. 可以配置 OpenAI-compatible 的本地模型作为普通 provider。
 
 这已经让 Codey 具备了“正经软件”的基本形态。
 
@@ -82,11 +89,35 @@ Codey 的 UI 应该像一个安静的本地开发工具，而不是一个功能�
 
 - 项目
 - 聊天
+- Research
 - 模型选择
 - 运行状态
 - diff
 - restore
 - retry
+
+用户侧统一叫 `Research`。`Knowledge`、`vault`、`artifact`、`index` 都是内部实现词，不应该出现在主界面入口里。
+
+### Research 必须是受控闭环
+
+Research 是 Codey 的原生能力，但它不是后台自动记忆，也不是普通聊天的隐藏联网。
+
+必须守住这些边界：
+
+1. 只有用户明确点击 `Research`，才允许本轮使用 `web_search`、`open_url` 和写 Research notes。
+2. 普通聊天默认不联网、不写长期笔记。
+3. Project Writer 默认没有网页搜索工具；需要研究时先进入 Research，再通过 Research Brief handoff 到项目。
+4. Research 报告只能引用本轮实际打开过的 requested URL、final URL 或已经 grounded 的 source note。
+5. 模型不能决定 note 属于哪个 session 或 project；归属由本地运行时强制写入。
+6. 不把整个 vault 注入 Writer，只注入有上限的 Research Brief。
+7. 代码本身留在项目目录；vault 记录为什么这么做、依据是什么、改了哪些文件、跑过什么检查。
+8. Restore 必须对应后端真实存在的 snapshot；重启后没有 snapshot 的旧 run 不能假装可恢复。
+
+Research 的价值不是让 Codey 变成另一个资料库 app，而是补齐这条工作流：
+
+```text
+Chat -> Research -> Research Brief -> Project -> Implementation memory
+```
 
 ### 网页自恢复必须有边界
 
@@ -365,7 +396,7 @@ Codey 可以在后台保存六类有严格边界的小型状态：
 
 ## 最重要的一句话
 
-Codey 应该是一个小而稳的本地 AI 编程工作台，不是一个为了展示架构而膨胀的 agent 平台。
+Codey 应该是一个小而稳的本地 AI 编程与研究工作台，不是一个为了展示架构而膨胀的 agent 平台。
 
 它的长期生命力来自：
 

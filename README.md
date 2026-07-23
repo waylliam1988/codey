@@ -2,19 +2,19 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.1.63-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
 [中文说明](README.zh-CN.md)
 
-Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, Xiaomi MiMo, and GLM, then gives them a controlled local coding loop: read files, edit files, run tests, show diffs, review changes, and restore safely.
+Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, Xiaomi MiMo, and GLM, or to a local OpenAI-compatible model, then gives them controlled local work loops: chat, research with evidence, read files, edit files, run tests, show diffs, review changes, and restore safely.
 
-It is a local-first, low-cost AI coding workspace for people who want useful coding help without wiring paid model APIs into every project.
+It is a local-first, low-cost AI coding and research workspace for people who want useful coding help without wiring paid model APIs into every project.
 
-No API key required. No model subscription wiring. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building.
+No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.1.63`
+Version: `0.2.0`
 
 [Version history](CHANGELOG.md)
 
@@ -23,8 +23,11 @@ Version: `0.1.63`
 ## At a Glance
 
 - **Use web AI accounts you already have**: DeepSeek, Qwen, Xiaomi MiMo, and GLM are supported.
+- **Research before building**: click `Research` to let Codey search the web, open sources, save evidence notes, and produce a synthesis.
 - **Keep code local**: models access only the project folder you choose.
+- **Carry research into projects**: after research, choose a folder and Codey injects a bounded Research Brief instead of the whole vault.
 - **Controlled tool loop**: read, edit, test, diff, review, and restore.
+- **Optional local model**: `Local` connects to an OpenAI-compatible endpoint with optional API key support.
 - **Review after edits**: one model can write while another reviews the final
   diff; if no second model is available, the writer can run a labelled
   self-review pass.
@@ -61,7 +64,10 @@ This is not about replacing professional tools. It is about making the first ste
 ## What It Can Do
 
 - Use New Chat for normal conversation without granting access to a project
+- Use `Research` from the composer context to search/read sources, save notes, and produce a grounded synthesis without opening a project
 - Turn a plain chat into a project task from the same conversation by choosing a folder from the composer context
+- Turn research into implementation by choosing a folder after the synthesis; Codey carries only a bounded Research Brief into the Writer prompt
+- Save successful implementation and verification facts back into local research memory without copying source code into the vault
 - Discuss, inspect, and edit inside one project conversation; files change only when requested
 - Let the model read and modify files in a selected project folder
 - Run allowed tests, builds, linters, and type checks, then feed results back
@@ -86,6 +92,7 @@ This is not about replacing professional tools. It is about making the first ste
 - Remember recent successful changes only from verified local checks
 - Resume the same chat after a Codey restart or model switch from one bounded
   factual handoff plus recent visible conversation context
+- Continue follow-up Research or Project Hybrid work from the same bounded chat handoff, so prompts like "continue researching that plan" keep the prior context
 - Keep non-Git diff and restore available across Codey restarts
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
@@ -127,6 +134,7 @@ This is not about replacing professional tools. It is about making the first ste
 | Xiaomi MiMo Chat | Tested |
 | Qwen Studio | Tested |
 | GLM | Tested |
+| Local OpenAI-compatible | Optional; configure endpoint/model in Codey |
 
 Codey uses browser automation, so websites may break after UI changes. The current design keeps provider-specific code isolated so those adapters can be repaired without changing the agent core.
 
@@ -165,6 +173,47 @@ provisional, become active only after natural successes, and roll back after
 repeated structural failures. Core files such as `agent.py`, `task_runner.py`,
 `tool_runtime.py`, `server.py`, and the recovery/safety modules are not
 self-modified by this v1.
+
+---
+
+## Research
+
+`Research` is Codey's new work loop in 0.2.0. It is not a separate app and it is
+not automatic background browsing. You explicitly click the `Research` token in
+the composer context when you want Codey to search, read sources, and write
+local evidence notes.
+
+The main screen stays the same:
+
+```text
+Choose folder · Research · DeepSeek/Qwen/Local
+```
+
+- `Choose folder` attaches the current chat to a project.
+- `Research` enables a research run for the current message.
+- The model token still chooses the active provider; choosing `Local` opens the
+  local endpoint configuration popover.
+
+Research can use web providers or `Local`. Search, page opening, URL policy,
+note writes, restore, and evidence checks are always local Codey tools. Models
+do not get hidden network access. A final synthesis can cite only sources that
+Codey actually opened in the run.
+
+The flow is:
+
+```text
+Chat about an idea
+-> click Research and ask the research question
+-> Codey searches, opens pages, writes notes, and saves a synthesis
+-> choose a folder
+-> Codey injects a bounded Research Brief into the project Writer
+-> successful implementation/verification can be remembered as project facts
+```
+
+The vault is stored under Codey's local state directory and is implemented as
+Markdown notes plus a rebuildable SQLite FTS index. Project source code is not
+copied into the vault; implementation notes record what changed, why, what was
+checked, and which research synthesis or decision it relates to.
 
 ---
 
@@ -255,6 +304,17 @@ click the composer project context (`Choose folder`) to attach that same chat to
 a folder. If there is a draft in the composer, clicking the same context keeps
 the draft and sends it after the folder is chosen. If you only want a general
 conversation with no project access, keep using **New Chat**.
+
+To research before coding, click the `Research` token in the same composer
+context, then ask for the sources, comparison, market scan, API notes, or design
+background you need. Codey writes local research notes and a synthesis. When you
+then choose a folder, the Writer receives a bounded Research Brief instead of
+the whole vault.
+
+To use a local model, select `Local` from the model menu. Codey opens a compact
+configuration popover for the OpenAI-compatible base URL, model id, and optional
+API key. Leaving the key blank keeps any saved key; use `Clear saved key` to
+remove it.
 
 When a task finishes, Codey summarizes the local facts in one quiet line:
 
@@ -394,6 +454,7 @@ ChatProvider -- DeepSeekWebProvider
              -- QwenWebProvider
              -- MimoWebProvider
              -- GlmWebProvider
+             -- LocalOpenAIProvider
    |
 Browser Session + provider DOM driver
 ```
@@ -418,6 +479,8 @@ codey/
   changed_symbols.py        lexical changed-symbol extraction from visible diffs
   project_map.py            deterministic bounded project orientation
   project_task_context.py   project facts, map, checkpoint, and verification context
+  knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
+  research/                 Research runner, web search/open tools, URL policy, evidence review
   verification_map.py       bounded review-time verification candidates
   review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief
@@ -459,6 +522,7 @@ codey/
     json_codec.py           JSON-only tool protocol
   providers/
     registry.py             provider registry and sibling-tab borrowing
+    local_openai.py         OpenAI-compatible local model provider
     *_web.py                provider adapters
   server.py                 local HTTP + SSE transport and runtime state
   web/

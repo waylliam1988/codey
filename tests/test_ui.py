@@ -11,11 +11,17 @@ class ProviderSelectorUiTests(unittest.TestCase):
     def test_provider_selector_lists_supported_providers(self) -> None:
         self.assertIn('id="provider-button"', HTML)
         self.assertIn('id="provider-menu"', HTML)
+        self.assertIn('id="local-config-pop"', HTML)
+        self.assertIn('id="local-clear-api-key"', HTML)
+        self.assertIn("blank keeps saved key", HTML)
+        self.assertIn("fetch('/api/local_provider')", HTML)
         self.assertIn('data-provider="deepseek"', HTML)
         self.assertIn('data-provider="qwen"', HTML)
         self.assertIn('data-provider="mimo"', HTML)
         self.assertIn('data-provider="glm"', HTML)
+        self.assertIn('data-provider="local"', HTML)
         self.assertIn("glm: 'GLM'", HTML)
+        self.assertIn("local: 'Local'", HTML)
         self.assertIn('id="provider-dot"', HTML)
         self.assertIn("--ok-dot:", HTML)
         self.assertIn(".dot.ok", HTML)
@@ -26,21 +32,24 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".provider-item.active .check", HTML)
         self.assertNotIn("providerAvailability(_id) { return 'ok'; }", HTML)
 
-    def test_provider_selector_orders_deepseek_mimo_qwen_glm(self) -> None:
+    def test_provider_selector_orders_deepseek_mimo_qwen_glm_local(self) -> None:
         deepseek = HTML.index('data-provider="deepseek"')
         mimo = HTML.index('data-provider="mimo"')
         qwen = HTML.index('data-provider="qwen"')
         glm = HTML.index('data-provider="glm"')
+        local = HTML.index('data-provider="local"')
 
         self.assertLess(deepseek, mimo)
         self.assertLess(mimo, qwen)
         self.assertLess(qwen, glm)
+        self.assertLess(glm, local)
 
     def test_run_and_continue_requests_keep_session_provider(self) -> None:
         self.assertIn("await sendTaskFromSession(sessionId, task, provider, () => clearDraftIfUnchanged(sessionId, task));", HTML)
         send_click = HTML[HTML.index("$('send').onclick"):HTML.index("async function continueTask")]
         self.assertIn("const provider = currentProviderId();", send_click)
         self.assertIn("provider: s.provider || DEFAULT_PROVIDER", HTML)
+        self.assertIn("intent: 'project'", HTML)
         self.assertIn("provider: PROVIDERS.includes(s.provider)", HTML)
         self.assertIn("Continue the unfinished task in this same conversation.", HTML)
         self.assertNotIn("Continue the unfinished Codey task", HTML)
@@ -127,7 +136,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_deleting_last_session_preserves_selected_provider(self) -> None:
         self.assertIn("const fallbackProvider = currentProviderId()", HTML)
-        self.assertIn("provider: fallbackProvider", HTML)
+        self.assertIn("defaultSession(null, fallbackProvider)", HTML)
 
     def test_topbar_shows_running_spinner(self) -> None:
         self.assertIn(".spinner", HTML)
@@ -164,6 +173,35 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("shownReceipt = true", HTML)
         self.assertIn("data.changed && !shownReceipt", HTML)
         self.assertIn("type: 'changes'", HTML)
+
+    def test_research_context_is_explicit_and_user_facing(self) -> None:
+        self.assertIn('id="ctx-research"', HTML)
+        self.assertIn('>Research</button>', HTML)
+        self.assertIn('class="ctx-token ctx-folder"', HTML)
+        self.assertIn('class="ctx-token ctx-provider"', HTML)
+        self.assertIn('id="research-drawer"', HTML)
+        self.assertIn('<strong>Research</strong>', HTML)
+        self.assertIn("function currentIntentForSession(sessionId)", HTML)
+        self.assertIn("return sessionProjectPath(sessionId) ? 'hybrid' : 'research';", HTML)
+        self.assertIn("body: JSON.stringify({ session_id: sessionId, project, task: text, provider, intent })", HTML)
+        self.assertIn("type: 'research_done'", HTML)
+        self.assertIn("Research restored:", HTML)
+        self.assertIn("$('research-restore').disabled = !current || !current.restoreable;", HTML)
+        self.assertIn("markResearchRestoreAvailability(data.research_restore_runs || [])", HTML)
+        self.assertIn("loadResearchRunNotes(run, sessionId)", HTML)
+        self.assertIn("Note no longer exists", HTML)
+        self.assertIn("__state: 'missing'", HTML)
+        self.assertIn("invalidateResearchNoteCache(noteIdsForResearchRun(run))", HTML)
+        self.assertIn("Use in Project", HTML)
+        self.assertNotIn("Use vault", HTML)
+        self.assertNotIn("Knowledge mode", HTML)
+
+        ctx_css = HTML[HTML.index(".ctx-token {"):HTML.index(".composer-context .ctx-sep")]
+        self.assertIn("border: 0;", ctx_css)
+        self.assertIn(".ctx-token:hover:not(:disabled) { color: var(--text); }", ctx_css)
+        self.assertIn("font-weight: 500;", ctx_css)
+        self.assertNotIn("background: var(--hover)", ctx_css)
+        self.assertNotIn("border: 1px", ctx_css)
 
     def test_agent_events_are_structured_instead_of_parsed_from_logs(self) -> None:
         self.assertIn("if (data.type === 'turn')", HTML)
@@ -486,6 +524,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         attach_block = HTML[attach_start:attach_end]
         self.assertIn("if (!s || !p || sessionProject(s)) return false;", attach_block)
         self.assertIn("s.projectId = p.id;", attach_block)
+        self.assertIn("s.research = false;", attach_block)
         self.assertIn("persistActiveNow();", attach_block)
         self.assertNotIn("/api/new_chat", attach_block)
 
@@ -501,17 +540,21 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("'Choose folder to send'", HTML)
         self.assertIn("const proj = p ? p.name : 'Choose folder';", HTML)
         self.assertIn("'Choose folder'", HTML)
-        self.assertIn("el.title = draft ? 'Choose folder and send draft' : 'Choose folder';", HTML)
-        self.assertIn("const clickable = !p && !runningSessionId && !projectPickerBusy;", HTML)
+        self.assertIn('id="ctx-folder"', HTML)
+        self.assertIn('id="ctx-research"', HTML)
+        self.assertIn('id="ctx-provider"', HTML)
         self.assertIn("$('task').addEventListener('input', () => { resizeTask(); updateSend(); updateComposerContext(); });", HTML)
 
         context_start = HTML.index("$('composer-context').onclick")
         context_end = HTML.index("function setActiveProvider", context_start)
         context_block = HTML[context_start:context_end]
-        self.assertIn("if (!s || sessionProject(s) || runningSessionId || projectPickerBusy) return;", context_block)
+        self.assertIn("const target = e.target.closest('.ctx-token');", context_block)
+        self.assertIn("if (target.id === 'ctx-folder')", context_block)
         self.assertIn("attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });", context_block)
+        self.assertIn("toggleResearchForActive();", context_block)
+        self.assertIn("if (currentProviderId() === 'local') openLocalProviderConfig();", context_block)
         self.assertIn("e.key !== 'Enter' && e.key !== ' '", context_block)
-        self.assertIn("if (!s || sessionProject(s)) return;", context_block)
+        self.assertIn("target.click();", context_block)
 
         key_start = HTML.index("$('task').addEventListener('keydown'")
         key_end = HTML.index("$('composer-context').onclick", key_start)
@@ -540,7 +583,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (typeof onSendStarted === 'function') onSendStarted();", send_block)
         self.assertIn("pushMsgToSession(sessionId, { type: 'user', text });", send_block)
         self.assertIn("const project = sessionProjectPath(sessionId);", send_block)
-        self.assertIn("JSON.stringify({ session_id: sessionId, project, task: text, provider })", send_block)
+        self.assertIn("JSON.stringify({ session_id: sessionId, project, task: text, provider, intent })", send_block)
         self.assertIn("await acceptRunResponse(r, sessionId);", send_block)
         self.assertIn("return true;", send_block)
 
@@ -554,6 +597,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (!attachSessionToProject(p.id, sid)) return;", attach_block)
         self.assertIn("await sendTaskFromSession(sid, draft, provider, () => clearDraftIfUnchanged(sid, draft));", attach_block)
         self.assertNotIn("/api/new_chat", attach_block)
+
+        attach_session_start = HTML.index("function attachSessionToProject")
+        attach_session_end = HTML.index("async function pickProject", attach_session_start)
+        attach_session_block = HTML[attach_session_start:attach_session_end]
+        self.assertIn("s.research = false;", attach_session_block)
 
         clear_start = HTML.index("function clearDraftIfUnchanged")
         clear_end = HTML.index("async function sendTaskFromSession", clear_start)

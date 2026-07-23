@@ -97,6 +97,28 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         self.assertEqual(args[0], str(exe))
         self.assertIn(f"--user-data-dir={browser.CHROME_PROFILE}", args)
 
+    def test_launch_browser_honors_explicit_browser_path(self) -> None:
+        exe = Path(r"C:\Tools\Chromium\chrome.exe")
+
+        def is_file(self: Path) -> bool:
+            return self == exe
+
+        with (
+            mock.patch.object(browser, "_find_browser", side_effect=AssertionError("should not auto-detect")),
+            mock.patch.object(Path, "is_file", is_file),
+            mock.patch.object(Path, "mkdir"),
+            mock.patch.object(browser.subprocess, "Popen") as popen,
+        ):
+            browser._launch_browser(
+                9333,
+                browser.DEFAULT_PROFILE,
+                "about:blank",
+                browser_path=exe,
+            )
+
+        args = popen.call_args.args[0]
+        self.assertEqual(args[0], str(exe))
+
     def test_deepseek_wrapper_uses_generic_chat_page(self) -> None:
         session = object()
         profile = Path("deepseek-profile")

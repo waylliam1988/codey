@@ -49,6 +49,8 @@ from codey.conversation_store import ConversationStore
 from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.handoff import ConversationContext
 from codey.local_store import DEFAULT_STATE_HOME
+from codey.knowledge.store import KnowledgeStore
+from codey.research.advisors import EvidencePack, run_research_advisors
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
@@ -58,6 +60,12 @@ from codey.providers import (
     connect_provider,
     provider_tab_availability,
     warm_provider_tabs,
+)
+from codey.providers.local_openai import (
+    load_local_config,
+    local_config_payload,
+    probe_local_endpoint,
+    save_local_config,
 )
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
 from codey.provider_supervisor import ProviderSupervisor
@@ -98,6 +106,7 @@ def reviewer_candidates(writer_id: str) -> tuple[str, ...]:
         provider_id
         for provider_id in PROVIDER_LABELS
         if provider_id != writer
+        and provider_id != "local"
         and (supervisor is None or supervisor.is_available(provider_id))
     )
 
@@ -279,6 +288,8 @@ def _run_review(
 def _connect_consensus_provider(selected_provider, provider_id: str):
     """Use an already-open sibling tab while a Writer provider is active."""
 
+    if provider_id == "local":
+        return connect_existing_provider(provider_id)
     owner_page = getattr(getattr(selected_provider, "session", None), "page", None)
     if owner_page is not None:
         helper = borrow_open_provider(provider_id, owner_page)
@@ -340,6 +351,26 @@ def _run_project_audit(
         ),
         clear_provider_session=lambda provider_id: STATE.set_provider_session(provider_id, None),
         context=context,
+    )
+
+
+def _run_research_advisors(
+    *,
+    selected_provider,
+    selected_provider_id: str,
+    pack: EvidencePack,
+) -> tuple[ConsensusAdvice, ...]:
+    return run_research_advisors(
+        selected_provider_id=selected_provider_id,
+        provider_ids=tuple(PROVIDER_LABELS),
+        provider_labels=PROVIDER_LABELS,
+        availability=provider_availability,
+        connect_existing=lambda provider_id: _connect_consensus_provider(
+            selected_provider,
+            provider_id,
+        ),
+        clear_provider_session=lambda provider_id: STATE.set_provider_session(provider_id, None),
+        pack=pack,
     )
 
 
@@ -515,6 +546,7 @@ class State:
         self.stop_flag = threading.Event()
         self.pending_shell: dict[str, dict] = {}
         self.pending_teach: dict[str, dict] = {}
+        self.research_changes: dict[str, object] = {}
         self.change_trackers: dict[str, ChangeTracker] = {}
         self.conversations: dict[str, ConversationContext] = {}
         self.conversation_tokens: dict[str, object] = {}
@@ -526,6 +558,12 @@ class State:
         self.last_shell_result: dict | None = None
         self.project_facts = (
             ProjectFactsStore(state_home) if state_home else ProjectFactsStore()
+        )
+        resolved_state_home = Path(state_home).expanduser().resolve() if state_home else None
+        self.knowledge_store = (
+            KnowledgeStore(Path(state_home) / "vault")
+            if resolved_state_home == DEFAULT_STATE_HOME.expanduser().resolve()
+            else None
         )
         self.work_checkpoints = (
             WorkCheckpointStore(state_home) if state_home else WorkCheckpointStore()
@@ -685,6 +723,34 @@ class State:
             self.last_shell_result = payload
         self.emit(payload)
 
+    def record_research_changes(self, run_id: str, changes: object) -> None:
+        with self.lock:
+            self.research_changes[run_id] = changes
+            if len(self.research_changes) > 32:
+                for key in list(self.research_changes)[:-32]:
+                    self.research_changes.pop(key, None)
+
+    def restore_research_changes(self, run_id: str) -> dict:
+        with self.lock:
+            changes = self.research_changes.get(run_id)
+        if changes is None:
+            return {"ok": False, "error": "research changes not found"}
+        result = changes.restore_result()
+        if self.knowledge_store is not None:
+            try:
+                self.knowledge_store.rebuild()
+            except Exception:
+                pass
+        if result.ok:
+            with self.lock:
+                self.research_changes.pop(run_id, None)
+        return {
+            "ok": result.ok,
+            "restored": result.restored,
+            "conflicts": result.conflicts,
+            "error": result.error,
+        }
+
     def run_state_payload(self) -> dict:
         with self.lock:
             active = self.active_run
@@ -694,6 +760,7 @@ class State:
             source = active
             run_id = source.run_id if source else str((terminal or {}).get("run_id") or "")
             session_id = source.session_id if source else str((terminal or {}).get("session_id") or "")
+            research_restore_runs = sorted(self.research_changes)
             return {
                 "run_id": run_id,
                 "session_id": session_id,
@@ -712,6 +779,7 @@ class State:
                 "pending_event": pending,
                 "last_terminal_event": terminal,
                 "last_shell_result": shell_result,
+                "research_restore_runs": research_restore_runs,
             }
 
     def _pending_ui_event_locked(self, active: RunSnapshot | None) -> dict | None:
@@ -821,12 +889,12 @@ class State:
         opened = tuple(
             provider_id
             for provider_id in PROVIDER_LABELS
-            if statuses.get(provider_id)
+            if provider_id != "local" and statuses.get(provider_id)
         )
         return opened + tuple(
             provider_id
             for provider_id in PROVIDER_LABELS
-            if provider_id not in opened
+            if provider_id != "local" and provider_id not in opened
         )
 
     def conversation_for(self, session_id: str) -> ConversationContext:
@@ -1078,6 +1146,7 @@ def _run_task(
     max_turns: int,
     continue_task: bool,
     provider_id: str,
+    intent: str = "auto",
     run_id: str = "",
 ) -> None:
     if not run_id:
@@ -1098,8 +1167,10 @@ def _run_task(
         capture_provider_failure=capture_provider_failure,
         run_consensus=_run_consensus,
         run_project_audit=_run_project_audit,
+        run_research_advisors=_run_research_advisors,
         project_facts=STATE.project_facts,
         work_checkpoints=STATE.work_checkpoints,
+        knowledge_store=STATE.knowledge_store,
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
@@ -1112,6 +1183,7 @@ def _run_task(
             max_turns=max_turns,
             continue_task=continue_task,
             provider_id=provider_id,
+            intent=intent,
             run_id=run_id,
         ))
     finally:
@@ -1125,6 +1197,7 @@ def _submit_task(
     max_turns: int,
     continue_task: bool,
     provider_id: str,
+    intent: str = "auto",
 ) -> str | None:
     reserved = STATE.reserve_run(
         session_id=session_id,
@@ -1143,6 +1216,7 @@ def _submit_task(
             max_turns,
             continue_task,
             provider_id,
+            intent,
             reserved.run_id,
         )
     except Exception:
@@ -1204,6 +1278,38 @@ class Handler(BaseHTTPRequestHandler):
                 "providers": provider_payload(statuses),
             })
             return
+        if url.path == "/api/local_provider":
+            self._send_json(200, {"ok": True, "local": local_config_payload()})
+            return
+        if url.path == "/api/research/note":
+            query = parse_qs(url.query)
+            note_id = (query.get("id") or [""])[0].strip()
+            if not note_id:
+                self._send_json(400, {"ok": False, "error": "id required"})
+                return
+            if STATE.knowledge_store is None:
+                self._send_json(404, {"ok": False, "error": "Research is not configured"})
+                return
+            note = STATE.knowledge_store.read_note(note_id)
+            if note is None:
+                self._send_json(404, {"ok": False, "error": "note not found"})
+                return
+            row = STATE.knowledge_store.index.get(note.id) or {}
+            self._send_json(200, {
+                "ok": True,
+                "note": {
+                    "id": note.id,
+                    "type": note.type,
+                    "title": note.title,
+                    "body": note.body,
+                    "sources": note.sources,
+                    "tags": note.tags,
+                    "status": note.status,
+                    "path": str(row.get("path") or ""),
+                    "updated": note.updated,
+                },
+            })
+            return
         if url.path == "/api/changes":
             query = parse_qs(url.query)
             project = (query.get("project") or [""])[0].strip()
@@ -1244,12 +1350,45 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, {"ok": True})
             return
+        if url.path == "/api/local_provider":
+            base_url = str(body.get("base_url") or "").strip().rstrip("/")
+            model = str(body.get("model") or "").strip()
+            raw_api_key = body.get("api_key")
+            api_key = str(raw_api_key).strip() if raw_api_key is not None else ""
+            clear_api_key = bool(body.get("clear_api_key"))
+            if not base_url:
+                self._send_json(400, {"ok": False, "error": "base_url required"})
+                return
+            previous = load_local_config()
+            probe_key = ""
+            if not clear_api_key:
+                probe_key = api_key if api_key else str(previous.get("api_key") or "")
+            endpoint = probe_local_endpoint(base_url, api_key=probe_key)
+            if endpoint is None:
+                self._send_json(400, {"ok": False, "error": "could not reach an OpenAI-compatible /models endpoint"})
+                return
+            try:
+                save_local_config(
+                    endpoint.base_url,
+                    model or endpoint.default_model,
+                    api_key if api_key else None,
+                    clear_api_key=clear_api_key,
+                )
+            except (OSError, ValueError) as exc:
+                self._send_json(500, {"ok": False, "error": str(exc)})
+                return
+            self._send_json(200, {"ok": True, "local": local_config_payload()})
+            return
         if url.path == "/api/run":
             session_id = str(body.get("session_id") or "").strip() or "default"
             project = (body.get("project") or "").strip() or None
             task = (body.get("task") or "").strip()
             continue_task = bool(body.get("continue_task"))
             provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
+            intent = str(body.get("intent") or "auto").strip().lower()
+            if intent not in {"auto", "chat", "research", "project", "hybrid"}:
+                self._send_json(400, {"error": "invalid intent"})
+                return
             try:
                 max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)
             except (TypeError, ValueError):
@@ -1272,6 +1411,7 @@ class Handler(BaseHTTPRequestHandler):
                     max_turns,
                     continue_task,
                     provider_id,
+                    intent,
                 )
             except Exception as exc:
                 self._send_json(500, {"error": str(exc)})
@@ -1280,6 +1420,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(409, {"error": "busy"})
                 return
             self._send_json(200, {"ok": True, "run_id": run_id})
+            return
+        if url.path == "/api/research/restore":
+            run_id = str(body.get("run_id") or "").strip()
+            if not run_id:
+                self._send_json(400, {"ok": False, "error": "run_id required"})
+                return
+            payload = STATE.restore_research_changes(run_id)
+            self._send_json(200 if payload.get("ok") else 409, payload)
             return
         if url.path == "/api/pick_folder":
             mode = str(body.get("mode") or "open").strip().lower()
@@ -1392,6 +1540,7 @@ class Handler(BaseHTTPRequestHandler):
                     int(pending["max_turns"]),
                     True,
                     pending.get("provider") or DEFAULT_PROVIDER_ID,
+                    "project",
                 )
                 continued = continuation_run is not None
             self._send_json(200, {

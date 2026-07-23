@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import http.client
+import json
 import shutil
 import subprocess
 import tempfile
@@ -22,6 +24,7 @@ from codey.consensus import ConsensusAdvice, ConsensusResult
 from codey.handoff import ConversationSnapshot
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_discovery import Discovery
+from codey.providers.local_openai import LocalEndpoint
 from codey.task_runner import _project_has_user_files
 from codey.verification_policy import VerificationCandidate
 
@@ -266,6 +269,7 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertFalse(by_id["mimo"]["available"])
         self.assertFalse(by_id["qwen"]["available"])
         self.assertFalse(by_id["glm"]["available"])
+        self.assertFalse(by_id["local"]["available"])
 
     def test_provider_status_update_only_reports_changed_model(self) -> None:
         payload = server.provider_status_update("deepseek", True)
@@ -323,6 +327,7 @@ class ProviderStatusTests(unittest.TestCase):
 
         self.assertFalse(statuses["qwen"])
         self.assertNotIn("qwen", reviewers)
+        self.assertNotIn("local", reviewers)
         self.assertIn("mimo", reviewers)
 
     def test_provider_warmup_emits_filtered_provider_statuses(self) -> None:
@@ -357,8 +362,10 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertEqual(event["type"], "providers")
         self.assertTrue(by_id["deepseek"]["available"])
         self.assertTrue(by_id["mimo"]["available"])
+
         self.assertFalse(by_id["qwen"]["available"])
         self.assertFalse(by_id["glm"]["available"])
+        self.assertFalse(by_id["local"]["available"])
 
     def test_provider_warmup_failure_does_not_emit_or_raise(self) -> None:
         state = server.State()
@@ -555,6 +562,52 @@ class ProviderStatusTests(unittest.TestCase):
         connect_self_review.assert_not_called()
 
 
+class LocalProviderApiTests(unittest.TestCase):
+    def test_empty_api_key_preserves_existing_key_for_probe_and_save(self) -> None:
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            with (
+                mock.patch.object(server, "load_local_config", return_value={"api_key": "old-secret"}),
+                mock.patch.object(
+                    server,
+                    "probe_local_endpoint",
+                    return_value=LocalEndpoint("http://127.0.0.1:1234/v1", ("llama",)),
+                ) as probe,
+                mock.patch.object(server, "save_local_config") as save,
+                mock.patch.object(server, "local_config_payload", return_value={"connected": True}),
+            ):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/local_provider",
+                    body=json.dumps({
+                        "base_url": "http://127.0.0.1:1234/v1",
+                        "model": "llama",
+                        "api_key": "",
+                    }),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                conn.close()
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["ok"])
+            probe.assert_called_once_with("http://127.0.0.1:1234/v1", api_key="old-secret")
+            save.assert_called_once_with(
+                "http://127.0.0.1:1234/v1",
+                "llama",
+                None,
+                clear_api_key=False,
+            )
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+
 class ConsensusConnectionTests(unittest.TestCase):
     def test_consensus_borrows_sibling_tab_from_selected_provider(self) -> None:
         state = server.State()
@@ -711,6 +764,26 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["run_id"], run.run_id)
         self.assertEqual(payload["pending_event"], pending)
         self.assertEqual(payload["last_terminal_event"]["run_id"], run.run_id)
+
+    def test_state_snapshot_reports_only_restorable_research_runs(self) -> None:
+        from codey.knowledge import KnowledgeChanges, KnowledgeNote, KnowledgeStore
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            changes = KnowledgeChanges(state.knowledge_store.root)
+            note = KnowledgeNote.create(type="synthesis", title="Run", body="Report", session_id="s1")
+            state.knowledge_store.write_note(note, changes=changes)
+
+            state.record_research_changes("run-research", changes)
+            before = state.run_state_payload()
+            restored = state.restore_research_changes("run-research")
+            after = state.run_state_payload()
+            state.knowledge_store.close()
+
+        self.assertIn("run-research", before["research_restore_runs"])
+        self.assertTrue(restored["ok"])
+        self.assertNotIn("run-research", after["research_restore_runs"])
 
     def test_state_snapshot_restores_active_teaching_card(self) -> None:
         state = server.State()
@@ -1248,6 +1321,149 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(tool["result"], "")
         self.assertEqual(done["stop_reason"], "done")
         self.assertFalse(any(event["type"] == "log" for event in emitted))
+
+    def test_run_task_with_research_intent_uses_research_runner(self) -> None:
+        class Search:
+            def search(self, query, limit=8):
+                return [{
+                    "title": "Helium source",
+                    "url": "https://example.com/helium",
+                    "snippet": "Helium data",
+                }]
+
+            def fetch(self, url):
+                return {
+                    "url": url,
+                    "title": "Helium source",
+                    "text": "Helium is separated from natural gas.",
+                    "truncated": False,
+                }
+
+            def close(self):
+                pass
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            from codey.knowledge import KnowledgeStore
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            conversation = state.conversation_for("session-research")
+            conversation.begin_window("deepseek", "chat")
+            conversation.update_snapshot(ConversationSnapshot(
+                mode="chat",
+                goal="Choose the storage layer",
+                provider_id="deepseek",
+                latest_user="SQLite or a flat file?",
+                latest_reply="SQLite is better once querying matters.",
+            ))
+            events = state.subscribe()
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.side_effect = [
+                '{"tool":"web_search","args":{"query":"helium"}}',
+                '{"tool":"open_url","args":{"url":"https://example.com/helium"}}',
+                '{"tool":"done","args":{"answer":"关键证据\\n- https://example.com/helium"}}',
+            ]
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch("codey.task_runner.BrowserSearchProvider", return_value=Search()),
+                mock.patch.object(server, "agent_run") as agent_run,
+            ):
+                server._run_task("session-research", None, "Research helium", 8, False, "deepseek", "research")
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+            done = next(event for event in emitted if event["type"] == "task_done")
+            tool_kinds = [event["kind"] for event in emitted if event["type"] == "tool"]
+            state.knowledge_store.close()
+        self.assertEqual(done["mode"], "research")
+        self.assertEqual(done["stop_reason"], "done")
+        self.assertTrue(done["research"]["synthesis_id"])
+        self.assertIn("search", tool_kinds)
+        self.assertIn("read", tool_kinds)
+        research_intro = provider.send.call_args_list[0].args[0]
+        self.assertIn("Conversation context from this chat", research_intro)
+        self.assertIn("Choose the storage layer", research_intro)
+        agent_run.assert_not_called()
+
+    def test_followup_research_intent_includes_previous_research_context(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            from codey.knowledge import KnowledgeStore
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.side_effect = [
+                '{"tool":"done","args":{"answer":"First research summary: prefer the SQLite-backed plan."}}',
+                '{"tool":"done","args":{"answer":"Second research summary."}}',
+            ]
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run") as agent_run,
+            ):
+                server._run_task("session-research", None, "Research the storage plan", 4, False, "deepseek", "research")
+                server._run_task("session-research", None, "Continue researching that plan", 4, False, "deepseek", "research")
+
+            state.knowledge_store.close()
+
+        second_intro = provider.send.call_args_list[1].args[0]
+        self.assertIn("Conversation context from this chat", second_intro)
+        self.assertIn("First research summary", second_intro)
+        agent_run.assert_not_called()
+
+    def test_hybrid_research_inside_project_includes_project_context(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td, "project")
+            project.mkdir()
+            project_text = str(project.resolve())
+            state = server.State(td)
+            from codey.knowledge import KnowledgeStore
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            state.set_provider_session("deepseek", "session-hybrid")
+            conversation = state.conversation_for("session-hybrid")
+            conversation.begin_window("deepseek", "project", project_text)
+            conversation.update_snapshot(ConversationSnapshot(
+                mode="project",
+                goal="Implement the API client",
+                project=project_text,
+                provider_id="deepseek",
+                summary="Use the requests-based client wrapper.",
+                latest_user="Build the client here.",
+                latest_reply="The wrapper should centralize retries.",
+            ))
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.side_effect = ["not json", "still not json", "again not json"]
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run") as agent_run,
+            ):
+                server._run_task(
+                    "session-hybrid",
+                    str(project),
+                    "Research that client before editing",
+                    3,
+                    False,
+                    "deepseek",
+                    "hybrid",
+                )
+
+            state.knowledge_store.close()
+
+        hybrid_intro = provider.send.call_args_list[0].args[0]
+        self.assertIn("Conversation context from this chat", hybrid_intro)
+        self.assertIn("Implement the API client", hybrid_intro)
+        self.assertIn("requests-based client wrapper", hybrid_intro)
+        agent_run.assert_not_called()
 
     def test_plain_chat_followup_reuses_same_model_conversation(self) -> None:
         state = server.State()

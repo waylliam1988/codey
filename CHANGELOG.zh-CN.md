@@ -4,6 +4,27 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.0 - Research、Knowledge 与本地模型
+
+这是一次重要工作流升级。Codey 不再只是本地编程循环：它可以显式 Research 一个问题，
+保存有来源约束的本地笔记，把有边界的 synthesis 带进项目，并把验证过的实现事实继续沉淀下来。
+
+- Research：输入框上下文现在有 `Research`。开启后，Codey 可以搜索网页、打开页面、
+  执行 URL policy、写 source/fact/synthesis notes，并拒绝最终报告引用本轮没有打开过的来源。
+- Knowledge：研究笔记存入本地 Markdown vault，配套可重建 SQLite FTS 索引、
+  单次 run restore、note links，以及给项目 handoff 使用的有边界 Research Brief。
+  项目源码不会被复制进 vault。
+- 项目衔接：研究结束后选择项目文件夹，Writer 收到的是 Research Brief，而不是整个 vault。
+  连续 Research 和项目内 Hybrid Research 会带上有边界的同一聊天前文，所以“继续查刚才那个方案”
+  不会丢上下文。
+- Local provider：`Local` 可以连接 LM Studio、Ollama、llama.cpp 等 OpenAI-compatible
+  endpoint。轻量配置弹窗支持 base URL、model id、可选 API key 保留和显式清除。
+- 安全与可靠性：网页版 provider send 仍留在 browser-worker 线程里；只有明确线程安全的
+  Local send 使用可取消后台发送。browser-worker call 支持 reentrant，避免 Research 搜索自锁。
+  Codey 运行路径里的隐藏浏览器启动代码已删除。
+- UI：Research 是 `Choose folder` 和模型名旁边的轻量 composer token，不是第二个 app，
+  也不是模型选择旁边的新按钮。Research drawer 会显示 notes、来源 URL、synthesis 和 restore 状态。
+
 ## 0.1.63 - 单 Provider Self-Review
 
 - Review：当没有可用的不同 provider 来做最终 diff review 时，Codey

@@ -25,6 +25,9 @@ from codey.handoff import (
     render_handoff,
     render_recovered_handoff,
 )
+from codey.knowledge.note import KnowledgeNote
+from codey.knowledge.store import KnowledgeStore
+from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.project_facts import ProjectFactsStore
 from codey.project_task_context import (
     ProjectTaskContextBuilder,
@@ -35,6 +38,9 @@ from codey.providers import PROVIDER_LABELS
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
 from codey.receipt import build_task_receipt
+from codey.research.browser_search import BrowserSearchProvider
+from codey.research.advisors import EvidencePack
+from codey.research.runner import ResearchRunner
 from codey.review_coordinator import ReviewCoordinator, change_state
 from codey.shell_risk import classify_shell_risk
 from codey.verification_map import render_verification_map
@@ -63,6 +69,7 @@ class TaskRequest:
     max_turns: int
     continue_task: bool
     provider_id: str
+    intent: str = "auto"
     run_id: str = ""
 
 
@@ -143,6 +150,46 @@ def _changed_file_paths(changes: object) -> tuple[str, ...]:
     return tuple(str(item.get("path") or "") for item in files if isinstance(item, dict) and item.get("path"))
 
 
+def _resolve_task_kind(request: TaskRequest) -> str:
+    intent = (request.intent or "auto").strip().lower()
+    if intent in {"research", "project", "hybrid", "chat"}:
+        if intent == "hybrid" and not request.project:
+            return "research"
+        if intent == "project" and not request.project:
+            return "chat"
+        return intent
+    return "project" if request.project else "chat"
+
+
+def _ui_mode(kind: str, project: str | None) -> str:
+    if kind == "research":
+        return "research"
+    if kind == "hybrid":
+        return "hybrid"
+    return "agent" if project else "chat"
+
+
+def _bullet_lines(values: tuple[str, ...]) -> str:
+    if not values:
+        return "- (none)"
+    return "\n".join(f"- {item}" for item in values)
+
+
+def _display_tool(name: str, args: dict, path: str = "") -> tuple[str, str]:
+    research_names = {
+        "web_search": ("search", str(args.get("query") or "")),
+        "open_url": ("read", str(args.get("url") or "")),
+        "knowledge_search": ("recall", str(args.get("query") or "")),
+        "knowledge_read": ("note", str(args.get("id") or args.get("note_id") or "")),
+        "knowledge_write": ("note", str(args.get("title") or args.get("type") or "")),
+        "knowledge_link": ("link", str(args.get("src") or "")),
+    }
+    if name in research_names:
+        kind, label = research_names[name]
+        return kind, label[:160]
+    return name, "" if path == "." else path
+
+
 class TaskRunner:
     """Coordinate one task while leaving transport and storage outside."""
 
@@ -156,8 +203,11 @@ class TaskRunner:
         capture_provider_failure: Callable,
         run_consensus: Callable | None = None,
         run_project_audit: Callable | None = None,
+        run_research_advisors: Callable | None = None,
         project_facts: ProjectFactsStore | None = None,
         work_checkpoints: WorkCheckpointStore | None = None,
+        knowledge_store: KnowledgeStore | None = None,
+        search_factory: Callable[[], object] | None = None,
         is_git_repository: Callable[[str | Path], bool] | None = None,
         review_fix_turns: int = 12,
         review_log_lines: int = 80,
@@ -168,9 +218,12 @@ class TaskRunner:
         self.run_review = run_review
         self.run_consensus = run_consensus
         self.run_project_audit = run_project_audit
+        self.run_research_advisors = run_research_advisors
         self.capture_provider_failure = capture_provider_failure
         self.project_facts = project_facts
         self.work_checkpoints = work_checkpoints
+        self.knowledge_store = knowledge_store
+        self.search_factory = search_factory or BrowserSearchProvider
         self.is_git_repository = is_git_repository or (lambda _project: False)
         self.review_fix_turns = review_fix_turns
         self.review_log_lines = review_log_lines
@@ -183,6 +236,7 @@ class TaskRunner:
         max_turns = request.max_turns
         continue_task = request.continue_task
         provider_id = request.provider_id
+        task_kind = _resolve_task_kind(request)
         run_id = request.run_id
 
         if not run_id:
@@ -212,10 +266,11 @@ class TaskRunner:
             "session_id": session_id,
             "project": project,
             "task": task,
-            "mode": "agent" if project else "chat",
+            "mode": _ui_mode(task_kind, project),
             "max_turns": max_turns,
             "continue_task": continue_task,
             "provider": provider_id,
+            "intent": request.intent,
         })
 
         recent_events: list[str] = []
@@ -421,7 +476,7 @@ class TaskRunner:
                 provider_id = replacement_id
                 preflight_switches += 1
                 state.switch_run_provider(run_id, provider_id)
-            mode = "project" if project else "chat"
+            mode = "research" if task_kind == "research" else ("project" if project else "chat")
             project_text = str(Path(project).expanduser().resolve()) if project else ""
             conversation = state.conversation_for(session_id)
             provider_session_changed = state.provider_session_changed(
@@ -444,6 +499,24 @@ class TaskRunner:
                 handoff = conversation.prepare_model_handoff(provider.send)
             prior_snapshot = conversation.snapshot
             recovered_owner_prompt = ""
+            visible_excerpt = ""
+            if fresh_chat or task_kind in {"research", "hybrid"}:
+                try:
+                    visible_excerpt = state.visible_session_excerpt(
+                        session_id,
+                        current_request=task,
+                    )
+                except Exception:
+                    visible_excerpt = ""
+            research_handoff = ""
+            if task_kind in {"research", "hybrid"}:
+                if handoff or visible_excerpt:
+                    research_handoff = render_recovered_handoff(
+                        prior_snapshot,
+                        visible_excerpt,
+                    )
+                elif prior_snapshot.to_payload():
+                    research_handoff = render_handoff(prior_snapshot)
             task_changed = False
             conversation.update_snapshot(ConversationSnapshot(
                 mode=mode,
@@ -459,14 +532,6 @@ class TaskRunner:
                 conversation_summary=prior_snapshot.conversation_summary,
             ))
             if fresh_chat:
-                visible_excerpt = ""
-                try:
-                    visible_excerpt = state.visible_session_excerpt(
-                        session_id,
-                        current_request=task,
-                    )
-                except Exception:
-                    visible_excerpt = ""
                 if handoff or visible_excerpt:
                     handoff = render_recovered_handoff(
                         prior_snapshot,
@@ -474,10 +539,118 @@ class TaskRunner:
                     )
                 if visible_excerpt:
                     recovered_owner_prompt = handoff
+            if task_kind == "research":
+                result = self._run_research_task(
+                    provider=provider,
+                    session_id=session_id,
+                    project=project_text,
+                    task=task,
+                    max_turns=max_turns,
+                    on_event=on_event,
+                    stop_flag=state.stop_flag,
+                    provider_id=provider_id,
+                    run_id=run_id,
+                    chat_handoff=research_handoff,
+                )
+                state.set_provider_session(
+                    provider_id,
+                    None if result.stop_reason == "stopped" else session_id,
+                )
+                conversation.begin_window(provider_id, "research", project_text)
+                conversation.record_exchange(
+                    task,
+                    result.summary,
+                    replace(
+                        conversation.snapshot,
+                        mode="research",
+                        goal=task,
+                        project=project_text,
+                        provider_id=provider_id,
+                        blocker="" if result.stop_reason == "done" else result.summary,
+                        latest_user=task,
+                        latest_reply=result.summary,
+                        summary=result.summary,
+                    ),
+                )
+                receipt = {
+                    "text": result.receipt,
+                    "created": result.notes_created,
+                    "updated": result.notes_updated,
+                    "synthesis_id": result.synthesis_id,
+                }
+                event = {
+                    "type": "task_done",
+                    "run_id": run_id,
+                    "session_id": session_id,
+                    "summary": result.summary,
+                    "stop_reason": result.stop_reason,
+                    "turns": result.turns,
+                    "max_turns": max_turns,
+                    "provider": provider_id,
+                    "mode": "research",
+                    "receipt": receipt,
+                    "research": {
+                        "synthesis_id": result.synthesis_id,
+                        "notes_created": result.notes_created,
+                        "notes_updated": result.notes_updated,
+                        "sources_read": result.sources_read,
+                        "source_urls": result.source_urls,
+                    },
+                }
+                state.finish_run(run_id, event)
+                return
+            if task_kind == "hybrid":
+                research_result = self._run_research_task(
+                    provider=provider,
+                    session_id=session_id,
+                    project=project_text,
+                    task=task,
+                    max_turns=max(1, min(max_turns, 18)),
+                    on_event=on_event,
+                    stop_flag=state.stop_flag,
+                    provider_id=provider_id,
+                    run_id=run_id,
+                    chat_handoff=research_handoff,
+                )
+                if research_result.stop_reason != "done":
+                    state.finish_run(run_id, {
+                        "type": "task_done",
+                        "run_id": run_id,
+                        "session_id": session_id,
+                        "summary": research_result.summary,
+                        "stop_reason": research_result.stop_reason,
+                        "turns": research_result.turns,
+                        "max_turns": max_turns,
+                        "provider": provider_id,
+                        "mode": "research",
+                        "receipt": {"text": research_result.receipt},
+                        "research": {
+                            "synthesis_id": research_result.synthesis_id,
+                            "notes_created": research_result.notes_created,
+                            "notes_updated": research_result.notes_updated,
+                            "sources_read": research_result.sources_read,
+                            "source_urls": research_result.source_urls,
+                        },
+                    })
+                    return
+                fresh_chat = True
+                handoff = ""
+                conversation.update_snapshot(replace(
+                    conversation.snapshot,
+                    mode="research",
+                    goal=task,
+                    project=project_text,
+                    provider_id=provider_id,
+                    summary=research_result.summary,
+                    blocker="",
+                    latest_user=task,
+                    latest_reply=research_result.summary,
+                ))
             if project:
                 context_builder = ProjectTaskContextBuilder(
                     project_facts=self.project_facts,
                     work_checkpoints=self.work_checkpoints,
+                    knowledge_store=self.knowledge_store,
                 )
                 project_context = context_builder.build(
                     project=project,
@@ -607,6 +780,7 @@ class TaskRunner:
                         provider_id=spec.provider_id,
                         handoff=spec.handoff,
                         project_facts=verified_facts,
+                        research_context=project_context.research_context,
                         project_map=project_map,
                         work_checkpoint=spec.checkpoint.prompt,
                         verification_candidates=verification_candidates,
@@ -996,6 +1170,15 @@ class TaskRunner:
                         )
                     except (OSError, ValueError):
                         facts_write_succeeded = False
+                if facts_write_succeeded and facts_write_required:
+                    self._record_project_memory(
+                        project=project,
+                        session_id=session_id,
+                        task=task,
+                        files=files,
+                        receipt=receipt.text,
+                        checks=evidence.successful_checks,
+                    )
                 if self.work_checkpoints is not None and work_checkpoint is not None:
                     if result.stop_reason == "done" and facts_write_succeeded:
                         try:
@@ -1041,6 +1224,14 @@ class TaskRunner:
                         "mode": task_changes.get("mode"),
                         "project": project,
                     }
+            if "research_result" in locals():
+                event["research"] = {
+                    "synthesis_id": research_result.synthesis_id,
+                    "notes_created": research_result.notes_created,
+                    "notes_updated": research_result.notes_updated,
+                    "sources_read": research_result.sources_read,
+                    "source_urls": research_result.source_urls,
+                }
             state.finish_run(run_id, event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             state.set_provider_session(provider_id, None)
@@ -1109,6 +1300,105 @@ class TaskRunner:
             except Exception:
                 pass
 
+    def _run_research_task(
+        self,
+        *,
+        provider,
+        session_id: str,
+        project: str,
+        task: str,
+        max_turns: int,
+        on_event: Callable[[RunEvent], None],
+        stop_flag,
+        provider_id: str = "",
+        run_id: str = "",
+        chat_handoff: str = "",
+    ):
+        if self.knowledge_store is None:
+            raise RuntimeError("Research is not configured")
+        search = self.search_factory()
+        try:
+            runner = ResearchRunner(
+                provider,
+                search,
+                self.knowledge_store,
+                max_turns=max_turns,
+                should_stop=stop_flag.is_set if stop_flag is not None else None,
+                session_id=session_id,
+                project=project,
+                chat_handoff=chat_handoff,
+                review_advisors=(
+                    (lambda pack: self.run_research_advisors(
+                        selected_provider=provider,
+                        selected_provider_id=provider_id,
+                        pack=pack,
+                    ))
+                    if self.run_research_advisors is not None
+                    else None
+                ),
+            )
+            for event in runner.run(task):
+                on_event(event)
+            if runner.result is None:
+                raise RuntimeError("research finished without a result")
+            recorder = getattr(self.state, "record_research_changes", None)
+            if callable(recorder) and run_id:
+                recorder(run_id, runner.changes)
+            return runner.result
+        finally:
+            try:
+                search.close()
+            except Exception:
+                pass
+
+    def _record_project_memory(
+        self,
+        *,
+        project: str,
+        session_id: str,
+        task: str,
+        files: tuple[str, ...],
+        receipt: str,
+        checks: tuple[object, ...],
+    ) -> None:
+        if self.knowledge_store is None:
+            return
+        try:
+            brief = KnowledgeBriefBuilder(self.knowledge_store).build_for_session(session_id)
+            sources = [brief.synthesis_id] if brief.synthesis_id else []
+            impl = KnowledgeNote.create(
+                type="implementation",
+                title=task[:120] or "Project implementation",
+                body=(
+                    "Implemented project task.\n\n"
+                    f"Files changed:\n{_bullet_lines(files)}\n\n"
+                    f"Receipt:\n{receipt}"
+                ),
+                tags=["project", "implementation", f"session:{session_id}"],
+                sources=sources,
+                session_id=session_id,
+                project=str(Path(project).expanduser().resolve()),
+            )
+            self.knowledge_store.write_note(impl)
+            if checks:
+                verification = KnowledgeNote.create(
+                    type="verification",
+                    title=f"Verification for {task[:80] or 'project task'}",
+                    body="Successful checks:\n" + _bullet_lines(
+                        tuple(f"{item.command} (cwd {item.cwd})" for item in checks)
+                    ),
+                    tags=["project", "verification", f"session:{session_id}"],
+                    sources=[impl.id],
+                    session_id=session_id,
+                    project=str(Path(project).expanduser().resolve()),
+                )
+                self.knowledge_store.write_note(verification)
+                self.knowledge_store.link(impl.id, verification.id, "verifies")
+            if brief.synthesis_id:
+                self.knowledge_store.link(brief.synthesis_id, impl.id, "implements")
+        except (OSError, ValueError):
+            return
+
     @staticmethod
     def _ui_event(run_id: str, session_id: str, event: RunEvent) -> dict | None:
         if event.kind == "turn":
@@ -1121,6 +1411,7 @@ class TaskRunner:
             return {"type": "info", "run_id": run_id, "session_id": session_id, "text": text}
         if event.kind == "tool_start" and event.call is not None:
             path = str(event.call.args.get("path") or "")
+            display_kind, display_path = _display_tool(event.call.name, event.call.args, path)
             tool_index = int(event.metadata.get("tool_index") or 0)
             return {
                 "type": "tool_started",
@@ -1128,13 +1419,14 @@ class TaskRunner:
                 "session_id": session_id,
                 "turn": event.turn,
                 "tool_id": f"{event.turn}:{tool_index}",
-                "kind": event.call.name,
-                "path": "" if path == "." else path,
+                "kind": display_kind,
+                "path": display_path,
                 "activity": event.message,
             }
         if event.kind != "tool" or event.call is None or event.outcome is None:
             return None
         path = str(event.call.args.get("path") or "")
+        display_kind, display_path = _display_tool(event.call.name, event.call.args, path)
         result = event.outcome.first_line(200)
         tool_index = int(event.metadata.get("tool_index") or 0)
         return {
@@ -1143,8 +1435,8 @@ class TaskRunner:
             "session_id": session_id,
             "turn": event.turn,
             "tool_id": f"{event.turn}:{tool_index}",
-            "kind": event.call.name,
-            "path": "" if path == "." else path,
+            "kind": display_kind,
+            "path": display_path,
             "result": result,
             "error": not event.outcome.ok,
         }

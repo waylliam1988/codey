@@ -1,0 +1,19 @@
+{
+  "default_engine": "bing",
+  "engines": {
+    "bing": {
+      "search_url": "https://www.bing.com/search?q={query}",
+      "result_selector": "li.b_algo",
+      "title_selector": "h2 a",
+      "link_selector": "h2 a",
+      "snippet_selector": ".b_caption p"
+    },
+    "duckduckgo": {
+      "search_url": "https://duckduckgo.com/html/?q={query}",
+      "result_selector": ".result",
+      "title_selector": ".result__a",
+      "link_selector": ".result__a",
+      "snippet_selector": ".result__snippet"
+    }
+  }
+}

@@ -2,19 +2,19 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.1.63-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
 [English](README.md)
 
-Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小米 MiMo 和 GLM，然后给它们一个受控的本地编程循环：读文件、改文件、跑测试、看 diff、审查改动、必要时恢复。
+Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小米 MiMo 和 GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的本地工作闭环：聊天、带证据的 Research、读文件、改文件、跑测试、看 diff、审查改动、必要时恢复。
 
-它是一个本地优先、低成本、多网页模型兼容的 AI 编程工作台，适合不想为每个项目接入付费模型 API 的用户。
+它是一个本地优先、低成本、多网页模型兼容的 AI 编程与研究工作台，适合不想为每个项目接入付费模型 API 的用户。
 
-不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。
+网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.1.63`
+版本：`0.2.0`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -23,8 +23,11 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 ## 一眼看懂
 
 - **使用你已经登录的网页 AI**：支持 DeepSeek、Qwen、小米 MiMo 和 GLM。
+- **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开来源、保存证据笔记并生成 synthesis。
 - **代码留在本机**：模型只能访问你选择的项目目录。
+- **把研究带进项目**：研究结束后选择项目文件夹，Codey 只把有边界的 Research Brief 注入 Writer，不把整个 vault 塞进去。
 - **受控工具循环**：读取、编辑、测试、diff、Review 和 Restore 都有边界。
+- **可选本地模型**：`Local` 可以连接 OpenAI-compatible endpoint，并支持可选 API key。
 - **改完后再审查**：一个模型写代码，另一个模型审查最终 diff；如果没有第二个可用模型，也可以让写代码的模型做一次明确标注的 self-review。
 - **对新手友好**：有 Git 会增强体验，但没有 Git 也能开始。
 
@@ -59,7 +62,10 @@ Codey 想解决的是一个很朴素的问题：
 ## 它能做什么？
 
 - 用 New Chat 正常聊天，不向模型开放任何项目
+- 在输入框上下文里点 `Research`，让 Codey 搜索、读来源、写笔记，并生成带来源约束的研究结论
 - 可以先普通聊天讨论方案，再从输入框上方的项目上下文选择文件夹，把同一个聊天接到项目任务
+- 研究结束后选择项目，把 synthesis 压成有边界的 Research Brief 交给 Writer 落地
+- 项目实现和验证成功后，可以把“做了什么、为什么、跑过什么检查”沉淀成实现/验证记忆，而不是把源码全文塞进 vault
 - 在同一个项目对话里讨论、查看和修改；只有明确要求时才改文件
 - 让模型读取和修改你选择的项目目录
 - 运行允许的测试、构建、lint 和类型检查，并把结果继续反馈给模型
@@ -78,6 +84,7 @@ Codey 想解决的是一个很朴素的问题：
 - 记住真实运行成功的项目命令，后续任务不必重新猜测
 - 只从通过本地检查的成功改动里沉淀最近变更事实
 - 重启 Codey 或切换模型后，同一聊天可以通过精简事实 handoff 和最近可见对话自然继续
+- 连续 Research 或项目内 Hybrid Research 会带上同一聊天的有边界前文，所以“继续查刚才那个方案”不会丢上下文
 - 非 Git 项目的 diff 和 restore 在 Codey 重启后仍然可用
 - 网页输入框或发送按钮改版时，先做有边界的本地发现，仍不确定则让健康兄弟模型
   从脱敏候选中选择；真实发送成功后才能保存、晋级或回滚恢复包
@@ -111,6 +118,7 @@ Codey 想解决的是一个很朴素的问题：
 | Xiaomi MiMo Chat | 已实机测试 |
 | Qwen Studio | 已实机测试 |
 | GLM | 已实机测试 |
+| Local OpenAI-compatible | 可选；在 Codey 中配置 endpoint 和模型名 |
 
 Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当前架构把不同网站的适配代码隔离开，网页变了就修对应 adapter，不需要改 agent 核心。
 
@@ -134,6 +142,42 @@ Provider worker 运行；worker 使用同一个已登录 Codey 浏览器 profile
 不会复制 cookie，也不会阻塞你当前的编程任务。候选先是 provisional，自然成功后才
 晋级 active，连续结构性失败会自动回滚。`agent.py`、`task_runner.py`、`tool_runtime.py`、
 `server.py` 以及恢复/安全控制面不在 v1 自修改范围内。
+
+---
+
+## Research
+
+`Research` 是 Codey 0.2.0 新增的工作闭环。它不是第二个 app，也不会偷偷自动联网。
+当你需要 Codey 查资料、读来源、写证据笔记时，明确点击输入框上下文里的 `Research`。
+
+主界面仍然是一条很轻的上下文：
+
+```text
+Choose folder · Research · DeepSeek/Qwen/Local
+```
+
+- `Choose folder` 把当前聊天接到项目目录。
+- `Research` 让当前消息进入研究闭环。
+- 模型名仍然选择当前 provider；选 `Local` 时会打开本地 endpoint 配置弹窗。
+
+Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开网页、URL policy、
+笔记写入、restore 和 evidence review 都由 Codey 本地工具执行。模型没有隐藏联网权。
+最终 synthesis 只能引用本轮 Codey 实际打开过的来源。
+
+典型流程是：
+
+```text
+先聊想法
+-> 点 Research，提出研究问题
+-> Codey 搜索、打开网页、写 notes、保存 synthesis
+-> 选择项目文件夹
+-> Codey 把有边界的 Research Brief 注入项目 Writer
+-> 实现和验证成功后，可以把实现事实沉淀回本地记忆
+```
+
+Vault 存在 Codey 本地状态目录里，底层是 Markdown notes 和可重建的 SQLite FTS
+索引。项目源码不会被复制进 vault；implementation note 记录的是做了什么、为什么、
+关联哪个 synthesis/decision、跑过什么检查，以及当前限制。
 
 ---
 
@@ -226,6 +270,14 @@ Codey 会让网页 AI 返回结构化工具调用，然后在本地真实读写�
 点击输入框上方的项目上下文（`Choose folder`）选择文件夹，把同一个聊天接到项目。
 如果输入框里已经有草稿，点击同一个上下文会保留草稿，并在选完文件夹后发送。
 如果只想普通聊天、不让模型接触任何项目，就继续使用 **New Chat**。
+
+如果要先研究再写代码，在同一条上下文里点击 `Research`，然后提出你要的资料、
+来源、对比、API 背景或方案调研。Codey 会写本地 research notes 和 synthesis。
+之后再选择项目文件夹时，Writer 收到的是有边界的 Research Brief，而不是整个 vault。
+
+如果要使用本地模型，在模型菜单里选择 `Local`。Codey 会弹出 OpenAI-compatible
+配置框，填写 base URL、model id 和可选 API key。key 留空会保留已有 key；
+勾选 `Clear saved key` 才会清除。
 
 任务结束后，Codey 会用一行很轻的收据总结本地事实：
 
@@ -358,6 +410,7 @@ ChatProvider -- DeepSeekWebProvider
              -- QwenWebProvider
              -- MimoWebProvider
              -- GlmWebProvider
+             -- LocalOpenAIProvider
    |
 Browser Session + provider DOM driver
 ```
@@ -382,6 +435,8 @@ codey/
   changed_symbols.py        从可见 diff 提取变化的 symbol
   project_map.py            确定性的有边界项目地图
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
+  knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
+  research/                 Research runner、网页搜索/打开、URL policy 和 evidence review
   verification_map.py       Review 阶段的有边界验证候选
   review_impact_map.py      只给 Review 使用的 caller/test 影响提示
   change_brief.py           隐藏任务意图 brief
@@ -423,6 +478,7 @@ codey/
     json_codec.py           JSON-only 工具协议
   providers/
     registry.py             模型注册表和同一 CDP 标签页借用
+    local_openai.py         OpenAI-compatible 本地模型 provider
     *_web.py                网页模型适配器
   server.py                 本地 HTTP + SSE 传输和运行状态
   web/

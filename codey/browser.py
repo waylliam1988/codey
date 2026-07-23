@@ -118,22 +118,36 @@ def _port_open(port: int, host: str = "127.0.0.1") -> bool:
         return False
 
 
-def _launch_browser(port: int, profile: Path | None, start_url: str) -> subprocess.Popen:
-    browser = _find_browser()
+def _launch_browser(
+    port: int,
+    profile: Path | None,
+    start_url: str,
+    *,
+    browser_path: str | Path | None = None,
+) -> subprocess.Popen:
+    if browser_path:
+        executable = Path(browser_path).expanduser()
+        if not executable.is_file():
+            raise FileNotFoundError(f"browser executable not found: {executable}")
+        default_profile = DEFAULT_PROFILE
+    else:
+        browser = _find_browser()
+        executable = browser.path
+        default_profile = browser.profile
     profile_path = (
-        browser.profile
+        default_profile
         if profile is None or Path(profile) == DEFAULT_PROFILE
         else Path(profile)
     )
     profile_path.mkdir(parents=True, exist_ok=True)
     args = [
-        str(browser.path),
+        str(executable),
         f"--remote-debugging-port={port}",
         f"--user-data-dir={profile_path}",
         "--no-first-run",
         "--no-default-browser-check",
-        start_url,
     ]
+    args.append(start_url)
     kwargs: dict = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
@@ -284,12 +298,16 @@ def _ensure_cdp_endpoint(
     url_contains: str,
     open_if_missing: bool,
     isolated: bool = False,
+    browser_path: str | Path | None = None,
 ) -> CdpEndpoint:
+    launch_kwargs = {}
+    if browser_path is not None:
+        launch_kwargs["browser_path"] = browser_path
     if isolated:
         if not open_if_missing:
             raise RuntimeError("isolated provider sessions require open_if_missing=True")
         cdp_port = _find_free_cdp_port(preferred)
-        process = _launch_browser(cdp_port, profile, start_url)
+        process = _launch_browser(cdp_port, profile, start_url, **launch_kwargs)
         try:
             _wait_port(cdp_port)
         except Exception:
@@ -309,7 +327,7 @@ def _ensure_cdp_endpoint(
         raise RuntimeError(f"CDP port {preferred} is not open")
 
     cdp_port = _find_free_cdp_port(preferred)
-    _launch_browser(cdp_port, profile, start_url)
+    _launch_browser(cdp_port, profile, start_url, **launch_kwargs)
     _wait_port(cdp_port)
     return CdpEndpoint(_remember_cdp_port(cdp_port))
 
@@ -321,6 +339,7 @@ def _ensure_cdp_browser_endpoint(
     start_url: str,
     open_if_missing: bool = True,
     wait_timeout: float = 20.0,
+    browser_path: str | Path | None = None,
 ) -> CdpEndpoint:
     existing = _find_remembered_cdp_port(preferred)
     if existing is not None:
@@ -330,7 +349,10 @@ def _ensure_cdp_browser_endpoint(
         raise RuntimeError(f"CDP port {preferred} is not open")
 
     cdp_port = _find_free_cdp_port(preferred)
-    process = _launch_browser(cdp_port, profile, start_url)
+    launch_kwargs = {}
+    if browser_path is not None:
+        launch_kwargs["browser_path"] = browser_path
+    process = _launch_browser(cdp_port, profile, start_url, **launch_kwargs)
     try:
         _wait_port(cdp_port, timeout=wait_timeout)
     except Exception:
@@ -501,6 +523,7 @@ def open_chat_page(
     bring_to_front: bool = True,
     isolated: bool = False,
     fresh_tab: bool = False,
+    browser_path: str | Path | None = None,
 ) -> Session:
     """Return a Playwright session attached to a matching provider tab."""
     cancellation.check()
@@ -513,6 +536,7 @@ def open_chat_page(
         url_contains=url_contains,
         open_if_missing=open_if_missing,
         isolated=isolated,
+        browser_path=browser_path,
     )
 
     pw: Playwright | None = None

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -14,7 +16,7 @@ from codey.providers import (
     MimoWebProvider,
     QwenWebProvider,
 )
-from codey.providers import deepseek_web, glm_web, mimo_web, qwen_web, registry
+from codey.providers import deepseek_web, glm_web, local_openai, mimo_web, qwen_web, registry
 
 
 class DeepSeekWebProviderTests(unittest.TestCase):
@@ -254,22 +256,24 @@ class ProviderRegistryTests(unittest.TestCase):
         ids = set(registry.provider_ids())
 
         self.assertEqual(ids, set(registry.PROVIDER_TYPES))
-        self.assertEqual(ids, set(registry.PROVIDER_URL_CONTAINS))
+        self.assertEqual(set(registry.WEB_PROVIDER_LABELS), set(registry.PROVIDER_URL_CONTAINS))
+        self.assertIn("local", ids)
+        self.assertNotIn("local", registry.PROVIDER_URL_CONTAINS)
 
     def test_provider_ids_are_ordered_for_ui(self) -> None:
-        self.assertEqual(registry.provider_ids(), ("deepseek", "mimo", "qwen", "glm"))
+        self.assertEqual(registry.provider_ids(), ("deepseek", "mimo", "qwen", "glm", "local"))
 
     def test_provider_tab_availability_returns_all_registered_providers(self) -> None:
         with mock.patch.object(
             registry,
             "detect_open_provider_tabs",
             return_value={"deepseek": True, "mimo": True},
-        ):
+        ), mock.patch.object(registry, "local_endpoint_available", return_value=True):
             statuses = registry.provider_tab_availability()
 
         self.assertEqual(
             statuses,
-            {"deepseek": True, "mimo": True, "qwen": False, "glm": False},
+            {"deepseek": True, "mimo": True, "qwen": False, "glm": False, "local": True},
         )
 
     def test_connect_provider_dispatches_supported_ids(self) -> None:
@@ -277,17 +281,115 @@ class ProviderRegistryTests(unittest.TestCase):
         qwen = object()
         mimo = object()
         glm = object()
+        local = object()
         with (
             mock.patch.object(registry, "load_enabled_override", return_value=None),
             mock.patch.object(registry.DeepSeekWebProvider, "connect", return_value=deepseek),
             mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen),
             mock.patch.object(registry.MimoWebProvider, "connect", return_value=mimo),
             mock.patch.object(registry.GlmWebProvider, "connect", return_value=glm),
+            mock.patch.object(registry.LocalOpenAIProvider, "connect", return_value=local),
         ):
             self.assertIs(registry.connect_provider("deepseek", port=9222), deepseek)
             self.assertIs(registry.connect_provider("qwen", port=9222), qwen)
             self.assertIs(registry.connect_provider("mimo", port=9222), mimo)
             self.assertIs(registry.connect_provider("glm", port=9222), glm)
+            self.assertIs(registry.connect_provider("local", port=9222), local)
+
+    def test_local_provider_uses_first_available_default_endpoint(self) -> None:
+        seen: list[str] = []
+
+        def probe(url: str, **_kwargs):
+            seen.append(url)
+            if url == "http://127.0.0.1:11434/v1":
+                return local_openai.LocalEndpoint(url, ("llama",))
+            return None
+
+        with (
+            mock.patch.dict(
+                "os.environ",
+                {
+                    local_openai.LOCAL_BASE_URL_ENV: "",
+                    local_openai.LOCAL_MODEL_ENV: "",
+                    local_openai.LOCAL_API_KEY_ENV: "",
+                },
+                clear=False,
+            ),
+            mock.patch.object(local_openai, "load_local_config", return_value={}),
+            mock.patch.object(local_openai, "probe_local_endpoint", side_effect=probe),
+        ):
+            provider = local_openai.LocalOpenAIProvider()
+
+        self.assertEqual(provider.base_url, "http://127.0.0.1:11434/v1")
+        self.assertEqual(provider.model, "local-model")
+        self.assertEqual(
+            seen,
+            ["http://127.0.0.1:1234/v1", "http://127.0.0.1:11434/v1"],
+        )
+
+    def test_local_connect_prefers_remembered_config(self) -> None:
+        endpoint = local_openai.LocalEndpoint("http://127.0.0.1:5001/v1", ("gemma",))
+        with (
+            mock.patch.object(
+                local_openai,
+                "load_local_config",
+                return_value={"base_url": endpoint.base_url, "model": "chosen", "api_key": "secret"},
+            ),
+            mock.patch.object(local_openai, "probe_local_endpoint", return_value=endpoint),
+        ):
+            provider = local_openai.LocalOpenAIProvider.connect()
+
+        self.assertEqual(provider.base_url, endpoint.base_url)
+        self.assertEqual(provider.model, "chosen")
+        self.assertEqual(provider.api_key, "secret")
+
+    def test_local_probe_sends_authorization_when_api_key_is_configured(self) -> None:
+        captured = {}
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self) -> bytes:
+                return b'{"data":[{"id":"llama"}]}'
+
+        def urlopen(request: urllib.request.Request, timeout: float):
+            captured["authorization"] = request.get_header("Authorization")
+            captured["timeout"] = timeout
+            return Response()
+
+        with mock.patch.object(local_openai.urllib.request, "urlopen", side_effect=urlopen):
+            endpoint = local_openai.probe_local_endpoint(
+                "http://127.0.0.1:1234/v1",
+                api_key="secret",
+                timeout=3,
+            )
+
+        self.assertIsNotNone(endpoint)
+        self.assertEqual(captured["authorization"], "Bearer secret")
+        self.assertEqual(captured["timeout"], 3)
+
+    def test_local_config_preserves_api_key_when_new_key_is_omitted(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "local-openai.json"
+            with mock.patch.object(local_openai, "_config_path", return_value=path):
+                local_openai.save_local_config("http://127.0.0.1:1234/v1", "old", "secret")
+                local_openai.save_local_config("http://127.0.0.1:1234/v1", "new", None)
+                preserved = local_openai.load_local_config()
+                local_openai.save_local_config(
+                    "http://127.0.0.1:1234/v1",
+                    "new",
+                    None,
+                    clear_api_key=True,
+                )
+                cleared = local_openai.load_local_config()
+
+        self.assertEqual(preserved["api_key"], "secret")
+        self.assertEqual(preserved["model"], "new")
+        self.assertEqual(cleared["api_key"], "")
 
     def test_connect_existing_provider_does_not_open_or_raise_window(self) -> None:
         qwen = object()
