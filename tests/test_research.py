@@ -9,10 +9,13 @@ from pathlib import Path
 
 from codey import browser_worker, cancellation
 from codey.consensus import ConsensusAdvice
+from codey.events import RunEvent, run_event_payload
 from codey.knowledge import KnowledgeChanges, KnowledgeStore
+from codey.models import ToolCall, ToolResult
 from codey.research.advisors import EvidencePack, run_research_advisors
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.evidence_review import provenance_problem
+from codey.research.protocols import JsonToolCodec
 from codey.research.runner import ResearchRunner
 from codey.research.tools import ResearchTools
 from codey.research.url_policy import check_fetch_url
@@ -189,6 +192,93 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertTrue(rejected.startswith("ERROR:"))
         self.assertIn("saved fact note", accepted)
+
+    def test_search_result_source_requires_open_without_rendering_as_error(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(FakeSearch(), store, KnowledgeChanges(store.root))
+            tools.search_result_urls.add("https://example.com/helium")
+
+            result = tools.knowledge_write({
+                "type": "fact",
+                "title": "Helium",
+                "body": "Helium is useful.",
+                "sources": ["https://example.com/helium"],
+            })
+            count = store.index.count()
+            store.close()
+
+        self.assertTrue(result.startswith("NEEDS_OPEN:"))
+        self.assertIn("open_url", result)
+        self.assertEqual(count, 0)
+
+    def test_needs_open_outcome_is_not_changed_or_error(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(FakeProvider(), FakeSearch(), store, max_turns=2)
+            runner.tools.search_result_urls.add("https://example.com/helium")
+            call = ToolCall("knowledge_write", {
+                "type": "fact",
+                "title": "Helium",
+                "body": "Helium is useful.",
+                "sources": ["https://example.com/helium"],
+            })
+
+            outcome = runner._dispatch(call)
+            payload = run_event_payload(RunEvent.tool_finished(1, call, outcome))
+            count = store.index.count()
+            store.close()
+
+        self.assertEqual(outcome.status, "needs_action")
+        self.assertTrue(outcome.ok)
+        self.assertFalse(outcome.changed)
+        self.assertEqual(count, 0)
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload["status"], "needs_action")
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["changed"])
+
+    def test_saved_note_outcome_is_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(FakeProvider(), FakeSearch(), store, max_turns=2)
+            runner.tools.sources_read.add("https://example.com/helium")
+            call = ToolCall("knowledge_write", {
+                "type": "fact",
+                "title": "Helium",
+                "body": "Helium is useful.",
+                "sources": ["https://example.com/helium"],
+            })
+
+            outcome = runner._dispatch(call)
+            payload = run_event_payload(RunEvent.tool_finished(1, call, outcome))
+            count = store.index.count()
+            store.close()
+
+        self.assertEqual(outcome.status, "ok")
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.changed)
+        self.assertEqual(count, 1)
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload["status"], "ok")
+        self.assertTrue(payload["changed"])
+
+    def test_research_protocol_guides_open_url_before_note_write(self) -> None:
+        codec = JsonToolCodec()
+        prompt = codec.system_prompt()
+        followup = codec.format_results([
+            ToolResult(
+                ToolCall("knowledge_write", {"title": "Helium"}),
+                "NEEDS_OPEN: open_url before saving this note: https://example.com/helium",
+            )
+        ])
+
+        self.assertIn("A web_search result is not evidence yet", prompt)
+        self.assertIn("call open_url", prompt)
+        self.assertIn("NEEDS_OPEN", followup)
+        self.assertIn("call open_url", followup)
 
     def test_research_advisors_get_only_the_evidence_pack(self) -> None:
         advisor = FakeAdvisorProvider("gap found")

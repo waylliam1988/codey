@@ -130,11 +130,11 @@ class ResearchTools:
         if note_type == "source":
             problem = self._source_problem(sources)
             if problem:
-                return f"ERROR: {problem}"
+                return problem if problem.startswith("NEEDS_OPEN:") else f"ERROR: {problem}"
         elif note_type in _CITED_TYPES:
             problem = self._provenance_problem(note_type, sources)
             if problem:
-                return f"ERROR: {problem}"
+                return problem if problem.startswith("NEEDS_OPEN:") else f"ERROR: {problem}"
         status = str(args.get("status") or "active").strip().lower()
         if status not in NOTE_STATUSES:
             status = "active"
@@ -188,6 +188,8 @@ class ResearchTools:
             return "a source note must cite the url of a page you opened"
         unopened = [u for u in urls if u not in self.sources_read]
         if unopened:
+            if all(u in self.search_result_urls for u in unopened):
+                return "NEEDS_OPEN: open_url before saving this source note: " + ", ".join(unopened[:3])
             return "cite only pages you actually opened; you did not open: " + ", ".join(unopened[:3])
         return None
 
@@ -206,6 +208,8 @@ class ResearchTools:
             )
         unread_urls = [s for s in sources if _looks_like_url(s) and s not in self.sources_read]
         if unread_urls:
+            if all(u in self.search_result_urls for u in unread_urls):
+                return "NEEDS_OPEN: open_url before saving this note: " + ", ".join(unread_urls[:3])
             return "cite only pages you actually opened; you did not open: " + ", ".join(unread_urls[:3])
         ungrounded = [s for s in sources if not _looks_like_url(s) and s not in self.grounded_ids]
         if ungrounded:

@@ -225,13 +225,9 @@ def save_local_config(
     base_url: str,
     model: str = "",
     api_key: str | None = None,
-    *,
-    clear_api_key: bool = False,
 ) -> None:
     previous = load_local_config()
-    if clear_api_key:
-        stored_key = ""
-    elif api_key is None:
+    if api_key is None:
         stored_key = str(previous.get("api_key") or "").strip()
     else:
         stored_key = str(api_key or "").strip()

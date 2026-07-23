@@ -161,11 +161,14 @@ class ResearchRunner:
                     yield RunEvent.info("stop requested")
                 break
             if plan.control is not None and plan.control.kind == "done":
-                failed = [r for r in results if getattr(r[1], "output", "").startswith("ERROR:")]
+                failed = [
+                    r for r in results
+                    if getattr(r[1], "output", "").startswith(("ERROR:", "NEEDS_OPEN:"))
+                ]
                 if failed:
                     message = self.codec.format_results(_tool_results(results)) + (
-                        "\n\nResolve the ERROR results before calling done. "
-                        "Open cited pages before saving facts, and link only notes that exist."
+                        "\n\nResolve the ERROR or NEEDS_OPEN results before calling done. "
+                        "Open cited pages with open_url before saving facts, and link only notes that exist."
                     )
                     continue
                 summary_candidate = plan.control.body.strip()
@@ -234,7 +237,8 @@ class ResearchRunner:
         if call.name == "knowledge_read":
             return _Outcome(self.tools.knowledge_read(str(args.get("id") or args.get("note_id") or "")))
         if call.name == "knowledge_write":
-            return _Outcome(self.tools.knowledge_write(args), changed=True)
+            output = self.tools.knowledge_write(args)
+            return _Outcome(output, changed=output.startswith("saved "))
         if call.name == "knowledge_link":
             output = self.tools.knowledge_link(
                 str(args.get("src") or ""),
@@ -454,9 +458,10 @@ def _advisor_followup_prompt(summary: str, advices: tuple[object, ...]) -> str:
 class _Outcome:
     def __init__(self, output: str, *, changed: bool = False) -> None:
         self.output = output
-        self.ok = not output.startswith("ERROR:")
+        self.status = _outcome_status(output)
+        self.ok = self.status != "error"
         self.exit_code = None
-        self.changed = changed
+        self.changed = changed and self.status == "ok"
         self.truncated = False
 
     @classmethod
@@ -466,6 +471,14 @@ class _Outcome:
 
     def first_line(self, limit: int) -> str:
         return next(iter(self.output.splitlines()), "")[:limit]
+
+
+def _outcome_status(output: str) -> str:
+    if output.startswith("ERROR:"):
+        return "error"
+    if output.startswith("NEEDS_OPEN:"):
+        return "needs_action"
+    return "ok"
 
 
 def _tool_results(results: list[tuple[object, _Outcome]]) -> list[ToolResult]:

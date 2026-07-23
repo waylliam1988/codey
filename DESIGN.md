@@ -216,6 +216,8 @@ Changes   3 files                    View diff
 
 File stats stay gray in the stream; weak tint only inside diff drawer.
 
+**Assistant long replies:** render expanded by default. If the reply is long, show a quiet `Collapse` text action below it; clicking it folds the body and changes the action to `Expand`. Do not default to collapsed answers.
+
 **Shell approval:**
 
 ```
@@ -248,7 +250,7 @@ Choose folder · Research · DeepSeek          ← composer-context (11.5px, --m
 
 - Box: `--bg-2`, 1px `--border`, radius 10px; focus border `--text-dim` (not blue).
 - **Context row:** `Choose folder`, `Research`, and the current provider stay in one quiet line above the input.
-- **Research token:** visible by default as text, not as a framed button. Hover changes text to `--text`; active Research uses brighter text and weight only. No border, background, chip, underline, or accent color.
+- **Research token:** visible by default as text, not as a framed button. Hover changes text to `--text`; active Research uses brighter text only. No border, background, chip, underline, font-weight change, or accent color.
 - **Provider picker:** borderless; status dot + label + chevron. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.
 - **Send / Stop:** square **icon buttons** (`.icon-btn`), transparent until hover. No filled accent send button.
 - `Enter` hint: visible on composer focus/hover only, `--faint`. `Enter` sends; `Shift+Enter` inserts a newline.

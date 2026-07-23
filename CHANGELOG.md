@@ -4,6 +4,23 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.1 - Research Polish and UI Follow-through
+
+- Local provider: removed the explicit saved-key clearing checkbox. Leaving the
+  API key field blank keeps the saved key; entering a new key replaces it on
+  `Connect`.
+- Research evidence flow: citing a search-result URL before opening it now
+  returns `NEEDS_OPEN` instead of a red error. `NEEDS_OPEN` is a neutral
+  `needs_action` tool status, not a saved note and not a changed tool result.
+  Both generic run events and the Web/SSE production event path carry the same
+  status.
+- UI: active `Research` now only brightens the text; it does not add a border,
+  background, or font-weight change. Assistant replies render expanded by
+  default, with `Collapse` available for long answers.
+- Markdown: assistant report rendering now supports `#` through `######`
+  headings and basic nested lists while staying dependency-free and
+  monochrome.
+
 ## 0.2.0 - Research, Knowledge, and Local Models
 
 This is a major workflow release. Codey is no longer only a local coding loop:
@@ -24,11 +41,12 @@ bounded synthesis into a project, and remember verified implementation facts.
   that plan" keep working.
 - Local provider: `Local` connects to OpenAI-compatible endpoints such as LM
   Studio, Ollama, or llama.cpp. The compact config popover supports base URL,
-  model id, optional API key preservation, and explicit key clearing.
+  model id, optional API key preservation, and replacing the saved key by
+  entering a new one.
 - Safety and reliability: web provider sends stay on the browser-worker thread;
   only thread-safe Local sends use cancellable background send. Browser-worker
-  calls are reentrant, preventing Research search self-deadlocks. Headless
-  browser code was removed from Codey's runtime path.
+  calls are reentrant, preventing Research search self-deadlocks. Hidden-browser
+  runtime code was removed from Codey's runtime path.
 - UI: Research is a lightweight composer token beside `Choose folder` and the
   model name, not a separate app or another button beside the model selector.
   The Research drawer shows notes, source URLs, synthesis, and restore state.

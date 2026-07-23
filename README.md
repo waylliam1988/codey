@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.1-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.0`
+Version: `0.2.1`
 
 [Version history](CHANGELOG.md)
 
@@ -313,8 +313,8 @@ the whole vault.
 
 To use a local model, select `Local` from the model menu. Codey opens a compact
 configuration popover for the OpenAI-compatible base URL, model id, and optional
-API key. Leaving the key blank keeps any saved key; use `Clear saved key` to
-remove it.
+API key. Leaving the key blank keeps any saved key; entering a new key replaces
+the saved key when you click `Connect`.
 
 When a task finishes, Codey summarizes the local facts in one quiet line:
 

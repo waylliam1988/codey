@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.0-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.1-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.0`
+版本：`0.2.1`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -277,7 +277,7 @@ Codey 会让网页 AI 返回结构化工具调用，然后在本地真实读写�
 
 如果要使用本地模型，在模型菜单里选择 `Local`。Codey 会弹出 OpenAI-compatible
 配置框，填写 base URL、model id 和可选 API key。key 留空会保留已有 key；
-勾选 `Clear saved key` 才会清除。
+填入新 key 后点击 `Connect` 会覆盖旧 key。
 
 任务结束后，Codey 会用一行很轻的收据总结本地事实：
 

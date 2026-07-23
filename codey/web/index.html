@@ -329,6 +329,7 @@
     font-size: 13px; margin: 14px 0 8px;
   }
   .md-list { margin: 0 0 10px; padding-left: 20px; }
+  .md-list .md-list { margin: 4px 0 2px; }
   .md-list li { margin: 2px 0; }
   .md-ic {
     font-family: var(--font-mono); font-size: 12px;
@@ -575,7 +576,6 @@
   .ctx-token:hover:not(:disabled) { color: var(--text); }
   .ctx-token.active {
     color: var(--text);
-    font-weight: 500;
   }
   .ctx-token:disabled {
     cursor: default;
@@ -716,19 +716,6 @@
     outline: none;
   }
   .local-config-pop input:focus { border-color: var(--faint); }
-  .local-key-row {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    margin-top: 7px;
-    color: var(--muted);
-    font-size: 12px;
-  }
-  .local-key-row input {
-    width: auto;
-    margin: 0;
-    accent-color: var(--text-dim);
-  }
   .local-config-actions {
     display: flex;
     justify-content: flex-end;
@@ -982,10 +969,6 @@
   <input id="local-base-url" placeholder="http://127.0.0.1:1234/v1" autocomplete="off" />
   <input id="local-model-name" placeholder="model id" autocomplete="off" />
   <input id="local-api-key" placeholder="API key (blank keeps saved key)" autocomplete="off" />
-  <label class="local-key-row">
-    <input type="checkbox" id="local-clear-api-key" />
-    <span>Clear saved key</span>
-  </label>
   <div class="local-config-actions">
     <button class="text-btn" id="local-config-close">Close</button>
     <button class="text-btn primary" id="local-config-save">Connect</button>
@@ -1683,10 +1666,40 @@ function appendCodeBlock(container, code) {
 }
 function renderMarkdown(container, text) {
   const lines = String(text == null ? '' : text).split('\n');
-  let list = null;
-  const flushList = () => { if (list) { container.appendChild(list); list = null; } };
+  let listStack = [];
+  const flushList = () => {
+    if (listStack.length) container.appendChild(listStack[0].el);
+    listStack = [];
+  };
+  const appendListItem = (line) => {
+    const match = line.match(/^(\s*)([-*]|\d+[.)])\s+(.*)$/);
+    if (!match) return false;
+    const spaces = match[1].replace(/\t/g, '    ').length;
+    let depth = Math.floor(spaces / 2);
+    const tag = /^\d/.test(match[2]) ? 'ol' : 'ul';
+    if (depth > listStack.length) depth = listStack.length;
+    if (depth === 0 && listStack[0] && listStack[0].tag !== tag) flushList();
+    while (listStack.length > depth + 1) listStack.pop();
+    if (!listStack[depth] || listStack[depth].tag !== tag) {
+      if (depth > 0 && (!listStack[depth - 1] || !listStack[depth - 1].lastLi)) depth = 0;
+      if (depth === 0 && listStack[0] && listStack[0].tag !== tag) flushList();
+      const next = document.createElement(tag);
+      next.className = 'md-list';
+      if (depth > 0) {
+        const parent = listStack[depth - 1];
+        parent.lastLi.appendChild(next);
+      }
+      listStack = listStack.slice(0, depth);
+      listStack[depth] = { el: next, tag, lastLi: null };
+    }
+    const li = document.createElement('li');
+    li.innerHTML = renderInlineMd(match[3]);
+    listStack[depth].el.appendChild(li);
+    listStack[depth].lastLi = li;
+    return true;
+  };
   const isBreak = (line) => (
-    /^\s*```/.test(line) || /^#{1,3}\s+/.test(line)
+    /^\s*```/.test(line) || /^#{1,6}\s+/.test(line)
     || /^\s*[-*]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line)
   );
   let i = 0;
@@ -1702,28 +1715,17 @@ function renderMarkdown(container, text) {
       continue;
     }
     if (!line.trim()) { flushList(); i++; continue; }
-    const heading = line.match(/^#{1,3}\s+(.*)$/);
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
     if (heading) {
       flushList();
       const el = document.createElement('div');
-      el.className = 'md-h';
-      el.innerHTML = renderInlineMd(heading[1]);
+      el.className = 'md-h md-h' + Math.min(6, heading[1].length);
+      el.innerHTML = renderInlineMd(heading[2]);
       container.appendChild(el);
       i++;
       continue;
     }
-    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    const ordered = line.match(/^\s*\d+[.)]\s+(.*)$/);
-    if (bullet || ordered) {
-      const tag = ordered ? 'ol' : 'ul';
-      if (!list || list.tagName.toLowerCase() !== tag) {
-        flushList();
-        list = document.createElement(tag);
-        list.className = 'md-list';
-      }
-      const li = document.createElement('li');
-      li.innerHTML = renderInlineMd((bullet || ordered)[1]);
-      list.appendChild(li);
+    if (appendListItem(line)) {
       i++;
       continue;
     }
@@ -1843,19 +1845,17 @@ function appendMessageNode(chat, m) {
     label.textContent = 'Codey';
     div.appendChild(label);
     const body = document.createElement('div');
-    body.className = 'body md collapsed';
+    body.className = 'body md';
     renderMarkdown(body, m.text);
     div.appendChild(body);
     if (m.text.split('\n').length > 6 || m.text.length > 400) {
       const toggle = document.createElement('div');
-      toggle.className = 'toggle'; toggle.textContent = 'Expand';
+      toggle.className = 'toggle'; toggle.textContent = 'Collapse';
       toggle.onclick = () => {
         const collapsed = body.classList.toggle('collapsed');
         toggle.textContent = collapsed ? 'Expand' : 'Collapse';
       };
       div.appendChild(toggle);
-    } else {
-      body.classList.remove('collapsed');
     }
     addMessageCopyButton(div, messageCopyText(m));
     chat.appendChild(div);
@@ -2318,6 +2318,7 @@ function handleServerEvent(data) {
   if (data.type === 'tool') {
     const rawToolId = (data.tool_id || '').toString();
     const toolKey = rawToolId ? `${runId}:${rawToolId}` : '';
+    const toolStatus = (data.status || (data.ok === false ? 'error' : 'ok')).toString();
     const message = {
       type: 'tool',
       toolKey,
@@ -2325,7 +2326,8 @@ function handleServerEvent(data) {
       kind: data.kind || '',
       path: data.path || '',
       result: (data.result || '').toString().slice(0, 200),
-      error: !!data.error,
+      status: toolStatus,
+      error: toolStatus === 'error',
       runId,
     };
     if (
@@ -3095,7 +3097,6 @@ async function openLocalProviderConfig() {
   pop.setAttribute('aria-hidden', 'false');
   $('local-config-error').textContent = '';
   $('local-api-key').value = '';
-  $('local-clear-api-key').checked = false;
   try {
     const r = await fetch('/api/local_provider');
     if (!r.ok) return;
@@ -3122,13 +3123,12 @@ async function saveLocalProviderConfig() {
   const base_url = $('local-base-url').value.trim();
   const model = $('local-model-name').value.trim();
   const api_key = $('local-api-key').value.trim();
-  const clear_api_key = $('local-clear-api-key').checked;
   if (!base_url) return;
   $('local-config-error').textContent = '';
   $('local-config-save').disabled = true;
   $('local-config-save').textContent = 'Connecting';
   try {
-    const payload = { base_url, model, clear_api_key };
+    const payload = { base_url, model };
     if (api_key) payload.api_key = api_key;
     const r = await fetch('/api/local_provider', {
       method: 'POST',

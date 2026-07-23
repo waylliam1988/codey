@@ -75,7 +75,8 @@ class JsonToolCodec:
             f"{joined}\n\n"
             "Continue. Reply with the next JSON tool call. When you have enough "
             "evidence, save what matters with knowledge_write/knowledge_link, "
-            "then call done with the full report as the answer."
+            "then call done with the full report as the answer. If a result says "
+            "NEEDS_OPEN, call open_url for that URL before trying knowledge_write again."
         )
 
 
@@ -148,6 +149,7 @@ Note types (choose the right one; never mislabel):
 
 Discipline:
 - Start by calling knowledge_search to see what you already know.
+- A web_search result is not evidence yet. After web_search, call open_url on useful result URLs before knowledge_write.
 - Prefer 2+ independent sources before writing a fact.
 - Every fact/conclusion note must cite sources.
 - The final report may cite or name only pages you opened in this run, or grounded source notes you read.

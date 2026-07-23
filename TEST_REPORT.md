@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## 0.2.1 Research Polish and UI Follow-through
+
+Codey 0.2.1 tightens the Research and Local-model UX added in 0.2.0 without
+changing the explicit Research boundary.
+
+Production changes:
+
+- Local model configuration no longer exposes a `Clear saved key` checkbox.
+  Blank API key input preserves the saved key; entering a new key replaces it.
+- `NEEDS_OPEN` is now a neutral Research tool status for "open this source
+  before saving a note". It does not write a note, does not mark the tool as
+  changed, and is carried through both generic run-event payloads and the
+  Web/SSE `TaskRunner._ui_event()` path.
+- Active `Research` text is brighter only, with no border, background, or
+  font-weight change.
+- Assistant replies render expanded by default; long replies offer a `Collapse`
+  action.
+- Assistant Markdown rendering supports `#` through `######` headings and
+  basic nested lists.
+
+Validation:
+
+```text
+python -m unittest tests.test_server tests.test_ui: 153 passed
+python -m unittest tests.test_browser tests.test_research tests.test_handoff tests.test_server tests.test_providers tests.test_ui: 252 passed
+python -m unittest discover: 1141 passed
+python -m py_compile codey\task_runner.py tests\test_server.py: passed
+Node parse codey\web\index.html script: ok
+stale browser/clear-key runtime string scan: no results
+git diff --check: passed
+```
+
 ## 0.2.0 Research, Knowledge, and Local Models
 
 Codey 0.2.0 adds an explicit Research work loop, a local knowledge vault, a

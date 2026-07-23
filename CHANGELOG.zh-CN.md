@@ -4,6 +4,19 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.1 - Research 收口与 UI 体验修正
+
+- Local provider：移除显式清除 saved key 的勾选框。API key 留空会保留旧 key；
+  输入新 key 后点击 `Connect` 会覆盖旧 key。
+- Research evidence flow：引用搜索结果 URL 但还没有打开时，现在返回中性的
+  `NEEDS_OPEN`，不再显示红色错误。`NEEDS_OPEN` 是 `needs_action` 状态，
+  不算 saved note，也不算 changed tool result；通用事件和 Web/SSE 生产事件路径都
+  透传同一状态。
+- UI：`Research` 选中态只让文字变亮，不加边框、背景或字重。Assistant 回答默认展开，
+  长回答提供 `Collapse` 手动折叠。
+- Markdown：assistant 报告渲染支持 `#` 到 `######` 标题和基础嵌套列表，
+  仍然不引入依赖，并保持单色设计。
+
 ## 0.2.0 - Research、Knowledge 与本地模型
 
 这是一次重要工作流升级。Codey 不再只是本地编程循环：它可以显式 Research 一个问题，
@@ -18,7 +31,8 @@
   连续 Research 和项目内 Hybrid Research 会带上有边界的同一聊天前文，所以“继续查刚才那个方案”
   不会丢上下文。
 - Local provider：`Local` 可以连接 LM Studio、Ollama、llama.cpp 等 OpenAI-compatible
-  endpoint。轻量配置弹窗支持 base URL、model id、可选 API key 保留和显式清除。
+  endpoint。轻量配置弹窗支持 base URL、model id、可选 API key 保留；输入新 key
+  后点击 `Connect` 会覆盖旧 key。
 - 安全与可靠性：网页版 provider send 仍留在 browser-worker 线程里；只有明确线程安全的
   Local send 使用可取消后台发送。browser-worker call 支持 reentrant，避免 Research 搜索自锁。
   Codey 运行路径里的隐藏浏览器启动代码已删除。

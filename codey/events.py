@@ -142,6 +142,7 @@ def run_event_payload(
         "kind": event.call.name,
         "path": "" if path == "." else clip_event_text(path),
         "ok": event.outcome.ok,
+        "status": clip_event_text(getattr(event.outcome, "status", "ok" if event.outcome.ok else "error"), 32),
         "changed": event.outcome.changed,
         "truncated": event.outcome.truncated,
         "result": clip_event_text(

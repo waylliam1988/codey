@@ -1429,6 +1429,7 @@ class TaskRunner:
         display_kind, display_path = _display_tool(event.call.name, event.call.args, path)
         result = event.outcome.first_line(200)
         tool_index = int(event.metadata.get("tool_index") or 0)
+        status = str(getattr(event.outcome, "status", "") or ("ok" if event.outcome.ok else "error"))
         return {
             "type": "tool",
             "run_id": run_id,
@@ -1438,5 +1439,6 @@ class TaskRunner:
             "kind": display_kind,
             "path": display_path,
             "result": result,
-            "error": not event.outcome.ok,
+            "status": status,
+            "error": status == "error",
         }

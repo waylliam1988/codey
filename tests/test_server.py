@@ -21,11 +21,13 @@ from codey import server
 from codey.agent import RunResult
 from codey.changes import ChangeTracker
 from codey.consensus import ConsensusAdvice, ConsensusResult
+from codey.events import RunEvent
 from codey.handoff import ConversationSnapshot
+from codey.models import ToolCall
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_discovery import Discovery
 from codey.providers.local_openai import LocalEndpoint
-from codey.task_runner import _project_has_user_files
+from codey.task_runner import TaskRunner, _project_has_user_files
 from codey.verification_policy import VerificationCandidate
 
 
@@ -562,6 +564,53 @@ class ProviderStatusTests(unittest.TestCase):
         connect_self_review.assert_not_called()
 
 
+class TaskRunnerUiEventTests(unittest.TestCase):
+    def test_tool_event_preserves_needs_action_status(self) -> None:
+        class Outcome:
+            output = "NEEDS_OPEN: open_url before saving this note: https://example.com/helium"
+            status = "needs_action"
+            ok = True
+            changed = False
+            truncated = False
+            exit_code = None
+
+            def first_line(self, limit: int) -> str:
+                return self.output[:limit]
+
+        call = ToolCall("knowledge_write", {"title": "Helium"})
+        event = RunEvent.tool_finished(2, call, Outcome(), index=3)
+
+        payload = TaskRunner._ui_event("run-1", "session-1", event)
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload["type"], "tool")
+        self.assertEqual(payload["status"], "needs_action")
+        self.assertFalse(payload["error"])
+
+    def test_tool_event_empty_status_falls_back_to_error(self) -> None:
+        class Outcome:
+            output = "ERROR: failed"
+            status = ""
+            ok = False
+            changed = False
+            truncated = False
+            exit_code = None
+
+            def first_line(self, limit: int) -> str:
+                return self.output[:limit]
+
+        call = ToolCall("knowledge_write", {"title": "Helium"})
+        event = RunEvent.tool_finished(2, call, Outcome(), index=3)
+
+        payload = TaskRunner._ui_event("run-1", "session-1", event)
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload["status"], "error")
+        self.assertTrue(payload["error"])
+
+
 class LocalProviderApiTests(unittest.TestCase):
     def test_empty_api_key_preserves_existing_key_for_probe_and_save(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -601,7 +650,6 @@ class LocalProviderApiTests(unittest.TestCase):
                 "http://127.0.0.1:1234/v1",
                 "llama",
                 None,
-                clear_api_key=False,
             )
         finally:
             httpd.shutdown()

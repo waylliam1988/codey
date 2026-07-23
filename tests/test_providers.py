@@ -379,17 +379,20 @@ class ProviderRegistryTests(unittest.TestCase):
                 local_openai.save_local_config("http://127.0.0.1:1234/v1", "old", "secret")
                 local_openai.save_local_config("http://127.0.0.1:1234/v1", "new", None)
                 preserved = local_openai.load_local_config()
-                local_openai.save_local_config(
-                    "http://127.0.0.1:1234/v1",
-                    "new",
-                    None,
-                    clear_api_key=True,
-                )
-                cleared = local_openai.load_local_config()
 
         self.assertEqual(preserved["api_key"], "secret")
         self.assertEqual(preserved["model"], "new")
-        self.assertEqual(cleared["api_key"], "")
+
+    def test_local_config_replaces_api_key_when_new_key_is_provided(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "local-openai.json"
+            with mock.patch.object(local_openai, "_config_path", return_value=path):
+                local_openai.save_local_config("http://127.0.0.1:1234/v1", "old", "old-secret")
+                local_openai.save_local_config("http://127.0.0.1:1234/v1", "new", "new-secret")
+                config = local_openai.load_local_config()
+
+        self.assertEqual(config["api_key"], "new-secret")
+        self.assertEqual(config["model"], "new")
 
     def test_connect_existing_provider_does_not_open_or_raise_window(self) -> None:
         qwen = object()

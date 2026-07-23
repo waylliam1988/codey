@@ -1355,14 +1355,11 @@ class Handler(BaseHTTPRequestHandler):
             model = str(body.get("model") or "").strip()
             raw_api_key = body.get("api_key")
             api_key = str(raw_api_key).strip() if raw_api_key is not None else ""
-            clear_api_key = bool(body.get("clear_api_key"))
             if not base_url:
                 self._send_json(400, {"ok": False, "error": "base_url required"})
                 return
             previous = load_local_config()
-            probe_key = ""
-            if not clear_api_key:
-                probe_key = api_key if api_key else str(previous.get("api_key") or "")
+            probe_key = api_key if api_key else str(previous.get("api_key") or "")
             endpoint = probe_local_endpoint(base_url, api_key=probe_key)
             if endpoint is None:
                 self._send_json(400, {"ok": False, "error": "could not reach an OpenAI-compatible /models endpoint"})
@@ -1372,7 +1369,6 @@ class Handler(BaseHTTPRequestHandler):
                     endpoint.base_url,
                     model or endpoint.default_model,
                     api_key if api_key else None,
-                    clear_api_key=clear_api_key,
                 )
             except (OSError, ValueError) as exc:
                 self._send_json(500, {"ok": False, "error": str(exc)})
