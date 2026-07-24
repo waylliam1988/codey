@@ -416,6 +416,19 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("did not open", problem)
 
+    def test_provenance_can_allow_search_result_mentions_as_limitations(self) -> None:
+        problem = provenance_problem(
+            "反证与限制: agency.gov and blog.example were search leads, not usable evidence.",
+            opened_sources=set(),
+            search_result_urls={
+                "https://agency.gov/alpha-safety/manual",
+                "https://blog.example/alpha-safety-summary",
+            },
+            allow_search_result_mentions=True,
+        )
+
+        self.assertIsNone(problem)
+
     def test_report_quality_allows_source_quality_parent_domain_for_opened_subdomain(self) -> None:
         url = "https://docs.python.org/3/library/pathlib.html"
         ledger = ResearchLedger()
@@ -583,6 +596,116 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertTrue(review.ok, review.message)
         self.assertEqual(review.citation_map[0].title, "Helium article")
         self.assertEqual(review.citation_map[0].url, url)
+
+    def test_report_quality_accepts_url_only_source_entry_with_ledger_title(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(url).replace(
+            f"[1] Helium article - {url}",
+            f"[1] {url}",
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertEqual(review.citation_map[0].title, "Helium article")
+
+    def test_report_quality_accepts_bibliography_style_source_entry(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(url).replace(
+            f"[1] Helium article - {url}",
+            f"1. Helium article. Available at: {url}",
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertEqual(review.citation_map[0].title, "Helium article")
+
+    def test_report_quality_allows_no_citable_source_report_for_failed_search_leads(self) -> None:
+        ledger = ResearchLedger()
+        ledger.record_search("Alpha Safety Program 72 hour threshold", [
+            {
+                "title": "Alpha Safety Program official manual",
+                "url": "https://agency.gov/alpha-safety/manual",
+                "snippet": "Official manual.",
+            },
+            {
+                "title": "Alpha Safety summary blog",
+                "url": "https://blog.example/alpha-safety-summary",
+                "snippet": "Secondary summary.",
+            },
+        ])
+        report = (
+            "## 结论\n"
+            "未能确认 Alpha Safety Program 要求 72 小时事件通知阈值。\n\n"
+            "## 关键证据\n"
+            "无可引用的有效来源；搜索结果里的 agency.gov 和 blog.example 没有提供可验证正文。\n\n"
+            "## 反证与限制\n"
+            "未找到强反证。限制是 agency.gov 和 blog.example 只是搜索线索，未形成可引用证据。\n\n"
+            "## 来源质量\n"
+            "无有效来源；没有可引用的已打开页面。\n\n"
+            "## 搜索覆盖\n"
+            "搜索了 Alpha Safety Program、72 hour threshold、agency.gov 和 blog.example 相关线索。\n\n"
+            "## 来源\n"
+            "本报告无可引用的已打开有效来源。"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources=set(),
+            search_result_urls={
+                "https://agency.gov/alpha-safety/manual",
+                "https://blog.example/alpha-safety-summary",
+            },
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertIn("no opened source", review.warnings[0])
+
+    def test_report_quality_rejects_no_citable_report_that_lists_unopened_url_as_source(self) -> None:
+        ledger = ResearchLedger()
+        ledger.record_search("Alpha Safety Program", [{
+            "title": "Alpha Safety Program official manual",
+            "url": "https://agency.gov/alpha-safety/manual",
+            "snippet": "Official manual.",
+        }])
+        report = (
+            "## 结论\n"
+            "未能确认 Alpha Safety Program 要求 72 小时事件通知阈值。\n\n"
+            "## 关键证据\n"
+            "无可引用的有效来源。\n\n"
+            "## 反证与限制\n"
+            "未找到强反证；搜索了 agency.gov。\n\n"
+            "## 来源质量\n"
+            "无有效来源。\n\n"
+            "## 搜索覆盖\n"
+            "搜索了 Alpha Safety Program。\n\n"
+            "## 来源\n"
+            "[1] https://agency.gov/alpha-safety/manual"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources=set(),
+            search_result_urls={"https://agency.gov/alpha-safety/manual"},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("did not open", review.message)
 
     def test_report_quality_accepts_pdf_page_citations_with_page_backed_evidence(self) -> None:
         url = "https://example.com/report.pdf"
@@ -1054,9 +1177,46 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("[1 p.4]", prompt)
         self.assertIn("Do not paraphrase evidence.excerpt", prompt)
         self.assertIn("omit the evidence field", prompt)
+        self.assertIn("You are a local research agent", prompt)
+        self.assertNotIn("CodeyResearch", prompt)
         self.assertIn("反证与限制", prompt)
         self.assertIn("NEEDS_OPEN", followup)
         self.assertIn("call open_url", followup)
+
+    def test_quality_review_followup_is_specific_when_done_answer_needs_revision(self) -> None:
+        url = "https://example.com/helium"
+        invalid = valid_research_report(url).replace(
+            "Helium supply depends on gas processing. [1]",
+            "Helium supply depends on gas processing.",
+        )
+        provider = FakeProvider(
+            json.dumps({"tool": "open_url", "args": {"url": url}}),
+            json.dumps({
+                "tool": "knowledge_write",
+                "args": {
+                    "type": "fact",
+                    "title": "Helium source",
+                    "body": "Helium comes from gas processing.",
+                    "sources": [url],
+                },
+            }),
+            json.dumps({"tool": "done", "args": {"answer": invalid}}),
+            json.dumps({"tool": "done", "args": {"answer": valid_research_report(url)}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=6)
+
+            list(runner.run("Research helium"))
+            result = runner.result
+            store.close()
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Your last done.answer did not pass", provider.sent[3])
+        self.assertIn("Supported conclusions need [n]", provider.sent[3])
+        self.assertNotIn("[no tool output]", provider.sent[3])
 
     def test_research_advisors_get_only_the_evidence_pack(self) -> None:
         advisor = FakeAdvisorProvider("gap found")

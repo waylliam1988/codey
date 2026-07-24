@@ -31,9 +31,6 @@ class QwenDriverTests(unittest.TestCase):
     def test_ready_timeout_allows_slow_homepage(self) -> None:
         self.assertGreaterEqual(qwen.READY_TIMEOUT, 90)
 
-    def test_page_bootstrap_helper_does_not_expose_product_name(self) -> None:
-        self.assertNotIn("codey", qwen._BOOTSTRAP_READY_JS.lower())
-
     def test_new_chat_applies_one_budget_to_navigation_and_ready_wait(self) -> None:
         page = mock.Mock()
         with (
@@ -244,26 +241,23 @@ class QwenDriverTests(unittest.TestCase):
         self.assertEqual(provider["_revival"]["failures"], 1)
         self.assertEqual(provider["send_button"]["failures"], 1)
 
-    def test_wait_ready_requires_model_bootstrap_after_input_appears(self) -> None:
+    def test_wait_ready_accepts_stable_model_selector_without_bootstrap_resource(self) -> None:
         page = mock.Mock()
         textarea = mock.Mock()
         with (
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_bootstrap_ready", side_effect=[False, True, True]) as ready,
             mock.patch.object(qwen, "_model_selector_text", return_value="Qwen3.7-Plus"),
             mock.patch.object(qwen.cancellation, "wait") as wait,
         ):
             qwen.wait_ready(page, timeout=1)
 
-        self.assertEqual(ready.call_count, 3)
-        self.assertEqual(wait.call_count, 2)
+        self.assertEqual(wait.call_count, 1)
 
     def test_wait_ready_requires_model_selector_stability(self) -> None:
         page = mock.Mock()
         textarea = mock.Mock()
         with (
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_bootstrap_ready", return_value=True),
             mock.patch.object(
                 qwen,
                 "_model_selector_text",
@@ -281,7 +275,6 @@ class QwenDriverTests(unittest.TestCase):
         textarea = mock.Mock()
         with (
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_bootstrap_ready", return_value=True),
             mock.patch.object(qwen, "_model_selector_text", return_value="Qwen3.7-Plus"),
         ):
             with self.assertRaisesRegex(TimeoutError, "model selector"):
@@ -302,7 +295,6 @@ class QwenDriverTests(unittest.TestCase):
         with (
             mock.patch.object(qwen.time, "time", side_effect=fake_time),
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_bootstrap_ready", return_value=True),
             mock.patch.object(
                 qwen,
                 "_model_selector_text",
@@ -335,14 +327,6 @@ class QwenDriverTests(unittest.TestCase):
 
         with self.assertRaises(qwen.PlaywrightError):
             qwen.new_chat(page)
-
-    def test_bootstrap_ready_is_read_without_page_content(self) -> None:
-        page = mock.Mock()
-        page.evaluate.return_value = True
-
-        self.assertTrue(qwen._bootstrap_ready(page))
-
-        page.evaluate.assert_called_once_with(qwen._BOOTSTRAP_READY_JS)
 
     def test_model_selector_text_is_read_without_page_content(self) -> None:
         page = mock.Mock()
@@ -633,6 +617,39 @@ class QwenDriverTests(unittest.TestCase):
         self.assertTrue(attempt.confirmed)
         helper.assert_not_called()
 
+    def test_chat_returns_stable_json_tool_reply_without_waiting_for_page_completion(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        json_reply = '{"tool":"done","args":{"answer":"ok"}}'
+        with (
+            mock.patch.object(qwen, "wait_ready"),
+            mock.patch.object(qwen, "_message_box", return_value=textarea),
+            mock.patch.object(qwen, "_fill_message"),
+            mock.patch.object(qwen, "_submit", return_value=attempt),
+            mock.patch.object(qwen, "_response_count", side_effect=[0, *([1] * 20)]),
+            mock.patch.object(qwen, "_last_text", return_value=json_reply),
+            mock.patch.object(qwen, "_empty_response_visible", return_value=False),
+            mock.patch.object(qwen, "_generation_complete", return_value=False),
+            mock.patch.object(qwen, "_final_text", return_value=json_reply),
+            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+            mock.patch.object(qwen.controls, "confirm_control"),
+            mock.patch.object(qwen.controls, "flow_stage_ready", return_value=False) as flow_ready,
+            mock.patch.object(qwen.cancellation, "wait"),
+        ):
+            reply = qwen.chat(
+                page,
+                "hello",
+                response_timeout=1,
+                stable_ticks=99,
+                tick=0,
+                min_wait=0,
+            )
+
+        self.assertEqual(reply, json_reply)
+        self.assertLess(flow_ready.call_count, 3)
+
     def test_chat_retries_once_after_confirmed_submission_stalls(self) -> None:
         page = mock.Mock()
         with (
@@ -797,11 +814,38 @@ class QwenDriverTests(unittest.TestCase):
                 "_copy_last_text",
                 side_effect=lambda page: calls.append("copy") or "raw reply",
             ),
+            mock.patch.object(qwen, "_last_text", return_value="raw reply"),
         ):
             result = qwen._final_text(object())
 
         self.assertEqual(result, "raw reply")
         self.assertEqual(calls, ["preference", "copy"])
+
+    def test_final_text_prefers_dom_json_when_copy_is_stale_prompt(self) -> None:
+        json_reply = '{"tool":"done","args":{"answer":"ok"}}'
+        with (
+            mock.patch.object(qwen, "_resolve_preference", return_value=False),
+            mock.patch.object(qwen, "_copy_last_text", return_value="previous prompt"),
+            mock.patch.object(qwen, "_last_text", return_value=json_reply),
+            mock.patch.object(qwen.controls, "confirm_control") as confirm_control,
+        ):
+            raw = qwen._final_text(object())
+
+        self.assertEqual(raw, json_reply)
+        confirm_control.assert_called_once_with(qwen.PROVIDER_ID, qwen.controls.CONTROL_RESPONSE)
+
+    def test_final_text_repairs_missing_trailing_json_tool_brace(self) -> None:
+        incomplete = '{"tool":"done","args":{"answer":"ok"}'
+        complete = '{"tool":"done","args":{"answer":"ok"}}'
+        with (
+            mock.patch.object(qwen, "_resolve_preference", return_value=False),
+            mock.patch.object(qwen, "_copy_last_text", return_value=incomplete),
+            mock.patch.object(qwen, "_last_text", return_value=incomplete),
+            mock.patch.object(qwen.controls, "confirm_control"),
+        ):
+            raw = qwen._final_text(object())
+
+        self.assertEqual(raw, complete)
 
     def test_final_text_rejects_missing_raw_response(self) -> None:
         with (

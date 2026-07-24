@@ -20,6 +20,12 @@ _SOURCE_LINE_RE = re.compile(
 _SOURCE_MARKDOWN_LINK_RE = re.compile(
     r"^\s*(?:[-*]\s*)?\[(\d+)\]\s*\[(.*?)\]\((https?://[^)\s]+)\)\s*(?:[-–—].*)?$"
 )
+_SOURCE_BRACKET_URL_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?\[(\d+)\]\s*(.*?)\s*(https?://\S+)\s*$"
+)
+_SOURCE_NUMBERED_URL_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(\d+)[\.)、]\s*(.*?)\s*(https?://\S+)\s*$"
+)
 _HEADING_NUMBER_RE = re.compile(
     r"^(?:"
     r"\d+(?:\.\d+)*"
@@ -84,13 +90,6 @@ def review_report_quality(
     opened_sources: set[str],
     search_result_urls: set[str],
 ) -> ReportQualityReview:
-    provenance = provenance_problem(
-        summary,
-        opened_sources=opened_sources,
-        search_result_urls=search_result_urls,
-    )
-    if provenance:
-        return ReportQualityReview(False, provenance)
     sections = parse_sections(summary)
     missing = [label for label in REQUIRED_SECTIONS if not sections.get(label, "").strip()]
     if missing:
@@ -100,6 +99,34 @@ def review_report_quality(
             + ", ".join(_section_title(item) for item in missing)
             + ". Revise done.answer using the required Research report template.",
         )
+    if not ledger.final_url_set() and _is_no_citable_source_report(
+        summary,
+        sections,
+        ledger,
+        opened_sources=opened_sources,
+        search_result_urls=search_result_urls,
+    ):
+        return ReportQualityReview(
+            True,
+            "report quality review passed: no citable opened source found",
+            ("no opened source was available for citation",),
+            sections=sections,
+        )
+    provenance = provenance_problem(
+        _strict_provenance_text(sections, summary),
+        opened_sources=opened_sources,
+        search_result_urls=search_result_urls,
+    )
+    if provenance:
+        return ReportQualityReview(False, provenance)
+    context_provenance = provenance_problem(
+        _context_provenance_text(sections),
+        opened_sources=opened_sources,
+        search_result_urls=search_result_urls,
+        allow_search_result_mentions=True,
+    )
+    if context_provenance:
+        return ReportQualityReview(False, context_provenance)
     if not ledger.final_url_set():
         return ReportQualityReview(
             False,
@@ -213,15 +240,20 @@ def parse_citations(sources_section: str, ledger: ResearchLedger | None = None) 
     seen: set[int] = set()
     for line in str(sources_section or "").splitlines():
         stripped = line.strip()
-        match = _SOURCE_MARKDOWN_LINK_RE.match(stripped) or _SOURCE_LINE_RE.match(stripped)
+        match = (
+            _SOURCE_MARKDOWN_LINK_RE.match(stripped)
+            or _SOURCE_LINE_RE.match(stripped)
+            or _SOURCE_BRACKET_URL_RE.match(stripped)
+            or _SOURCE_NUMBERED_URL_RE.match(stripped)
+        )
         if not match:
             continue
         number = int(match.group(1))
         if number in seen:
             continue
         seen.add(number)
-        title = match.group(2).strip() or "Source"
-        url = match.group(3).rstrip(".,;:，。；、)")
+        url = match.group(3).rstrip(".,;:，。；、)]")
+        title = _citation_title(match.group(2), url, ledger)
         quality = ledger.quality_for_url(url).to_dict() if ledger is not None else {}
         citations.append(Citation(number=number, title=title, url=url, quality=quality))
     return citations
@@ -295,6 +327,99 @@ def _page_citation_problem(citations: list[Citation], ledger: ResearchLedger) ->
 
 def _without_sources(sections: Mapping[str, str]) -> str:
     return "\n\n".join(value for key, value in sections.items() if key != "sources")
+
+
+def _citation_title(raw: str, url: str, ledger: ResearchLedger | None) -> str:
+    title = re.sub(r"\bAvailable at:?\s*$", "", str(raw or ""), flags=re.IGNORECASE)
+    title = title.strip().strip("-–—:：.。")
+    if title:
+        return title
+    if ledger is not None:
+        opened_title = ledger.source_title(url).strip()
+        if opened_title:
+            return opened_title
+    return "Source"
+
+
+def _strict_provenance_text(sections: Mapping[str, str], fallback: str) -> str:
+    parts = [
+        sections.get("conclusion", ""),
+        sections.get("evidence", ""),
+        sections.get("source_quality", ""),
+        sections.get("sources", ""),
+    ]
+    text = "\n\n".join(part for part in parts if part).strip()
+    return text or fallback
+
+
+def _context_provenance_text(sections: Mapping[str, str]) -> str:
+    return "\n\n".join(
+        part for part in (sections.get("counter", ""), sections.get("coverage", ""))
+        if part
+    )
+
+
+def _is_no_citable_source_report(
+    summary: str,
+    sections: Mapping[str, str],
+    ledger: ResearchLedger,
+    *,
+    opened_sources: set[str],
+    search_result_urls: set[str],
+) -> bool:
+    if ledger.final_url_set() or not ledger.searches:
+        return False
+    if citation_ref_items(_without_sources(sections)):
+        return False
+    sources = sections.get("sources", "")
+    if parse_citations(sources, ledger) or "http://" in sources.lower() or "https://" in sources.lower():
+        return False
+    if provenance_problem(
+        summary,
+        opened_sources=opened_sources,
+        search_result_urls=search_result_urls,
+        allow_search_result_mentions=True,
+    ):
+        return False
+    source_text = _normalized_body(sources)
+    if not any(marker in source_text for marker in _NO_CITABLE_SOURCE_MARKERS):
+        return False
+    report_text = _normalized_body(
+        "\n\n".join(
+            sections.get(key, "")
+            for key in ("conclusion", "evidence", "counter", "coverage")
+        )
+    )
+    return any(marker in report_text for marker in _INSUFFICIENT_EVIDENCE_MARKERS)
+
+
+_NO_CITABLE_SOURCE_MARKERS = (
+    "无可引用",
+    "无有效来源",
+    "无可引用的有效来源",
+    "no citable source",
+    "no valid source",
+    "no opened source",
+    "no sources",
+)
+
+_INSUFFICIENT_EVIDENCE_MARKERS = (
+    "未能确认",
+    "无法确认",
+    "无法验证",
+    "未找到任何可验证",
+    "未找到可验证",
+    "insufficient evidence",
+    "could not verify",
+    "cannot verify",
+    "unable to confirm",
+    "not enough evidence",
+    "no verifiable evidence",
+)
+
+
+def _normalized_body(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "").lower())
 
 
 def _heading_key(line: str) -> str:

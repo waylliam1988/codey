@@ -220,7 +220,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("appendResearchCoverage", HTML)
         self.assertIn("['graph', 'Graph']", HTML)
         self.assertIn("renderResearchGraph(panel, run, sessionId)", HTML)
-        self.assertIn('<script src="/assets/research_graph.js?v=0.2.9"></script>', HTML)
+        self.assertIn('<script src="/assets/research_graph.js?v=0.2.10"></script>', HTML)
         self.assertIn("if (window.CodeyResearchGraph) window.CodeyResearchGraph.dispose();", HTML)
         self.assertIn("window.CodeyResearchGraph.render(panel, {", HTML)
         self.assertIn("focusIds: coreNoteIdsForResearchRun(run)", HTML)
@@ -373,6 +373,20 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("{ type: 'review', text: data.text, runId }", HTML)
         self.assertIn("statusRow('Review'", HTML)
         self.assertNotIn("Review mode", HTML)
+
+    def test_plain_chat_terminal_event_can_restore_assistant_reply(self) -> None:
+        done_start = HTML.index("if (data.type === 'task_done')")
+        done_end = HTML.index("if (data.type === 'shell_request')", done_start)
+        done_block = HTML[done_start:done_end]
+        self.assertIn("data.mode === 'chat'", done_block)
+        self.assertIn("type: 'asst', text: summary, runId, eventKey: answerKey", done_block)
+        self.assertIn("data.mode !== 'research' && data.mode !== 'chat'", done_block)
+
+        reply_start = HTML.index("if (data.type === 'reply')")
+        reply_end = HTML.index("if (data.type === 'review')", reply_start)
+        reply_block = HTML[reply_start:reply_end]
+        self.assertIn("const answerKey = runId ? `terminal:${runId}:answer` : '';", reply_block)
+        self.assertIn("type: 'asst', text: data.text, runId, eventKey: answerKey", reply_block)
 
     def test_consensus_has_no_visible_ui_mode(self) -> None:
         self.assertNotIn("MoA", HTML)

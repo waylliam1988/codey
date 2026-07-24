@@ -15,6 +15,10 @@ from codey import (
 )
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, ResponseMissing
+from codey.json_tool_reply import (
+    is_json_tool_reply as _is_json_tool_reply,
+    normalize_final_json_tool_reply as _normalize_final_json_tool_reply,
+)
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.provider_submission import (
     SendAttempt,
@@ -42,26 +46,7 @@ COPY_READY_TIMEOUT = 10.0
 PREFERENCE_TIMEOUT = 15.0
 REGENERATE_START_TIMEOUT = 15.0
 MAX_STALLED_RESPONSE_RETRIES = 1
-
-_BOOTSTRAP_READY_JS = r"""
-() => {
-  if (window.__qwenComposerReady) return true;
-  const modelReady = performance.getEntriesByType('resource').some((entry) => {
-    try {
-      const url = new URL(entry.name);
-      const status = Number(entry.responseStatus || 0);
-      return url.origin === location.origin
-        && url.pathname === '/api/v2/models/'
-        && entry.responseEnd > 0
-        && (status === 0 || (status >= 200 && status < 300));
-    } catch (_) {
-      return false;
-    }
-  });
-  if (modelReady) window.__qwenComposerReady = true;
-  return modelReady;
-}
-"""
+JSON_TOOL_STABLE_TICKS = 2
 
 _MODEL_SELECTOR_TEXT_JS = r"""
 () => {
@@ -122,16 +107,6 @@ def _fill_message(page: Page, textarea: Locator, text: str) -> str:
     textarea.press("End")
     textarea.press("Space")
     return f"{text} "
-
-
-def _bootstrap_ready(page: Page) -> bool:
-    """Return whether Qwen has loaded the model state used by its send handler."""
-    try:
-        return bool(page.evaluate(_BOOTSTRAP_READY_JS))
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception:
-        return False
 
 
 def _model_selector_text(page: Page) -> str:
@@ -223,7 +198,7 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     stable_text = ""
     stable_reads = 0
     while time.time() < deadline:
-        if _message_box(page) is not None and _bootstrap_ready(page):
+        if _message_box(page) is not None:
             model_text = _model_selector_text(page)
             if model_text and model_text == stable_text:
                 stable_reads += 1
@@ -236,7 +211,7 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
                 stable_text = ""
                 stable_reads = 0
         cancellation.wait(0.4)
-    if _message_box(page, teach=True) is not None and _bootstrap_ready(page):
+    if _message_box(page, teach=True) is not None:
         model_text = _model_selector_text(page)
         if model_text and model_text == stable_text:
             stable_reads += 1
@@ -354,8 +329,12 @@ def _final_text(page: Page) -> str:
     _resolve_preference(page)
     try:
         raw = _copy_last_text(page)
+        dom = _last_text(page)
         if not raw:
-            raw = _last_text(page)
+            raw = dom
+        elif _is_json_tool_reply(dom) and not _is_json_tool_reply(raw):
+            raw = dom
+        raw = _normalize_final_json_tool_reply(raw)
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
@@ -508,6 +487,15 @@ def _chat(
                 response_nonempty=bool(current),
             )
             ctx.record_response(current, observation)
+            if (
+                ctx.stable >= JSON_TOOL_STABLE_TICKS
+                and (time.time() - ctx.sent_at) >= min_wait
+                and _is_json_tool_reply(current)
+            ):
+                return send_loop.read_completion(
+                    ctx,
+                    lambda: _final_text(page),
+                )
             if ctx.stable >= stable_ticks and (time.time() - ctx.sent_at) >= min_wait:
                 completion_ready = send_loop.completion_ready(
                     ctx,

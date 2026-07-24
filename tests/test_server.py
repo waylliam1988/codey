@@ -1856,6 +1856,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.task_runner.BrowserSearchProvider", return_value=Search()),
+                mock.patch.object(server, "_run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
                 server._run_task("session-research", None, "Research helium", 8, False, "deepseek", "research")
@@ -2077,6 +2078,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch("codey.task_runner.BrowserSearchProvider", return_value=Search()),
+                mock.patch.object(server, "_run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
                 server._run_task("session-research", None, "Research the storage plan", 4, False, "deepseek", "research")
@@ -2307,6 +2309,11 @@ class SessionThreadingTests(unittest.TestCase):
             emitted.append(events.get_nowait())
         reply = next(event for event in emitted if event["type"] == "reply")
         self.assertEqual(reply["text"], "Combined answer")
+        self.assertIn("run_id", reply)
+        done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertEqual(done["mode"], "chat")
+        self.assertEqual(done["summary"], "Combined answer")
+        self.assertEqual(done["run_id"], reply["run_id"])
 
     def test_plain_chat_consensus_aggregate_failure_does_not_resend_prompt(self) -> None:
         state = server.State()

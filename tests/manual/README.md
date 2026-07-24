@@ -269,6 +269,36 @@ callers/tests, false-positive review on a safe control case, and prompt-size
 delta. Keep this as a regression probe for affected-caller/test awareness and
 false-positive review noise.
 
+`deep_research_core_ab.py` is a Research-only A/B probe for possible Deep
+Research Core changes. It does not change production ResearchRunner behavior.
+The live provider runs a real JSON-tool research loop, but search results,
+source bodies, PDF pages, and local-memory notes are deterministic fixtures.
+
+Arms:
+
+- `baseline`: current Research prompt and tools.
+- `source_search`: current prompt plus a probe-only `source_search` locator
+  tool for already-opened sources.
+- `deep_core`: `source_search` plus a compact Research Plan / Coverage prompt.
+
+```powershell
+python -B tests\manual\deep_research_core_ab.py --self-test
+python -B tests\manual\deep_research_core_ab.py `
+  --provider qwen `
+  --max-cases 3 `
+  --timeout 90 `
+  --open-if-missing `
+  --output tests\manual\results\deep_research_core_qwen.json
+```
+
+The scorer tracks primary-source opening, source_search use, target
+page/offset recall, exact evidence snippets, counter/limitations reporting,
+local-memory reuse, unsupported citations, turn count, and max-turn failures.
+By default it only attaches to already-open provider tabs; add
+`--open-if-missing` when intentionally allowing the probe to open or foreground
+provider pages. Use this probe before promoting source_search, ResearchPlan, or
+Coverage Review into the production Research path.
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 

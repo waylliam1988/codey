@@ -29,9 +29,20 @@ def provenance_problem(
     *,
     opened_sources: set[str],
     search_result_urls: set[str],
+    allow_search_result_mentions: bool = False,
 ) -> str | None:
     text = str(summary or "")
-    unread_urls = [url for url in _urls_in_text(text) if url not in opened_sources]
+    search_hosts = {_source_host(url) for url in search_result_urls}
+    search_hosts.discard("")
+    unread_urls = [
+        url
+        for url in _urls_in_text(text)
+        if url not in opened_sources
+        and not (
+            allow_search_result_mentions
+            and (url in search_result_urls or _site_domain_was_opened(_source_host(url), search_hosts))
+        )
+    ]
     if unread_urls:
         return (
             "Final report cites URL(s) you did not open: "
@@ -44,6 +55,10 @@ def provenance_problem(
         domain
         for domain in _domains_in_text(text)
         if not _site_domain_was_opened(domain, opened_hosts)
+        and not (
+            allow_search_result_mentions
+            and _site_domain_was_opened(domain, search_hosts)
+        )
     ]
     if unopened_domains:
         return (
@@ -51,7 +66,11 @@ def provenance_problem(
             + ", ".join(unopened_domains[:3])
             + ". Open those pages first, or remove those source claims before calling done."
         )
-    unopened_named_sources = _unopened_search_source_mentions(text, search_result_urls, opened_hosts)
+    unopened_named_sources = (
+        []
+        if allow_search_result_mentions
+        else _unopened_search_source_mentions(text, search_result_urls, opened_hosts)
+    )
     if unopened_named_sources:
         return (
             "Final report names search result source(s) you did not open: "

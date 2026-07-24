@@ -4,6 +4,27 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.10 - Research Quality and Provider JSON Hygiene
+
+- 网页 provider JSON 卫生：把 JSON tool reply 的识别和修复抽到
+  `codey/json_tool_reply.py`，DeepSeek 和 Qwen 复用同一套逻辑。Qwen 不再依赖
+  已过时的 `/api/v2/models/` bootstrap 信号；稳定输出 JSON tool reply 时能更快
+  收尾，并且在复制文本过旧或不完整时优先使用 DOM 里的 JSON。
+- Research 质量门：最终报告现在接受 `[1] https://final-url`、带
+  `Available at:` 的编号来源等常见格式，但正文引用的来源 URL 仍必须是本轮打开过、
+  且有 evidence 支撑的 final URL。`结论` / `关键证据` / `来源质量` / `来源`
+  仍严格；`反证与限制` 和 `搜索覆盖` 可以把未打开的搜索结果域名当作限制说明。
+- 无可引用来源报告：当 Research 已经搜索但确实没有可引用的已打开来源时，Codey
+  现在可以接受明确标注的“无可引用来源”报告，不会逼模型编造引用。
+- Research 修复体验：质量门退回时会说明具体硬性要求，不再只给泛泛的 continue
+  提示；Research 系统提示也改成中性的“local research agent”，不再写旧项目名。
+- 普通聊天显示：聊天回复现在带 `run_id`，`task_done` 会把 chat answer 放进
+  summary，前端会对 `reply` / `task_done` 的同一答案去重；普通聊天回复能更可靠地
+  恢复并显示在界面里。
+- Manual Research A/B：新增 `tests/manual/deep_research_core_ab.py`，用于实机网页
+  provider 测试 source-search / plan / coverage 实验。这个 probe 不改变默认生产
+  Research 行为。
+
 ## 0.2.9 - Runtime Responsiveness Hygiene
 
 - SSE 可靠性：subscriber queue 满时，Codey 现在会丢弃队列里最旧的事件，

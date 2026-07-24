@@ -4,6 +4,33 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.10 - Research Quality and Provider JSON Hygiene
+
+- Web provider JSON hygiene: moved shared JSON-tool reply detection/repair into
+  `codey/json_tool_reply.py` and reused it from DeepSeek and Qwen. Qwen no
+  longer depends on the stale `/api/v2/models/` bootstrap signal, can finish
+  stable JSON tool replies promptly, and prefers DOM JSON when copied text is
+  stale or incomplete.
+- Research quality gate: final reports now accept common source formats such as
+  `[1] https://final-url` and numbered `Available at:` lines while still
+  requiring cited source URLs to be opened and evidence-backed. The provenance
+  check is stricter for conclusion/evidence/source sections, but lets
+  counterpoint and coverage sections mention unopened search-result domains as
+  limitations.
+- No-source research reports: when a Research run searched but found no citable
+  opened source, Codey can now accept a clearly labelled no-citable-source
+  report instead of forcing invented citations.
+- Research repair UX: quality-gate followups now explain the exact hard
+  requirements instead of sending a generic continue prompt, and the Research
+  system prompt uses the neutral "local research agent" wording.
+- Plain chat display: chat replies now carry `run_id`, `task_done` includes the
+  chat answer as its summary, and the frontend de-duplicates `reply` /
+  `task_done` answer events so normal chat answers can be restored and shown
+  reliably.
+- Manual Research A/B: added `tests/manual/deep_research_core_ab.py` as a live
+  provider harness for source-search / plan / coverage experiments. The probe
+  does not change default production Research behavior.
+
 ## 0.2.9 - Runtime Responsiveness Hygiene
 
 - SSE reliability: when a subscriber queue is full, Codey now drops the oldest

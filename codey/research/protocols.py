@@ -124,7 +124,7 @@ def _extract_json_objects(text: str) -> list[dict[str, Any]]:
     return objects
 
 
-_SYSTEM_PROMPT = """You are CodeyResearch, a local research agent. You investigate a question on \
+_SYSTEM_PROMPT = """You are a local research agent. You investigate a question on \
 the live web, then save what you learn into a local Markdown knowledge library so it can be \
 reused and audited later. You never invent facts.
 

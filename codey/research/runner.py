@@ -189,7 +189,11 @@ class ResearchRunner:
                     search_result_urls=self.tools.search_result_urls,
                 )
                 if not review.ok:
-                    message = self.codec.format_results(_tool_results(results)) + "\n\n" + review.message
+                    message = _quality_review_followup(
+                        self.codec,
+                        _tool_results(results),
+                        review.message,
+                    )
                     continue
                 if self.review_advisors is not None and not advisor_reviewed:
                     advisor_reviewed = True
@@ -451,6 +455,29 @@ def _chat_handoff_context(handoff: str) -> str:
         "for the research question; do not mention handoff mechanics.\n"
         f"{text}"
     )
+
+
+def _quality_review_followup(
+    codec: ProtocolCodec,
+    results: list[ToolResult],
+    message: str,
+) -> str:
+    prompt = (
+        "Your last done.answer did not pass the research quality review.\n"
+        f"{message}\n\n"
+        "Before calling done again, check these hard requirements:\n"
+        "- Supported conclusions need [n] citations in 结论 and 关键证据.\n"
+        "- 来源 entries may be [1] Title - https://final-url or [1] https://final-url.\n"
+        "- Each cited 来源 URL must be opened in this run and have saved evidence.\n"
+        "- If no citable source exists, do not use [n] citations or list URLs in 来源; "
+        "say no citable opened source was found and explain what was searched.\n\n"
+        "Reply with exactly one JSON tool call. If more evidence is needed, call "
+        "web_search/open_url/knowledge_write first. If the issue is only in the "
+        "final report wording, call done with a revised full report."
+    )
+    if not results:
+        return prompt
+    return codec.format_results(results) + "\n\n" + prompt
 
 
 def _synthesis_title(question: str, limit: int = 80) -> str:

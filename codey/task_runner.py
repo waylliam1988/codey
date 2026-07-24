@@ -889,10 +889,11 @@ class TaskRunner:
         )
         state.emit({
             "type": "reply",
+            "run_id": frame.run_id,
             "session_id": request.session_id,
             "text": reply,
         })
-        result = RunResult("", "done", 1)
+        result = RunResult(reply, "done", 1)
         return _ModeOutcome({
             "type": "task_done",
             "run_id": frame.run_id,
@@ -902,6 +903,7 @@ class TaskRunner:
             "turns": result.turns,
             "max_turns": request.max_turns,
             "provider": frame.provider_id,
+            "mode": "chat",
         })
 
     def _run_project_mode(

@@ -1,5 +1,68 @@
 # Codey Test Report
 
+## 0.2.10 Research Quality and Provider JSON Hygiene
+
+Codey 0.2.10 tightens the basic Research and chat/provider runtime path without
+turning the experimental Deep Research Core probe on by default.
+
+Production changes:
+
+- Added shared JSON-tool reply helpers in `codey/json_tool_reply.py` and reused
+  them from DeepSeek and Qwen.
+- Updated Qwen readiness/completion handling for the current page shape:
+  composer readiness no longer depends on the stale `/api/v2/models/` bootstrap
+  request, stable JSON tool replies can complete quickly, and DOM JSON can win
+  over stale copied text.
+- Relaxed Research report source parsing for common source-line formats while
+  keeping opened-source/evidence requirements strict for cited claims.
+- Split Research provenance review by section, so limitations/search-coverage
+  prose can mention unopened search-result domains without pretending they were
+  cited sources.
+- Added an explicit no-citable-source report path for searched-but-unverified
+  Research runs.
+- Made Research quality repair prompts specific and removed the old
+  `CodeyResearch` name from the protocol prompt.
+- Plain chat replies now carry `run_id`; chat `task_done` events carry the
+  answer summary; the frontend de-duplicates answer events and can restore a
+  chat answer from either `reply` or `task_done`.
+- Added the manual `deep_research_core_ab.py` harness for source-search /
+  plan / coverage experiments without changing default Research behavior.
+
+Validation:
+
+```text
+python -m pytest tests\test_research.py tests\test_qwen.py tests\test_deepseek.py tests\test_deep_research_core_ab.py -q
+# 127 passed
+
+python -B tests\manual\deep_research_core_ab.py --self-test
+# self-test passed
+
+python -m pytest tests\test_research.py tests\test_server.py tests\test_ui.py tests\test_qwen.py tests\test_deepseek.py tests\test_mimo.py tests\test_glm.py tests\test_deep_research_core_ab.py -q
+# 370 passed, 11 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\research\protocols.py codey\research\provenance.py codey\research\report_quality.py codey\research\runner.py codey\qwen.py codey\deepseek.py codey\json_tool_reply.py
+# passed
+
+git diff --check
+# passed
+
+python -m pytest -q
+# 1239 passed, 111 subtests passed
+```
+
+Live smoke:
+
+```text
+DeepSeek JSON done smoke: passed
+MiMo JSON done smoke: passed
+GLM JSON done smoke: passed
+Qwen full smoke was skipped after the account hit its usage limit.
+User-confirmed Codey UI "你好" chat smoke: web model reply appeared in the Codey chat UI.
+```
+
 ## 0.2.9 Runtime Responsiveness Hygiene
 
 Codey 0.2.9 improves runtime responsiveness without changing API payloads or

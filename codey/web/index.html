@@ -1163,7 +1163,7 @@
   </div>
 </section>
 
-<script src="/assets/research_graph.js?v=0.2.9"></script>
+<script src="/assets/research_graph.js?v=0.2.10"></script>
 <script>
 // ============================ state & storage ============================
 const $ = (id) => document.getElementById(id);
@@ -2581,6 +2581,8 @@ function handleServerEvent(data) {
           });
           shownReceipt = true;
         }
+      } else if (data.mode === 'chat') {
+        if (summary) addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
       } else if (project && summary) {
         addToSession(sid, { type: 'asst', text: summary, runId, eventKey: answerKey });
       }
@@ -2597,7 +2599,7 @@ function handleServerEvent(data) {
           eventKey: receiptKey,
         });
         shownReceipt = true;
-      } else if (!project && summary && data.mode !== 'research') {
+      } else if (!project && summary && data.mode !== 'research' && data.mode !== 'chat') {
         addToSession(sid, { type: 'done', text: summary, runId, eventKey: terminalKey });
       }
     } else if (summary) {
@@ -2638,7 +2640,8 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'reply') {
-    if (data.text) addToSession(sid, { type: 'asst', text: data.text, runId });
+    const answerKey = runId ? `terminal:${runId}:answer` : '';
+    if (data.text) addToSession(sid, { type: 'asst', text: data.text, runId, eventKey: answerKey });
     return;
   }
   if (data.type === 'review') {
