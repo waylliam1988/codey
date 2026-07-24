@@ -4,6 +4,26 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.11 - Provider Readiness Self-Repair
+
+- Provider diagnostics: added a narrow `readiness_stale` failure kind so
+  adapters can report cases where safe DOM facts suggest the page is usable but
+  a readiness signal has gone stale.
+- Safe failure facts: `ProviderFailure` can now carry a small sanitized facts
+  packet for self-repair. Facts use an explicit readiness allowlist
+  (`composer_visible`, `send_visible`, `model_selector_text_present`,
+  `response_count`, `question_count`, `waited_for`) and ordinary failures still
+  omit empty facts from their payloads.
+- Self-repair routing: `readiness_stale` is treated as a structural provider
+  failure for circuit/self-repair purposes, while keeping the existing rule
+  that repairs are queued only after the provider circuit opens.
+- Adapter repair prompts: self-repair worker now forwards failure kind, stage,
+  and sanitized facts into the adapter repair prompt so the repair model can
+  distinguish stale readiness checks from missing controls.
+- Boundary discipline: no UI changes, no user-project access, no webpage body
+  capture, no new repair framework, and no change to the fresh-chat marker
+  canary before enabling a provisional adapter override.
+
 ## 0.2.10 - Research Quality and Provider JSON Hygiene
 
 - Web provider JSON hygiene: moved shared JSON-tool reply detection/repair into

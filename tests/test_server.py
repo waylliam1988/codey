@@ -860,7 +860,7 @@ class WebAssetTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             conn = http.client.HTTPConnection(host, port, timeout=5)
-            conn.request("GET", "/assets/research_graph.js?v=0.2.9")
+            conn.request("GET", "/assets/research_graph.js?v=0.2.11")
             response = conn.getresponse()
             body = response.read().decode("utf-8")
             ctype = response.getheader("Content-Type") or ""

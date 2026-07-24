@@ -53,7 +53,16 @@ class WorkerChatProvider:
         return f"worker:{self.provider_id}:{self.override.generation}"
 
     def new_chat(self, timeout: float | None = None) -> None:
-        self._request("new_chat", {"timeout": timeout}, timeout)
+        try:
+            self._request("new_chat", {"timeout": timeout}, timeout)
+        except ProviderActionError as exc:
+            record_failure(
+                self.provider_id,
+                self.override.generation,
+                exc.failure.kind,
+                state_home=self.state_home,
+            )
+            raise
 
     def send(self, text: str, timeout: float | None = None) -> str:
         try:
@@ -251,6 +260,7 @@ def _failure_from_response(provider_id: str, method: str, response: dict) -> Pro
             str(raw.get("time") or ""),
             str(raw.get("kind") or FAILURE_RESPONSE_MISSING),
             str(raw.get("stage") or ""),
+            facts=raw.get("facts") if isinstance(raw.get("facts"), dict) else {},
         )
     return ProviderFailure(
         provider_id,

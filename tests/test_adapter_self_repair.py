@@ -15,11 +15,12 @@ from unittest import mock
 from codey import adapter_overrides
 from codey.adapter_repair import AdapterRepairResult, _render_repair_prompt, run_adapter_repair, run_worker_canary
 from codey.agent import RunResult
-from codey.provider_worker import WorkerChatProvider
+from codey.provider_worker import WorkerChatProvider, _failure_from_response
 from codey import provider_worker_child
 from codey.provider_diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     FAILURE_CONTROL_MISSING,
+    FAILURE_READINESS_STALE,
     FAILURE_RESPONSE_MISSING,
     ProviderActionError,
     ProviderFailure,
@@ -44,8 +45,8 @@ def _source_tree(root: Path) -> None:
     (root / "tests" / "test_qwen.py").write_text("def test_qwen():\n    pass\n", encoding="utf-8")
 
 
-def _failure(kind: str) -> ProviderFailure:
-    return ProviderFailure("Qwen", "send", "", "", "broken", "now", kind)
+def _failure(kind: str, *, facts: dict[str, object] | None = None) -> ProviderFailure:
+    return ProviderFailure("Qwen", "send", "", "", "broken", "now", kind, facts=facts or {})
 
 
 class AdapterOverridesTests(unittest.TestCase):
@@ -114,6 +115,32 @@ class AdapterOverridesTests(unittest.TestCase):
 
             enabled = adapter_overrides.load_enabled_override("qwen", state_home=state, current_root=root)
             self.assertEqual(enabled.generation, override.generation)
+
+    def test_readiness_stale_failure_rolls_back_provisional_override(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            state = Path(td) / "state"
+            override = adapter_overrides.install_candidate("qwen", root, state_home=state)
+            adapter_overrides.mark_provisional("qwen", override.generation, state_home=state)
+
+            adapter_overrides.record_failure(
+                "qwen",
+                override.generation,
+                FAILURE_READINESS_STALE,
+                state_home=state,
+            )
+            enabled = adapter_overrides.load_enabled_override("qwen", state_home=state, current_root=root)
+            self.assertEqual(enabled.generation, override.generation)
+
+            adapter_overrides.record_failure(
+                "qwen",
+                override.generation,
+                FAILURE_READINESS_STALE,
+                state_home=state,
+            )
+
+            self.assertIsNone(adapter_overrides.load_enabled_override("qwen", state_home=state))
 
     def test_rollback_does_not_restore_missing_previous_generation(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -325,6 +352,34 @@ class SelfRepairSupervisorTests(unittest.TestCase):
             degraded = ProviderHealth(state=STATE_DEGRADED, last_failure_kind=FAILURE_RESPONSE_MISSING)
             self.assertFalse(supervisor.maybe_enqueue("mimo", _failure(FAILURE_RESPONSE_MISSING), degraded))
             self.assertFalse(supervisor.maybe_enqueue("glm", _failure(FAILURE_AUTHENTICATION_REQUIRED), open_health))
+
+    def test_readiness_stale_enqueue_carries_sanitized_facts_without_keying_on_facts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = SelfRepairSupervisor(td, clock=lambda: 100.0)
+            open_health = ProviderHealth(state=STATE_OPEN, last_failure_kind=FAILURE_READINESS_STALE)
+
+            first = _failure(
+                FAILURE_READINESS_STALE,
+                facts={
+                    "composer_visible": True,
+                    "waited_for": "/api/v2/models/",
+                    "prompt": "secret",
+                },
+            )
+            second = _failure(
+                FAILURE_READINESS_STALE,
+                facts={"composer_visible": False, "waited_for": "/other"},
+            )
+
+            self.assertTrue(supervisor.maybe_enqueue("qwen", first, open_health))
+            self.assertFalse(supervisor.maybe_enqueue("qwen", second, open_health))
+            job = supervisor.pending()[0]
+
+            self.assertEqual(job.failure_kind, FAILURE_READINESS_STALE)
+            self.assertEqual(job.failure_facts, {
+                "composer_visible": True,
+                "waited_for": "/api/v2/models/",
+            })
 
     def test_run_pending_uses_runner(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -638,7 +693,12 @@ class SelfRepairWorkerTests(unittest.TestCase):
         )
         with mock.patch("codey.self_repair_worker.cancellation.run_process", return_value=completed) as run:
             result = run_self_repair_worker(
-                SelfRepairJob("qwen", FAILURE_RESPONSE_MISSING),
+                SelfRepairJob(
+                    "qwen",
+                    FAILURE_READINESS_STALE,
+                    "new_chat",
+                    failure_facts={"composer_visible": True},
+                ),
                 helper_ids=("deepseek", "mimo"),
                 state_home=Path("state"),
                 source_root=Path("src"),
@@ -649,6 +709,8 @@ class SelfRepairWorkerTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertIn("codey.self_repair_worker", command)
         self.assertEqual(command.count("--helper"), 2)
+        self.assertIn("--failure-facts-json", command)
+        self.assertIn('{"composer_visible":true}', command)
         self.assertEqual(run.call_args.kwargs["timeout"], 900.0)
 
     def test_parent_runner_uses_process_tree_cleanup_on_timeout(self) -> None:
@@ -677,6 +739,9 @@ class SelfRepairWorkerTests(unittest.TestCase):
         ):
             result = _run_worker_job(
                 provider_id="qwen",
+                failure_kind=FAILURE_READINESS_STALE,
+                failure_stage="new_chat",
+                failure_facts={"composer_visible": True},
                 helper_ids=("deepseek",),
                 state_home=Path("state"),
                 source_root=Path("src"),
@@ -689,6 +754,9 @@ class SelfRepairWorkerTests(unittest.TestCase):
         flow_suppress.assert_called_once()
         helper.new_chat.assert_called_once_with(timeout=12.0)
         repair.assert_called_once()
+        self.assertEqual(repair.call_args.kwargs["failure_kind"], FAILURE_READINESS_STALE)
+        self.assertEqual(repair.call_args.kwargs["failure_stage"], "new_chat")
+        self.assertEqual(repair.call_args.kwargs["failure_facts"], {"composer_visible": True})
 
     def test_worker_job_tries_next_helper_after_invalid_repair_result(self) -> None:
         first = mock.Mock()
@@ -852,6 +920,67 @@ class SelfRepairWorkerTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:9444/json/close/target-1", urlopen.call_args.args[0])
         terminate.assert_called_once_with(process, job)
 
+    def test_provider_worker_failure_from_response_preserves_sanitized_facts(self) -> None:
+        failure = _failure_from_response(
+            "qwen",
+            "new_chat",
+            {
+                "error": "failed",
+                "failure": {
+                    "model": "Qwen",
+                    "action": "new_chat",
+                    "message": "stale bootstrap",
+                    "kind": FAILURE_READINESS_STALE,
+                    "stage": "new_chat",
+                    "facts": {
+                        "composer_visible": True,
+                        "waited_for": "/api/v2/models/",
+                        "cookie": "secret",
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(failure.kind, FAILURE_READINESS_STALE)
+        self.assertEqual(failure.facts, {
+            "composer_visible": True,
+            "waited_for": "/api/v2/models/",
+        })
+
+    def test_provider_worker_new_chat_failure_counts_against_override(self) -> None:
+        provider = WorkerChatProvider.__new__(WorkerChatProvider)
+        provider.provider_id = "qwen"
+        provider.override = mock.Mock(generation=7)
+        provider.state_home = Path("state")
+        failure = ProviderFailure(
+            "Qwen",
+            "new_chat",
+            "",
+            "",
+            "stale readiness",
+            "now",
+            FAILURE_READINESS_STALE,
+            "new_chat",
+        )
+
+        with (
+            mock.patch.object(
+                WorkerChatProvider,
+                "_request",
+                side_effect=ProviderActionError(failure),
+            ),
+            mock.patch("codey.provider_worker.record_failure") as record,
+        ):
+            with self.assertRaises(ProviderActionError):
+                WorkerChatProvider.new_chat(provider, timeout=1.0)
+
+        record.assert_called_once_with(
+            "qwen",
+            7,
+            FAILURE_READINESS_STALE,
+            state_home=Path("state"),
+        )
+
 
 class AdapterRepairRunnerTests(unittest.TestCase):
     def test_repair_prompt_example_uses_target_provider_adapter(self) -> None:
@@ -866,6 +995,33 @@ class AdapterRepairRunnerTests(unittest.TestCase):
 
             self.assertIn('"path":"codey/deepseek.py"', prompt)
             self.assertNotIn('"path":"codey/qwen.py"', prompt)
+
+    def test_repair_prompt_includes_bounded_readiness_failure_context(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+
+            prompt = _render_repair_prompt(
+                "qwen",
+                root,
+                failure_kind=FAILURE_READINESS_STALE,
+                failure_stage="new_chat",
+                failure_facts={
+                    "composer_visible": True,
+                    "model_selector_text_present": True,
+                    "waited_for": "/api/v2/models/",
+                    "reply": "secret answer",
+                },
+            )
+
+            self.assertIn("Observed failure:", prompt)
+            self.assertIn("kind: readiness_stale", prompt)
+            self.assertIn("stage: new_chat", prompt)
+            self.assertIn("- composer_visible=true", prompt)
+            self.assertIn("- model_selector_text_present=true", prompt)
+            self.assertIn('- waited_for="/api/v2/models/"', prompt)
+            self.assertIn("prefer DOM readiness over brittle internal bootstrap resources", prompt)
+            self.assertNotIn("secret answer", prompt)
 
     def test_adapter_repair_installs_candidate_after_policy_and_checks(self) -> None:
         with tempfile.TemporaryDirectory() as td:

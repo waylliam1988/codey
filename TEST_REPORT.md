@@ -1,5 +1,48 @@
 # Codey Test Report
 
+## 0.2.11 Provider Readiness Self-Repair
+
+Codey 0.2.11 teaches the provider self-repair path a narrow readiness drift
+case without changing the UI or bypassing the existing adapter canary.
+
+Production changes:
+
+- Added `readiness_stale` as a typed provider failure so adapters can report
+  cases where safe DOM facts indicate the page may be usable even though an
+  adapter readiness signal is stale.
+- Added bounded `ProviderFailure` facts with an explicit readiness allowlist:
+  `composer_visible`, `send_visible`, `model_selector_text_present`,
+  `response_count`, `question_count`, and `waited_for`.
+- Treated `readiness_stale` as structural for provider circuit and self-repair
+  enqueue logic while preserving the existing requirement that self-repair only
+  queues after the circuit opens.
+- Forwarded failure kind, stage, and sanitized facts from `SelfRepairJob`
+  through the subprocess worker into the adapter repair prompt.
+- Kept adapter override installation, UI, provider canary, and user project
+  access boundaries unchanged.
+
+Validation:
+
+```text
+python -m unittest tests.test_provider_diagnostics tests.test_provider_supervisor tests.test_adapter_self_repair
+# 68 tests OK
+
+python -m pytest tests\test_provider_diagnostics.py tests\test_provider_supervisor.py tests\test_adapter_self_repair.py tests\test_server.py tests\test_ui.py tests\test_qwen.py -q
+# 286 passed
+
+python -m pytest -q
+# 1246 passed, 111 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\__init__.py codey\provider_diagnostics.py codey\provider_supervisor.py codey\self_repair.py codey\self_repair_worker.py codey\adapter_repair.py codey\provider_worker.py codey\server.py codey\qwen.py
+# passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.10 Research Quality and Provider JSON Hygiene
 
 Codey 0.2.10 tightens the basic Research and chat/provider runtime path without

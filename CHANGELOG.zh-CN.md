@@ -4,6 +4,22 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.11 - Provider Readiness Self-Repair
+
+- Provider 诊断：新增克制的 `readiness_stale` failure kind，让 adapter 可以表达
+  “安全 DOM facts 显示页面可能可用，但 readiness 信号已经过时”。
+- 安全 failure facts：`ProviderFailure` 现在可以携带一小包经过白名单清洗的
+  facts。facts 使用显式 readiness allowlist：`composer_visible`、`send_visible`、
+  `model_selector_text_present`、`response_count`、`question_count`、`waited_for`；
+  普通 failure 的 payload 仍不会输出空 facts。
+- Self-repair 路由：`readiness_stale` 作为结构性 provider failure 参与 circuit
+  和 self-repair，但仍保持原有纪律：只有 provider circuit 进入 `OPEN` 后才入队。
+- Adapter repair prompt：self-repair worker 现在会把 failure kind、stage 和清洗后
+  的 facts 传给 adapter repair prompt，让修复模型更容易区分 stale readiness
+  check 和真正的控件缺失。
+- 边界克制：没有 UI 变化、没有访问用户项目、没有抓取网页正文、没有新增 repair
+  framework，也没有绕过现有 fresh-chat marker canary。
+
 ## 0.2.10 - Research Quality and Provider JSON Hygiene
 
 - 网页 provider JSON 卫生：把 JSON tool reply 的识别和修复抽到

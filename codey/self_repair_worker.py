@@ -17,6 +17,7 @@ from pathlib import Path
 from codey import cancellation
 from codey.adapter_repair import AdapterRepairResult, run_adapter_repair, run_worker_canary
 from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE
+from codey.provider_diagnostics import sanitize_failure_facts
 from codey.providers.registry import PROVIDER_TYPES, PROVIDER_WORKER_PORT_OFFSETS
 from codey import provider_controls, provider_flow
 from codey.self_repair import SelfRepairJob
@@ -47,6 +48,8 @@ def run_self_repair_worker(
         job.failure_kind,
         "--failure-stage",
         job.failure_stage,
+        "--failure-facts-json",
+        json.dumps(job.failure_facts, ensure_ascii=False, separators=(",", ":")),
         "--state-home",
         str(state_home),
         "--source-root",
@@ -79,14 +82,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", required=True)
     parser.add_argument("--failure-kind", default="")
     parser.add_argument("--failure-stage", default="")
+    parser.add_argument("--failure-facts-json", default="{}")
     parser.add_argument("--state-home", required=True)
     parser.add_argument("--source-root", required=True)
     parser.add_argument("--helper", action="append", default=[])
     parser.add_argument("--model-timeout", type=float, default=DEFAULT_MODEL_TIMEOUT)
     args = parser.parse_args(argv)
-    _ = args.failure_kind, args.failure_stage
     result = _run_worker_job(
         provider_id=args.provider,
+        failure_kind=str(args.failure_kind or ""),
+        failure_stage=str(args.failure_stage or ""),
+        failure_facts=_failure_facts_from_json(args.failure_facts_json),
         helper_ids=tuple(str(item) for item in args.helper),
         state_home=Path(args.state_home),
         source_root=Path(args.source_root),
@@ -99,6 +105,9 @@ def main(argv: list[str] | None = None) -> int:
 def _run_worker_job(
     *,
     provider_id: str,
+    failure_kind: str = "",
+    failure_stage: str = "",
+    failure_facts: dict[str, object] | None = None,
     helper_ids: tuple[str, ...],
     state_home: Path,
     source_root: Path,
@@ -119,6 +128,9 @@ def _run_worker_job(
                     ),
                     state_home=state_home,
                     source_root=source_root,
+                    failure_kind=failure_kind,
+                    failure_stage=failure_stage,
+                    failure_facts=failure_facts,
                     run_canary=lambda override: run_worker_canary(
                         provider_id,
                         override,
@@ -137,6 +149,14 @@ def _run_worker_job(
                 except Exception:
                     pass
     return AdapterRepairResult(False, provider_id, error=last_error)
+
+
+def _failure_facts_from_json(value: str) -> dict[str, object]:
+    try:
+        decoded = json.loads(value or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return sanitize_failure_facts(decoded)
 
 
 def connect_repair_helper(provider_id: str):

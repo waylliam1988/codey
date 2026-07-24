@@ -13,6 +13,7 @@ from typing import Callable
 from codey import adapter_overrides
 from codey.adapter_overrides import AdapterOverride
 from codey.local_store import DEFAULT_STATE_HOME
+from codey.provider_diagnostics import FAILURE_READINESS_STALE, sanitize_failure_facts
 from codey.provider_worker import WorkerChatProvider
 from codey.repair_journal import RepairJournal
 from codey.repair_policy import (
@@ -43,11 +44,20 @@ def run_adapter_repair(
     source_root: str | Path | None = None,
     journal: RepairJournal | None = None,
     run_canary: Callable[[AdapterOverride], bool] | None = None,
+    failure_kind: str = "",
+    failure_stage: str = "",
+    failure_facts: dict[str, object] | None = None,
 ) -> AdapterRepairResult:
     journal = journal or RepairJournal(state_home)
     sandbox = create_repair_sandbox(source_root)
     try:
-        prompt = _render_repair_prompt(provider_id, sandbox.baseline_root)
+        prompt = _render_repair_prompt(
+            provider_id,
+            sandbox.baseline_root,
+            failure_kind=failure_kind,
+            failure_stage=failure_stage,
+            failure_facts=failure_facts,
+        )
         reply = send_prompt(prompt)
         _apply_model_reply(provider_id, sandbox.candidate_root, reply)
         policy = validate_candidate(provider_id, sandbox.baseline_root, sandbox.candidate_root)
@@ -103,7 +113,14 @@ def run_adapter_repair(
         sandbox.cleanup()
 
 
-def _render_repair_prompt(provider_id: str, root: Path) -> str:
+def _render_repair_prompt(
+    provider_id: str,
+    root: Path,
+    *,
+    failure_kind: str = "",
+    failure_stage: str = "",
+    failure_facts: dict[str, object] | None = None,
+) -> str:
     files = []
     for rel in (*allowed_adapter_files(provider_id), *readonly_reference_files(provider_id)):
         path = root / rel
@@ -115,6 +132,7 @@ def _render_repair_prompt(provider_id: str, root: Path) -> str:
     allowed = ", ".join(allowed_adapter_files(provider_id))
     readonly = ", ".join(readonly_reference_files(provider_id))
     example_path = (allowed_adapter_files(provider_id) or ("codey/provider.py",))[0]
+    failure_context = _render_failure_context(failure_kind, failure_stage, failure_facts)
     return (
         "Repair this Codey web provider adapter in a temporary sandbox.\n"
         f"Provider: {provider_id}\n"
@@ -124,8 +142,44 @@ def _render_repair_prompt(provider_id: str, root: Path) -> str:
         f'{{"files":[{{"path":"{example_path}","content":"full replacement text"}}]}}\n'
         "Do not add dependencies, subprocess calls, network calls, file writes, "
         "eval/exec, or changes outside the allowed adapter files.\n\n"
+        + failure_context
         + "\n\n".join(files)
     )
+
+
+def _render_failure_context(
+    failure_kind: str,
+    failure_stage: str,
+    failure_facts: dict[str, object] | None,
+) -> str:
+    kind = str(failure_kind or "").strip()[:80]
+    stage = str(failure_stage or "").strip()[:80]
+    facts = sanitize_failure_facts(failure_facts)
+    if not kind and not stage and not facts:
+        return ""
+    lines = ["Observed failure:"]
+    if kind:
+        lines.append(f"kind: {kind}")
+    if stage:
+        lines.append(f"stage: {stage}")
+    if facts:
+        lines.append("facts:")
+        for key, value in sorted(facts.items()):
+            lines.append(f"- {key}={_prompt_fact_value(value)}")
+    if kind == FAILURE_READINESS_STALE:
+        lines.append(
+            "If visible DOM controls prove the page is usable, prefer DOM "
+            "readiness over brittle internal bootstrap resources."
+        )
+    return "\n".join(lines) + "\n\n"
+
+
+def _prompt_fact_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    return json.dumps(str(value), ensure_ascii=False)
 
 
 def _apply_model_reply(provider_id: str, root: Path, reply: str) -> None:

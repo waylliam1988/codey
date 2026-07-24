@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey import cancellation
-from codey.provider_diagnostics import ProviderFailure
+from codey.provider_diagnostics import FAILURE_READINESS_STALE, ProviderFailure
 from codey.provider_supervisor import (
     STATE_AUTH_REQUIRED,
     STATE_DEGRADED,
@@ -37,6 +37,19 @@ class ProviderSupervisorTests(unittest.TestCase):
             self.assertEqual(opened.state, STATE_OPEN)
             self.assertTrue(supervisor.allows_revival("qwen"))
             self.assertFalse(supervisor.is_available("qwen"))
+
+    def test_readiness_stale_is_structural_for_circuit_and_revival(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            supervisor = ProviderSupervisor(td, clock=lambda: 100.0)
+
+            self.assertEqual(
+                supervisor.record_failure("qwen", failure(FAILURE_READINESS_STALE)).state,
+                STATE_DEGRADED,
+            )
+            opened = supervisor.record_failure("qwen", failure(FAILURE_READINESS_STALE))
+
+            self.assertEqual(opened.state, STATE_OPEN)
+            self.assertTrue(supervisor.allows_revival("qwen"))
 
     def test_expired_circuit_recovers_as_degraded_after_restart(self) -> None:
         now = [100.0]

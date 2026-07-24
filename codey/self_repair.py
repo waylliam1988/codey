@@ -4,21 +4,27 @@ from __future__ import annotations
 
 import threading
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
 from codey.adapter_repair import AdapterRepairResult
 from codey.provider_diagnostics import (
     FAILURE_CONTROL_MISSING,
+    FAILURE_READINESS_STALE,
     FAILURE_RESPONSE_MISSING,
     ProviderFailure,
+    sanitize_failure_facts,
 )
 from codey.provider_supervisor import ProviderHealth, STATE_OPEN
 from codey.repair_journal import RepairJournal
 
 
-STRUCTURAL_FAILURES = {FAILURE_CONTROL_MISSING, FAILURE_RESPONSE_MISSING}
+STRUCTURAL_FAILURES = {
+    FAILURE_CONTROL_MISSING,
+    FAILURE_RESPONSE_MISSING,
+    FAILURE_READINESS_STALE,
+}
 REPAIR_COOLDOWN_SECONDS = 15 * 60
 
 
@@ -29,6 +35,10 @@ class SelfRepairJob:
     failure_stage: str = ""
     enqueued_at: float = 0.0
     next_retry_at: float = 0.0
+    failure_facts: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "failure_facts", sanitize_failure_facts(self.failure_facts))
 
 
 class SelfRepairSupervisor:
@@ -68,6 +78,7 @@ class SelfRepairSupervisor:
                 failure_stage=failure.stage,
                 enqueued_at=now,
                 next_retry_at=now,
+                failure_facts=failure.facts,
             )
             self._queued[key] = job
             self._last_enqueued[key] = now

@@ -6,8 +6,10 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey.provider_diagnostics import (
+    FAILURE_READINESS_STALE,
     ProviderActionError,
     ProviderFailure,
+    ReadinessStale,
     capture_provider_failure,
     run_provider_action,
 )
@@ -62,6 +64,46 @@ class ProviderDiagnosticsTests(unittest.TestCase):
 
         self.assertEqual(failure.kind, "response_missing")
         self.assertEqual(failure.stage, "completion")
+
+    def test_readiness_stale_carries_only_bounded_safe_facts(self) -> None:
+        failure = capture_provider_failure(
+            model="Qwen",
+            action="new_chat",
+            page=SimpleNamespace(url="https://chat.qwen.ai/", title=lambda: "Qwen"),
+            error=ReadinessStale(
+                "bootstrap signal did not arrive",
+                facts={
+                    "composer_visible": True,
+                    "send_visible": False,
+                    "model_selector_text_present": True,
+                    "waited_for": "/api/v2/models/",
+                    "prompt": "secret user prompt",
+                    "user_message": "secret user message",
+                    "page_text": "secret page text",
+                    "textarea_value": "secret textarea value",
+                    "BadKey": "bad",
+                    "full_dom": "<html>secret</html>",
+                    "bootstrap_signal": "https://chat.qwen.ai/api/v2/models/",
+                    "long_value": "x" * 200,
+                },
+            ),
+        )
+
+        self.assertEqual(failure.kind, FAILURE_READINESS_STALE)
+        self.assertEqual(failure.stage, "new_chat")
+        self.assertEqual(failure.facts["composer_visible"], True)
+        self.assertEqual(failure.facts["send_visible"], False)
+        self.assertEqual(failure.facts["model_selector_text_present"], True)
+        self.assertEqual(failure.facts["waited_for"], "/api/v2/models/")
+        self.assertNotIn("long_value", failure.facts)
+        self.assertNotIn("prompt", failure.facts)
+        self.assertNotIn("user_message", failure.facts)
+        self.assertNotIn("page_text", failure.facts)
+        self.assertNotIn("textarea_value", failure.facts)
+        self.assertNotIn("BadKey", failure.facts)
+        self.assertNotIn("full_dom", failure.facts)
+        self.assertNotIn("bootstrap_signal", failure.facts)
+        self.assertEqual(failure.to_dict()["facts"], failure.facts)
 
     def test_new_chat_action_uses_new_chat_stage(self) -> None:
         failure = capture_provider_failure(
