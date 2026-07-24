@@ -711,6 +711,47 @@ class ResearchGraphApiTests(unittest.TestCase):
         self.assertEqual(payload["graph"]["edges"], [])
 
 
+class WebAssetTests(unittest.TestCase):
+    def test_research_graph_asset_is_whitelisted(self) -> None:
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request("GET", "/assets/research_graph.js?v=0.2.6")
+            response = conn.getresponse()
+            body = response.read().decode("utf-8")
+            ctype = response.getheader("Content-Type") or ""
+            conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 200)
+        self.assertIn("application/javascript", ctype)
+        self.assertIn("window.CodeyResearchGraph", body)
+
+    def test_unknown_web_asset_returns_404(self) -> None:
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request("GET", "/assets/missing.js")
+            response = conn.getresponse()
+            response.read()
+            conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 404)
+
+
 class LocalProviderApiTests(unittest.TestCase):
     def test_empty_api_key_preserves_existing_key_for_probe_and_save(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)

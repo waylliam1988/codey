@@ -89,6 +89,12 @@ from codey.text_budget import clip_middle
 from codey.ui_state_store import UiStateStore
 
 WEB_DIR = Path(__file__).parent / "web"
+WEB_ASSETS = {
+    "/assets/research_graph.js": (
+        WEB_DIR / "assets" / "research_graph.js",
+        "application/javascript; charset=utf-8",
+    ),
+}
 FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_TIMEOUT = 120
 SHELL_OUTPUT_LIMIT = 24_000
@@ -1285,6 +1291,15 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         if url.path in ("/", "/index.html"):
             self._send_file(WEB_DIR / "index.html", "text/html; charset=utf-8")
+            return
+        asset = WEB_ASSETS.get(url.path)
+        if asset is not None:
+            path, ctype = asset
+            if path.is_file():
+                self._send_file(path, ctype)
+            else:
+                self.send_response(404)
+                self.end_headers()
             return
         if url.path == "/icon.ico":
             icon = WEB_DIR / "icon.ico"

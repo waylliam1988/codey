@@ -1,5 +1,39 @@
 # Codey Test Report
 
+## 0.2.6 Frontend Research Graph Split
+
+Codey 0.2.6 moves the Research drawer Graph implementation into a dedicated
+whitelisted browser asset while keeping the Research product surface unchanged.
+The split is deliberately narrow: no CSS split, no ES modules, no bundler, and
+no frontend framework migration.
+
+Production changes:
+
+- Added `codey/web/assets/research_graph.js` with the Graph toolbar, graph
+  fetch, loading/error/empty state, canvas force layout, hover/click/dblclick
+  behavior, and detail panel rendering.
+- Kept `index.html` responsible for Research drawer tabs, session/run state,
+  note cache, and the thin `renderResearchGraph()` / `disposeResearchGraph()`
+  wrapper callbacks.
+- Added a narrow `WEB_ASSETS` whitelist route for `/assets/research_graph.js`.
+  Codey still does not serve `codey/web` as a general static directory.
+- Added the `?v=0.2.6` script cachebuster so webview/browser sessions load the
+  split graph module for this release.
+
+Validation:
+
+```text
+bundled node --check codey\web\assets\research_graph.js: passed
+python -m unittest tests.test_ui.ProviderSelectorUiTests.test_research_context_is_explicit_and_user_facing tests.test_server.WebAssetTests: 3 tests OK
+python -m unittest tests.test_ui tests.test_server: 159 tests OK
+python -m unittest tests.test_knowledge tests.test_server tests.test_ui: 169 tests OK
+python -m unittest discover: 1181 tests OK
+python -m py_compile codey\server.py: passed
+python -m ruff check codey tests: All checks passed
+git diff --check: passed
+git diff --cached --check: passed
+```
+
 ## 0.2.5 Research Graph
 
 Codey 0.2.5 adds an on-demand Local Graph inside the Research drawer. The graph

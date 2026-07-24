@@ -4,6 +4,18 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.6 - Frontend Research Graph Split
+
+- 前端卫生：把 Research drawer Graph 实现从单体 `index.html` script 中拆出，
+  放到 `codey/web/assets/research_graph.js`。主 HTML 现在只保留 drawer wrapper
+  以及 depth、note handoff、source opening 的 callbacks。
+- 静态资源边界：新增 `/assets/research_graph.js` 白名单路由；Codey 仍不会把
+  `codey/web` 暴露成通用静态目录。
+- 兼容性：保留现有 Graph UI、canvas layout、CSS、callbacks 和全局浏览器形态。
+  没有 ES module 迁移、bundler、CSS 拆分或前端框架改造。
+- 缓存卫生：HTML 通过 `/assets/research_graph.js?v=0.2.6` 加载 graph script，
+  让 webview/browser session 在本次 release 中拿到拆分后的模块。
+
 ## 0.2.5 - Research Graph
 
 - Research drawer Graph：新增 Obsidian-like 的局部 Graph tab，把当前 Research

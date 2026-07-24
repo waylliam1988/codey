@@ -4,6 +4,22 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.6 - Frontend Research Graph Split
+
+- Frontend hygiene: moved the Research drawer Graph implementation out of the
+  monolithic `index.html` script and into `codey/web/assets/research_graph.js`.
+  The main HTML now keeps only the drawer wrapper and callbacks for depth,
+  note handoff, and source opening.
+- Static asset boundary: added a narrow whitelist route for
+  `/assets/research_graph.js`; Codey still does not expose `codey/web` as a
+  general static directory.
+- Compatibility: kept the existing Graph UI, canvas layout, CSS, callbacks,
+  and global browser shape. There is no ES module migration, bundler, CSS
+  split, or frontend framework change.
+- Cache hygiene: the HTML loads the graph script as
+  `/assets/research_graph.js?v=0.2.6` so webview/browser sessions pick up the
+  split module during the release.
+
 ## 0.2.5 - Research Graph
 
 - Research drawer Graph: added an Obsidian-like local graph tab that visualizes
