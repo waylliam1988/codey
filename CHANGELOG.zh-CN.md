@@ -4,6 +4,16 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.7 - Research Server Hygiene
+
+- Research API 卫生：把 `/api/research/graph`、`/api/research/note` 和
+  `/api/research/restore` 的响应组装收进 `server.py` 内的小 helper，统一返回
+  `(status, payload)`。
+- Run submit 卫生：把 `/api/run` 的校验和提交响应组装收进对应 helper，
+  `_submit_task()` 和任务执行行为保持不变。
+- 边界克制：helper 仍留在 `server.py`；没有新增 router、`server/research.py`
+  模块、schema 变化，也没有改变 payload 或 status code。
+
 ## 0.2.6 - Frontend Research Graph Split
 
 - 前端卫生：把 Research drawer Graph 实现从单体 `index.html` script 中拆出，

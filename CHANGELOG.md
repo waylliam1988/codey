@@ -4,6 +4,17 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.7 - Research Server Hygiene
+
+- Research API hygiene: moved the `/api/research/graph`,
+  `/api/research/note`, and `/api/research/restore` response assembly into
+  small `server.py` helpers that return `(status, payload)`.
+- Run submit hygiene: moved `/api/run` validation and submit response assembly
+  into a matching helper, keeping `_submit_task()` and task execution behavior
+  unchanged.
+- Boundary discipline: kept helpers inside `server.py`; there is no router,
+  `server/research.py` module, schema change, or payload/status-code change.
+
 ## 0.2.6 - Frontend Research Graph Split
 
 - Frontend hygiene: moved the Research drawer Graph implementation out of the

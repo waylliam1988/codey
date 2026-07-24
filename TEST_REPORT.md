@@ -1,5 +1,36 @@
 # Codey Test Report
 
+## 0.2.7 Research Server Hygiene
+
+Codey 0.2.7 keeps Research server behavior unchanged while making the HTTP
+handler easier to extend. The Research Graph, Research note, Research restore,
+and run-submit response paths now use small `server.py` helpers that return
+`(status, payload)`; `do_GET` and `do_POST` remain simple dispatch plus
+`_send_json()`.
+
+Production changes:
+
+- Added `_research_unconfigured_response()`, `_research_graph_response()`,
+  `_research_note_response()`, `_research_restore_response()`, and
+  `_run_submit_response()` inside `server.py`.
+- Kept `State.restore_research_changes()` and `_submit_task()` unchanged.
+- Kept all API payloads and status codes unchanged.
+- Did not add a router, a new `server/research.py` module, a schema change, or
+  any frontend behavior change.
+
+Validation:
+
+```text
+python -m unittest tests.test_server: 118 tests OK
+python -m unittest tests.test_knowledge tests.test_server tests.test_ui: 175 tests OK
+python -m unittest tests.test_ui_browser_e2e.UiBrowserE2ETests.test_complete_project_flow_in_real_edge: 1 test OK
+python -m unittest discover: 1187 tests OK
+python -m py_compile codey\__init__.py codey\server.py: passed
+python -m ruff check codey tests: All checks passed
+git diff --check: passed
+git diff --cached --check: passed
+```
+
 ## 0.2.6 Frontend Research Graph Split
 
 Codey 0.2.6 moves the Research drawer Graph implementation into a dedicated

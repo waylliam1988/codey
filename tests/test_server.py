@@ -711,6 +711,145 @@ class ResearchGraphApiTests(unittest.TestCase):
         self.assertEqual(payload["graph"]["edges"], [])
 
 
+class ResearchServerHelperTests(unittest.TestCase):
+    def test_research_graph_response_parses_bounded_query(self) -> None:
+        state = server.State()
+        state.knowledge_store = object()
+        graph = SimpleNamespace(to_dict=lambda: {"nodes": [], "edges": []})
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "KnowledgeGraphBuilder") as builder_cls,
+        ):
+            builder = builder_cls.return_value
+            builder.build_for_session.return_value = graph
+            status, payload = server._research_graph_response({
+                "session_id": ["s1"],
+                "focus": ["fact-1"],
+                "synthesis_id": ["synthesis-1"],
+                "depth": ["9"],
+                "limit": ["999"],
+                "edge_limit": ["bad"],
+                "include_sources": ["false"],
+                "counterpoint": ["one,two", "three"],
+            })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, {"ok": True, "graph": {"nodes": [], "edges": []}})
+        builder_cls.assert_called_once_with(state.knowledge_store)
+        builder.build_for_session.assert_called_once_with(
+            "s1",
+            focus_ids=("synthesis-1", "fact-1"),
+            depth=2,
+            node_limit=200,
+            edge_limit=192,
+            include_sources=False,
+            counterpoints=("one", "two", "three"),
+        )
+
+    def test_research_graph_response_reports_unconfigured_store(self) -> None:
+        state = server.State()
+        state.knowledge_store = None
+        with mock.patch.object(server, "STATE", state):
+            status, payload = server._research_graph_response({})
+
+        self.assertEqual(status, 404)
+        self.assertEqual(payload, {"ok": False, "error": "Research is not configured"})
+
+    def test_research_note_response_validation_and_payload(self) -> None:
+        status, payload = server._research_note_response({})
+        self.assertEqual(status, 400)
+        self.assertEqual(payload, {"ok": False, "error": "id required"})
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State()
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            note = KnowledgeNote.create(
+                type="fact",
+                title="Fact",
+                body="Body",
+                sources=["https://example.com"],
+                tags=["research"],
+            )
+            state.knowledge_store.write_note(note)
+            try:
+                with mock.patch.object(server, "STATE", state):
+                    found_status, found_payload = server._research_note_response({"id": [note.id]})
+                    missing_status, missing_payload = server._research_note_response({"id": ["missing"]})
+            finally:
+                state.knowledge_store.close()
+
+        self.assertEqual(found_status, 200)
+        self.assertTrue(found_payload["ok"])
+        self.assertEqual(found_payload["note"]["id"], note.id)
+        self.assertEqual(found_payload["note"]["title"], "Fact")
+        self.assertEqual(found_payload["note"]["sources"], ["https://example.com"])
+        self.assertEqual(missing_status, 404)
+        self.assertEqual(missing_payload, {"ok": False, "error": "note not found"})
+
+    def test_research_note_response_reports_unconfigured_store(self) -> None:
+        state = server.State()
+        state.knowledge_store = None
+        with mock.patch.object(server, "STATE", state):
+            status, payload = server._research_note_response({"id": ["n1"]})
+
+        self.assertEqual(status, 404)
+        self.assertEqual(payload, {"ok": False, "error": "Research is not configured"})
+
+    def test_research_restore_response_preserves_status_mapping(self) -> None:
+        missing_status, missing_payload = server._research_restore_response({})
+        self.assertEqual(missing_status, 400)
+        self.assertEqual(missing_payload, {"ok": False, "error": "run_id required"})
+
+        state = server.State()
+        with mock.patch.object(server, "STATE", state):
+            with mock.patch.object(state, "restore_research_changes", return_value={"ok": False, "error": "busy"}):
+                failed_status, failed_payload = server._research_restore_response({"run_id": "r1"})
+            with mock.patch.object(state, "restore_research_changes", return_value={"ok": True, "restored": []}):
+                ok_status, ok_payload = server._research_restore_response({"run_id": "r1"})
+
+        self.assertEqual(failed_status, 409)
+        self.assertEqual(failed_payload, {"ok": False, "error": "busy"})
+        self.assertEqual(ok_status, 200)
+        self.assertEqual(ok_payload, {"ok": True, "restored": []})
+
+    def test_run_submit_response_validation_and_submit_mapping(self) -> None:
+        self.assertEqual(server._run_submit_response({"task": "hello", "intent": "bad"}), (400, {"error": "invalid intent"}))
+        self.assertEqual(
+            server._run_submit_response({"task": "hello", "max_turns": "bad"}),
+            (400, {"error": "invalid max_turns"}),
+        )
+        self.assertEqual(server._run_submit_response({"task": ""}), (400, {"error": "task required"}))
+        self.assertEqual(
+            server._run_submit_response({"task": "hello", "provider": "missing"}),
+            (400, {"error": "unsupported provider: missing"}),
+        )
+
+        with mock.patch.object(server, "_submit_task", return_value="run-1") as submit:
+            status, payload = server._run_submit_response({
+                "task": "hello",
+                "session_id": "",
+                "provider": "deepseek",
+                "max_turns": "999",
+                "continue_task": True,
+                "intent": "research",
+            })
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, {"ok": True, "run_id": "run-1"})
+        submit.assert_called_once_with("default", None, "hello", 500, True, "deepseek", "research")
+
+        with mock.patch.object(server, "_submit_task", return_value=None):
+            busy_status, busy_payload = server._run_submit_response({"task": "hello"})
+        with mock.patch.object(server, "_submit_task", side_effect=RuntimeError("boom")):
+            error_status, error_payload = server._run_submit_response({"task": "hello"})
+
+        self.assertEqual(busy_status, 409)
+        self.assertEqual(busy_payload, {"error": "busy"})
+        self.assertEqual(error_status, 500)
+        self.assertEqual(error_payload, {"error": "boom"})
+
+
 class WebAssetTests(unittest.TestCase):
     def test_research_graph_asset_is_whitelisted(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
@@ -719,7 +858,7 @@ class WebAssetTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             conn = http.client.HTTPConnection(host, port, timeout=5)
-            conn.request("GET", "/assets/research_graph.js?v=0.2.6")
+            conn.request("GET", "/assets/research_graph.js?v=0.2.7")
             response = conn.getresponse()
             body = response.read().decode("utf-8")
             ctype = response.getheader("Content-Type") or ""

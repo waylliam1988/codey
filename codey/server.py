@@ -1262,6 +1262,104 @@ def _query_bool(query: dict[str, list[str]], key: str, default: bool) -> bool:
         return default
     return value not in {"0", "false", "no", "off"}
 
+
+def _query_value(query: dict[str, list[str]], key: str) -> str:
+    return str((query.get(key) or [""])[0]).strip()
+
+
+def _research_unconfigured_response() -> tuple[int, dict]:
+    return 404, {"ok": False, "error": "Research is not configured"}
+
+
+def _research_graph_response(query: dict[str, list[str]]) -> tuple[int, dict]:
+    if STATE.knowledge_store is None:
+        return _research_unconfigured_response()
+    focus_ids = _query_list(query, "focus")
+    synthesis_id = _query_value(query, "synthesis_id")
+    if synthesis_id and synthesis_id not in focus_ids:
+        focus_ids.insert(0, synthesis_id)
+    graph = KnowledgeGraphBuilder(STATE.knowledge_store).build_for_session(
+        _query_value(query, "session_id"),
+        focus_ids=tuple(focus_ids),
+        depth=_query_int(query, "depth", 1, 0, 2),
+        node_limit=_query_int(query, "limit", 96, 8, 200),
+        edge_limit=_query_int(query, "edge_limit", 192, 8, 400),
+        include_sources=_query_bool(query, "include_sources", True),
+        counterpoints=tuple(_query_list(query, "counterpoint")[:8]),
+    )
+    return 200, {"ok": True, "graph": graph.to_dict()}
+
+
+def _research_note_response(query: dict[str, list[str]]) -> tuple[int, dict]:
+    note_id = _query_value(query, "id")
+    if not note_id:
+        return 400, {"ok": False, "error": "id required"}
+    if STATE.knowledge_store is None:
+        return _research_unconfigured_response()
+    note = STATE.knowledge_store.read_note(note_id)
+    if note is None:
+        return 404, {"ok": False, "error": "note not found"}
+    row = STATE.knowledge_store.index.get(note.id) or {}
+    return 200, {
+        "ok": True,
+        "note": {
+            "id": note.id,
+            "type": note.type,
+            "title": note.title,
+            "body": note.body,
+            "sources": note.sources,
+            "tags": note.tags,
+            "status": note.status,
+            "path": str(row.get("path") or ""),
+            "updated": note.updated,
+        },
+    }
+
+
+def _research_restore_response(body: dict) -> tuple[int, dict]:
+    run_id = str(body.get("run_id") or "").strip()
+    if not run_id:
+        return 400, {"ok": False, "error": "run_id required"}
+    payload = STATE.restore_research_changes(run_id)
+    return 200 if payload.get("ok") else 409, payload
+
+
+def _run_submit_response(body: dict) -> tuple[int, dict]:
+    session_id = str(body.get("session_id") or "").strip() or "default"
+    project = (body.get("project") or "").strip() or None
+    task = (body.get("task") or "").strip()
+    continue_task = bool(body.get("continue_task"))
+    provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
+    intent = str(body.get("intent") or "auto").strip().lower()
+    if intent not in {"auto", "chat", "research", "project", "hybrid"}:
+        return 400, {"error": "invalid intent"}
+    try:
+        max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)
+    except (TypeError, ValueError):
+        return 400, {"error": "invalid max_turns"}
+    max_turns = max(1, min(max_turns, 500))
+    if not task:
+        return 400, {"error": "task required"}
+    if provider_id not in PROVIDER_LABELS:
+        return 400, {"error": f"unsupported provider: {provider_id}"}
+    if project:
+        Path(project).mkdir(parents=True, exist_ok=True)
+    try:
+        run_id = _submit_task(
+            session_id,
+            project,
+            task,
+            max_turns,
+            continue_task,
+            provider_id,
+            intent,
+        )
+    except Exception as exc:
+        return 500, {"error": str(exc)}
+    if run_id is None:
+        return 409, {"error": "busy"}
+    return 200, {"ok": True, "run_id": run_id}
+
 # ------------------------------------------------------------ http layer ---
 
 class Handler(BaseHTTPRequestHandler):
@@ -1329,53 +1427,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True, "local": local_config_payload()})
             return
         if url.path == "/api/research/graph":
-            query = parse_qs(url.query)
-            if STATE.knowledge_store is None:
-                self._send_json(404, {"ok": False, "error": "Research is not configured"})
-                return
-            focus_ids = _query_list(query, "focus")
-            synthesis_id = (query.get("synthesis_id") or [""])[0].strip()
-            if synthesis_id and synthesis_id not in focus_ids:
-                focus_ids.insert(0, synthesis_id)
-            graph = KnowledgeGraphBuilder(STATE.knowledge_store).build_for_session(
-                (query.get("session_id") or [""])[0].strip(),
-                focus_ids=tuple(focus_ids),
-                depth=_query_int(query, "depth", 1, 0, 2),
-                node_limit=_query_int(query, "limit", 96, 8, 200),
-                edge_limit=_query_int(query, "edge_limit", 192, 8, 400),
-                include_sources=_query_bool(query, "include_sources", True),
-                counterpoints=tuple(_query_list(query, "counterpoint")[:8]),
-            )
-            self._send_json(200, {"ok": True, "graph": graph.to_dict()})
+            status, payload = _research_graph_response(parse_qs(url.query))
+            self._send_json(status, payload)
             return
         if url.path == "/api/research/note":
-            query = parse_qs(url.query)
-            note_id = (query.get("id") or [""])[0].strip()
-            if not note_id:
-                self._send_json(400, {"ok": False, "error": "id required"})
-                return
-            if STATE.knowledge_store is None:
-                self._send_json(404, {"ok": False, "error": "Research is not configured"})
-                return
-            note = STATE.knowledge_store.read_note(note_id)
-            if note is None:
-                self._send_json(404, {"ok": False, "error": "note not found"})
-                return
-            row = STATE.knowledge_store.index.get(note.id) or {}
-            self._send_json(200, {
-                "ok": True,
-                "note": {
-                    "id": note.id,
-                    "type": note.type,
-                    "title": note.title,
-                    "body": note.body,
-                    "sources": note.sources,
-                    "tags": note.tags,
-                    "status": note.status,
-                    "path": str(row.get("path") or ""),
-                    "updated": note.updated,
-                },
-            })
+            status, payload = _research_note_response(parse_qs(url.query))
+            self._send_json(status, payload)
             return
         if url.path == "/api/changes":
             query = parse_qs(url.query)
@@ -1443,54 +1500,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"ok": True, "local": local_config_payload()})
             return
         if url.path == "/api/run":
-            session_id = str(body.get("session_id") or "").strip() or "default"
-            project = (body.get("project") or "").strip() or None
-            task = (body.get("task") or "").strip()
-            continue_task = bool(body.get("continue_task"))
-            provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
-            intent = str(body.get("intent") or "auto").strip().lower()
-            if intent not in {"auto", "chat", "research", "project", "hybrid"}:
-                self._send_json(400, {"error": "invalid intent"})
-                return
-            try:
-                max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)
-            except (TypeError, ValueError):
-                self._send_json(400, {"error": "invalid max_turns"})
-                return
-            max_turns = max(1, min(max_turns, 500))
-            if not task:
-                self._send_json(400, {"error": "task required"})
-                return
-            if provider_id not in PROVIDER_LABELS:
-                self._send_json(400, {"error": f"unsupported provider: {provider_id}"})
-                return
-            if project:
-                Path(project).mkdir(parents=True, exist_ok=True)
-            try:
-                run_id = _submit_task(
-                    session_id,
-                    project,
-                    task,
-                    max_turns,
-                    continue_task,
-                    provider_id,
-                    intent,
-                )
-            except Exception as exc:
-                self._send_json(500, {"error": str(exc)})
-                return
-            if run_id is None:
-                self._send_json(409, {"error": "busy"})
-                return
-            self._send_json(200, {"ok": True, "run_id": run_id})
+            status, payload = _run_submit_response(body)
+            self._send_json(status, payload)
             return
         if url.path == "/api/research/restore":
-            run_id = str(body.get("run_id") or "").strip()
-            if not run_id:
-                self._send_json(400, {"ok": False, "error": "run_id required"})
-                return
-            payload = STATE.restore_research_changes(run_id)
-            self._send_json(200 if payload.get("ok") else 409, payload)
+            status, payload = _research_restore_response(body)
+            self._send_json(status, payload)
             return
         if url.path == "/api/pick_folder":
             mode = str(body.get("mode") or "open").strip().lower()
