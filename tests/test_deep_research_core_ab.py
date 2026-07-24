@@ -109,16 +109,6 @@ def test_deep_research_ab_probe_rejects_tool_call_plus_done() -> None:
     assert "too many JSON tool calls" in (plan.protocol_error or "")
 
 
-def test_deep_research_ab_probe_repeats_question_in_followups() -> None:
-    question = "Does the Alpha Safety Program require 72-hour incident notification?"
-    codec = ab.ProbeJsonToolCodec("baseline", question=question)
-
-    assert question in codec.repair_prompt()
-    assert question in codec.format_results([])
-    assert "do not use ASCII double-quote search operators" in codec.repair_prompt()
-
-
-
 def test_deep_research_ab_probe_extracts_malformed_done_answer() -> None:
     reply = (
         '{"tool":"done","args":{"answer":"## 结论\\n'

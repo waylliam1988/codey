@@ -437,7 +437,6 @@ class ProbeResearchRunner(ResearchRunner):
         send_timeout: float = 120.0,
         provider_id: str = "",
         case_name: str = "",
-        question: str = "",
         trace: LiveTrace | None = None,
     ) -> None:
         super().__init__(
@@ -445,7 +444,7 @@ class ProbeResearchRunner(ResearchRunner):
             search,
             store,
             max_turns=max_turns,
-            codec=ProbeJsonToolCodec(arm, question=question),
+            codec=ProbeJsonToolCodec(arm),
             session_id=f"deep-research-ab-{arm}",
         )
         self.arm = arm
@@ -585,7 +584,6 @@ class LiveTrace:
 @dataclass(frozen=True)
 class ProbeJsonToolCodec(JsonToolCodec):
     arm: str = "baseline"
-    question: str = ""
 
     def system_prompt(self) -> str:
         include_source_search = self.arm in {"source_search", "deep_core"}
@@ -601,23 +599,8 @@ class ProbeJsonToolCodec(JsonToolCodec):
         return prompt
 
     def repair_prompt(self) -> str:
-        json_rules = (
-            "Use exactly one JSON object. Do not output multiple JSON objects.\n"
-            "For done.answer, avoid raw ASCII double quotes inside the answer; "
-            "use single quotes or Chinese quotes, or escape them as \\\".\n"
-            "For query strings, do not use ASCII double-quote search operators; "
-            "write plain words instead."
-        )
-        question = _probe_question_reminder(self.question)
         if self.arm == "baseline":
-            return (
-                super().repair_prompt()
-                + "\n\n"
-                + json_rules
-                + question
-                + "\n\n"
-                + _probe_fixture_reminder(include_source_search=False)
-            )
+            return super().repair_prompt() + "\n\n" + _probe_fixture_reminder(include_source_search=False)
         return (
             "Your last reply was not a valid tool call. Reply with exactly one "
             "JSON object and nothing else, for example:\n"
@@ -625,16 +608,12 @@ class ProbeJsonToolCodec(JsonToolCodec):
             '{"tool":"source_search","args":{"url":"https://...","query":"..."}}\n'
             'or {"tool":"done","args":{"answer":"..."}}'
             "\n\n"
-            + json_rules
-            + question
-            + "\n\n"
             + _probe_fixture_reminder(include_source_search=True)
         )
 
     def format_results(self, results) -> str:
         return (
             super().format_results(results)
-            + _probe_question_reminder(self.question)
             + "\n\n"
             + _probe_fixture_reminder(include_source_search=self.arm in {"source_search", "deep_core"})
         )
@@ -744,25 +723,14 @@ def _with_probe_fixture_discipline(prompt: str, *, include_source_search: bool) 
     return prompt + "\n\n" + _probe_fixture_reminder(include_source_search=include_source_search)
 
 
-def _probe_question_reminder(question: str) -> str:
-    question = _clip(question, 500)
-    if not question:
-        return ""
-    return "\n\nResearch question still being answered:\n" + question
-
-
 def _probe_fixture_reminder(*, include_source_search: bool) -> str:
     tool_names = "web_search/open_url/knowledge_search/knowledge_read/knowledge_write/knowledge_link"
     if include_source_search:
         tool_names += "/source_search"
     return (
         "Probe fixture discipline:\n"
-        "- Reply with exactly one JSON object per turn; never output a list of repeated tool calls.\n"
-        '- Valid shape: {"tool":"web_search","args":{"query":"..."}}\n'
-        "- Do not wrap the JSON in Markdown fences. Do not prefix it with `json`. Do not repeat the same object.\n"
         "- Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.\n"
         f"- All web and knowledge access in this probe is available only through these JSON tools: {tool_names}.\n"
-        "- The [result: ...] blocks are real local tool results already returned to you.\n"
         "- The source URLs and facts are deterministic local fixtures; they may not exist on the public internet.\n"
         "- Treat tool outputs as the only evidence, even when a fixture domain looks fake or unreachable publicly.\n"
         "- Do not answer from memory or from the chat website's own search results."
@@ -861,7 +829,6 @@ def run_case(
             send_timeout=timeout,
             provider_id=provider_id,
             case_name=case.name,
-            question=case.question,
             trace=trace,
         )
         events = []
