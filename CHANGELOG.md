@@ -4,6 +4,19 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.9 - Runtime Responsiveness Hygiene
+
+- SSE reliability: when a subscriber queue is full, Codey now drops the oldest
+  queued event and keeps the newest event instead of silently losing the newest
+  state update.
+- Research restore responsiveness: restoring Research note changes now schedules
+  a coalesced background knowledge index rebuild, so `/api/research/restore`
+  can return without waiting for a full vault scan.
+- Review responsiveness: rejected Review repair reuses the project map already
+  refreshed for the same review cycle instead of refreshing it twice.
+- Boundary discipline: no API payload changes, frontend changes, incremental
+  indexer, workspace watcher, or background task framework.
+
 ## 0.2.8 - Research TaskRunner Hygiene
 
 - TaskRunner hygiene: split `TaskRunner.run()` mode execution into private

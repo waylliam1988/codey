@@ -554,6 +554,8 @@ class State:
         self.pending_shell: dict[str, dict] = {}
         self.pending_teach: dict[str, dict] = {}
         self.research_changes: dict[str, object] = {}
+        self._knowledge_rebuild_running = False
+        self._knowledge_rebuild_pending = False
         self.change_trackers: dict[str, ChangeTracker] = {}
         self.conversations: dict[str, ConversationContext] = {}
         self.conversation_tokens: dict[str, object] = {}
@@ -744,10 +746,7 @@ class State:
             return {"ok": False, "error": "research changes not found"}
         result = changes.restore_result()
         if self.knowledge_store is not None:
-            try:
-                self.knowledge_store.rebuild()
-            except Exception:
-                pass
+            self._schedule_knowledge_rebuild()
         if result.ok:
             with self.lock:
                 self.research_changes.pop(run_id, None)
@@ -757,6 +756,36 @@ class State:
             "conflicts": result.conflicts,
             "error": result.error,
         }
+
+    def _schedule_knowledge_rebuild(self) -> None:
+        if self.knowledge_store is None:
+            return
+        with self.lock:
+            if self._knowledge_rebuild_running:
+                self._knowledge_rebuild_pending = True
+                return
+            self._knowledge_rebuild_running = True
+            self._knowledge_rebuild_pending = False
+        threading.Thread(
+            target=self._run_knowledge_rebuild,
+            name="codey-knowledge-rebuild",
+            daemon=True,
+        ).start()
+
+    def _run_knowledge_rebuild(self) -> None:
+        while True:
+            store = self.knowledge_store
+            if store is not None:
+                try:
+                    store.rebuild()
+                except Exception:
+                    pass
+            with self.lock:
+                if self._knowledge_rebuild_pending:
+                    self._knowledge_rebuild_pending = False
+                    continue
+                self._knowledge_rebuild_running = False
+                return
 
     def run_state_payload(self) -> dict:
         with self.lock:
@@ -820,6 +849,15 @@ class State:
             for sub in list(self.subscribers):
                 try:
                     sub.put_nowait(payload)
+                except queue.Full:
+                    try:
+                        sub.get_nowait()
+                    except queue.Empty:
+                        pass
+                    try:
+                        sub.put_nowait(payload)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 

@@ -165,6 +165,7 @@ class ReviewCoordinatorTests(unittest.TestCase):
         self.assertTrue(state["result"].review_repair_attempted)
         self.assertEqual(state["result"].result.summary, "fixed")
         self.assertTrue(state["result"].task_changed)
+        state["refresh_project_map"].assert_called_once()
 
     def test_review_repair_without_changes_can_inherit_prior_green_check(self) -> None:
         review = ReviewResult("changes_requested", "Check claim", [])

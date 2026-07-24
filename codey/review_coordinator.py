@@ -93,7 +93,15 @@ class ReviewCoordinator:
         if not task_changed or stop_requested():
             return ReviewCycleResult(result, task_changed, changes, changes_dirty)
 
-        project_map = refresh_project_map()
+        refreshed_project_map: str | None = None
+
+        def current_project_map() -> str:
+            nonlocal refreshed_project_map
+            if refreshed_project_map is None:
+                refreshed_project_map = refresh_project_map()
+            return refreshed_project_map
+
+        project_map = current_project_map()
         if not has_reviewable_changes(changes or {}):
             return ReviewCycleResult(result, task_changed, changes, changes_dirty)
 
@@ -151,7 +159,7 @@ class ReviewCoordinator:
             review,
             change_brief=change_brief,
         )
-        refresh_project_map()
+        current_project_map()
         repaired = repair_writer(
             followup,
             CheckpointView(

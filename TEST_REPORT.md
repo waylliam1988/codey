@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## 0.2.9 Runtime Responsiveness Hygiene
+
+Codey 0.2.9 improves runtime responsiveness without changing API payloads or
+frontend behavior. The changes target slow restore/review tails and slow SSE
+clients.
+
+Production changes:
+
+- `State.emit()` now drops the oldest queued SSE event when a subscriber queue
+  is full, then enqueues the newest event.
+- `State.restore_research_changes()` now schedules a coalesced background
+  knowledge index rebuild instead of calling `knowledge_store.rebuild()` on the
+  HTTP restore path.
+- `ReviewCoordinator.run_cycle()` now reuses the project map refreshed for the
+  current review cycle when a rejected review triggers Writer repair.
+- Did not add incremental indexing, a workspace watcher, a background task
+  framework, frontend changes, or API payload changes.
+
+Validation:
+
+```text
+python -m unittest tests.test_server.RunSnapshotTests.test_emit_full_subscriber_queue_drops_oldest_and_keeps_latest tests.test_server.RunSnapshotTests.test_restore_research_changes_schedules_rebuild_in_background tests.test_server.RunSnapshotTests.test_restore_research_changes_coalesces_background_rebuilds tests.test_server.RunSnapshotTests.test_restore_research_changes_rebuild_error_does_not_change_restore_result: 4 tests OK
+python -m unittest tests.test_review_coordinator: 12 tests OK
+python -m py_compile codey\server.py codey\review_coordinator.py: passed
+python -m unittest tests.test_server.RunSnapshotTests tests.test_review_coordinator: 26 tests OK
+python -m unittest tests.test_server tests.test_ui tests.test_review_coordinator: 183 tests OK
+python -m unittest discover: 1193 tests OK
+python -m py_compile codey\__init__.py codey\server.py codey\review_coordinator.py: passed
+python -m ruff check codey tests: All checks passed
+git diff --check: passed
+```
+
 ## 0.2.8 Research TaskRunner Hygiene
 
 Codey 0.2.8 keeps TaskRunner behavior unchanged while making the core run

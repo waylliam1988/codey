@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import queue
 import shutil
 import subprocess
 import sys
@@ -859,7 +860,7 @@ class WebAssetTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             conn = http.client.HTTPConnection(host, port, timeout=5)
-            conn.request("GET", "/assets/research_graph.js?v=0.2.8")
+            conn.request("GET", "/assets/research_graph.js?v=0.2.9")
             response = conn.getresponse()
             body = response.read().decode("utf-8")
             ctype = response.getheader("Content-Type") or ""
@@ -1094,6 +1095,22 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertEqual(payload["pending_event"], pending)
         self.assertEqual(payload["last_terminal_event"]["run_id"], run.run_id)
 
+    def test_emit_full_subscriber_queue_drops_oldest_and_keeps_latest(self) -> None:
+        state = server.State()
+        q: queue.Queue[dict] = queue.Queue(maxsize=2)
+        with state.lock:
+            state.subscribers.append(q)
+        try:
+            state.emit({"type": "info", "seq": 1})
+            state.emit({"type": "info", "seq": 2})
+            state.emit({"type": "info", "seq": 3})
+
+            items = [q.get_nowait(), q.get_nowait()]
+        finally:
+            state.unsubscribe(q)
+
+        self.assertEqual([item["seq"] for item in items], [2, 3])
+
     def test_state_snapshot_reports_only_restorable_research_runs(self) -> None:
         from codey.knowledge import KnowledgeChanges, KnowledgeNote, KnowledgeStore
 
@@ -1113,6 +1130,136 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIn("run-research", before["research_restore_runs"])
         self.assertTrue(restored["ok"])
         self.assertNotIn("run-research", after["research_restore_runs"])
+
+    def test_restore_research_changes_schedules_rebuild_in_background(self) -> None:
+        class SlowStore:
+            def __init__(self) -> None:
+                self.started = threading.Event()
+                self.release = threading.Event()
+
+            def rebuild(self) -> None:
+                self.started.set()
+                self.release.wait(2)
+
+        state = server.State()
+        state.knowledge_store = SlowStore()
+        state.record_research_changes(
+            "run-research",
+            SimpleNamespace(
+                restore_result=lambda: SimpleNamespace(
+                    ok=True,
+                    restored=["note.md"],
+                    conflicts=[],
+                    error="",
+                ),
+            ),
+        )
+        done = threading.Event()
+        holder: dict[str, dict] = {}
+
+        def restore() -> None:
+            holder["payload"] = state.restore_research_changes("run-research")
+            done.set()
+
+        thread = threading.Thread(target=restore)
+        thread.start()
+        try:
+            self.assertTrue(state.knowledge_store.started.wait(1))
+            self.assertTrue(done.wait(0.2))
+            self.assertEqual(holder["payload"]["restored"], ["note.md"])
+        finally:
+            state.knowledge_store.release.set()
+            thread.join(1)
+
+    def test_restore_research_changes_coalesces_background_rebuilds(self) -> None:
+        class CoalescingStore:
+            def __init__(self) -> None:
+                self.lock = threading.Lock()
+                self.first_started = threading.Event()
+                self.second_started = threading.Event()
+                self.first_release = threading.Event()
+                self.second_release = threading.Event()
+                self.extra_started = threading.Event()
+                self.count = 0
+                self.active = 0
+                self.max_active = 0
+
+            def rebuild(self) -> None:
+                with self.lock:
+                    self.count += 1
+                    index = self.count
+                    self.active += 1
+                    self.max_active = max(self.max_active, self.active)
+                try:
+                    if index == 1:
+                        self.first_started.set()
+                        self.first_release.wait(2)
+                    elif index == 2:
+                        self.second_started.set()
+                        self.second_release.wait(2)
+                    else:
+                        self.extra_started.set()
+                finally:
+                    with self.lock:
+                        self.active -= 1
+
+        def change() -> SimpleNamespace:
+            return SimpleNamespace(
+                restore_result=lambda: SimpleNamespace(
+                    ok=True,
+                    restored=[],
+                    conflicts=[],
+                    error="",
+                ),
+            )
+
+        state = server.State()
+        state.knowledge_store = CoalescingStore()
+        for run_id in ("run-1", "run-2", "run-3"):
+            state.record_research_changes(run_id, change())
+
+        try:
+            self.assertTrue(state.restore_research_changes("run-1")["ok"])
+            self.assertTrue(state.knowledge_store.first_started.wait(1))
+            self.assertTrue(state.restore_research_changes("run-2")["ok"])
+            self.assertTrue(state.restore_research_changes("run-3")["ok"])
+            state.knowledge_store.first_release.set()
+            self.assertTrue(state.knowledge_store.second_started.wait(1))
+            self.assertEqual(state.knowledge_store.max_active, 1)
+            self.assertEqual(state.knowledge_store.count, 2)
+            self.assertFalse(state.knowledge_store.extra_started.is_set())
+        finally:
+            state.knowledge_store.first_release.set()
+            state.knowledge_store.second_release.set()
+
+    def test_restore_research_changes_rebuild_error_does_not_change_restore_result(self) -> None:
+        class FailingStore:
+            def __init__(self) -> None:
+                self.started = threading.Event()
+
+            def rebuild(self) -> None:
+                self.started.set()
+                raise RuntimeError("index failed")
+
+        state = server.State()
+        state.knowledge_store = FailingStore()
+        state.record_research_changes(
+            "run-research",
+            SimpleNamespace(
+                restore_result=lambda: SimpleNamespace(
+                    ok=True,
+                    restored=["note.md"],
+                    conflicts=[],
+                    error="",
+                ),
+            ),
+        )
+
+        restored = state.restore_research_changes("run-research")
+
+        self.assertTrue(restored["ok"])
+        self.assertEqual(restored["restored"], ["note.md"])
+        self.assertTrue(state.knowledge_store.started.wait(1))
 
     def test_state_snapshot_restores_active_teaching_card(self) -> None:
         state = server.State()

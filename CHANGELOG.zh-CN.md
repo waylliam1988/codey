@@ -4,6 +4,17 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.9 - Runtime Responsiveness Hygiene
+
+- SSE 可靠性：subscriber queue 满时，Codey 现在会丢弃队列里最旧的事件，
+  再放入最新事件；不再静默丢掉最新状态更新。
+- Research restore 响应性：恢复 Research note changes 后，knowledge index rebuild
+  改为合并式后台任务，`/api/research/restore` 不再等待完整 vault scan 才返回。
+- Review 响应性：Review 拒绝后进入 repair 时，复用同一个 review cycle 中已经
+  刷新的 project map，避免重复刷新。
+- 边界克制：没有 API payload 变化、frontend 变化、增量 indexer、workspace watcher
+  或后台任务框架。
+
 ## 0.2.8 - Research TaskRunner Hygiene
 
 - TaskRunner 整理：把 `TaskRunner.run()` 中 chat、research、hybrid、project
