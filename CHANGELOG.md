@@ -4,6 +4,18 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.8 - Research TaskRunner Hygiene
+
+- TaskRunner hygiene: split `TaskRunner.run()` mode execution into private
+  chat, research, hybrid, and project helpers while keeping run reservation,
+  provider lifecycle, cancellation, and terminal `finish_run()` handling in the
+  main orchestration method.
+- Boundary discipline: added only small private frame/work/hook data carriers
+  inside `task_runner.py`; there is no new router, strategy system, task mode,
+  or module split.
+- Compatibility: kept task events, payloads, provider failover behavior,
+  review flow, project memory writes, and Research handoff behavior unchanged.
+
 ## 0.2.7 - Research Server Hygiene
 
 - Research API hygiene: moved the `/api/research/graph`,

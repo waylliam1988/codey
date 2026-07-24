@@ -4,6 +4,16 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.8 - Research TaskRunner Hygiene
+
+- TaskRunner 整理：把 `TaskRunner.run()` 中 chat、research、hybrid、project
+  四条执行路径拆成私有 helper；run reserve/start、provider lifecycle、
+  cancellation 和最终 `finish_run()` 仍留在主 orchestration 方法里。
+- 边界克制：只在 `task_runner.py` 内部增加很小的 frame/work/hook data carrier；
+  没有新增 router、strategy system、task mode 或 module split。
+- 兼容性：task events、payloads、provider failover、review flow、project memory
+  writes 和 Research handoff 行为保持不变。
+
 ## 0.2.7 - Research Server Hygiene
 
 - Research API 卫生：把 `/api/research/graph`、`/api/research/note` 和

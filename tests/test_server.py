@@ -30,6 +30,7 @@ from codey.models import ToolCall
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_discovery import Discovery
 from codey.providers.local_openai import LocalEndpoint
+from codey.research.runner import ResearchRunResult
 from codey.task_runner import TaskRunner, _project_has_user_files
 from codey.tool_runtime import ToolOutcome
 from codey.verification_policy import VerificationCandidate
@@ -858,7 +859,7 @@ class WebAssetTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             conn = http.client.HTTPConnection(host, port, timeout=5)
-            conn.request("GET", "/assets/research_graph.js?v=0.2.7")
+            conn.request("GET", "/assets/research_graph.js?v=0.2.8")
             response = conn.getresponse()
             body = response.read().decode("utf-8")
             ctype = response.getheader("Content-Type") or ""
@@ -1988,6 +1989,125 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Implement the API client", hybrid_intro)
         self.assertIn("requests-based client wrapper", hybrid_intro)
         agent_run.assert_not_called()
+
+    def test_hybrid_research_failure_finishes_without_project_writer(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td, "project")
+            project.mkdir()
+            state = server.State(td)
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            events = state.subscribe()
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            research_result = ResearchRunResult(
+                question="Research first",
+                summary="Research stopped before project work.",
+                stop_reason="no_progress",
+                turns=2,
+                notes_created=["fact-1"],
+                synthesis_id="synthesis-1",
+            )
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(
+                    TaskRunner,
+                    "_run_research_task",
+                    return_value=research_result,
+                ) as research_task,
+                mock.patch.object(server, "agent_run") as agent_run,
+            ):
+                server._run_task(
+                    "session-hybrid-fail",
+                    str(project),
+                    "Research before editing",
+                    12,
+                    False,
+                    "deepseek",
+                    "hybrid",
+                )
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+            done = next(event for event in emitted if event["type"] == "task_done")
+            state.knowledge_store.close()
+
+        research_task.assert_called_once()
+        agent_run.assert_not_called()
+        self.assertEqual(done["mode"], "research")
+        self.assertEqual(done["stop_reason"], "no_progress")
+        self.assertEqual(done["research"]["synthesis_id"], "synthesis-1")
+        self.assertNotIn("changed", done)
+
+    def test_hybrid_success_runs_project_and_keeps_research_payload(self) -> None:
+        changes = {
+            "ok": True,
+            "mode": "snapshot",
+            "changed_count": 0,
+            "files": [],
+            "diff": "",
+        }
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td, "project")
+            project.mkdir()
+            (project / "app.py").write_text("value = 1\n", encoding="utf-8")
+            state = server.State(td)
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            events = state.subscribe()
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            research_result = ResearchRunResult(
+                question="Research first",
+                summary="Use the documented API.",
+                stop_reason="done",
+                turns=3,
+                notes_created=["fact-1"],
+                notes_updated=["synthesis-1"],
+                synthesis_id="synthesis-1",
+            )
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(
+                    TaskRunner,
+                    "_run_research_task",
+                    return_value=research_result,
+                ) as research_task,
+                mock.patch.object(
+                    server,
+                    "agent_run",
+                    return_value=RunResult("project done", "done", 4, True, False),
+                ) as agent_run,
+                mock.patch.object(server, "collect_changes", return_value=changes),
+            ):
+                server._run_task(
+                    "session-hybrid-ok",
+                    str(project),
+                    "Research then implement",
+                    12,
+                    False,
+                    "deepseek",
+                    "hybrid",
+                )
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+            done = next(event for event in emitted if event["type"] == "task_done")
+            state.knowledge_store.close()
+
+        research_task.assert_called_once()
+        agent_run.assert_called_once()
+        self.assertEqual(done["summary"], "project done")
+        self.assertEqual(done["stop_reason"], "done")
+        self.assertEqual(done["research"]["synthesis_id"], "synthesis-1")
+        self.assertEqual(done["research"]["notes_created"], ["fact-1"])
+        self.assertIn("receipt", done)
 
     def test_plain_chat_followup_reuses_same_model_conversation(self) -> None:
         state = server.State()

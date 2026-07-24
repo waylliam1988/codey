@@ -1,5 +1,36 @@
 # Codey Test Report
 
+## 0.2.8 Research TaskRunner Hygiene
+
+Codey 0.2.8 keeps TaskRunner behavior unchanged while making the core run
+orchestrator easier to maintain. `TaskRunner.run()` now owns lifecycle and thin
+mode dispatch; private helpers own chat, research, hybrid, and project path
+execution.
+
+Production changes:
+
+- Added private `_RunFrame`, `_RunWork`, `_RunHooks`, and `_ModeOutcome`
+  implementation details inside `task_runner.py`.
+- Added `_run_chat_mode()`, `_run_research_mode()`, `_run_hybrid_mode()`, and
+  `_run_project_mode()` on `TaskRunner`.
+- Kept run reservation/start, provider preflight, cancellation/error cleanup,
+  and terminal `finish_run()` in `TaskRunner.run()`.
+- Did not add a strategy system, new task mode, router, module split, payload
+  change, or provider/review/memory policy change.
+
+Validation:
+
+```text
+python -m unittest tests.test_server.SessionThreadingTests: 65 tests OK
+python -m unittest tests.test_server tests.test_research tests.test_project_task_context: 183 tests OK
+python -m unittest tests.test_server tests.test_ui: 167 tests OK
+python -m unittest discover: 1189 tests OK
+python -m py_compile codey\task_runner.py: passed
+python -m py_compile codey\__init__.py codey\task_runner.py codey\server.py: passed
+python -m ruff check codey tests: All checks passed
+git diff --check: passed
+```
+
 ## 0.2.7 Research Server Hygiene
 
 Codey 0.2.7 keeps Research server behavior unchanged while making the HTTP
