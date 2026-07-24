@@ -1,5 +1,51 @@
 # Codey Test Report
 
+## 0.2.5 Research Graph
+
+Codey 0.2.5 adds an on-demand Local Graph inside the Research drawer. The graph
+is a read model over Markdown notes and the rebuildable SQLite index; it does
+not add a graph database, a new Research mode, or localStorage graph artifacts.
+
+Production changes:
+
+- Added `codey/knowledge/graph.py` with bounded `ResearchGraphArtifact`,
+  `GraphNode`, `GraphEdge`, and `KnowledgeGraphBuilder`.
+- Added `KnowledgeIndex.notes_by_ids()`, `links_touching()`, and
+  `sources_for()` for graph read-model queries without changing the schema.
+- Added `GET /api/research/graph` with focus/depth/limit/source/counterpoint
+  query support. Unknown focus/session returns an empty graph packet instead of
+  a 500.
+- Added a `Graph` tab to the Research drawer. It fetches graph data only when
+  the tab is opened, renders a lightweight canvas force graph, widens the
+  drawer only for Graph, and supports Depth 1/2, Reset, hover/click detail,
+  URL source opening, and note handoff to the Notes tab.
+- URL sources are virtual `source_url` nodes connected by virtual `cites` edges.
+  `cites` remains display-only and is not added to persistent `LINK_KINDS`.
+- Virtual counterpoint nodes are created only from the current run payload when
+  no real `contradicts` link exists; the builder does not parse synthesis
+  Markdown sections.
+- The graph keeps Codey's monochrome design: grey/white nodes and links,
+  dashed `contradicts`, and `--ok-dot` only as a hover accent for the hovered
+  node and its connected edges.
+
+Validation:
+
+```text
+python -m py_compile .\codey\knowledge\index.py .\codey\knowledge\graph.py .\codey\server.py: passed
+python -m unittest tests.test_knowledge tests.test_research tests.test_server tests.test_ui: 215 tests OK
+python -m unittest discover: 1178 tests OK
+python -m unittest tests.test_knowledge tests.test_server.ResearchGraphApiTests tests.test_ui.ProviderSelectorUiTests.test_research_context_is_explicit_and_user_facing: 12 tests OK
+```
+
+Browser smoke:
+
+```text
+Temporary fixture server with synthesis/fact/counterpoint/implementation/verification notes.
+Research drawer -> Graph tab: canvas rendered, drawer graph-open=true, loading overlay hidden.
+Canvas screenshot sampling: 1280x900, non-dark pixels present, hover accent pixels present.
+Screenshots captured for narrow and desktop graph states.
+```
+
 ## 0.2.4 Research PDF Intake
 
 Codey 0.2.4 makes PDF a first-class Research source intake path under

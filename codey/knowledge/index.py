@@ -227,6 +227,46 @@ class KnowledgeIndex:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def notes_by_ids(self, note_ids: list[str]) -> list[dict]:
+        ids = _unique(note_ids)
+        if not ids:
+            return []
+        marks = ",".join("?" * len(ids))
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id,path,type,title,confidence,status,session_id,project,"
+                "created,updated,content_hash,body FROM notes"
+                f" WHERE id IN ({marks})",
+                ids,
+            ).fetchall()
+        by_id = {str(row["id"]): dict(row) for row in rows}
+        return [by_id[note_id] for note_id in ids if note_id in by_id]
+
+    def links_touching(self, note_ids: list[str]) -> list[dict]:
+        ids = _unique(note_ids)
+        if not ids:
+            return []
+        marks = ",".join("?" * len(ids))
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT src_id,dst_id,kind FROM links"
+                f" WHERE src_id IN ({marks}) OR dst_id IN ({marks})",
+                (*ids, *ids),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def sources_for(self, note_ids: list[str]) -> list[dict]:
+        ids = _unique(note_ids)
+        if not ids:
+            return []
+        marks = ",".join("?" * len(ids))
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT note_id,source FROM sources WHERE note_id IN ({marks})",
+                ids,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
@@ -250,4 +290,15 @@ def _tokenize(query: str) -> list[str]:
             current = []
     if current:
         out.append("".join(current))
+    return out
+
+
+def _unique(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        item = str(value or "").strip()
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
     return out

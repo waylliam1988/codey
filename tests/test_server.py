@@ -635,6 +635,82 @@ class TaskRunnerUiEventTests(unittest.TestCase):
         self.assertTrue(payload["error"])
 
 
+class ResearchGraphApiTests(unittest.TestCase):
+    def test_research_graph_api_returns_graph_packet(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State()
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            synthesis = KnowledgeNote.create(
+                type="synthesis",
+                title="Graph research",
+                body="Conclusion",
+                sources=["https://example.com/graph"],
+                session_id="s1",
+            )
+            fact = KnowledgeNote.create(
+                type="fact",
+                title="Graph fact",
+                body="Fact",
+                sources=["https://example.com/fact"],
+                session_id="s1",
+            )
+            state.knowledge_store.write_note(synthesis)
+            state.knowledge_store.write_note(fact)
+            state.knowledge_store.link(synthesis.id, fact.id, "derives")
+            httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            host, port = httpd.server_address
+            try:
+                with mock.patch.object(server, "STATE", state):
+                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    path = (
+                        "/api/research/graph?session_id=s1"
+                        f"&focus={synthesis.id}&depth=1&counterpoint=Missing+primary+data"
+                    )
+                    conn.request("GET", path)
+                    response = conn.getresponse()
+                    payload = json.loads(response.read().decode("utf-8"))
+                    conn.close()
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=5)
+                state.knowledge_store.close()
+
+        self.assertEqual(response.status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["graph"]["center_id"], synthesis.id)
+        self.assertTrue(any(node["kind"] == "source_url" for node in payload["graph"]["nodes"]))
+        self.assertTrue(any(node["kind"] == "counterpoint" for node in payload["graph"]["nodes"]))
+
+    def test_research_graph_api_unknown_focus_returns_empty_graph(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State()
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            host, port = httpd.server_address
+            try:
+                with mock.patch.object(server, "STATE", state):
+                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn.request("GET", "/api/research/graph?session_id=missing&focus=unknown")
+                    response = conn.getresponse()
+                    payload = json.loads(response.read().decode("utf-8"))
+                    conn.close()
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=5)
+                state.knowledge_store.close()
+
+        self.assertEqual(response.status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["graph"]["nodes"], [])
+        self.assertEqual(payload["graph"]["edges"], [])
+
+
 class LocalProviderApiTests(unittest.TestCase):
     def test_empty_api_key_preserves_existing_key_for_probe_and_save(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)

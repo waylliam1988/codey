@@ -49,6 +49,7 @@ from codey.conversation_store import ConversationStore
 from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.handoff import ConversationContext
 from codey.local_store import DEFAULT_STATE_HOME
+from codey.knowledge.graph import KnowledgeGraphBuilder
 from codey.knowledge.store import KnowledgeStore
 from codey.research.advisors import EvidencePack, run_research_advisors
 from codey.providers import (
@@ -1224,6 +1225,37 @@ def _submit_task(
         raise
     return reserved.run_id
 
+
+def _query_list(query: dict[str, list[str]], key: str) -> list[str]:
+    values: list[str] = []
+    for raw in query.get(key, []):
+        for item in str(raw or "").split(","):
+            text = item.strip()
+            if text and text not in values:
+                values.append(text)
+    return values
+
+
+def _query_int(
+    query: dict[str, list[str]],
+    key: str,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        value = int((query.get(key) or [default])[0])
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
+def _query_bool(query: dict[str, list[str]], key: str, default: bool) -> bool:
+    value = str((query.get(key) or [""])[0]).strip().lower()
+    if not value:
+        return default
+    return value not in {"0", "false", "no", "off"}
+
 # ------------------------------------------------------------ http layer ---
 
 class Handler(BaseHTTPRequestHandler):
@@ -1280,6 +1312,26 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/local_provider":
             self._send_json(200, {"ok": True, "local": local_config_payload()})
+            return
+        if url.path == "/api/research/graph":
+            query = parse_qs(url.query)
+            if STATE.knowledge_store is None:
+                self._send_json(404, {"ok": False, "error": "Research is not configured"})
+                return
+            focus_ids = _query_list(query, "focus")
+            synthesis_id = (query.get("synthesis_id") or [""])[0].strip()
+            if synthesis_id and synthesis_id not in focus_ids:
+                focus_ids.insert(0, synthesis_id)
+            graph = KnowledgeGraphBuilder(STATE.knowledge_store).build_for_session(
+                (query.get("session_id") or [""])[0].strip(),
+                focus_ids=tuple(focus_ids),
+                depth=_query_int(query, "depth", 1, 0, 2),
+                node_limit=_query_int(query, "limit", 96, 8, 200),
+                edge_limit=_query_int(query, "edge_limit", 192, 8, 400),
+                include_sources=_query_bool(query, "include_sources", True),
+                counterpoints=tuple(_query_list(query, "counterpoint")[:8]),
+            )
+            self._send_json(200, {"ok": True, "graph": graph.to_dict()})
             return
         if url.path == "/api/research/note":
             query = parse_qs(url.query)

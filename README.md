@@ -1,8 +1,8 @@
 # Codey
 
-**Use web AI models as a local coding assistant.**
+**Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.4-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.5-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.4`
+Version: `0.2.5`
 
 [Version history](CHANGELOG.md)
 
@@ -23,7 +23,7 @@ Version: `0.2.4`
 ## At a Glance
 
 - **Use web AI accounts you already have**: DeepSeek, Qwen, Xiaomi MiMo, and GLM are supported.
-- **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
+- **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
 - **Keep code local**: models access only the project folder you choose.
 - **Carry research into projects**: after research, choose a folder and Codey injects a bounded Research Brief with citations and limitations instead of the whole vault.
 - **Controlled tool loop**: read, edit, test, diff, review, and restore.
@@ -67,7 +67,7 @@ This is not about replacing professional tools. It is about making the first ste
 - Use `Research` from the composer context to search/read HTML and text PDFs, save notes, and produce a grounded synthesis with numbered citations, evidence snippets, counter-evidence, source quality, and search coverage
 - Turn a plain chat into a project task from the same conversation by choosing a folder from the composer context
 - Turn research into implementation by choosing a folder after the synthesis; Codey carries only a bounded Research Brief into the Writer prompt
-- Inspect a Research run through `Evidence`, `Sources`, and `Notes` drawer tabs instead of reading a flat receipt; PDF page locators and search coverage appear inside the existing evidence/source views
+- Inspect a Research run through `Evidence`, `Sources`, `Graph`, and `Notes` drawer tabs instead of reading a flat receipt; PDF page locators and search coverage appear inside the existing evidence/source views
 - Save successful implementation and verification facts back into local research memory without copying source code into the vault
 - Discuss, inspect, and edit inside one project conversation; files change only when requested
 - Let the model read and modify files in a selected project folder
@@ -248,16 +248,16 @@ Chat about an idea
 -> successful implementation/verification can be remembered as project facts
 ```
 
-The Research drawer has three lightweight tabs:
+The Research drawer has four lightweight tabs:
 
 - `Evidence`: claims, snippets, PDF page locators, counterpoints, quality warnings, and search coverage
 - `Sources`: citation map, source titles, final URLs, quality hints, and PDF pages read/truncation metadata
+- `Graph`: an on-demand local graph of current research notes, source URLs, counterpoints, implementation links, and verification links
 - `Notes`: synthesis, note ids, source URLs, and restore state
 
 Coverage stays as supporting audit detail inside `Evidence`, rather than a
-first-level concept. A future Graph view can make the broader research process
-and note relationships visible when the library has enough structure to justify
-it.
+first-level concept. `Graph` is a bounded read model for the current Research
+run, not a new database or a full-vault knowledge map.
 
 The vault is stored under Codey's local state directory and is implemented as
 Markdown notes plus a rebuildable SQLite FTS index. Project source code is not

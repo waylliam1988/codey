@@ -4,6 +4,27 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.5 - Research Graph
+
+- Research drawer Graph: added an Obsidian-like local graph tab that visualizes
+  the current Research run as note/source nodes connected by
+  `derives` / `supports` / `contradicts` / `implements` / `verifies` links.
+  The graph uses a lightweight canvas force layout with hover highlighting,
+  click details, source URL opening, Depth 1/2, and Reset.
+- Graph read model: added `codey/knowledge/graph.py` plus bounded index queries
+  for notes, incoming/outgoing links, and note sources. Markdown notes remain
+  the source of truth; SQLite remains a rebuildable cache; the graph is loaded
+  on demand through `/api/research/graph`.
+- Provenance display: URL sources become virtual `source_url` nodes with
+  virtual `cites` edges for display only. `cites` is intentionally not a
+  persistent note link kind.
+- Counterpoint hygiene: virtual counterpoint nodes are created only from the
+  current run's counterpoint payload when there is no real `contradicts` link.
+  The graph does not parse synthesis Markdown sections.
+- UI language: the drawer graph keeps Codey's monochrome design, using grey
+  nodes and lines by default. `--ok-dot` appears only as an interaction accent
+  on the hovered node and its connected edges.
+
 ## 0.2.4 - Research PDF Intake
 
 - PDF source intake: `open_url` can now read text PDFs directly. There is no

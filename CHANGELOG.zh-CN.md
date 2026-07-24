@@ -4,6 +4,23 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.5 - Research Graph
+
+- Research drawer Graph：新增 Obsidian-like 的局部 Graph tab，把当前 Research
+  run 里的 notes/source 节点和 `derives` / `supports` / `contradicts` /
+  `implements` / `verifies` 关系可视化。第一版使用轻量 canvas force layout，
+  支持 hover 高亮、点击详情、打开 source URL、Depth 1/2 和 Reset。
+- Graph read model：新增 `codey/knowledge/graph.py`，并给 index 补上 notes、
+  incoming/outgoing links、note sources 的有边界查询。Markdown notes 仍是事实源，
+  SQLite 仍是可重建 cache；Graph 通过 `/api/research/graph` 按需加载。
+- Provenance 展示：URL sources 会派生成虚拟 `source_url` 节点和虚拟 `cites`
+  边，只用于 Graph 展示。`cites` 不加入持久 note link kind。
+- Counterpoint 卫生：只有当前 run 有 counterpoints payload、且没有真实
+  `contradicts` link 时，才生成虚拟 counterpoint 节点。Graph 不解析 synthesis
+  Markdown section。
+- UI 语言：drawer graph 保持 Codey 的 monochrome 设计，默认是灰白点线；
+  `--ok-dot` 只作为交互 accent，用在 hover 节点及其相连边。
+
 ## 0.2.4 - Research PDF Intake
 
 - PDF source intake：`open_url` 现在可以直接读取文本型 PDF。没有 `open_pdf`
