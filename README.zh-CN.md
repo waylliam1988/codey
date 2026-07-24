@@ -165,6 +165,11 @@ Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开
 笔记写入、restore 和 evidence review 都由 Codey 本地工具执行。模型没有隐藏联网权。
 最终 synthesis 只能引用本轮 Codey 实际打开过的来源。
 
+Research 对 provider 的协议遵守能力更敏感。MiMo 仍然支持普通聊天和较简单任务，
+但实机 Deep Research A/B 显示，它目前不适合作为严格 JSON-tool 研究闭环的主模型：
+它可能一次输出多个或格式不正确的 JSON tool call，并在 protocol repair 后丢失上下文。
+如果你需要带 evidence note 的深度研究，优先使用 DeepSeek、Qwen、GLM 或 `Local`。
+
 从 0.2.4 开始，Research 会维护 Evidence Ledger，并在保存最终 synthesis 前通过确定性的
 报告质量门。报告必须包含：
 

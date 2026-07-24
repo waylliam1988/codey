@@ -70,6 +70,70 @@ def test_deep_research_ab_live_trace_writes_reply_json_immediately() -> None:
     assert not temp_files
 
 
+def test_deep_research_ab_probe_rejects_tool_call_flood() -> None:
+    reply = "\n".join(
+        json.dumps({"tool": "web_search", "args": {"query": f"alpha {index}"}})
+        for index in range(ab.MAX_CALLS_PER_TURN + 2)
+    )
+
+    plan = ab.ProbeJsonToolCodec("baseline").parse(reply)
+
+    assert not plan.calls
+    assert plan.control is None
+    assert "too many JSON tool calls" in (plan.protocol_error or "")
+
+
+def test_deep_research_ab_probe_rejects_two_duplicate_tool_calls() -> None:
+    reply = (
+        'json{"tool":"knowledge_search","args":{"query":"alpha"}}'
+        'json{"tool":"knowledge_search","args":{"query":"alpha"}}'
+    )
+
+    plan = ab.ProbeJsonToolCodec("baseline").parse(reply)
+
+    assert not plan.calls
+    assert plan.control is None
+    assert "too many JSON tool calls" in (plan.protocol_error or "")
+
+
+def test_deep_research_ab_probe_rejects_tool_call_plus_done() -> None:
+    reply = (
+        '{"tool":"knowledge_write","args":{"type":"source","title":"Alpha"}}\n'
+        '{"tool":"done","args":{"answer":"report"}}'
+    )
+
+    plan = ab.ProbeJsonToolCodec("baseline").parse(reply)
+
+    assert not plan.calls
+    assert plan.control is None
+    assert "too many JSON tool calls" in (plan.protocol_error or "")
+
+
+def test_deep_research_ab_probe_repeats_question_in_followups() -> None:
+    question = "Does the Alpha Safety Program require 72-hour incident notification?"
+    codec = ab.ProbeJsonToolCodec("baseline", question=question)
+
+    assert question in codec.repair_prompt()
+    assert question in codec.format_results([])
+    assert "do not use ASCII double-quote search operators" in codec.repair_prompt()
+
+
+
+def test_deep_research_ab_probe_extracts_malformed_done_answer() -> None:
+    reply = (
+        '{"tool":"done","args":{"answer":"## 结论\\n'
+        '搜索覆盖里写了："Alpha Safety Program query" — 返回结果\\n'
+        '## 来源\\n[1] Title - https://example.com"}}'
+    )
+
+    plan = ab.ProbeJsonToolCodec("baseline").parse(reply)
+
+    assert not plan.calls
+    assert plan.control is not None
+    assert plan.control.kind == "done"
+    assert "Alpha Safety Program query" in plan.control.body
+
+
 def test_source_search_requires_opened_source_and_returns_pdf_page_locator() -> None:
     case = next(item for item in ab.CASES if item.name == "pdf-target-page")
 

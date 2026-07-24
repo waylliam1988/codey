@@ -29,6 +29,18 @@ Manual Research A/B changes:
   and include send/reply counts, done attempts, repair prompt counts, opened
   sources, evidence items, raw reply previews, and last `done` quality review.
 
+Live provider note:
+
+- Xiaomi MiMo was smoke-tested on the `long-official-doc` fixture and is not a
+  good primary model for the current JSON-tool Deep Research loop. The web page
+  adapter was usable, but MiMo repeatedly emitted multiple JSON tool calls in a
+  single reply, `json`-prefixed duplicated objects, malformed query strings with
+  unescaped double quotes, and context-losing repair replies. It did not
+  reliably reach `done` within the 10-turn cheap profile. This is a model
+  protocol-following limitation for this research workflow, not evidence that
+  MiMo is broken for ordinary chat or simpler tasks. Prefer DeepSeek, Qwen, or
+  GLM when evaluating Deep Research source-search behavior.
+
 Validation:
 
 ```text

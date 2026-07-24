@@ -200,6 +200,12 @@ note writes, restore, and evidence checks are always local Codey tools. Models
 do not get hidden network access. A final synthesis can cite only sources that
 Codey actually opened in the run.
 
+Provider fit matters for Research. MiMo remains supported for ordinary chat and
+simpler tasks, but live Deep Research A/B probes show it is currently a poor fit
+for the strict JSON-tool research loop: it may emit multiple or malformed JSON
+tool calls and lose context after protocol repair. Prefer DeepSeek, Qwen, GLM,
+or `Local` when you want evidence-backed research with source notes.
+
 In 0.2.4, Research keeps an Evidence Ledger and applies a deterministic report
 quality gate before saving the final synthesis. The report must include:
 

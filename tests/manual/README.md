@@ -310,6 +310,14 @@ By default it only attaches to already-open provider tabs; add
 provider pages. Use this probe before promoting source_search, ResearchPlan, or
 Coverage Review into the production Research path.
 
+Provider fit note: MiMo is currently a poor fit for this JSON-tool Deep
+Research A/B harness. In live `long-official-doc` smoke tests, the MiMo page was
+usable, but the model often emitted multiple JSON objects per reply, duplicated
+objects with `json` prefixes, malformed query strings, and repair replies that
+lost the original research question. Treat MiMo results as protocol-following
+diagnostics, not as strong evidence for or against Deep Research quality.
+Prefer DeepSeek, Qwen, or GLM for source-search A/B decisions.
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 
