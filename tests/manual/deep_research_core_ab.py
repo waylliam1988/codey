@@ -31,16 +31,24 @@ from codey.models import Control, ToolCall, ToolPlan
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
 from codey.research.protocols import JsonToolCodec, MAX_CALLS_PER_TURN
+from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner, _Outcome
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tools import ResearchTools
 
 
 ARMS = ("baseline", "source_search", "deep_core")
+PROFILES = ("cheap", "full")
+DEFAULT_PROFILE = "cheap"
+CHEAP_CASE_NAMES = ("long-official-doc", "pdf-target-page")
+CHEAP_ARMS = ARMS
+CHEAP_MAX_TURNS = 10
+FULL_MAX_TURNS = 14
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-deep-research-core-ab.json"
 SOURCE_SEARCH_SNIPPET_CHARS = 460
 MAX_REPLY_CHARS = 4_000
 MAX_FIELD_CHARS = 2_000
+MAX_RAW_REPLY_PREVIEW_CHARS = 1_000
 
 
 @dataclass(frozen=True)
@@ -427,6 +435,9 @@ class ProbeResearchRunner(ResearchRunner):
         arm: str,
         max_turns: int,
         send_timeout: float = 120.0,
+        provider_id: str = "",
+        case_name: str = "",
+        trace: LiveTrace | None = None,
     ) -> None:
         super().__init__(
             provider,
@@ -438,7 +449,11 @@ class ProbeResearchRunner(ResearchRunner):
         )
         self.arm = arm
         self.send_timeout = max(1.0, float(send_timeout))
+        self.provider_id = provider_id
+        self.case_name = case_name
+        self.trace = trace
         self.sent_messages: list[str] = []
+        self.received_replies: list[str] = []
         self.tools = ProbeResearchTools(
             search=search,
             store=store,
@@ -452,10 +467,31 @@ class ProbeResearchRunner(ResearchRunner):
             cancellation.check()
             reply = self.provider.send(message, timeout=self.send_timeout)
             cancellation.check()
-            return str(reply or "")
+            text = str(reply or "")
+            self.received_replies.append(text)
+            if self.trace is not None:
+                self.trace.record_reply(
+                    provider=self.provider_id,
+                    case=self.case_name,
+                    arm=self.arm,
+                    send_index=len(self.sent_messages),
+                    message=message,
+                    reply=text,
+                )
+            return text
         except cancellation.TaskCancelled:
             raise
         except Exception as exc:
+            if self.trace is not None:
+                self.trace.record({
+                    "event": "send_error",
+                    "provider": self.provider_id,
+                    "case": self.case_name,
+                    "arm": self.arm,
+                    "send_index": len(self.sent_messages),
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "message_preview": _clip(message, 800),
+                })
             self._record_model_failure("send", exc)
             raise
 
@@ -499,12 +535,62 @@ class TimedProvider:
         return self.provider.close()
 
 
+class LiveTrace:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.started = time.monotonic()
+        self.events: list[dict[str, Any]] = []
+
+    def record(self, event: dict[str, Any]) -> None:
+        payload = dict(event)
+        payload["elapsed_seconds"] = round(time.monotonic() - self.started, 3)
+        self.events.append(payload)
+        self.flush()
+
+    def record_reply(
+        self,
+        *,
+        provider: str,
+        case: str,
+        arm: str,
+        send_index: int,
+        message: str,
+        reply: str,
+    ) -> None:
+        self.record({
+            "event": "reply",
+            "provider": provider,
+            "case": case,
+            "arm": arm,
+            "send_index": send_index,
+            "sent_chars": len(message or ""),
+            "reply_chars": len(reply or ""),
+            "message_preview": _clip(message, 800),
+            "reply": _clip(reply, MAX_REPLY_CHARS),
+        })
+
+    def flush(self) -> None:
+        _write_json_atomic(
+            self.path,
+            {
+                "probe": "deep_research_core_ab_trace",
+                "updated_elapsed_seconds": round(time.monotonic() - self.started, 3),
+                "event_count": len(self.events),
+                "events": self.events,
+            },
+        )
+
+
 @dataclass(frozen=True)
 class ProbeJsonToolCodec(JsonToolCodec):
     arm: str = "baseline"
 
     def system_prompt(self) -> str:
-        base = super().system_prompt()
+        include_source_search = self.arm in {"source_search", "deep_core"}
+        base = _with_probe_fixture_discipline(
+            super().system_prompt(),
+            include_source_search=include_source_search,
+        )
         if self.arm == "baseline":
             return base
         prompt = _with_source_search_tool(base)
@@ -514,13 +600,22 @@ class ProbeJsonToolCodec(JsonToolCodec):
 
     def repair_prompt(self) -> str:
         if self.arm == "baseline":
-            return super().repair_prompt()
+            return super().repair_prompt() + "\n\n" + _probe_fixture_reminder(include_source_search=False)
         return (
             "Your last reply was not a valid tool call. Reply with exactly one "
             "JSON object and nothing else, for example:\n"
             '{"tool":"web_search","args":{"query":"..."}}\n'
             '{"tool":"source_search","args":{"url":"https://...","query":"..."}}\n'
             'or {"tool":"done","args":{"answer":"..."}}'
+            "\n\n"
+            + _probe_fixture_reminder(include_source_search=True)
+        )
+
+    def format_results(self, results) -> str:
+        return (
+            super().format_results(results)
+            + "\n\n"
+            + _probe_fixture_reminder(include_source_search=self.arm in {"source_search", "deep_core"})
         )
 
     def parse(self, text: str) -> ToolPlan:
@@ -613,6 +708,24 @@ def _with_source_search_tool(prompt: str) -> str:
     )
 
 
+def _with_probe_fixture_discipline(prompt: str, *, include_source_search: bool) -> str:
+    return prompt + "\n\n" + _probe_fixture_reminder(include_source_search=include_source_search)
+
+
+def _probe_fixture_reminder(*, include_source_search: bool) -> str:
+    tool_names = "web_search/open_url/knowledge_search/knowledge_read/knowledge_write/knowledge_link"
+    if include_source_search:
+        tool_names += "/source_search"
+    return (
+        "Probe fixture discipline:\n"
+        "- Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.\n"
+        f"- All web and knowledge access in this probe is available only through these JSON tools: {tool_names}.\n"
+        "- The source URLs and facts are deterministic local fixtures; they may not exist on the public internet.\n"
+        "- Treat tool outputs as the only evidence, even when a fixture domain looks fake or unreachable publicly.\n"
+        "- Do not answer from memory or from the chat website's own search results."
+    )
+
+
 def _source_hits(
     doc: FixtureDocument,
     query: str,
@@ -690,6 +803,7 @@ def run_case(
     arm: str,
     max_turns: int,
     timeout: float,
+    trace: LiveTrace | None = None,
 ) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="codey-deep-research-ab-") as td:
         store = KnowledgeStore(Path(td))
@@ -702,6 +816,9 @@ def run_case(
             arm=arm,
             max_turns=max_turns,
             send_timeout=timeout,
+            provider_id=provider_id,
+            case_name=case.name,
+            trace=trace,
         )
         events = []
         started = time.monotonic()
@@ -716,17 +833,36 @@ def run_case(
                 "case": case.name,
                 "arm": arm,
                 "elapsed_seconds": round(time.monotonic() - started, 3),
+                "send_count": len(runner.sent_messages),
+                "reply_count": len(runner.received_replies),
                 "sent_chars": sum(len(item) for item in runner.sent_messages),
+                "reply_chars": sum(len(item) for item in runner.received_replies),
                 "first_prompt_chars": len(runner.sent_messages[0]) if runner.sent_messages else 0,
+                "done_attempts": _done_attempt_count(runner.received_replies),
+                "protocol_repair_prompts": _sent_prompt_count(
+                    runner.sent_messages,
+                    "Your last reply was not a valid tool call",
+                ),
+                "quality_repair_prompts": _sent_prompt_count(
+                    runner.sent_messages,
+                    "research quality review",
+                ),
+                "raw_reply_previews": [
+                    _clip(reply, MAX_RAW_REPLY_PREVIEW_CHARS)
+                    for reply in runner.received_replies[-3:]
+                ],
                 "stop_reason": result.stop_reason,
                 "turns_used": result.turns,
                 "queries": list(result.queries),
                 "source_urls": list(result.source_urls),
+                "opened_sources": list(result.opened_sources),
                 "citation_map": result.citation_map,
+                "evidence_items": result.evidence_items,
                 "quality_warnings": result.quality_warnings,
                 "summary_preview": _clip(result.summary, MAX_REPLY_CHARS),
                 "tool_calls": _tool_calls(events),
             }
+            row["last_done_quality_review"] = _last_done_quality_review(runner)
             row.update(_score(case, row, result))
             return row
         finally:
@@ -903,6 +1039,7 @@ def run_provider(
     max_turns: int,
     timeout: float,
     new_chat_timeout: float,
+    trace: LiveTrace | None = None,
 ) -> dict[str, Any]:
     try:
         provider = connect_provider(
@@ -923,11 +1060,18 @@ def run_provider(
             for arm in arms
         ]
         print(f"[{provider_id}] connect {type(exc).__name__}: {exc}")
+        if trace is not None:
+            trace.record({
+                "event": "connect_error",
+                "provider": provider_id,
+                "error": f"connect {type(exc).__name__}: {exc}",
+            })
         return {
             "provider": provider_id,
             "elapsed_seconds": 0.0,
             "rows": rows,
             "summary": _summarize(rows),
+            "max_turns": max_turns,
             "timeout_seconds": timeout,
             "new_chat_timeout_seconds": new_chat_timeout,
             "open_if_missing": open_if_missing,
@@ -945,6 +1089,13 @@ def run_provider(
     try:
         for case in cases:
             for arm in arms:
+                if trace is not None:
+                    trace.record({
+                        "event": "case_start",
+                        "provider": provider_id,
+                        "case": case.name,
+                        "arm": arm,
+                    })
                 try:
                     row = run_case(
                         provider,
@@ -953,6 +1104,7 @@ def run_provider(
                         arm,
                         max_turns,
                         timeout,
+                        trace=trace,
                     )
                 except Exception as exc:
                     row = {
@@ -963,6 +1115,14 @@ def run_provider(
                         "provider_failure": _provider_failure_payload(exc, provider),
                     }
                 rows.append(row)
+                if trace is not None:
+                    trace.record({
+                        "event": "case_result",
+                        "provider": provider_id,
+                        "case": case.name,
+                        "arm": arm,
+                        "row": row,
+                    })
                 if "error" in row:
                     print(f"[{provider_id} {case.name} {arm}] {row['error']}")
                 else:
@@ -985,6 +1145,7 @@ def run_provider(
         "elapsed_seconds": round(time.monotonic() - started, 3),
         "rows": rows,
         "summary": _summarize(rows),
+        "max_turns": max_turns,
         "timeout_seconds": timeout,
         "new_chat_timeout_seconds": new_chat_timeout,
         "open_if_missing": open_if_missing,
@@ -1085,6 +1246,67 @@ def _provider_failure_payload(exc: BaseException, provider: object | None = None
     return failure.to_dict()
 
 
+def _last_done_quality_review(runner: ProbeResearchRunner) -> dict[str, Any]:
+    answer = _last_done_answer(runner.received_replies)
+    if not answer:
+        return {}
+    try:
+        review = review_report_quality(
+            answer,
+            ledger=runner.tools.ledger,
+            opened_sources=runner.tools.sources_read,
+            search_result_urls=runner.tools.search_result_urls,
+        )
+    except Exception as exc:
+        return {
+            "ok": False,
+            "message": f"{type(exc).__name__}: {exc}",
+        }
+    return {
+        "ok": review.ok,
+        "message": review.message,
+        "warnings": list(review.warnings),
+        "citation_map": review.citation_payload(),
+    }
+
+
+def _last_done_answer(replies: list[str]) -> str:
+    for reply in reversed(replies):
+        for obj in reversed(_extract_json_objects(reply or "")):
+            name = str(obj.get("tool") or obj.get("name") or "").strip().lower()
+            if name not in {"done", "answer", "finish"}:
+                continue
+            args = obj.get("args")
+            if not isinstance(args, dict):
+                args = obj
+            answer = str(args.get("answer") or args.get("summary") or args.get("text") or "")
+            if answer.strip():
+                return answer
+    return ""
+
+
+def _done_attempt_count(replies: list[str]) -> int:
+    count = 0
+    for reply in replies:
+        objects = _extract_json_objects(reply or "")
+        done_objects = [
+            obj for obj in objects
+            if str(obj.get("tool") or obj.get("name") or "").strip().lower() in {"done", "answer", "finish"}
+        ]
+        if done_objects:
+            count += len(done_objects)
+        elif re.search(r'"(?:tool|name)"\s*:\s*"(?:done|answer|finish)"', reply or "", flags=re.I):
+            count += 1
+    return count
+
+
+def _sent_prompt_count(messages: list[str], needle: str) -> int:
+    folded = str(needle or "").lower()
+    if not folded:
+        return 0
+    return sum(1 for message in messages if folded in str(message or "").lower())
+
+
 def _rate(rows: list[dict[str, Any]], key: str) -> float:
     if not rows:
         return 0.0
@@ -1108,8 +1330,13 @@ def _avg(rows: list[dict[str, Any]], key: str) -> float:
     return round(sum(float(row.get(key) or 0) for row in rows) / len(rows), 3)
 
 
-def _selected_cases(names: list[str], max_cases: int = 0) -> tuple[ResearchProbeCase, ...]:
-    cases = CASES
+def _selected_cases(
+    names: list[str],
+    max_cases: int = 0,
+    *,
+    profile: str = DEFAULT_PROFILE,
+) -> tuple[ResearchProbeCase, ...]:
+    cases = _profile_cases(profile)
     if names:
         wanted = set(names)
         cases = tuple(case for case in CASES if case.name in wanted)
@@ -1121,9 +1348,9 @@ def _selected_cases(names: list[str], max_cases: int = 0) -> tuple[ResearchProbe
     return cases
 
 
-def _selected_arms(values: list[str]) -> tuple[str, ...]:
+def _selected_arms(values: list[str], *, profile: str = DEFAULT_PROFILE) -> tuple[str, ...]:
     if not values:
-        return ARMS
+        return _profile_arms(profile)
     arms: list[str] = []
     for value in values:
         for item in str(value or "").split(","):
@@ -1136,9 +1363,50 @@ def _selected_arms(values: list[str]) -> tuple[str, ...]:
     return tuple(arms)
 
 
+def _profile_cases(profile: str) -> tuple[ResearchProbeCase, ...]:
+    _ensure_profile(profile)
+    if profile == "full":
+        return CASES
+    wanted = set(CHEAP_CASE_NAMES)
+    return tuple(case for case in CASES if case.name in wanted)
+
+
+def _profile_arms(profile: str) -> tuple[str, ...]:
+    _ensure_profile(profile)
+    if profile == "full":
+        return ARMS
+    return CHEAP_ARMS
+
+
+def _profile_max_turns(profile: str, requested: int = 0) -> int:
+    if requested:
+        return max(1, requested)
+    _ensure_profile(profile)
+    if profile == "full":
+        return FULL_MAX_TURNS
+    return CHEAP_MAX_TURNS
+
+
+def _ensure_profile(profile: str) -> None:
+    if profile not in PROFILES:
+        raise SystemExit(f"unknown profile: {profile}")
+
+
 def _write_output(path: Path, payload: dict[str, Any]) -> None:
+    _write_json_atomic(path, payload)
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _trace_output_path(output: Path) -> Path:
+    if output.suffix:
+        return output.with_name(f"{output.stem}.trace.json")
+    return output.with_name(f"{output.name}.trace.json")
 
 
 def _clip(text: object, limit: int = MAX_FIELD_CHARS) -> str:
@@ -1215,9 +1483,12 @@ class ScriptedProvider:
 
 def self_test() -> int:
     case = next(item for item in CASES if item.name == "pdf-target-page")
+    baseline_codec = ProbeJsonToolCodec("baseline")
     source_codec = ProbeJsonToolCodec("source_search")
     deep_codec = ProbeJsonToolCodec("deep_core")
     assert "source_search" not in JsonToolCodec().system_prompt()
+    assert "Probe fixture discipline" in baseline_codec.system_prompt()
+    assert "source_search" not in baseline_codec.system_prompt()
     assert "source_search" in source_codec.system_prompt()
     assert "Deep Research Core experimental guidance" not in source_codec.system_prompt()
     assert "Deep Research Core experimental guidance" in deep_codec.system_prompt()
@@ -1293,13 +1564,30 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", choices=choices, help="provider to test")
     parser.add_argument("--port", type=int, default=9222)
-    parser.add_argument("--arm", action="append", default=[], help="arm or comma list; default all")
-    parser.add_argument("--case", action="append", default=[], help="case name; default all")
+    parser.add_argument(
+        "--profile",
+        choices=PROFILES,
+        default=DEFAULT_PROFILE,
+        help="cheap runs a low-send live probe; full runs every fixture case",
+    )
+    parser.add_argument("--arm", action="append", default=[], help="arm or comma list; default from profile")
+    parser.add_argument("--case", action="append", default=[], help="case name; default from profile")
     parser.add_argument("--max-cases", type=int, default=0, help="limit selected cases for quick live smoke")
-    parser.add_argument("--max-turns", type=int, default=14)
+    parser.add_argument("--max-turns", type=int, default=0, help="turn cap; default from profile")
     parser.add_argument("--timeout", type=float, default=120.0, help="per-send timeout seconds")
     parser.add_argument("--new-chat-timeout", type=float, default=45.0, help="per-new-chat timeout seconds")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument(
+        "--trace-output",
+        type=Path,
+        default=None,
+        help="live JSON trace path; default is the output path with .trace.json suffix",
+    )
+    parser.add_argument(
+        "--no-live-trace",
+        action="store_true",
+        help="disable incremental atomic trace writes during live provider runs",
+    )
     parser.add_argument(
         "--open-if-missing",
         action="store_true",
@@ -1317,12 +1605,23 @@ def main() -> int:
         return self_test()
     if not args.provider:
         raise SystemExit("--provider is required unless --self-test is used")
-    arms = _selected_arms(args.arm)
-    cases = _selected_cases(args.case, args.max_cases)
+    max_turns = _profile_max_turns(args.profile, args.max_turns)
+    arms = _selected_arms(args.arm, profile=args.profile)
+    cases = _selected_cases(args.case, args.max_cases, profile=args.profile)
     provider_list = provider_ids() if args.provider == "all" else (args.provider,)
     provider_results = []
     all_rows: list[dict[str, Any]] = []
     started = time.monotonic()
+    trace = None if args.no_live_trace else LiveTrace(args.trace_output or _trace_output_path(args.output))
+    if trace is not None:
+        trace.record({
+            "event": "run_start",
+            "provider": args.provider,
+            "profile": args.profile,
+            "arms": list(arms),
+            "cases": [case.name for case in cases],
+            "max_turns": max_turns,
+        })
     for provider_id in provider_list:
         result = run_provider(
             provider_id,
@@ -1331,25 +1630,35 @@ def main() -> int:
             no_new_chat=args.no_new_chat,
             arms=arms,
             cases=cases,
-            max_turns=max(1, args.max_turns),
+            max_turns=max_turns,
             timeout=args.timeout,
             new_chat_timeout=args.new_chat_timeout,
+            trace=trace,
         )
         provider_results.append(result)
         all_rows.extend(result["rows"])
     payload = {
         "probe": "deep_research_core_ab",
+        "profile": args.profile,
         "providers": list(provider_list),
         "arms": list(arms),
         "cases": [case.name for case in cases],
+        "max_turns": max_turns,
         "open_if_missing": args.open_if_missing,
         "no_new_chat": args.no_new_chat,
+        "trace_output": str(trace.path) if trace is not None else "",
         "new_chat_timeout_seconds": args.new_chat_timeout,
         "elapsed_seconds": round(time.monotonic() - started, 3),
         "summary": _summarize(all_rows),
         "provider_results": provider_results,
     }
     _write_output(args.output, payload)
+    if trace is not None:
+        trace.record({
+            "event": "run_complete",
+            "summary": payload["summary"],
+            "output": str(args.output),
+        })
     print(json.dumps(payload, ensure_ascii=True, indent=2))
     return 0
 

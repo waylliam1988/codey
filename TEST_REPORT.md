@@ -1,5 +1,53 @@
 # Codey Test Report
 
+## 0.2.12 Research A/B and Provider Parsing Hygiene
+
+Codey 0.2.12 keeps Deep Research Core behind the manual A/B harness, but makes
+the probe cheaper to run and easier to debug while fixing two production
+Research/provider parsing edge cases seen during live provider tests.
+
+Production changes:
+
+- DeepSeek can now return stable malformed JSON-tool-shaped replies so the
+  Research protocol repair loop can correct them instead of waiting for the
+  provider send timeout.
+- Research report quality accepts Chinese-adjacent citations such as
+  `结论[1]`.
+- Research provenance parsing treats Chinese brackets, backticks, and quotes as
+  URL boundaries, avoiding false unopened-source failures for ordinary Markdown
+  or Chinese prose.
+- CDP attach timeout was increased from 30s to 60s for loaded browser sessions;
+  warmup timeouts are unchanged.
+
+Manual Research A/B changes:
+
+- `tests/manual/deep_research_core_ab.py` defaults to a low-send `cheap`
+  profile: two high-signal fixture cases, all arms, and a 10-turn cap.
+- The probe prompt tells web models to use only local JSON tools and not the
+  chat site's own web search or outside knowledge.
+- Live runs atomically write a `.trace.json` beside the output after each reply
+  and include send/reply counts, done attempts, repair prompt counts, opened
+  sources, evidence items, raw reply previews, and last `done` quality review.
+
+Validation:
+
+```text
+python -m pytest tests\test_research.py tests\test_deepseek.py tests\test_deep_research_core_ab.py -q
+# 87 passed
+
+python -B tests\manual\deep_research_core_ab.py --self-test
+# self-test passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\__init__.py codey\browser.py codey\deepseek.py codey\research\provenance.py codey\research\report_quality.py tests\manual\deep_research_core_ab.py
+# passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.11 Provider Readiness Self-Repair
 
 Codey 0.2.11 teaches the provider self-repair path a narrow readiness drift

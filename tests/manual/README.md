@@ -273,6 +273,8 @@ false-positive review noise.
 Research Core changes. It does not change production ResearchRunner behavior.
 The live provider runs a real JSON-tool research loop, but search results,
 source bodies, PDF pages, and local-memory notes are deterministic fixtures.
+The probe prompt explicitly tells web models not to use the chat site's built-in
+web search or outside knowledge, because fixture URLs may not exist publicly.
 
 Arms:
 
@@ -284,16 +286,25 @@ Arms:
 ```powershell
 python -B tests\manual\deep_research_core_ab.py --self-test
 python -B tests\manual\deep_research_core_ab.py `
-  --provider qwen `
-  --max-cases 3 `
+  --provider deepseek `
+  --profile cheap `
   --timeout 90 `
   --open-if-missing `
-  --output tests\manual\results\deep_research_core_qwen.json
+  --output tests\manual\results\deep_research_core_deepseek_cheap.json
 ```
+
+Default `--profile cheap` keeps live traffic bounded: two high-signal fixture
+cases, all arms, and a 10-turn cap. Use `--profile full` only when intentionally
+running all fixture cases with the normal 14-turn cap.
 
 The scorer tracks primary-source opening, source_search use, target
 page/offset recall, exact evidence snippets, counter/limitations reporting,
 local-memory reuse, unsupported citations, turn count, and max-turn failures.
+It also stores send/reply counts, done attempts, quality-repair prompt counts,
+and the last raw reply previews so provider/protocol failures can be diagnosed
+without rerunning the model. During live runs it also atomically writes an
+incremental trace next to the output file, for example
+`deep_research_core_deepseek_cheap.trace.json`, after each provider reply.
 By default it only attaches to already-open provider tabs; add
 `--open-if-missing` when intentionally allowing the probe to open or foreground
 provider pages. Use this probe before promoting source_search, ResearchPlan, or

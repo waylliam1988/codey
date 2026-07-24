@@ -7,7 +7,6 @@ from unittest import mock
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
-from codey.research.protocols import JsonToolCodec
 from tests.manual import deep_research_core_ab as ab
 
 
@@ -16,8 +15,10 @@ def test_deep_research_ab_prompt_arms_are_isolated() -> None:
     source_search = ab.ProbeJsonToolCodec("source_search").system_prompt()
     deep_core = ab.ProbeJsonToolCodec("deep_core").system_prompt()
 
-    assert baseline == JsonToolCodec().system_prompt()
+    assert "Probe fixture discipline" in baseline
+    assert "built-in web search" in baseline
     assert "source_search" not in baseline
+    assert "Probe fixture discipline" in source_search
     assert "source_search" in source_search
     assert "Deep Research Core experimental guidance" not in source_search
     assert "Deep Research Core experimental guidance" in deep_core
@@ -28,6 +29,45 @@ def test_deep_research_ab_prompt_arms_are_isolated() -> None:
 
     assert plan.calls
     assert plan.calls[0].name == "source_search"
+
+
+def test_deep_research_ab_profile_defaults_keep_live_probe_small() -> None:
+    cheap_cases = ab._selected_cases([], profile="cheap")
+    full_cases = ab._selected_cases([], profile="full")
+
+    assert tuple(case.name for case in cheap_cases) == ab.CHEAP_CASE_NAMES
+    assert len(cheap_cases) < len(full_cases)
+    assert ab._selected_arms([], profile="cheap") == ab.CHEAP_ARMS
+    assert ab._selected_arms([], profile="full") == ab.ARMS
+    assert ab._profile_max_turns("cheap") == ab.CHEAP_MAX_TURNS
+    assert ab._profile_max_turns("full") == ab.FULL_MAX_TURNS
+    assert ab._profile_max_turns("cheap", 3) == 3
+
+
+def test_deep_research_ab_live_trace_writes_reply_json_immediately() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "trace.json"
+        trace = ab.LiveTrace(path)
+
+        trace.record_reply(
+            provider="deepseek",
+            case="pdf-target-page",
+            arm="source_search",
+            send_index=1,
+            message="prompt",
+            reply='{"tool":"web_search","args":{"query":"omega"}}',
+        )
+
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        temp_files = list(Path(td).glob("*.tmp"))
+
+    assert payload["probe"] == "deep_research_core_ab_trace"
+    assert payload["event_count"] == 1
+    event = payload["events"][0]
+    assert event["event"] == "reply"
+    assert event["provider"] == "deepseek"
+    assert event["reply"] == '{"tool":"web_search","args":{"query":"omega"}}'
+    assert not temp_files
 
 
 def test_source_search_requires_opened_source_and_returns_pdf_page_locator() -> None:
@@ -108,6 +148,14 @@ def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
 
     assert row["final_done"]
     assert row["used_source_search"]
+    assert row["send_count"] == 5
+    assert row["reply_count"] == 5
+    assert row["done_attempts"] == 1
+    assert row["protocol_repair_prompts"] == 0
+    assert row["quality_repair_prompts"] == 0
+    assert row["raw_reply_previews"]
+    assert "done" in row["raw_reply_previews"][-1]
+    assert row["last_done_quality_review"]["ok"]
     assert row["opened_target_page_or_offset"]
     assert row["target_fact_reported"]
     assert row["saved_exact_evidence_snippet"]

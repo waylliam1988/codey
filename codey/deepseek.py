@@ -420,15 +420,15 @@ def chat(
             )
             ctx.trace.add(observation)
             if same and (time.time() - ctx.sent_at) >= min_wait:
+                stable += 1
                 is_json_tool = _is_json_tool_reply(current)
                 repairable_json_tool = False
                 if _looks_like_json_tool_reply(current) and not is_json_tool:
                     repairable_json_tool = bool(
                         _repair_missing_trailing_braces_json_tool_reply(current)
                     )
-                    if not repairable_json_tool:
+                    if not repairable_json_tool and stable < stable_ticks:
                         continue
-                stable += 1
                 if stable >= JSON_TOOL_STABLE_TICKS and is_json_tool:
                     return send_loop.read_completion(
                         ctx,

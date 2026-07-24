@@ -4,6 +4,22 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.12 - Research A/B and Provider Parsing Hygiene
+
+- Manual Deep Research A/B：实机 probe 默认使用低发送量的 `cheap` profile，
+  明确要求网页模型只通过本地 JSON tools 访问 fixture source，并在每次 provider
+  回复后原子写入 `.trace.json`，方便不重新消耗模型额度也能检查 protocol /
+  quality-gate 失败。
+- Research 诊断：A/B row 现在记录 send/reply 次数、done 尝试次数、protocol /
+  quality repair prompt 次数、已打开来源、evidence items、原始回复预览和最后一次
+  `done` 的质量门结果。
+- Provider 解析：DeepSeek 遇到稳定但格式略坏的 JSON-tool-shaped 回复时，会尽快把
+  回复交给 Research protocol repair loop 修，而不是一直等到 timeout。
+- Research 质量卫生：接受 `结论[1]` 这类中文紧贴引用；URL provenance 解析也把中文
+  括号、反引号和引号视为 URL 边界。
+- 运行时容错：CDP attach timeout 延长，以适应负载较高的浏览器会话；warmup timeout
+  保持不变。
+
 ## 0.2.11 - Provider Readiness Self-Repair
 
 - Provider 诊断：新增克制的 `readiness_stale` failure kind，让 adapter 可以表达

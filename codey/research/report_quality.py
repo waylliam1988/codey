@@ -11,7 +11,7 @@ from codey.research.provenance import provenance_problem
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
 _CITATION_RE = re.compile(
-    r"(?<![\w!])\[(\d+)(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*(\d+(?:\s*-\s*\d+)?))?\]",
+    r"(?<![A-Za-z0-9_!])\[(\d+)(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*(\d+(?:\s*-\s*\d+)?))?\]",
     re.IGNORECASE,
 )
 _SOURCE_LINE_RE = re.compile(

@@ -304,6 +304,36 @@ class DeepSeekTimeoutTests(unittest.TestCase):
 
         self.assertEqual(reply, complete)
 
+    def test_chat_returns_stable_malformed_json_tool_reply_for_protocol_repair(self) -> None:
+        page = mock.Mock()
+        message_box = mock.Mock()
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+        malformed = '{"tool":"web_search","args":{"query":""Omega paper" validation method PDF"}}'
+        with (
+            mock.patch.object(deepseek, "wait_ready"),
+            mock.patch.object(deepseek, "_message_box", return_value=message_box),
+            mock.patch.object(deepseek, "_submit", return_value=attempt),
+            mock.patch.object(deepseek, "_response_count", side_effect=[0, *([1] * 30)]),
+            mock.patch.object(deepseek, "_rate_limit_visible", return_value=False),
+            mock.patch.object(deepseek, "_last_text", return_value=malformed),
+            mock.patch.object(deepseek, "_final_text", return_value=malformed),
+            mock.patch.object(deepseek.controls, "control_has_text", return_value=True),
+            mock.patch.object(deepseek.controls, "confirm_control"),
+            mock.patch.object(deepseek.controls, "flow_stage_ready", return_value=True),
+            mock.patch.object(deepseek.cancellation, "wait"),
+        ):
+            reply = deepseek.chat(
+                page,
+                "hello",
+                response_timeout=1,
+                stable_ticks=3,
+                tick=0,
+                min_wait=0,
+            )
+
+        self.assertEqual(reply, malformed)
+
     def test_rate_limit_visible_checks_deepseek_warning_text(self) -> None:
         page = mock.Mock()
         body = mock.Mock()

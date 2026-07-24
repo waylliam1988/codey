@@ -4,6 +4,24 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.12 - Research A/B and Provider Parsing Hygiene
+
+- Manual Deep Research A/B: the live probe now defaults to a low-send `cheap`
+  profile, tells web models to use only the local JSON tools against fixture
+  sources, and writes an atomic `.trace.json` file after each provider reply so
+  protocol and quality-gate failures can be inspected without rerunning a model.
+- Research diagnostics: A/B rows now include send/reply counts, done attempts,
+  protocol/quality repair prompt counts, opened sources, evidence items, raw
+  reply previews, and the last `done` quality review.
+- Provider parsing: DeepSeek can now return stable malformed JSON-tool-shaped
+  replies promptly so the Research protocol repair loop can fix them instead of
+  waiting until timeout.
+- Research quality hygiene: Chinese-adjacent citations such as `结论[1]` are
+  accepted, and URL provenance parsing treats Chinese brackets, backticks, and
+  quotes as URL boundaries.
+- Runtime tolerance: CDP attach timeout is longer to handle loaded browser
+  sessions while leaving the warmup timeout unchanged.
+
 ## 0.2.11 - Provider Readiness Self-Repair
 
 - Provider diagnostics: added a narrow `readiness_stale` failure kind so

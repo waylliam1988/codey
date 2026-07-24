@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-_URL_RE = re.compile(r"https?://[^\s<>)\]]+", re.IGNORECASE)
+_URL_RE = re.compile(r"https?://[^\s<>)\]）】`\"']+", re.IGNORECASE)
 _DOMAIN_RE = re.compile(r"(?<!@)\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b", re.IGNORECASE)
 _GENERIC_HOST_LABELS = {
     "www",
@@ -83,7 +83,7 @@ def provenance_problem(
 def _urls_in_text(text: str) -> list[str]:
     urls = []
     for match in _URL_RE.findall(text):
-        url = match.rstrip(".,;:，。；、)")
+        url = match.rstrip(".,;:，。；、)）】`\"'")
         if url:
             urls.append(url)
     return urls

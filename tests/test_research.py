@@ -429,6 +429,26 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIsNone(problem)
 
+    def test_provenance_treats_fullwidth_parenthesis_as_url_boundary(self) -> None:
+        url = "https://example.com/report.pdf"
+        problem = provenance_problem(
+            f"来源为PDF（{url}），属于一手文献。",
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertIsNone(problem)
+
+    def test_provenance_treats_backtick_as_url_boundary(self) -> None:
+        url = "https://example.com/report.pdf"
+        problem = provenance_problem(
+            f"来源为 `{url}`，属于一手文献。",
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertIsNone(problem)
+
     def test_report_quality_allows_source_quality_parent_domain_for_opened_subdomain(self) -> None:
         url = "https://docs.python.org/3/library/pathlib.html"
         ledger = ResearchLedger()
@@ -566,6 +586,24 @@ class ResearchBoundaryTests(unittest.TestCase):
             "- query: helium\n\n"
             "## 6. 来源\n"
             f"[1] Helium article - {url}"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertEqual(review.citation_map[0].url, url)
+
+    def test_report_quality_accepts_chinese_text_adjacent_citation(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(
+            url,
+            conclusion="氦供应依赖天然气处理[1]",
         )
 
         review = review_report_quality(

@@ -28,7 +28,7 @@ QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
 DEFAULT_PORT = 9222
-CDP_CONNECT_TIMEOUT_MS = 30_000
+CDP_CONNECT_TIMEOUT_MS = 60_000
 WARMUP_CDP_CONNECT_TIMEOUT_MS = 8_000
 WARMUP_NAVIGATION_TIMEOUT_MS = 10_000
 WARMUP_PORT_TIMEOUT = 10.0
