@@ -40,6 +40,14 @@ Live provider note:
   protocol-following limitation for this research workflow, not evidence that
   MiMo is broken for ordinary chat or simpler tasks. Prefer DeepSeek, Qwen, or
   GLM when evaluating Deep Research source-search behavior.
+- DeepSeek was re-run on the missing `long-official-doc` / `deep_core` arm after
+  an earlier transient send failure. The clean retry completed in 8 turns,
+  used `source_search`, opened the hidden target offset, reported the 72-hour
+  threshold, saved an exact evidence snippet, and passed the report quality
+  gate with `quality_score=10`. This validates the direction for
+  `source_search` plus compact plan/coverage on long-source research: baseline
+  completed but missed the hidden fact, source_search found evidence but did
+  not finish within 10 turns, and deep_core both found the fact and finished.
 
 Validation:
 

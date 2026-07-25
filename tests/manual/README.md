@@ -318,6 +318,13 @@ lost the original research question. Treat MiMo results as protocol-following
 diagnostics, not as strong evidence for or against Deep Research quality.
 Prefer DeepSeek, Qwen, or GLM for source-search A/B decisions.
 
+DeepSeek `long-official-doc` follow-up: after retrying the previously failed
+`deep_core` arm, DeepSeek finished in 8 turns with `quality_score=10`, used
+`source_search`, opened the hidden target offset, saved exact evidence, and
+passed the report quality gate. This is the strongest current evidence that
+the `deep_core` direction is useful for long sources; it should still remain in
+the manual A/B path until more cases confirm the prompt cost is worth it.
+
 `large_project_ab.py` measures Codey's read-only navigation behavior against
 real medium/large projects through an already-open web provider.
 
