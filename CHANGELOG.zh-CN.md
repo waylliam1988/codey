@@ -4,6 +4,25 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.20 - Research Controller v1
+
+- 生产 Research controller：Research 现在用很薄的 ledger read-model，根据当前
+  研究状态只暴露这一轮合理的工具，而不是每次都把所有 Research 工具格式交给模型。
+- 稳定 ID：搜索结果、已打开来源和 source_search 定位命中会得到 run-global 的
+  `result_id`、`source_id`、`hit_id`。Controller 会先把这些 ID 改写成普通的
+  `url` / `pages` / `offset` 参数，再交给 0.2.18 的 typed tool contract 校验。
+- 写 evidence 更省复制：controller 模式下，`knowledge_write` 可以使用
+  `sources:["s1"]` 和 `evidence.source_url:"s1"`；Codey 会在保存前改写成已打开的
+  final URL。
+- 非线性门禁：这不是硬状态机。`knowledge_search`、`knowledge_read`、`web_search`
+  仍然可用，模型可以回头查本地记忆、反证或更好的来源。`open_url`、
+  `source_search`、`knowledge_write`、`knowledge_link`、`done` 只在 ledger 状态
+  让它们有意义时开放。
+- done 纪律：通常只有保存过 evidence 后才允许 `done`；接近 turn 上限时保留一个很窄的
+  “证据不足/无可引用来源”报告出口。确定性的 report quality gate 不放宽。
+- 边界克制：没有把 Deep Research Core prompt 进生产，没有 provider 自动路由，没有新增
+  UI 模式，也没有放宽 provenance/evidence 规则。
+
 ## 0.2.19 - Research Browser Isolation and Thin-Gate Probe
 
 - Research 浏览器隔离：浏览器版 `web_search` 和 HTML `open_url` 现在默认使用独立的

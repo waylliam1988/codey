@@ -1848,14 +1848,15 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
-                '{"tool":"open_url","args":{"url":"https://example.com/helium"}}',
+                json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
+                json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
                 json.dumps({
                     "tool": "knowledge_write",
                     "args": {
                         "type": "fact",
                         "title": "Helium fixture source",
                         "body": "Helium is separated from natural gas.",
-                        "sources": ["https://example.com/helium"],
+                        "sources": ["s1"],
                     },
                 }),
                 json.dumps({
@@ -2035,7 +2036,11 @@ class SessionThreadingTests(unittest.TestCase):
     def test_followup_research_intent_includes_previous_research_context(self) -> None:
         class Search:
             def search(self, query, limit=8):
-                return []
+                return [{
+                    "title": "Storage source",
+                    "url": "https://example.com/storage",
+                    "snippet": "The storage plan source supports the SQLite-backed plan.",
+                }]
 
             def fetch(self, url):
                 return {
@@ -2056,28 +2061,30 @@ class SessionThreadingTests(unittest.TestCase):
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
-                '{"tool":"open_url","args":{"url":"https://example.com/storage"}}',
+                json.dumps({"tool": "web_search", "args": {"query": "storage plan"}}),
+                json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
                 json.dumps({
                     "tool": "knowledge_write",
                     "args": {
                         "type": "fact",
                         "title": "Storage plan source",
                         "body": "The storage plan source supports the SQLite-backed plan.",
-                        "sources": ["https://example.com/storage"],
+                        "sources": ["s1"],
                     },
                 }),
                 json.dumps({
                     "tool": "done",
                     "args": {"answer": valid_research_report("https://example.com/storage", "First research summary: prefer the SQLite-backed plan.")},
                 }),
-                '{"tool":"open_url","args":{"url":"https://example.com/storage"}}',
+                json.dumps({"tool": "web_search", "args": {"query": "storage plan followup"}}),
+                json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
                 json.dumps({
                     "tool": "knowledge_write",
                     "args": {
                         "type": "fact",
                         "title": "Storage plan followup",
                         "body": "The storage plan source supports the SQLite-backed plan.",
-                        "sources": ["https://example.com/storage"],
+                        "sources": ["s1"],
                     },
                 }),
                 json.dumps({
@@ -2098,7 +2105,7 @@ class SessionThreadingTests(unittest.TestCase):
 
             state.knowledge_store.close()
 
-        second_intro = provider.send.call_args_list[3].args[0]
+        second_intro = provider.send.call_args_list[4].args[0]
         self.assertIn("Conversation context from this chat", second_intro)
         self.assertIn("First research summary", second_intro)
         agent_run.assert_not_called()

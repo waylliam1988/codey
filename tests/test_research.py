@@ -83,6 +83,20 @@ class RecordingSearch(FakeSearch):
         return super().search(query, limit=limit)
 
 
+class TrackingSearch(FakeSearch):
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+        self.fetch_urls: list[str] = []
+
+    def search(self, query: str, limit: int = 8) -> list[dict]:
+        self.queries.append(query)
+        return super().search(query, limit=limit)
+
+    def fetch(self, url: str) -> dict:
+        self.fetch_urls.append(url)
+        return super().fetch(url)
+
+
 class FakePdfPage:
     def __init__(self, text: str, stream_size: int = 0) -> None:
         self._text = text
@@ -1601,6 +1615,62 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("source_search missing required arg 'query'", provider.sent[1])
         self.assertIn('{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}', provider.sent[1])
 
+    def test_research_runner_controller_prompt_limits_initial_tools(self) -> None:
+        provider = FakeProvider(
+            json.dumps({"tool": "done", "args": {"answer": "premature"}}),
+            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+
+            list(runner.run("Research alpha"))
+            store.close()
+
+        self.assertIn("Research controller current allowed actions", provider.sent[0])
+        self.assertIn(
+            "Allowed tools this turn: knowledge_search, knowledge_read, web_search",
+            provider.sent[0],
+        )
+        self.assertNotIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[0])
+        self.assertIn("not allowed by the current Research controller state", provider.sent[1])
+
+    def test_research_runner_controller_rewrites_result_id_before_dispatch(self) -> None:
+        provider = FakeProvider(
+            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
+            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
+        )
+        search = TrackingSearch()
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, search, store, max_turns=2)
+
+            list(runner.run("Research helium"))
+            store.close()
+
+        self.assertEqual(search.queries, ["helium"])
+        self.assertEqual(search.fetch_urls, ["https://example.com/helium"])
+        self.assertIn("Search results you may open", provider.sent[1])
+        self.assertIn('{"tool":"open_url","args":{"result_id":"r1"}}', provider.sent[1])
+
+    def test_research_runner_can_disable_controller_for_manual_baselines(self) -> None:
+        provider = FakeProvider(json.dumps({"tool": "done", "args": {"answer": "done"}}))
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(
+                provider,
+                FakeSearch(),
+                store,
+                max_turns=1,
+                controller_enabled=False,
+            )
+
+            list(runner.run("Research alpha"))
+            store.close()
+
+        self.assertIn("Tools:", provider.sent[0])
+        self.assertNotIn("Research controller current allowed actions", provider.sent[0])
+
     def test_research_runner_repair_for_direct_answer_uses_done_shape(self) -> None:
         provider = FakeProvider(
             "## 结论\nAlpha requires notice.\n\n## 来源\n[1] Alpha - https://example.com",
@@ -1699,14 +1769,15 @@ class ResearchBoundaryTests(unittest.TestCase):
             "Helium supply depends on gas processing.",
         )
         provider = FakeProvider(
-            json.dumps({"tool": "open_url", "args": {"url": url}}),
+            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
+            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
             json.dumps({
                 "tool": "knowledge_write",
                 "args": {
                     "type": "fact",
                     "title": "Helium source",
                     "body": "Helium comes from gas processing.",
-                    "sources": [url],
+                    "sources": ["s1"],
                 },
             }),
             json.dumps({"tool": "done", "args": {"answer": invalid}}),
@@ -1723,9 +1794,9 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result.stop_reason, "done")
-        self.assertIn("Your last done.answer did not pass", provider.sent[3])
-        self.assertIn("Supported conclusions need [n]", provider.sent[3])
-        self.assertNotIn("[no tool output]", provider.sent[3])
+        self.assertIn("Your last done.answer did not pass", provider.sent[4])
+        self.assertIn("Supported conclusions need [n]", provider.sent[4])
+        self.assertNotIn("[no tool output]", provider.sent[4])
         self.assertTrue(
             any(
                 event.kind == "info"
@@ -1988,14 +2059,15 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_runner_synthesis_records_opened_sources_for_project_brief(self) -> None:
         url = "https://example.com/helium"
         provider = FakeProvider(
-            json.dumps({"tool": "open_url", "args": {"url": url}}),
+            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
+            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
             json.dumps({
                 "tool": "knowledge_write",
                 "args": {
                     "type": "fact",
                     "title": "Helium source",
                     "body": "Helium comes from gas processing.",
-                    "sources": [url],
+                    "sources": ["s1"],
                 },
             }),
             json.dumps({
@@ -2005,7 +2077,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchRunner(provider, FakeSearch(), store, session_id="s1", max_turns=4)
+            runner = ResearchRunner(provider, FakeSearch(), store, session_id="s1", max_turns=6)
 
             list(runner.run("Research helium"))
             result = runner.result

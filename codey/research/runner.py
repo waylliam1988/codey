@@ -14,11 +14,13 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.models import ToolResult
 from codey.research.advisors import EvidenceNote, EvidencePack
+from codey.research.controller import ResearchController, controller_system_prompt
 from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
 from codey.research.source_document import compact_pages
 from codey.research.tool_contract import (
     PROTOCOL_DIRECT_ANSWER,
+    PROTOCOL_DISALLOWED_TOOL,
     PROTOCOL_INVALID_ARGS,
     PROTOCOL_NATIVE_SEARCH_LEAK,
     PROTOCOL_NO_JSON,
@@ -110,6 +112,7 @@ class ResearchRunner:
         project: str = "",
         chat_handoff: str = "",
         review_advisors: Callable[[EvidencePack], tuple[object, ...]] | None = None,
+        controller_enabled: bool = True,
     ) -> None:
         self.provider = provider
         self.search = search
@@ -122,6 +125,14 @@ class ResearchRunner:
         self.project = project
         self.chat_handoff = (chat_handoff or "").strip()
         self.review_advisors = review_advisors
+        self.controller_enabled = bool(controller_enabled)
+        self.controller = (
+            ResearchController(
+                include_source_search=bool(getattr(self.codec, "include_source_search", True)),
+            )
+            if self.controller_enabled
+            else None
+        )
         self.changes = KnowledgeChanges(root=store.root)
         self.tools = ResearchTools(
             search=search,
@@ -164,14 +175,28 @@ class ResearchRunner:
                 stop_announced = True
                 yield RunEvent.info("stop requested")
                 break
+            control_state = (
+                self.controller.build_state(self.tools, turn=turn, max_turns=self.max_turns)
+                if self.controller is not None
+                else None
+            )
+            outbound = (
+                self.controller.append_block(message, control_state)
+                if self.controller is not None and control_state is not None
+                else message
+            )
             try:
-                reply = self._send_provider(message)
+                reply = self._send_provider(outbound)
             except cancellation.TaskCancelled:
                 stop_reason = "stopped"
                 stop_announced = True
                 yield RunEvent.info("stop requested")
                 break
-            plan = self.codec.parse(reply)
+            plan = (
+                self.controller.parse_plan(self.codec, reply, control_state)
+                if self.controller is not None and control_state is not None
+                else self.codec.parse(reply)
+            )
             yield RunEvent.turn_started(turn, reply, note=_plan_note(plan))
             if plan.protocol_error and not plan.calls and plan.control is None:
                 protocol_errors += 1
@@ -367,8 +392,13 @@ class ResearchRunner:
                 pass
 
     def _intro(self, question: str) -> str:
+        include_source_search = bool(getattr(self.codec, "include_source_search", True))
         parts = [
-            self.codec.system_prompt(),
+            (
+                controller_system_prompt(include_source_search=include_source_search)
+                if self.controller is not None
+                else self.codec.system_prompt()
+            ),
             _recent_context(self.store, self.session_id),
             _chat_handoff_context(self.chat_handoff),
             f"Research question:\n{question}",
@@ -564,6 +594,12 @@ def _protocol_repair_prompt(codec: ProtocolCodec, plan) -> str:
             "",
             "Example:",
             tool_example("web_search"),
+        ])
+    elif kind == PROTOCOL_DISALLOWED_TOOL:
+        lines.extend([
+            "The tool was valid JSON, but it is not allowed by the current Research controller state.",
+            "Use exactly one of the JSON shapes in the current allowed-actions block.",
+            "If you need evidence first, open/search/write evidence before done.",
         ])
     elif kind == PROTOCOL_NO_JSON:
         lines.extend([

@@ -490,6 +490,7 @@ class ProbeResearchRunner(ResearchRunner):
             max_turns=max_turns,
             codec=ProbeJsonToolCodec(arm),
             session_id=f"deep-research-ab-{arm}",
+            controller_enabled=False,
         )
         self.arm = arm
         self.send_timeout = max(1.0, float(send_timeout))

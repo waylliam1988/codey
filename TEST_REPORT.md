@@ -1,5 +1,78 @@
 # Codey Test Report
 
+## 0.2.20 Research Controller v1
+
+Codey 0.2.20 moves the manual thin-gate direction into production Research as a
+thin, state-aware controller. The controller does not plan the research path and
+does not replace the existing tool contract or report quality gate. It reads the
+current ledger, appends a small allowed-actions block, and rewrites stable IDs
+into ordinary tool arguments before execution.
+
+Production changes:
+
+- Added `codey.research.controller.ResearchController`.
+- Production `ResearchRunner` enables the controller by default; tests and
+  manual baselines can pass `controller_enabled=False`.
+- First-turn Research prompt no longer lists all concrete tool JSON shapes.
+  Instead, Codey appends the current allowed-actions block every turn.
+- Search results, opened sources, and source_search hits get run-global stable
+  IDs: `result_id`, `source_id`, and `hit_id`.
+- `open_url(result_id/source_id/hit_id)` and `source_search(source_id)` are
+  rewritten before `JsonToolCodec` validates the final ordinary arguments.
+- `knowledge_write` may use `source_id` in `sources` and
+  `evidence.source_url`; the controller rewrites those IDs to final opened URLs.
+- `done` is allowed after saved evidence exists, with a narrow near-limit escape
+  for no-citable-evidence reports. The existing report quality gate still
+  decides whether the report is acceptable.
+
+Validation focus:
+
+- Initial controller state exposes only `knowledge_search`, `knowledge_read`,
+  and `web_search`.
+- `r1/r2/...` stay stable across multiple web searches even when later searches
+  reorder or repeat URLs.
+- `open_url` with `result_id` dispatches to the correct URL.
+- `source_search` and `knowledge_write` can use `source_id`.
+- `open_url` with `hit_id` opens the correct PDF page or HTML offset target.
+- Controller blocks display the most recent result/source/hit IDs while keeping
+  older ID mappings valid for parsing.
+- Unknown `result_id`, `source_id`, and `hit_id` return typed `invalid_args`
+  repairs instead of falling through to handwritten arguments.
+- Stable IDs override conflicting handwritten URLs, so a model cannot combine
+  `result_id/source_id/hit_id` with an unrelated `url` to bypass the controller.
+- Early `done` is rejected as `disallowed_tool`; `done` becomes allowed after
+  saved evidence or near the turn limit for insufficient-evidence reporting.
+- `controller_enabled=False` preserves the full old Research prompt for manual
+  baselines.
+
+Validation:
+
+```text
+python -m pytest tests\test_research_controller.py tests\test_research.py -q
+# 92 passed, 1 pytest cache warning
+
+python -m pytest tests\test_deep_research_core_ab.py tests\test_research_controller.py tests\test_research.py -q
+# 107 passed, 1 pytest cache warning
+
+python -m pytest tests\test_research_controller.py tests\test_research.py tests\test_deep_research_core_ab.py tests\test_research_protocol_contract.py -q
+# 125 passed, 1 pytest cache warning
+
+python -B tests\manual\deep_research_core_ab.py --self-test
+# self-test passed
+
+python -m pytest tests\test_server.py tests\test_ui.py tests\test_research_controller.py tests\test_research.py tests\test_deep_research_core_ab.py tests\test_research_protocol_contract.py -q
+# 292 passed, 1 skipped, 1 pytest cache warning
+
+python -m pytest -q
+# 1328 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\research\controller.py codey\research\runner.py codey\research\protocols.py codey\research\tool_contract.py tests\manual\deep_research_core_ab.py
+# passed
+```
+
 ## 0.2.19 Research Browser Isolation and Thin-Gate Probe
 
 Codey 0.2.19 fixes the deeper live Research stall seen with web providers:

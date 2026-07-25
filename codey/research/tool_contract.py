@@ -11,6 +11,7 @@ PROTOCOL_TOO_MANY_TOOLS = "too_many_tools"
 PROTOCOL_INVALID_ARGS = "invalid_args"
 PROTOCOL_DIRECT_ANSWER = "direct_answer"
 PROTOCOL_NATIVE_SEARCH_LEAK = "native_search_leak"
+PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,29 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.20 - Research Controller v1
+
+- Production Research controller: Research now uses a thin ledger read-model to
+  expose only currently reasonable tools each turn, instead of showing every
+  Research tool shape all the time.
+- Stable IDs: search results, opened sources, and source_search locators receive
+  run-global `result_id`, `source_id`, and `hit_id` handles. The controller
+  rewrites those IDs into the normal `url` / `pages` / `offset` arguments before
+  the existing 0.2.18 tool contract validates the call.
+- Source-write convenience: `knowledge_write` can use `sources:["s1"]` and
+  `evidence.source_url:"s1"` in controller mode; Codey rewrites those source IDs
+  to opened final URLs before saving.
+- Non-linear gate: this is not a hard state machine. `knowledge_search`,
+  `knowledge_read`, and `web_search` remain available so models can go back for
+  local memory, counter-evidence, or better sources. `open_url`,
+  `source_search`, `knowledge_write`, `knowledge_link`, and `done` become
+  available only when the ledger makes them meaningful.
+- Done discipline: `done` is normally allowed after saved evidence exists, with
+  a narrow near-turn-limit escape for insufficient/no-citable-evidence reports.
+  The deterministic report quality gate remains unchanged.
+- Boundary discipline: no Deep Research Core prompt in production, no provider
+  routing, no new UI mode, and no relaxed provenance/evidence rules.
+
 ## 0.2.19 - Research Browser Isolation and Thin-Gate Probe
 
 - Research browser isolation: browser-backed `web_search` and HTML `open_url`

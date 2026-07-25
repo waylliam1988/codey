@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.19-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.20-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.19`
+Version: `0.2.20`
 
 [Version history](CHANGELOG.md)
 
@@ -202,6 +202,16 @@ Codey actually opened in the run. Research providers are also asked to choose
 exactly one local JSON tool per turn; if a model emits several actions at once,
 Codey treats that as a protocol error and asks it to retry.
 
+In 0.2.20, production Research uses a thin controller instead of exposing the
+full tool menu every turn. Codey reads the current Research ledger, shows only
+reasonable allowed tools for that turn, and assigns stable run-global IDs:
+`result_id` for search results, `source_id` for opened sources, and `hit_id` for
+source_search locators. Models can choose IDs instead of hand-copying URLs,
+PDF pages, or HTML offsets. This is not a hard linear state machine: local
+memory search and web search remain available so the model can go back for
+counter-evidence or better sources. The existing typed tool contract and report
+quality gate still decide what actually executes and what can be saved.
+
 In 0.2.19, browser-backed Research search and page opening run in a separate
 Research browser profile and CDP port instead of sharing the provider chat
 browser. This keeps Bing/result/article tabs away from DeepSeek, MiMo, StepFun,
@@ -251,13 +261,13 @@ fixture completed with `done=True` in 9 turns. Qwen stayed format-clean in the
 same source_search fixture, but still spent its 10-turn budget on intermediate
 note writing instead of reaching `done`.
 
-The manual A/B harness now has a `thin_gate` probe arm for the next Research
-controller work. It appends state-aware allowed tools plus stable `result_id`
-and `source_id` choices without changing production Research routing. In a live
-MiMo `long-official-doc/thin_gate` probe, MiMo completed with `done=True`,
+The manual A/B harness has a `thin_gate` probe arm that informed the 0.2.20
+production controller work. It appends state-aware allowed tools plus stable
+`result_id` and `source_id` choices. In a live MiMo
+`long-official-doc/thin_gate` probe, MiMo completed with `done=True`,
 `quality_score=11`, zero protocol repairs, and four ID rewrites in eight turns.
-That supports a narrow 0.2.20 direction: allowed-tools and stable IDs, not a
-hard linear controller.
+That supported the narrow 0.2.20 direction: allowed-tools and stable IDs, not a
+hard linear controller or Deep Research Core.
 
 Production Research can now call `source_search` after `open_url`. It searches
 only inside sources Codey already opened and returns locator previews, not
@@ -601,7 +611,7 @@ codey/
   project_map.py            deterministic bounded project orientation
   project_task_context.py   project facts, map, checkpoint, and verification context
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
-  research/                 Research runner, isolated web/source search tools, evidence ledger, report quality gate
+  research/                 Research controller/runner, isolated web/source search tools, evidence ledger, report quality gate
   verification_map.py       bounded review-time verification candidates
   review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief

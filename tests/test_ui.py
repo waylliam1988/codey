@@ -223,7 +223,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("appendResearchCoverage", HTML)
         self.assertIn("['graph', 'Graph']", HTML)
         self.assertIn("renderResearchGraph(panel, run, sessionId)", HTML)
-        self.assertIn('<script src="/assets/research_graph.js?v=0.2.19"></script>', HTML)
+        self.assertIn('<script src="/assets/research_graph.js?v=0.2.20"></script>', HTML)
         self.assertIn("if (window.CodeyResearchGraph) window.CodeyResearchGraph.dispose();", HTML)
         self.assertIn("window.CodeyResearchGraph.render(panel, {", HTML)
         self.assertIn("focusIds: coreNoteIdsForResearchRun(run)", HTML)

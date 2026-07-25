@@ -67,7 +67,7 @@ class JsonToolCodec:
         )
 
     def parse(self, text: str) -> ToolPlan:
-        objects = _extract_json_objects(text or "")
+        objects = extract_json_objects(text or "")
         if not objects:
             kind, message = classify_no_json_reply(text or "")
             return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind)
@@ -151,7 +151,7 @@ def _result_label(call: ToolCall) -> str:
     return call.name
 
 
-def _extract_json_objects(text: str) -> list[dict[str, Any]]:
+def extract_json_objects(text: str) -> list[dict[str, Any]]:
     objects: list[dict[str, Any]] = []
     depth = 0
     start = -1
@@ -185,6 +185,9 @@ def _extract_json_objects(text: str) -> list[dict[str, Any]]:
                         objects.append(value)
                     start = -1
     return objects
+
+
+_extract_json_objects = extract_json_objects
 
 
 _SYSTEM_PROMPT = """You are a local research agent. You investigate a question on \
