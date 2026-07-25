@@ -49,13 +49,13 @@ Validation:
 
 ```text
 python -m pytest tests\test_ui.py tests\test_ui_architecture.py tests\test_server.py -q
-# 185 passed, 1 skipped
+# 186 passed
 
 python -m pytest tests\test_ui_browser_e2e.py -q
 # 1 passed (real browser: modularized assets load, boot wiring works end to end)
 
 python -m pytest -q
-# 1341 passed, 8 skipped, 112 subtests passed
+# 1349 passed, 112 subtests passed
 
 python -m py_compile codey\server.py tests\test_ui.py tests\test_ui_architecture.py tests\test_server.py
 # ok
