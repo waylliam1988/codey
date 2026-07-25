@@ -28,7 +28,7 @@ from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.models import Control, ToolCall, ToolPlan
-from codey.providers.registry import connect_provider, provider_ids
+from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
 from codey.research.protocols import JsonToolCodec, MAX_CALLS_PER_TURN
 from codey.research.report_quality import review_report_quality
@@ -731,6 +731,7 @@ def _probe_fixture_reminder(*, include_source_search: bool) -> str:
         "Probe fixture discipline:\n"
         "- Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.\n"
         f"- All web and knowledge access in this probe is available only through these JSON tools: {tool_names}.\n"
+        "- For search query strings, use plain keywords; do not put literal double quote characters inside JSON strings.\n"
         "- The source URLs and facts are deterministic local fixtures; they may not exist on the public internet.\n"
         "- Treat tool outputs as the only evidence, even when a fixture domain looks fake or unreachable publicly.\n"
         "- Do not answer from memory or from the chat website's own search results."
@@ -1044,6 +1045,8 @@ def run_provider(
     *,
     port: int,
     open_if_missing: bool,
+    fresh_tab: bool,
+    keep_open_on_error: bool,
     no_new_chat: bool,
     arms: tuple[str, ...],
     cases: tuple[ResearchProbeCase, ...],
@@ -1053,12 +1056,15 @@ def run_provider(
     trace: LiveTrace | None = None,
 ) -> dict[str, Any]:
     try:
-        provider = connect_provider(
-            provider_id,
-            port=port,
-            open_if_missing=open_if_missing,
-            bring_to_front=open_if_missing,
-        )
+        if fresh_tab:
+            provider = connect_fresh_provider_tab(provider_id, port=port)
+        else:
+            provider = connect_provider(
+                provider_id,
+                port=port,
+                open_if_missing=open_if_missing,
+                bring_to_front=open_if_missing,
+            )
     except Exception as exc:
         rows = [
             {
@@ -1086,6 +1092,8 @@ def run_provider(
             "timeout_seconds": timeout,
             "new_chat_timeout_seconds": new_chat_timeout,
             "open_if_missing": open_if_missing,
+            "fresh_tab": fresh_tab,
+            "keep_open_on_error": keep_open_on_error,
             "no_new_chat": no_new_chat,
             "error": rows[0]["error"] if rows else f"connect {type(exc).__name__}: {exc}",
         }
@@ -1150,7 +1158,9 @@ def run_provider(
                         f"turns={row['turns_used']} elapsed={row['elapsed_seconds']}s"
                     )
     finally:
-        provider.close()
+        has_error = any("error" in row for row in rows)
+        if not (keep_open_on_error and has_error):
+            provider.close()
     return {
         "provider": provider_id,
         "elapsed_seconds": round(time.monotonic() - started, 3),
@@ -1160,6 +1170,8 @@ def run_provider(
         "timeout_seconds": timeout,
         "new_chat_timeout_seconds": new_chat_timeout,
         "open_if_missing": open_if_missing,
+        "fresh_tab": fresh_tab,
+        "keep_open_on_error": keep_open_on_error,
         "no_new_chat": no_new_chat,
     }
 
@@ -1632,6 +1644,16 @@ def main() -> int:
         help="allow the probe to open or foreground a provider page; default only attaches to existing tabs",
     )
     parser.add_argument(
+        "--fresh-tab",
+        action="store_true",
+        help="diagnostic only: open an isolated fresh provider tab for this run",
+    )
+    parser.add_argument(
+        "--keep-open-on-error",
+        action="store_true",
+        help="diagnostic only: leave the provider tab open when a case errors",
+    )
+    parser.add_argument(
         "--no-new-chat",
         action="store_true",
         help="diagnostic only: reuse the current provider page instead of starting a clean chat",
@@ -1665,6 +1687,8 @@ def main() -> int:
             provider_id,
             port=args.port,
             open_if_missing=args.open_if_missing,
+            fresh_tab=args.fresh_tab,
+            keep_open_on_error=args.keep_open_on_error,
             no_new_chat=args.no_new_chat,
             arms=arms,
             cases=cases,
@@ -1683,6 +1707,8 @@ def main() -> int:
         "cases": [case.name for case in cases],
         "max_turns": max_turns,
         "open_if_missing": args.open_if_missing,
+        "fresh_tab": args.fresh_tab,
+        "keep_open_on_error": args.keep_open_on_error,
         "no_new_chat": args.no_new_chat,
         "trace_output": str(trace.path) if trace is not None else "",
         "new_chat_timeout_seconds": args.new_chat_timeout,

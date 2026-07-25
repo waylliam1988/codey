@@ -32,6 +32,8 @@ READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 60.0
 SUBMIT_CONFIRM_TIMEOUT = 15.0
 JSON_TOOL_STABLE_TICKS = 2
+RESPONSE_FOOTER_TIMEOUT = 8.0
+RESPONSE_FOOTER_STABLE_TICKS = 2
 
 _VISIBLE_RESPONSE_COUNT_JS = r"""
 (selector) => Array.from(document.querySelectorAll(selector))
@@ -180,6 +182,46 @@ def _response_count(page: Page) -> int:
         return controls.response_count(page, PROVIDER_ID, PROFILE.selectors("response"))
 
 
+def _response_action_count(page: Page) -> int:
+    count = 0
+    for selector in PROFILE.selectors("response_action"):
+        try:
+            locator = page.locator(selector)
+            for index in range(int(locator.count())):
+                try:
+                    if locator.nth(index).is_visible():
+                        count += 1
+                except Exception:
+                    continue
+        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+            raise
+        except Exception:
+            continue
+    return count
+
+
+def _wait_response_footer_ready(
+    page: Page,
+    action_baseline: int,
+    timeout: float = RESPONSE_FOOTER_TIMEOUT,
+) -> None:
+    if not PROFILE.selectors("response_action"):
+        return
+    deadline = time.time() + max(0.0, timeout)
+    stable = 0
+    last = -1
+    while time.time() < deadline:
+        current = _response_action_count(page)
+        if current > action_baseline and current == last:
+            stable += 1
+            if stable >= RESPONSE_FOOTER_STABLE_TICKS:
+                return
+        else:
+            stable = 0
+            last = current
+        cancellation.wait(0.25)
+
+
 def _fresh_response_text(page: Page, baseline: int) -> str:
     try:
         return str(
@@ -237,6 +279,16 @@ def _fill_message(textarea: Locator, text: str) -> None:
         textarea.fill(text)
 
 
+def _control_text(control: Locator) -> str:
+    try:
+        return str(control.input_value() or "")
+    except Exception:
+        try:
+            return str(control.inner_text() or "")
+        except Exception:
+            return ""
+
+
 def _submission_started(
     page: Page,
     baseline: int,
@@ -248,10 +300,7 @@ def _submission_started(
         if _fresh_response_text(page, baseline):
             return True
         message_box = _message_box(page)
-        input_empty = (
-            message_box is not None
-            and not controls.control_has_text(message_box, submitted_text)
-        )
+        input_empty = message_box is not None and not _control_text(message_box).strip()
         if input_empty:
             return True
         return controls.flow_matches(
@@ -287,6 +336,18 @@ def _submit(page: Page, textarea: Locator, baseline: int, submitted_text: str) -
     button = _send_button(page, timeout=1.0, teach=False)
     if button is not None:
         attempt.submit("click", button.click)
+        if _wait_submission_started(page, baseline, submitted_text):
+            confirm_submission(attempt, PROVIDER_ID)
+            return attempt
+        cancellation.wait(0.6)
+        retry_button = _send_button(page, timeout=2.0, teach=False)
+        if retry_button is None:
+            return attempt
+        retry = SendAttempt()
+        retry.submit("click", lambda: retry_button.click(force=True))
+        if _wait_submission_started(page, baseline, submitted_text):
+            confirm_submission(retry, PROVIDER_ID)
+        return retry
     else:
         controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON, page=page)
         attempt.submit("enter", lambda: textarea.press("Enter"))
@@ -331,6 +392,7 @@ def chat(
     wait_ready(page)
 
     baseline = _response_count(page)
+    action_baseline = _response_action_count(page)
     with send_loop.response_watch(page, PROVIDER_ID):
         textarea = _message_box(page, teach=True)
         if textarea is None:
@@ -354,6 +416,10 @@ def chat(
         cancellation.wait(0.3)
 
         attempt = _submit(page, textarea, baseline, text)
+        if not attempt.confirmed:
+            if attempt.method == "click" and attempt.action_error is not None:
+                controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)
+            raise SubmissionUncertain("StepFun submission status is uncertain")
 
         ctx = send_loop.ProviderSendContext(
             page=page,
@@ -387,6 +453,7 @@ def chat(
                     if not repairable_json_tool and stable < stable_ticks:
                         continue
                 if stable >= JSON_TOOL_STABLE_TICKS and is_json_tool:
+                    _wait_response_footer_ready(page, action_baseline)
                     return send_loop.read_completion(
                         ctx,
                         lambda: _final_text(page, baseline),
@@ -394,6 +461,7 @@ def chat(
                 if repairable_json_tool and stable < stable_ticks:
                     continue
                 if repairable_json_tool:
+                    _wait_response_footer_ready(page, action_baseline)
                     return send_loop.read_completion(
                         ctx,
                         lambda: _final_text(page, baseline),
@@ -404,6 +472,7 @@ def chat(
                     built_in_ready=stable >= stable_ticks,
                 )
                 if ready:
+                    _wait_response_footer_ready(page, action_baseline)
                     return send_loop.read_completion(
                         ctx,
                         lambda: _final_text(page, baseline),
@@ -415,8 +484,10 @@ def chat(
         late = _wait_late_response(page, baseline, grace=TIMEOUT_GRACE, tick=tick)
         if late:
             confirm_submission(attempt, PROVIDER_ID)
+            _wait_response_footer_ready(page, action_baseline)
             return late
         if ctx.appeared and ctx.last:
+            _wait_response_footer_ready(page, action_baseline)
             return _final_text(page, baseline)
         recovered = controls.recover_response(
             page,
@@ -425,6 +496,7 @@ def chat(
         )
         if recovered is not None:
             confirm_submission(attempt, PROVIDER_ID)
+            _wait_response_footer_ready(page, action_baseline)
             return recovered
         if not attempt.confirmed:
             if attempt.method == "click" and attempt.action_error is not None:

@@ -4,6 +4,24 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.14 - StepFun Submit Stability
+
+- StepFun send stability: updated the profiled send control for the current
+  `custom-icon-send-outline` button and added a response-footer idle wait based
+  on StepFun's reload action. Codey now waits for the answer surface to finish
+  rendering before the next send, which avoids swallowing follow-up prompts when
+  StepFun is still settling.
+- Submission certainty: StepFun no longer treats a textarea newline/change as
+  proof that a message was submitted. If a click cannot be confirmed by an empty
+  composer or new response activity, the adapter fails fast with the existing
+  `SubmissionUncertain` boundary instead of waiting for a fake timeout.
+- Manual probes: added low-send provider submit probes and fresh-tab/error
+  diagnostics for the Deep Research A/B harness so live web-provider issues can
+  be checked one arm at a time without burning a full research run.
+- Boundary discipline: no provider role router, no UI change, no prompt
+  broadening, and no change to the provider-independent coding/review/research
+  core.
+
 ## 0.2.13 - Provider Fit Update
 
 - Provider set: added StepFun as an additional supported web provider while

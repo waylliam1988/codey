@@ -1,5 +1,54 @@
 # Codey Test Report
 
+## 0.2.14 StepFun Submit Stability
+
+Codey 0.2.14 tightens the StepFun provider adapter after live probes showed
+that the page could expose reply text before its footer actions had finished
+rendering. A follow-up prompt sent during that gap could remain in the composer
+without being submitted.
+
+Production changes:
+
+- Updated StepFun's provider profile to prefer the current
+  `button:has(svg.custom-icon-send-outline)` send control.
+- Added a StepFun-specific response action selector for the reload footer button
+  and waits for that footer to stabilize before returning a completed response
+  to the upper agent loop.
+- Made StepFun submission confirmation stricter: newline insertion or changed
+  textarea contents no longer count as a successful submit.
+- Added a force-click retry for the profiled send button, then fail fast with
+  `SubmissionUncertain` if the submit cannot be confirmed.
+- Kept the fix provider-local. No UI, router, agent prompt, review, or Research
+  production behavior changed.
+
+Manual diagnostics:
+
+- `tests/manual/provider_submit_probe.py` adds a small live submit/idle smoke
+  for any web provider.
+- `tests/manual/stepfun_submit_probe.py` keeps a StepFun-focused version for
+  inspecting composer/send/response state.
+- `tests/manual/deep_research_core_ab.py` can now run in a fresh provider tab
+  and optionally keep an error tab open for diagnosis.
+
+Validation:
+
+```text
+python -m pytest tests\test_stepfun.py tests\test_provider_profiles.py tests\test_ui.py -q
+# 64 passed, 1 pytest cache warning
+
+python -B tests\manual\deep_research_core_ab.py --self-test
+# self-test passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile ...
+# passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.13 Provider Fit Update
 
 Codey 0.2.13 adds StepFun while keeping MiMo. The change documents provider fit

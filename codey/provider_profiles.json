@@ -37,12 +37,17 @@
       }
     },
     "stepfun": {
-      "version": 1,
+      "version": 2,
       "hosts": ["chat.stepfun.com"],
       "selectors": {
         "message_box": ["textarea.Publisher_textarea__pMX9t:not([disabled])"],
-        "send_button": ["button[class*=\"Publisher_send\"]", "button[class*=\"Publisher_submit\"]"],
-        "response": ["div.message-markdown_markdown__Y5Weu"]
+        "send_button": [
+          "button:has(svg.custom-icon-send-outline)",
+          "button[class*=\"Publisher_send\"]",
+          "button[class*=\"Publisher_submit\"]"
+        ],
+        "response": ["div.message-markdown_markdown__Y5Weu"],
+        "response_action": ["button:has(svg.custom-icon-reload-outline)"]
       }
     },
     "glm": {

@@ -4,6 +4,20 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.14 - StepFun Submit Stability
+
+- StepFun 发送稳定性：更新当前页面的 `custom-icon-send-outline` 发送按钮选择器，
+  并用 StepFun 回答尾部的 reload action 做收尾等待。Codey 现在会等回答区域
+  渲染稳定后再进入下一轮发送，避免 StepFun 还在收尾时把后续 prompt 吞掉。
+- 提交确认：StepFun 不再把 textarea 里的换行或文本变化当成“已经发送”。如果点击后
+  不能通过输入框清空或新回答活动确认提交，adapter 会用现有 `SubmissionUncertain`
+  边界快速失败，而不是假等到超时。
+- Manual probe：新增低发送量 provider submit probe，并给 Deep Research A/B harness
+  增加 fresh-tab / 保留错误页诊断参数，方便一个 arm 一个 arm 地实机排查网页模型，
+  不必每次消耗完整 research run。
+- 边界克制：没有加入 provider 角色路由，没有 UI 改动，没有加重通用 prompt，也没有改
+  provider-independent 的 coding / review / research 核心。
+
 ## 0.2.13 - Provider Fit Update
 
 - Provider 列表：新增 StepFun，同时保留小米 MiMo。UI、provider registry、
