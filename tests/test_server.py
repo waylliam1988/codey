@@ -592,6 +592,17 @@ class ProviderStatusTests(unittest.TestCase):
 
 
 class TaskRunnerUiEventTests(unittest.TestCase):
+    def test_turn_event_preserves_note(self) -> None:
+        event = RunEvent.turn_started(17, '{"tool":"done","args":{"answer":"report"}}', note="(done)")
+
+        payload = TaskRunner._ui_event("run-1", "session-1", event)
+
+        self.assertIsNotNone(payload)
+        assert payload is not None
+        self.assertEqual(payload["type"], "turn")
+        self.assertEqual(payload["turn"], 17)
+        self.assertEqual(payload["note"], "(done)")
+
     def test_tool_event_preserves_needs_action_status(self) -> None:
         class Outcome:
             output = "NEEDS_OPEN: open_url before saving this note: https://example.com/helium"

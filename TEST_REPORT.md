@@ -20,9 +20,10 @@ Production changes:
 - Research search/fetch pages no longer call `bring_to_front()` by default.
 - HTML fetch now retries short `Page.content()` races caused by pages that keep
   navigating or replacing content after `domcontentloaded`.
-- Research UI turn dividers preserve `RunEvent.note`, so `done` attempts show
-  as `Turn N (done)` instead of blank turns when a quality gate or private
-  evidence review sends the model back for another action.
+- Research UI event payloads, persisted UI state, and turn dividers preserve
+  `RunEvent.note`, so `done` attempts show as `Turn N (done)` and protocol
+  mistakes can show typed notes such as `Turn N (direct_answer)` instead of
+  blank turns when Codey sends the model back for another action.
 - `ResearchRunner` emits the report-quality failure message before asking the
   model to revise a failed `done`.
 
@@ -50,7 +51,8 @@ Validation focus:
 - Isolated free-port selection ignores stale remembered provider ports.
 - `Page.content()` transient navigation errors are retried and then succeed.
 - Failed final-report quality review now emits an info event.
-- Frontend turn handling keeps turn notes such as `(done)`.
+- Backend UI event mapping, persisted UI state, and frontend turn handling keep
+  turn notes such as `(done)` and `(direct_answer)`.
 - Manual thin-gate prompt state separates opened-only sources from
   evidence-backed citable sources.
 

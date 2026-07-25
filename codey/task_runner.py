@@ -1542,7 +1542,10 @@ class TaskRunner:
     @staticmethod
     def _ui_event(run_id: str, session_id: str, event: RunEvent) -> dict | None:
         if event.kind == "turn":
-            return {"type": "turn", "run_id": run_id, "session_id": session_id, "turn": event.turn}
+            payload = {"type": "turn", "run_id": run_id, "session_id": session_id, "turn": event.turn}
+            if event.note:
+                payload["note"] = event.note
+            return payload
         if event.kind == "info":
             text = event.message
             names = str(event.metadata.get("names") or "")

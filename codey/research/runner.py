@@ -463,7 +463,8 @@ def _plan_note(plan) -> str:
     if plan.calls:
         return "(" + ", ".join(call.name for call in plan.calls) + ")"
     if plan.protocol_error:
-        return "(no tool call)"
+        kind = str(getattr(plan, "protocol_error_kind", "") or "").strip()
+        return f"({kind or 'no tool call'})"
     return ""
 
 

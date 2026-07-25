@@ -18,7 +18,10 @@ class UiStateStoreTests(unittest.TestCase):
                 "sessions": [{
                     "id": "chat-1",
                     "title": "你好",
-                    "messages": [{"type": "user", "text": "你好"}],
+                    "messages": [
+                        {"type": "turn", "n": 17, "note": "(done)"},
+                        {"type": "user", "text": "你好"},
+                    ],
                     "terminalRuns": ["run-1"],
                     "createdAt": 100,
                     "projectId": "project-1",

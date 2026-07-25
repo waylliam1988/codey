@@ -16,10 +16,11 @@ This file records Codey's release history. The newest release appears first.
 - Page-fetch robustness: HTML fetch now retries short `Page.content()` races
   while the page is still navigating or replacing content, avoiding transient
   `open_url` errors from dynamic news pages.
-- Research UI observability: turn dividers now keep protocol notes such as
-  `(done)`, so quality-gate or private evidence-review rejections no longer
-  appear as blank turns. The runner also emits the quality-review message before
-  asking the model to revise a failed `done`.
+- Research UI observability: the event bridge, UI state store, and turn dividers
+  now keep protocol notes such as `(done)` and typed protocol notes such as
+  `(direct_answer)`, so quality-gate, private evidence-review, or protocol
+  repair turns no longer appear as blank turns. The runner also emits the
+  quality-review message before asking the model to revise a failed `done`.
 - Manual A/B thin gate: `tests/manual/deep_research_core_ab.py` gained a
   manual-only `thin_gate` arm with state-aware allowed tools, stable
   `result_id` / `source_id` rewrites, and atomic `send_start` trace events.

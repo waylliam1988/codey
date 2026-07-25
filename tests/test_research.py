@@ -1616,6 +1616,21 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Do not write the research answer directly", provider.sent[1])
         self.assertIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[1])
 
+    def test_research_runner_turn_note_names_protocol_error_kind(self) -> None:
+        provider = FakeProvider(
+            "## 结论\nAlpha requires notice.\n\n## 来源\n[1] Alpha - https://example.com",
+            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+
+            events = list(runner.run("Research alpha"))
+            store.close()
+
+        turn = next(event for event in events if event.kind == "turn")
+        self.assertEqual(turn.note, "(direct_answer)")
+
     def test_research_runner_repair_for_synthesis_write_uses_done_shape(self) -> None:
         provider = FakeProvider(
             json.dumps({

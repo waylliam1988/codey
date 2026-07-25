@@ -23,6 +23,7 @@ MAX_TITLE = 160
 MESSAGE_KEYS = {
     "type",
     "text",
+    "note",
     "n",
     "kind",
     "path",

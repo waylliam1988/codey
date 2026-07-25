@@ -14,9 +14,10 @@
   provider 端口，避免本该隔离的 session 又接回共享 provider 浏览器。
 - 页面抓取鲁棒性：HTML fetch 在 `Page.content()` 遇到页面仍在导航或替换内容时会短暂
   重试，避免动态新闻页的一次 DOM 抖动直接变成 `open_url` 错误。
-- Research UI 可观测性：TURN 分隔线现在保留 `(done)` 这类协议 note；如果 `done`
-  被质量门或私有 evidence review 退回，不再显示成空白 turn。Runner 也会在要求模型
-  修最终报告前，先把质量门失败原因显示出来。
+- Research UI 可观测性：事件桥、UI 状态存储和 TURN 分隔线现在都会保留 `(done)`
+  这类协议 note，以及 `(direct_answer)` 这类 typed protocol note；如果 `done`
+  被质量门或私有 evidence review 退回，或模型需要协议修复，不再显示成空白 turn。
+  Runner 也会在要求模型修最终报告前，先把质量门失败原因显示出来。
 - Manual A/B thin gate：`tests/manual/deep_research_core_ab.py` 新增 manual-only
   `thin_gate` arm，带 state-aware allowed tools、稳定的 `result_id` / `source_id`
   rewrite，以及原子 `send_start` trace。MiMo 实机 `long-official-doc/thin_gate`
