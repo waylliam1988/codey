@@ -586,6 +586,22 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertEqual(browser_worker.call(outer, timeout=1.0), "nested")
 
+    def test_browser_search_uses_dedicated_worker_when_called_from_browser_worker(self) -> None:
+        provider = BrowserSearchProvider()
+        sentinel = [{"title": "Alpha", "url": "https://example.com/a", "snippet": ""}]
+
+        with (
+            mock.patch("codey.research.browser_search._search_browser_call", return_value=sentinel) as search_call,
+            mock.patch(
+                "codey.research.browser_search.browser_worker.call",
+                side_effect=AssertionError("Research search must not reenter the provider browser worker"),
+            ),
+        ):
+            result = browser_worker.WORKER.call(lambda: provider.search("alpha", limit=3), timeout=1.0)
+
+        self.assertEqual(result, sentinel)
+        search_call.assert_called_once_with(provider._search_on_browser_thread, "alpha", 3)
+
     def test_browser_worker_call_observes_task_cancellation_while_waiting(self) -> None:
         event = threading.Event()
 
@@ -1524,6 +1540,99 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIsNone(plan.control)
         self.assertIn("too many JSON tool calls", plan.protocol_error)
 
+    def test_research_runner_repair_for_invalid_args_names_missing_field(self) -> None:
+        provider = FakeProvider(
+            json.dumps({"tool": "source_search", "args": {"url": "https://example.com/helium"}}),
+            json.dumps({"tool": "knowledge_search", "args": {"query": "helium"}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+
+            list(runner.run("Research helium"))
+            store.close()
+
+        self.assertGreaterEqual(len(provider.sent), 2)
+        self.assertIn("Research tool contract", provider.sent[1])
+        self.assertIn("source_search missing required arg 'query'", provider.sent[1])
+        self.assertIn('{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}', provider.sent[1])
+
+    def test_research_runner_repair_for_direct_answer_uses_done_shape(self) -> None:
+        provider = FakeProvider(
+            "## 结论\nAlpha requires notice.\n\n## 来源\n[1] Alpha - https://example.com",
+            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+
+            list(runner.run("Research alpha"))
+            store.close()
+
+        self.assertIn("Do not write the research answer directly", provider.sent[1])
+        self.assertIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[1])
+
+    def test_research_runner_repair_for_synthesis_write_uses_done_shape(self) -> None:
+        provider = FakeProvider(
+            json.dumps({
+                "tool": "knowledge_write",
+                "args": {"type": "synthesis", "title": "Alpha report", "body": "final report"},
+            }),
+            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+
+            list(runner.run("Research alpha"))
+            store.close()
+
+        self.assertIn("done required for final synthesis", provider.sent[1])
+        self.assertIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[1])
+
+    def test_research_runner_repair_for_native_search_leak_points_to_local_web_search(self) -> None:
+        provider = FakeProvider(
+            "I searched the web and search results show Alpha requires notice.",
+            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+
+            list(runner.run("Research alpha"))
+            store.close()
+
+        self.assertIn("Do not use the chat website's own search", provider.sent[1])
+        self.assertIn('{"tool":"web_search","args":{"query":"..."}}', provider.sent[1])
+
+    def test_research_runner_unknown_tool_repair_respects_disabled_source_search(self) -> None:
+        provider = FakeProvider(
+            json.dumps({
+                "tool": "source_search",
+                "args": {"url": "https://example.com/a", "query": "alpha"},
+            }),
+            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(
+                provider,
+                FakeSearch(),
+                store,
+                max_turns=2,
+                codec=JsonToolCodec(include_source_search=False),
+            )
+
+            list(runner.run("Research alpha"))
+            store.close()
+
+        self.assertIn("unknown tool: source_search", provider.sent[1])
+        self.assertIn(
+            "Use only Codey's Research tools: web_search, open_url, knowledge_search",
+            provider.sent[1],
+        )
+        self.assertNotIn("open_url, source_search", provider.sent[1])
+
     def test_quality_review_followup_is_specific_when_done_answer_needs_revision(self) -> None:
         url = "https://example.com/helium"
         invalid = valid_research_report(url).replace(
@@ -2066,7 +2175,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         }
 
         with (
-            mock.patch("codey.research.browser_search.browser_worker.call", return_value=sentinel),
+            mock.patch("codey.research.browser_search._search_browser_call", return_value=sentinel),
             mock.patch("codey.research.browser_search._download_pdf_streaming", return_value=streamed) as download,
         ):
             result = provider.fetch("https://example.com/report")

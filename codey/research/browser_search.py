@@ -6,6 +6,8 @@ import base64
 import binascii
 import json
 from pathlib import Path
+import threading
+from typing import Any, Callable, TypeVar
 import urllib.error
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 import urllib.request
@@ -23,6 +25,9 @@ _PDF_DOWNLOAD_TIMEOUT = 20
 _PDF_CHUNK_BYTES = 64 * 1024
 _PDF_MAX_REDIRECTS = 5
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
+T = TypeVar("T")
+_SEARCH_WORKER_LOCK = threading.Lock()
+_SEARCH_WORKER: browser_worker.BrowserWorker | None = None
 
 
 def load_profiles() -> dict:
@@ -30,6 +35,19 @@ def load_profiles() -> dict:
         return json.loads(_PROFILES_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"default_engine": "bing", "engines": {}}
+
+
+def _search_browser_call(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    return _search_browser_worker().call(fn, *args, **kwargs)
+
+
+def _search_browser_worker() -> browser_worker.BrowserWorker:
+    global _SEARCH_WORKER
+    if _SEARCH_WORKER is None:
+        with _SEARCH_WORKER_LOCK:
+            if _SEARCH_WORKER is None:
+                _SEARCH_WORKER = browser_worker.BrowserWorker(name="codey-research-browser")
+    return _SEARCH_WORKER
 
 
 class BrowserSearchProvider:
@@ -132,7 +150,7 @@ class BrowserSearchProvider:
 
     def search(self, query: str, limit: int = 8) -> list[dict]:
         cancellation.check()
-        results = browser_worker.call(self._search_on_browser_thread, query, limit)
+        results = _search_browser_call(self._search_on_browser_thread, query, limit)
         cancellation.check()
         return results
 
@@ -183,7 +201,7 @@ class BrowserSearchProvider:
         if _is_pdf_url(url):
             page = _download_pdf_streaming(url)
         else:
-            page = browser_worker.call(self._fetch_on_browser_thread, url)
+            page = _search_browser_call(self._fetch_on_browser_thread, url)
             if page.get("content_kind") == "pdf_download":
                 cancellation.check()
                 page = _download_pdf_streaming(
@@ -225,7 +243,7 @@ class BrowserSearchProvider:
     def close(self) -> None:
         if self._session is None:
             return
-        browser_worker.call(self._close_on_browser_thread)
+        _search_browser_call(self._close_on_browser_thread)
 
     def _close_on_browser_thread(self) -> None:
         try:

@@ -6,6 +6,13 @@ import json
 from typing import Any, Protocol
 
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
+from codey.research.protocol_diagnostics import classify_no_json_reply
+from codey.research.tool_contract import (
+    PROTOCOL_INVALID_ARGS,
+    PROTOCOL_TOO_MANY_TOOLS,
+    PROTOCOL_UNKNOWN_TOOL,
+    validate_tool_args,
+)
 
 MAX_CALLS_PER_TURN = 1
 _TOOL_ALIASES = {
@@ -62,36 +69,59 @@ class JsonToolCodec:
     def parse(self, text: str) -> ToolPlan:
         objects = _extract_json_objects(text or "")
         if not objects:
-            return ToolPlan(calls=[], control=None, protocol_error="no JSON tool call found")
-        calls: list[ToolCall] = []
-        control: Control | None = None
-        action_count = 0
+            kind, message = classify_no_json_reply(text or "")
+            return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind)
+        actions: list[tuple[str, str, dict[str, Any]]] = []
+        alias_map = _alias_to_tool(self.include_source_search)
         for obj in objects:
             name = str(obj.get("tool") or obj.get("name") or "").strip().lower()
-            runtime = _alias_to_tool(self.include_source_search).get(name)
-            if runtime is None:
+            if not name:
                 continue
-            action_count += 1
-            args = obj.get("args")
-            if not isinstance(args, dict):
-                args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
-            if runtime == "done":
-                body = str(args.get("answer") or args.get("summary") or args.get("text") or "")
-                control = Control("done", body)
-            else:
-                calls.append(ToolCall(runtime, args))
-        if not calls and control is None:
-            return ToolPlan(calls=[], control=None, protocol_error="no known tool in reply")
-        if action_count > MAX_CALLS_PER_TURN:
+            runtime = alias_map.get(name)
+            if runtime is None:
+                actions.append(("unknown", name, obj))
+                continue
+            actions.append(("known", runtime, obj))
+        if not actions:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error="no known tool in reply",
+                protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
+            )
+        if len(actions) > MAX_CALLS_PER_TURN:
             return ToolPlan(
                 calls=[],
                 control=None,
                 protocol_error=(
-                    f"too many JSON tool calls in one reply ({action_count}); "
+                    f"too many JSON tool calls in one reply ({len(actions)}); "
                     "reply with exactly one JSON object"
                 ),
+                protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
             )
-        return ToolPlan(calls=calls, control=control)
+        action_kind, runtime, obj = actions[0]
+        if action_kind == "unknown":
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=f"unknown tool: {runtime}",
+                protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
+            )
+        args = obj.get("args")
+        if not isinstance(args, dict):
+            args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
+        validated = validate_tool_args(runtime, args)
+        if not validated.ok:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=validated.error,
+                protocol_error_kind=validated.error_kind or PROTOCOL_INVALID_ARGS,
+            )
+        if runtime == "done":
+            return ToolPlan(calls=[], control=Control("done", str(validated.args.get("answer") or "")))
+        calls = [ToolCall(runtime, validated.args)]
+        return ToolPlan(calls=calls, control=None)
 
     def format_results(self, results: list[ToolResult]) -> str:
         blocks: list[str] = []
@@ -168,7 +198,7 @@ Tools:
 - {"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":"1-5"}}  read a page's text; for PDFs, pages selects bounded page ranges
 - {"tool":"knowledge_search","args":{"query":"..."}}  search your existing local notes FIRST
 - {"tool":"knowledge_read","args":{"id":"<note id>"}}  read one existing note in full
-- {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}
+- {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}  save small source/fact/hypothesis/conclusion/question notes; final reports must use done
 - {"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}
 - {"tool":"done","args":{"answer":"<the full human-readable report>"}}
 
@@ -178,7 +208,7 @@ Note types (choose the right one; never mislabel):
 - hypothesis: your inference or expectation. It is NOT a fact. Label it as a hypothesis.
 - conclusion: an actionable takeaway derived from facts + hypotheses.
 - question: something still open that needs more research.
-- synthesis: a full human-readable report for one research run.
+- synthesis: created by Codey after done passes quality review. Do not write synthesis with knowledge_write.
 
 Discipline:
 - Start by calling knowledge_search to see what you already know.

@@ -323,6 +323,76 @@ class MimoDriverTests(unittest.TestCase):
         ):
             self.assertTrue(mimo._generation_complete(page))
 
+    def test_wait_response_footer_ready_waits_for_stable_copy_action(self) -> None:
+        page = mock.Mock()
+        with (
+            mock.patch.object(mimo, "_response_action_count", side_effect=[1, 2, 2, 2]) as count,
+            mock.patch.object(mimo.cancellation, "wait") as wait,
+        ):
+            mimo._wait_response_footer_ready(page, action_baseline=1, timeout=1.0)
+
+        self.assertEqual(count.call_count, 4)
+        wait.assert_called()
+
+    def test_wait_response_footer_ready_is_bounded_without_new_action(self) -> None:
+        page = mock.Mock()
+        clock = [100.0]
+
+        def fake_time() -> float:
+            return clock[0]
+
+        def fake_wait(seconds: float) -> None:
+            clock[0] += seconds
+
+        with (
+            mock.patch.object(mimo.time, "time", side_effect=fake_time),
+            mock.patch.object(mimo, "_response_action_count", return_value=1) as count,
+            mock.patch.object(mimo.cancellation, "wait", side_effect=fake_wait) as wait,
+        ):
+            mimo._wait_response_footer_ready(page, action_baseline=1, timeout=1.0)
+
+        self.assertGreaterEqual(clock[0], 101.0)
+        self.assertEqual(count.call_count, 4)
+        self.assertEqual(wait.call_count, 4)
+
+    def test_chat_waits_for_response_footer_before_returning(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        response = mock.Mock()
+        response.evaluate.return_value = "false"
+        attempt = SendAttempt()
+        attempt.submit("click", lambda: None)
+
+        with (
+            mock.patch.object(mimo, "wait_ready"),
+            mock.patch.object(mimo, "_message_box", return_value=textarea),
+            mock.patch.object(mimo, "_submit", return_value=attempt),
+            mock.patch.object(mimo, "_response_count", side_effect=[0, 1]),
+            mock.patch.object(mimo, "_response_action_count", return_value=0),
+            mock.patch.object(mimo.controls, "locate_response", return_value=response),
+            mock.patch.object(mimo, "_response_text", return_value="final"),
+            mock.patch.object(mimo, "_generation_complete", return_value=True),
+            mock.patch.object(mimo, "_wait_response_footer_ready") as footer_ready,
+            mock.patch.object(mimo, "_final_text", return_value="final") as final_text,
+            mock.patch.object(mimo.controls, "control_has_text", return_value=True),
+            mock.patch.object(mimo.controls, "confirm_control"),
+            mock.patch.object(mimo.controls, "start_response_watch"),
+            mock.patch.object(mimo.controls, "stop_response_watch"),
+            mock.patch.object(mimo.cancellation, "wait"),
+        ):
+            reply = mimo.chat(
+                page,
+                "hello",
+                response_timeout=1,
+                stable_ticks=0,
+                tick=0,
+                min_wait=0,
+            )
+
+        self.assertEqual(reply, "final")
+        footer_ready.assert_called_once_with(page, 0)
+        final_text.assert_called_once_with(page, completion_verified=False)
+
     def test_generation_complete_rejects_typing_response(self) -> None:
         page = mock.Mock()
         response = mock.Mock()

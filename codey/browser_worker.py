@@ -19,12 +19,12 @@ _POLL_INTERVAL = 0.1
 
 
 class BrowserWorker:
-    def __init__(self) -> None:
+    def __init__(self, *, name: str = "codey-browser") -> None:
         self._queue: queue.Queue[
             tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any], threading.Event, list[Any]]
         ] = queue.Queue()
         self._thread_id: int | None = None
-        self._thread = threading.Thread(target=self._loop, name="codey-browser", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name=name, daemon=True)
         self._thread.start()
 
     def _loop(self) -> None:

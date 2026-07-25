@@ -27,10 +27,10 @@ from codey import cancellation
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.models import Control, ToolCall, ToolPlan
+from codey.models import Control, ToolPlan
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
-from codey.research.protocols import JsonToolCodec, MAX_CALLS_PER_TURN
+from codey.research.protocols import JsonToolCodec, MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner, _Outcome, first_text_arg
 from codey.research.source_document import SourceDocument, SourcePage, compact_pages
@@ -50,6 +50,7 @@ MAX_REPLY_CHARS = 4_000
 MAX_FIELD_CHARS = 2_000
 MAX_RAW_REPLY_PREVIEW_CHARS = 1_000
 SINGLE_TOOL_BOUNDARY = False
+MAX_CALLS_PER_TURN = _MAX_CALLS_PER_TURN
 
 
 @dataclass(frozen=True)
@@ -663,69 +664,8 @@ class ProbeJsonToolCodec(JsonToolCodec):
             answer = _extract_malformed_done_answer(text or "")
             if answer:
                 return ToolPlan(calls=[], control=Control("done", answer))
-            return ToolPlan(calls=[], control=None, protocol_error="no JSON tool call found")
-        calls: list[ToolCall] = []
-        control: Control | None = None
-        action_count = 0
-        for obj in objects:
-            name = str(obj.get("tool") or obj.get("name") or "").strip().lower()
-            runtime = _ALIAS_TO_TOOL.get(name)
-            if runtime is None:
-                continue
-            if runtime == "source_search" and self.arm == "baseline":
-                continue
-            action_count += 1
-            args = obj.get("args")
-            if not isinstance(args, dict):
-                args = {key: value for key, value in obj.items() if key not in ("tool", "name")}
-            if runtime == "done":
-                body = str(args.get("answer") or args.get("summary") or args.get("text") or "")
-                control = Control("done", body)
-            else:
-                calls.append(ToolCall(runtime, args))
-        if not calls and control is None:
-            return ToolPlan(calls=[], control=None, protocol_error="no known tool in reply")
-        if action_count > 1:
-            return ToolPlan(
-                calls=[],
-                control=None,
-                protocol_error=(
-                    f"too many JSON tool calls in one reply ({action_count}); "
-                    "reply with exactly one JSON object"
-                ),
-            )
-        return ToolPlan(calls=calls[:MAX_CALLS_PER_TURN], control=control)
-
-
-_ALIAS_TO_TOOL = {
-    "web_search": "web_search",
-    "search": "web_search",
-    "open_url": "open_url",
-    "open": "open_url",
-    "fetch": "open_url",
-    "read_url": "open_url",
-    "source_search": "source_search",
-    "search_source": "source_search",
-    "find_in_source": "source_search",
-    "knowledge_search": "knowledge_search",
-    "recall": "knowledge_search",
-    "memory_search": "knowledge_search",
-    "vault_search": "knowledge_search",
-    "knowledge_read": "knowledge_read",
-    "knowledge_note": "knowledge_read",
-    "vault_read": "knowledge_read",
-    "note_read": "knowledge_read",
-    "knowledge_write": "knowledge_write",
-    "note_write": "knowledge_write",
-    "save_note": "knowledge_write",
-    "write_note": "knowledge_write",
-    "knowledge_link": "knowledge_link",
-    "note_link": "knowledge_link",
-    "link": "knowledge_link",
-    "done": "done",
-    "answer": "done",
-    "finish": "done",
-}
+        include_source_search = self.arm in {"source_search", "deep_core"}
+        return JsonToolCodec(include_source_search=include_source_search).parse(text)
 
 _DEEP_CORE_APPENDIX = """Deep Research Core experimental guidance:
 - Follow a compact coverage plan before done: local memory, overview, primary/source-of-record, data or method, counter-evidence or limitations, freshness if time-sensitive, and application implications if the user may later build from this.

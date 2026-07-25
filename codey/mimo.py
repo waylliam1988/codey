@@ -36,6 +36,8 @@ TIMEOUT_GRACE = 60.0
 COPY_READY_TIMEOUT = 10.0
 SUBMIT_CONFIRM_TIMEOUT = 15.0
 SUBMIT_READY_TIMEOUT = 5.0
+RESPONSE_FOOTER_TIMEOUT = 4.0
+RESPONSE_FOOTER_STABLE_TICKS = 2
 
 _RESPONSE_TEXT_JS = r"""
 el => {
@@ -237,6 +239,44 @@ def _copy_button_after_response(page: Page, response: Locator) -> Locator | None
         return None
     matches.sort(key=lambda item: (item[1], item[0]))
     return matches[0][2]
+
+
+def _response_action_count(page: Page) -> int:
+    count = 0
+    try:
+        buttons = page.locator(COPY_BUTTON)
+        total = int(buttons.count())
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        return 0
+    for index in range(total):
+        try:
+            if buttons.nth(index).is_visible():
+                count += 1
+        except Exception:
+            continue
+    return count
+
+
+def _wait_response_footer_ready(
+    page: Page,
+    action_baseline: int,
+    timeout: float = RESPONSE_FOOTER_TIMEOUT,
+) -> None:
+    deadline = time.time() + max(0.0, timeout)
+    stable = 0
+    last = -1
+    while time.time() < deadline:
+        current = _response_action_count(page)
+        if current > action_baseline and current == last:
+            stable += 1
+            if stable >= RESPONSE_FOOTER_STABLE_TICKS:
+                return
+        else:
+            stable = 0
+            last = current
+        cancellation.wait(0.25)
 
 
 def _copy_last_text(page: Page) -> str:
@@ -594,6 +634,7 @@ def _chat(
 
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
+    action_baseline = _response_action_count(page)
 
     with send_loop.response_watch(page, PROVIDER_ID):
         textarea = _message_box(page, teach=True)
@@ -658,6 +699,7 @@ def _chat(
                     allow_recovery=attempt.confirmed,
                 )
                 if completion_ready:
+                    _wait_response_footer_ready(page, action_baseline)
                     return send_loop.read_completion(
                         ctx,
                         lambda: _final_text(
@@ -675,6 +717,7 @@ def _chat(
         )
         if late:
             confirm_submission(attempt, PROVIDER_ID)
+            _wait_response_footer_ready(page, action_baseline)
             return late
         if ctx.appeared and ctx.last:
             response = controls.locate_response(
@@ -696,6 +739,7 @@ def _chat(
                 allow_recovery=attempt.confirmed,
             )
             if completion_ready:
+                _wait_response_footer_ready(page, action_baseline)
                 return send_loop.read_completion(
                     ctx,
                     lambda: _final_text(
@@ -706,6 +750,7 @@ def _chat(
         recovered = controls.recover_response(page, PROVIDER_ID, lambda: _final_text(page))
         if recovered is not None:
             confirm_submission(attempt, PROVIDER_ID)
+            _wait_response_footer_ready(page, action_baseline)
             return recovered
         if not attempt.confirmed:
             if attempt.method == "click" and attempt.action_error is not None:

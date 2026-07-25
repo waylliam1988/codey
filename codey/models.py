@@ -21,6 +21,7 @@ class ToolPlan:
     calls: list[ToolCall]
     control: Control | None
     protocol_error: str = ""
+    protocol_error_kind: str = ""
 
 
 @dataclass(frozen=True)

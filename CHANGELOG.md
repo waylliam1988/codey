@@ -4,6 +4,36 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.18 - Research Tool Contract and Typed Repairs
+
+- Research tool contract: all Research JSON tools now pass through typed local
+  argument validation before execution, including `knowledge_search`,
+  `knowledge_read`, `knowledge_write`, `knowledge_link`, `web_search`,
+  `open_url`, `source_search`, and `done`.
+- Typed protocol repairs: Research now classifies protocol failures as
+  `no_json`, `unknown_tool`, `too_many_tools`, `invalid_args`,
+  `direct_answer`, or `native_search_leak`, then sends a specific repair prompt
+  with one copyable JSON shape.
+- Safer argument handling: optional defaults are applied only when fields are
+  missing; malformed numbers such as `offset="abc"` are rejected instead of
+  silently defaulting, aliases such as `queries` and `summary` are normalized,
+  and unknown extra args do not pass through to tools.
+- Final report discipline: `knowledge_write type="synthesis"` is rejected with
+  a repair that points to `done`; Codey saves the synthesis after the final
+  report passes quality review.
+- Research browser isolation: browser-backed web search and page fetch now run
+  on a dedicated Research browser worker instead of reentering the provider
+  browser worker, fixing Playwright sync-API failures seen during live Research
+  runs.
+- MiMo submit stability: MiMo now waits briefly for the response footer/copy
+  action to settle before the next send, matching the StepFun-style pacing fix
+  for pages that finish text before their composer/action area is ready.
+- Live provider check: Qwen stayed JSON-format clean but still hit the 10-turn
+  cap before `done`; MiMo first showed a typed `too_many_tools` repair, then
+  passed a continuous long-message submit probe and completed
+  `long-official-doc/source_search` with `done=True` in 9 turns after the footer
+  wait and final-report clarification.
+
 ## 0.2.17 - Source Search Production and Research Tool Boundary
 
 - Production Research tool: `source_search` is now part of the default Research

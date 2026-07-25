@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.17-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.18-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.17`
+Version: `0.2.18`
 
 [Version history](CHANGELOG.md)
 
@@ -202,13 +202,20 @@ Codey actually opened in the run. Research providers are also asked to choose
 exactly one local JSON tool per turn; if a model emits several actions at once,
 Codey treats that as a protocol error and asks it to retry.
 
+In 0.2.18, Research JSON calls are checked against a typed local contract before
+they execute. Codey now distinguishes missing JSON, unknown tools, too many tool
+calls, invalid arguments, direct prose answers, and suspected use of a chat
+website's own search. The repair prompt names the specific problem and gives one
+copyable JSON shape. Final reports must use `done`; Codey saves the synthesis
+after the report passes quality review.
+
 Provider fit matters. Codey does not route automatically by role yet; choose the
 provider that fits the current job:
 
 | Provider | Best Fit | Current Caution |
 |---|---|---|
 | DeepSeek / Qwen / GLM | General coding, review, and Research | Daily web-use limits can interrupt long runs |
-| MiMo | Coding/editing when stronger providers are limited; small Research runs after the one-tool boundary | Higher variance for strict JSON-tool Research; prefer DeepSeek, Qwen, StepFun, or Local for longer research |
+| MiMo | Coding/editing when stronger providers are limited; small Research runs after the one-tool boundary | Higher variance for strict JSON-tool Research; Codey waits for MiMo's response footer before the next send, but longer research still works best on DeepSeek, Qwen, StepFun, or Local |
 | StepFun | Evidence-backed Research and local JSON-tool probes | The adapter now waits for StepFun's response footer before the next send; not recommended as the main writer for fresh projects yet |
 | Local | Private/offline runs and quota fallback | Quality depends on your local model; Gemma4-12B passed fixture probes, but heavier prompts can stress JSON discipline |
 
@@ -228,6 +235,13 @@ MiMo was retested after adding the one-tool Research boundary. A fresh-tab
 report quality gate. Earlier MiMo probes without that boundary still emitted
 multiple search calls, so the documentation treats this as improved Research
 discipline rather than a role router.
+
+MiMo was retested again in 0.2.18 after Codey added typed tool-contract repairs
+and a MiMo-local response-footer wait. A continuous long-message submit probe
+completed two sends without timeout, and the same `long-official-doc/source_search`
+fixture completed with `done=True` in 9 turns. Qwen stayed format-clean in the
+same source_search fixture, but still spent its 10-turn budget on intermediate
+note writing instead of reaching `done`.
 
 Production Research can now call `source_search` after `open_url`. It searches
 only inside sources Codey already opened and returns locator previews, not

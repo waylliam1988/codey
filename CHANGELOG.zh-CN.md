@@ -4,6 +4,29 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.18 - Research Tool Contract and Typed Repairs
+
+- Research 工具合同：所有 Research JSON 工具现在都会先经过本地 typed 参数校验，
+  再真正执行，包括 `knowledge_search`、`knowledge_read`、`knowledge_write`、
+  `knowledge_link`、`web_search`、`open_url`、`source_search` 和 `done`。
+- Typed protocol repair：Research 现在会把协议错误分成 `no_json`、
+  `unknown_tool`、`too_many_tools`、`invalid_args`、`direct_answer`、
+  `native_search_leak`，然后给模型更具体的修复提示和一个可照抄的 JSON 格式。
+- 参数更安全：可选参数只有缺失时才补默认值；`offset="abc"` 这类错误数字会被拒绝，
+  不会静默默认；`queries`、`summary` 等 alias 会规范化，模型乱塞的额外字段不会
+  继续传给工具。
+- 最终报告纪律：`knowledge_write type="synthesis"` 会被拒绝，并提示改用 `done`；
+  Codey 会在最终报告通过质量门后自己保存 synthesis。
+- Research 浏览器隔离：网页搜索和打开页面现在使用独立的 Research browser worker，
+  不再重入 provider 聊天用的 browser worker，修复实机 Research 中出现的
+  Playwright sync API / asyncio loop 错误。
+- MiMo 发送稳定性：MiMo 现在会在读到回复后短暂等待回答尾部 copy action 稳定，再发
+  下一轮，和 StepFun 的节奏修复类似，避免页面正文已稳定但 composer/action 区还没收尾时抢发。
+- 实机 provider 检查：Qwen 的 JSON 格式很干净，但 10 轮内仍没走到 `done`；
+  MiMo 先被 typed contract 抓到一次 `too_many_tools`，随后通过连续长消息 submit
+  probe，并在 footer 等待和最终报告说明修正后，用 9 轮完成
+  `long-official-doc/source_search`，`done=True`。
+
 ## 0.2.17 - Source Search Production and Research Tool Boundary
 
 - 生产 Research 工具：`source_search` 现在进入默认 Research JSON 协议。它只搜索

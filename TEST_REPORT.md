@@ -1,5 +1,89 @@
 # Codey Test Report
 
+## 0.2.18 Research Tool Contract and Typed Repairs
+
+Codey 0.2.18 makes the Research JSON fallback behave more like a local tool
+contract. It does not add the full Research controller/state machine yet; the
+goal is narrower: reject malformed Research tool calls before execution, give
+the model a precise repair message, and avoid two live runtime issues seen while
+probing Qwen and MiMo.
+
+Production changes:
+
+- Added `codey/research/tool_contract.py` with typed contracts for
+  `web_search`, `open_url`, `source_search`, `knowledge_search`,
+  `knowledge_read`, `knowledge_write`, `knowledge_link`, and `done`.
+- Added `codey/research/protocol_diagnostics.py` for conservative no-JSON
+  diagnostics: `no_json`, `direct_answer`, and `native_search_leak`.
+- Added `ToolPlan.protocol_error_kind` as a backward-compatible optional field.
+- `JsonToolCodec` now validates and normalizes Research arguments before tool
+  dispatch. Optional defaults are used only when a field is missing; malformed
+  numbers are `invalid_args`, and unknown extra args are dropped.
+- `ResearchRunner` now sends typed repair prompts for `unknown_tool`,
+  `too_many_tools`, `invalid_args`, `direct_answer`, `native_search_leak`, and
+  `no_json` instead of using one generic repair prompt for every protocol error.
+- `knowledge_write type="synthesis"` is now rejected by the Research contract.
+  Final reports must use `done`; Codey persists the synthesis after report
+  quality review passes.
+- Browser-backed Research search/fetch now uses a dedicated lazy
+  `codey-research-browser` worker instead of reentering the provider browser
+  worker. This fixes the live error:
+  `It looks like you are using Playwright Sync API inside the asyncio loop`.
+- MiMo now waits for its response footer/copy action to become stable before
+  returning a response to the upper loop, matching the StepFun-style pacing
+  fix for pages whose answer text stabilizes before the action/composer area is
+  ready.
+
+Validation focus:
+
+- `source_search` missing `query` returns `invalid_args` with a source_search
+  example.
+- `queries` aliases normalize to `query`; `summary` / `text` normalize to
+  `done.answer`.
+- `open_url offset="12"` is accepted, while `offset="abc"` is rejected.
+- `knowledge_write.evidence` accepts a single object by normalizing it to a
+  one-item list, but rejects non-object evidence entries such as `["bad"]`.
+- Unknown tools, too many JSON tool calls, direct prose reports, and suspected
+  native-search leaks get distinct protocol error kinds.
+- `knowledge_write type="synthesis"` gets a repair that points to `done`.
+- Research browser search called from the provider browser worker uses the
+  dedicated Research worker instead of the provider worker.
+- MiMo waits for a stable response footer before returning, and a live
+  continuous long-message submit probe completed two sends without timeout.
+
+Live provider observations:
+
+- Qwen `long-official-doc/source_search`, 10-turn smoke:
+  `used_source_search=True`, opened the target offset, saved exact evidence,
+  `protocol_repair_prompts=0`, but `done=False` because Qwen spent the turn
+  budget writing intermediate notes.
+- MiMo before footer wait: the typed contract caught a first-turn
+  `too_many_tools` flood and repaired it, but a later send hit
+  `Xiaomi MiMo Chat send failed (transient)`.
+- MiMo after footer wait and final-report clarification:
+  `long-official-doc/source_search` completed in 9 turns with `done=True`,
+  `quality_score=10`, `used_source_search=True`, target offset opened, exact
+  evidence saved, and report quality passed.
+
+Validation:
+
+```text
+python -m pytest tests\test_research_protocol_contract.py tests\test_research.py tests\test_mimo.py tests\test_ui.py tests\test_protocols.py tests\test_deep_research_core_ab.py -q
+# 229 passed, 1 pytest cache warning, 36 subtests passed
+
+python -m pytest -q
+# 1306 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -B tests\manual\deep_research_core_ab.py --self-test
+# self-test passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\mimo.py codey\browser_worker.py codey\research\browser_search.py codey\models.py codey\research\tool_contract.py codey\research\protocol_diagnostics.py codey\research\protocols.py codey\research\runner.py tests\test_mimo.py tests\test_research.py tests\test_research_protocol_contract.py tests\manual\deep_research_core_ab.py
+# passed
+```
+
 ## 0.2.17 Source Search Production and Research Tool Boundary
 
 Codey 0.2.17 promotes the deterministic `source_search` locator from the manual

@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.17-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.18-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.17`
+版本：`0.2.18`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -167,12 +167,17 @@ Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开
 每轮只选择一个本地 JSON 工具；如果模型一次吐出多个 action，Codey 会把它当作协议错误，
 要求模型重答，而不是直接执行一串工具。
 
+从 0.2.18 开始，Research JSON tool call 会先经过本地 typed contract 检查再执行。
+Codey 现在能区分没有 JSON、未知工具、一次多个工具、参数不合法、直接写报告、
+疑似使用聊天网站自带搜索这些错误，并给模型一个更具体、可照抄的修复格式。
+最终报告必须通过 `done` 返回；Codey 会在质量门通过后自己保存 synthesis。
+
 Provider 的适用场景很重要。Codey 暂时不会按角色自动切换模型；你可以按当前任务手动选择：
 
 | Provider | 更适合 | 当前注意点 |
 |---|---|---|
 | DeepSeek / Qwen / GLM | 通用写代码、Review 和 Research | 网页每日额度可能打断长任务 |
-| MiMo | 强模型额度不够时做代码编辑/实现；加上 one-tool 边界后可跑小型 Research | 严格 JSON-tool Research 的波动仍更高；长研究优先 DeepSeek、Qwen、StepFun 或 Local |
+| MiMo | 强模型额度不够时做代码编辑/实现；加上 one-tool 边界后可跑小型 Research | 严格 JSON-tool Research 的波动仍更高；Codey 会等 MiMo 回答尾部按钮稳定后再发下一轮，但长研究仍优先 DeepSeek、Qwen、StepFun 或 Local |
 | StepFun | 带证据的 Research 和本地 JSON-tool probe | adapter 现在会等 StepFun 回答尾部按钮稳定后再进入下一轮；暂不建议作为从零新建项目的主 Writer |
 | Local | 私有/offline 任务和额度兜底 | 质量取决于你的本地模型；Gemma4-12B 通过了 fixture probe，但更重的 prompt 仍可能压低 JSON 遵守 |
 
@@ -188,6 +193,12 @@ MiMo 在加入 one-tool Research 边界后重新做过实机补测。fresh-tab �
 `long-official-doc/source_search` 跑满 10 轮并完成：使用了 `source_search`，
 打开目标 offset，保存精确 evidence，并通过 report quality。没有这个边界的早期 MiMo
 probe 仍会一次输出多个搜索调用，所以这里记录为 Research 纪律增强，而不是自动角色路由。
+
+0.2.18 又补测了一次 MiMo：加上 typed tool-contract repair 和 MiMo 本地的回答尾部
+稳定等待后，连续两轮长消息 submit probe 没有 timeout；同一个
+`long-official-doc/source_search` fixture 在 9 轮内 `done=True`。Qwen 在同一类
+source_search fixture 中 JSON 格式很干净，但 10 轮内仍把时间花在中间 note 写入上，
+没有走到 `done`。
 
 生产 Research 现在可以在 `open_url` 后调用 `source_search`。它只搜索 Codey
 已经打开过的来源，并返回定位预览，不是 evidence。HTML 命中会提示模型先打开对应

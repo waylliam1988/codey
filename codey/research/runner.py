@@ -17,6 +17,16 @@ from codey.research.advisors import EvidenceNote, EvidencePack
 from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
 from codey.research.source_document import compact_pages
+from codey.research.tool_contract import (
+    PROTOCOL_DIRECT_ANSWER,
+    PROTOCOL_INVALID_ARGS,
+    PROTOCOL_NATIVE_SEARCH_LEAK,
+    PROTOCOL_NO_JSON,
+    PROTOCOL_TOO_MANY_TOOLS,
+    PROTOCOL_UNKNOWN_TOOL,
+    TOOL_CONTRACTS,
+    tool_example,
+)
 from codey.research.tools import ResearchTools
 
 DEFAULT_MAX_TURNS = 14
@@ -168,7 +178,7 @@ class ResearchRunner:
                 if protocol_errors > MAX_PROTOCOL_ERRORS:
                     stop_reason = "protocol"
                     break
-                message = self.codec.repair_prompt()
+                message = _protocol_repair_prompt(self.codec, plan)
                 continue
             protocol_errors = 0
             results: list = []
@@ -502,6 +512,95 @@ def _quality_review_followup(
     if not results:
         return prompt
     return codec.format_results(results) + "\n\n" + prompt
+
+
+def _protocol_repair_prompt(codec: ProtocolCodec, plan) -> str:
+    kind = str(getattr(plan, "protocol_error_kind", "") or "")
+    error = str(getattr(plan, "protocol_error", "") or "invalid Research tool call")
+    lines = [
+        "Your last reply did not satisfy Codey's Research tool contract.",
+        f"Error: {error}",
+        "",
+    ]
+    if kind == PROTOCOL_TOO_MANY_TOOLS:
+        lines.extend([
+            "Codey Research executes exactly one action per turn.",
+            "Choose one next action and reply with only that JSON object.",
+            "",
+            "Example:",
+            tool_example("knowledge_search"),
+        ])
+    elif kind == PROTOCOL_INVALID_ARGS:
+        tool = _tool_from_protocol_error(error)
+        lines.extend([
+            "The tool name was recognized, but its arguments did not match the required schema.",
+            "Fix the missing or invalid argument and reply with exactly one JSON object.",
+            "",
+            "Expected shape:",
+            tool_example(tool) if tool else tool_example("web_search"),
+        ])
+    elif kind == PROTOCOL_DIRECT_ANSWER:
+        lines.extend([
+            "Do not write the research answer directly in prose.",
+            "If the report is final and grounded in Codey-opened sources, return it through done.",
+            "If more evidence is needed, call a local Research tool first.",
+            "",
+            "Final answer shape:",
+            tool_example("done"),
+        ])
+    elif kind == PROTOCOL_NATIVE_SEARCH_LEAK:
+        lines.extend([
+            "Do not use the chat website's own search, browsing, plugins, or outside knowledge.",
+            "All web access in Research must go through Codey's local JSON tools.",
+            "",
+            "Use this shape:",
+            tool_example("web_search"),
+        ])
+    elif kind == PROTOCOL_UNKNOWN_TOOL:
+        lines.extend([
+            f"Use only Codey's Research tools: {_allowed_research_tools(codec)}.",
+            "",
+            "Example:",
+            tool_example("web_search"),
+        ])
+    elif kind == PROTOCOL_NO_JSON:
+        lines.extend([
+            "Reply with a JSON tool call, not prose.",
+            "",
+            "Example:",
+            tool_example("knowledge_search"),
+        ])
+    else:
+        lines.append(codec.repair_prompt())
+        return "\n".join(lines)
+    lines.extend([
+        "",
+        "Reply with exactly one JSON object and no prose.",
+    ])
+    return "\n".join(lines)
+
+
+def _tool_from_protocol_error(error: str) -> str:
+    text = str(error or "")
+    for tool in TOOL_CONTRACTS:
+        if text.startswith(f"{tool}.") or text.startswith(f"{tool} "):
+            return tool
+    return ""
+
+
+def _allowed_research_tools(codec: ProtocolCodec) -> str:
+    tools = [
+        "web_search",
+        "open_url",
+        "knowledge_search",
+        "knowledge_read",
+        "knowledge_write",
+        "knowledge_link",
+        "done",
+    ]
+    if bool(getattr(codec, "include_source_search", True)):
+        tools.insert(2, "source_search")
+    return ", ".join(tools)
 
 
 def _synthesis_title(question: str, limit: int = 80) -> str:
