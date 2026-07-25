@@ -456,7 +456,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         with (
             mock.patch.object(browser, "_find_cdp_port_with_target") as find_target,
             mock.patch.object(browser, "_find_existing_cdp_port") as find_existing,
-            mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
+            mock.patch.object(browser, "_find_free_isolated_cdp_port", return_value=9444),
             mock.patch.object(browser, "_launch_browser") as launch,
             mock.patch.object(browser, "_wait_port") as wait_port,
             mock.patch.object(browser, "_save_cdp_port") as save,
@@ -477,6 +477,19 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         wait_port.assert_called_once_with(9444)
         save.assert_not_called()
 
+    def test_isolated_free_port_ignores_stale_remembered_ports(self) -> None:
+        def port_open(port: int) -> bool:
+            return port == 9444
+
+        with (
+            mock.patch.object(browser, "_active_cdp_port", 9222),
+            mock.patch.object(browser, "_load_saved_cdp_port", return_value=9222),
+            mock.patch.object(browser, "_port_open", side_effect=port_open),
+        ):
+            port = browser._find_free_isolated_cdp_port(9444)
+
+        self.assertEqual(port, 9445)
+
     def test_isolated_open_chat_page_closes_launched_browser_process(self) -> None:
         pw = mock.Mock()
         browser_obj = mock.Mock()
@@ -486,7 +499,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         process = mock.Mock()
         process.poll.return_value = None
         with (
-            mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
+            mock.patch.object(browser, "_find_free_isolated_cdp_port", return_value=9444),
             mock.patch.object(browser, "_launch_browser", return_value=process),
             mock.patch.object(browser, "_wait_port"),
             mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
@@ -517,7 +530,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         process = mock.Mock()
         process.poll.return_value = None
         with (
-            mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
+            mock.patch.object(browser, "_find_free_isolated_cdp_port", return_value=9444),
             mock.patch.object(browser, "_launch_browser", return_value=process),
             mock.patch.object(browser, "_wait_port", side_effect=TimeoutError("no port")),
         ):

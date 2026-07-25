@@ -4,6 +4,32 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.19 - Research Browser Isolation and Thin-Gate Probe
+
+- Research browser isolation: browser-backed `web_search` and HTML `open_url`
+  now use a separate Research Edge profile and CDP port by default, instead of
+  sharing the provider chat browser. Search/result/article tabs no longer live
+  in the same 9222 browser as DeepSeek, MiMo, StepFun, Qwen, or GLM chat tabs.
+- Isolated CDP hygiene: isolated browser sessions now choose free ports without
+  consulting stale active/saved provider ports, so they cannot accidentally
+  reattach to the shared provider browser.
+- Page-fetch robustness: HTML fetch now retries short `Page.content()` races
+  while the page is still navigating or replacing content, avoiding transient
+  `open_url` errors from dynamic news pages.
+- Research UI observability: turn dividers now keep protocol notes such as
+  `(done)`, so quality-gate or private evidence-review rejections no longer
+  appear as blank turns. The runner also emits the quality-review message before
+  asking the model to revise a failed `done`.
+- Manual A/B thin gate: `tests/manual/deep_research_core_ab.py` gained a
+  manual-only `thin_gate` arm with state-aware allowed tools, stable
+  `result_id` / `source_id` rewrites, and atomic `send_start` trace events.
+  A live MiMo `long-official-doc/thin_gate` probe completed in 8 turns with
+  `done=True`, `quality_score=11`, zero protocol repairs, and four ID rewrites.
+- Boundary discipline: no production Research controller yet, no automatic
+  provider routing, no Deep Research Core prompt in the main chain, and no UI
+  mode change. The thin-gate work remains evidence for a narrow 0.2.20
+  allowed-tools/stable-ID controller.
+
 ## 0.2.18 - Research Tool Contract and Typed Repairs
 
 - Research tool contract: all Research JSON tools now pass through typed local

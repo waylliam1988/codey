@@ -198,6 +198,47 @@ def test_deep_research_ab_pdf_source_search_uses_production_page_cap() -> None:
     assert coverage["source_searches"][0]["hits"] == []
 
 
+def test_thin_gate_separates_opened_sources_from_citable_sources() -> None:
+    case = next(item for item in ab.CASES if item.name == "long-official-doc")
+    secondary_url = case.documents[1].url
+
+    with tempfile.TemporaryDirectory() as td:
+        store = KnowledgeStore(Path(td))
+        try:
+            tools = ab.ProbeResearchTools(
+                ab.FixtureSearchProvider(case),
+                store,
+                KnowledgeChanges(store.root),
+            )
+
+            tools.open_url(ab.OFFICIAL_LONG_URL)
+            tools.open_url(secondary_url)
+            saved = tools.knowledge_write({
+                "type": "fact",
+                "title": "Alpha threshold",
+                "body": "Alpha requires a 72-hour notification threshold.",
+                "sources": [ab.OFFICIAL_LONG_URL],
+                "evidence": {
+                    "claim": "Alpha requires a 72-hour notification threshold.",
+                    "source_url": ab.OFFICIAL_LONG_URL,
+                    "excerpt": "The required threshold is a 72-hour incident notification",
+                    "stance": "supports",
+                },
+            })
+            state = ab._thin_gate_state(tools)
+            block = ab._thin_gate_block(state)
+        finally:
+            store.close()
+
+    assert saved.startswith("saved fact note")
+    assert "done" in state.allowed_tools
+    assert any(ab.OFFICIAL_LONG_URL in line for line in state.citable_source_lines)
+    assert not any(secondary_url in line for line in state.citable_source_lines)
+    assert any(secondary_url in line for line in state.noncitable_source_lines)
+    assert "Evidence-backed sources allowed in final 来源" in block
+    assert "Opened but not citable in final 来源" in block
+
+
 def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:
     case = next(item for item in ab.CASES if item.name == "pdf-target-page")
     report = (

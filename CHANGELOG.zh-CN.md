@@ -4,6 +4,28 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.19 - Research Browser Isolation and Thin-Gate Probe
+
+- Research 浏览器隔离：浏览器版 `web_search` 和 HTML `open_url` 现在默认使用独立的
+  Research Edge profile 和 CDP 端口，不再和 provider 聊天浏览器共用同一个上下文。
+  搜索页、结果页和文章页不会再和 DeepSeek、MiMo、StepFun、Qwen、GLM 的聊天标签页
+  混在 9222 浏览器里。
+- Isolated CDP 卫生：隔离浏览器 session 选择空闲端口时，不再参考旧的 active/saved
+  provider 端口，避免本该隔离的 session 又接回共享 provider 浏览器。
+- 页面抓取鲁棒性：HTML fetch 在 `Page.content()` 遇到页面仍在导航或替换内容时会短暂
+  重试，避免动态新闻页的一次 DOM 抖动直接变成 `open_url` 错误。
+- Research UI 可观测性：TURN 分隔线现在保留 `(done)` 这类协议 note；如果 `done`
+  被质量门或私有 evidence review 退回，不再显示成空白 turn。Runner 也会在要求模型
+  修最终报告前，先把质量门失败原因显示出来。
+- Manual A/B thin gate：`tests/manual/deep_research_core_ab.py` 新增 manual-only
+  `thin_gate` arm，带 state-aware allowed tools、稳定的 `result_id` / `source_id`
+  rewrite，以及原子 `send_start` trace。MiMo 实机 `long-official-doc/thin_gate`
+  probe 用 8 轮完成，`done=True`、`quality_score=11`、0 次 protocol repair、
+  4 次 ID rewrite。
+- 边界克制：还没有把完整 Research controller 进生产，没有自动 provider 路由，没有把
+  Deep Research Core prompt 进主链路，也没有新增 UI 模式。thin-gate 只是为 0.2.20
+  的 allowed-tools / stable-ID controller 提供证据。
+
 ## 0.2.18 - Research Tool Contract and Typed Repairs
 
 - Research 工具合同：所有 Research JSON 工具现在都会先经过本地 typed 参数校验，

@@ -38,11 +38,11 @@ from codey.research.source_search import bounded_limit, render_results, search_p
 from codey.research.tools import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, PDF_SOURCE_SEARCH_MAX_PAGES, ResearchTools
 
 
-ARMS = ("baseline", "source_search", "deep_core")
+ARMS = ("baseline", "source_search", "thin_gate", "deep_core")
 PROFILES = ("cheap", "full")
 DEFAULT_PROFILE = "cheap"
 CHEAP_CASE_NAMES = ("long-official-doc", "pdf-target-page")
-CHEAP_ARMS = ARMS
+CHEAP_ARMS = ("baseline", "source_search", "deep_core")
 CHEAP_MAX_TURNS = 10
 FULL_MAX_TURNS = 14
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-deep-research-core-ab.json"
@@ -506,9 +506,23 @@ class ProbeResearchRunner(ResearchRunner):
         )
 
     def _send_provider(self, message: str) -> str:
+        if self.arm == "thin_gate":
+            state = _thin_gate_state(self.tools)
+            codec = self.codec
+            if isinstance(codec, ProbeJsonToolCodec):
+                codec.configure_thin_gate(state)
+            message = _append_thin_gate_block(message, state)
         self.sent_messages.append(message)
         try:
             cancellation.check()
+            if self.trace is not None:
+                self.trace.record_send_start(
+                    provider=self.provider_id,
+                    case=self.case_name,
+                    arm=self.arm,
+                    send_index=len(self.sent_messages),
+                    message=message,
+                )
             reply = self.provider.send(message, timeout=self.send_timeout)
             cancellation.check()
             text = str(reply or "")
@@ -591,6 +605,25 @@ class LiveTrace:
         self.events.append(payload)
         self.flush()
 
+    def record_send_start(
+        self,
+        *,
+        provider: str,
+        case: str,
+        arm: str,
+        send_index: int,
+        message: str,
+    ) -> None:
+        self.record({
+            "event": "send_start",
+            "provider": provider,
+            "case": case,
+            "arm": arm,
+            "send_index": send_index,
+            "sent_chars": len(message or ""),
+            "message_preview": _clip(message, 800),
+        })
+
     def record_reply(
         self,
         *,
@@ -626,11 +659,38 @@ class LiveTrace:
 
 
 @dataclass(frozen=True)
+class ThinGateState:
+    allowed_tools: tuple[str, ...]
+    result_urls: dict[str, str]
+    source_urls: dict[str, str]
+    result_lines: tuple[str, ...]
+    source_lines: tuple[str, ...]
+    citable_source_lines: tuple[str, ...]
+    noncitable_source_lines: tuple[str, ...]
+    evidence_count: int
+    note_count: int
+
+
 class ProbeJsonToolCodec(JsonToolCodec):
-    arm: str = "baseline"
+    def __init__(self, arm: str = "baseline") -> None:
+        self.arm = str(arm or "baseline")
+        self.allowed_tools: tuple[str, ...] = ()
+        self.result_urls: dict[str, str] = {}
+        self.source_urls: dict[str, str] = {}
+        self.id_rewrites: list[dict[str, str]] = []
+
+    def configure_thin_gate(self, state: ThinGateState) -> None:
+        self.allowed_tools = tuple(state.allowed_tools)
+        self.result_urls = dict(state.result_urls)
+        self.source_urls = dict(state.source_urls)
 
     def system_prompt(self) -> str:
-        include_source_search = self.arm in {"source_search", "deep_core"}
+        include_source_search = self.arm in {"source_search", "thin_gate", "deep_core"}
+        if self.arm == "thin_gate":
+            return _with_probe_fixture_discipline(
+                _THIN_GATE_SYSTEM_PROMPT,
+                include_source_search=include_source_search,
+            )
         base = _with_probe_fixture_discipline(
             JsonToolCodec(include_source_search=include_source_search).system_prompt(),
             include_source_search=include_source_search,
@@ -643,15 +703,18 @@ class ProbeJsonToolCodec(JsonToolCodec):
         return prompt
 
     def repair_prompt(self) -> str:
-        include_source_search = self.arm in {"source_search", "deep_core"}
-        return (
+        include_source_search = self.arm in {"source_search", "thin_gate", "deep_core"}
+        prompt = (
             JsonToolCodec(include_source_search=include_source_search).repair_prompt()
             + "\n\n"
             + _probe_fixture_reminder(include_source_search=include_source_search)
         )
+        if self.arm == "thin_gate":
+            prompt += "\n\n" + _thin_gate_block(_state_from_codec(self))
+        return prompt
 
     def format_results(self, results) -> str:
-        include_source_search = self.arm in {"source_search", "deep_core"}
+        include_source_search = self.arm in {"source_search", "thin_gate", "deep_core"}
         return (
             JsonToolCodec(include_source_search=include_source_search).format_results(results)
             + "\n\n"
@@ -664,8 +727,261 @@ class ProbeJsonToolCodec(JsonToolCodec):
             answer = _extract_malformed_done_answer(text or "")
             if answer:
                 return ToolPlan(calls=[], control=Control("done", answer))
-        include_source_search = self.arm in {"source_search", "deep_core"}
+        include_source_search = self.arm in {"source_search", "thin_gate", "deep_core"}
+        if self.arm == "thin_gate":
+            return self._parse_thin_gate(text)
         return JsonToolCodec(include_source_search=include_source_search).parse(text)
+
+    def _parse_thin_gate(self, text: str) -> ToolPlan:
+        objects = _extract_json_objects(text or "")
+        if len(objects) == 1:
+            rewritten = self._rewrite_id_args(objects[0])
+            plan = JsonToolCodec(include_source_search=True).parse(json.dumps(rewritten, ensure_ascii=False))
+        else:
+            plan = JsonToolCodec(include_source_search=True).parse(text)
+        if plan.protocol_error or (not plan.calls and plan.control is None):
+            return plan
+        tool = plan.control.kind if plan.control is not None else plan.calls[0].name
+        if self.allowed_tools and tool not in self.allowed_tools:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=(
+                    f"{tool} is not allowed by the current thin_gate state; "
+                    f"allowed tools: {', '.join(self.allowed_tools)}"
+                ),
+                protocol_error_kind="disallowed_tool",
+            )
+        return plan
+
+    def _rewrite_id_args(self, obj: dict[str, Any]) -> dict[str, Any]:
+        rewritten = dict(obj)
+        args = rewritten.get("args")
+        if isinstance(args, dict):
+            args = dict(args)
+        else:
+            args = {key: value for key, value in rewritten.items() if key not in ("tool", "name")}
+        raw_tool = str(rewritten.get("tool") or rewritten.get("name") or "").strip().lower()
+        if raw_tool in {"open_url", "open", "fetch", "read_url"}:
+            url = ""
+            result_id = _normalized_id(args.get("result_id"))
+            source_id = _normalized_id(args.get("source_id"))
+            if result_id:
+                url = self.result_urls.get(result_id, "")
+                if url:
+                    self.id_rewrites.append({"tool": "open_url", "kind": "result_id", "id": result_id, "url": url})
+            if not url and source_id:
+                url = self.source_urls.get(source_id, "")
+                if url:
+                    self.id_rewrites.append({"tool": "open_url", "kind": "source_id", "id": source_id, "url": url})
+            if url and not str(args.get("url") or "").strip():
+                args["url"] = url
+        elif raw_tool in {"source_search", "search_source", "find_in_source"}:
+            source_id = _normalized_id(args.get("source_id"))
+            url = self.source_urls.get(source_id, "") if source_id else ""
+            if url and not str(args.get("url") or "").strip():
+                args["url"] = url
+                self.id_rewrites.append({"tool": "source_search", "kind": "source_id", "id": source_id, "url": url})
+        rewritten["args"] = args
+        return rewritten
+
+
+_THIN_GATE_SYSTEM_PROMPT = """You are a local research agent. You investigate a question using only Codey's local JSON tools, then save what you learn into a local Markdown knowledge library. You never invent facts.
+
+Answer ONLY with JSON tool calls. No prose outside JSON. One JSON object per action.
+
+Codey will append a "Thin gate current allowed actions" block every turn. Use only the tools and exact JSON shapes shown in that block. If you need another action, wait for the next local tool result first.
+
+Research discipline:
+- Start by checking local memory when useful.
+- A web_search result is not evidence. Open useful results before knowledge_write.
+- source_search is a locator inside an already-opened source, not evidence. Open the returned offset/pages before citing.
+- Prefer primary or source-of-record material when available.
+- Evidence snippets must be exact short excerpts copied from open_url text.
+- Final reports must use done, with these sections: 结论, 关键证据, 反证与限制, 来源质量, 搜索覆盖, 来源.
+- Every cited source URL in the final report must be opened in this run and have saved evidence.
+- If no strong counter-evidence exists, write "未找到强反证" and explain what was searched.
+
+Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge. Tool outputs are the only evidence."""
+
+
+def _thin_gate_state(tools: ProbeResearchTools) -> ThinGateState:
+    result_rows = _thin_gate_search_results(tools)
+    source_rows = _thin_gate_sources(tools)
+    evidence_source_urls = _thin_gate_evidence_source_urls(tools)
+    evidence_count = len(tools.ledger.evidence_items)
+    note_count = len(tools.created_ids) + len(tools.updated_ids)
+    allowed = ["knowledge_search", "knowledge_read", "web_search"]
+    if result_rows:
+        allowed.append("open_url")
+    if source_rows:
+        for tool in ("open_url", "source_search", "knowledge_write"):
+            if tool not in allowed:
+                allowed.append(tool)
+    if note_count:
+        allowed.append("knowledge_link")
+    if evidence_count:
+        allowed.append("done")
+    return ThinGateState(
+        allowed_tools=tuple(allowed),
+        result_urls={row["id"]: row["url"] for row in result_rows if row.get("url")},
+        source_urls={row["id"]: row["url"] for row in source_rows if row.get("url")},
+        result_lines=tuple(_thin_gate_result_line(row) for row in result_rows[:6]),
+        source_lines=tuple(_thin_gate_source_line(row) for row in source_rows[:6]),
+        citable_source_lines=tuple(
+            _thin_gate_source_line(row)
+            for row in source_rows[:6]
+            if row.get("url") in evidence_source_urls
+        ),
+        noncitable_source_lines=tuple(
+            _thin_gate_source_line(row)
+            for row in source_rows[:6]
+            if row.get("url") not in evidence_source_urls
+        ),
+        evidence_count=evidence_count,
+        note_count=note_count,
+    )
+
+
+def _thin_gate_search_results(tools: ProbeResearchTools) -> list[dict[str, str]]:
+    if not tools.ledger.searches:
+        return []
+    latest = tools.ledger.searches[-1]
+    rows: list[dict[str, str]] = []
+    for index, result in enumerate(latest.results, 1):
+        rows.append({
+            "id": f"r{index}",
+            "title": str(result.title or ""),
+            "url": str(result.url or ""),
+            "snippet": str(result.snippet or ""),
+        })
+    return rows
+
+
+def _thin_gate_sources(tools: ProbeResearchTools) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for index, source in enumerate(tools.ledger.opened_sources, 1):
+        rows.append({
+            "id": f"s{index}",
+            "title": str(source.title or ""),
+            "url": str(source.final_url or source.requested_url or ""),
+            "kind": str(source.content_kind or "html"),
+            "pages": compact_pages(source.pages_read),
+        })
+    return rows
+
+
+def _thin_gate_evidence_source_urls(tools: ProbeResearchTools) -> set[str]:
+    urls: set[str] = set()
+    for item in tools.ledger.evidence_items:
+        raw = str(item.source_url or "").strip()
+        if not raw:
+            continue
+        urls.add(tools.ledger.canonical_opened_url(raw) or raw)
+    return urls
+
+
+def _state_from_codec(codec: ProbeJsonToolCodec) -> ThinGateState:
+    return ThinGateState(
+        allowed_tools=tuple(codec.allowed_tools),
+        result_urls=dict(codec.result_urls),
+        source_urls=dict(codec.source_urls),
+        result_lines=tuple(f"{rid}: {url}" for rid, url in sorted(codec.result_urls.items())),
+        source_lines=tuple(f"{sid}: {url}" for sid, url in sorted(codec.source_urls.items())),
+        citable_source_lines=(),
+        noncitable_source_lines=tuple(f"{sid}: {url}" for sid, url in sorted(codec.source_urls.items())),
+        evidence_count=0,
+        note_count=0,
+    )
+
+
+def _append_thin_gate_block(message: str, state: ThinGateState) -> str:
+    return str(message or "").rstrip() + "\n\n" + _thin_gate_block(state)
+
+
+def _thin_gate_block(state: ThinGateState) -> str:
+    lines = [
+        "Thin gate current allowed actions:",
+        f"- Allowed tools this turn: {', '.join(state.allowed_tools)}",
+        "- Reply with exactly one JSON object using only the allowed tools below.",
+        "- Prefer result_id/source_id over hand-copying URLs when an ID is available.",
+        f"- Saved evidence items: {state.evidence_count}; saved/updated notes: {state.note_count}.",
+        "- In done.answer, cite and list only evidence-backed sources. Opened-only sources are not citable yet.",
+        "",
+        "Allowed JSON shapes:",
+    ]
+    for tool in state.allowed_tools:
+        for example in _thin_gate_tool_examples(tool, state):
+            lines.append(f"- {example}")
+    if state.result_lines:
+        lines.extend(("", "Search results you may open:"))
+        lines.extend(f"- {line}" for line in state.result_lines)
+    if state.source_lines:
+        lines.extend(("", "Opened sources you may inspect or reopen:"))
+        lines.extend(f"- {line}" for line in state.source_lines)
+    if state.citable_source_lines:
+        lines.extend(("", "Evidence-backed sources allowed in final 来源:"))
+        lines.extend(f"- {line}" for line in state.citable_source_lines)
+    if state.noncitable_source_lines:
+        lines.extend(("", "Opened but not citable in final 来源 until knowledge_write saves evidence:"))
+        lines.extend(f"- {line}" for line in state.noncitable_source_lines)
+    lines.extend((
+        "",
+        "Do not call tools outside the allowed list. Do not output multiple JSON objects.",
+    ))
+    return "\n".join(lines)
+
+
+def _thin_gate_tool_examples(tool: str, state: ThinGateState) -> tuple[str, ...]:
+    if tool == "knowledge_search":
+        return ('{"tool":"knowledge_search","args":{"query":"..."}}',)
+    if tool == "knowledge_read":
+        return ('{"tool":"knowledge_read","args":{"id":"<note id>"}}',)
+    if tool == "web_search":
+        return ('{"tool":"web_search","args":{"query":"..."}}',)
+    if tool == "open_url":
+        examples: list[str] = []
+        if state.result_urls:
+            first_result = next(iter(state.result_urls))
+            examples.append(f'{{"tool":"open_url","args":{{"result_id":"{first_result}"}}}}')
+        if state.source_urls:
+            first_source = next(iter(state.source_urls))
+            examples.append(
+                f'{{"tool":"open_url","args":{{"source_id":"{first_source}","offset":0,"limit":6000,"pages":""}}}}'
+            )
+        if not examples:
+            examples.append('{"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":""}}')
+        return tuple(examples)
+    if tool == "source_search":
+        if state.source_urls:
+            first_source = next(iter(state.source_urls))
+            return (f'{{"tool":"source_search","args":{{"source_id":"{first_source}","query":"...","limit":6}}}}',)
+        return ('{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}',)
+    if tool == "knowledge_write":
+        return (
+            '{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","sources":["https://..."],"evidence":{"claim":"...","source_url":"https://...","excerpt":"exact short text from open_url","stance":"supports"}}}',
+        )
+    if tool == "knowledge_link":
+        return ('{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id>","kind":"supports"}}',)
+    if tool == "done":
+        return ('{"tool":"done","args":{"answer":"<the full report>"}}',)
+    return ()
+
+
+def _thin_gate_result_line(row: dict[str, str]) -> str:
+    return f"{row.get('id')}: {row.get('title')} - {row.get('url')} - {_clip(row.get('snippet'), 160)}"
+
+
+def _thin_gate_source_line(row: dict[str, str]) -> str:
+    meta = row.get("kind") or "html"
+    if row.get("pages"):
+        meta += f" pages {row.get('pages')}"
+    return f"{row.get('id')}: {row.get('title') or row.get('url')} - {row.get('url')} ({meta})"
+
+
+def _normalized_id(value: object) -> str:
+    return str(value or "").strip().lower()
+
 
 _DEEP_CORE_APPENDIX = """Deep Research Core experimental guidance:
 - Follow a compact coverage plan before done: local memory, overview, primary/source-of-record, data or method, counter-evidence or limitations, freshness if time-sensitive, and application implications if the user may later build from this.
@@ -779,13 +1095,19 @@ def run_case(
                 "reply_chars": sum(len(item) for item in runner.received_replies),
                 "first_prompt_chars": len(runner.sent_messages[0]) if runner.sent_messages else 0,
                 "done_attempts": _done_attempt_count(runner.received_replies),
-                "protocol_repair_prompts": _sent_prompt_count(
+                "protocol_repair_prompts": _protocol_repair_prompt_count(runner.sent_messages),
+                "thin_gate_disallowed_tool_repairs": _sent_prompt_count(
                     runner.sent_messages,
-                    "Your last reply was not a valid tool call",
+                    "not allowed by the current thin_gate state",
                 ),
                 "quality_repair_prompts": _sent_prompt_count(
                     runner.sent_messages,
                     "research quality review",
+                ),
+                "id_rewrites": list(
+                    runner.codec.id_rewrites
+                    if isinstance(runner.codec, ProbeJsonToolCodec)
+                    else []
                 ),
                 "raw_reply_previews": [
                     _clip(reply, MAX_RAW_REPLY_PREVIEW_CHARS)
@@ -802,6 +1124,9 @@ def run_case(
                 "summary_preview": _clip(result.summary, MAX_REPLY_CHARS),
                 "tool_calls": _tool_calls(events),
             }
+            row["id_rewrite_count"] = len(row["id_rewrites"])
+            row["used_result_id"] = any(item.get("kind") == "result_id" for item in row["id_rewrites"])
+            row["used_source_id"] = any(item.get("kind") == "source_id" for item in row["id_rewrites"])
             row["last_done_quality_review"] = _last_done_quality_review(runner)
             row.update(_score(case, row, result))
             return row
@@ -1149,9 +1474,13 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "max_turns_failure_rate": _rate(arm_rows, "max_turns_failure"),
             "unsupported_citation_count": sum(int(row.get("unsupported_citation_count") or 0) for row in arm_rows),
             "avg_turns_used": _avg(arm_rows, "turns_used"),
+            "avg_protocol_repair_prompts": _avg(arm_rows, "protocol_repair_prompts"),
+            "avg_thin_gate_disallowed_tool_repairs": _avg(arm_rows, "thin_gate_disallowed_tool_repairs"),
+            "used_result_id_rate": _rate(arm_rows, "used_result_id"),
+            "used_source_id_rate": _rate(arm_rows, "used_source_id"),
         }
     baseline = summary["arms"].get("baseline", {})
-    for arm in ("source_search", "deep_core"):
+    for arm in ("source_search", "thin_gate", "deep_core"):
         current = summary["arms"].get(arm, {})
         if not baseline.get("count") or not current.get("count"):
             continue
@@ -1179,6 +1508,31 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "avg_turns_used": round(
                 float(current.get("avg_turns_used") or 0)
                 - float(baseline.get("avg_turns_used") or 0),
+                3,
+            ),
+        }
+    source_search = summary["arms"].get("source_search", {})
+    thin_gate = summary["arms"].get("thin_gate", {})
+    if source_search.get("count") and thin_gate.get("count"):
+        summary["thin_gate_delta_vs_source_search"] = {
+            "avg_quality_score": round(
+                float(thin_gate.get("avg_quality_score") or 0)
+                - float(source_search.get("avg_quality_score") or 0),
+                3,
+            ),
+            "avg_protocol_repair_prompts": round(
+                float(thin_gate.get("avg_protocol_repair_prompts") or 0)
+                - float(source_search.get("avg_protocol_repair_prompts") or 0),
+                3,
+            ),
+            "avg_turns_used": round(
+                float(thin_gate.get("avg_turns_used") or 0)
+                - float(source_search.get("avg_turns_used") or 0),
+                3,
+            ),
+            "final_done_rate": round(
+                float(thin_gate.get("final_done_rate") or 0)
+                - float(source_search.get("final_done_rate") or 0),
                 3,
             ),
         }
@@ -1259,6 +1613,18 @@ def _sent_prompt_count(messages: list[str], needle: str) -> int:
     if not folded:
         return 0
     return sum(1 for message in messages if folded in str(message or "").lower())
+
+
+def _protocol_repair_prompt_count(messages: list[str]) -> int:
+    return sum(
+        1
+        for message in messages
+        if (
+            "your last reply was not a valid tool call" in str(message or "").lower()
+            or "your last reply did not satisfy codey's research tool contract"
+            in str(message or "").lower()
+        )
+    )
 
 
 def _rate(rows: list[dict[str, Any]], key: str) -> float:
@@ -1463,12 +1829,34 @@ def self_test() -> int:
     case = next(item for item in CASES if item.name == "pdf-target-page")
     baseline_codec = ProbeJsonToolCodec("baseline")
     source_codec = ProbeJsonToolCodec("source_search")
+    thin_codec = ProbeJsonToolCodec("thin_gate")
     deep_codec = ProbeJsonToolCodec("deep_core")
     assert "source_search" in JsonToolCodec().system_prompt()
     assert "source_search" not in JsonToolCodec(include_source_search=False).system_prompt()
     assert "Probe fixture discipline" in baseline_codec.system_prompt()
     assert "source_search" not in baseline_codec.system_prompt()
     assert "source_search" in source_codec.system_prompt()
+    assert "Allowed tools this turn" not in thin_codec.system_prompt()
+    thin_state = ThinGateState(
+        allowed_tools=("knowledge_search", "web_search", "open_url", "source_search"),
+        result_urls={"r1": OFFICIAL_LONG_URL},
+        source_urls={"s1": OFFICIAL_LONG_URL},
+        result_lines=(f"r1: Alpha - {OFFICIAL_LONG_URL}",),
+        source_lines=(f"s1: Alpha - {OFFICIAL_LONG_URL}",),
+        citable_source_lines=(),
+        noncitable_source_lines=(f"s1: Alpha - {OFFICIAL_LONG_URL}",),
+        evidence_count=0,
+        note_count=0,
+    )
+    thin_codec.configure_thin_gate(thin_state)
+    opened_by_result_id = thin_codec.parse('{"tool":"open_url","args":{"result_id":"r1"}}')
+    assert opened_by_result_id.calls[0].args["url"] == OFFICIAL_LONG_URL
+    source_search_by_source_id = thin_codec.parse(
+        '{"tool":"source_search","args":{"source_id":"s1","query":"72-hour"}}'
+    )
+    assert source_search_by_source_id.calls[0].args["url"] == OFFICIAL_LONG_URL
+    disallowed_done = thin_codec.parse('{"tool":"done","args":{"answer":"premature"}}')
+    assert disallowed_done.protocol_error_kind == "disallowed_tool"
     assert "Deep Research Core experimental guidance" not in source_codec.system_prompt()
     assert "Deep Research Core experimental guidance" in deep_codec.system_prompt()
     plan = source_codec.parse(

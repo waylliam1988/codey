@@ -287,6 +287,15 @@ def _find_free_cdp_port(preferred: int = DEFAULT_PORT) -> int:
     raise RuntimeError("no free CDP port available")
 
 
+def _find_free_isolated_cdp_port(preferred: int = DEFAULT_PORT) -> int:
+    near_preferred = range(preferred, min(preferred + 9, 65536))
+    ports = tuple(dict.fromkeys((preferred, *near_preferred, *CDP_PORT_CANDIDATES)))
+    for cdp_port in ports:
+        if not _port_open(cdp_port):
+            return cdp_port
+    raise RuntimeError("no free isolated CDP port available")
+
+
 def _ensure_cdp_port(
     **kwargs,
 ) -> int:
@@ -309,7 +318,7 @@ def _ensure_cdp_endpoint(
     if isolated:
         if not open_if_missing:
             raise RuntimeError("isolated provider sessions require open_if_missing=True")
-        cdp_port = _find_free_cdp_port(preferred)
+        cdp_port = _find_free_isolated_cdp_port(preferred)
         process = _launch_browser(cdp_port, profile, start_url, **launch_kwargs)
         try:
             _wait_port(cdp_port)

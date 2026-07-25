@@ -1168,7 +1168,7 @@
   </div>
 </section>
 
-<script src="/assets/research_graph.js?v=0.2.18"></script>
+<script src="/assets/research_graph.js?v=0.2.19"></script>
 <script>
 // ============================ state & storage ============================
 const $ = (id) => document.getElementById(id);
@@ -2006,7 +2006,13 @@ function appendMessageNode(chat, m) {
   } else if (m.type === 'turn') {
     const div = document.createElement('div');
     div.className = 'turn-divider';
-    div.innerHTML = `<span>Turn ${m.n}</span><span class="line"></span>`;
+    const label = document.createElement('span');
+    const note = (m.note || '').toString().trim();
+    label.textContent = `Turn ${m.n}${note ? ` ${note}` : ''}`;
+    const line = document.createElement('span');
+    line.className = 'line';
+    div.appendChild(label);
+    div.appendChild(line);
     chat.appendChild(div);
   } else if (m.type === 'asst') {
     const div = document.createElement('div');
@@ -2466,7 +2472,12 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'turn') {
-    addToSession(sid, { type: 'turn', n: data.turn || 0, runId });
+    addToSession(sid, {
+      type: 'turn',
+      n: data.turn || 0,
+      note: (data.note || '').toString(),
+      runId,
+    });
     return;
   }
   if (data.type === 'tool_started') {

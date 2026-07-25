@@ -17,7 +17,8 @@ from codey.events import RunEvent, run_event_payload
 from codey.knowledge import KnowledgeChanges, KnowledgeStore
 from codey.models import ToolCall, ToolResult
 from codey.research.advisors import EvidencePack, run_research_advisors
-from codey.research.browser_search import BrowserSearchProvider
+from codey.research import browser_search
+from codey.research.browser_search import BrowserSearchProvider, RESEARCH_CDP_PORT, RESEARCH_PROFILE
 from codey.research.ledger import ResearchLedger
 from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
 from codey.research.provenance import provenance_problem
@@ -601,6 +602,49 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertEqual(result, sentinel)
         search_call.assert_called_once_with(provider._search_on_browser_thread, "alpha", 3)
+
+    def test_browser_search_defaults_to_isolated_research_browser(self) -> None:
+        session = SimpleNamespace(page=mock.Mock(), browser=mock.Mock())
+        provider = BrowserSearchProvider()
+
+        with mock.patch("codey.research.browser_search.open_chat_page", return_value=session) as opened:
+            self.assertIs(provider._ensure_session_on_browser_thread(reuse_url_contains="bing.com"), session)
+
+        opened.assert_called_once_with(
+            "about:blank",
+            "",
+            port=RESEARCH_CDP_PORT,
+            profile=RESEARCH_PROFILE,
+            open_if_missing=True,
+            bring_to_front=False,
+            isolated=True,
+            fresh_tab=False,
+            browser_path=None,
+        )
+
+    def test_browser_search_shared_mode_preserves_old_reuse_contract(self) -> None:
+        session = SimpleNamespace(page=mock.Mock(), browser=mock.Mock())
+        provider = BrowserSearchProvider(
+            profile_dir=Path("shared-profile"),
+            cdp_port=9333,
+            isolated=False,
+            bring_to_front=True,
+        )
+
+        with mock.patch("codey.research.browser_search.open_chat_page", return_value=session) as opened:
+            self.assertIs(provider._ensure_session_on_browser_thread(reuse_url_contains="bing.com"), session)
+
+        opened.assert_called_once_with(
+            "about:blank",
+            "bing.com",
+            port=9333,
+            profile=Path("shared-profile"),
+            open_if_missing=True,
+            bring_to_front=False,
+            isolated=False,
+            fresh_tab=False,
+            browser_path=None,
+        )
 
     def test_browser_worker_call_observes_task_cancellation_while_waiting(self) -> None:
         event = threading.Event()
@@ -1657,7 +1701,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store = KnowledgeStore(Path(td))
             runner = ResearchRunner(provider, FakeSearch(), store, max_turns=6)
 
-            list(runner.run("Research helium"))
+            events = list(runner.run("Research helium"))
             result = runner.result
             store.close()
 
@@ -1667,6 +1711,13 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Your last done.answer did not pass", provider.sent[3])
         self.assertIn("Supported conclusions need [n]", provider.sent[3])
         self.assertNotIn("[no tool output]", provider.sent[3])
+        self.assertTrue(
+            any(
+                event.kind == "info"
+                and "Report quality failed" in event.message
+                for event in events
+            )
+        )
 
     def test_research_advisors_get_only_the_evidence_pack(self) -> None:
         advisor = FakeAdvisorProvider("gap found")
@@ -1995,7 +2046,50 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIsNot(fetch_page, search_page)
         self.assertIn(fetch_page, context.pages)
-        self.assertTrue(fetch_page.brought_to_front)
+        self.assertFalse(fetch_page.brought_to_front)
+
+        front_context = FakeContext()
+        front_search_page = FakePage(front_context)
+        front_context.pages.append(front_search_page)
+        front_session = type("Session", (), {
+            "page": front_search_page,
+            "browser": type("Browser", (), {"contexts": [front_context]})(),
+        })()
+        front_provider = BrowserSearchProvider(bring_to_front=True)
+        front_provider._session = front_session
+        front_provider._search_page = front_search_page
+
+        front_fetch_page = front_provider._ensure_fetch_page_on_browser_thread("https://example.com/article")
+
+        self.assertTrue(front_fetch_page.brought_to_front)
+
+    def test_browser_search_retries_content_while_page_is_still_navigating(self) -> None:
+        class FakePage:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.waits = 0
+
+            def content(self) -> str:
+                self.calls += 1
+                if self.calls == 1:
+                    raise RuntimeError(
+                        "Page.content: Unable to retrieve content because the page is navigating and changing the content."
+                    )
+                return "<html><title>Done</title><body>ready</body></html>"
+
+            def wait_for_load_state(self, _state: str, timeout: int) -> None:
+                self.waits += 1
+                self.last_timeout = timeout
+
+        page = FakePage()
+
+        with mock.patch.object(browser_search.cancellation, "wait") as sleep:
+            content = browser_search._page_content_after_navigation(page)
+
+        self.assertIn("ready", content)
+        self.assertEqual(page.calls, 2)
+        self.assertEqual(page.waits, 1)
+        sleep.assert_called_once()
 
     def test_browser_search_fetch_streams_known_pdf_without_opening_browser_page(self) -> None:
         class StreamingResponse:

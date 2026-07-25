@@ -217,6 +217,7 @@ class ResearchRunner:
                     search_result_urls=self.tools.search_result_urls,
                 )
                 if not review.ok:
+                    yield RunEvent.info(review.message)
                     message = _quality_review_followup(
                         self.codec,
                         _tool_results(results),

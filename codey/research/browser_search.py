@@ -7,19 +7,25 @@ import binascii
 import json
 from pathlib import Path
 import threading
+import time
 from typing import Any, Callable, TypeVar
 import urllib.error
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 import urllib.request
 
 from codey import cancellation, browser_worker
-from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE, open_chat_page
+from codey.browser import DEFAULT_PORT, open_chat_page
+from codey.local_store import DEFAULT_STATE_HOME
 from codey.research.extract import extract_text, extract_title
 from codey.research.pdf_extract import PDF_MAX_BYTES
 from codey.research.url_policy import check_fetch_url
 
 _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
+RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"
+RESEARCH_CDP_PORT = DEFAULT_PORT + 40
 _NAV_TIMEOUT_MS = 20_000
+_CONTENT_RETRY_TIMEOUT = 3.0
+_CONTENT_RETRY_TICK = 0.2
 _MAX_PAGE_CHARS = 200_000
 _PDF_DOWNLOAD_TIMEOUT = 20
 _PDF_CHUNK_BYTES = 64 * 1024
@@ -58,9 +64,11 @@ class BrowserSearchProvider:
         *,
         engine: str | None = None,
         profile_dir: Path | None = None,
-        cdp_port: int = DEFAULT_PORT,
+        cdp_port: int = RESEARCH_CDP_PORT,
         browser_path: str | None = None,
         launch: bool = True,
+        isolated: bool = True,
+        bring_to_front: bool = False,
     ) -> None:
         profiles = load_profiles()
         self.engine = engine or profiles.get("default_engine", "bing")
@@ -68,10 +76,12 @@ class BrowserSearchProvider:
         if not self._profile:
             raise ValueError(f"unknown search engine: {self.engine}")
         self._reuse_url_contains = _search_host(self._profile)
-        self.profile_dir = Path(profile_dir) if profile_dir else DEFAULT_PROFILE
+        self.profile_dir = Path(profile_dir) if profile_dir else RESEARCH_PROFILE
         self.cdp_port = int(cdp_port)
         self.browser_path = browser_path
         self.launch = launch
+        self.isolated = bool(isolated)
+        self.bring_to_front = bool(bring_to_front)
         self._session = None
         self._search_page = None
         self._fetch_page = None
@@ -79,14 +89,15 @@ class BrowserSearchProvider:
     def _ensure_session_on_browser_thread(self, *, reuse_url_contains: str = ""):
         if self._session is not None:
             return self._session
+        target_reuse = "" if self.isolated else reuse_url_contains
         self._session = open_chat_page(
-            "about:blank" if reuse_url_contains else "about:blank",
-            reuse_url_contains or "",
+            "about:blank",
+            target_reuse or "",
             port=self.cdp_port,
             profile=self.profile_dir,
             open_if_missing=self.launch,
             bring_to_front=False,
-            isolated=False,
+            isolated=self.isolated,
             fresh_tab=False,
             browser_path=self.browser_path,
         )
@@ -106,7 +117,8 @@ class BrowserSearchProvider:
         session = self._ensure_session_on_browser_thread(reuse_url_contains=self._reuse_url_contains)
         if self._page_closed_on_browser_thread(self._search_page):
             self._search_page = session.page
-            self._bring_to_front_on_browser_thread(self._search_page)
+            if self.bring_to_front:
+                self._bring_to_front_on_browser_thread(self._search_page)
         return self._prepare_page_on_browser_thread(self._search_page)
 
     def _ensure_fetch_page_on_browser_thread(self, url: str):
@@ -114,7 +126,8 @@ class BrowserSearchProvider:
         if self._page_closed_on_browser_thread(self._fetch_page):
             context = self._page_context_on_browser_thread(self._search_page or session.page)
             self._fetch_page = context.new_page()
-            self._bring_to_front_on_browser_thread(self._fetch_page)
+            if self.bring_to_front:
+                self._bring_to_front_on_browser_thread(self._fetch_page)
         return self._prepare_page_on_browser_thread(self._fetch_page)
 
     def _page_context_on_browser_thread(self, page):
@@ -233,7 +246,7 @@ class BrowserSearchProvider:
                 return _pdf_download_sentinel(final_url, mime_type=ctype)
             if ctype and not any(t in ctype for t in ("html", "text", "xml", "json")):
                 return {"url": final_url, "title": "", "text": f"ERROR: unsupported content type: {ctype}", "truncated": False}
-        html = page.content()
+        html = _page_content_after_navigation(page)
         text = extract_text(html)
         truncated = len(text) > _MAX_PAGE_CHARS
         if truncated:
@@ -266,6 +279,34 @@ class BrowserSearchProvider:
             setattr(page, "_codey_research_guarded", False)
         except Exception:
             pass
+
+
+def _page_content_after_navigation(page) -> str:
+    stop_at = time.monotonic() + _CONTENT_RETRY_TIMEOUT
+    last_error: Exception | None = None
+    while True:
+        cancellation.check()
+        try:
+            return str(page.content() or "")
+        except Exception as exc:
+            last_error = exc
+            if not _content_retryable(exc) or time.monotonic() >= stop_at:
+                raise
+            try:
+                page.wait_for_load_state("domcontentloaded", timeout=500)
+            except Exception:
+                pass
+            cancellation.wait(_CONTENT_RETRY_TICK)
+    raise RuntimeError("unreachable") from last_error
+
+
+def _content_retryable(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return (
+        "page is navigating" in text
+        or "navigating and changing the content" in text
+        or "execution context was destroyed" in text
+    )
 
 
 def _search_host(profile: dict) -> str:

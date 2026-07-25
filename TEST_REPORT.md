@@ -1,5 +1,84 @@
 # Codey Test Report
 
+## 0.2.19 Research Browser Isolation and Thin-Gate Probe
+
+Codey 0.2.19 fixes the deeper live Research stall seen with web providers:
+Codey's browser-backed search/fetch pages were sharing the same Edge/CDP browser
+as the provider chat tabs. Local AI did not stall because it did not depend on
+that shared browser context. This release isolates Research browsing and records
+the thin-gate A/B evidence for the next Research controller step.
+
+Production changes:
+
+- `BrowserSearchProvider` now defaults to an isolated Research browser profile
+  at `~/.codey/research-edge-profile` and a separate preferred CDP port
+  (`DEFAULT_PORT + 40`), instead of sharing `DEFAULT_PROFILE` / 9222 with
+  provider chat tabs.
+- Isolated CDP sessions use `_find_free_isolated_cdp_port()`, which ignores
+  stale active/saved provider ports and cannot accidentally reuse the provider
+  browser.
+- Research search/fetch pages no longer call `bring_to_front()` by default.
+- HTML fetch now retries short `Page.content()` races caused by pages that keep
+  navigating or replacing content after `domcontentloaded`.
+- Research UI turn dividers preserve `RunEvent.note`, so `done` attempts show
+  as `Turn N (done)` instead of blank turns when a quality gate or private
+  evidence review sends the model back for another action.
+- `ResearchRunner` emits the report-quality failure message before asking the
+  model to revise a failed `done`.
+
+Manual A/B / live observations:
+
+- The manual Deep Research A/B harness gained a `thin_gate` arm with
+  state-aware allowed tools, stable `result_id` / `source_id` rewrites,
+  evidence-backed citable-source separation, and atomic `send_start` traces.
+- Live MiMo `long-official-doc/thin_gate` after the citable-source prompt fix:
+  `done=True`, `quality_score=11`, `turns=8`,
+  `protocol_repair_prompts=0`, and `id_rewrite_count=4`.
+- The thin-gate result is evidence for the next narrow controller direction;
+  production Research still keeps the existing open tool loop in 0.2.19.
+- Live user smoke after the browser isolation fix confirmed the web-provider
+  Research stall was resolved. The old symptom was that DeepSeek/StepFun/MiMo
+  appeared to keep spinning after a Codey `web_search/open_url` result and only
+  showed JSON after Codey was stopped.
+
+Validation focus:
+
+- Default `BrowserSearchProvider()` opens an isolated Research browser instead
+  of reusing a provider/search tab in the shared CDP browser.
+- Explicit `isolated=False` still preserves the old shared-browser contract for
+  tests or diagnostics.
+- Isolated free-port selection ignores stale remembered provider ports.
+- `Page.content()` transient navigation errors are retried and then succeed.
+- Failed final-report quality review now emits an info event.
+- Frontend turn handling keeps turn notes such as `(done)`.
+- Manual thin-gate prompt state separates opened-only sources from
+  evidence-backed citable sources.
+
+Validation:
+
+```text
+python -m pytest tests\test_research.py tests\test_browser.py tests\test_ui.py -q
+# 166 passed, 1 pytest cache warning
+
+python -m pytest tests\test_deep_research_core_ab.py tests\test_research_protocol_contract.py -q
+# 33 passed, 1 pytest cache warning
+
+python -B tests\manual\deep_research_core_ab.py --self-test
+# self-test passed
+
+python -m pytest -q
+# 1311 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\browser.py codey\research\browser_search.py codey\research\runner.py tests\test_browser.py tests\test_research.py tests\test_ui.py tests\manual\deep_research_core_ab.py tests\test_deep_research_core_ab.py
+# passed
+
+git diff --check
+# passed with Git CRLF notice for tests/test_browser.py
+```
+
 ## 0.2.18 Research Tool Contract and Typed Repairs
 
 Codey 0.2.18 makes the Research JSON fallback behave more like a local tool
