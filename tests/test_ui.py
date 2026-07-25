@@ -5,9 +5,20 @@ from pathlib import Path
 
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "codey" / "web"
+ASSET_DIR = WEB_DIR / "assets"
 HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-GRAPH_JS = (WEB_DIR / "assets" / "research_graph.js").read_text(encoding="utf-8")
-UI_SOURCE = HTML + "\n" + GRAPH_JS
+GRAPH_JS = (ASSET_DIR / "research_graph.js").read_text(encoding="utf-8")
+RESEARCH_DRAWER_JS = (ASSET_DIR / "research_drawer.js").read_text(encoding="utf-8")
+CHANGES_DRAWER_JS = (ASSET_DIR / "changes_drawer.js").read_text(encoding="utf-8")
+RENDER_JS = (ASSET_DIR / "render.js").read_text(encoding="utf-8")
+PROVIDER_UI_JS = (ASSET_DIR / "provider_ui.js").read_text(encoding="utf-8")
+TOKENS_CSS = (ASSET_DIR / "tokens.css").read_text(encoding="utf-8")
+APP_CSS = (ASSET_DIR / "app.css").read_text(encoding="utf-8")
+STYLE_SOURCE = TOKENS_CSS + "\n" + APP_CSS
+JS_ASSETS = "\n".join(
+    path.read_text(encoding="utf-8") for path in sorted(ASSET_DIR.glob("*.js"))
+)
+UI_SOURCE = HTML + "\n" + STYLE_SOURCE + "\n" + JS_ASSETS
 
 
 class ProviderSelectorUiTests(unittest.TestCase):
@@ -19,7 +30,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("local-clear-api-key", HTML)
         self.assertNotIn("Clear saved key", HTML)
         self.assertNotIn("clear_api_key", HTML)
-        self.assertIn("fetch('/api/local_provider')", HTML)
+        self.assertIn("fetch('/api/local_provider')", PROVIDER_UI_JS)
         self.assertIn('data-provider="deepseek"', HTML)
         self.assertIn('data-provider="mimo"', HTML)
         self.assertIn('data-provider="qwen"', HTML)
@@ -29,14 +40,17 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("glm: 'GLM'", HTML)
         self.assertIn("local: 'Local'", HTML)
         self.assertIn('id="provider-dot"', HTML)
-        self.assertIn("--ok-dot:", HTML)
-        self.assertIn(".dot.ok", HTML)
-        self.assertIn("let providerStatus", HTML)
-        self.assertIn("function refreshProviderStatus()", HTML)
-        self.assertIn("fetch('/api/providers')", HTML)
-        self.assertIn("providerStatus[id] ? 'ok' : ''", HTML)
-        self.assertIn(".provider-item.active .check", HTML)
-        self.assertNotIn("providerAvailability(_id) { return 'ok'; }", HTML)
+        self.assertIn("--ok-dot:", STYLE_SOURCE)
+        self.assertIn(".dot.ok", STYLE_SOURCE)
+        self.assertIn("let providerStatus", PROVIDER_UI_JS)
+        self.assertIn("function refreshProviderStatus()", PROVIDER_UI_JS)
+        self.assertIn("fetch('/api/providers')", PROVIDER_UI_JS)
+        self.assertIn("providerStatus[id] ? 'ok' : ''", PROVIDER_UI_JS)
+        self.assertIn(".provider-item.active .check", STYLE_SOURCE)
+        self.assertNotIn("providerAvailability(_id) { return 'ok'; }", UI_SOURCE)
+        self.assertIn('<script src="/assets/provider_ui.js?v=__CODEY_VERSION__"></script>', HTML)
+        self.assertIn("window.CodeyProviderUI.init({", HTML)
+        self.assertIn("window.CodeyProviderUI = {", PROVIDER_UI_JS)
 
     def test_provider_selector_orders_deepseek_mimo_stepfun_qwen_glm_local(self) -> None:
         deepseek = HTML.index('data-provider="deepseek"')
@@ -132,27 +146,27 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("riskDetail: data.risk_detail", HTML)
 
     def test_provider_status_is_quiet_and_refreshes_on_menu_open(self) -> None:
-        self.assertIn("if (menu.classList.contains('open')) refreshProviderStatus();", HTML)
+        self.assertIn("if (menu.classList.contains('open')) refreshProviderStatus();", PROVIDER_UI_JS)
         self.assertIn("if (data.type === 'providers')", HTML)
         self.assertIn("applyProviderStatus(data.providers)", HTML)
         self.assertIn("data.provider_failure.action === 'connect'", HTML)
-        self.assertIn("providerStatus[data.provider] = false", HTML)
+        self.assertIn("applyProviderStatus([{ id: data.provider, available: false }])", HTML)
         self.assertIn("addSendError(sid, terminalKey, runId)", HTML)
-        self.assertNotIn("Could not connect model", HTML)
-        self.assertNotIn("Open the model page", HTML)
-        self.assertNotIn("PlaywrightContextManager", HTML)
+        self.assertNotIn("Could not connect model", UI_SOURCE)
+        self.assertNotIn("Open the model page", UI_SOURCE)
+        self.assertNotIn("PlaywrightContextManager", UI_SOURCE)
 
     def test_deleting_last_session_preserves_selected_provider(self) -> None:
         self.assertIn("const fallbackProvider = currentProviderId()", HTML)
         self.assertIn("defaultSession(null, fallbackProvider)", HTML)
 
     def test_topbar_shows_running_spinner(self) -> None:
-        self.assertIn(".spinner", HTML)
+        self.assertIn(".spinner", STYLE_SOURCE)
         self.assertIn('id="status"', HTML)
         self.assertIn("setStatus('Running', 'run')", HTML)
 
     def test_status_rows_use_continue_and_retry_links(self) -> None:
-        self.assertIn(".link-btn", HTML)
+        self.assertIn(".link-btn", STYLE_SOURCE)
         self.assertIn("Continue", HTML)
         self.assertIn("Retry", HTML)
         self.assertIn("Resume", HTML)
@@ -200,35 +214,38 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("s.researchRuns.slice(-32).map(normalizeStoredResearchRun)", HTML)
         self.assertNotIn("...run, restoreable: false", HTML)
         self.assertIn("function normalizeResearchRunArtifact(runId, research, receipt)", HTML)
-        self.assertIn("research-tabs", HTML)
-        self.assertIn("research-tab", HTML)
-        self.assertIn("Evidence", HTML)
-        self.assertIn("Sources", HTML)
-        self.assertIn("Graph", HTML)
-        self.assertIn("Notes", HTML)
+        self.assertIn("research-tabs", RESEARCH_DRAWER_JS)
+        self.assertIn("research-tab", RESEARCH_DRAWER_JS)
+        self.assertIn("Evidence", RESEARCH_DRAWER_JS)
+        self.assertIn("Sources", RESEARCH_DRAWER_JS)
+        self.assertIn("Graph", RESEARCH_DRAWER_JS)
+        self.assertIn("Notes", RESEARCH_DRAWER_JS)
         self.assertIn("citationMap", HTML)
         self.assertIn("evidenceItems", HTML)
         self.assertIn("openedSources", HTML)
         self.assertIn("qualityWarnings", HTML)
-        self.assertIn("renderResearchEvidence", HTML)
-        self.assertIn("renderResearchSources", HTML)
-        self.assertIn("const locator = item.locator || (item.page ? `p.${item.page}` : '');", HTML)
-        self.assertIn("formatPdfSourceMeta", HTML)
-        self.assertIn("compactPages", HTML)
-        self.assertIn("PDF", HTML)
-        self.assertIn("pages ${pages} / ${pageCount}", HTML)
-        self.assertIn("panel.appendChild(researchSourceCard({\n      ...source,", HTML)
-        self.assertNotIn("['coverage', 'Coverage']", HTML)
-        self.assertIn("Search coverage", HTML)
-        self.assertIn("appendResearchCoverage", HTML)
-        self.assertIn("['graph', 'Graph']", HTML)
-        self.assertIn("renderResearchGraph(panel, run, sessionId)", HTML)
-        self.assertIn('<script src="/assets/research_graph.js?v=0.2.20"></script>', HTML)
-        self.assertIn("if (window.CodeyResearchGraph) window.CodeyResearchGraph.dispose();", HTML)
-        self.assertIn("window.CodeyResearchGraph.render(panel, {", HTML)
-        self.assertIn("focusIds: coreNoteIdsForResearchRun(run)", HTML)
-        self.assertIn("onOpenNote(noteId)", HTML)
-        self.assertIn("onOpenSource(url)", HTML)
+        self.assertIn("renderResearchEvidence", RESEARCH_DRAWER_JS)
+        self.assertIn("renderResearchSources", RESEARCH_DRAWER_JS)
+        self.assertIn("const locator = item.locator || (item.page ? `p.${item.page}` : '');", RESEARCH_DRAWER_JS)
+        self.assertIn("formatPdfSourceMeta", RESEARCH_DRAWER_JS)
+        self.assertIn("compactPages", RESEARCH_DRAWER_JS)
+        self.assertIn("PDF", RESEARCH_DRAWER_JS)
+        self.assertIn("pages ${pages} / ${pageCount}", RESEARCH_DRAWER_JS)
+        self.assertIn("panel.appendChild(researchSourceCard({\n      ...source,", RESEARCH_DRAWER_JS)
+        self.assertNotIn("['coverage', 'Coverage']", UI_SOURCE)
+        self.assertIn("Search coverage", RESEARCH_DRAWER_JS)
+        self.assertIn("appendResearchCoverage", RESEARCH_DRAWER_JS)
+        self.assertIn("['graph', 'Graph']", RESEARCH_DRAWER_JS)
+        self.assertIn("renderResearchGraph(panel, run, sessionId)", RESEARCH_DRAWER_JS)
+        self.assertIn('<script src="/assets/research_graph.js?v=__CODEY_VERSION__"></script>', HTML)
+        self.assertIn('<script src="/assets/research_drawer.js?v=__CODEY_VERSION__"></script>', HTML)
+        self.assertIn("window.CodeyResearchDrawer.init({", HTML)
+        self.assertIn("window.CodeyResearchDrawer = {", RESEARCH_DRAWER_JS)
+        self.assertIn("if (window.CodeyResearchGraph) window.CodeyResearchGraph.dispose();", RESEARCH_DRAWER_JS)
+        self.assertIn("window.CodeyResearchGraph.render(panel, {", RESEARCH_DRAWER_JS)
+        self.assertIn("focusIds: coreNoteIdsForResearchRun(run)", RESEARCH_DRAWER_JS)
+        self.assertIn("onOpenNote(noteId)", RESEARCH_DRAWER_JS)
+        self.assertIn("onOpenSource(url)", RESEARCH_DRAWER_JS)
         self.assertIn("window.CodeyResearchGraph = { render, dispose };", GRAPH_JS)
         self.assertIn("async function loadGraph(options, canvas, status, detail)", GRAPH_JS)
         self.assertIn("function draw(canvas, graph, detail, options)", GRAPH_JS)
@@ -243,7 +260,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("researchGraphLoadSeq", UI_SOURCE)
         self.assertNotIn("function loadResearchGraph", UI_SOURCE)
         self.assertNotIn("function drawResearchGraph", UI_SOURCE)
-        self.assertIn(".research-graph-status.error { color: var(--err-text); }", HTML)
+        self.assertIn(".research-graph-status.error { color: var(--err-text); }", STYLE_SOURCE)
         self.assertIn("function setStatus(status, text, isError = false)", GRAPH_JS)
         self.assertIn("setStatus(status, 'Loading graph...');", GRAPH_JS)
         self.assertIn("setStatus(status, 'No graph yet');", GRAPH_JS)
@@ -267,15 +284,15 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("if (hit && hit.url) openResearchGraphNode(hit, run, sessionId);", UI_SOURCE)
         self.assertNotIn("node.focus ? colors.ok", GRAPH_JS)
         self.assertNotIn("graph: data.graph", UI_SOURCE)
-        self.assertIn("loadResearchRunNotes(run, sessionId)", HTML)
-        self.assertIn("Note no longer exists", HTML)
-        self.assertIn("__state: 'missing'", HTML)
+        self.assertIn("loadResearchRunNotes(run, sessionId)", RESEARCH_DRAWER_JS)
+        self.assertIn("Note no longer exists", RESEARCH_DRAWER_JS)
+        self.assertIn("__state: 'missing'", RESEARCH_DRAWER_JS)
         self.assertIn("invalidateResearchNoteCache(noteIdsForResearchRun(run))", HTML)
         self.assertIn("Use in Project", HTML)
         self.assertNotIn("Use vault", HTML)
         self.assertNotIn("Knowledge mode", HTML)
 
-        ctx_css = HTML[HTML.index(".ctx-token {"):HTML.index(".composer-context .ctx-sep")]
+        ctx_css = APP_CSS[APP_CSS.index(".ctx-token {"):APP_CSS.index(".composer-context .ctx-sep")]
         self.assertIn("border: 0;", ctx_css)
         self.assertIn(".ctx-token:hover:not(:disabled) { color: var(--text); }", ctx_css)
         self.assertNotIn("font-weight", ctx_css)
@@ -301,11 +318,11 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("function handleLog", HTML)
 
     def test_tool_start_pending_row_is_replaced_by_final_tool(self) -> None:
-        self.assertIn(".tool-line.pending .tl-result", HTML)
-        self.assertIn("if (m.pending) row.classList.add('pending');", HTML)
+        self.assertIn(".tool-line.pending .tl-result", STYLE_SOURCE)
+        self.assertIn("if (m.pending) row.classList.add('pending');", RENDER_JS)
         self.assertIn(
             "result.textContent = m.pending ? (m.activity || m.result || 'Working') : (m.result || '');",
-            HTML,
+            RENDER_JS,
         )
 
         pending_render_start = HTML.index("} else if (m.type === 'tool_pending') {")
@@ -411,16 +428,19 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_changes_drawer_supports_snapshot_mode_and_restore(self) -> None:
         self.assertIn('id="changes-restore"', HTML)
-        self.assertIn("Reading changes", HTML)
-        self.assertIn("data.mode === 'git' ? 'Git' : 'Snapshot'", HTML)
+        self.assertIn("Reading changes", CHANGES_DRAWER_JS)
+        self.assertIn("data.mode === 'git' ? 'Git' : 'Snapshot'", CHANGES_DRAWER_JS)
         self.assertIn("/api/changes/restore", HTML)
-        self.assertNotIn("Reading git diff", HTML)
+        self.assertNotIn("Reading git diff", UI_SOURCE)
+        self.assertIn('<script src="/assets/changes_drawer.js?v=__CODEY_VERSION__"></script>', HTML)
+        self.assertIn("window.CodeyChangesDrawer.init({", HTML)
+        self.assertIn("window.CodeyChangesDrawer = {", CHANGES_DRAWER_JS)
 
     def test_changes_drawer_hides_diff_metadata_lines(self) -> None:
-        self.assertIn('class="diff-line add"><span class="ln"', HTML)
-        self.assertIn('class="diff-line del"><span class="ln"', HTML)
-        self.assertIn("line.startsWith('diff --git')", HTML)
-        self.assertNotIn("line.startsWith('@@')) cls += ' hunk'", HTML)
+        self.assertIn('class="diff-line add"><span class="ln"', CHANGES_DRAWER_JS)
+        self.assertIn('class="diff-line del"><span class="ln"', CHANGES_DRAWER_JS)
+        self.assertIn("line.startsWith('diff --git')", CHANGES_DRAWER_JS)
+        self.assertNotIn("line.startsWith('@@')) cls += ' hunk'", UI_SOURCE)
 
     def test_composer_holds_model_picker_with_green_dot(self) -> None:
         self.assertIn('class="provider-chooser"', HTML)
@@ -452,18 +472,21 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("找 bug", HTML)
 
     def test_chat_messages_have_quiet_copy_button(self) -> None:
-        self.assertIn("function addMessageCopyButton(div, text)", HTML)
-        self.assertIn("function copyText(text)", HTML)
-        self.assertIn("navigator.clipboard.writeText(value)", HTML)
-        self.assertIn("document.execCommand('copy')", HTML)
-        self.assertIn("className = 'msg-copy'", HTML)
-        self.assertIn("opacity: .45", HTML)
-        self.assertIn(".msg:hover .msg-copy", HTML)
-        self.assertIn(".msg:focus-within .msg-copy", HTML)
-        self.assertIn("aria-label', 'Copy message'", HTML)
+        self.assertIn("function addMessageCopyButton(div, text)", RENDER_JS)
+        self.assertIn("function copyText(text)", RENDER_JS)
+        self.assertIn("navigator.clipboard.writeText(value)", RENDER_JS)
+        self.assertIn("document.execCommand('copy')", RENDER_JS)
+        self.assertIn("className = 'msg-copy'", RENDER_JS)
+        self.assertIn("opacity: .45", STYLE_SOURCE)
+        self.assertIn(".msg:hover .msg-copy", STYLE_SOURCE)
+        self.assertIn(".msg:focus-within .msg-copy", STYLE_SOURCE)
+        self.assertIn("aria-label', 'Copy message'", RENDER_JS)
         self.assertIn("addMessageCopyButton(div, messageCopyText(m))", HTML)
         self.assertIn("copyText: text", HTML)
-        self.assertNotIn("Export chat", HTML)
+        self.assertIn('<script src="/assets/render.js?v=__CODEY_VERSION__"></script>', HTML)
+        self.assertIn("window.CodeyRender = {", RENDER_JS)
+        self.assertIn("const copyText = window.CodeyRender.copyText;", HTML)
+        self.assertNotIn("Export chat", UI_SOURCE)
 
     def test_chat_messages_and_titles_remain_local_persistent(self) -> None:
         self.assertIn("const LS_SESSIONS = 'codey:sessions';", HTML)
@@ -496,48 +519,48 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("persistActive();", HTML[HTML.index("function ensureProject"):HTML.index("async function pickProject")])
 
     def test_assistant_replies_render_minimal_markdown(self) -> None:
-        self.assertIn("function renderMarkdown(container, text)", HTML)
-        self.assertIn("function renderInlineMd(text)", HTML)
-        self.assertIn("const escaped = escapeHtml(text);", HTML)
-        self.assertIn("<strong>$1</strong>", HTML)
+        self.assertIn("function renderMarkdown(container, text)", RENDER_JS)
+        self.assertIn("function renderInlineMd(text)", RENDER_JS)
+        self.assertIn("const escaped = escapeHtml(text);", RENDER_JS)
+        self.assertIn("<strong>$1</strong>", RENDER_JS)
         self.assertIn("body.className = 'body md'", HTML)
         self.assertNotIn("body.className = 'body md collapsed'", HTML)
         self.assertIn("toggle.className = 'toggle'; toggle.textContent = 'Collapse';", HTML)
         self.assertIn("renderMarkdown(body, m.text)", HTML)
-        self.assertNotIn("body.textContent = m.text;", HTML)
-        self.assertIn("/^#{1,6}\\s+/.test(line)", HTML)
-        self.assertIn("line.match(/^(#{1,6})\\s+(.*)$/)", HTML)
-        self.assertIn("el.className = 'md-h md-h' + Math.min(6, heading[1].length);", HTML)
-        self.assertIn(".md-code", HTML)
-        self.assertIn(".md-ic", HTML)
-        self.assertIn(".md-list", HTML)
-        self.assertIn(".md-list .md-list", HTML)
-        self.assertIn("let listStack = [];", HTML)
-        self.assertIn("parent.lastLi.appendChild(next);", HTML)
-        self.assertIn("background: var(--panel-2)", HTML)
+        self.assertNotIn("body.textContent = m.text;", UI_SOURCE)
+        self.assertIn("/^#{1,6}\\s+/.test(line)", RENDER_JS)
+        self.assertIn("line.match(/^(#{1,6})\\s+(.*)$/)", RENDER_JS)
+        self.assertIn("el.className = 'md-h md-h' + Math.min(6, heading[1].length);", RENDER_JS)
+        self.assertIn(".md-code", STYLE_SOURCE)
+        self.assertIn(".md-ic", STYLE_SOURCE)
+        self.assertIn(".md-list", STYLE_SOURCE)
+        self.assertIn(".md-list .md-list", STYLE_SOURCE)
+        self.assertIn("let listStack = [];", RENDER_JS)
+        self.assertIn("parent.lastLi.appendChild(next);", RENDER_JS)
+        self.assertIn("background: var(--panel-2)", STYLE_SOURCE)
 
     def test_inline_code_spans_are_not_bolded(self) -> None:
-        self.assertIn("function applyBold(segment)", HTML)
-        self.assertIn("out += applyBold(escaped.slice(last, m.index));", HTML)
-        self.assertIn("${m[1]}</code>", HTML)
-        self.assertIn("out += applyBold(escaped.slice(last));", HTML)
+        self.assertIn("function applyBold(segment)", RENDER_JS)
+        self.assertIn("out += applyBold(escaped.slice(last, m.index));", RENDER_JS)
+        self.assertIn("${m[1]}</code>", RENDER_JS)
+        self.assertIn("out += applyBold(escaped.slice(last));", RENDER_JS)
 
     def test_markdown_stays_monochrome_without_syntax_highlighting(self) -> None:
-        md_css_start = HTML.index("assistant markdown")
-        md_css_end = HTML.index("tool line", md_css_start)
-        md_css = HTML[md_css_start:md_css_end]
+        md_css_start = APP_CSS.index("assistant markdown")
+        md_css_end = APP_CSS.index("tool line", md_css_start)
+        md_css = APP_CSS[md_css_start:md_css_end]
         self.assertNotIn("#", md_css.replace("var(--", ""))
-        self.assertNotIn("hljs", HTML)
-        self.assertNotIn("highlight.js", HTML)
+        self.assertNotIn("hljs", UI_SOURCE)
+        self.assertNotIn("highlight.js", UI_SOURCE)
 
     def test_code_blocks_have_quiet_copy_button(self) -> None:
-        self.assertIn("function addCodeCopyButton(pre, text)", HTML)
-        self.assertIn("function appendCodeBlock(container, code)", HTML)
-        self.assertIn("className = 'code-copy'", HTML)
-        self.assertIn("aria-label', 'Copy code'", HTML)
-        self.assertIn("el.textContent = code", HTML)
-        self.assertIn(".md-code:hover .code-copy", HTML)
-        self.assertIn("await copyText(value)", HTML)
+        self.assertIn("function addCodeCopyButton(pre, text)", RENDER_JS)
+        self.assertIn("function appendCodeBlock(container, code)", RENDER_JS)
+        self.assertIn("className = 'code-copy'", RENDER_JS)
+        self.assertIn("aria-label', 'Copy code'", RENDER_JS)
+        self.assertIn("el.textContent = code", RENDER_JS)
+        self.assertIn(".md-code:hover .code-copy", STYLE_SOURCE)
+        self.assertIn("await copyText(value)", RENDER_JS)
 
     def test_ui_state_persistence_is_debounced_with_immediate_flush_helpers(self) -> None:
         # A-1: hot-path persistence is coalesced behind a debounce timer, while
@@ -615,7 +638,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("persistActiveNow();", HTML[new_start:new_end])
 
         prov_start = HTML.index("function setActiveProvider(id)")
-        prov_end = HTML.index("$('provider-button').onclick", prov_start)
+        prov_end = HTML.index("// Provider menu handlers are bound by window.CodeyProviderUI.init().", prov_start)
         self.assertIn("persistActiveNow();", HTML[prov_start:prov_end])
 
         # The debounced path is still used where coalescing matters: the SSE hot
@@ -841,19 +864,19 @@ class ProviderSelectorUiTests(unittest.TestCase):
         # never touches the sessions data structure.
         self.assertIn(
             "const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);",
-            HTML,
+            RENDER_JS,
         )
-        self.assertIn("function toolRowEl(m, compact)", HTML)
-        self.assertIn("function createToolGroup(kind)", HTML)
-        self.assertIn("function standaloneToolEl(m)", HTML)
-        self.assertIn("function appendToToolGroup(group, m)", HTML)
-        self.assertIn("function appendOrFoldTool(chat, m)", HTML)
-        self.assertIn("function foldCountLabel(kind, n)", HTML)
+        self.assertIn("function toolRowEl(m, compact)", RENDER_JS)
+        self.assertIn("function createToolGroup(kind)", RENDER_JS)
+        self.assertIn("function standaloneToolEl(m)", RENDER_JS)
+        self.assertIn("function appendToToolGroup(group, m)", RENDER_JS)
+        self.assertIn("function appendOrFoldTool(chat, m)", RENDER_JS)
+        self.assertIn("function foldCountLabel(kind, n)", RENDER_JS)
 
         # count labels pluralize correctly, incl. the irregular "searches".
-        self.assertIn("search: ['search', 'searches'],", HTML)
-        self.assertIn("read: ['file', 'files'],", HTML)
-        self.assertNotIn("noun + (n === 1 ? '' : 's')", HTML)
+        self.assertIn("search: ['search', 'searches'],", RENDER_JS)
+        self.assertIn("read: ['file', 'files'],", RENDER_JS)
+        self.assertNotIn("noun + (n === 1 ? '' : 's')", UI_SOURCE)
 
         # edit / run / shell are deliberately absent from the foldable set.
         set_line = "const FOLDABLE_TOOL_KINDS = new Set(['read', 'ls', 'search', 'references']);"
@@ -872,44 +895,44 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
         # a single foldable tool stays visible; only the second consecutive tool
         # of the same kind converts the previous standalone row into a group.
-        standalone_start = HTML.index("function standaloneToolEl(m)")
-        standalone_end = HTML.index("function appendToToolGroup", standalone_start)
-        standalone_block = HTML[standalone_start:standalone_end]
+        standalone_start = RENDER_JS.index("function standaloneToolEl(m)")
+        standalone_end = RENDER_JS.index("function appendToToolGroup", standalone_start)
+        standalone_block = RENDER_JS[standalone_start:standalone_end]
         self.assertIn("div.className = 'msg tool';", standalone_block)
         self.assertIn("div.dataset.foldkind = m.kind;", standalone_block)
         self.assertIn("div.appendChild(toolRowEl(m, false));", standalone_block)
 
         # merge only into a trailing group or standalone row of the same kind.
-        merge_start = HTML.index("function appendOrFoldTool(chat, m)")
-        merge_end = HTML.index("function appendMessageNode(chat, m)", merge_start)
-        merge_block = HTML[merge_start:merge_end]
+        merge_start = RENDER_JS.index("function appendOrFoldTool(chat, m)")
+        merge_end = RENDER_JS.index("window.CodeyRender = {", merge_start)
+        merge_block = RENDER_JS[merge_start:merge_end]
         self.assertIn("const last = chat.lastElementChild;", merge_block)
         self.assertIn("last.dataset.foldkind === m.kind", merge_block)
         self.assertIn("last.replaceWith(group);", merge_block)
         self.assertIn("chat.appendChild(standaloneToolEl(m));", merge_block)
 
-        append_start = HTML.index("function appendToToolGroup(group, m)")
-        append_end = HTML.index("function appendOrFoldTool(chat, m)", append_start)
-        append_block = HTML[append_start:append_end]
+        append_start = RENDER_JS.index("function appendToToolGroup(group, m)")
+        append_end = RENDER_JS.index("function appendOrFoldTool(chat, m)", append_start)
+        append_block = RENDER_JS[append_start:append_end]
         self.assertIn("body.children.length", append_block)
 
         # converted groups default collapsed and toggle on click; state is not persisted.
-        group_start = HTML.index("function createToolGroup(kind)")
-        group_end = HTML.index("function standaloneToolEl(m)", group_start)
-        group_block = HTML[group_start:group_end]
+        group_start = RENDER_JS.index("function createToolGroup(kind)")
+        group_end = RENDER_JS.index("function standaloneToolEl(m)", group_start)
+        group_block = RENDER_JS[group_start:group_end]
         self.assertIn("group.className = 'tool-group collapsed';", group_block)
         self.assertIn("group.dataset.foldkind = kind;", group_block)
         self.assertIn("summary.onclick = () => group.classList.toggle('collapsed');", group_block)
         self.assertNotIn("persist", group_block)
 
         # monochrome, cardless folding CSS: hidden body, chevron rotate, no colors.
-        self.assertIn(".tool-line.compact { grid-template-columns: 1fr auto auto; }", HTML)
-        self.assertIn(".tool-group-body { display: none; padding-left: 20px; }", HTML)
-        self.assertIn(".tool-group:not(.collapsed) .tool-group-body { display: block; }", HTML)
-        self.assertIn(".tool-group:not(.collapsed) .tg-chevron { transform: rotate(90deg); }", HTML)
-        group_css_start = HTML.index("/* ---------- tool group (read-only folding) ---------- */")
-        group_css_end = HTML.index("/* ---------- turn divider ---------- */", group_css_start)
-        group_css = HTML[group_css_start:group_css_end]
+        self.assertIn(".tool-line.compact { grid-template-columns: 1fr auto auto; }", STYLE_SOURCE)
+        self.assertIn(".tool-group-body { display: none; padding-left: 20px; }", STYLE_SOURCE)
+        self.assertIn(".tool-group:not(.collapsed) .tool-group-body { display: block; }", STYLE_SOURCE)
+        self.assertIn(".tool-group:not(.collapsed) .tg-chevron { transform: rotate(90deg); }", STYLE_SOURCE)
+        group_css_start = APP_CSS.index("/* ---------- tool group (read-only folding) ---------- */")
+        group_css_end = APP_CSS.index("/* ---------- turn divider ---------- */", group_css_start)
+        group_css = APP_CSS[group_css_start:group_css_end]
         self.assertNotIn("#", group_css.replace("var(--", ""))
 
 

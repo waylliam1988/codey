@@ -354,8 +354,8 @@ These existed in earlier iterations and were intentionally removed:
 
 ## 10. Implementation notes
 
-- **Single file today:** all UI lives in `codey/web/index.html` (CSS + HTML + JS). Keep styles colocated with components until a build step is introduced.
-- **If splitting later:** extract `:root` tokens to a shared `tokens.css` first; do not fork the palette per page.
+- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `changes_drawer.js`, `provider_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
+- **Do not fork the palette:** all color/spacing tokens stay in `tokens.css`; never redefine them per module or per page. `tests/test_ui_architecture.py` ratchets inline `<style>` to zero and only lets the inline `<script>` budget go down.
 - **Dark mode only:** there is no light theme. New surfaces should assume dark gray backgrounds and light text.
 - **Accessibility:** maintain keyboard focus on interactive rows; prefer visible hover states over permanent color coding. When adding color is unavoidable, pair with text labels (never color alone).
 

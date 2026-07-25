@@ -1,5 +1,72 @@
 # Codey Test Report
 
+## 0.2.21 UI Asset Modularization
+
+Codey 0.2.21 splits the single-file web UI into zero-build asset modules while
+keeping visuals, DOM structure, `/api/*`, SSE reconciliation, the composer send
+chain, and provider behavior unchanged. No npm, bundler, ESM, or framework was
+introduced; assets are plain scripts and stylesheets loaded synchronously in a
+fixed order.
+
+Production changes:
+
+- `server.py` replaced the hand-written asset dict with a safe resolver that
+  only serves `/assets/*.js` and `/assets/*.css` resolved inside
+  `web/assets/`; traversal, directories, and unknown extensions return 404.
+  `index.html` is served through `_send_index()` with `__CODEY_VERSION__`
+  replaced by `codey.__version__`, and every asset reference carries
+  `?v=__CODEY_VERSION__` for cache busting.
+- CSS tokens split: `:root` design tokens moved to `assets/tokens.css`, all
+  remaining styles to `assets/app.css`; `index.html` has zero inline
+  `<style>` lines.
+- Research drawer split: drawer open/close/render, tabs, evidence/source/graph
+  cards, and the research note cache moved to `assets/research_drawer.js`
+  (`window.CodeyResearchDrawer`). Run recording/restore state stayed in index.
+- Changes drawer split: drawer open/load/close/render plus diff chunk parsing
+  and diff line rendering moved to `assets/changes_drawer.js`
+  (`window.CodeyChangesDrawer`). `fetchChanges` / `restoreChanges` /
+  receipt-side summary logic stayed in index.
+- Render helpers split: pure helpers (`escapeHtml`, minimal markdown
+  rendering, copy buttons, tool-line fold helpers) moved to
+  `assets/render.js` (`window.CodeyRender`, no deps/init needed).
+  `renderChat()` and `appendMessageNode()` stayed in index.
+- Provider UI split: provider labels/availability, menu sync/refresh, status
+  application, and local provider config popover handlers moved to
+  `assets/provider_ui.js` (`window.CodeyProviderUI`). `currentProviderId` and
+  `setActiveProvider` stayed in index and are injected via `init(deps)`.
+- SSE ingestion/reconciliation, state/storage, session ops, the composer send
+  chain, and boot remain in `index.html` as the thin core; extracted call
+  sites go through thin same-name wrappers.
+- New architecture ratchet `tests/test_ui_architecture.py`: inline `<style>`
+  budget 0 lines; inline `<script>` budget 1950 lines (actual 1915, down from
+  2698 before the split); one `window.Codey*` namespace per asset module;
+  every referenced asset exists and carries the version placeholder; script
+  load order is fixed (`render.js`, `research_graph.js`,
+  `research_drawer.js`, `changes_drawer.js`, `provider_ui.js`, then the
+  inline core).
+
+Validation:
+
+```text
+python -m pytest tests\test_ui.py tests\test_ui_architecture.py tests\test_server.py -q
+# 185 passed, 1 skipped
+
+python -m pytest tests\test_ui_browser_e2e.py -q
+# 1 passed (real browser: modularized assets load, boot wiring works end to end)
+
+python -m pytest -q
+# 1341 passed, 8 skipped, 112 subtests passed
+
+python -m py_compile codey\server.py tests\test_ui.py tests\test_ui_architecture.py tests\test_server.py
+# ok
+
+python -m ruff check codey tests
+# All checks passed
+
+git diff --check
+# clean
+```
+
 ## 0.2.20 Research Controller v1
 
 Codey 0.2.20 moves the manual thin-gate direction into production Research as a

@@ -904,6 +904,47 @@ class WebAssetTests(unittest.TestCase):
 
         self.assertEqual(response.status, 404)
 
+    def test_asset_path_traversal_and_unknown_extension_return_404(self) -> None:
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        statuses = {}
+        try:
+            for path in ("/assets/../server.py", "/assets/x.txt", "/assets/", "/assets/..%2fserver.py"):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request("GET", path)
+                response = conn.getresponse()
+                response.read()
+                conn.close()
+                statuses[path] = response.status
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(statuses, {path: 404 for path in statuses})
+
+    def test_index_substitutes_version_placeholder(self) -> None:
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request("GET", "/")
+            response = conn.getresponse()
+            body = response.read().decode("utf-8")
+            conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 200)
+        self.assertNotIn("__CODEY_VERSION__", body)
+        self.assertIn(f"?v={server.__version__}", body)
+
 
 class LocalProviderApiTests(unittest.TestCase):
     def test_empty_api_key_preserves_existing_key_for_probe_and_save(self) -> None:

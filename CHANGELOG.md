@@ -4,6 +4,33 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.21 - UI Asset Modularization
+
+- Zero-build asset modules: the web UI is no longer one giant `index.html`.
+  CSS variables live in `assets/tokens.css`, all other styles in
+  `assets/app.css`, and reusable UI logic in plain-script IIFE modules:
+  `render.js` (pure markdown/tool-line helpers), `research_drawer.js`,
+  `changes_drawer.js`, and `provider_ui.js`, alongside the existing
+  `research_graph.js`. No npm, no bundler, no ESM -- scripts still load
+  synchronously in a fixed order.
+- Safe asset serving: the server replaced its hand-written asset dict with a
+  path resolver that only serves `/assets/*.js` and `/assets/*.css` from
+  inside the assets directory; traversal attempts, directories, and unknown
+  extensions return 404. `index.html` is served with `__CODEY_VERSION__`
+  substituted, and every asset reference carries `?v=<version>` for cache
+  busting.
+- Thin core, thin wrappers: `index.html` keeps only the HTML skeleton,
+  state/storage, session ops, SSE ingestion/reconciliation, composer send
+  chain, and boot wiring. Extracted modules receive their dependencies via
+  `init(deps)` at boot; existing call sites go through thin wrapper
+  functions, so DOM structure, visuals, `/api/*`, SSE reconciliation, and
+  provider behavior are unchanged.
+- Architecture ratchet: new `tests/test_ui_architecture.py` enforces zero
+  inline `<style>` lines, an inline `<script>` budget that may only go down
+  (currently 1950 lines, actual 1915), one `window.Codey*` namespace per
+  asset module, versioned references to existing files only, and the fixed
+  script load order.
+
 ## 0.2.20 - Research Controller v1
 
 - Production Research controller: Research now uses a thin ledger read-model to

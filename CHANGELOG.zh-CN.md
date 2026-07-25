@@ -4,6 +4,27 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.21 - UI Asset Modularization
+
+- 零构建资产模块化：web UI 不再是一个巨大的 `index.html`。CSS 变量拆到
+  `assets/tokens.css`，其余样式拆到 `assets/app.css`；可复用 UI 逻辑拆成
+  普通脚本 IIFE 模块：`render.js`（纯 markdown/tool-line helper）、
+  `research_drawer.js`、`changes_drawer.js`、`provider_ui.js`，加上原有的
+  `research_graph.js`。不上 npm、不上 bundler、不上 ESM——脚本仍按固定顺序
+  同步加载。
+- 安全资产服务：服务端把手写资产 dict 换成路径 resolver，只允许提供 assets
+  目录内的 `/assets/*.js` 和 `/assets/*.css`；目录穿越、目录本身、未知扩展
+  一律 404。`index.html` 在响应时替换 `__CODEY_VERSION__`，所有资产引用带
+  `?v=<version>` 做缓存失效。
+- 薄核心、薄 wrapper：`index.html` 只保留 HTML 骨架、state/storage、session
+  操作、SSE ingestion/reconciliation、composer 发送链和 boot 接线。拆出的
+  模块在 boot 时通过 `init(deps)` 注入依赖；原调用点走同名薄 wrapper，所以
+  DOM 结构、视觉、`/api/*`、SSE reconciliation 和 provider 行为都没有变。
+- 架构 ratchet：新增 `tests/test_ui_architecture.py`，强制 inline `<style>`
+  为 0 行、inline `<script>` 预算只降不升（当前预算 1950 行，实际 1915 行）、
+  每个资产模块只声明一个 `window.Codey*` 命名空间、资产引用带版本号且文件
+  必须存在、脚本加载顺序固定。
+
 ## 0.2.20 - Research Controller v1
 
 - 生产 Research controller：Research 现在用很薄的 ledger read-model，根据当前

@@ -89,12 +89,36 @@ from codey.text_budget import clip_middle
 from codey.ui_state_store import UiStateStore
 
 WEB_DIR = Path(__file__).parent / "web"
-WEB_ASSETS = {
-    "/assets/research_graph.js": (
-        WEB_DIR / "assets" / "research_graph.js",
-        "application/javascript; charset=utf-8",
-    ),
+WEB_ASSET_DIR = WEB_DIR / "assets"
+WEB_ASSET_TYPES = {
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
 }
+
+
+def resolve_web_asset(url_path: str) -> tuple[Path, str] | None:
+    """Resolve /assets/* to a real file inside codey/web/assets, or None.
+
+    Only .js/.css files are served. Anything that escapes the assets
+    directory (e.g. ../) or is not a regular file resolves to None.
+    """
+    prefix = "/assets/"
+    if not url_path.startswith(prefix):
+        return None
+    name = url_path[len(prefix):]
+    ctype = WEB_ASSET_TYPES.get(Path(name).suffix.lower())
+    if not ctype:
+        return None
+    path = (WEB_ASSET_DIR / name).resolve()
+    try:
+        path.relative_to(WEB_ASSET_DIR.resolve())
+    except ValueError:
+        return None
+    if not path.is_file():
+        return None
+    return path, ctype
+
+
 FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_TIMEOUT = 120
 SHELL_OUTPUT_LIMIT = 24_000
@@ -1423,19 +1447,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_index(self) -> None:
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        html = html.replace("__CODEY_VERSION__", __version__)
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self) -> None:  # noqa: N802
         url = urlparse(self.path)
         if url.path in ("/", "/index.html"):
-            self._send_file(WEB_DIR / "index.html", "text/html; charset=utf-8")
+            self._send_index()
             return
-        asset = WEB_ASSETS.get(url.path)
-        if asset is not None:
-            path, ctype = asset
-            if path.is_file():
-                self._send_file(path, ctype)
-            else:
+        if url.path.startswith("/assets/"):
+            asset = resolve_web_asset(url.path)
+            if asset is None:
                 self.send_response(404)
                 self.end_headers()
+            else:
+                self._send_file(asset[0], asset[1])
             return
         if url.path == "/icon.ico":
             icon = WEB_DIR / "icon.ico"
