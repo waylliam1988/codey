@@ -21,7 +21,7 @@ class ProviderDiagnosticsTests(unittest.TestCase):
         now = datetime(2026, 6, 28, 1, 2, 3, tzinfo=timezone.utc)
 
         failure = capture_provider_failure(
-            model="MiMo",
+            model="StepFun",
             action="send",
             page=page,
             error=TimeoutError("response timed out"),
@@ -29,7 +29,7 @@ class ProviderDiagnosticsTests(unittest.TestCase):
         )
 
         self.assertEqual(failure.to_dict(), {
-            "model": "MiMo",
+            "model": "StepFun",
             "action": "send",
             "url": "https://chat.example/c",
             "title": "Example Chat",
@@ -183,7 +183,7 @@ class ProviderDiagnosticsTests(unittest.TestCase):
         action.assert_not_called()
 
     def test_visible_challenge_is_typed_before_provider_control_logic(self) -> None:
-        provider = SimpleNamespace(name="MiMo", last_failure=None)
+        provider = SimpleNamespace(name="StepFun", last_failure=None)
         hidden = mock.Mock()
         hidden.count.return_value = 0
         challenge = mock.Mock()

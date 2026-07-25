@@ -41,8 +41,8 @@ class BootstrapSmokeTests(unittest.TestCase):
         writer.location = "https://chat.deepseek.com/"
         writer.close = mock.Mock()
         reviewer = mock.Mock()
-        reviewer.name = "MiMo"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         reviewer.close = mock.Mock()
 
@@ -64,7 +64,7 @@ class BootstrapSmokeTests(unittest.TestCase):
             mock.patch.object(bootstrap_smoke, "collect_changes", return_value={"ok": True, "changed_count": 1, "files": [], "diff": "+x"}),
             mock.patch.object(bootstrap_smoke.shutil, "rmtree"),
         ):
-            data = bootstrap_smoke.run_bootstrap_smoke("deepseek", port=9222, max_turns=8, reviewer_id="mimo")
+            data = bootstrap_smoke.run_bootstrap_smoke("deepseek", port=9222, max_turns=8, reviewer_id="stepfun")
 
         self.assertTrue(data["ok"], data)
         begin_context.assert_called_once_with("bootstrap-smoke:deepseek")
@@ -74,7 +74,7 @@ class BootstrapSmokeTests(unittest.TestCase):
         self.assertEqual(connect.call_args_list[0], mock.call("deepseek", port=9222))
         self.assertEqual(
             connect.call_args_list[1],
-            mock.call("mimo", port=9222, open_if_missing=False, bring_to_front=False),
+            mock.call("stepfun", port=9222, open_if_missing=False, bring_to_front=False),
         )
         reviewer.new_chat.assert_called_once_with()
 
@@ -92,9 +92,9 @@ class BootstrapSmokeTests(unittest.TestCase):
             mock.patch.object(bootstrap_smoke, "connect_provider", side_effect=RuntimeError("offline")),
         ):
             with self.assertRaisesRegex(RuntimeError, "offline"):
-                bootstrap_smoke.run_bootstrap_smoke("mimo", port=9222, max_turns=8)
+                bootstrap_smoke.run_bootstrap_smoke("stepfun", port=9222, max_turns=8)
 
-        begin_context.assert_called_once_with("bootstrap-smoke:mimo")
+        begin_context.assert_called_once_with("bootstrap-smoke:stepfun")
         end_context.assert_called_once_with()
 
     def test_run_bootstrap_smoke_cleans_task_context_when_provider_close_fails(self) -> None:

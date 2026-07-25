@@ -279,7 +279,7 @@ def run_self_test() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Live A/B for default post-edit verification.")
-    parser.add_argument("--provider", choices=provider_ids(), default="mimo")
+    parser.add_argument("--provider", choices=provider_ids(), default="stepfun")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--case", choices=[case.name for case in CASES], action="append")
     parser.add_argument("--arm", choices=ARMS, action="append")

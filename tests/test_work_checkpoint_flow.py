@@ -110,10 +110,10 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
             state = server.State(root / "state")
-            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             first = self._provider()
             second = self._provider()
-            second.name = "MiMo"
+            second.name = "StepFun"
             captured = {}
 
             def writer(*args, **kwargs):
@@ -166,14 +166,14 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "deepseek",
                 )
 
-            self.assertEqual(get_provider.call_args_list[1].args, ("mimo",))
+            self.assertEqual(get_provider.call_args_list[1].args, ("stepfun",))
             self.assertEqual(agent_run.call_count, 2)
             self.assertTrue(captured["fresh_chat"])
             self.assertTrue(captured["strict_fresh_chat"])
             self.assertIn("Local execution checkpoint", captured["work_checkpoint"])
             self.assertIn("app.py", captured["work_checkpoint"])
             self.assertEqual(captured["verification_changed_files"], ("app.py",))
-            self.assertEqual(state.last_terminal_event["provider"], "mimo")
+            self.assertEqual(state.last_terminal_event["provider"], "stepfun")
             self.assertEqual(state.active_run, None)
             self.assertEqual(agent_run.call_args_list[1].kwargs["max_turns"], 6)
             run_review.assert_called_once()
@@ -188,7 +188,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project.mkdir()
             (project / "app.py").write_text("content\n", encoding="utf-8")
             state = server.State(root / "state")
-            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             provider = self._provider()
 
             with (
@@ -221,11 +221,11 @@ class WorkCheckpointFlowTests(unittest.TestCase):
 
             self.assertEqual(
                 [call.args[0] for call in get_provider.call_args_list],
-                ["deepseek", "mimo"],
+                ["deepseek", "stepfun"],
             )
-            self.assertEqual(agent_run.call_args.kwargs["provider_id"], "mimo")
+            self.assertEqual(agent_run.call_args.kwargs["provider_id"], "stepfun")
             self.assertTrue(agent_run.call_args.kwargs["strict_fresh_chat"])
-            self.assertEqual(state.last_terminal_event["provider"], "mimo")
+            self.assertEqual(state.last_terminal_event["provider"], "stepfun")
 
     def test_first_rescue_failure_continues_to_second_sibling(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -234,7 +234,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project.mkdir()
             (project / "app.py").write_text("content\n", encoding="utf-8")
             state = server.State(root / "state")
-            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             providers = [self._provider(), self._provider(), self._provider()]
             failure = ProviderActionError(ProviderFailure(
                 "web",
@@ -276,7 +276,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
 
             self.assertEqual(
                 [call.args[0] for call in get_provider.call_args_list],
-                ["deepseek", "mimo", "qwen"],
+                ["deepseek", "stepfun", "qwen"],
             )
             self.assertEqual(agent_run.call_count, 3)
             self.assertEqual(state.last_terminal_event["provider"], "qwen")
@@ -291,7 +291,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             target.write_text("before\n", encoding="utf-8")
             (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
             state = server.State(root / "state")
-            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             providers = [self._provider(), self._provider()]
             captured = {}
 
@@ -365,7 +365,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project.mkdir()
             (project / "app.py").write_text("content\n", encoding="utf-8")
             state = server.State(root / "state")
-            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             provider = self._provider()
 
             def stopped(*_args, **_kwargs):
@@ -409,7 +409,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project.mkdir()
             (project / "app.py").write_text("content\n", encoding="utf-8")
             state = server.State(root / "state")
-            state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+            state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             providers = [self._provider(), self._provider(), self._provider()]
 
             def failed(*_args, **_kwargs):

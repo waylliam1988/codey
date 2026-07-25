@@ -290,11 +290,12 @@ class ApprovedShellTests(unittest.TestCase):
 
 class ProviderStatusTests(unittest.TestCase):
     def test_provider_payload_marks_available_models(self) -> None:
-        payload = server.provider_payload({"deepseek": True, "mimo": False})
+        payload = server.provider_payload({"deepseek": True, "stepfun": False})
 
         by_id = {item["id"]: item for item in payload}
         self.assertTrue(by_id["deepseek"]["available"])
         self.assertFalse(by_id["mimo"]["available"])
+        self.assertFalse(by_id["stepfun"]["available"])
         self.assertFalse(by_id["qwen"]["available"])
         self.assertFalse(by_id["glm"]["available"])
         self.assertFalse(by_id["local"]["available"])
@@ -309,7 +310,7 @@ class ProviderStatusTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "provider_tab_availability",
-                return_value={"deepseek": True, "mimo": True, "qwen": False, "glm": False},
+                return_value={"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
             ) as detected,
             mock.patch.object(server, "connect_existing_provider") as connected,
         ):
@@ -317,7 +318,7 @@ class ProviderStatusTests(unittest.TestCase):
 
         self.assertEqual(
             statuses,
-            {"deepseek": True, "mimo": True, "qwen": False, "glm": False},
+            {"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
         )
         detected.assert_called_once_with()
         connected.assert_not_called()
@@ -344,7 +345,7 @@ class ProviderStatusTests(unittest.TestCase):
                     "provider_tab_availability",
                     return_value={
                         "deepseek": True,
-                        "mimo": True,
+                        "stepfun": True,
                         "qwen": True,
                         "glm": True,
                     },
@@ -356,7 +357,7 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertFalse(statuses["qwen"])
         self.assertNotIn("qwen", reviewers)
         self.assertNotIn("local", reviewers)
-        self.assertIn("mimo", reviewers)
+        self.assertIn("stepfun", reviewers)
 
     def test_provider_warmup_emits_filtered_provider_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -379,7 +380,7 @@ class ProviderStatusTests(unittest.TestCase):
                 server._run_provider_warmup(
                     runner=lambda: {
                         "deepseek": True,
-                        "mimo": True,
+                        "stepfun": True,
                         "qwen": True,
                         "glm": False,
                     }
@@ -389,7 +390,7 @@ class ProviderStatusTests(unittest.TestCase):
         by_id = {item["id"]: item for item in event["providers"]}
         self.assertEqual(event["type"], "providers")
         self.assertTrue(by_id["deepseek"]["available"])
-        self.assertTrue(by_id["mimo"]["available"])
+        self.assertTrue(by_id["stepfun"]["available"])
 
         self.assertFalse(by_id["qwen"]["available"])
         self.assertFalse(by_id["glm"]["available"])
@@ -425,7 +426,7 @@ class ProviderStatusTests(unittest.TestCase):
         ):
             order = state.provider_failover_order()
 
-        self.assertEqual(order, ("qwen", "glm", "deepseek", "mimo"))
+        self.assertEqual(order, ("qwen", "glm", "deepseek", "mimo", "stepfun"))
 
     def test_review_honors_task_cancellation_before_connecting(self) -> None:
         event = threading.Event()
@@ -462,7 +463,7 @@ class ProviderStatusTests(unittest.TestCase):
 
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=("mimo",)),
+            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
             mock.patch.object(
                 server,
@@ -506,7 +507,7 @@ class ProviderStatusTests(unittest.TestCase):
 
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=("mimo",)),
+            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
             mock.patch.object(
                 server,
                 "connect_existing_provider",
@@ -530,7 +531,7 @@ class ProviderStatusTests(unittest.TestCase):
 
         self.assertIsNotNone(reviewed)
         self.assertEqual(reviewed[0], "deepseek")
-        connect_existing.assert_called_once_with("mimo")
+        connect_existing.assert_called_once_with("stepfun")
         connect_self_review.assert_called_once_with("deepseek")
         self.assertEqual(state.provider_sessions["deepseek"], "session-1")
         reviewer.new_chat.assert_called_once_with()
@@ -572,7 +573,7 @@ class ProviderStatusTests(unittest.TestCase):
         with (
             cancellation.scope(event),
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "reviewer_candidates", return_value=("mimo",)),
+            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
             mock.patch.object(server, "connect_existing_provider", side_effect=fail_and_cancel),
             mock.patch.object(server, "connect_fresh_provider_tab") as connect_self_review,
         ):
@@ -945,7 +946,7 @@ class ConsensusConnectionTests(unittest.TestCase):
         selected.session.page = object()
         selected.send.return_value = "combined answer"
         advisor = mock.Mock()
-        advisor.name = "MiMo"
+        advisor.name = "StepFun"
         advisor.send.return_value = "advisor note"
 
         with (
@@ -953,7 +954,7 @@ class ConsensusConnectionTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "provider_availability",
-                return_value={"deepseek": True, "mimo": True, "qwen": False, "glm": False},
+                return_value={"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
             ),
             mock.patch.object(server, "borrow_open_provider", return_value=advisor) as borrowed,
             mock.patch.object(
@@ -971,7 +972,7 @@ class ConsensusConnectionTests(unittest.TestCase):
         self.assertIsNotNone(result)
         assert result is not None
         self.assertEqual(result.answer, "combined answer")
-        borrowed.assert_called_once_with("mimo", selected.session.page)
+        borrowed.assert_called_once_with("stepfun", selected.session.page)
         advisor.new_chat.assert_called_once_with()
         advisor.close.assert_called_once_with()
         selected.send.assert_called_once()
@@ -981,7 +982,7 @@ class ConsensusConnectionTests(unittest.TestCase):
         selected = mock.Mock()
         selected.session.page = object()
         advisor = mock.Mock()
-        advisor.name = "MiMo"
+        advisor.name = "StepFun"
         advisor.send.return_value = '{"tool":"done","args":{"summary":"audit report"}}'
 
         with (
@@ -990,7 +991,7 @@ class ConsensusConnectionTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "provider_availability",
-                return_value={"deepseek": True, "mimo": True, "qwen": False, "glm": False},
+                return_value={"deepseek": True, "mimo": False, "stepfun": True, "qwen": False, "glm": False},
             ),
             mock.patch.object(server, "borrow_open_provider", return_value=advisor) as borrowed,
             mock.patch.object(
@@ -1008,7 +1009,7 @@ class ConsensusConnectionTests(unittest.TestCase):
             )
 
         self.assertEqual([report.text for report in reports], ["audit report"])
-        borrowed.assert_called_once_with("mimo", selected.session.page)
+        borrowed.assert_called_once_with("stepfun", selected.session.page)
         advisor.new_chat.assert_called_once_with()
         advisor.close.assert_called_once_with()
 
@@ -1403,19 +1404,19 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_state_marks_provider_available_after_connect(self) -> None:
         class FakeProvider:
-            name = "Xiaomi MiMo Chat"
-            location = "https://aistudio.xiaomimimo.com/#/c"
+            name = "StepFun Chat"
+            location = "https://chat.stepfun.com/chats/"
 
         state = server.State()
         events = state.subscribe()
         with mock.patch.object(server, "connect_provider", return_value=FakeProvider()):
-            state.get_provider("mimo")
+            state.get_provider("stepfun")
 
         emitted = []
         while not events.empty():
             emitted.append(events.get_nowait())
         providers = next(event for event in emitted if event["type"] == "providers")
-        self.assertEqual(providers["providers"], [{"id": "mimo", "label": "MiMo", "available": True}])
+        self.assertEqual(providers["providers"], [{"id": "stepfun", "label": "StepFun", "available": True}])
 
     def test_state_pauses_for_control_teaching_and_resumes_with_captured_control(self) -> None:
         state = server.State()
@@ -1459,7 +1460,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_profile_doctor_uses_one_healthy_sibling_model_call(self) -> None:
         state = server.State()
-        state.set_provider_session("qwen", "old-session")
+        state.set_provider_session("stepfun", "old-session")
         page = mock.Mock()
         helper = mock.Mock()
         helper.send.return_value = '{"candidate_id":"c1"}'
@@ -1480,7 +1481,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(selected, "c1")
         self.assertEqual(
             borrowed.call_args_list,
-            [mock.call("mimo", page), mock.call("qwen", page)],
+            [mock.call("mimo", page), mock.call("stepfun", page)],
         )
         helper.new_chat.assert_called_once()
         self.assertGreater(helper.new_chat.call_args.kwargs["timeout"], 0)
@@ -1494,7 +1495,7 @@ class SessionThreadingTests(unittest.TestCase):
             helper.send.call_args.kwargs["timeout"], server.PROFILE_DOCTOR_TIMEOUT
         )
         helper.close.assert_called_once_with()
-        self.assertTrue(state.provider_session_changed("qwen", "old-session"))
+        self.assertTrue(state.provider_session_changed("stepfun", "old-session"))
 
     def test_profile_doctor_tries_next_model_after_call_failure(self) -> None:
         state = server.State()
@@ -1520,7 +1521,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(selected, "c1")
         self.assertEqual(
             borrowed.call_args_list,
-            [mock.call("mimo", page), mock.call("qwen", page)],
+            [mock.call("mimo", page), mock.call("stepfun", page)],
         )
         first.send.assert_called_once()
         second.send.assert_called_once()
@@ -1671,7 +1672,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(selected, "f1")
         self.assertEqual(
             borrowed.call_args_list,
-            [mock.call("mimo", page), mock.call("qwen", page)],
+            [mock.call("mimo", page), mock.call("stepfun", page)],
         )
         first.close.assert_called_once_with()
         second.close.assert_called_once_with()
@@ -2862,8 +2863,8 @@ class SessionThreadingTests(unittest.TestCase):
         provider.name = "DeepSeek Web"
         provider.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = (
             '{"verdict":"approved","summary":"Looks good","findings":[]}'
         )
@@ -2919,8 +2920,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
             "ok": True,
@@ -2970,8 +2971,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = (
             '{"verdict":"changes_requested","summary":"Fix one issue",'
             '"findings":[{"path":"app.py","issue":"Missing empty case",'
@@ -3082,7 +3083,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_review_repair_uses_writer_failover(self) -> None:
         state = server.State()
-        state.provider_failover_order = lambda: ("deepseek", "mimo", "qwen", "glm")
+        state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
         writer = mock.Mock()
         writer.name = "DeepSeek Web"
         reviewer = mock.Mock()
@@ -3144,8 +3145,8 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertFalse(agent_run.call_args_list[1].kwargs["fresh_chat"])
         self.assertTrue(agent_run.call_args_list[2].kwargs["fresh_chat"])
         self.assertTrue(agent_run.call_args_list[2].kwargs["strict_fresh_chat"])
-        self.assertEqual(agent_run.call_args_list[2].kwargs["provider_id"], "mimo")
-        self.assertEqual(state.last_terminal_event["provider"], "mimo")
+        self.assertEqual(agent_run.call_args_list[2].kwargs["provider_id"], "stepfun")
+        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
         self.assertEqual(state.last_terminal_event["summary"], "fixed by sibling")
         self.assertEqual(state.last_terminal_event["changes"]["changed_count"], 2)
         self.assertEqual(
@@ -3160,8 +3161,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = (
             '{"verdict":"changes_requested","summary":"Verify one claim",'
             '"findings":[{"path":"app.py","issue":"Possible issue",'
@@ -3210,8 +3211,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = (
             '{"verdict":"changes_requested","summary":"Verify one claim",'
             '"findings":[{"path":"app.py","issue":"Possible issue",'
@@ -3260,8 +3261,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = (
             '{"verdict":"changes_requested","summary":"Verify one claim",'
             '"findings":[{"path":"app.py","issue":"Possible issue",'
@@ -3352,8 +3353,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.side_effect = [
             "looks good but not json",
             '{"verdict":"approved","summary":"Looks good","findings":[]}',
@@ -3392,8 +3393,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         states: list[tuple[bool, bool]] = []
 
         def send_review(_prompt, timeout=None):
@@ -3628,8 +3629,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
             "ok": True,
@@ -3684,8 +3685,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         changes = {
             "ok": True,
@@ -3793,8 +3794,8 @@ class SessionThreadingTests(unittest.TestCase):
         writer.name = "DeepSeek Web"
         writer.location = "https://chat.deepseek.com/"
         reviewer = mock.Mock()
-        reviewer.name = "Xiaomi MiMo Chat"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun Chat"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         self.consensus_mock.return_value = ConsensusResult("Use app.py and add a smoke test.", 2)
         changes = {
@@ -3874,13 +3875,13 @@ class SessionThreadingTests(unittest.TestCase):
         state = server.State()
         events = state.subscribe()
         provider = mock.Mock()
-        provider.name = "MiMo"
-        provider.location = "https://aistudio.xiaomimimo.com/#/c"
+        provider.name = "StepFun"
+        provider.location = "https://chat.stepfun.com/chats/"
         provider.last_failure = ProviderFailure(
-            model="MiMo",
+            model="StepFun",
             action="send",
-            url="https://aistudio.xiaomimimo.com/#/c",
-            title="MiMo",
+            url="https://chat.stepfun.com/chats/",
+            title="StepFun",
             message="response timed out",
             time="2026-06-28T01:02:03+00:00",
         )
@@ -3891,7 +3892,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider),
             mock.patch.object(server, "agent_run", side_effect=TimeoutError("response timed out")),
         ):
-            server._run_task("session-1", td, "task", 8, False, "mimo")
+            server._run_task("session-1", td, "task", 8, False, "stepfun")
 
         emitted = []
         while not events.empty():
@@ -3899,7 +3900,7 @@ class SessionThreadingTests(unittest.TestCase):
         task_done = next(event for event in emitted if event["type"] == "task_done")
         self.assertEqual(task_done["stop_reason"], "error")
         self.assertEqual(task_done["provider_failure"], {
-            "model": "MiMo",
+            "model": "StepFun",
             "action": "task",
             "url": "",
             "title": "",
@@ -3912,7 +3913,7 @@ class SessionThreadingTests(unittest.TestCase):
 
     def test_run_task_records_connect_failure_without_provider_page(self) -> None:
         state = server.State()
-        state.provider_failover_order = lambda: ("qwen", "deepseek", "mimo", "glm")
+        state.provider_failover_order = lambda: ("qwen", "deepseek", "stepfun", "glm")
         events = state.subscribe()
 
         with (
@@ -3932,9 +3933,9 @@ class SessionThreadingTests(unittest.TestCase):
         failure = task_done["provider_failure"]
         self.assertEqual(
             [call.args[0] for call in get_provider.call_args_list],
-            ["qwen", "deepseek", "mimo"],
+            ["qwen", "deepseek", "stepfun"],
         )
-        self.assertEqual(failure["model"], "MiMo")
+        self.assertEqual(failure["model"], "StepFun")
         self.assertEqual(failure["action"], "connect")
         self.assertEqual(failure["url"], "")
         self.assertEqual(failure["title"], "")

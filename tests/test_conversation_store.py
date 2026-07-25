@@ -48,12 +48,12 @@ class ConversationStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             first = server.State(td)
             context = first.conversation_for("chat-1")
-            context.begin_window("mimo", "project", "E:/demo")
+            context.begin_window("stepfun", "project", "E:/demo")
             context.update_snapshot(ConversationSnapshot(
                 mode="project",
                 goal="Keep ORANGE-417",
                 project="E:/demo",
-                provider_id="mimo",
+                provider_id="stepfun",
                 changed_files=("app.py",),
                 checks_passed=True,
             ))

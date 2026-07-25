@@ -4,6 +4,30 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.13 - Provider Fit Update
+
+- Provider set: added StepFun as an additional supported web provider while
+  keeping Xiaomi MiMo available. The UI, provider registry, browser warmup,
+  provider profiles, repair policy, and worker port offsets now cover both
+  `mimo` and `stepfun`.
+- StepFun adapter: added a dedicated `codey/stepfun.py` driver and
+  `StepFunWebProvider` wrapper for `https://chat.stepfun.com/chats/`. The
+  adapter uses StepFun's ordinary textarea composer, reads the newest markdown
+  answer while ignoring reasoning blocks, and keeps send/read logic isolated
+  from the agent core.
+- Provider selection rationale: live probes showed StepFun can follow the local
+  JSON-tool protocol one action at a time in the Research fixture. It passed a
+  small edit-and-test coding smoke after the existing protocol nudge recovered
+  initial non-JSON tool-call markup, but a fresh project creation smoke still
+  failed on Python syntax repair, so it is not promoted as the strongest
+  default project writer. MiMo remains useful for coding/editing, but is not
+  recommended for strict JSON-tool Research after live probe failures.
+  MiniMax was not selected because its Agent page ignored the local JSON-tool
+  protocol on the first probe and used its own web/agent behavior instead.
+- Boundary discipline: no role router, no new UI mode, no prompt broadening for
+  other providers, and no change to the provider-independent agent/tool/review
+  core.
+
 ## 0.2.12 - Research A/B and Provider Parsing Hygiene
 
 - Manual Deep Research A/B: the live probe now defaults to a low-send `cheap`

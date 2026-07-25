@@ -9,7 +9,7 @@ uses a changed path, and returns a valid optional hunk/line anchor:
 python -B tests\manual\changeset_review_ab.py --self-test
 python -B tests\manual\changeset_review_ab.py --provider deepseek --timeout 90
 python -B tests\manual\changeset_review_ab.py --provider qwen --timeout 90
-python -B tests\manual\changeset_review_ab.py --provider mimo --timeout 90
+python -B tests\manual\changeset_review_ab.py --provider stepfun --timeout 90
 python -B tests\manual\changeset_review_ab.py --provider glm --timeout 90
 ```
 
@@ -141,7 +141,7 @@ bounded current-file excerpt. It is a probe only and does not change production
 edit behavior:
 
 ```powershell
-python -B tests\manual\edit_failure_context_ab.py --provider mimo --port 9222
+python -B tests\manual\edit_failure_context_ab.py --provider stepfun --port 9222
 ```
 
 `default_verification_ab.py` compares the pre-0.1.35 completion behavior with
@@ -150,7 +150,7 @@ case/arm at a time to avoid provider rate limits:
 
 ```powershell
 python -B tests\manual\default_verification_ab.py `
-  --provider mimo `
+  --provider stepfun `
   --case python-pytest `
   --arm current
 ```
@@ -172,30 +172,13 @@ profile, and that a candidate Provider worker can run a neutral marker canary:
 ```powershell
 python -B tests\manual\adapter_self_repair_smoke.py --provider qwen --timeout 90
 python -B tests\manual\adapter_self_repair_smoke.py --provider deepseek --timeout 90
-python -B tests\manual\adapter_self_repair_smoke.py --provider mimo --timeout 90
+python -B tests\manual\adapter_self_repair_smoke.py --provider stepfun --timeout 90
 python -B tests\manual\adapter_self_repair_smoke.py --provider glm --timeout 90
 ```
 
 Reports contain only bounded status metadata, marker length/exactness, timing,
 and error type/message snippets. They do not store prompts, replies, cookies,
 page text, DOM, or project data.
-
-`mimo_typing_evidence_probe.py` records only bounded boolean DOM evidence for
-MiMo's `data-is-typing` transition. It never writes the prompt or reply text to
-the report, and its outbound nonce uses the same product-neutral
-`SESSION_CHECK_<random>` form as the other web probes. Run short, long-code,
-and deep-thinking cases separately before
-retaining MiMo completion Flow; `--force-flow` disables only the built-in
-completion decision for the first send so the production Flow path must save a
-provisional rule, then performs a second natural send in a fresh task context
-and requires promotion to active:
-
-```powershell
-python -B tests\manual\mimo_typing_evidence_probe.py --case short
-python -B tests\manual\mimo_typing_evidence_probe.py --case long-code
-python -B tests\manual\mimo_typing_evidence_probe.py --case deep-thinking
-python -B tests\manual\mimo_typing_evidence_probe.py --case short --force-flow
-```
 
 `python_syntax_regression_ab.py` compares the production Python
 syntax-regression hint with a baseline that suppresses it. Fault injection is
@@ -206,12 +189,12 @@ characters; this is a character budget, not a byte-size limit:
 ```powershell
 python -B tests\manual\python_syntax_regression_ab.py --provider deepseek
 python -B tests\manual\python_syntax_regression_ab.py --provider qwen
-python -B tests\manual\python_syntax_regression_ab.py --provider mimo
+python -B tests\manual\python_syntax_regression_ab.py --provider stepfun
 python -B tests\manual\python_syntax_regression_ab.py --provider glm
 ```
 
 The default order is baseline-first for DeepSeek/Qwen and hint-first for
-MiMo/GLM. Use `--order baseline-first` or `--order hint-first` to override it.
+StepFun/GLM. Use `--order baseline-first` or `--order hint-first` to override it.
 
 `refactor_hint_ab.py` compares current production edits with a probe-only
 incomplete-refactor hint. The hint arm injects an edit wrapper only inside the
@@ -310,13 +293,17 @@ By default it only attaches to already-open provider tabs; add
 provider pages. Use this probe before promoting source_search, ResearchPlan, or
 Coverage Review into the production Research path.
 
-Provider fit note: MiMo is currently a poor fit for this JSON-tool Deep
-Research A/B harness. In live `long-official-doc` smoke tests, the MiMo page was
-usable, but the model often emitted multiple JSON objects per reply, duplicated
-objects with `json` prefixes, malformed query strings, and repair replies that
-lost the original research question. Treat MiMo results as protocol-following
-diagnostics, not as strong evidence for or against Deep Research quality.
-Prefer DeepSeek, Qwen, or GLM for source-search A/B decisions.
+Provider fit note: StepFun is available alongside MiMo for current provider
+smoke/A-B work. StepFun followed the local JSON-tool Research protocol more
+reliably in live probes: one JSON object per turn and a completed fixture
+report. MiMo remains useful for coding/editing, but it often emitted multiple
+or malformed JSON objects in this strict Research loop. MiniMax was also probed
+and not selected: its Agent page answered with prose and its own web/agent
+behavior instead of local JSON tools. Prefer DeepSeek, Qwen, StepFun, GLM, or
+Local for source-search A/B decisions. This is a Research protocol fit note,
+not a claim that StepFun is the strongest coding writer: its live edit smoke
+passed after protocol nudges, but its fresh project create smoke failed on
+Python syntax repair.
 
 DeepSeek `long-official-doc` follow-up: after retrying the previously failed
 `deep_core` arm, DeepSeek finished in 8 turns with `quality_score=10`, used

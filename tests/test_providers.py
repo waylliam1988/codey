@@ -14,9 +14,10 @@ from codey.providers import (
     DeepSeekWebProvider,
     GlmWebProvider,
     MimoWebProvider,
+    StepFunWebProvider,
     QwenWebProvider,
 )
-from codey.providers import deepseek_web, glm_web, local_openai, mimo_web, qwen_web, registry
+from codey.providers import deepseek_web, glm_web, local_openai, mimo_web, stepfun_web, qwen_web, registry
 
 
 class DeepSeekWebProviderTests(unittest.TestCase):
@@ -131,6 +132,46 @@ class QwenWebProviderTests(unittest.TestCase):
         new_chat.assert_called_once_with(page, timeout=7.5)
 
 
+class StepFunWebProviderTests(unittest.TestCase):
+    def test_connect_wraps_browser_session(self) -> None:
+        session = SimpleNamespace()
+        profile = Path("stepfun-profile")
+        with mock.patch.object(stepfun_web, "open_stepfun", return_value=session) as opened:
+            provider = StepFunWebProvider.connect(port=9555, profile=profile)
+
+        self.assertIs(provider.session, session)
+        opened.assert_called_once_with(
+            port=9555,
+            profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
+        )
+
+    def test_delegates_chat_operations_and_closes_playwright(self) -> None:
+        page = SimpleNamespace(url="https://chat.stepfun.com/chats/")
+        page.title = mock.Mock(return_value="StepFun")
+        session = SimpleNamespace(page=page, close=mock.Mock())
+        provider = StepFunWebProvider(session)
+
+        with (
+            mock.patch.object(stepfun_web.stepfun, "new_chat") as new_chat,
+            mock.patch.object(stepfun_web.stepfun, "chat", return_value="stepfun reply") as chat,
+        ):
+            provider.new_chat()
+            reply = provider.send("hello", timeout=20.0)
+
+        self.assertEqual(provider.name, "StepFun Chat")
+        self.assertEqual(provider.location, "https://chat.stepfun.com/chats/")
+        self.assertEqual(reply, "stepfun reply")
+        new_chat.assert_called_once_with(page)
+        chat.assert_called_once_with(page, "hello", response_timeout=20.0)
+
+        provider.close()
+        session.close.assert_called_once_with()
+
+
 class MimoWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
@@ -227,6 +268,7 @@ class ProviderTimeoutBoundaryTests(unittest.TestCase):
             (DeepSeekWebProvider, deepseek_web.deepseek),
             (QwenWebProvider, qwen_web.qwen),
             (MimoWebProvider, mimo_web.mimo),
+            (StepFunWebProvider, stepfun_web.stepfun),
             (GlmWebProvider, glm_web.glm),
         )
         for provider_type, driver in cases:
@@ -261,38 +303,48 @@ class ProviderRegistryTests(unittest.TestCase):
         self.assertNotIn("local", registry.PROVIDER_URL_CONTAINS)
 
     def test_provider_ids_are_ordered_for_ui(self) -> None:
-        self.assertEqual(registry.provider_ids(), ("deepseek", "mimo", "qwen", "glm", "local"))
+        self.assertEqual(
+            registry.provider_ids(),
+            ("deepseek", "mimo", "stepfun", "qwen", "glm", "local"),
+        )
 
     def test_provider_tab_availability_returns_all_registered_providers(self) -> None:
         with mock.patch.object(
             registry,
             "detect_open_provider_tabs",
-            return_value={"deepseek": True, "mimo": True},
+            return_value={"deepseek": True, "stepfun": True},
         ), mock.patch.object(registry, "local_endpoint_available", return_value=True):
             statuses = registry.provider_tab_availability()
 
         self.assertEqual(
             statuses,
-            {"deepseek": True, "mimo": True, "qwen": False, "glm": False, "local": True},
+            {
+                "deepseek": True,
+                "mimo": False,
+                "stepfun": True,
+                "qwen": False,
+                "glm": False,
+                "local": True,
+            },
         )
 
     def test_connect_provider_dispatches_supported_ids(self) -> None:
         deepseek = object()
         qwen = object()
-        mimo = object()
+        stepfun = object()
         glm = object()
         local = object()
         with (
             mock.patch.object(registry, "load_enabled_override", return_value=None),
             mock.patch.object(registry.DeepSeekWebProvider, "connect", return_value=deepseek),
             mock.patch.object(registry.QwenWebProvider, "connect", return_value=qwen),
-            mock.patch.object(registry.MimoWebProvider, "connect", return_value=mimo),
+            mock.patch.object(registry.StepFunWebProvider, "connect", return_value=stepfun),
             mock.patch.object(registry.GlmWebProvider, "connect", return_value=glm),
             mock.patch.object(registry.LocalOpenAIProvider, "connect", return_value=local),
         ):
             self.assertIs(registry.connect_provider("deepseek", port=9222), deepseek)
             self.assertIs(registry.connect_provider("qwen", port=9222), qwen)
-            self.assertIs(registry.connect_provider("mimo", port=9222), mimo)
+            self.assertIs(registry.connect_provider("stepfun", port=9222), stepfun)
             self.assertIs(registry.connect_provider("glm", port=9222), glm)
             self.assertIs(registry.connect_provider("local", port=9222), local)
 

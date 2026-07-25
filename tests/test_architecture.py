@@ -27,7 +27,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("codey.browser", imports)
         self.assertNotIn("codey.deepseek", imports)
         self.assertNotIn("codey.qwen", imports)
-        self.assertNotIn("codey.mimo", imports)
+        self.assertNotIn("codey.stepfun", imports)
         self.assertNotIn("codey.glm", imports)
         self.assertIn("codey.providers", imports)
         self.assertIn("codey.protocols", imports)
@@ -39,7 +39,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn("codey.browser", imports)
                 self.assertNotIn("codey.deepseek", imports)
                 self.assertNotIn("codey.qwen", imports)
-                self.assertNotIn("codey.mimo", imports)
+                self.assertNotIn("codey.stepfun", imports)
                 self.assertNotIn("codey.glm", imports)
 
     def test_http_server_delegates_task_orchestration(self) -> None:

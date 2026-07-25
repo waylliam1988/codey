@@ -423,8 +423,9 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
         codey_server.connect_existing_provider = lambda provider_id: ScriptedReviewer()
         codey_server.provider_availability = lambda: {
             "deepseek": True,
-            "qwen": True,
             "mimo": True,
+            "qwen": True,
+            "stepfun": True,
             "glm": True,
         }
         codey_server.pick_folder = lambda mode="open", initial=None: str(project)

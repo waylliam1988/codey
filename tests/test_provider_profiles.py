@@ -12,7 +12,7 @@ class ProviderProfileTests(unittest.TestCase):
     def test_bundled_profiles_are_versioned_and_complete(self) -> None:
         profiles = provider_profiles.load_profiles()
 
-        self.assertEqual(set(profiles), {"deepseek", "qwen", "mimo", "glm"})
+        self.assertEqual(set(profiles), {"deepseek", "qwen", "mimo", "stepfun", "glm"})
         for profile in profiles.values():
             self.assertGreaterEqual(profile.version, 1)
             self.assertTrue(profile.hosts)

@@ -30,7 +30,7 @@ class ProfileDoctorTests(unittest.TestCase):
                 metadata={"enabled": True, "anchor_distance": 35, "bottom_ratio": 0.9},
             ),
         )
-        return profile_doctor.make_request("mimo", "send_button", object(), candidates)
+        return profile_doctor.make_request("stepfun", "send_button", object(), candidates)
 
     def test_valid_known_candidate_is_selected_with_one_call(self) -> None:
         request = self._request()
@@ -130,7 +130,7 @@ class ProfileDoctorTests(unittest.TestCase):
             fingerprint={"tag": "div", "text": "private model answer", "classes": ["markdown-prose"]},
             score=41,
         )
-        request = profile_doctor.make_request("mimo", "response", object(), (discovery,))
+        request = profile_doctor.make_request("stepfun", "response", object(), (discovery,))
 
         prompt = profile_doctor.render_prompt(request)
 

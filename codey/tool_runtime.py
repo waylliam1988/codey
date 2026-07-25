@@ -145,15 +145,22 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
     if len(content.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
     path = safe_join(root, rel)
+    before = ""
     if path.is_file():
         try:
-            if path.read_text(encoding="utf-8") == content:
+            before = path.read_text(encoding="utf-8")
+            if before == content:
                 return ToolOutcome(f"wrote {rel} (no changes)", True)
         except UnicodeDecodeError:
             pass
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
-    return ToolOutcome(f"wrote {rel} ({len(content)} chars)", True, changed=True)
+    syntax_hint = _python_syntax_regression_hint(rel, before, content)
+    return ToolOutcome(
+        f"wrote {rel} ({len(content)} chars){syntax_hint}",
+        True,
+        changed=True,
+    )
 
 
 def _replace_unique(content: str, search: str, replace: str) -> tuple[str, bool]:

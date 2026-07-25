@@ -19,12 +19,14 @@ from codey.providers.glm_web import GlmWebProvider
 from codey.providers.local_openai import LocalOpenAIProvider, local_endpoint_available
 from codey.providers.mimo_web import MimoWebProvider
 from codey.providers.qwen_web import QwenWebProvider
+from codey.providers.stepfun_web import StepFunWebProvider
 from codey.provider_worker import WorkerChatProvider
 
 DEFAULT_PROVIDER_ID = "deepseek"
 PROVIDER_LABELS = {
     "deepseek": "DeepSeek",
     "mimo": "MiMo",
+    "stepfun": "StepFun",
     "qwen": "Qwen",
     "glm": "GLM",
     "local": "Local",
@@ -35,6 +37,7 @@ WEB_PROVIDER_LABELS = {
 PROVIDER_TYPES = {
     "deepseek": DeepSeekWebProvider,
     "mimo": MimoWebProvider,
+    "stepfun": StepFunWebProvider,
     "qwen": QwenWebProvider,
     "glm": GlmWebProvider,
     "local": LocalOpenAIProvider,
@@ -44,6 +47,7 @@ PROVIDER_WORKER_PORT_OFFSETS = {
     "mimo": 102,
     "qwen": 103,
     "glm": 104,
+    "stepfun": 105,
 }
 WORKER_CHILD_ENV = "CODEY_PROVIDER_WORKER_CHILD"
 

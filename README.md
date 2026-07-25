@@ -2,19 +2,19 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.12-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.13-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
 [中文说明](README.zh-CN.md)
 
-Codey connects to AI chat websites you already use, such as DeepSeek, Qwen, Xiaomi MiMo, and GLM, or to a local OpenAI-compatible model, then gives them controlled local work loops: chat, research with evidence, read files, edit files, run tests, show diffs, review changes, and restore safely.
+Codey connects to AI chat websites you already use, such as DeepSeek, MiMo, StepFun, Qwen, and GLM, or to a local OpenAI-compatible model, then gives them controlled local work loops: chat, research with evidence, read files, edit files, run tests, show diffs, review changes, and restore safely.
 
 It is a local-first, low-cost AI coding and research workspace for people who want useful coding help without wiring paid model APIs into every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.12`
+Version: `0.2.13`
 
 [Version history](CHANGELOG.md)
 
@@ -22,7 +22,7 @@ Version: `0.2.12`
 
 ## At a Glance
 
-- **Use web AI accounts you already have**: DeepSeek, Qwen, Xiaomi MiMo, and GLM are supported.
+- **Use web AI accounts you already have**: DeepSeek, MiMo, StepFun, Qwen, and GLM are supported.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
 - **Keep code local**: models access only the project folder you choose.
 - **Carry research into projects**: after research, choose a folder and Codey injects a bounded Research Brief with citations and limitations instead of the whole vault.
@@ -98,8 +98,8 @@ This is not about replacing professional tools. It is about making the first ste
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
 - Recover one bounded web-chat state rule from boolean-only evidence when a
-  verified control bundle is not enough; Qwen uses a real stop-state
-  transition and MiMo uses an explicit typing transition
+  verified control bundle is not enough; provider-specific completion signals
+  stay isolated inside each adapter
 - Hand an interrupted project Writer to a healthy sibling model from bounded
   local checkpoint facts, with at most two switches and no repeated uncertain
   submission to the failed model
@@ -132,7 +132,8 @@ This is not about replacing professional tools. It is about making the first ste
 | Model | Status |
 |---|---|
 | DeepSeek Web | Tested |
-| Xiaomi MiMo Chat | Tested |
+| Xiaomi MiMo | Tested |
+| StepFun Chat | Tested |
 | Qwen Studio | Tested |
 | GLM | Tested |
 | Local OpenAI-compatible | Optional; configure endpoint/model in Codey |
@@ -149,10 +150,9 @@ restore the previous bundle. Normal healthy sends do not call sibling models.
 The same recovery bundle can contain one bounded Flow Recipe made only from
 fixed boolean facts such as response stability and a verified stop-state
 transition. Recipes cannot contain selectors, JavaScript, URLs, arbitrary
-clicks, page text, or project data. Completion is never inferred from stable
-text alone. Qwen uses a real stop-state transition, MiMo uses an explicit
-typing transition, and GLM safely keeps its built-in behavior until it exposes
-equally reliable terminal evidence.
+clicks, page text, or project data. Provider-specific completion logic remains
+inside the individual adapters, and Codey does not promote a learned Flow rule
+unless the current boolean facts prove it.
 
 If a project Writer fails with an explicit provider-page error, Codey can move
 the unfinished task to a healthy sibling model. The new Writer starts a clean
@@ -187,7 +187,7 @@ evidence notes.
 The main screen stays the same:
 
 ```text
-Choose folder · Research · DeepSeek/Qwen/Local
+Choose folder · Research · DeepSeek/MiMo/StepFun/Qwen/Local
 ```
 
 - `Choose folder` attaches the current chat to a project.
@@ -200,11 +200,19 @@ note writes, restore, and evidence checks are always local Codey tools. Models
 do not get hidden network access. A final synthesis can cite only sources that
 Codey actually opened in the run.
 
-Provider fit matters for Research. MiMo remains supported for ordinary chat and
-simpler tasks, but live Deep Research A/B probes show it is currently a poor fit
-for the strict JSON-tool research loop: it may emit multiple or malformed JSON
-tool calls and lose context after protocol repair. Prefer DeepSeek, Qwen, GLM,
-or `Local` when you want evidence-backed research with source notes.
+Provider fit matters. Codey does not route automatically by role yet; choose the
+provider that fits the current job:
+
+| Provider | Best Fit | Current Caution |
+|---|---|---|
+| DeepSeek / Qwen / GLM | General coding, review, and Research | Daily web-use limits can interrupt long runs |
+| MiMo | Coding/editing when stronger providers are limited | Not recommended for strict JSON-tool Research; live probes often emitted multiple or malformed JSON calls |
+| StepFun | Evidence-backed Research and local JSON-tool probes | Not recommended as the main writer for fresh projects yet; a create smoke failed on Python syntax repair |
+| Local | Private/offline runs and quota fallback | Quality depends on your local model |
+
+MiniMax was also probed and not selected because its Agent page ignored the
+local JSON-tool protocol on the first probe and used its own web/agent behavior
+instead.
 
 In 0.2.4, Research keeps an Evidence Ledger and applies a deterministic report
 quality gate before saving the final synthesis. The report must include:
@@ -417,7 +425,7 @@ Git is an upgrade path, not an entry requirement.
 
 ## Self-Bootstrap Proof
 
-Codey has been tested repairing broken copies of itself using DeepSeek, MiMo, and Qwen.
+Codey has been tested repairing broken copies of itself using DeepSeek, MiMo, StepFun, and Qwen.
 
 Each model:
 
@@ -509,8 +517,9 @@ Server / Orchestrator
 Agent Runtime -- JsonToolCodec
    |
 ChatProvider -- DeepSeekWebProvider
-             -- QwenWebProvider
              -- MimoWebProvider
+             -- StepFunWebProvider
+             -- QwenWebProvider
              -- GlmWebProvider
              -- LocalOpenAIProvider
    |
@@ -526,6 +535,7 @@ Browser Session + provider DOM driver
 ```text
 codey/
   agent.py                  provider-independent agent runtime
+  models.py                 shared tool-call and protocol data models
   cancellation.py           shared task-local cancellation and process cleanup
   events.py                 structured run events and log rendering
   text_budget.py            bounded head-and-tail output clipping
@@ -534,6 +544,7 @@ codey/
   tool_runtime.py           local tools and structured outcomes
   execution_evidence.py     bounded in-memory execution fact ledger
   references.py             bounded lexical reference hints
+  change_set.py             structured diff files, hunks, and rename/copy facts
   changed_symbols.py        lexical changed-symbol extraction from visible diffs
   project_map.py            deterministic bounded project orientation
   project_task_context.py   project facts, map, checkpoint, and verification context
@@ -559,6 +570,7 @@ codey/
   provider_revival.py       atomic control bundles, promotion, and rollback
   provider_submission.py    shared one-shot remote submission boundary
   provider_send_loop.py     shared send-loop lifecycle helpers for web providers
+  provider_timeouts.py      shared provider deadline and navigation timeout helpers
   provider_supervisor.py    passive health circuit, Writer selection, and canary
   adapter_overrides.py      local adapter candidates, promotion, and rollback
   adapter_repair.py         sandboxed provider adapter repair runner
@@ -570,8 +582,11 @@ codey/
   provider_worker.py        parent-side isolated adapter worker wrapper
   provider_worker_child.py  child process adapter runner
   profile_doctor.py         one-shot sanitized candidate selection
+  json_tool_reply.py        tolerant final JSON tool-reply detection and repair
+  web_clipboard.py          bounded copy-action clipboard transaction helper
   deepseek.py               DeepSeek page driver
   mimo.py                   MiMo page driver
+  stepfun.py                StepFun page driver
   qwen.py                   Qwen page driver
   glm.py                    GLM page driver
   provider_diagnostics.py   compact provider failure records

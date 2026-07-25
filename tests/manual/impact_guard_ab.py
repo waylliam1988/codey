@@ -35,7 +35,7 @@ from tests.manual.project_task_context import render_production_project_map
 
 ARMS = ("current", "impact_guard")
 DEFAULT_PROVIDERS = ("deepseek", "qwen")
-ALL_WEB_PROVIDERS = ("deepseek", "mimo", "qwen", "glm")
+ALL_WEB_PROVIDERS = ("deepseek", "stepfun", "qwen", "glm")
 SOURCE_SUFFIXES = {
     ".py",
     ".js",

@@ -26,6 +26,7 @@ from codey.local_store import DEFAULT_STATE_HOME
 DEEPSEEK_URL = "https://chat.deepseek.com/"
 QWEN_URL = "https://chat.qwen.ai/"
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
+STEPFUN_URL = "https://chat.stepfun.com/chats/"
 GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
 DEFAULT_PORT = 9222
 CDP_CONNECT_TIMEOUT_MS = 60_000
@@ -41,12 +42,14 @@ PROVIDER_URL_CONTAINS = {
     "deepseek": "chat.deepseek.com",
     "qwen": "chat.qwen.ai",
     "mimo": "aistudio.xiaomimimo.com",
+    "stepfun": "chat.stepfun.com",
     "glm": "chatglm.cn",
 }
 PROVIDER_START_URLS = {
     "deepseek": DEEPSEEK_URL,
     "qwen": QWEN_URL,
     "mimo": MIMO_URL,
+    "stepfun": STEPFUN_URL,
     "glm": GLM_URL,
 }
 
@@ -654,6 +657,28 @@ def open_mimo(
     return open_chat_page(
         MIMO_URL,
         "aistudio.xiaomimimo.com",
+        port=port,
+        profile=profile,
+        open_if_missing=open_if_missing,
+        bring_to_front=bring_to_front,
+        isolated=isolated,
+        fresh_tab=fresh_tab,
+    )
+
+
+def open_stepfun(
+    port: int = DEFAULT_PORT,
+    profile: Path = DEFAULT_PROFILE,
+    *,
+    open_if_missing: bool = True,
+    bring_to_front: bool = True,
+    isolated: bool = False,
+    fresh_tab: bool = False,
+) -> Session:
+    """Return a session attached to a StepFun Chat tab."""
+    return open_chat_page(
+        STEPFUN_URL,
+        "chat.stepfun.com",
         port=port,
         profile=profile,
         open_if_missing=open_if_missing,

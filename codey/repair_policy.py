@@ -10,12 +10,14 @@ PROVIDER_ADAPTER_FILES = {
     "deepseek": ("codey/deepseek.py", "codey/providers/deepseek_web.py"),
     "qwen": ("codey/qwen.py", "codey/providers/qwen_web.py"),
     "mimo": ("codey/mimo.py", "codey/providers/mimo_web.py"),
+    "stepfun": ("codey/stepfun.py", "codey/providers/stepfun_web.py"),
     "glm": ("codey/glm.py", "codey/providers/glm_web.py"),
 }
 PROVIDER_TEST_FILES = {
     "deepseek": ("tests/test_deepseek.py",),
     "qwen": ("tests/test_qwen.py",),
     "mimo": ("tests/test_mimo.py",),
+    "stepfun": ("tests/test_stepfun.py",),
     "glm": ("tests/test_glm.py",),
 }
 FORBIDDEN_SNIPPETS = (

@@ -107,7 +107,7 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
             )
             recorder.event(
                 "provider_send_error",
-                provider="mimo",
+                provider="stepfun",
                 role="advisor",
                 elapsed=1.0,
                 error="stopped",
@@ -116,7 +116,7 @@ class MoaSnakeFlowScriptTests(unittest.TestCase):
             bottlenecks = moa_snake_flow.summarize_bottlenecks(recorder)
 
         self.assertEqual(len(bottlenecks), 2)
-        self.assertEqual({item["provider"] for item in bottlenecks}, {"qwen", "mimo"})
+        self.assertEqual({item["provider"] for item in bottlenecks}, {"qwen", "stepfun"})
 
 
 if __name__ == "__main__":

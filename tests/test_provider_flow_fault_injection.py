@@ -137,86 +137,34 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
         )
         helper.assert_not_called()
 
-    def test_mimo_typing_transition_recovers_then_promotes(self) -> None:
-        page = mock.Mock(url="https://aistudio.xiaomimimo.com/#/c")
-        generating = _DomFrame(typing=True)
-        terminal = _DomFrame(
-            response_nonempty=True,
-            response_stable=True,
-            typing=False,
-        )
-        trace = _trace(generating, terminal, terminal)
-
-        with tempfile.TemporaryDirectory() as td:
-            path = Path(td) / "provider-controls.json"
-
-            @controls.revival_send("mimo")
-            def recover(current_page):
-                return controls.flow_stage_ready(
-                    current_page,
-                    "mimo",
-                    flow.STAGE_COMPLETION,
-                    trace,
-                    terminal.observation(),
-                    built_in_ready=False,
-                    allow_recovery=True,
-                )
-
-            @controls.revival_send("mimo")
-            def natural_success(current_page):
-                return controls.flow_stage_ready(
-                    current_page,
-                    "mimo",
-                    flow.STAGE_COMPLETION,
-                    trace,
-                    terminal.observation(),
-                    built_in_ready=True,
-                )
-
-            helper = mock.Mock()
-            flow.set_recovery_handler(helper)
-            with mock.patch.object(controls, "CONTROL_STORE", path):
-                controls.begin_task_context("mimo-flow-recovery")
-                self.assertTrue(recover(page))
-                provisional = controls.load_controls(path)["mimo"]["_revival"]
-
-                controls.end_task_context()
-                controls.begin_task_context("mimo-natural-success")
-                self.assertTrue(natural_success(page))
-                active = controls.load_controls(path)["mimo"]["_revival"]
-
-        helper.assert_not_called()
-        self.assertEqual(provisional["status"], "provisional")
-        self.assertEqual(active["status"], "active")
-
-    def test_mimo_unreadable_flow_response_rolls_back_after_second_failure(self) -> None:
-        page = mock.Mock(url="https://aistudio.xiaomimimo.com/#/c")
-        profile_digest = flow.profile_hash(controls.get_profile("mimo"))
+    def test_qwen_unreadable_flow_response_rolls_back_after_second_failure(self) -> None:
+        page = mock.Mock(url="https://chat.qwen.ai/")
+        profile_digest = flow.profile_hash(controls.get_profile("qwen"))
         old_flow = {
             flow.STAGE_COMPLETION: (
                 flow.PREDICATE_RESPONSE_STABLE,
-                flow.PREDICATE_STOP_HIDDEN,
+                flow.PREDICATE_COPY_VISIBLE,
             )
         }
         current_flow = {
             flow.STAGE_COMPLETION: (
                 flow.PREDICATE_RESPONSE_STABLE,
-                flow.PREDICATE_TYPING_FALSE,
+                flow.PREDICATE_STOP_HIDDEN,
             )
         }
         terminal = _DomFrame(
             response_nonempty=True,
             response_stable=True,
-            typing=False,
+            stop_visible=False,
         )
-        trace = _trace(_DomFrame(typing=True), terminal, terminal)
+        trace = _trace(_DomFrame(stop_visible=True), terminal, terminal)
 
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "provider-controls.json"
             revival.complete_send(
                 path,
-                "mimo",
-                "aistudio.xiaomimimo.com",
+                "qwen",
+                "chat.qwen.ai",
                 {},
                 set(),
                 set(),
@@ -225,8 +173,8 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
             )
             revival.complete_send(
                 path,
-                "mimo",
-                "aistudio.xiaomimimo.com",
+                "qwen",
+                "chat.qwen.ai",
                 {},
                 set(),
                 set(),
@@ -235,8 +183,8 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
             )
             revival.complete_send(
                 path,
-                "mimo",
-                "aistudio.xiaomimimo.com",
+                "qwen",
+                "chat.qwen.ai",
                 {},
                 set(),
                 set(),
@@ -244,12 +192,12 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
                 built_in_profile_hash=profile_digest,
             )
 
-            @controls.revival_send("mimo")
+            @controls.revival_send("qwen")
             def unreadable(current_page):
                 self.assertTrue(
                     controls.flow_stage_ready(
                         current_page,
-                        "mimo",
+                        "qwen",
                         flow.STAGE_COMPLETION,
                         trace,
                         terminal.observation(),
@@ -257,7 +205,7 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
                     )
                 )
                 return controls.read_flow_response(
-                    "mimo",
+                    "qwen",
                     flow.STAGE_COMPLETION,
                     lambda: (_ for _ in ()).throw(RuntimeError("unreadable")),
                 )
@@ -266,20 +214,20 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
                 controls.begin_task_context("failure-1")
                 with self.assertRaises(ResponseMissing):
                     unreadable(page)
-                first = controls.load_controls(path)["mimo"]["_revival"]
+                first = controls.load_controls(path)["qwen"]["_revival"]
 
                 controls.end_task_context()
                 controls.begin_task_context("failure-2")
                 with self.assertRaises(ResponseMissing):
                     unreadable(page)
                 restored = revival.load_flow_recipe(
-                    path, "mimo", profile_digest
+                    path, "qwen", profile_digest
                 )
 
         self.assertEqual(first["failures"], 1)
         self.assertEqual(restored, old_flow)
 
-    def test_mimo_and_glm_text_stability_cannot_start_recovery(self) -> None:
+    def test_stepfun_and_glm_text_stability_cannot_start_recovery(self) -> None:
         trace = _trace(
             _DomFrame(response_nonempty=True, response_stable=True),
             _DomFrame(response_nonempty=True, response_stable=True),
@@ -287,7 +235,7 @@ class ProviderFlowFaultInjectionTests(unittest.TestCase):
         helper = mock.Mock()
         flow.set_recovery_handler(helper)
 
-        for provider_id in ("mimo", "glm"):
+        for provider_id in ("stepfun", "glm"):
             with self.subTest(provider_id=provider_id):
                 self.assertIsNone(
                     flow.request_recovery(

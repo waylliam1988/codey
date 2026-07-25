@@ -2,19 +2,19 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.12-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.13-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
 [English](README.md)
 
-Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小米 MiMo 和 GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的本地工作闭环：聊天、带证据的 Research、读文件、改文件、跑测试、看 diff、审查改动、必要时恢复。
+Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、StepFun、Qwen 和 GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的本地工作闭环：聊天、带证据的 Research、读文件、改文件、跑测试、看 diff、审查改动、必要时恢复。
 
 它是一个本地优先、低成本、多网页模型兼容的 AI 编程与研究工作台，适合不想为每个项目接入付费模型 API 的用户。
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.12`
+版本：`0.2.13`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -22,7 +22,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、Qwen、小�
 
 ## 一眼看懂
 
-- **使用你已经登录的网页 AI**：支持 DeepSeek、Qwen、小米 MiMo 和 GLM。
+- **使用你已经登录的网页 AI**：支持 DeepSeek、MiMo、StepFun、Qwen 和 GLM。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存证据笔记、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
 - **代码留在本机**：模型只能访问你选择的项目目录。
 - **把研究带进项目**：研究结束后选择项目文件夹，Codey 只把带引用和限制条件的有边界 Research Brief 注入 Writer，不把整个 vault 塞进去。
@@ -89,8 +89,8 @@ Codey 想解决的是一个很朴素的问题：
 - 非 Git 项目的 diff 和 restore 在 Codey 重启后仍然可用
 - 网页输入框或发送按钮改版时，先做有边界的本地发现，仍不确定则让健康兄弟模型
   从脱敏候选中选择；真实发送成功后才能保存、晋级或回滚恢复包
-- 控件恢复仍不足时，只根据脱敏布尔事实恢复一条有边界的网页状态规则；当前 Qwen
-  completion 必须观察到真实的“生成中 → stop 消失”转换
+- 控件恢复仍不足时，只根据脱敏布尔事实恢复一条有边界的网页状态规则；不同网页的
+  completion 信号仍隔离在各自 adapter 里
 - Writer 遇到明确网页故障时，从本地 checkpoint 把未完成任务交给健康兄弟模型，
   同一任务最多切换两次，不会向提交状态不确定的旧模型重发
 - 用小型健康熔断区分控件故障、临时错误、限流、登录和验证码状态
@@ -116,7 +116,8 @@ Codey 想解决的是一个很朴素的问题：
 | 模型 | 状态 |
 |---|---|
 | DeepSeek Web | 已实机测试 |
-| Xiaomi MiMo Chat | 已实机测试 |
+| 小米 MiMo | 已实机测试 |
+| StepFun Chat | 已实机测试 |
 | Qwen Studio | 已实机测试 |
 | GLM | 已实机测试 |
 | Local OpenAI-compatible | 可选；在 Codey 中配置 endpoint 和模型名 |
@@ -131,9 +132,8 @@ Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当�
 
 同一恢复包现在还可以保存一条有边界的 Flow Recipe。它只能组合固定布尔事实，例如
 回答稳定和经过验证的 stop 或 typing 状态转换，不能包含 selector、JavaScript、URL、
-任意点击、网页正文或项目数据。Codey 绝不会只凭“文字暂时稳定”猜测回答已经结束。
-Qwen 使用真实 stop 状态转换，MiMo 使用明确 typing 状态转换；GLM 在没有同等可靠的
-终止证据时继续安全降级。
+任意点击、网页正文或项目数据。Provider 专属 completion 逻辑仍留在各自 adapter 中；
+Codey 只有在当前布尔事实能证明规则成立时，才会晋级学到的 Flow Recipe。
 
 如果网页变化大到 adapter 代码本身也坏了，Codey 现在可以把这个 Provider 放入后台
 自修复队列。自修复运行在独立 Python 进程中，只允许健康 helper 模型修改坏掉的
@@ -154,7 +154,7 @@ Provider worker 运行；worker 使用同一个已登录 Codey 浏览器 profile
 主界面仍然是一条很轻的上下文：
 
 ```text
-Choose folder · Research · DeepSeek/Qwen/Local
+Choose folder · Research · DeepSeek/MiMo/StepFun/Qwen/Local
 ```
 
 - `Choose folder` 把当前聊天接到项目目录。
@@ -165,10 +165,17 @@ Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开
 笔记写入、restore 和 evidence review 都由 Codey 本地工具执行。模型没有隐藏联网权。
 最终 synthesis 只能引用本轮 Codey 实际打开过的来源。
 
-Research 对 provider 的协议遵守能力更敏感。MiMo 仍然支持普通聊天和较简单任务，
-但实机 Deep Research A/B 显示，它目前不适合作为严格 JSON-tool 研究闭环的主模型：
-它可能一次输出多个或格式不正确的 JSON tool call，并在 protocol repair 后丢失上下文。
-如果你需要带 evidence note 的深度研究，优先使用 DeepSeek、Qwen、GLM 或 `Local`。
+Provider 的适用场景很重要。Codey 暂时不会按角色自动切换模型；你可以按当前任务手动选择：
+
+| Provider | 更适合 | 当前注意点 |
+|---|---|---|
+| DeepSeek / Qwen / GLM | 通用写代码、Review 和 Research | 网页每日额度可能打断长任务 |
+| MiMo | 强模型额度不够时做代码编辑/实现 | 不建议用于严格 JSON-tool Research；实机 probe 里经常一次输出多个或格式不正确的 JSON |
+| StepFun | 带证据的 Research 和本地 JSON-tool probe | 暂不建议作为从零新建项目的主 Writer；create smoke 卡在 Python 语法修复 |
+| Local | 私有/offline 任务和额度兜底 | 质量取决于你的本地模型 |
+
+MiniMax 也做过 probe，但没有被选中，因为它的 Agent 页面首轮就脱离本地 JSON-tool 协议，
+改用自己的网页/agent 行为。
 
 从 0.2.4 开始，Research 会维护 Evidence Ledger，并在保存最终 synthesis 前通过确定性的
 报告质量门。报告必须包含：
@@ -370,7 +377,7 @@ Codey 按这个思路设计：
 
 ## 自举证明
 
-Codey 已经测试过用 DeepSeek、MiMo 和 Qwen 修复被故意弄坏的 Codey 临时副本。
+Codey 已经测试过用 DeepSeek、MiMo、StepFun 和 Qwen 修复被故意弄坏的 Codey 临时副本。
 
 每个模型都完成了这个闭环：
 
@@ -456,15 +463,16 @@ Server / Orchestrator
 Agent Runtime -- JsonToolCodec
    |
 ChatProvider -- DeepSeekWebProvider
-             -- QwenWebProvider
              -- MimoWebProvider
+             -- StepFunWebProvider
+             -- QwenWebProvider
              -- GlmWebProvider
              -- LocalOpenAIProvider
    |
 Browser Session + provider DOM driver
 ```
 
-`agent.py` 只认识 `ChatProvider`、`ProtocolCodec` 和工具调用，不知道具体网页 DOM。DeepSeek、Qwen、MiMo 和 GLM 的网页选择器分别在自己的驱动里。
+`agent.py` 只认识 `ChatProvider`、`ProtocolCodec` 和工具调用，不知道具体网页 DOM。DeepSeek、MiMo、StepFun、Qwen 和 GLM 的网页选择器分别在自己的驱动里。
 
 ---
 
@@ -473,6 +481,7 @@ Browser Session + provider DOM driver
 ```text
 codey/
   agent.py                  与模型网站无关的 agent runtime
+  models.py                 共享的工具调用和协议数据模型
   cancellation.py           共享的任务级取消和进程清理
   events.py                 结构化运行事件和日志渲染
   text_budget.py            有上限的命令输出头尾截取
@@ -481,6 +490,7 @@ codey/
   tool_runtime.py           本地工具和结构化执行结果
   execution_evidence.py     有边界的内存执行证据账本
   references.py             有边界的文本引用提示
+  change_set.py             结构化 diff 文件、hunk 和 rename/copy 事实
   changed_symbols.py        从可见 diff 提取变化的 symbol
   project_map.py            确定性的有边界项目地图
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
@@ -506,6 +516,7 @@ codey/
   provider_revival.py       控件恢复包的原子保存、晋级和回滚
   provider_submission.py    共享的单次远程提交边界
   provider_send_loop.py     网页模型发送循环生命周期 helper
+  provider_timeouts.py      共享的 provider deadline 和导航超时 helper
   provider_supervisor.py    被动健康熔断、Writer 选择和 canary
   adapter_overrides.py      本地 adapter 候选、晋级和回滚
   adapter_repair.py         sandbox 中的 Provider adapter 修复执行器
@@ -517,8 +528,11 @@ codey/
   provider_worker.py        父进程侧 adapter worker 包装
   provider_worker_child.py  子进程 adapter 运行器
   profile_doctor.py         单次脱敏候选选择
+  json_tool_reply.py        最终 JSON tool reply 的宽容检测和修复
+  web_clipboard.py          有边界的复制按钮剪贴板事务 helper
   deepseek.py               DeepSeek 页面驱动
   mimo.py                   MiMo 页面驱动
+  stepfun.py                StepFun 页面驱动
   qwen.py                   Qwen 页面驱动
   glm.py                    GLM 页面驱动
   provider_diagnostics.py   小型 provider 失败记录

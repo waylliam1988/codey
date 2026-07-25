@@ -40,8 +40,8 @@ class ConsensusTests(unittest.TestCase):
     def test_advisor_ids_use_available_models_without_trigger_words(self) -> None:
         ids = consensus.advisor_ids(
             "deepseek",
-            {"deepseek": True, "qwen": True, "glm": True, "mimo": False},
-            ("deepseek", "mimo", "qwen", "glm"),
+            {"deepseek": True, "qwen": True, "glm": True, "stepfun": False},
+            ("deepseek", "stepfun", "qwen", "glm"),
         )
 
         self.assertEqual(ids, ("qwen", "glm"))

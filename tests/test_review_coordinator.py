@@ -24,7 +24,7 @@ class ReviewCoordinatorTests(unittest.TestCase):
         coordinator = ReviewCoordinator(collect_changes)
         run_review = overrides.pop(
             "run_review",
-            mock.Mock(return_value=("mimo", ReviewResult("approved", "ok", []))),
+            mock.Mock(return_value=("stepfun", ReviewResult("approved", "ok", []))),
         )
         close_writer = overrides.pop("close_writer_for_review", mock.Mock())
         repair_writer = overrides.pop(
@@ -147,7 +147,7 @@ class ReviewCoordinatorTests(unittest.TestCase):
             "Fix one issue",
             [ReviewFinding("app.py", "Missing empty case", "Add a guard")],
         )
-        run_review = mock.Mock(return_value=("mimo", review))
+        run_review = mock.Mock(return_value=("stepfun", review))
         repair_writer = mock.Mock(return_value=RunResult("fixed", "done", 2, False, True))
 
         state = self.run_cycle(run_review=run_review, repair_writer=repair_writer)
@@ -174,7 +174,7 @@ class ReviewCoordinatorTests(unittest.TestCase):
         )
 
         state = self.run_cycle(
-            run_review=mock.Mock(return_value=("mimo", review)),
+            run_review=mock.Mock(return_value=("stepfun", review)),
             repair_writer=repair_writer,
             checks_before_review_followup=True,
         )
@@ -189,7 +189,7 @@ class ReviewCoordinatorTests(unittest.TestCase):
         )
 
         state = self.run_cycle(
-            run_review=mock.Mock(return_value=("mimo", review)),
+            run_review=mock.Mock(return_value=("stepfun", review)),
             repair_writer=repair_writer,
             checks_before_review_followup=True,
         )
@@ -204,7 +204,7 @@ class ReviewCoordinatorTests(unittest.TestCase):
         )
 
         state = self.run_cycle(
-            run_review=mock.Mock(return_value=("mimo", review)),
+            run_review=mock.Mock(return_value=("stepfun", review)),
             repair_writer=repair_writer,
             checks_before_review_followup=True,
         )
@@ -226,7 +226,7 @@ class ReviewCoordinatorTests(unittest.TestCase):
 
         with self.assertRaises(ProviderActionError):
             self.run_cycle(
-                run_review=mock.Mock(return_value=("mimo", review)),
+                run_review=mock.Mock(return_value=("stepfun", review)),
                 repair_writer=mock.Mock(side_effect=ProviderActionError(failure)),
             )
 

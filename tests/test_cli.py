@@ -100,7 +100,7 @@ class ProviderCliTests(unittest.TestCase):
         end_context.assert_called_once_with()
 
     def test_cmd_agent_cleans_task_context_when_provider_connection_fails(self) -> None:
-        args = mock.Mock(provider="mimo", port=9222, project=".", task=["fix"], max_turns=4)
+        args = mock.Mock(provider="stepfun", port=9222, project=".", task=["fix"], max_turns=4)
 
         with (
             mock.patch("codey.providers.connect_provider", side_effect=RuntimeError("offline")),
@@ -111,7 +111,7 @@ class ProviderCliTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "offline"):
                 cli.cmd_agent(args)
 
-        begin_context.assert_called_once_with("cli-agent:mimo")
+        begin_context.assert_called_once_with("cli-agent:stepfun")
         end_context.assert_called_once_with()
 
     def test_cmd_agent_json_emits_machine_readable_events(self) -> None:

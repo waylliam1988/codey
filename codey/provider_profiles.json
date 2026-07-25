@@ -36,6 +36,15 @@
         "dismiss_notice": ["button[aria-label=\"关闭公告\"]"]
       }
     },
+    "stepfun": {
+      "version": 1,
+      "hosts": ["chat.stepfun.com"],
+      "selectors": {
+        "message_box": ["textarea.Publisher_textarea__pMX9t:not([disabled])"],
+        "send_button": ["button[class*=\"Publisher_send\"]", "button[class*=\"Publisher_submit\"]"],
+        "response": ["div.message-markdown_markdown__Y5Weu"]
+      }
+    },
     "glm": {
       "version": 1,
       "hosts": ["chatglm.cn"],

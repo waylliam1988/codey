@@ -190,7 +190,7 @@ def run_probe(
     try:
         provider = connect_provider(provider_id, port=port)
         arms = ARMS
-        if order == "hint-first" or (order == "auto" and provider_id in {"mimo", "glm"}):
+        if order == "hint-first" or (order == "auto" and provider_id in {"stepfun", "glm"}):
             arms = tuple(reversed(ARMS))
         fault_rows = {}
         for arm in arms:
@@ -254,7 +254,7 @@ def run_self_test() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Live A/B for Python syntax regression hints.")
-    parser.add_argument("--provider", choices=provider_ids(), default="mimo")
+    parser.add_argument("--provider", choices=provider_ids(), default="stepfun")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--max-turns", type=int, default=10)
     parser.add_argument(

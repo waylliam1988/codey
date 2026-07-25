@@ -119,8 +119,8 @@ class LiveSmokeTests(unittest.TestCase):
         writer.location = "https://chat.deepseek.com/"
         writer.close = mock.Mock()
         reviewer = mock.Mock()
-        reviewer.name = "MiMo"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.return_value = '{"verdict":"approved","summary":"Looks good","findings":[]}'
         reviewer.close = mock.Mock()
         changes = {"ok": True, "changed_count": 1, "files": [], "diff": "+x"}
@@ -132,12 +132,12 @@ class LiveSmokeTests(unittest.TestCase):
             mock.patch.object(live_smoke, "_verify_fixture", return_value={"ok": True, "exit_code": 0, "output": "OK"}),
             mock.patch.object(live_smoke.shutil, "rmtree"),
         ):
-            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "mimo")
+            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "stepfun")
 
         self.assertEqual(connect.call_args_list[0], mock.call("deepseek", port=9222))
         self.assertEqual(
             connect.call_args_list[1],
-            mock.call("mimo", port=9222, open_if_missing=False, bring_to_front=False),
+            mock.call("stepfun", port=9222, open_if_missing=False, bring_to_front=False),
         )
         reviewer.new_chat.assert_called_once_with()
         reviewer.close.assert_called_once_with()
@@ -150,8 +150,8 @@ class LiveSmokeTests(unittest.TestCase):
         writer.location = "https://chat.deepseek.com/"
         writer.close = mock.Mock()
         reviewer = mock.Mock()
-        reviewer.name = "MiMo"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.side_effect = RuntimeError("generation failed")
         reviewer.close = mock.Mock()
         changes = {"ok": True, "changed_count": 1, "files": [], "diff": "+x"}
@@ -163,7 +163,7 @@ class LiveSmokeTests(unittest.TestCase):
             mock.patch.object(live_smoke, "_verify_fixture", return_value={"ok": True, "exit_code": 0, "output": "OK"}),
             mock.patch.object(live_smoke.shutil, "rmtree"),
         ):
-            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "mimo")
+            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "stepfun")
 
         reviewer.close.assert_called_once_with()
         self.assertEqual(data["review"], "unavailable")
@@ -176,8 +176,8 @@ class LiveSmokeTests(unittest.TestCase):
         writer.location = "https://chat.deepseek.com/"
         writer.close = mock.Mock()
         reviewer = mock.Mock()
-        reviewer.name = "MiMo"
-        reviewer.location = "https://aistudio.xiaomimimo.com/#/c"
+        reviewer.name = "StepFun"
+        reviewer.location = "https://chat.stepfun.com/chats/"
         reviewer.send.side_effect = [
             "looks good but not json",
             '{"verdict":"approved","summary":"Looks good","findings":[]}',
@@ -192,7 +192,7 @@ class LiveSmokeTests(unittest.TestCase):
             mock.patch.object(live_smoke, "_verify_fixture", return_value={"ok": True, "exit_code": 0, "output": "OK"}),
             mock.patch.object(live_smoke.shutil, "rmtree"),
         ):
-            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "mimo")
+            data = live_smoke.run_smoke("deepseek", "edit", 9222, 8, "stepfun")
 
         self.assertEqual(reviewer.send.call_count, 2)
         self.assertEqual(data["review"], "approved")

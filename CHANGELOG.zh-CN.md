@@ -4,6 +4,24 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.13 - Provider Fit Update
+
+- Provider 列表：新增 StepFun，同时保留小米 MiMo。UI、provider registry、
+  browser warmup、provider profile、repair policy 和 worker 端口偏移现在同时覆盖
+  `mimo` 和 `stepfun`。
+- StepFun adapter：新增 `codey/stepfun.py` 和 `StepFunWebProvider`，连接
+  `https://chat.stepfun.com/chats/`。adapter 使用 StepFun 的普通 textarea
+  输入框，读取最新 markdown 回答并避开 reasoning 区，发送/读取逻辑仍隔离在
+  provider 专属代码里。
+- 选择依据：实机 probe 显示 StepFun 能按本地 JSON-tool 协议一轮一个 action 地工作，
+  这点在 Research fixture 里表现更好。它通过了一个小型 edit-and-test 代码 smoke，
+  但前几轮需要现有 protocol nudge 把非 JSON tool-call 标记拉回；从零创建项目的 smoke
+  仍卡在 Python 语法修复上，所以暂不把它宣传成最强默认项目 Writer。MiMo 仍适合代码
+  编辑/实现，但实机 probe 后不建议用于严格 JSON-tool Research。MiniMax 没有被选中，
+  因为它的 Agent 页面首轮就忽略本地 JSON-tool 协议，改用自己的网页/agent 行为。
+- 边界克制：没有加入角色路由，没有新增 UI 模式，没有为了某个 provider 加重其它 provider
+  prompt，也没有改 provider-independent agent/tool/review 核心。
+
 ## 0.2.12 - Research A/B and Provider Parsing Hygiene
 
 - Manual Deep Research A/B：实机 probe 默认使用低发送量的 `cheap` profile，

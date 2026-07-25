@@ -83,11 +83,11 @@ class ProviderSupervisorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             supervisor = ProviderSupervisor(td)
             health = supervisor.record_failure(
-                "mimo", failure("submission_uncertain")
+                "stepfun", failure("submission_uncertain")
             )
 
             self.assertEqual(health.state, STATE_DEGRADED)
-            self.assertTrue(supervisor.is_available("mimo"))
+            self.assertTrue(supervisor.is_available("stepfun"))
 
     def test_selection_is_deterministic_and_skips_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -96,11 +96,11 @@ class ProviderSupervisorTests(unittest.TestCase):
 
             selected = supervisor.select(
                 "qwen",
-                ("deepseek", "mimo", "glm"),
+                ("deepseek", "stepfun", "glm"),
                 excluded=("deepseek",),
             )
 
-            self.assertEqual(selected, "mimo")
+            self.assertEqual(selected, "stepfun")
 
     def test_corrupt_file_degrades_to_empty_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:

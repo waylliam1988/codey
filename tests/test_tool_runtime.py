@@ -1135,6 +1135,20 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIn("Syntax regression detected in app.py at line 1", outcome.output)
         self.assertIn("The edit was applied", outcome.output)
 
+    def test_python_syntax_regression_is_reported_for_new_content_write(self) -> None:
+        broken = "def value():\nreturn 1\n"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "app.py"
+
+            outcome = write_file(root, "app.py", broken)
+
+            self.assertEqual(path.read_text(encoding="utf-8"), broken)
+        self.assertTrue(outcome.ok)
+        self.assertTrue(outcome.changed)
+        self.assertIn("wrote app.py", outcome.output)
+        self.assertIn("Syntax regression detected in app.py at line 2", outcome.output)
+
     def test_valid_python_edit_keeps_success_output_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

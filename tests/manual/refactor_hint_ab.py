@@ -571,7 +571,7 @@ def run_self_test() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Live A/B for incomplete refactor hints.")
-    parser.add_argument("--provider", choices=provider_ids(), default="mimo")
+    parser.add_argument("--provider", choices=provider_ids(), default="stepfun")
     parser.add_argument("--case", choices=sorted(CASES), default="python-function-rename")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--max-turns", type=int, default=10)

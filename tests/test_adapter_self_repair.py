@@ -350,7 +350,7 @@ class SelfRepairSupervisorTests(unittest.TestCase):
             self.assertEqual(len(supervisor.pending()), 1)
 
             degraded = ProviderHealth(state=STATE_DEGRADED, last_failure_kind=FAILURE_RESPONSE_MISSING)
-            self.assertFalse(supervisor.maybe_enqueue("mimo", _failure(FAILURE_RESPONSE_MISSING), degraded))
+            self.assertFalse(supervisor.maybe_enqueue("stepfun", _failure(FAILURE_RESPONSE_MISSING), degraded))
             self.assertFalse(supervisor.maybe_enqueue("glm", _failure(FAILURE_AUTHENTICATION_REQUIRED), open_health))
 
     def test_readiness_stale_enqueue_carries_sanitized_facts_without_keying_on_facts(self) -> None:
@@ -515,7 +515,7 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(Path(td) / "state")
-            state.provider_failover_order = lambda: ("deepseek", "mimo")
+            state.provider_failover_order = lambda: ("deepseek", "stepfun")
             state.provider_supervisor.record_failure(
                 "deepseek",
                 ProviderFailure(
@@ -534,8 +534,8 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
             writer.location = "https://chat.deepseek.com/"
             writer.send.side_effect = lambda prompt, timeout=None: str(prompt).rsplit(" ", 1)[-1]
             sibling = mock.Mock()
-            sibling.name = "Xiaomi MiMo Chat"
-            sibling.location = "https://aistudio.xiaomimimo.com/#/c"
+            sibling.name = "StepFun Chat"
+            sibling.location = "https://chat.stepfun.com/chats/"
             failure = ProviderActionError(ProviderFailure(
                 "DeepSeek",
                 "send",
@@ -571,7 +571,7 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
             self.assertEqual(args[0], "deepseek")
             self.assertEqual(args[1].kind, FAILURE_RESPONSE_MISSING)
             self.assertEqual(args[2].state, STATE_DEGRADED)
-            self.assertEqual(state.last_terminal_event["provider"], "mimo")
+            self.assertEqual(state.last_terminal_event["provider"], "stepfun")
 
     def test_state_kicks_self_repair_queue_only_when_idle(self) -> None:
         from codey import server
@@ -631,7 +631,7 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(Path(td) / "state")
-            state.provider_failover_order = lambda: ("qwen", "mimo", "deepseek")
+            state.provider_failover_order = lambda: ("qwen", "stepfun", "deepseek")
             with mock.patch.object(
                 server,
                 "run_self_repair_worker",
@@ -641,7 +641,7 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
 
         self.assertTrue(result.ok)
         worker.assert_called_once()
-        self.assertEqual(worker.call_args.kwargs["helper_ids"], ("qwen", "mimo"))
+        self.assertEqual(worker.call_args.kwargs["helper_ids"], ("qwen", "stepfun"))
 
     def test_state_does_not_start_self_repair_while_busy(self) -> None:
         from codey import server
@@ -699,7 +699,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
                     "new_chat",
                     failure_facts={"composer_visible": True},
                 ),
-                helper_ids=("deepseek", "mimo"),
+                helper_ids=("deepseek", "stepfun"),
                 state_home=Path("state"),
                 source_root=Path("src"),
             )
@@ -777,7 +777,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         ):
             result = _run_worker_job(
                 provider_id="qwen",
-                helper_ids=("deepseek", "mimo"),
+                helper_ids=("deepseek", "stepfun"),
                 state_home=Path("state"),
                 source_root=Path("src"),
                 model_timeout=12.0,
@@ -786,7 +786,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.generation, 4)
         self.assertEqual(connect_helper.call_args_list[0].args, ("deepseek",))
-        self.assertEqual(connect_helper.call_args_list[1].args, ("mimo",))
+        self.assertEqual(connect_helper.call_args_list[1].args, ("stepfun",))
         self.assertEqual(repair.call_count, 2)
         first.close.assert_called_once()
         second.close.assert_called_once()

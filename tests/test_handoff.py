@@ -147,10 +147,10 @@ class HandoffTests(unittest.TestCase):
 
     def test_same_window_stays_in_same_provider_chat(self) -> None:
         context = ConversationContext(hard_limit=1000)
-        context.begin_window("mimo", "chat")
+        context.begin_window("stepfun", "chat")
 
         fresh, handoff = context.plan_request(
-            provider_id="mimo",
+            provider_id="stepfun",
             mode="chat",
             next_prompt="a" * 20,
         )

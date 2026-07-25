@@ -21,8 +21,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("clear_api_key", HTML)
         self.assertIn("fetch('/api/local_provider')", HTML)
         self.assertIn('data-provider="deepseek"', HTML)
-        self.assertIn('data-provider="qwen"', HTML)
         self.assertIn('data-provider="mimo"', HTML)
+        self.assertIn('data-provider="qwen"', HTML)
+        self.assertIn('data-provider="stepfun"', HTML)
         self.assertIn('data-provider="glm"', HTML)
         self.assertIn('data-provider="local"', HTML)
         self.assertIn("glm: 'GLM'", HTML)
@@ -37,15 +38,17 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn(".provider-item.active .check", HTML)
         self.assertNotIn("providerAvailability(_id) { return 'ok'; }", HTML)
 
-    def test_provider_selector_orders_deepseek_mimo_qwen_glm_local(self) -> None:
+    def test_provider_selector_orders_deepseek_mimo_stepfun_qwen_glm_local(self) -> None:
         deepseek = HTML.index('data-provider="deepseek"')
         mimo = HTML.index('data-provider="mimo"')
+        stepfun = HTML.index('data-provider="stepfun"')
         qwen = HTML.index('data-provider="qwen"')
         glm = HTML.index('data-provider="glm"')
         local = HTML.index('data-provider="local"')
 
         self.assertLess(deepseek, mimo)
-        self.assertLess(mimo, qwen)
+        self.assertLess(mimo, stepfun)
+        self.assertLess(stepfun, qwen)
         self.assertLess(qwen, glm)
         self.assertLess(glm, local)
 
@@ -220,7 +223,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("appendResearchCoverage", HTML)
         self.assertIn("['graph', 'Graph']", HTML)
         self.assertIn("renderResearchGraph(panel, run, sessionId)", HTML)
-        self.assertIn('<script src="/assets/research_graph.js?v=0.2.11"></script>', HTML)
+        self.assertIn('<script src="/assets/research_graph.js?v=0.2.13"></script>', HTML)
         self.assertIn("if (window.CodeyResearchGraph) window.CodeyResearchGraph.dispose();", HTML)
         self.assertIn("window.CodeyResearchGraph.render(panel, {", HTML)
         self.assertIn("focusIds: coreNoteIdsForResearchRun(run)", HTML)

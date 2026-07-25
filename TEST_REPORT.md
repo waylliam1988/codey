@@ -1,5 +1,63 @@
 # Codey Test Report
 
+## 0.2.13 Provider Fit Update
+
+Codey 0.2.13 adds StepFun while keeping MiMo. The change documents provider fit
+instead of adding automatic routing: users can still choose a provider manually,
+and the core agent/review/tool path remains unchanged.
+
+Production changes:
+
+- Added the `stepfun` provider id, `codey/stepfun.py`, and
+  `StepFunWebProvider` for `https://chat.stepfun.com/chats/`.
+- Restored MiMo as a supported provider alongside StepFun.
+- Updated browser warmup, provider registry/profile entries, repair policy,
+  UI labels, README/CHANGELOG provider lists, and manual A/B examples.
+- Kept the change provider-local: no role router, no new UI mode, no broad
+  agent prompt change, and no provider-independent review/tool/runtime rewrite.
+
+Live probe results:
+
+- StepFun Research fixture probe completed with exactly one JSON tool call per
+  turn and no prose outside JSON.
+- MiMo remains useful for coding/editing based on historical live coding
+  results, but the strict Research fixture is not a good fit because it often
+  emits multiple or malformed JSON tool calls.
+- MiniMax was not selected: its Agent page ignored the local JSON-tool protocol
+  on the first probe and used its own web/agent behavior.
+- StepFun coding smoke `edit` passed after removing the StepFun-specific prompt
+  hint. The first three replies used non-JSON `<tool_call>` markup, but Codey's
+  existing protocol nudge recovered the run; it then edited the file and passed
+  `python -m unittest`.
+- StepFun coding smoke `create` failed because the model wrote invalid Python
+  indentation / `if name == 'main':` and then no-op repairs. This is a model
+  coding-quality limitation, not an adapter DOM compatibility failure.
+
+Validation:
+
+```text
+python -m pytest tests\test_mimo.py tests\test_stepfun.py tests\test_providers.py tests\test_browser.py tests\test_provider_profiles.py tests\test_ui.py tests\test_server.py tests\test_adapter_self_repair.py tests\test_provider_supervisor.py tests\test_provider_flow_fault_injection.py tests\test_review_coordinator.py tests\test_work_checkpoint_flow.py tests\test_live_smoke.py tests\test_bootstrap_smoke.py tests\test_tool_runtime.py -q
+# 473 passed, 20 subtests passed
+
+python -m pytest -q
+# 1257 passed, 8 skipped, 112 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile ...
+# passed
+
+git diff --check
+# passed
+
+python -B tools\live_smoke.py --provider stepfun --case edit --max-turns 8 --json
+# ok=true, 8 turns after protocol nudges
+
+python -B tools\live_smoke.py --provider stepfun --case create --max-turns 10 --json
+# ok=false, Python syntax repair failed
+```
+
 ## 0.2.12 Research A/B and Provider Parsing Hygiene
 
 Codey 0.2.12 keeps Deep Research Core behind the manual A/B harness, but makes

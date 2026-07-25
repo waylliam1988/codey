@@ -28,7 +28,7 @@ from codey.review import parse_review_with_repair, render_review_prompt
 
 
 WRITER_ID = "deepseek"
-ADVISOR_IDS = ("glm", "mimo", "qwen")
+ADVISOR_IDS = ("glm", "stepfun", "qwen")
 SLOW_SEND_SECONDS = 120.0
 
 DISCUSSION_TASK = (

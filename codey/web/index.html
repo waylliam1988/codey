@@ -1073,6 +1073,11 @@
               <span class="label">MiMo</span>
               <span class="check">✓</span>
             </button>
+            <button class="provider-item" data-provider="stepfun">
+              <span class="dot" aria-hidden="true"></span>
+              <span class="label">StepFun</span>
+              <span class="check">✓</span>
+            </button>
             <button class="provider-item" data-provider="qwen">
               <span class="dot" aria-hidden="true"></span>
               <span class="label">Qwen</span>
@@ -1163,7 +1168,7 @@
   </div>
 </section>
 
-<script src="/assets/research_graph.js?v=0.2.12"></script>
+<script src="/assets/research_graph.js?v=0.2.13"></script>
 <script>
 // ============================ state & storage ============================
 const $ = (id) => document.getElementById(id);
@@ -1174,7 +1179,7 @@ const LS_UI_UPDATED = 'codey:ui-updated';
 const LS_UI_REVISION = 'codey:ui-revision';
 const LS_LEGACY_PROJECT = 'codey:project';
 const DEFAULT_PROVIDER = 'deepseek';
-const PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', qwen: 'Qwen', glm: 'GLM', local: 'Local' };
+const PROVIDER_LABELS = { deepseek: 'DeepSeek', mimo: 'MiMo', stepfun: 'StepFun', qwen: 'Qwen', glm: 'GLM', local: 'Local' };
 const PROVIDERS = Object.keys(PROVIDER_LABELS);
 
 function uid() { return Math.random().toString(36).slice(2, 10); }

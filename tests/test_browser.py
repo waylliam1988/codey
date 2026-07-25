@@ -155,6 +155,24 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             fresh_tab=False,
         )
 
+    def test_stepfun_wrapper_uses_generic_chat_page(self) -> None:
+        session = object()
+        profile = Path("stepfun-profile")
+        with mock.patch.object(browser, "open_chat_page", return_value=session) as opened:
+            result = browser.open_stepfun(port=9555, profile=profile)
+
+        self.assertIs(result, session)
+        opened.assert_called_once_with(
+            browser.STEPFUN_URL,
+            "chat.stepfun.com",
+            port=9555,
+            profile=profile,
+            open_if_missing=True,
+            bring_to_front=True,
+            isolated=False,
+            fresh_tab=False,
+        )
+
     def test_mimo_wrapper_uses_generic_chat_page(self) -> None:
         session = object()
         profile = Path("mimo-profile")
@@ -214,7 +232,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
     def test_detect_open_provider_tabs_uses_cdp_target_urls(self) -> None:
         targets = [
             {"type": "page", "url": "https://chat.deepseek.com/a/chat/s/1"},
-            {"type": "page", "url": "https://aistudio.xiaomimimo.com/#/chat/1"},
+            {"type": "page", "url": "https://aistudio.xiaomimimo.com/#/c"},
+            {"type": "page", "url": "https://chat.stepfun.com/chats/1"},
             {"type": "service_worker", "url": "https://chat.qwen.ai/sw.js"},
             {"type": "page", "url": "https://chatglm.cn/main/alltoolsdetail?lang=zh"},
         ]
@@ -228,7 +247,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
 
         self.assertEqual(
             statuses,
-            {"deepseek": True, "qwen": False, "mimo": True, "glm": True},
+            {"deepseek": True, "qwen": False, "mimo": True, "stepfun": True, "glm": True},
         )
 
     def test_detect_open_provider_tabs_returns_all_false_when_cdp_is_closed(self) -> None:
@@ -241,7 +260,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
 
         self.assertEqual(
             statuses,
-            {"deepseek": False, "qwen": False, "mimo": False, "glm": False},
+            {"deepseek": False, "qwen": False, "mimo": False, "stepfun": False, "glm": False},
         )
         targets.assert_not_called()
 
@@ -571,7 +590,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         remember.assert_called_once_with(9444)
 
     def test_warm_provider_tabs_returns_existing_tabs_without_opening_pages(self) -> None:
-        statuses = {"deepseek": True, "mimo": False, "qwen": False, "glm": False}
+        statuses = {"deepseek": True, "qwen": False, "mimo": False, "stepfun": False, "glm": False}
         with (
             mock.patch.object(browser, "detect_open_provider_tabs", return_value=statuses),
             mock.patch.object(browser, "_ensure_cdp_browser_endpoint") as ensure,
@@ -584,8 +603,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         start_pw.assert_not_called()
 
     def test_warm_provider_tabs_opens_all_provider_pages_on_empty_existing_cdp(self) -> None:
-        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
-        final = {"deepseek": True, "mimo": True, "qwen": True, "glm": True}
+        empty = {"deepseek": False, "qwen": False, "mimo": False, "stepfun": False, "glm": False}
+        final = {"deepseek": True, "qwen": True, "mimo": True, "stepfun": True, "glm": True}
         pages = [mock.Mock(url=url) for url in browser.PROVIDER_START_URLS.values()]
         ctx = mock.Mock(pages=[])
         ctx.new_page.side_effect = pages
@@ -615,7 +634,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             "http://127.0.0.1:9333",
             timeout=browser.WARMUP_CDP_CONNECT_TIMEOUT_MS,
         )
-        self.assertEqual(ctx.new_page.call_count, 4)
+        self.assertEqual(ctx.new_page.call_count, 5)
         self.assertEqual(
             [page.goto.call_args.args[0] for page in pages],
             list(browser.PROVIDER_START_URLS.values()),
@@ -630,8 +649,8 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         pw.stop.assert_called_once_with()
 
     def test_warm_provider_tabs_opens_first_provider_when_launch_page_is_not_visible(self) -> None:
-        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
-        final = {"deepseek": True, "mimo": True, "qwen": True, "glm": True}
+        empty = {"deepseek": False, "qwen": False, "mimo": False, "stepfun": False, "glm": False}
+        final = {"deepseek": True, "qwen": True, "mimo": True, "stepfun": True, "glm": True}
         pages = [mock.Mock(url=url) for url in browser.PROVIDER_START_URLS.values()]
         ctx = mock.Mock(pages=[])
         ctx.new_page.side_effect = pages
@@ -651,15 +670,15 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             result = browser.warm_provider_tabs()
 
         self.assertEqual(result, final)
-        self.assertEqual(ctx.new_page.call_count, 4)
+        self.assertEqual(ctx.new_page.call_count, 5)
         self.assertEqual(
             [page.goto.call_args.args[0] for page in pages],
             list(browser.PROVIDER_START_URLS.values()),
         )
 
     def test_warm_provider_tabs_skips_launch_start_page_when_visible(self) -> None:
-        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
-        final = {"deepseek": True, "mimo": True, "qwen": True, "glm": True}
+        empty = {"deepseek": False, "qwen": False, "mimo": False, "stepfun": False, "glm": False}
+        final = {"deepseek": True, "qwen": True, "mimo": True, "stepfun": True, "glm": True}
         launch_page = mock.Mock(url=browser.DEEPSEEK_URL)
         pages = [mock.Mock(url=url) for url in list(browser.PROVIDER_START_URLS.values())[1:]]
         ctx = mock.Mock(pages=[launch_page])
@@ -680,15 +699,15 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             result = browser.warm_provider_tabs()
 
         self.assertEqual(result, final)
-        self.assertEqual(ctx.new_page.call_count, 3)
+        self.assertEqual(ctx.new_page.call_count, 4)
         self.assertEqual(
             [page.goto.call_args.args[0] for page in pages],
             list(browser.PROVIDER_START_URLS.values())[1:],
         )
 
     def test_warm_provider_tabs_continues_when_one_provider_page_fails(self) -> None:
-        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
-        final = {"deepseek": True, "mimo": False, "qwen": True, "glm": True}
+        empty = {"deepseek": False, "qwen": False, "mimo": False, "stepfun": False, "glm": False}
+        final = {"deepseek": True, "qwen": False, "mimo": True, "stepfun": True, "glm": True}
         pages = [mock.Mock(url=url) for url in browser.PROVIDER_START_URLS.values()]
         pages[1].url = "about:blank"
         pages[1].goto.side_effect = RuntimeError("navigation failed")
@@ -710,15 +729,15 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             result = browser.warm_provider_tabs()
 
         self.assertEqual(result, final)
-        self.assertEqual(ctx.new_page.call_count, 4)
+        self.assertEqual(ctx.new_page.call_count, 5)
         self.assertEqual(pages[0].goto.call_count, 1)
         pages[1].close.assert_called_once_with()
         self.assertEqual(pages[2].goto.call_count, 1)
         self.assertEqual(pages[3].goto.call_count, 1)
 
     def test_warm_provider_tabs_keeps_slow_page_when_provider_url_is_reached(self) -> None:
-        empty = {"deepseek": False, "mimo": False, "qwen": False, "glm": False}
-        final = {"deepseek": True, "mimo": True, "qwen": True, "glm": True}
+        empty = {"deepseek": False, "qwen": False, "mimo": False, "stepfun": False, "glm": False}
+        final = {"deepseek": True, "qwen": True, "mimo": True, "stepfun": True, "glm": True}
         pages = [mock.Mock(url=url) for url in browser.PROVIDER_START_URLS.values()]
         pages[1].goto.side_effect = TimeoutError("domcontentloaded timed out")
         ctx = mock.Mock(pages=[])
@@ -739,7 +758,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             result = browser.warm_provider_tabs()
 
         self.assertEqual(result, final)
-        self.assertEqual(ctx.new_page.call_count, 4)
+        self.assertEqual(ctx.new_page.call_count, 5)
         pages[1].close.assert_not_called()
         self.assertEqual(pages[2].goto.call_count, 1)
         self.assertEqual(pages[3].goto.call_count, 1)
