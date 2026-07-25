@@ -41,6 +41,9 @@ TIMEOUT_GRACE = 60.0
 SEND_TIMEOUT = 30.0
 MODEL_SELECTOR_STABLE_READS = 2
 COMPOSER_SETTLE_TIME = 1.5
+COMPOSER_SETTLE_TICK = 0.25
+COMPOSER_REFILL_ATTEMPTS = 3
+COMPOSER_REFILL_DELAY = 0.4
 SUBMIT_CONFIRM_TIMEOUT = 15.0
 COPY_READY_TIMEOUT = 10.0
 PREFERENCE_TIMEOUT = 15.0
@@ -107,6 +110,31 @@ def _fill_message(page: Page, textarea: Locator, text: str) -> str:
     textarea.press("End")
     textarea.press("Space")
     return f"{text} "
+
+
+def _composer_retains_text(
+    textarea: Locator,
+    submitted_text: str,
+    *,
+    settle_time: float = COMPOSER_SETTLE_TIME,
+) -> bool:
+    ticks = max(1, int(max(0.0, settle_time) / COMPOSER_SETTLE_TICK))
+    for _ in range(ticks):
+        if not controls.control_has_text(textarea, submitted_text):
+            return False
+        cancellation.wait(COMPOSER_SETTLE_TICK)
+    return controls.control_has_text(textarea, submitted_text)
+
+
+def _fill_message_until_stable(page: Page, textarea: Locator, text: str) -> str:
+    """Fill Qwen's controlled composer and survive late page hydration clears."""
+    for attempt in range(max(1, COMPOSER_REFILL_ATTEMPTS)):
+        submitted_text = _fill_message(page, textarea, text)
+        if _composer_retains_text(textarea, submitted_text):
+            return submitted_text
+        if attempt + 1 < COMPOSER_REFILL_ATTEMPTS:
+            cancellation.wait(COMPOSER_REFILL_DELAY)
+    raise ControlMissing("Qwen Studio chat input did not keep the complete message")
 
 
 def _model_selector_text(page: Page) -> str:
@@ -381,8 +409,6 @@ def _submit(page: Page, baseline: int, submitted_text: str = "") -> SendAttempt:
         )
 
     attempt = SendAttempt()
-    # Qwen enables the button before its send closure receives the latest draft.
-    cancellation.wait(COMPOSER_SETTLE_TIME)
     attempt.submit("click", send.click)
     confirm_deadline = time.time() + SUBMIT_CONFIRM_TIMEOUT
     while time.time() < confirm_deadline:
@@ -439,15 +465,12 @@ def _chat(
             )
             raise ControlMissing("Qwen Studio chat input is not visible")
         try:
-            submitted_text = _fill_message(page, textarea, text)
+            submitted_text = _fill_message_until_stable(page, textarea, text)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
             controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
             raise
-        if not controls.control_has_text(textarea, submitted_text):
-            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-            raise ControlMissing("Qwen Studio chat input did not accept the complete message")
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
         attempt = _submit(page, baseline, submitted_text)
 

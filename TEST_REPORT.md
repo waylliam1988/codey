@@ -1,5 +1,67 @@
 # Codey Test Report
 
+## 0.2.15 Source Search Research Hygiene
+
+Codey 0.2.15 records the cross-provider Deep Research A/B result and fixes the
+small production issues found while probing Qwen.
+
+Production changes:
+
+- Qwen now fills the composer until the text remains stable for a short settle
+  window. If the page finishes hydration and clears the draft, Codey refills a
+  bounded number of times before submitting.
+- Research dispatch accepts a single search query from either `query` or the
+  model-emitted `queries` alias for `web_search` and `knowledge_search`.
+- The manual `source_search` A/B arm uses the same query normalization.
+- Manual A/B harness `fresh_tab` and `keep_open_on_error` controls now default
+  to `False`, preserving older scripted calls.
+- Report quality accepts URL-first numbered source entries such as
+  `1. https://standards.example.org/widget-storage - Widget Storage standard`
+  while keeping the existing opened-source and evidence-snippet checks.
+
+Live/manual A/B findings:
+
+- Qwen `long-official-doc` baseline at 12 turns: `score=4`, `done=False`,
+  `max_turns=True`; it cited unopened public URLs and did not save the target
+  fixture evidence.
+- Qwen `long-official-doc` source_search at 12 turns: `score=10`,
+  `done=True`; it used `source_search`, opened the target offset, saved
+  evidence, and passed the quality gate.
+- Earlier Qwen 10-turn source_search reached the evidence path but needed more
+  turns to finish; this informed the 12-turn follow-up instead of changing
+  production defaults.
+- Local Gemma4-12B (`http://localhost:5001/v1`, model `Gemma4-12B`) passed the
+  JSON smoke. On fixtures, source_search reduced turns for the PDF case
+  (`5` vs baseline `6`) and stayed competitive on long-document cases. Local
+  output still needs protocol tolerance because it can fence JSON, and heavier
+  `deep_core` prompts can trigger repair loops or public-URL drift.
+- Combined with the existing DeepSeek and StepFun reports, the A/B direction is
+  now clear: deterministic `source_search` is useful across web and local
+  providers. The heavier `deep_core` plan/coverage prompt is still not ready for
+  default production use.
+
+Validation:
+
+```text
+python -m pytest tests\test_deep_research_core_ab.py tests\test_qwen.py tests\test_research.py tests\test_ui.py -q
+# 169 passed, 1 pytest cache warning
+
+python -m pytest -q
+# 1270 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -B tests\manual\deep_research_core_ab.py --self-test
+# self-test passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\__init__.py codey\qwen.py codey\research\runner.py codey\research\report_quality.py tests\test_qwen.py tests\test_research.py tests\test_ui.py tests\test_deep_research_core_ab.py tests\manual\deep_research_core_ab.py
+# passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.14 StepFun Submit Stability
 
 Codey 0.2.14 tightens the StepFun provider adapter after live probes showed

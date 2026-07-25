@@ -32,7 +32,7 @@ from codey.providers.registry import connect_fresh_provider_tab, connect_provide
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
 from codey.research.protocols import JsonToolCodec, MAX_CALLS_PER_TURN
 from codey.research.report_quality import review_report_quality
-from codey.research.runner import ResearchRunner, _Outcome
+from codey.research.runner import ResearchRunner, _Outcome, first_text_arg
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tools import ResearchTools
 
@@ -499,7 +499,7 @@ class ProbeResearchRunner(ResearchRunner):
         if call.name == "source_search":
             return _Outcome(self.tools.source_search(
                 str(call.args.get("url") or ""),
-                str(call.args.get("query") or ""),
+                first_text_arg(call.args, "query", "queries"),
                 _as_int(call.args.get("limit"), 6),
             ))
         return super()._dispatch(call)
@@ -1045,8 +1045,8 @@ def run_provider(
     *,
     port: int,
     open_if_missing: bool,
-    fresh_tab: bool,
-    keep_open_on_error: bool,
+    fresh_tab: bool = False,
+    keep_open_on_error: bool = False,
     no_new_chat: bool,
     arms: tuple[str, ...],
     cases: tuple[ResearchProbeCase, ...],

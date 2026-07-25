@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.14-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.15-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.14`
+版本：`0.2.15`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -172,10 +172,15 @@ Provider 的适用场景很重要。Codey 暂时不会按角色自动切换模�
 | DeepSeek / Qwen / GLM | 通用写代码、Review 和 Research | 网页每日额度可能打断长任务 |
 | MiMo | 强模型额度不够时做代码编辑/实现 | 不建议用于严格 JSON-tool Research；实机 probe 里经常一次输出多个或格式不正确的 JSON |
 | StepFun | 带证据的 Research 和本地 JSON-tool probe | adapter 现在会等 StepFun 回答尾部按钮稳定后再进入下一轮；暂不建议作为从零新建项目的主 Writer |
-| Local | 私有/offline 任务和额度兜底 | 质量取决于你的本地模型 |
+| Local | 私有/offline 任务和额度兜底 | 质量取决于你的本地模型；Gemma4-12B 通过了 fixture probe，但更重的 prompt 仍可能压低 JSON 遵守 |
 
 MiniMax 也做过 probe，但没有被选中，因为它的 Agent 页面首轮就脱离本地 JSON-tool 协议，
 改用自己的网页/agent 行为。
+
+Manual Deep Research A/B harness 已经测过 DeepSeek、StepFun、Qwen 和本地
+Gemma4-12B endpoint。当前一致结论是：在已经打开的来源内部做确定性的
+`source_search`，是下一步最稳的 Research 增强。更重的 `deep_core`
+plan/coverage prompt 还只保留在 A/B，不默认进入生产链路。
 
 从 0.2.4 开始，Research 会维护 Evidence Ledger，并在保存最终 synthesis 前通过确定性的
 报告质量门。报告必须包含：

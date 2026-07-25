@@ -73,6 +73,15 @@ class FakeSearch:
         pass
 
 
+class RecordingSearch(FakeSearch):
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def search(self, query: str, limit: int = 8) -> list[dict]:
+        self.queries.append(query)
+        return super().search(query, limit=limit)
+
+
 class FakePdfPage:
     def __init__(self, text: str, stream_size: int = 0) -> None:
         self._text = text
@@ -671,6 +680,25 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertTrue(review.ok, review.message)
         self.assertEqual(review.citation_map[0].title, "Helium article")
 
+    def test_report_quality_accepts_numbered_url_first_source_entry(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(url).replace(
+            f"[1] Helium article - {url}",
+            f"1. {url} - Helium article",
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+        self.assertEqual(review.citation_map[0].title, "Helium article")
+        self.assertEqual(review.citation_map[0].url, url)
+
     def test_report_quality_allows_no_citable_source_report_for_failed_search_leads(self) -> None:
         ledger = ResearchLedger()
         ledger.record_search("Alpha Safety Program 72 hour threshold", [
@@ -1064,6 +1092,20 @@ class ResearchBoundaryTests(unittest.TestCase):
         assert payload is not None
         self.assertEqual(payload["status"], "ok")
         self.assertTrue(payload["changed"])
+
+    def test_web_search_accepts_single_query_from_queries_alias(self) -> None:
+        search = RecordingSearch()
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(FakeProvider(), search, store, max_turns=2)
+            call = ToolCall("web_search", {"queries": ["helium supply", "argon"]})
+
+            outcome = runner._dispatch(call)
+            store.close()
+
+        self.assertTrue(outcome.ok)
+        self.assertEqual(search.queries, ["helium supply"])
+        self.assertIn("Helium article", outcome.output)
 
     def test_unsupported_content_type_is_skipped_not_failed(self) -> None:
         class PdfSearch:

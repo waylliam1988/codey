@@ -26,6 +26,9 @@ _SOURCE_BRACKET_URL_RE = re.compile(
 _SOURCE_NUMBERED_URL_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(\d+)[\.)、]\s*(.*?)\s*(https?://\S+)\s*$"
 )
+_SOURCE_NUMBERED_URL_FIRST_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?(\d+)[\.)、]\s*(https?://\S+)\s*(?:[-–—]\s*(.*?))?\s*$"
+)
 _HEADING_NUMBER_RE = re.compile(
     r"^(?:"
     r"\d+(?:\.\d+)*"
@@ -246,14 +249,21 @@ def parse_citations(sources_section: str, ledger: ResearchLedger | None = None) 
             or _SOURCE_BRACKET_URL_RE.match(stripped)
             or _SOURCE_NUMBERED_URL_RE.match(stripped)
         )
-        if not match:
+        url_first_match = None if match else _SOURCE_NUMBERED_URL_FIRST_RE.match(stripped)
+        if not match and not url_first_match:
             continue
-        number = int(match.group(1))
+        if url_first_match:
+            number = int(url_first_match.group(1))
+            url = url_first_match.group(2).rstrip(".,;:，。；、)]")
+            raw_title = url_first_match.group(3) or ""
+        else:
+            number = int(match.group(1))
+            url = match.group(3).rstrip(".,;:，。；、)]")
+            raw_title = match.group(2)
         if number in seen:
             continue
         seen.add(number)
-        url = match.group(3).rstrip(".,;:，。；、)]")
-        title = _citation_title(match.group(2), url, ledger)
+        title = _citation_title(raw_title, url, ledger)
         quality = ledger.quality_for_url(url).to_dict() if ledger is not None else {}
         citations.append(Citation(number=number, title=title, url=url, quality=quality))
     return citations

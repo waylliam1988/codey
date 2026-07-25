@@ -34,6 +34,23 @@ _ACTIVITY = {
 }
 
 
+def first_text_arg(args: dict, key: str, *aliases: str) -> str:
+    for name in (key, *aliases):
+        value = args.get(name)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                text = str(item or "").strip()
+                if text:
+                    return text
+        if value not in (None, "") and not isinstance(value, (dict, list, tuple)):
+            text = str(value).strip()
+            if text:
+                return text
+    return ""
+
+
 @dataclass
 class ResearchRunResult:
     question: str
@@ -249,7 +266,7 @@ class ResearchRunner:
         cancellation.check()
         args = call.args
         if call.name == "web_search":
-            return _Outcome(self.tools.web_search(str(args.get("query") or "")))
+            return _Outcome(self.tools.web_search(first_text_arg(args, "query", "queries")))
         if call.name == "open_url":
             return _Outcome(self.tools.open_url(
                 str(args.get("url") or ""),
@@ -258,7 +275,7 @@ class ResearchRunner:
                 pages=str(args.get("pages") or ""),
             ))
         if call.name == "knowledge_search":
-            return _Outcome(self.tools.knowledge_search(str(args.get("query") or "")))
+            return _Outcome(self.tools.knowledge_search(first_text_arg(args, "query", "queries")))
         if call.name == "knowledge_read":
             return _Outcome(self.tools.knowledge_read(str(args.get("id") or args.get("note_id") or "")))
         if call.name == "knowledge_write":

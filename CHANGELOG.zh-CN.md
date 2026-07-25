@@ -4,6 +4,23 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.15 - Source Search Research Hygiene
+
+- Qwen 发送稳定性：Qwen adapter 现在会确认受控输入框在一个短暂稳定窗口里确实保留了
+  完整消息；如果页面 hydration 把草稿清空，会有限次数重新填入后再提交。
+- Research 协议容错：`web_search`、`knowledge_search` 和 manual A/B 里的
+  `source_search` probe 现在都能从 `query` 或常见模型错误 `queries` 中取第一条
+  非空 query。
+- Research 报告质量：`1. https://final-url - Title` 这种 URL 在前的编号来源行，
+  现在会走和 title-first 来源行一样的 provenance 检查。
+- Manual A/B harness 卫生：fresh-tab 和 keep-open 诊断参数现在有安全默认值，
+  旧的脚本调用不会因为少传 keyword 断掉。
+- A/B 证据：DeepSeek、StepFun、Qwen 和本地 Gemma4-12B probe 现在给出一致结论：
+  在已打开来源内部做确定性的 `source_search`，能提升长文档/PDF 的证据定位。
+  更重的 `deep_core` plan/coverage prompt 仍只保留在 manual A/B。
+- 边界克制：没有加重默认 Research prompt，没有加入角色路由，没有 UI 改动，也还没有把
+  source-search 工具直接接入生产链路。
+
 ## 0.2.14 - StepFun Submit Stability
 
 - StepFun 发送稳定性：更新当前页面的 `custom-icon-send-outline` 发送按钮选择器，

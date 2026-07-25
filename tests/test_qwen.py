@@ -184,8 +184,7 @@ class QwenDriverTests(unittest.TestCase):
                 mock.patch.object(qwen, "wait_ready"),
                 mock.patch.object(qwen, "_response_count", return_value=0),
                 mock.patch.object(qwen, "_message_box", return_value=textarea),
-                mock.patch.object(qwen, "_fill_message", return_value="hello "),
-                mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+                mock.patch.object(qwen, "_fill_message_until_stable", return_value="hello "),
                 mock.patch.object(qwen, "_submit", side_effect=uncertain_submit),
                 mock.patch.object(qwen, "_wait_late_response", return_value=""),
                 mock.patch.object(qwen.controls, "recover_response", return_value=None),
@@ -227,8 +226,7 @@ class QwenDriverTests(unittest.TestCase):
                 mock.patch.object(qwen, "wait_ready"),
                 mock.patch.object(qwen, "_response_count", return_value=0),
                 mock.patch.object(qwen, "_message_box", return_value=textarea),
-                mock.patch.object(qwen, "_fill_message", return_value="hello "),
-                mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+                mock.patch.object(qwen, "_fill_message_until_stable", return_value="hello "),
                 mock.patch.object(qwen, "_submit", side_effect=failed_submit),
                 mock.patch.object(qwen, "_wait_late_response", return_value=""),
                 mock.patch.object(qwen.controls, "recover_response", return_value=None),
@@ -399,6 +397,49 @@ class QwenDriverTests(unittest.TestCase):
         page.keyboard.insert_text.assert_called_once_with("hello")
         self.assertEqual(submitted_text, "hello ")
 
+    def test_fill_message_until_stable_refills_after_qwen_clears_draft(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+
+        with (
+            mock.patch.object(qwen, "_fill_message", side_effect=["hello ", "hello "]) as fill,
+            mock.patch.object(qwen, "_composer_retains_text", side_effect=[False, True]),
+            mock.patch.object(qwen.cancellation, "wait") as wait,
+        ):
+            submitted_text = qwen._fill_message_until_stable(page, textarea, "hello")
+
+        self.assertEqual(submitted_text, "hello ")
+        self.assertEqual(fill.call_count, 2)
+        wait.assert_called_once_with(qwen.COMPOSER_REFILL_DELAY)
+
+    def test_fill_message_until_stable_rejects_repeated_page_clears(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+
+        with (
+            mock.patch.object(qwen, "_fill_message", return_value="hello "),
+            mock.patch.object(qwen, "_composer_retains_text", return_value=False),
+            mock.patch.object(qwen.cancellation, "wait"),
+        ):
+            with self.assertRaisesRegex(ControlMissing, "did not keep"):
+                qwen._fill_message_until_stable(page, textarea, "hello")
+
+    def test_composer_retains_text_requires_stable_text_across_settle_ticks(self) -> None:
+        textarea = mock.Mock()
+
+        with (
+            mock.patch.object(qwen.controls, "control_has_text", side_effect=[True, True, False]),
+            mock.patch.object(qwen.cancellation, "wait") as wait,
+        ):
+            retained = qwen._composer_retains_text(
+                textarea,
+                "hello ",
+                settle_time=qwen.COMPOSER_SETTLE_TICK * 3,
+            )
+
+        self.assertFalse(retained)
+        self.assertEqual(wait.call_count, 2)
+
     def test_submit_confirms_that_qwen_accepted_message(self) -> None:
         page = mock.Mock()
         send = mock.Mock()
@@ -463,7 +504,7 @@ class QwenDriverTests(unittest.TestCase):
 
         send.click.assert_called_once_with()
 
-    def test_submit_allows_qwen_draft_state_to_settle_before_click(self) -> None:
+    def test_submit_clicks_after_qwen_draft_was_prepared(self) -> None:
         page = mock.Mock()
         send = mock.Mock()
         events = []
@@ -480,7 +521,7 @@ class QwenDriverTests(unittest.TestCase):
         ):
             qwen._submit(page, baseline=0, submitted_text="hello ")
 
-        self.assertEqual(events, [("wait", qwen.COMPOSER_SETTLE_TIME), "click"])
+        self.assertEqual(events, ["click"])
 
     def test_submit_rechecks_state_before_retry_click(self) -> None:
         page = mock.Mock()
@@ -519,13 +560,12 @@ class QwenDriverTests(unittest.TestCase):
         with (
             mock.patch.object(qwen, "wait_ready"),
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_fill_message", return_value="hello "),
+            mock.patch.object(qwen, "_fill_message_until_stable", return_value="hello "),
             mock.patch.object(qwen, "_submit", return_value=attempt),
             mock.patch.object(qwen, "_response_count", return_value=0),
             mock.patch.object(qwen, "_last_text", return_value=""),
             mock.patch.object(qwen, "_empty_response_visible", return_value=False),
             mock.patch.object(qwen, "_wait_late_response", return_value=""),
-            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
             mock.patch.object(qwen.controls, "recover_response", return_value=None),
             mock.patch.object(qwen.controls, "reject_control"),
             mock.patch.object(qwen.cancellation, "wait"),
@@ -544,7 +584,7 @@ class QwenDriverTests(unittest.TestCase):
         with (
             mock.patch.object(qwen, "wait_ready"),
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_fill_message", side_effect=RuntimeError("fill failed")),
+            mock.patch.object(qwen, "_fill_message_until_stable", side_effect=RuntimeError("fill failed")),
             mock.patch.object(qwen, "_response_count", return_value=0),
             mock.patch.object(qwen.controls, "start_response_watch") as start_watch,
             mock.patch.object(qwen.controls, "stop_response_watch") as stop_watch,
@@ -564,14 +604,13 @@ class QwenDriverTests(unittest.TestCase):
         with (
             mock.patch.object(qwen, "wait_ready"),
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_fill_message"),
+            mock.patch.object(qwen, "_fill_message_until_stable", return_value="hello "),
             mock.patch.object(qwen, "_submit", return_value=attempt),
             mock.patch.object(qwen, "_response_count", side_effect=[0, 1]),
             mock.patch.object(qwen, "_last_text", return_value="delayed reply"),
             mock.patch.object(qwen, "_empty_response_visible", return_value=False),
             mock.patch.object(qwen, "_generation_complete", return_value=True),
             mock.patch.object(qwen, "_final_text", return_value="raw delayed reply"),
-            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
             mock.patch.object(qwen.controls, "confirm_control"),
             mock.patch.object(qwen.controls, "recover_flow") as recover_flow,
             mock.patch.object(qwen.cancellation, "wait"),
@@ -592,7 +631,7 @@ class QwenDriverTests(unittest.TestCase):
         with (
             mock.patch.object(qwen, "wait_ready"),
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_fill_message"),
+            mock.patch.object(qwen, "_fill_message_until_stable", return_value="hello "),
             mock.patch.object(qwen, "_submit", return_value=attempt),
             mock.patch.object(qwen, "_response_count", side_effect=[0, 1, 1, 1]),
             mock.patch.object(qwen, "_last_text", return_value="stable reply"),
@@ -604,7 +643,6 @@ class QwenDriverTests(unittest.TestCase):
                 "_visible_locator",
                 side_effect=[mock.Mock(), mock.Mock(), None],
             ),
-            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
             mock.patch.object(qwen.controls, "confirm_control"),
             mock.patch.object(qwen.provider_flow, "_handler") as helper,
             mock.patch.object(qwen.cancellation, "wait"),
@@ -626,14 +664,13 @@ class QwenDriverTests(unittest.TestCase):
         with (
             mock.patch.object(qwen, "wait_ready"),
             mock.patch.object(qwen, "_message_box", return_value=textarea),
-            mock.patch.object(qwen, "_fill_message"),
+            mock.patch.object(qwen, "_fill_message_until_stable", return_value="hello "),
             mock.patch.object(qwen, "_submit", return_value=attempt),
             mock.patch.object(qwen, "_response_count", side_effect=[0, *([1] * 20)]),
             mock.patch.object(qwen, "_last_text", return_value=json_reply),
             mock.patch.object(qwen, "_empty_response_visible", return_value=False),
             mock.patch.object(qwen, "_generation_complete", return_value=False),
             mock.patch.object(qwen, "_final_text", return_value=json_reply),
-            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
             mock.patch.object(qwen.controls, "confirm_control"),
             mock.patch.object(qwen.controls, "flow_stage_ready", return_value=False) as flow_ready,
             mock.patch.object(qwen.cancellation, "wait"),
@@ -770,7 +807,7 @@ class QwenDriverTests(unittest.TestCase):
             mock.patch.object(qwen, "_generation_complete", return_value=True),
             mock.patch.object(qwen, "_regenerate_empty_response", return_value=True) as regenerate,
             mock.patch.object(qwen, "_final_text", return_value="raw recovered"),
-            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+            mock.patch.object(qwen, "_fill_message_until_stable", return_value="hello "),
             mock.patch.object(qwen.cancellation, "wait"),
         ):
             reply = qwen.chat(

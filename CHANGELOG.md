@@ -4,6 +4,26 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.15 - Source Search Research Hygiene
+
+- Qwen submit stability: the Qwen adapter now verifies that the controlled
+  composer keeps the full message across a short settle window, and refills a
+  few times if late page hydration clears the draft before submit.
+- Research protocol tolerance: `web_search`, `knowledge_search`, and the manual
+  A/B `source_search` probe accept a single query from either `query` or the
+  common model mistake `queries`.
+- Research report quality: numbered source lines in the URL-first form
+  `1. https://final-url - Title` now pass the same provenance checks as
+  title-first source lines.
+- Manual A/B harness hygiene: fresh-tab and keep-open diagnostics now have safe
+  defaults so older scripted calls keep working.
+- A/B evidence: DeepSeek, StepFun, Qwen, and local Gemma4-12B probes now all
+  support the same conclusion: deterministic `source_search` inside
+  already-opened sources improves long-document/PDF evidence recall. The heavier
+  `deep_core` plan/coverage prompt remains manual A/B only.
+- Boundary discipline: no default Research prompt broadening, no role router,
+  no UI change, and no new production source-search tool yet.
+
 ## 0.2.14 - StepFun Submit Stability
 
 - StepFun send stability: updated the profiled send control for the current
