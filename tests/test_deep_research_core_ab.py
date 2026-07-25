@@ -109,6 +109,19 @@ def test_deep_research_ab_probe_rejects_tool_call_plus_done() -> None:
     assert "too many JSON tool calls" in (plan.protocol_error or "")
 
 
+def test_deep_research_ab_probe_rejects_duplicate_done_calls() -> None:
+    reply = (
+        '{"tool":"done","args":{"answer":"first"}}\n'
+        '{"tool":"done","args":{"answer":"second"}}'
+    )
+
+    plan = ab.ProbeJsonToolCodec("baseline").parse(reply)
+
+    assert not plan.calls
+    assert plan.control is None
+    assert "too many JSON tool calls" in (plan.protocol_error or "")
+
+
 def test_deep_research_ab_probe_extracts_malformed_done_answer() -> None:
     reply = (
         '{"tool":"done","args":{"answer":"## 结论\\n'
@@ -138,6 +151,7 @@ def test_source_search_requires_opened_source_and_returns_pdf_page_locator() -> 
         before = tools.source_search(ab.PDF_METHOD_URL, "stratified bootstrap")
         opened = tools.open_url(ab.PDF_METHOD_URL)
         located = tools.source_search(ab.PDF_METHOD_URL, "stratified bootstrap")
+        coverage = tools.ledger.coverage_payload()
         page = tools.open_url(ab.PDF_METHOD_URL, pages="9")
         evidence_count = len(tools.ledger.evidence_items)
         store.close()
@@ -146,8 +160,42 @@ def test_source_search_requires_opened_source_and_returns_pdf_page_locator() -> 
     assert "[page 1]" in opened
     assert "p.9" in located
     assert "stratified bootstrap validation" in located
+    assert coverage["source_searches"][0]["query"] == "stratified bootstrap"
     assert "[page 9]" in page
     assert evidence_count == 0
+
+
+def test_deep_research_ab_pdf_source_search_uses_production_page_cap() -> None:
+    pages = tuple(
+        "target phrase appears beyond production cap" if index == ab.PDF_SOURCE_SEARCH_MAX_PAGES + 1 else "background"
+        for index in range(1, ab.PDF_SOURCE_SEARCH_MAX_PAGES + 2)
+    )
+    case = ab.ResearchProbeCase(
+        name="long-pdf-cap",
+        question="Find the target phrase.",
+        documents=(
+            ab.FixtureDocument(
+                "https://example.edu/long-cap.pdf",
+                "Long cap PDF",
+                pages=pages,
+            ),
+        ),
+    )
+    with tempfile.TemporaryDirectory() as td:
+        store = KnowledgeStore(Path(td))
+        tools = ab.ProbeResearchTools(
+            ab.FixtureSearchProvider(case),
+            store,
+            KnowledgeChanges(store.root),
+        )
+
+        tools.open_url("https://example.edu/long-cap.pdf")
+        located = tools.source_search("https://example.edu/long-cap.pdf", "target phrase")
+        coverage = tools.ledger.coverage_payload()
+        store.close()
+
+    assert located == "no source_search matches"
+    assert coverage["source_searches"][0]["hits"] == []
 
 
 def test_deep_research_ab_scoring_tracks_source_search_recall() -> None:

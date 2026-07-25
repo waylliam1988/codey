@@ -33,8 +33,9 @@ from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
 from codey.research.protocols import JsonToolCodec, MAX_CALLS_PER_TURN
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner, _Outcome, first_text_arg
-from codey.research.source_document import SourceDocument, SourcePage
-from codey.research.tools import ResearchTools
+from codey.research.source_document import SourceDocument, SourcePage, compact_pages
+from codey.research.source_search import bounded_limit, render_results, search_pages, search_text
+from codey.research.tools import OPEN_DEFAULT_LIMIT, OPEN_MAX_LIMIT, PDF_SOURCE_SEARCH_MAX_PAGES, ResearchTools
 
 
 ARMS = ("baseline", "source_search", "deep_core")
@@ -45,10 +46,10 @@ CHEAP_ARMS = ARMS
 CHEAP_MAX_TURNS = 10
 FULL_MAX_TURNS = 14
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-deep-research-core-ab.json"
-SOURCE_SEARCH_SNIPPET_CHARS = 460
 MAX_REPLY_CHARS = 4_000
 MAX_FIELD_CHARS = 2_000
 MAX_RAW_REPLY_PREVIEW_CHARS = 1_000
+SINGLE_TOOL_BOUNDARY = False
 
 
 @dataclass(frozen=True)
@@ -377,6 +378,31 @@ class FixtureSearchProvider:
 
 
 class ProbeResearchTools(ResearchTools):
+    def open_url(
+        self,
+        url: str,
+        offset: int = 0,
+        limit: int = OPEN_DEFAULT_LIMIT,
+        pages: str = "",
+    ) -> str:
+        url = str(url or "").strip()
+        search_doc = getattr(self.search, "document_for_url", lambda _url: None)
+        doc = search_doc(url)
+        if doc is None:
+            return super().open_url(url, offset=offset, limit=limit, pages=pages)
+        offset = max(0, _as_int(offset, 0))
+        limit = min(OPEN_MAX_LIMIT, max(500, _as_int(limit, OPEN_DEFAULT_LIMIT)))
+        document = doc.source_document(pages=pages)
+        self.sources_read.add(url)
+        if document.final_url and document.final_url != url:
+            self.sources_read.add(document.final_url)
+        self.ledger.record_open_document(document)
+        window = document.text[offset : offset + limit]
+        body = f"{_fixture_document_header(document)}\n\n{window}".strip()
+        if offset + limit < len(document.text):
+            body += f"\n\n[more text available: open with offset={offset + limit}]"
+        return _clip(body, OPEN_MAX_LIMIT)
+
     def _source_document_from_fetch(
         self,
         requested_url: str,
@@ -412,17 +438,34 @@ class ProbeResearchTools(ResearchTools):
         doc = search_doc(final_url) or search_doc(url)
         if doc is None:
             return "ERROR: source_search fixture document is unavailable"
-        hits = _source_hits(doc, query, max(1, min(12, _as_int(limit, 6))))
+        hit_limit = bounded_limit(limit)
+        if doc.pages:
+            hits = search_pages(
+                {
+                    index: text
+                    for index, text in enumerate(doc.pages[:PDF_SOURCE_SEARCH_MAX_PAGES], 1)
+                },
+                query,
+                hit_limit,
+            )
+        else:
+            hits = search_text(doc.text, query, hit_limit)
+        self.ledger.record_source_search(final_url, query, [hit.to_dict() for hit in hits])
         if not hits:
             return "no source_search matches"
-        lines = [
-            "source_search results from an already-opened source.",
-            "Use these as locators. Open the matching offset/pages before relying on them as evidence.",
-        ]
-        for index, hit in enumerate(hits, 1):
-            locator = f"p.{hit['page']}" if hit.get("page") else f"offset {hit['offset']}"
-            lines.append(f"{index}. {locator}: {hit['snippet']}")
-        return "\n".join(lines)
+        return render_results(final_url, hits)
+
+
+def _fixture_document_header(document: SourceDocument) -> str:
+    lines = [document.title, document.final_url]
+    if document.content_kind == "pdf":
+        page_text = compact_pages(document.pages_read)
+        if page_text:
+            suffix = f" / {document.page_count}" if document.page_count else ""
+            lines.append(f"PDF pages {page_text}{suffix}")
+        else:
+            lines.append("PDF")
+    return "\n".join(str(line or "").strip() for line in lines if str(line or "").strip())
 
 
 class ProbeResearchRunner(ResearchRunner):
@@ -588,34 +631,30 @@ class ProbeJsonToolCodec(JsonToolCodec):
     def system_prompt(self) -> str:
         include_source_search = self.arm in {"source_search", "deep_core"}
         base = _with_probe_fixture_discipline(
-            super().system_prompt(),
+            JsonToolCodec(include_source_search=include_source_search).system_prompt(),
             include_source_search=include_source_search,
         )
         if self.arm == "baseline":
             return base
-        prompt = _with_source_search_tool(base)
+        prompt = base
         if self.arm == "deep_core":
             prompt += "\n\n" + _DEEP_CORE_APPENDIX
         return prompt
 
     def repair_prompt(self) -> str:
-        if self.arm == "baseline":
-            return super().repair_prompt() + "\n\n" + _probe_fixture_reminder(include_source_search=False)
+        include_source_search = self.arm in {"source_search", "deep_core"}
         return (
-            "Your last reply was not a valid tool call. Reply with exactly one "
-            "JSON object and nothing else, for example:\n"
-            '{"tool":"web_search","args":{"query":"..."}}\n'
-            '{"tool":"source_search","args":{"url":"https://...","query":"..."}}\n'
-            'or {"tool":"done","args":{"answer":"..."}}'
-            "\n\n"
-            + _probe_fixture_reminder(include_source_search=True)
+            JsonToolCodec(include_source_search=include_source_search).repair_prompt()
+            + "\n\n"
+            + _probe_fixture_reminder(include_source_search=include_source_search)
         )
 
     def format_results(self, results) -> str:
+        include_source_search = self.arm in {"source_search", "deep_core"}
         return (
-            super().format_results(results)
+            JsonToolCodec(include_source_search=include_source_search).format_results(results)
             + "\n\n"
-            + _probe_fixture_reminder(include_source_search=self.arm in {"source_search", "deep_core"})
+            + _probe_fixture_reminder(include_source_search=include_source_search)
         )
 
     def parse(self, text: str) -> ToolPlan:
@@ -627,11 +666,15 @@ class ProbeJsonToolCodec(JsonToolCodec):
             return ToolPlan(calls=[], control=None, protocol_error="no JSON tool call found")
         calls: list[ToolCall] = []
         control: Control | None = None
+        action_count = 0
         for obj in objects:
             name = str(obj.get("tool") or obj.get("name") or "").strip().lower()
             runtime = _ALIAS_TO_TOOL.get(name)
             if runtime is None:
                 continue
+            if runtime == "source_search" and self.arm == "baseline":
+                continue
+            action_count += 1
             args = obj.get("args")
             if not isinstance(args, dict):
                 args = {key: value for key, value in obj.items() if key not in ("tool", "name")}
@@ -642,7 +685,6 @@ class ProbeJsonToolCodec(JsonToolCodec):
                 calls.append(ToolCall(runtime, args))
         if not calls and control is None:
             return ToolPlan(calls=[], control=None, protocol_error="no known tool in reply")
-        action_count = len(calls) + (1 if control is not None else 0)
         if action_count > 1:
             return ToolPlan(
                 calls=[],
@@ -693,106 +735,52 @@ _DEEP_CORE_APPENDIX = """Deep Research Core experimental guidance:
 - Keep the final report focused. Do not add template filler; every section should contain concrete evidence, limitation, source quality, or coverage facts."""
 
 
-def _with_source_search_tool(prompt: str) -> str:
-    needle = (
-        '- {"tool":"open_url","args":{"url":"https://...",'
-        '"offset":0,"limit":6000,"pages":"1-5"}}  read a page\'s text; '
-        "for PDFs, pages selects bounded page ranges\n"
-    )
-    insert = (
-        needle
-        + '- {"tool":"source_search","args":{"url":"https://...",'
-        '"query":"...","limit":6}}  search within a source already opened with '
-        "open_url; returns locators, offsets, and PDF pages\n"
-    )
-    if needle in prompt:
-        prompt = prompt.replace(needle, insert)
-    else:
-        prompt += (
-            "\n- source_search(url, query, limit) searches inside an already-opened source "
-            "and returns locators only.\n"
-        )
-    return prompt + (
-        "\nsource_search discipline: call open_url first; source_search is a locator, "
-        "not independent evidence. Open the returned offset or PDF page before citing "
-        "that detail when page/offset context matters."
-    )
-
-
 def _with_probe_fixture_discipline(prompt: str, *, include_source_search: bool) -> str:
-    return prompt + "\n\n" + _probe_fixture_reminder(include_source_search=include_source_search)
+    return (
+        _probe_fixture_front_matter(include_source_search=include_source_search)
+        + "\n\n"
+        + prompt
+        + "\n\n"
+        + _probe_fixture_reminder(include_source_search=include_source_search)
+    )
+
+
+def _probe_fixture_front_matter(*, include_source_search: bool) -> str:
+    tool_names = "web_search/open_url/knowledge_search/knowledge_read/knowledge_write/knowledge_link"
+    if include_source_search:
+        tool_names += "/source_search"
+    lines = [
+        "Probe fixture hard boundary:\n",
+        "- Reply only with one JSON tool call. Do not write the research answer directly.\n",
+    ]
+    if SINGLE_TOOL_BOUNDARY:
+        lines.append("- Choose exactly one tool. If you need another action, wait for the next local tool result first.\n")
+    lines.extend([
+        "- Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.\n",
+        f"- Use only these local JSON tools for evidence: {tool_names}.\n",
+        "- Tool outputs are the only evidence in this probe.",
+    ])
+    return "".join(lines)
 
 
 def _probe_fixture_reminder(*, include_source_search: bool) -> str:
     tool_names = "web_search/open_url/knowledge_search/knowledge_read/knowledge_write/knowledge_link"
     if include_source_search:
         tool_names += "/source_search"
-    return (
-        "Probe fixture discipline:\n"
-        "- Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.\n"
-        f"- All web and knowledge access in this probe is available only through these JSON tools: {tool_names}.\n"
-        "- For search query strings, use plain keywords; do not put literal double quote characters inside JSON strings.\n"
-        "- The source URLs and facts are deterministic local fixtures; they may not exist on the public internet.\n"
-        "- Treat tool outputs as the only evidence, even when a fixture domain looks fake or unreachable publicly.\n"
-        "- Do not answer from memory or from the chat website's own search results."
-    )
-
-
-def _source_hits(
-    doc: FixtureDocument,
-    query: str,
-    limit: int,
-) -> list[dict[str, object]]:
-    tokens = _tokens(query)
-    hits: list[dict[str, object]] = []
-    if doc.pages:
-        for page_number, text in enumerate(doc.pages, 1):
-            hit = _best_hit(text, tokens)
-            if hit is None:
-                continue
-            hits.append({
-                "page": page_number,
-                "offset": hit,
-                "snippet": _snippet(text, hit),
-            })
-    else:
-        text = doc.text
-        offset = 0
-        while offset < len(text):
-            chunk = text[offset : offset + 2_000]
-            hit = _best_hit(chunk, tokens)
-            if hit is not None:
-                absolute = offset + hit
-                hits.append({
-                    "offset": absolute,
-                    "snippet": _snippet(text, absolute),
-                })
-            offset += 1_600
-    return hits[:limit]
-
-
-def _best_hit(text: str, tokens: tuple[str, ...]) -> int | None:
-    lowered = text.lower()
-    positions = [lowered.find(token) for token in tokens if token]
-    found = [pos for pos in positions if pos >= 0]
-    if not found:
-        return None
-    return min(found)
-
-
-def _tokens(query: str) -> tuple[str, ...]:
-    raw = re.findall(r"[A-Za-z0-9$.-]{3,}", str(query or "").lower())
-    tokens: list[str] = []
-    for item in raw:
-        cleaned = item.strip(".-")
-        if cleaned and cleaned not in tokens:
-            tokens.append(cleaned)
-    return tuple(tokens[:8])
-
-
-def _snippet(text: str, index: int) -> str:
-    start = max(0, index - 130)
-    return _clip(" ".join(text[start : start + SOURCE_SEARCH_SNIPPET_CHARS].split()), SOURCE_SEARCH_SNIPPET_CHARS)
+    lines = [
+        "Probe fixture discipline:\n",
+        "- Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.\n",
+    ]
+    if SINGLE_TOOL_BOUNDARY:
+        lines.append("- Choose exactly one JSON tool call per turn; never output multiple JSON objects in one reply.\n")
+    lines.extend([
+        f"- All web and knowledge access in this probe is available only through these JSON tools: {tool_names}.\n",
+        "- For search query strings, use plain keywords; do not put literal double quote characters inside JSON strings.\n",
+        "- The source URLs and facts are deterministic local fixtures; they may not exist on the public internet.\n",
+        "- Treat tool outputs as the only evidence, even when a fixture domain looks fake or unreachable publicly.\n",
+        "- Do not answer from memory or from the chat website's own search results.",
+    ])
+    return "".join(lines)
 
 
 def _seed_store(store: KnowledgeStore, case: ResearchProbeCase) -> None:
@@ -1536,7 +1524,8 @@ def self_test() -> int:
     baseline_codec = ProbeJsonToolCodec("baseline")
     source_codec = ProbeJsonToolCodec("source_search")
     deep_codec = ProbeJsonToolCodec("deep_core")
-    assert "source_search" not in JsonToolCodec().system_prompt()
+    assert "source_search" in JsonToolCodec().system_prompt()
+    assert "source_search" not in JsonToolCodec(include_source_search=False).system_prompt()
     assert "Probe fixture discipline" in baseline_codec.system_prompt()
     assert "source_search" not in baseline_codec.system_prompt()
     assert "source_search" in source_codec.system_prompt()
@@ -1658,6 +1647,11 @@ def main() -> int:
         action="store_true",
         help="diagnostic only: reuse the current provider page instead of starting a clean chat",
     )
+    parser.add_argument(
+        "--single-tool-boundary",
+        action="store_true",
+        help="manual probe only: add an extra one-tool-per-turn boundary line",
+    )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -1669,6 +1663,8 @@ def main() -> int:
     arms = _selected_arms(args.arm, profile=args.profile)
     cases = _selected_cases(args.case, args.max_cases, profile=args.profile)
     provider_list = provider_ids() if args.provider == "all" else (args.provider,)
+    global SINGLE_TOOL_BOUNDARY
+    SINGLE_TOOL_BOUNDARY = bool(args.single_tool_boundary)
     provider_results = []
     all_rows: list[dict[str, Any]] = []
     started = time.monotonic()
@@ -1710,6 +1706,7 @@ def main() -> int:
         "fresh_tab": args.fresh_tab,
         "keep_open_on_error": args.keep_open_on_error,
         "no_new_chat": args.no_new_chat,
+        "single_tool_boundary": args.single_tool_boundary,
         "trace_output": str(trace.path) if trace is not None else "",
         "new_chat_timeout_seconds": args.new_chat_timeout,
         "elapsed_seconds": round(time.monotonic() - started, 3),

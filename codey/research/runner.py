@@ -27,6 +27,7 @@ PROVIDER_SEND_POLL_INTERVAL = 0.1
 _ACTIVITY = {
     "web_search": "searching the web",
     "open_url": "reading the page",
+    "source_search": "searching within the source",
     "knowledge_search": "recalling local notes",
     "knowledge_read": "reading a note",
     "knowledge_write": "saving a note",
@@ -273,6 +274,12 @@ class ResearchRunner:
                 offset=args.get("offset", 0),
                 limit=args.get("limit", 6000),
                 pages=str(args.get("pages") or ""),
+            ))
+        if call.name == "source_search":
+            return _Outcome(self.tools.source_search(
+                str(args.get("url") or ""),
+                first_text_arg(args, "query", "queries"),
+                args.get("limit", 6),
             ))
         if call.name == "knowledge_search":
             return _Outcome(self.tools.knowledge_search(first_text_arg(args, "query", "queries")))

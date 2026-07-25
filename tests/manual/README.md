@@ -253,18 +253,21 @@ delta. Keep this as a regression probe for affected-caller/test awareness and
 false-positive review noise.
 
 `deep_research_core_ab.py` is a Research-only A/B probe for possible Deep
-Research Core changes. It does not change production ResearchRunner behavior.
-The live provider runs a real JSON-tool research loop, but search results,
-source bodies, PDF pages, and local-memory notes are deterministic fixtures.
+Research Core changes. Production Research now includes `source_search`; this
+probe still keeps a source-search-free baseline arm so the locator can be
+compared against the older behavior. The live provider runs a real JSON-tool
+research loop, but search results, source bodies, PDF pages, and local-memory
+notes are deterministic fixtures.
 The probe prompt explicitly tells web models not to use the chat site's built-in
 web search or outside knowledge, because fixture URLs may not exist publicly.
 
 Arms:
 
-- `baseline`: current Research prompt and tools.
-- `source_search`: current prompt plus a probe-only `source_search` locator
-  tool for already-opened sources.
-- `deep_core`: `source_search` plus a compact Research Plan / Coverage prompt.
+- `baseline`: production Research prompt with `source_search` disabled.
+- `source_search`: production Research prompt and production `source_search`
+  locator tool for already-opened sources.
+- `deep_core`: `source_search` plus an experimental compact Research Plan /
+  Coverage prompt.
 
 ```powershell
 python -B tests\manual\deep_research_core_ab.py --self-test
@@ -279,6 +282,10 @@ python -B tests\manual\deep_research_core_ab.py `
 Default `--profile cheap` keeps live traffic bounded: two high-signal fixture
 cases, all arms, and a 10-turn cap. Use `--profile full` only when intentionally
 running all fixture cases with the normal 14-turn cap.
+Use `--single-tool-boundary` only for manual provider diagnosis. It repeats the
+one-tool-per-turn Research boundary in the fixture front matter and reminders so
+providers such as MiMo can be compared against older runs that emitted several
+tool calls in one reply.
 
 The scorer tracks primary-source opening, source_search use, target
 page/offset recall, exact evidence snippets, counter/limitations reporting,
@@ -290,20 +297,24 @@ incremental trace next to the output file, for example
 `deep_research_core_deepseek_cheap.trace.json`, after each provider reply.
 By default it only attaches to already-open provider tabs; add
 `--open-if-missing` when intentionally allowing the probe to open or foreground
-provider pages. Use this probe before promoting source_search, ResearchPlan, or
-Coverage Review into the production Research path.
+provider pages. Use this probe before changing source_search behavior further,
+or before promoting ResearchPlan / Coverage Review into the production Research
+path.
 
 Provider fit note: StepFun is available alongside MiMo for current provider
-smoke/A-B work. StepFun followed the local JSON-tool Research protocol more
-reliably in live probes: one JSON object per turn and a completed fixture
-report. MiMo remains useful for coding/editing, but it often emitted multiple
-or malformed JSON objects in this strict Research loop. MiniMax was also probed
-and not selected: its Agent page answered with prose and its own web/agent
-behavior instead of local JSON tools. Prefer DeepSeek, Qwen, StepFun, GLM, or
-Local for source-search A/B decisions. This is a Research protocol fit note,
-not a claim that StepFun is the strongest coding writer: its live edit smoke
-passed after protocol nudges, but its fresh project create smoke failed on
-Python syntax repair.
+smoke/A-B work. StepFun followed the local JSON-tool Research protocol reliably
+in earlier probes: one JSON object per turn and a completed fixture report.
+MiMo remains useful for coding/editing and improved after the one-tool boundary:
+a fresh-tab `long-official-doc/source_search` run completed in 10 turns with
+`quality_score=11`, `done=True`, zero protocol repairs, source_search target
+offset recall, exact evidence, and a passing report quality review. Older MiMo
+runs without that boundary still emitted multiple or malformed JSON objects, so
+prefer DeepSeek, Qwen, StepFun, GLM, or Local for source-search A/B decisions
+when quotas allow. MiniMax was also probed and not selected: its Agent page
+answered with prose and its own web/agent behavior instead of local JSON tools.
+This is a Research protocol fit note, not a claim that StepFun is the strongest
+coding writer: its live edit smoke passed after protocol nudges, but its fresh
+project create smoke failed on Python syntax repair.
 
 DeepSeek `long-official-doc` follow-up: after retrying the previously failed
 `deep_core` arm, DeepSeek finished in 8 turns with `quality_score=10`, used

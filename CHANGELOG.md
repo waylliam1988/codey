@@ -4,6 +4,36 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.17 - Source Search Production and Research Tool Boundary
+
+- Production Research tool: `source_search` is now part of the default Research
+  JSON protocol. It searches only within sources already opened by `open_url`
+  and returns locators, offsets, PDF pages, and short previews.
+- Research tool boundary: the Research prompt now explicitly forbids using a
+  chat website's built-in web search, browsing, plugins, or outside knowledge.
+  Web and knowledge access must go through Codey's local JSON tools.
+- Single-action discipline: Research now tells providers to choose exactly one
+  tool per turn, and the Research JSON parser rejects multiple tool calls in one
+  reply so MiMo-style tool floods go through the normal protocol repair path.
+- Evidence boundary: `source_search` does not write evidence, does not update
+  PDF `pages_read`, and does not relax report quality. HTML uses soft locator
+  discipline; PDF page-specific citations still require `open_url pages="N"`.
+- PDF bounded scan: after a PDF URL has been opened once, `source_search` may
+  re-fetch that same opened URL and scan a bounded first-page range for locator
+  hits without recording those pages as read evidence.
+- Manual A/B hygiene: baseline runs can instantiate
+  `JsonToolCodec(include_source_search=False)` so production source_search does
+  not contaminate the no-source-search arm; the manual harness now reuses the
+  production source-search matching logic and has a manual-only
+  `--single-tool-boundary` probe switch for provider diagnosis.
+- Live MiMo follow-up: without the single-tool boundary, MiMo repeatedly emitted
+  multiple search calls. With the boundary enabled on a fresh tab, MiMo completed
+  the `long-official-doc/source_search` fixture in 10 turns with
+  `quality_score=11`, `done=True`, zero protocol repairs, opened the target
+  offset, saved exact evidence, and passed report quality.
+- Boundary discipline: no `deep_core` production prompt, no UI change, no role
+  router, no vector index, and no HTML range hard gate.
+
 ## 0.2.15 - Source Search Research Hygiene
 
 - Qwen submit stability: the Qwen adapter now verifies that the controlled

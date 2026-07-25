@@ -3,22 +3,28 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from typing import Any, Protocol
 
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
 
-MAX_CALLS_PER_TURN = 4
+MAX_CALLS_PER_TURN = 1
 _TOOL_ALIASES = {
     "web_search": ("web_search", "search"),
     "open_url": ("open_url", "open", "fetch", "read_url"),
+    "source_search": ("source_search", "search_source", "find_in_source"),
     "knowledge_search": ("knowledge_search", "recall", "memory_search", "vault_search"),
     "knowledge_read": ("knowledge_read", "knowledge_note", "vault_read", "note_read"),
     "knowledge_write": ("knowledge_write", "note_write", "save_note", "write_note"),
     "knowledge_link": ("knowledge_link", "note_link", "link"),
     "done": ("done", "answer", "finish"),
 }
-_ALIAS_TO_TOOL = {alias: name for name, aliases in _TOOL_ALIASES.items() for alias in aliases}
+
+
+def _alias_to_tool(include_source_search: bool = True) -> dict[str, str]:
+    aliases = dict(_TOOL_ALIASES)
+    if not include_source_search:
+        aliases.pop("source_search", None)
+    return {alias: name for name, names in aliases.items() for alias in names}
 
 
 class ProtocolCodec(Protocol):
@@ -28,17 +34,29 @@ class ProtocolCodec(Protocol):
     def format_results(self, results: list[ToolResult]) -> str: ...
 
 
-@dataclass(frozen=True)
 class JsonToolCodec:
+    def __init__(self, include_source_search: bool = True) -> None:
+        self.include_source_search = bool(include_source_search)
+
     def system_prompt(self) -> str:
-        return _SYSTEM_PROMPT
+        return _system_prompt(self.include_source_search)
 
     def repair_prompt(self) -> str:
+        source_search_example = (
+            '{"tool":"source_search","args":{"url":"https://...","query":"..."}}\n'
+            if self.include_source_search
+            else ""
+        )
         return (
             "Your last reply was not a valid tool call. Reply with exactly one "
             "JSON object and nothing else, for example:\n"
             '{"tool":"web_search","args":{"query":"..."}}\n'
-            'or {"tool":"done","args":{"answer":"..."}}'
+            f"{source_search_example}"
+            'or {"tool":"done","args":{"answer":"..."}}\n\n'
+            "Choose exactly one tool. If you need another action, wait for the "
+            "next local tool result first. "
+            "Do not use this chat website's built-in web search, browsing, "
+            "plugins, or outside knowledge. Use only local JSON tools."
         )
 
     def parse(self, text: str) -> ToolPlan:
@@ -47,11 +65,13 @@ class JsonToolCodec:
             return ToolPlan(calls=[], control=None, protocol_error="no JSON tool call found")
         calls: list[ToolCall] = []
         control: Control | None = None
+        action_count = 0
         for obj in objects:
             name = str(obj.get("tool") or obj.get("name") or "").strip().lower()
-            runtime = _ALIAS_TO_TOOL.get(name)
+            runtime = _alias_to_tool(self.include_source_search).get(name)
             if runtime is None:
                 continue
+            action_count += 1
             args = obj.get("args")
             if not isinstance(args, dict):
                 args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
@@ -62,7 +82,16 @@ class JsonToolCodec:
                 calls.append(ToolCall(runtime, args))
         if not calls and control is None:
             return ToolPlan(calls=[], control=None, protocol_error="no known tool in reply")
-        return ToolPlan(calls=calls[:MAX_CALLS_PER_TURN], control=control)
+        if action_count > MAX_CALLS_PER_TURN:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=(
+                    f"too many JSON tool calls in one reply ({action_count}); "
+                    "reply with exactly one JSON object"
+                ),
+            )
+        return ToolPlan(calls=calls, control=control)
 
     def format_results(self, results: list[ToolResult]) -> str:
         blocks: list[str] = []
@@ -76,7 +105,11 @@ class JsonToolCodec:
             "Continue. Reply with the next JSON tool call. When you have enough "
             "evidence, save what matters with knowledge_write/knowledge_link, "
             "then call done with the full report as the answer. If a result says "
-            "NEEDS_OPEN, call open_url for that URL before trying knowledge_write again."
+            "NEEDS_OPEN, call open_url for that URL before trying knowledge_write again. "
+            "Choose exactly one tool; if you need another action, wait for the "
+            "next local tool result first. "
+            "Do not use this chat website's built-in web search, browsing, plugins, "
+            "or outside knowledge."
         )
 
 
@@ -164,3 +197,49 @@ Discipline:
 
 Be efficient: a handful of good searches and reads beat many shallow ones. When you have \
 enough, save the important findings as notes, link them, then call done."""
+
+
+def _tool_names(include_source_search: bool) -> str:
+    names = "web_search/open_url/knowledge_search/knowledge_read/knowledge_write/knowledge_link"
+    if include_source_search:
+        names += "/source_search"
+    return names
+
+
+def _hard_boundary(include_source_search: bool) -> str:
+    return (
+        "Research hard boundary:\n"
+        "- Reply only with one JSON tool call. Do not write the research answer directly.\n"
+        "- Choose exactly one tool. If you need another action, wait for the next local tool result first.\n"
+        "- Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.\n"
+        f"- Use only these local JSON tools for web and knowledge access: {_tool_names(include_source_search)}.\n"
+        "- Tool outputs are the only evidence."
+    )
+
+
+def _system_prompt(include_source_search: bool) -> str:
+    if not include_source_search:
+        return _hard_boundary(False) + "\n\n" + _SYSTEM_PROMPT
+    tool_needle = (
+        '- {"tool":"open_url","args":{"url":"https://...",'
+        '"offset":0,"limit":6000,"pages":"1-5"}}  read a page\'s text; '
+        "for PDFs, pages selects bounded page ranges\n"
+    )
+    tool_insert = (
+        tool_needle
+        + '- {"tool":"source_search","args":{"url":"https://...",'
+        '"query":"...","limit":6}}  search within a source already opened with '
+        "open_url; returns locators, offsets, and PDF pages\n"
+    )
+    prompt = _SYSTEM_PROMPT.replace(tool_needle, tool_insert)
+    discipline_needle = (
+        "- open_url can read text PDFs. For PDFs, pass pages like \"1-5\" or \"4\"; "
+        "default is the first pages."
+    )
+    discipline_insert = (
+        discipline_needle
+        + "\n- source_search searches only inside already-opened sources. It returns "
+        "locator previews, not evidence. For HTML, open the returned offset before "
+        "citing. For PDF page-specific evidence, open_url pages=\"N\" before citing [n p.N]."
+    )
+    return _hard_boundary(True) + "\n\n" + prompt.replace(discipline_needle, discipline_insert)

@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.15-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.17-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.15`
+版本：`0.2.17`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -163,14 +163,16 @@ Choose folder · Research · DeepSeek/MiMo/StepFun/Qwen/Local
 
 Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开网页、URL policy、
 笔记写入、restore 和 evidence review 都由 Codey 本地工具执行。模型没有隐藏联网权。
-最终 synthesis 只能引用本轮 Codey 实际打开过的来源。
+最终 synthesis 只能引用本轮 Codey 实际打开过的来源。Research provider 也会被要求
+每轮只选择一个本地 JSON 工具；如果模型一次吐出多个 action，Codey 会把它当作协议错误，
+要求模型重答，而不是直接执行一串工具。
 
 Provider 的适用场景很重要。Codey 暂时不会按角色自动切换模型；你可以按当前任务手动选择：
 
 | Provider | 更适合 | 当前注意点 |
 |---|---|---|
 | DeepSeek / Qwen / GLM | 通用写代码、Review 和 Research | 网页每日额度可能打断长任务 |
-| MiMo | 强模型额度不够时做代码编辑/实现 | 不建议用于严格 JSON-tool Research；实机 probe 里经常一次输出多个或格式不正确的 JSON |
+| MiMo | 强模型额度不够时做代码编辑/实现；加上 one-tool 边界后可跑小型 Research | 严格 JSON-tool Research 的波动仍更高；长研究优先 DeepSeek、Qwen、StepFun 或 Local |
 | StepFun | 带证据的 Research 和本地 JSON-tool probe | adapter 现在会等 StepFun 回答尾部按钮稳定后再进入下一轮；暂不建议作为从零新建项目的主 Writer |
 | Local | 私有/offline 任务和额度兜底 | 质量取决于你的本地模型；Gemma4-12B 通过了 fixture probe，但更重的 prompt 仍可能压低 JSON 遵守 |
 
@@ -179,8 +181,18 @@ MiniMax 也做过 probe，但没有被选中，因为它的 Agent 页面首轮�
 
 Manual Deep Research A/B harness 已经测过 DeepSeek、StepFun、Qwen 和本地
 Gemma4-12B endpoint。当前一致结论是：在已经打开的来源内部做确定性的
-`source_search`，是下一步最稳的 Research 增强。更重的 `deep_core`
-plan/coverage prompt 还只保留在 A/B，不默认进入生产链路。
+`source_search`，已经值得进入生产 Research。更重的 `deep_core`
+plan/coverage prompt 仍只保留在 A/B，不默认进入生产链路。
+
+MiMo 在加入 one-tool Research 边界后重新做过实机补测。fresh-tab 的
+`long-official-doc/source_search` 跑满 10 轮并完成：使用了 `source_search`，
+打开目标 offset，保存精确 evidence，并通过 report quality。没有这个边界的早期 MiMo
+probe 仍会一次输出多个搜索调用，所以这里记录为 Research 纪律增强，而不是自动角色路由。
+
+生产 Research 现在可以在 `open_url` 后调用 `source_search`。它只搜索 Codey
+已经打开过的来源，并返回定位预览，不是 evidence。HTML 命中会提示模型先打开对应
+offset 再引用；PDF 页码证据仍走硬性质量门：必须先 `open_url pages="N"`，
+才能引用 `[n p.N]` 或保存该页 evidence。
 
 从 0.2.4 开始，Research 会维护 Evidence Ledger，并在保存最终 synthesis 前通过确定性的
 报告质量门。报告必须包含：
@@ -500,7 +512,7 @@ codey/
   project_map.py            确定性的有边界项目地图
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
-  research/                 Research runner、网页搜索/打开、evidence ledger 和 report quality gate
+  research/                 Research runner、网页/source search 工具、evidence ledger 和 report quality gate
   verification_map.py       Review 阶段的有边界验证候选
   review_impact_map.py      只给 Review 使用的 caller/test 影响提示
   change_brief.py           隐藏任务意图 brief

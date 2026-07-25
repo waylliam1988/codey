@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.15-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.17-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.15`
+Version: `0.2.17`
 
 [Version history](CHANGELOG.md)
 
@@ -198,7 +198,9 @@ Choose folder · Research · DeepSeek/MiMo/StepFun/Qwen/Local
 Research can use web providers or `Local`. Search, page opening, URL policy,
 note writes, restore, and evidence checks are always local Codey tools. Models
 do not get hidden network access. A final synthesis can cite only sources that
-Codey actually opened in the run.
+Codey actually opened in the run. Research providers are also asked to choose
+exactly one local JSON tool per turn; if a model emits several actions at once,
+Codey treats that as a protocol error and asks it to retry.
 
 Provider fit matters. Codey does not route automatically by role yet; choose the
 provider that fits the current job:
@@ -206,7 +208,7 @@ provider that fits the current job:
 | Provider | Best Fit | Current Caution |
 |---|---|---|
 | DeepSeek / Qwen / GLM | General coding, review, and Research | Daily web-use limits can interrupt long runs |
-| MiMo | Coding/editing when stronger providers are limited | Not recommended for strict JSON-tool Research; live probes often emitted multiple or malformed JSON calls |
+| MiMo | Coding/editing when stronger providers are limited; small Research runs after the one-tool boundary | Higher variance for strict JSON-tool Research; prefer DeepSeek, Qwen, StepFun, or Local for longer research |
 | StepFun | Evidence-backed Research and local JSON-tool probes | The adapter now waits for StepFun's response footer before the next send; not recommended as the main writer for fresh projects yet |
 | Local | Private/offline runs and quota fallback | Quality depends on your local model; Gemma4-12B passed fixture probes, but heavier prompts can stress JSON discipline |
 
@@ -216,9 +218,23 @@ instead.
 
 The manual Deep Research A/B harness has now checked DeepSeek, StepFun, Qwen,
 and a local Gemma4-12B endpoint. The consistent result is that deterministic
-`source_search` inside already-opened sources is the safest next Research
-improvement. The heavier `deep_core` plan/coverage prompt remains an A/B
-experiment, not default production behavior.
+`source_search` inside already-opened sources is useful enough for production.
+The heavier `deep_core` plan/coverage prompt remains an A/B experiment, not
+default production behavior.
+
+MiMo was retested after adding the one-tool Research boundary. A fresh-tab
+`long-official-doc/source_search` run completed in 10 turns, used
+`source_search`, opened the target offset, saved exact evidence, and passed the
+report quality gate. Earlier MiMo probes without that boundary still emitted
+multiple search calls, so the documentation treats this as improved Research
+discipline rather than a role router.
+
+Production Research can now call `source_search` after `open_url`. It searches
+only inside sources Codey already opened and returns locator previews, not
+evidence. For HTML, Codey asks the model to open the returned offset before
+citing. For PDF page-specific evidence, the existing hard gate still applies:
+the model must call `open_url pages="N"` before it can cite `[n p.N]` or save
+evidence for that page.
 
 In 0.2.4, Research keeps an Evidence Ledger and applies a deterministic report
 quality gate before saving the final synthesis. The report must include:
@@ -555,7 +571,7 @@ codey/
   project_map.py            deterministic bounded project orientation
   project_task_context.py   project facts, map, checkpoint, and verification context
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
-  research/                 Research runner, web search/open tools, evidence ledger, report quality gate
+  research/                 Research runner, web/source search tools, evidence ledger, report quality gate
   verification_map.py       bounded review-time verification candidates
   review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief

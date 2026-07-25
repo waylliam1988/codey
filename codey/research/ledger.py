@@ -22,6 +22,7 @@ MAX_PAYLOAD_SEARCHES = 12
 MAX_PAYLOAD_RESULTS = 48
 MAX_PAYLOAD_SOURCES = 24
 MAX_PAYLOAD_EVIDENCE = 48
+MAX_PAYLOAD_SOURCE_SEARCHES = 24
 _SPACE_RE = re.compile(r"\s+")
 _YEAR_RE = re.compile(r"\b(20\d{2})\b")
 
@@ -111,6 +112,7 @@ class ResearchLedger:
         self.searches: list[SearchRecord] = []
         self.opened_sources: list[OpenedSource] = []
         self.evidence_items: list[EvidenceItem] = []
+        self.source_searches: list[dict] = []
         self._source_texts: dict[str, str] = {}
         self._source_pages: dict[str, dict[int, str]] = {}
 
@@ -280,6 +282,41 @@ class ResearchLedger:
                 continue
             self.evidence_items.append(replace(item, note_id=note_id or item.note_id))
 
+    def record_source_search(self, source_url: str, query: str, hits: list[dict]) -> None:
+        final_url = self.canonical_opened_url(source_url) or str(source_url or "").strip()
+        query = " ".join(str(query or "").split())
+        if not final_url or not query:
+            return
+        bounded_hits = []
+        for hit in hits[:MAX_PAYLOAD_SOURCE_SEARCHES]:
+            bounded_hits.append({
+                "page": hit.get("page"),
+                "offset": int(hit.get("offset") or 0),
+                "snippet": _clip(str(hit.get("snippet") or ""), MAX_SNIPPET_CHARS),
+            })
+        self.source_searches.append({
+            "source_url": final_url,
+            "query": query,
+            "hits": bounded_hits[:12],
+        })
+
+    def source_record_for_url(self, source_url: str) -> OpenedSource | None:
+        final_url = self.canonical_opened_url(source_url) or str(source_url or "").strip()
+        if not final_url:
+            return None
+        for item in self.opened_sources:
+            if item.final_url == final_url or item.requested_url == final_url:
+                return item
+        return None
+
+    def source_text_for_url(self, source_url: str) -> str:
+        final_url = self.canonical_opened_url(source_url) or str(source_url or "").strip()
+        return self._source_texts.get(final_url) or self._source_texts.get(str(source_url or "").strip()) or ""
+
+    def source_pages_for_url(self, source_url: str) -> dict[int, str]:
+        final_url = self.canonical_opened_url(source_url) or str(source_url or "").strip()
+        return dict(self._source_pages.get(final_url) or self._source_pages.get(str(source_url or "").strip()) or {})
+
     def best_excerpt(self, source_url: str, hint: str = "") -> str:
         excerpt, _page = self.best_excerpt_with_page(source_url, hint)
         return excerpt
@@ -411,6 +448,7 @@ class ResearchLedger:
         return {
             "queries": [item.query for item in self.searches[:MAX_PAYLOAD_SEARCHES]],
             "searches": [item.to_dict() for item in self.searches[:MAX_PAYLOAD_SEARCHES]],
+            "source_searches": list(self.source_searches[:MAX_PAYLOAD_SOURCE_SEARCHES]),
             "opened_count": len(self.opened_sources),
             "skipped_results": skipped,
         }

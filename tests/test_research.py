@@ -370,6 +370,213 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(tools.sources_read, set())
         self.assertFalse(tools.ledger.opened_sources_payload())
 
+    def test_source_search_requires_opened_source_and_finds_late_html_offset(self) -> None:
+        url = "https://example.com/long"
+
+        class LongHtmlSearch:
+            def __init__(self) -> None:
+                self.fetches: list[str] = []
+
+            def fetch(self, requested: str) -> dict:
+                self.fetches.append(requested)
+                return {
+                    "url": requested,
+                    "title": "Long HTML",
+                    "text": (
+                        "Overview only. "
+                        + ("filler " * 1200)
+                        + "The stable-v2 endpoint appears deep in the HTML source."
+                    ),
+                    "truncated": False,
+                }
+
+        search = LongHtmlSearch()
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(search, store, KnowledgeChanges(store.root))
+
+            before = tools.source_search(url, "stable-v2 endpoint")
+            opened = tools.open_url(url, limit=600)
+            found = tools.source_search(url, "stable-v2 endpoint")
+            evidence_before_write = len(tools.ledger.evidence_items)
+            saved = tools.knowledge_write({
+                "type": "fact",
+                "title": "Stable endpoint",
+                "body": "The stable-v2 endpoint appears deep in the HTML source.",
+                "sources": [url],
+                "evidence": [{
+                    "claim": "The endpoint is stable-v2.",
+                    "source_url": url,
+                    "excerpt": "stable-v2 endpoint appears deep in the HTML source",
+                    "stance": "supports",
+                }],
+            })
+            coverage = tools.ledger.coverage_payload()
+            evidence_count = len(tools.ledger.evidence_items)
+            store.close()
+
+        self.assertTrue(before.startswith("NEEDS_OPEN:"))
+        self.assertIn("[more text available", opened)
+        self.assertIn("Locator preview only", found)
+        self.assertIn("offset ", found)
+        self.assertIn('open_url url="https://example.com/long" offset=', found)
+        self.assertEqual(evidence_before_write, 0)
+        self.assertIn("saved fact note", saved)
+        self.assertEqual(evidence_count, 1)
+        self.assertEqual(len(search.fetches), 1)
+        self.assertEqual(coverage["source_searches"][0]["query"], "stable-v2 endpoint")
+
+    def test_source_search_finds_chinese_html_phrase(self) -> None:
+        url = "https://example.com/zh-long"
+
+        class ChineseHtmlSearch:
+            def fetch(self, requested: str) -> dict:
+                return {
+                    "url": requested,
+                    "title": "中文长文",
+                    "text": "概览。" + ("背景 " * 800) + "最终建议继续使用稳定端点。",
+                    "truncated": False,
+                }
+
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(ChineseHtmlSearch(), store, KnowledgeChanges(store.root))
+
+            tools.open_url(url, limit=600)
+            found = tools.source_search(url, "稳定端点")
+            store.close()
+
+        self.assertIn("Locator preview only", found)
+        self.assertIn("稳定端点", found)
+        self.assertIn('open_url url="https://example.com/zh-long" offset=', found)
+
+    def test_source_search_pdf_locator_does_not_satisfy_page_evidence_until_page_opened(self) -> None:
+        url = "https://example.com/method.pdf"
+
+        class PdfSearch:
+            def __init__(self) -> None:
+                self.fetches: list[str] = []
+
+            def fetch(self, requested: str) -> dict:
+                self.fetches.append(requested)
+                return {
+                    "url": requested,
+                    "title": "Method PDF",
+                    "text": "",
+                    "content_kind": "pdf",
+                    "mime_type": "application/pdf",
+                    "bytes": b"%PDF fixture",
+                    "truncated": False,
+                }
+
+        with tempfile.TemporaryDirectory() as td, fake_pypdf(
+            "page one",
+            "page two",
+            "page three",
+            "page four",
+            "page five",
+            "page six",
+            "page seven",
+            "page eight",
+            "The validation method uses stratified bootstrap validation.",
+            "page ten",
+        ):
+            store = KnowledgeStore(Path(td))
+            search = PdfSearch()
+            tools = ResearchTools(search, store, KnowledgeChanges(store.root))
+
+            opened = tools.open_url(url)
+            located = tools.source_search(url, "stratified bootstrap validation")
+            pages_after_search = tools.ledger.opened_sources_payload()[0]["pages_read"]
+            evidence_after_search = len(tools.ledger.evidence_items)
+            rejected = tools.knowledge_write({
+                "type": "fact",
+                "title": "Validation method",
+                "body": "The validation method uses stratified bootstrap validation.",
+                "sources": [url],
+                "evidence": [{
+                    "claim": "The method uses stratified bootstrap validation.",
+                    "source_url": url,
+                    "excerpt": "stratified bootstrap validation",
+                    "stance": "supports",
+                    "page": 9,
+                }],
+            })
+            page = tools.open_url(url, pages="9")
+            accepted = tools.knowledge_write({
+                "type": "fact",
+                "title": "Validation method",
+                "body": "The validation method uses stratified bootstrap validation.",
+                "sources": [url],
+                "evidence": [{
+                    "claim": "The method uses stratified bootstrap validation.",
+                    "source_url": url,
+                    "excerpt": "stratified bootstrap validation",
+                    "stance": "supports",
+                    "page": 9,
+                }],
+            })
+            pages_after_open = tools.ledger.opened_sources_payload()[0]["pages_read"]
+            evidence_count = len(tools.ledger.evidence_items)
+            store.close()
+
+        self.assertIn("pages 1-5 / 10", opened)
+        self.assertIn("p.9", located)
+        self.assertIn('open_url url="https://example.com/method.pdf" pages="9"', located)
+        self.assertEqual(pages_after_search, [1, 2, 3, 4, 5])
+        self.assertEqual(evidence_after_search, 0)
+        self.assertTrue(rejected.startswith("ERROR: evidence cites unread PDF page p.9"))
+        self.assertIn("[page 9]", page)
+        self.assertIn("saved fact note", accepted)
+        self.assertEqual(pages_after_open, [1, 2, 3, 4, 5, 9])
+        self.assertEqual(evidence_count, 1)
+        self.assertEqual(search.fetches, [url, url, url])
+
+    def test_source_search_pdf_broad_query_scans_before_low_limit_ranking(self) -> None:
+        url = "https://example.com/broad-method.pdf"
+
+        class PdfSearch:
+            def __init__(self) -> None:
+                self.fetches: list[str] = []
+
+            def fetch(self, requested: str) -> dict:
+                self.fetches.append(requested)
+                return {
+                    "url": requested,
+                    "title": "Broad Method PDF",
+                    "text": "",
+                    "content_kind": "pdf",
+                    "mime_type": "application/pdf",
+                    "bytes": b"%PDF fixture",
+                    "truncated": False,
+                }
+
+        with tempfile.TemporaryDirectory() as td, fake_pypdf(
+            "method overview only",
+            "method background only",
+            "method appendix only",
+            "page four",
+            "page five",
+            "page six",
+            "page seven",
+            "page eight",
+            "validation method target phrase",
+            "page ten",
+        ):
+            store = KnowledgeStore(Path(td))
+            search = PdfSearch()
+            tools = ResearchTools(search, store, KnowledgeChanges(store.root))
+
+            tools.open_url(url)
+            located = tools.source_search(url, "validation method", limit=3)
+            pages_after_search = tools.ledger.opened_sources_payload()[0]["pages_read"]
+            store.close()
+
+        self.assertIn("1. p.9", located)
+        self.assertIn("validation method target phrase", located)
+        self.assertEqual(pages_after_search, [1, 2, 3, 4, 5])
+        self.assertEqual(search.fetches, [url, url])
+
     def test_browser_worker_exposes_module_call_for_research_search(self) -> None:
         self.assertEqual(browser_worker.call(lambda value: value + 1, 4), 5)
 
@@ -1107,6 +1314,20 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(search.queries, ["helium supply"])
         self.assertIn("Helium article", outcome.output)
 
+    def test_source_search_dispatch_accepts_queries_alias(self) -> None:
+        url = "https://example.com/helium"
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(FakeProvider(), FakeSearch(), store, max_turns=2)
+            runner.tools.open_url(url)
+            call = ToolCall("source_search", {"url": url, "queries": ["natural gas", "argon"]})
+
+            outcome = runner._dispatch(call)
+            store.close()
+
+        self.assertTrue(outcome.ok)
+        self.assertIn("natural gas", outcome.output)
+
     def test_unsupported_content_type_is_skipped_not_failed(self) -> None:
         class PdfSearch:
             def fetch(self, url: str) -> dict:
@@ -1240,7 +1461,10 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_protocol_guides_open_url_before_note_write(self) -> None:
         codec = JsonToolCodec()
+        baseline_codec = JsonToolCodec(include_source_search=False)
         prompt = codec.system_prompt()
+        baseline_prompt = baseline_codec.system_prompt()
+        repair = codec.repair_prompt()
         followup = codec.format_results([
             ToolResult(
                 ToolCall("knowledge_write", {"title": "Helium"}),
@@ -1253,6 +1477,19 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("exact short excerpts copied from open_url text", prompt)
         self.assertIn('"pages":"1-5"', prompt)
         self.assertIn("open_url can read text PDFs", prompt)
+        self.assertIn("source_search", prompt)
+        self.assertIn("locator previews", prompt)
+        self.assertIn("open the returned offset", prompt)
+        self.assertNotIn("source_search", baseline_prompt)
+        self.assertIn("Research hard boundary", prompt)
+        self.assertIn("Do not write the research answer directly", prompt)
+        self.assertIn("Choose exactly one tool", prompt)
+        self.assertIn("Do not use this chat website's built-in web search", prompt)
+        self.assertIn("Tool outputs are the only evidence", prompt)
+        self.assertIn("Choose exactly one tool", repair)
+        self.assertIn("Choose exactly one tool", followup)
+        self.assertIn("Do not use this chat website's built-in web search", repair)
+        self.assertIn("Do not use this chat website's built-in web search", followup)
         self.assertIn("evidence.page", prompt)
         self.assertIn("[1 p.4]", prompt)
         self.assertIn("Do not paraphrase evidence.excerpt", prompt)
@@ -1262,6 +1499,30 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("反证与限制", prompt)
         self.assertIn("NEEDS_OPEN", followup)
         self.assertIn("call open_url", followup)
+
+    def test_research_protocol_rejects_multiple_tool_calls_per_reply(self) -> None:
+        plan = JsonToolCodec().parse(
+            "\n".join([
+                json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+                json.dumps({"tool": "web_search", "args": {"query": "alpha"}}),
+            ])
+        )
+
+        self.assertFalse(plan.calls)
+        self.assertIsNone(plan.control)
+        self.assertIn("too many JSON tool calls", plan.protocol_error)
+
+    def test_research_protocol_rejects_duplicate_done_calls_per_reply(self) -> None:
+        plan = JsonToolCodec().parse(
+            "\n".join([
+                json.dumps({"tool": "done", "args": {"answer": "first"}}),
+                json.dumps({"tool": "done", "args": {"answer": "second"}}),
+            ])
+        )
+
+        self.assertFalse(plan.calls)
+        self.assertIsNone(plan.control)
+        self.assertIn("too many JSON tool calls", plan.protocol_error)
 
     def test_quality_review_followup_is_specific_when_done_answer_needs_revision(self) -> None:
         url = "https://example.com/helium"

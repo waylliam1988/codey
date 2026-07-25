@@ -1,5 +1,76 @@
 # Codey Test Report
 
+## 0.2.17 Source Search Production and Research Tool Boundary
+
+Codey 0.2.17 promotes the deterministic `source_search` locator from the manual
+Deep Research A/B harness into production Research, and tightens the Research
+JSON-tool boundary while keeping `deep_core` manual-only.
+
+Production changes:
+
+- Added `codey/research/source_search.py` for deterministic token locator search
+  over already-opened source text or PDF page text.
+- Added read-only source accessors and source-search audit records to the
+  per-run `ResearchLedger`.
+- Added `ResearchTools.source_search()` and `ResearchRunner` dispatch.
+- Added `source_search` to the default Research JSON protocol, with
+  `JsonToolCodec(include_source_search=False)` for manual baseline isolation.
+- Added a hard Research boundary that tells providers not to use the chat
+  website's built-in search/browsing/plugins or outside knowledge.
+- Added one-tool-per-turn Research discipline in the system prompt, protocol
+  repair prompt, and tool-result follow-up.
+- Tightened the production Research JSON parser so multiple tool calls in one
+  reply are rejected and repaired instead of being executed as a batch.
+- PDF source_search can bounded-scan an already-opened PDF URL for locators, but
+  it does not update `pages_read` or evidence.
+- HTML source_search returns offsets and previews. It remains a soft locator
+  discipline rather than a hard returned-window provenance gate.
+- Added a manual-only `--single-tool-boundary` probe switch to
+  `deep_research_core_ab.py` for provider diagnosis.
+
+Validation focus:
+
+- HTML `open_url` followed by `source_search` finds a late offset without a
+  second fetch, creates no evidence by itself, and records audit coverage.
+- HTML evidence from opened-source ledger text remains accepted without adding
+  an HTML range hard gate.
+- PDF `source_search` can locate p.9 after the PDF URL was opened once, but
+  `knowledge_write evidence.page=9` still fails until `open_url pages="9"`
+  reads that page.
+- Manual A/B baseline prompt remains source_search-free while source/deep arms
+  keep source_search available.
+- Research parser rejects multiple JSON tool calls in a single provider reply.
+- Live MiMo follow-up:
+  - Earlier no/single-tool experiments were mixed: without the extra boundary
+    MiMo emitted multiple search calls; one single-tool run was clean but hit
+    the turn cap before evidence.
+  - Final fresh-tab long run with `--single-tool-boundary` completed
+    `long-official-doc/source_search` in 10 turns with `quality_score=11`,
+    `done=True`, `protocol_repair_prompts=0`, opened the source_search target
+    offset, saved exact evidence, and passed report quality.
+
+Validation:
+
+```text
+python -m pytest tests\test_research.py tests\test_deep_research_core_ab.py tests\test_ui.py -q
+# 129 passed, 1 pytest cache warning
+
+python -m pytest -q
+# 1279 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -B tests\manual\deep_research_core_ab.py --self-test
+# self-test passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\__init__.py codey\research\source_search.py codey\research\ledger.py codey\research\tools.py codey\research\runner.py codey\research\protocols.py tests\test_research.py tests\test_deep_research_core_ab.py tests\manual\deep_research_core_ab.py tests\test_ui.py
+# passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.15 Source Search Research Hygiene
 
 Codey 0.2.15 records the cross-provider Deep Research A/B result and fixes the

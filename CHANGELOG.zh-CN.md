@@ -4,6 +4,29 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.17 - Source Search Production and Research Tool Boundary
+
+- 生产 Research 工具：`source_search` 现在进入默认 Research JSON 协议。它只搜索
+  已经通过 `open_url` 打开的来源，返回 locator、offset、PDF 页码和短 preview。
+- Research 工具边界：Research prompt 现在明确禁止使用聊天网站自带搜索、浏览、
+  插件或外部知识。所有网页和知识访问都必须通过 Codey 本地 JSON 工具完成。
+- 单 action 纪律：Research 现在要求 provider 每轮只选择一个工具；Research JSON
+  parser 也会拒绝一轮多个 tool call，让 MiMo 这类工具洪水走现有 protocol repair。
+- Evidence 边界：`source_search` 不写 evidence、不更新 PDF `pages_read`、不放宽
+  report quality。HTML 走软性的 locator 纪律；PDF 页码引用仍必须先
+  `open_url pages="N"`。
+- PDF 有界扫描：某个 PDF URL 至少打开过一次后，`source_search` 可以重新 fetch
+  同一个已打开 URL，并在有边界的前若干页里找 locator；这些页不会被记录成已读证据页。
+- Manual A/B 卫生：baseline 可以使用 `JsonToolCodec(include_source_search=False)`，
+  避免生产 source_search 污染无 source_search arm；manual harness 现在复用生产
+  source-search 匹配逻辑，并提供 manual-only 的 `--single-tool-boundary` probe 开关。
+- MiMo 实机补测：没有 single-tool 边界时，MiMo 会反复一次输出多个搜索调用；在 fresh
+  tab 加上该边界后，MiMo 用 10 轮完成 `long-official-doc/source_search` fixture，
+  `quality_score=11`、`done=True`、0 次 protocol repair，打开目标 offset，保存精确
+  evidence，并通过 report quality。
+- 边界克制：没有把 `deep_core` prompt 进生产，没有 UI 改动，没有角色路由，没有向量索引，
+  也没有给 HTML 增加复杂的 range hard gate。
+
 ## 0.2.15 - Source Search Research Hygiene
 
 - Qwen 发送稳定性：Qwen adapter 现在会确认受控输入框在一个短暂稳定窗口里确实保留了
