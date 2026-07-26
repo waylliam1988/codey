@@ -77,6 +77,7 @@ TOOL_CONTRACTS = {
             "sources": ToolArg(list, None),
             "tags": ToolArg(list, None),
             "aliases": ToolArg(list, None),
+            "relations": ToolArg(list, None, singleton_dict=True, list_item_type=dict),
             "evidence": ToolArg(list, None, singleton_dict=True, list_item_type=dict),
             "confidence": ToolArg(float, None),
             "retrieved_at": ToolArg(str, None),
@@ -144,7 +145,11 @@ def tool_example(tool: str) -> str:
     if tool == "knowledge_read":
         return '{"tool":"knowledge_read","args":{"id":"<note id>"}}'
     if tool == "knowledge_write":
-        return '{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","sources":["https://..."]}}'
+        return (
+            '{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...",'
+            '"sources":["https://..."],'
+            '"relations":[{"src":"war","dst":"helium supply","kind":"affects"}]}}'
+        )
     if tool == "knowledge_link":
         return '{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id>","kind":"supports"}}'
     if tool == "done":

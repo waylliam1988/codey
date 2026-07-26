@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from codey import cancellation
 from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.concept_schema import clean_relations, normalize_concept
 from codey.knowledge.note import NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
 from codey.knowledge.store import KnowledgeStore
 from codey.research.ledger import ResearchLedger
@@ -279,6 +280,7 @@ class ResearchTools:
         )
         if evidence_preparation.error:
             return f"ERROR: {evidence_preparation.error}"
+        relations, relation_warnings = clean_relations(args.get("relations"))
         status = str(args.get("status") or "active").strip().lower()
         if status not in NOTE_STATUSES:
             status = "active"
@@ -293,9 +295,10 @@ class ResearchTools:
             title=title,
             body=body,
             id=existing_id or None,
-            tags=_as_str_list(args.get("tags")),
+            tags=_merge_relation_tags(_as_str_list(args.get("tags")), relations),
             sources=sources,
             aliases=_as_str_list(args.get("aliases")),
+            relations=relations,
             confidence=_as_float(args.get("confidence")),
             status=status,
             retrieved_at=_as_opt_str(args.get("retrieved_at")),
@@ -316,6 +319,8 @@ class ResearchTools:
         output = f"saved {note_type} note id={note.id} at {rel}"
         if evidence_preparation.warning:
             output += f"; WARNING: {evidence_preparation.warning}"
+        if relation_warnings:
+            output += "; WARNING: relations: " + "; ".join(relation_warnings)
         return output
 
     def knowledge_link(self, src: str, dst: str, kind: str = "relates") -> str:
@@ -391,6 +396,18 @@ def _as_str_list(value) -> list[str]:
     if isinstance(value, (list, tuple)):
         return [str(v).strip() for v in value if str(v).strip()]
     return []
+
+
+def _merge_relation_tags(tags: list[str], relations: list[dict]) -> list[str]:
+    """Relation endpoints become tags so the Concept Graph can weight them."""
+    known = {normalize_concept(tag) for tag in tags}
+    merged = list(tags)
+    for relation in relations:
+        for concept in (relation["src"], relation["dst"]):
+            if concept not in known:
+                known.add(concept)
+                merged.append(concept)
+    return merged
 
 
 def _looks_like_url(source: str) -> bool:

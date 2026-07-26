@@ -4,6 +4,54 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.22 - Concept Graph Seed
+
+- 知识库之上的概念层：笔记现在可以在 `knowledge_write` 中声明带类型的概念
+  关系（`relations: [{src, dst, kind}]`，kind 支持
+  affects/uses/causes/part_of/enables/relates）。关系由新增的
+  `knowledge/concept_schema.py` 做标准化（小写化、URL / 机器 tag / 年份噪声
+  过滤、自环与重复去除、每笔记最多 8 条），存进笔记 front-matter
+  （Markdown 依然是权威数据），并缓存到可重建的 `concept_edges` SQLite 表，
+  每条边带 note 级 provenance。关系端点会自动并入笔记的 tags。
+- Concept Graph read model：新增 `knowledge/concepts.py`，构建虚拟概念图——
+  概念永远不会变成真实 Markdown 笔记。声明关系成为边（label 带支持数），
+  最近的 synthesis 笔记通过弱化的 `tagged` 边挂到概念 tag 上，当前 session
+  的概念会被 focus 高亮。co-tags 永不生成边；missing-link 候选（两个概念
+  共享一个 declared 邻居但彼此没有 declared 边）只以文本形式出现在概念
+  节点上，最多 6 条并标注 "unproven; not facts"。Evidence Graph
+  （`knowledge/graph.py`）完全不动。
+- 新增 `GET /api/research/concept_graph` 诊断端点，同时 Research drawer
+  对用户只保留一个统一 `Graph` 标签页。这个图由概念、当前 synthesis/report、
+  相关笔记和 source URL 组合而成，depth 1/2/3 逐层展开；concept endpoint
+  继续用于确定性测试和诊断。
+- synthesis 笔记现在只从本次 run 的 active notes 聚合 top 概念 tags，而不再
+  只有机器 tag，让报告接上概念层，同时不会把 contradicted/stale note 的 tag
+  重新带回图里。
+- 契约纪律：`knowledge_write.relations` 必须是对象列表（单个对象会归一化为
+  单项列表；非对象项返回 typed `invalid_args`）；宽松清洗放在工具层，并在
+  工具结果里给出显式 warning。研究 prompt 要求模型只声明引用来源真正陈述的关系。
+- 评审加固：概念节点详情按 Outgoing/Incoming 分组展示 declared relations，
+  并显示支撑笔记标题（画布仍是无向线）；missing-link 文案改成 Open Questions，
+  继续标注 "unproven; not facts"；只有 `status='active'` 的笔记会进入概念层；
+  node/edge limit 是硬边界——synthesis 挂接只花剩余预算，直接调用时的坏 limit
+  参数会被容错，Concept Graph 会先按 declared relation 成对保留端点，再用剩余
+  空间补 tag-only 概念，Concept Graph 的边选择会优先保留由当前 session 笔记支撑的
+  关系，而不是靠共享概念名猜测当前关系；`concept_edge_rows` / `tag_concept_rows`
+  会先取目标 session rows，再用全库 rows 回填，避免旧 run 被后续知识库增长截断；
+  统一 Graph 会先保住当前 evidence spine，再把剩余预算分给全库概念；默认 Research
+  controller 的 prompt 和 `knowledge_write` JSON shape 现在也教 tags + relations；
+  空 Graph 显示 builder 的引导文案，而不是泛化的 "No graph yet"。
+- 实机 provider 加固：MiMo 的代码块 overlay 现在会忽略隐藏的重复层，所以肉眼只有
+  一个 JSON 工具调用时，不会因为 DOM 暴露两份文本而误判成 `too_many_tools`；
+  controller repair 会先把当前阶段禁止的工具（例如过早 `knowledge_write`）
+  归类为 `disallowed_tool`，不再反过来教它该工具的参数格式；Research drawer
+  继续保持克制，只暴露一个统一 `Graph` 标签页，而不是拆成 evidence/concept
+  两个图入口。
+- Source 节点展示打磨：source URL 节点会优先使用 synthesis source ledger
+  中恢复出的新闻标题；graph 节点详情使用现有零构建 Markdown renderer 渲染短 excerpt。
+- 本版本有意不做：不向研究 prompt 注入概念上下文、不做 co-tag 推理、
+  不做 edge 点击 UI、不做 alias/embedding 合并。
+
 ## 0.2.21 - UI Asset Modularization
 
 - 零构建资产模块化：web UI 不再是一个巨大的 `index.html`。CSS 变量拆到

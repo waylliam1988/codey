@@ -174,6 +174,40 @@ def test_knowledge_write_evidence_list_requires_objects() -> None:
     assert "knowledge_write.evidence must be a list of objects" in plan.protocol_error
 
 
+def test_knowledge_write_relations_list_requires_objects() -> None:
+    plan = parse({
+        "tool": "knowledge_write",
+        "args": {
+            "type": "hypothesis",
+            "title": "Alpha link",
+            "body": "Alpha may affect beta.",
+            "relations": ["war->helium"],
+        },
+    })
+
+    assert not plan.calls
+    assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
+    assert "knowledge_write.relations must be a list of objects" in plan.protocol_error
+
+
+def test_knowledge_write_single_relation_object_normalizes_to_list() -> None:
+    relation = {"src": "war", "dst": "helium supply", "kind": "affects"}
+
+    plan = parse({
+        "tool": "knowledge_write",
+        "args": {
+            "type": "hypothesis",
+            "title": "Alpha link",
+            "body": "Alpha may affect beta.",
+            "relations": relation,
+        },
+    })
+
+    assert plan.protocol_error == ""
+    assert plan.calls
+    assert plan.calls[0].args["relations"] == [relation]
+
+
 def test_knowledge_write_synthesis_is_reserved_for_done() -> None:
     plan = parse({
         "tool": "knowledge_write",

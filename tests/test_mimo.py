@@ -155,6 +155,16 @@ class MimoDriverTests(unittest.TestCase):
 
         self.assertEqual(raw, '{"tool":"done","args":{"summary":"ok"}}')
 
+    def test_clean_copied_text_prefers_raw_json_over_rendered_overlay_text(self) -> None:
+        raw = '{"tool":"web_search","args":{"query":"alpha"}}'
+        visible = f'json\n{raw}\njson\n{raw}'
+
+        self.assertEqual(mimo._clean_copied_text(raw, visible), raw)
+
+    def test_response_text_script_removes_mimo_hidden_overlay_duplicates(self) -> None:
+        self.assertIn('[aria-hidden="true"]', mimo._RESPONSE_TEXT_JS)
+        self.assertIn('[hidden]', mimo._RESPONSE_TEXT_JS)
+
     def test_copy_last_text_waits_for_generation_completion(self) -> None:
         page = mock.Mock()
 

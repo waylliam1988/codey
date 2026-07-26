@@ -5,7 +5,13 @@ import unittest
 from types import SimpleNamespace
 
 from codey.models import ToolCall
-from codey.research.controller import CONTROLLER_DISPLAY_LIMIT, ResearchController, render_control_block
+from codey.research.controller import (
+    CONTROLLER_DISPLAY_LIMIT,
+    ResearchControlState,
+    ResearchController,
+    controller_system_prompt,
+    render_control_block,
+)
 from codey.research.ledger import ResearchLedger
 from codey.research.protocols import JsonToolCodec
 from codey.research.source_document import SourceDocument, SourcePage
@@ -29,6 +35,33 @@ class ResearchControllerTests(unittest.TestCase):
         self.assertNotIn("open_url", state.allowed_tools)
         self.assertNotIn("done", state.allowed_tools)
         self.assertIn("Allowed tools this turn: knowledge_search, knowledge_read, web_search", render_control_block(state))
+
+    def test_controller_prompt_teaches_tags_and_relations_discipline(self) -> None:
+        prompt = controller_system_prompt()
+
+        self.assertIn("Note tags should be 2-5 short lowercase concept nouns", prompt)
+        self.assertIn(
+            '{"src":...,"dst":...,"kind":affects/uses/causes/part_of/enables/relates}', prompt
+        )
+        self.assertIn("never declare a guessed relation", prompt)
+
+    def test_knowledge_write_shape_includes_tags_and_relations(self) -> None:
+        state = ResearchControlState(
+            allowed_tools=("knowledge_write",),
+            source_urls={"s1": "https://example.com/a"},
+        )
+        block = render_control_block(state)
+
+        example = next(
+            line[2:] for line in block.splitlines()
+            if line.startswith('- {"tool":"knowledge_write"')
+        )
+        payload = json.loads(example)
+        self.assertEqual(payload["args"]["sources"], ["s1"])
+        self.assertEqual(
+            payload["args"]["relations"], [{"src": "...", "dst": "...", "kind": "affects"}]
+        )
+        self.assertIn("tags", payload["args"])
 
     def test_search_result_ids_are_run_global_stable(self) -> None:
         ledger = ResearchLedger()
@@ -284,6 +317,26 @@ class ResearchControllerTests(unittest.TestCase):
 
         self.assertEqual(plan.protocol_error_kind, "disallowed_tool")
         self.assertIn("not allowed", plan.protocol_error)
+
+    def test_disallowed_tool_takes_precedence_over_bad_args(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ResearchLedger()), turn=1, max_turns=8)
+
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            json.dumps({
+                "tool": "knowledge_write",
+                "args": {
+                    "title": "Alpha report",
+                    "content": "direct report",
+                },
+            }),
+            state,
+        )
+
+        self.assertEqual(plan.protocol_error_kind, "disallowed_tool")
+        self.assertIn("knowledge_write is not allowed", plan.protocol_error)
+        self.assertNotIn("missing required arg", plan.protocol_error)
 
     def test_unknown_source_id_in_write_is_invalid_args(self) -> None:
         ledger = ResearchLedger()

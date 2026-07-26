@@ -12,7 +12,7 @@ Codey is a **local developer and research tool**, not a consumer chat app. The U
 - **Monochrome first** — black, gray, white. Hierarchy comes from typography and spacing, not color blocks.
 - **Quiet by default** — idle states show almost nothing. Activity is signaled with motion (spinner) or text, not banners.
 - **No decoration** — no emoji, no gradients for status, no “chat bubble” aesthetics, no brand-blue/purple accents.
-- **One exception color** — the provider availability dot (`#4ec9b0`). It is the only intentional hue in the chrome.
+- **One persistent exception color** — the provider availability dot (`#4ec9b0`). Research graph hover may reuse the same token transiently inside the canvas; the rest of the chrome stays monochrome.
 - **English in the UI** — labels, buttons, placeholders, and system messages use English (`New chat`, `You`, `Codey`, `Allow`, …).
 
 When in doubt: remove color, remove chrome, remove copy.
@@ -49,7 +49,7 @@ Always use CSS variables from `:root`. Do not hard-code one-off hex values in co
 
 | Token       | Value     | Use |
 |------------|-----------|-----|
-| `--ok-dot` | `#4ec9b0` | **Provider online dot only** (+ optional soft ring `rgba(78,201,176,.14)`) |
+| `--ok-dot` | `#4ec9b0` | **Provider online dot** (+ optional soft ring `rgba(78,201,176,.14)`), plus the Research graph hover accent below |
 | `--err-text`| `#d28a8a` | Error **text only** — never error backgrounds or borders |
 
 ### Allowed tint exception
@@ -60,6 +60,11 @@ Inside the **changes diff drawer**, added/removed lines may use very weak backgr
 - Del: `rgba(210, 138, 138, .07)` — derived from `--err-text`
 
 Do not reuse these tints elsewhere. Diff is the only place where background tint helps scanning.
+
+Inside the **Research graph canvas** (the Graph tab), the hovered
+node and its directly connected edges may use `--ok-dot` as a transient hover
+accent. The resting (non-hover) graph stays gray/white; no other component may
+use `--ok-dot` for hover states.
 
 ### Forbidden
 
@@ -322,7 +327,7 @@ README and docs for end users may stay in Chinese; **the web UI stays English** 
 
 Before shipping any UI change, verify:
 
-1. **Colors:** Only `--ok-dot` for provider online; `--err-text` for error strings; everything else neutral?
+1. **Colors:** Only provider online dots and Research graph transient hover may use `--ok-dot`; `--err-text` for error strings; everything else neutral?
 2. **Hierarchy:** Can this be done with label size, weight, or spacing instead of a new color?
 3. **Chat area:** Still de-bubbled? No new bubble variants?
 4. **Actions:** Secondary/destructive actions behind `⋯` or text links, not permanent colored buttons?

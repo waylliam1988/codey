@@ -34,6 +34,13 @@ def _alias_to_tool(include_source_search: bool = True) -> dict[str, str]:
     return {alias: name for name, names in aliases.items() for alias in names}
 
 
+def canonical_tool_name(name: object, *, include_source_search: bool = True) -> str:
+    raw = str(name or "").strip().lower()
+    if not raw:
+        return ""
+    return _alias_to_tool(include_source_search).get(raw, "")
+
+
 class ProtocolCodec(Protocol):
     def system_prompt(self) -> str: ...
     def repair_prompt(self) -> str: ...
@@ -201,7 +208,7 @@ Tools:
 - {"tool":"open_url","args":{"url":"https://...","offset":0,"limit":6000,"pages":"1-5"}}  read a page's text; for PDFs, pages selects bounded page ranges
 - {"tool":"knowledge_search","args":{"query":"..."}}  search your existing local notes FIRST
 - {"tool":"knowledge_read","args":{"id":"<note id>"}}  read one existing note in full
-- {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}  save small source/fact/hypothesis/conclusion/question notes; final reports must use done
+- {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}  save small source/fact/hypothesis/conclusion/question notes; final reports must use done
 - {"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}
 - {"tool":"done","args":{"answer":"<the full human-readable report>"}}
 
@@ -227,6 +234,8 @@ Discipline:
 - Every 来源 citation must also have at least one saved knowledge_write evidence snippet from that opened page before done.
 - If no strong counter-evidence exists, write "未找到强反证" and explain what you searched that would have falsified the conclusion.
 - Keep notes small and single-topic. Link related notes.
+- tags should be 2-5 short lowercase concept nouns (e.g. "helium supply", "war"), not sentences.
+- relations declare concept-to-concept links the note's evidence supports, as {"src":...,"dst":...,"kind":affects/uses/causes/part_of/enables/relates}. Only declare relations the cited sources actually state; never declare a guessed relation.
 
 Be efficient: a handful of good searches and reads beat many shallow ones. When you have \
 enough, save the important findings as notes, link them, then call done."""

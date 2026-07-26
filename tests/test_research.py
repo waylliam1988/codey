@@ -1600,20 +1600,22 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_runner_repair_for_invalid_args_names_missing_field(self) -> None:
         provider = FakeProvider(
+            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
+            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
             json.dumps({"tool": "source_search", "args": {"url": "https://example.com/helium"}}),
             json.dumps({"tool": "knowledge_search", "args": {"query": "helium"}}),
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=4)
 
             list(runner.run("Research helium"))
             store.close()
 
         self.assertGreaterEqual(len(provider.sent), 2)
-        self.assertIn("Research tool contract", provider.sent[1])
-        self.assertIn("source_search missing required arg 'query'", provider.sent[1])
-        self.assertIn('{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}', provider.sent[1])
+        self.assertIn("Research tool contract", provider.sent[3])
+        self.assertIn("source_search missing required arg 'query'", provider.sent[3])
+        self.assertIn('{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}', provider.sent[3])
 
     def test_research_runner_controller_prompt_limits_initial_tools(self) -> None:
         provider = FakeProvider(
@@ -1634,6 +1636,25 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
         self.assertNotIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[0])
         self.assertIn("not allowed by the current Research controller state", provider.sent[1])
+
+    def test_research_runner_repair_for_disallowed_write_does_not_teach_write_shape(self) -> None:
+        provider = FakeProvider(
+            json.dumps({
+                "tool": "knowledge_write",
+                "args": {"title": "Alpha report", "content": "direct report"},
+            }),
+            json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+
+            list(runner.run("Research alpha"))
+            store.close()
+
+        self.assertIn("knowledge_write is not allowed by the current Research controller state", provider.sent[1])
+        self.assertIn("Do not call knowledge_write again", provider.sent[1])
+        self.assertNotIn('{"tool":"knowledge_write"', provider.sent[1])
 
     def test_research_runner_controller_rewrites_result_id_before_dispatch(self) -> None:
         provider = FakeProvider(
@@ -1684,7 +1705,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertIn("Do not write the research answer directly", provider.sent[1])
-        self.assertIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[1])
+        self.assertIn("done is not allowed yet", provider.sent[1])
+        self.assertNotIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[1])
 
     def test_research_runner_turn_note_names_protocol_error_kind(self) -> None:
         provider = FakeProvider(
@@ -1703,6 +1725,8 @@ class ResearchBoundaryTests(unittest.TestCase):
 
     def test_research_runner_repair_for_synthesis_write_uses_done_shape(self) -> None:
         provider = FakeProvider(
+            json.dumps({"tool": "web_search", "args": {"query": "alpha"}}),
+            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
             json.dumps({
                 "tool": "knowledge_write",
                 "args": {"type": "synthesis", "title": "Alpha report", "body": "final report"},
@@ -1711,13 +1735,13 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=2)
+            runner = ResearchRunner(provider, FakeSearch(), store, max_turns=4)
 
             list(runner.run("Research alpha"))
             store.close()
 
-        self.assertIn("done required for final synthesis", provider.sent[1])
-        self.assertIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[1])
+        self.assertIn("done required for final synthesis", provider.sent[3])
+        self.assertIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[3])
 
     def test_research_runner_repair_for_native_search_leak_points_to_local_web_search(self) -> None:
         provider = FakeProvider(
@@ -2402,6 +2426,76 @@ class ResearchBoundaryTests(unittest.TestCase):
                 BrowserSearchProvider().fetch("https://example.com/report.pdf")
 
         self.assertEqual(response.calls, 1)
+
+
+class ConceptRelationsTests(unittest.TestCase):
+    def test_knowledge_write_persists_relations_and_merges_endpoint_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            tools = ResearchTools(object(), store, KnowledgeChanges(store.root))
+
+            saved = tools.knowledge_write({
+                "type": "hypothesis",
+                "title": "War constrains helium",
+                "body": "War may constrain helium exports.",
+                "tags": ["war"],
+                "relations": [
+                    {"src": "War", "dst": "Helium Supply", "kind": "affects"},
+                    {"src": "war", "dst": "war"},
+                ],
+            })
+            note_id = saved.split("id=")[1].split(" ")[0]
+            note = store.read_note(note_id)
+            edge_rows = store.index.concept_edge_rows()
+            store.close()
+
+        self.assertIn("saved hypothesis note", saved)
+        self.assertIn("WARNING: relations: dropped self-relation on 'war'", saved)
+        self.assertEqual(
+            note.relations,
+            [{"src": "war", "dst": "helium supply", "kind": "affects"}],
+        )
+        self.assertEqual(note.tags, ["war", "helium supply"])
+        self.assertEqual(
+            edge_rows,
+            [
+                {
+                    "note_id": note_id,
+                    "src": "war",
+                    "dst": "helium supply",
+                    "kind": "affects",
+                    "session_id": "",
+                    "title": "War constrains helium",
+                }
+            ],
+        )
+
+    def test_run_concept_tags_ranks_run_note_tags_and_skips_machine_or_inactive_tags(self) -> None:
+        from codey.research.runner import _run_concept_tags
+        from codey.knowledge import KnowledgeNote
+
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            ids = []
+            for tags in (["research", "helium", "war"], ["session:s1", "helium"], ["copper"]):
+                note = KnowledgeNote.create(type="note", title="N", body="B", tags=tags)
+                store.write_note(note)
+                ids.append(note.id)
+            stale = KnowledgeNote.create(
+                type="note",
+                title="Old",
+                body="B",
+                tags=["gold"],
+                status="contradicted",
+            )
+            store.write_note(stale)
+            ids.append(stale.id)
+
+            ranked = _run_concept_tags(store, [*ids, ""])
+            store.close()
+
+        self.assertEqual(ranked[0], "helium")
+        self.assertEqual(set(ranked), {"helium", "war", "copper"})
 
 
 if __name__ == "__main__":

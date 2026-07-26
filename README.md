@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.21-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.22-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.21`
+Version: `0.2.22`
 
 [Version history](CHANGELOG.md)
 
@@ -328,12 +328,14 @@ The Research drawer has four lightweight tabs:
 
 - `Evidence`: claims, snippets, PDF page locators, counterpoints, quality warnings, and search coverage
 - `Sources`: citation map, source titles, final URLs, quality hints, and PDF pages read/truncation metadata
-- `Graph`: an on-demand local graph of current research notes, source URLs, counterpoints, implementation links, and verification links
+- `Graph`: a bounded unified graph with virtual concepts at the top, the current synthesis/report and related notes in the middle, and source URLs at depth 3; open questions stay text on concept nodes, marked "unproven; not facts"
 - `Notes`: synthesis, note ids, source URLs, and restore state
 
 Coverage stays as supporting audit detail inside `Evidence`, rather than a
-first-level concept. `Graph` is a bounded read model for the current Research
-run, not a new database or a full-vault knowledge map.
+first-level concept. `Graph` is a presentation read model, not a new database
+or a full-vault knowledge map: declared concept relations stay virtual, evidence
+links stay note/source links, and tag edges only connect visible notes to
+concepts.
 
 The vault is stored under Codey's local state directory and is implemented as
 Markdown notes plus a rebuildable SQLite FTS index. Project source code is not

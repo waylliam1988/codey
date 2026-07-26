@@ -160,7 +160,7 @@ function renderResearchGraph(panel, run, sessionId) {
     sessionId,
     activeId: deps.getActiveId(),
     depth: deps.getResearchGraphDepth(),
-    focusIds: coreNoteIdsForResearchRun(run),
+    focusIds: run.synthesisId ? [run.synthesisId] : coreNoteIdsForResearchRun(run),
     counterpoints: run.counterpoints || [],
     onDepthChange(depth) {
       deps.setResearchGraphDepth(depth);

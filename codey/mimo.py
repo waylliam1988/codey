@@ -42,6 +42,9 @@ RESPONSE_FOOTER_STABLE_TICKS = 2
 _RESPONSE_TEXT_JS = r"""
 el => {
   const clone = el.cloneNode(true);
+  for (const hidden of Array.from(clone.querySelectorAll('[aria-hidden="true"], [hidden]'))) {
+    hidden.remove();
+  }
   const thinking = /^(正在思考|已深度思考|深度思考|思考中)/;
   for (const summary of Array.from(clone.querySelectorAll('summary'))) {
     const text = (summary.innerText || summary.textContent || '').trim();
@@ -315,7 +318,7 @@ def _clean_copied_text(raw: str, visible_text: str) -> str:
         return text
     if _starts_with_thinking_summary(text):
         return visible
-    return visible
+    return text
 
 
 def _final_text(page: Page, *, completion_verified: bool = False) -> str:

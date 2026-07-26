@@ -1,5 +1,139 @@
 # Codey Test Report
 
+## 0.2.22 Concept Graph Seed
+
+Codey 0.2.22 adds a concept layer on top of the knowledge vault: notes can
+declare typed concept relations, relations are cached in a rebuildable SQLite
+table, and a virtual Concept Graph read model feeds a single unified Research
+drawer Graph. The persisted evidence graph is untouched, concepts never become
+Markdown notes, co-tags never create edges, and missing-link candidates stay
+text-only ("unproven; not facts"). By design this release does NOT inject
+concept context into research prompts (deferred to 0.2.23 behind an A/B).
+
+Production changes:
+
+- New `knowledge/concept_schema.py`: `normalize_concept` (lowercasing,
+  whitespace folding, edge punctuation strip, URL / machine-tag / pure-year /
+  single-Latin-char noise filtering, 48-char cap; single CJK chars kept),
+  `clean_relations` (drops non-objects, empty/noisy endpoints, self-loops,
+  duplicates; downgrades unknown kinds to `relates`; caps 8 per note; returns
+  explicit warnings), `concept_tags`, and the 6-kind edge allowlist.
+  `note.py` imports only this module -- no import cycle.
+- `note.py` carries `relations` through `__post_init__` cleaning,
+  front-matter output, and `from_markdown` tolerant parsing (Markdown stays
+  authoritative). `index.py` caches a `concept_edges` table
+  (`UNIQUE(note_id, src, dst, kind)` + src/dst indexes) with the same
+  upsert/remove/clear lifecycle as tags, so `rebuild()` works unchanged;
+  new read queries `tags_for` / `concept_edge_rows` / `tag_concept_rows`.
+- Contract + tool split per review: `tool_contract.py` types
+  `knowledge_write.relations` as a list of objects (a single object is
+  normalized to a one-item list; non-object items are a typed `invalid_args`);
+  `tools.py` then cleans leniently and appends
+  `WARNING: relations: ...` to the tool result so models see what was
+  dropped. Relation endpoints merge into note tags. The research prompt
+  gains two discipline lines (concept-noun tags; declare only relations the
+  sources actually state).
+- New `knowledge/concepts.py` (`ConceptGraphBuilder`): declared relations
+  become edges with support counts; declared endpoints weight >= 2.6 (label
+  always visible), tag-only concepts <= 2.4; recent synthesis notes (max 12)
+  attach via faint `tagged` edges; missing-link suggestions come only from
+  declared adjacency (shared declared neighbor, no declared edge), capped at
+  6, rendered only into concept-node excerpts, never persisted.
+- New `GET /api/research/concept_graph` diagnostic endpoint (mirrors
+  `/api/research/graph`) plus a unified Research drawer `Graph` tab. The
+  production graph endpoint now composes concepts, the current synthesis/report,
+  related notes, and source URLs into a bounded 3-depth read model; concept
+  nodes render brighter with radius 5, `tagged` edges render as faint as `cites`.
+- `runner._persist_synthesis` now aggregates the run's top-5 concept tags
+  (Counter over normalized note tags) instead of machine tags only.
+
+Review fixes (same release, after code review):
+
+- Concept-node details list declared relations as grouped Outgoing/Incoming
+  summaries with direction, kind, and supporting note titles; missing-link text
+  is renamed to Open Questions and keeps the "Unproven; not facts" boundary.
+  No edge-click UI added.
+- `concept_edge_rows` / `tag_concept_rows` only read `status='active'` notes,
+  so contradicted/superseded/stale notes stop feeding the concept layer. When a
+  session is requested, both queries read that session first and then backfill
+  globally, so older Research runs stay diagnosable after the vault grows past
+  the scan cap.
+- Synthesis tag aggregation also uses active-only note tags, so inactive note
+  concepts cannot re-enter the Concept Graph through the active synthesis note.
+- `node_limit` / `edge_limit` are hard: `_append_syntheses` spends only the
+  leftover budget (regression: limits 8/8 stay <= 8/8 with syntheses present).
+- `ConceptGraphBuilder` now sanitizes direct `node_limit` / `edge_limit`
+  callers and selects declared relation endpoint pairs before filling leftover
+  space with isolated tag concepts. Regression: 80 one-off relation pairs with
+  `node_limit=64` return 32 visible relation edges instead of 64 isolated nodes
+  and 0 edges. Edge selection prioritizes relations supported by notes from the
+  current session, not shared concept names; regression: a 1-note current
+  relation is not crowded out by old 3-note relations at `edge_limit=8`, even
+  when both current and old relations share `war`. Regression: requested-session
+  edge/tag rows survive a capped scan even when newer unrelated rows exceed the
+  same cap, and the builder still renders the target `war -> helium` edge.
+- Unified Graph trimming now protects the current evidence spine first
+  (focus synthesis/report, related notes, and depth-3 source URLs), then spends
+  remaining node/edge budget on global concepts. Regression: 140 unrelated
+  global concept pairs no longer crowd out the current fact/source path.
+- The default Research controller path now teaches the concept layer: two
+  discipline lines in `controller_system_prompt` and tags + relations in the
+  `knowledge_write` allowed JSON shape (also fixed a stray extra closing brace
+  in that example).
+- Empty unified Graph shows the builder's guidance warning in the quiet gray
+  status line instead of "No graph yet".
+- MiMo live-page root cause fixed: its rendered JSON code blocks expose both
+  an `aria-hidden` overlay placeholder and the real content in `innerText`.
+  The MiMo driver now strips hidden overlay layers before parsing, and the
+  response copy path prefers the response-local raw copy over rendered overlay
+  text when they differ. Live Edge verification on the open MiMo tab changed
+  the first two replies from two `"tool"` occurrences to one each.
+- Controller repair tightened for web models: when a model calls a currently
+  forbidden tool such as first-turn `knowledge_write`, the controller returns
+  `disallowed_tool` before contract argument repair, so Codey does not teach
+  a tool shape that is not currently allowed. The allowed-actions block now
+  says tools not listed are forbidden this turn.
+- Source-node display polish: source URL nodes recover titles from the
+  synthesis source ledger when available, and graph details render short
+  Markdown excerpts via the existing zero-build `CodeyRender` renderer.
+- UI consolidation: the drawer now exposes four tabs (`Evidence`, `Sources`,
+  `Graph`, `Notes`) instead of separate evidence/concept graph tabs. The single
+  Graph uses depth 1/2/3 for concepts + synthesis/report, related notes, and
+  sources, while the internal concept endpoint remains available for tests and
+  diagnostics.
+- Docs synced: README (EN/zh) four-tab list with unified Graph wording;
+  DESIGN.md documents the Research graph hover accent as the explicit
+  `--ok-dot` exception; new production files are git-tracked.
+
+Validation (deterministic fixtures, no live A/B by design):
+
+```text
+python -m pytest tests\test_mimo.py tests\test_research_controller.py tests\test_research.py tests\test_knowledge.py tests\test_ui.py tests\test_server.py tests\test_ui_browser_e2e.py tests\test_research_repair_prompt_ab.py -q
+# 357 passed, 1 skipped, 1 pytest cache warning, 11 subtests passed (schema
+# rules; note round-trip + index rebuild keep relations; declared relation
+# direction/kind/note provenance; co-tags create no edges; missing suggestions
+# land only in excerpts and are never persisted; non-active notes are excluded;
+# synthesis tags only count active notes; node/edge limits hold with syntheses;
+# relation endpoint pairs and current-session edges stay visible by note provenance; direct bad limit args sanitize;
+# controller prompt + knowledge_write shape teach tags/relations and parse as
+# JSON; disallowed tools take precedence over bad args; MiMo overlay duplicates
+# are stripped; concept_graph endpoint and unified Graph depth/layer/budget UI
+# assertions pass; repair-prompt A/B fixture is locked;
+# real browser boot with the extended drawer/graph modules passes)
+
+python -m pytest -q
+# 1380 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\knowledge\concepts.py codey\knowledge\unified_graph.py codey\knowledge\index.py codey\server.py
+# ok
+
+git diff --check
+# passed
+```
+
 ## 0.2.21 UI Asset Modularization
 
 Codey 0.2.21 splits the single-file web UI into zero-build asset modules while

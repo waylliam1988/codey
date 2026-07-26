@@ -48,6 +48,10 @@ _TYPE_PRIORITY = {
     "question": 40,
     "project_note": 35,
 }
+_SOURCE_TITLE_RE = re.compile(
+    r"^\s*(?:-\s*)?\[\d+\]\s+(?P<title>.+?)\s+-\s+(?P<url>https?://\S+)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -169,6 +173,7 @@ class KnowledgeGraphBuilder:
         kept_focus = tuple(note_id for note_id in focus_existing if note_id in kept)
         note_links = tuple(edge for edge in note_links if edge.src in kept and edge.dst in kept)
         degree = _degree(note_links)
+        source_titles = _source_titles_from_rows(rows)
 
         nodes: list[GraphNode] = [
             self._note_node(row, degree[str(row.get("id") or "")], kept_focus)
@@ -191,6 +196,7 @@ class KnowledgeGraphBuilder:
                 nodes,
                 edges,
                 kept,
+                source_titles=source_titles,
                 node_limit=node_limit,
                 edge_limit=edge_limit,
             )
@@ -353,6 +359,7 @@ class KnowledgeGraphBuilder:
         edges: list[GraphEdge],
         note_ids: set[str],
         *,
+        source_titles: dict[str, str],
         node_limit: int,
         edge_limit: int,
     ) -> None:
@@ -370,15 +377,16 @@ class KnowledgeGraphBuilder:
             if node_id not in existing_nodes:
                 if len(nodes) >= node_limit:
                     continue
+                title = source_titles.get(source, "")
                 nodes.append(
                     GraphNode(
                         id=node_id,
-                        label=_source_label(source),
+                        label=_clip(title, 58) if title else _source_label(source),
                         kind="source_url",
                         note_type="source_url",
                         url=source,
                         weight=0.8 + min(5, source_counts[source]) * 0.2,
-                        excerpt=source,
+                        excerpt=f"{title}\n{source}" if title else source,
                         virtual=True,
                     )
                 )
@@ -466,20 +474,41 @@ def _source_label(url: str) -> str:
     return _clip(host, 58)
 
 
+def _source_titles_from_rows(rows: list[dict]) -> dict[str, str]:
+    titles: dict[str, str] = {}
+    for row in rows:
+        body = str(row.get("body") or "")
+        for line in body.splitlines():
+            match = _SOURCE_TITLE_RE.match(line)
+            if not match:
+                continue
+            url = _clean_url(match.group("url"))
+            title = re.sub(r"\s+", " ", match.group("title")).strip()
+            if url and title:
+                titles.setdefault(url, title)
+    return titles
+
+
+def _clean_url(value: str) -> str:
+    return str(value or "").strip().rstrip(").,;")
+
+
 def _stable_hash(value: str) -> str:
     return hashlib.sha1(value.encode("utf-8")).hexdigest()[:16]
 
 
-def _excerpt(body: str, limit: int = 260) -> str:
+def _excerpt(body: str, limit: int = 420) -> str:
     lines = []
     for line in str(body or "").splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        if not stripped:
+            if lines and lines[-1] != "":
+                lines.append("")
             continue
         lines.append(stripped)
-        if len(" ".join(lines)) >= limit:
+        if len("\n".join(lines)) >= limit:
             break
-    return _clip(" ".join(lines), limit)
+    return _clip("\n".join(lines).strip(), limit)
 
 
 def _clean_counterpoint(value: object) -> str:

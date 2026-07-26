@@ -658,6 +658,7 @@ class ResearchGraphApiTests(unittest.TestCase):
                 type="synthesis",
                 title="Graph research",
                 body="Conclusion",
+                tags=["graph", "research"],
                 sources=["https://example.com/graph"],
                 session_id="s1",
             )
@@ -665,7 +666,9 @@ class ResearchGraphApiTests(unittest.TestCase):
                 type="fact",
                 title="Graph fact",
                 body="Fact",
+                tags=["graph fact"],
                 sources=["https://example.com/fact"],
+                relations=[{"src": "graph", "dst": "graph fact", "kind": "relates"}],
                 session_id="s1",
             )
             state.knowledge_store.write_note(synthesis)
@@ -680,7 +683,7 @@ class ResearchGraphApiTests(unittest.TestCase):
                     conn = http.client.HTTPConnection(host, port, timeout=5)
                     path = (
                         "/api/research/graph?session_id=s1"
-                        f"&focus={synthesis.id}&depth=1&counterpoint=Missing+primary+data"
+                        f"&focus={synthesis.id}&depth=3&counterpoint=Missing+primary+data"
                     )
                     conn.request("GET", path)
                     response = conn.getresponse()
@@ -694,7 +697,9 @@ class ResearchGraphApiTests(unittest.TestCase):
 
         self.assertEqual(response.status, 200)
         self.assertTrue(payload["ok"])
-        self.assertEqual(payload["graph"]["center_id"], synthesis.id)
+        self.assertIn(payload["graph"]["center_id"], set(payload["graph"]["focus_ids"]))
+        self.assertTrue(any(node["kind"] == "concept" for node in payload["graph"]["nodes"]))
+        self.assertTrue(any(node["id"] == synthesis.id for node in payload["graph"]["nodes"]))
         self.assertTrue(any(node["kind"] == "source_url" for node in payload["graph"]["nodes"]))
         self.assertTrue(any(node["kind"] == "counterpoint" for node in payload["graph"]["nodes"]))
 
@@ -724,6 +729,63 @@ class ResearchGraphApiTests(unittest.TestCase):
         self.assertEqual(payload["graph"]["nodes"], [])
         self.assertEqual(payload["graph"]["edges"], [])
 
+    def test_research_concept_graph_api_returns_concepts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State()
+            state.knowledge_store = KnowledgeStore(Path(td, "vault"))
+            note = KnowledgeNote.create(
+                type="note",
+                title="War and helium",
+                body="B",
+                session_id="s1",
+                relations=[{"src": "war", "dst": "helium", "kind": "affects"}],
+            )
+            state.knowledge_store.write_note(note)
+            httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            thread.start()
+            host, port = httpd.server_address
+            try:
+                with mock.patch.object(server, "STATE", state):
+                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn.request("GET", "/api/research/concept_graph?session_id=s1")
+                    response = conn.getresponse()
+                    payload = json.loads(response.read().decode("utf-8"))
+                    conn.close()
+            finally:
+                httpd.shutdown()
+                httpd.server_close()
+                thread.join(timeout=5)
+                state.knowledge_store.close()
+
+        self.assertEqual(response.status, 200)
+        self.assertTrue(payload["ok"])
+        node_ids = {node["id"] for node in payload["graph"]["nodes"]}
+        self.assertEqual(node_ids, {"concept:war", "concept:helium"})
+        self.assertEqual(payload["graph"]["edges"][0]["kind"], "affects")
+
+    def test_research_concept_graph_api_without_store_is_404(self) -> None:
+        state = server.State()
+        state.knowledge_store = None
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        try:
+            with mock.patch.object(server, "STATE", state):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request("GET", "/api/research/concept_graph")
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                conn.close()
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=5)
+
+        self.assertEqual(response.status, 404)
+        self.assertFalse(payload["ok"])
+
 
 class ResearchServerHelperTests(unittest.TestCase):
     def test_research_graph_response_parses_bounded_query(self) -> None:
@@ -733,7 +795,7 @@ class ResearchServerHelperTests(unittest.TestCase):
 
         with (
             mock.patch.object(server, "STATE", state),
-            mock.patch.object(server, "KnowledgeGraphBuilder") as builder_cls,
+            mock.patch.object(server, "UnifiedResearchGraphBuilder") as builder_cls,
         ):
             builder = builder_cls.return_value
             builder.build_for_session.return_value = graph
@@ -754,10 +816,9 @@ class ResearchServerHelperTests(unittest.TestCase):
         builder.build_for_session.assert_called_once_with(
             "s1",
             focus_ids=("synthesis-1", "fact-1"),
-            depth=2,
+            depth=3,
             node_limit=200,
             edge_limit=192,
-            include_sources=False,
             counterpoints=("one", "two", "three"),
         )
 

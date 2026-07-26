@@ -49,8 +49,9 @@ from codey.conversation_store import ConversationStore
 from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.handoff import ConversationContext
 from codey.local_store import DEFAULT_STATE_HOME
-from codey.knowledge.graph import KnowledgeGraphBuilder
+from codey.knowledge.concepts import ConceptGraphBuilder
 from codey.knowledge.store import KnowledgeStore
+from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
 from codey.research.advisors import EvidencePack, run_research_advisors
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
@@ -1340,14 +1341,24 @@ def _research_graph_response(query: dict[str, list[str]]) -> tuple[int, dict]:
     synthesis_id = _query_value(query, "synthesis_id")
     if synthesis_id and synthesis_id not in focus_ids:
         focus_ids.insert(0, synthesis_id)
-    graph = KnowledgeGraphBuilder(STATE.knowledge_store).build_for_session(
+    graph = UnifiedResearchGraphBuilder(STATE.knowledge_store).build_for_session(
         _query_value(query, "session_id"),
         focus_ids=tuple(focus_ids),
-        depth=_query_int(query, "depth", 1, 0, 2),
+        depth=_query_int(query, "depth", 1, 1, 3),
         node_limit=_query_int(query, "limit", 96, 8, 200),
         edge_limit=_query_int(query, "edge_limit", 192, 8, 400),
-        include_sources=_query_bool(query, "include_sources", True),
         counterpoints=tuple(_query_list(query, "counterpoint")[:8]),
+    )
+    return 200, {"ok": True, "graph": graph.to_dict()}
+
+
+def _research_concept_graph_response(query: dict[str, list[str]]) -> tuple[int, dict]:
+    if STATE.knowledge_store is None:
+        return _research_unconfigured_response()
+    graph = ConceptGraphBuilder(STATE.knowledge_store).build_for_session(
+        _query_value(query, "session_id"),
+        node_limit=_query_int(query, "limit", 64, 8, 200),
+        edge_limit=_query_int(query, "edge_limit", 128, 8, 400),
     )
     return 200, {"ok": True, "graph": graph.to_dict()}
 
@@ -1499,6 +1510,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/research/graph":
             status, payload = _research_graph_response(parse_qs(url.query))
+            self._send_json(status, payload)
+            return
+        if url.path == "/api/research/concept_graph":
+            status, payload = _research_concept_graph_response(parse_qs(url.query))
             self._send_json(status, payload)
             return
         if url.path == "/api/research/note":

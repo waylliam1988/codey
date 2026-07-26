@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.21-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.22-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.21`
+版本：`0.2.22`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -65,7 +65,7 @@ Codey 想解决的是一个很朴素的问题：
 - 在输入框上下文里点 `Research`，让 Codey 搜索、读取 HTML 和文本型 PDF、写笔记，并生成带编号引用、evidence snippet、反证/限制、来源质量和搜索覆盖的研究结论
 - 可以先普通聊天讨论方案，再从输入框上方的项目上下文选择文件夹，把同一个聊天接到项目任务
 - 研究结束后选择项目，把 synthesis 压成有边界的 Research Brief 交给 Writer 落地
-- 通过 Research drawer 的 `Evidence`、`Sources`、`Graph`、`Notes` 四个 tab 查看本轮证据、来源、局部关系图和落盘笔记，而不是只看一条 receipt；PDF 页码定位和搜索覆盖都放在现有证据/来源视图里
+- 通过 Research drawer 的 `Evidence`、`Sources`、`Graph`、`Notes` 四个 tab 查看本轮证据、来源、统一图和落盘笔记，而不是只看一条 receipt；PDF 页码定位和搜索覆盖都放在现有证据/来源视图里
 - 项目实现和验证成功后，可以把“做了什么、为什么、跑过什么检查”沉淀成实现/验证记忆，而不是把源码全文塞进 vault
 - 在同一个项目对话里讨论、查看和修改；只有明确要求时才改文件
 - 让模型读取和修改你选择的项目目录
@@ -272,11 +272,12 @@ Research drawer 有四个轻量 tab：
 
 - `Evidence`：claim、snippet、PDF 页码定位、counterpoints、质量 warning 和搜索覆盖
 - `Sources`：citation map、source title、final URL、来源质量提示，以及 PDF 已读页/截断元信息
-- `Graph`：按需读取当前 Research run 的 note、source URL、counterpoint、implementation 和 verification 局部关系图
+- `Graph`：一个有边界的统一图，最上层是虚拟概念，中间是当前 synthesis/report 和相关笔记，depth 3 展开到 source URL；Open Questions 只作为 concept 节点文本，标注 "unproven; not facts"
 - `Notes`：synthesis、note id、source URL 和 restore 状态
 
-Coverage 作为支持性的审计信息放在 `Evidence` 里，不做第一层用户概念。`Graph` 是当前
-Research run 的有边界 read model，不是新数据库，也不是全 vault 知识图谱。
+Coverage 作为支持性的审计信息放在 `Evidence` 里，不做第一层用户概念。`Graph`
+是展示层 read model，不是新数据库，也不是全 vault 知识图谱：声明的概念关系保持虚拟，
+证据关系仍然是 note/source 关系，tag 边只连接当前可见笔记和概念。
 
 Vault 存在 Codey 本地状态目录里，底层是 Markdown notes 和可重建的 SQLite FTS
 索引。项目源码不会被复制进 vault；implementation note 记录的是做了什么、为什么、

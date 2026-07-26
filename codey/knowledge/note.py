@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 
 import yaml
 
+from codey.knowledge.concept_schema import clean_relations
+
 NOTE_TYPES = (
     "source",
     "fact",
@@ -84,6 +86,7 @@ class KnowledgeNote:
     tags: list[str] = field(default_factory=list)
     sources: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
+    relations: list[dict] = field(default_factory=list)
     confidence: float | None = None
     status: str = "active"
     session_id: str = ""
@@ -96,6 +99,7 @@ class KnowledgeNote:
     def __post_init__(self) -> None:
         if self.type not in NOTE_TYPES:
             self.type = "note"
+        self.relations = clean_relations(self.relations)[0]
         if self.status not in NOTE_STATUSES:
             self.status = "active"
         if not self.created:
@@ -147,6 +151,8 @@ class KnowledgeNote:
             data["sources"] = list(self.sources)
         if self.aliases:
             data["aliases"] = list(self.aliases)
+        if self.relations:
+            data["relations"] = [dict(r) for r in self.relations]
         if self.confidence is not None:
             data["confidence"] = round(float(self.confidence), 2)
         if self.session_id:
@@ -185,6 +191,7 @@ class KnowledgeNote:
             tags=[str(t) for t in (meta.get("tags") or [])],
             sources=[str(s) for s in (meta.get("sources") or [])],
             aliases=[str(a) for a in (meta.get("aliases") or [])],
+            relations=[r for r in (meta.get("relations") or []) if isinstance(r, dict)],
             confidence=_as_float(meta.get("confidence")),
             status=str(meta.get("status") or "active"),
             session_id=str(meta.get("session_id") or ""),

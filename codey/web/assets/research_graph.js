@@ -18,18 +18,20 @@ function render(panel, options) {
   panel.classList.add('research-graph-panel');
   const toolbar = document.createElement('div');
   toolbar.className = 'research-graph-toolbar';
-  const depthLabel = document.createElement('span');
-  depthLabel.textContent = 'Depth';
-  toolbar.appendChild(depthLabel);
-  for (const depth of [1, 2]) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'research-depth' + ((options.depth || 1) === depth ? ' active' : '');
-    btn.textContent = String(depth);
-    btn.onclick = () => {
-      if (typeof options.onDepthChange === 'function') options.onDepthChange(depth);
-    };
-    toolbar.appendChild(btn);
+  if (options.showDepth !== false) {
+    const depthLabel = document.createElement('span');
+    depthLabel.textContent = 'Depth';
+    toolbar.appendChild(depthLabel);
+    for (const depth of [1, 2, 3]) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'research-depth' + ((options.depth || 1) === depth ? ' active' : '');
+      btn.textContent = String(depth);
+      btn.onclick = () => {
+        if (typeof options.onDepthChange === 'function') options.onDepthChange(depth);
+      };
+      toolbar.appendChild(btn);
+    }
   }
   const spacer = document.createElement('div');
   spacer.className = 'research-graph-spacer';
@@ -66,7 +68,7 @@ async function loadGraph(options, canvas, status, detail) {
   const seq = ++loadSeq;
   try {
     const params = graphParams(options);
-    const r = await fetch('/api/research/graph?' + params.toString());
+    const r = await fetch((options.endpoint || '/api/research/graph') + '?' + params.toString());
     let data = {};
     try { data = await r.json(); } catch {}
     if (seq !== loadSeq || !canvas.isConnected) return;
@@ -76,7 +78,8 @@ async function loadGraph(options, canvas, status, detail) {
     }
     const graph = data.graph;
     if (!Array.isArray(graph.nodes) || !graph.nodes.length) {
-      setStatus(status, 'No graph yet');
+      const warning = Array.isArray(graph.warnings) && graph.warnings.length ? graph.warnings[0] : '';
+      setStatus(status, warning || 'No graph yet');
       return;
     }
     if (seq !== loadSeq || !canvas.isConnected) return;
@@ -133,7 +136,7 @@ function setDetail(detail, node, options) {
   if (node.excerpt || node.url || node.path) {
     const body = document.createElement('div');
     body.className = 'research-graph-detail-body';
-    body.textContent = node.excerpt || node.url || node.path || '';
+    setDetailBody(body, node.excerpt || node.url || node.path || '');
     detail.appendChild(body);
   }
   if (node.url || (node.id && !node.virtual)) {
@@ -144,6 +147,16 @@ function setDetail(detail, node, options) {
     action.onclick = () => openNode(node, options);
     detail.appendChild(action);
   }
+}
+
+function setDetailBody(body, text) {
+  const value = String(text || '');
+  if (window.CodeyRender && typeof window.CodeyRender.renderMarkdown === 'function') {
+    body.classList.add('md');
+    window.CodeyRender.renderMarkdown(body, value);
+    return;
+  }
+  body.textContent = value;
 }
 
 function nodeMeta(node) {
@@ -176,12 +189,14 @@ function draw(canvas, graph, detail, options) {
   };
   const nodes = (graph.nodes || []).map((node, index) => {
     const seed = hashUnit(node.id || String(index));
-    const angle = seed * Math.PI * 2;
-    const radius = 56 + hashUnit((node.id || '') + ':r') * 120;
+    const spread = 72 + hashUnit((node.id || '') + ':x') * 210;
+    const sign = seed > 0.5 ? 1 : -1;
+    const layerY = graphLayerY(node);
     return {
       ...node,
-      x: Math.cos(angle) * radius,
-      y: Math.sin(angle) * radius,
+      x: sign * spread * (0.35 + hashUnit((node.id || '') + ':s')),
+      y: layerY + (hashUnit((node.id || '') + ':y') - 0.5) * 54,
+      layerY,
       vx: 0,
       vy: 0,
       fixed: false,
@@ -427,7 +442,7 @@ function stepResearchGraph(nodes, edges) {
   for (const node of nodes) {
     if (node.fixed) continue;
     node.vx += -node.x * 0.0025;
-    node.vy += -node.y * 0.0025;
+    node.vy += ((node.layerY || 0) - node.y) * 0.004;
     node.vx *= 0.86;
     node.vy *= 0.86;
     node.x += Math.max(-6, Math.min(6, node.vx));
@@ -440,9 +455,9 @@ function drawGraphEdge(ctx, edge, state, neighbors, colors) {
   const selectedActive = !hoverActive && state.selected && (edge.src === state.selected.id || edge.dst === state.selected.id);
   const active = hoverActive || selectedActive;
   ctx.save();
-  ctx.globalAlpha = hoverActive ? 0.95 : (selectedActive ? 0.78 : (edge.kind === 'cites' ? 0.2 : 0.32));
+  ctx.globalAlpha = hoverActive ? 0.95 : (selectedActive ? 0.78 : (edge.kind === 'cites' || edge.kind === 'tagged' ? 0.2 : 0.32));
   ctx.strokeStyle = hoverActive ? colors.ok : (selectedActive ? colors.text : colors.faint);
-  ctx.lineWidth = active ? 1.35 : (edge.kind === 'cites' ? 0.7 : 1);
+  ctx.lineWidth = active ? 1.35 : (edge.kind === 'cites' || edge.kind === 'tagged' ? 0.7 : 1);
   if (edge.kind === 'contradicts') ctx.setLineDash([5, 5]);
   ctx.beginPath();
   ctx.moveTo(edge.source.x, edge.source.y);
@@ -461,6 +476,7 @@ function drawGraphNode(ctx, node, state, neighbors, colors) {
   ctx.globalAlpha = faded ? 0.28 : 1;
   ctx.fillStyle = hovered ? colors.ok : (node.kind === 'source_url' ? colors.faint : colors.textDim);
   if (!hovered && node.kind === 'counterpoint') ctx.fillStyle = colors.muted;
+  if (!hovered && node.kind === 'concept') ctx.fillStyle = colors.text;
   ctx.beginPath();
   ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
   ctx.fill();
@@ -502,8 +518,16 @@ function drawGraphLabel(ctx, node, state, neighbors, colors) {
 }
 
 function graphNodeRadius(node) {
-  const base = node.kind === 'source_url' ? 3 : 4.2;
+  const base = node.kind === 'source_url' ? 3 : (node.kind === 'concept' ? 5 : 4.2);
   return Math.max(2.8, Math.min(11, base + Math.sqrt(Number(node.weight || 1)) * 1.6));
+}
+
+function graphLayerY(node) {
+  if (node.kind === 'concept') return -130;
+  if (node.kind === 'source_url') return 145;
+  if (node.kind === 'counterpoint') return 90;
+  if (node.kind === 'synthesis' || node.kind === 'decision') return -20;
+  return 55;
 }
 
 function graphBounds(nodes) {

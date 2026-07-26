@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from codey.models import ToolPlan
-from codey.research.protocols import ProtocolCodec, extract_json_objects
+from codey.research.protocols import ProtocolCodec, canonical_tool_name, extract_json_objects
 from codey.research.source_document import compact_pages
 from codey.research.tool_contract import (
     PROTOCOL_DISALLOWED_TOOL,
@@ -51,6 +51,8 @@ Research discipline:
 - A web_search result is not evidence. Open useful results before knowledge_write.
 - Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.{source_search_line}
 - Evidence snippets must be exact short excerpts copied from open_url text.
+- Note tags should be 2-5 short lowercase concept nouns (e.g. "helium supply", "war"), not sentences.
+- knowledge_write relations declare concept-to-concept links the note's evidence supports, as {{"src":...,"dst":...,"kind":affects/uses/causes/part_of/enables/relates}}. Only declare relations the cited sources actually state; never declare a guessed relation.
 - Final reports must use done, with these sections: 结论, 关键证据, 反证与限制, 来源质量, 搜索覆盖, 来源.
 - Every cited source URL in the final report must be opened in this run and have saved evidence.
 - If no strong counter-evidence exists, write "未找到强反证" and explain what was searched."""
@@ -132,6 +134,20 @@ class ResearchController:
     def parse_plan(self, codec: ProtocolCodec, reply: str, state: ResearchControlState) -> ToolPlan:
         objects = extract_json_objects(reply or "")
         if len(objects) == 1:
+            tool = canonical_tool_name(
+                objects[0].get("tool") or objects[0].get("name"),
+                include_source_search=self.include_source_search,
+            )
+            if tool and state.allowed_tools and tool not in state.allowed_tools:
+                return ToolPlan(
+                    calls=[],
+                    control=None,
+                    protocol_error=(
+                        f"{tool} is not allowed by the current Research controller state; "
+                        f"allowed tools: {', '.join(state.allowed_tools)}"
+                    ),
+                    protocol_error_kind=PROTOCOL_DISALLOWED_TOOL,
+                )
             rewritten, error = rewrite_id_args(objects[0], state)
             if error:
                 return ToolPlan(
@@ -256,6 +272,7 @@ def render_control_block(state: ResearchControlState) -> str:
         "Research controller current allowed actions:",
         f"- Allowed tools this turn: {', '.join(state.allowed_tools)}",
         "- Reply with exactly one JSON object using only the allowed tools below.",
+        "- Tools not listed here are forbidden this turn, even if they appeared earlier.",
         "- Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.",
         f"- Saved evidence items: {state.evidence_count}; saved/updated notes: {state.note_count}.",
         "- In done.answer, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.",
@@ -264,7 +281,7 @@ def render_control_block(state: ResearchControlState) -> str:
         lines.append(
             "- done is allowed only to report insufficient/no citable evidence and what was searched."
         )
-    lines.extend(("", "Allowed JSON shapes:"))
+    lines.extend(("", "Allowed JSON shapes for this turn (choose exactly one):"))
     for tool in state.allowed_tools:
         for example in _tool_examples(tool, state):
             lines.append(f"- {example}")
@@ -406,8 +423,11 @@ def _tool_examples(tool: str, state: ResearchControlState) -> tuple[str, ...]:
         sid = next(iter(state.source_urls))
         return (
             '{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...",'
-            f'"sources":["{sid}"],"evidence":{{"claim":"...","source_url":"{sid}",'
-            '"excerpt":"exact short text from open_url","stance":"supports"}}}}',
+            '"tags":["short concept noun"],'
+            f'"sources":["{sid}"],'
+            '"relations":[{"src":"...","dst":"...","kind":"affects"}],'
+            f'"evidence":{{"claim":"...","source_url":"{sid}",'
+            '"excerpt":"exact short text from open_url","stance":"supports"}}}',
         )
     return (tool_example(tool),)
 

@@ -301,6 +301,22 @@ provider pages. Use this probe before changing source_search behavior further,
 or before promoting ResearchPlan / Coverage Review into the production Research
 path.
 
+`research_repair_prompt_ab.py` is a tiny live probe for Research protocol repair
+wording. It sends the old and current repair prompts to a provider, scores the
+reply with the production Research parser/controller, and atomically writes a
+JSON result after each arm. It does not execute Research tools or write vault
+notes.
+
+```powershell
+python -B tests\manual\research_repair_prompt_ab.py --self-test
+python -B tests\manual\research_repair_prompt_ab.py `
+  --provider mimo `
+  --port 9222 `
+  --timeout 120 `
+  --order old,new `
+  --keep-open
+```
+
 Provider fit note: StepFun is available alongside MiMo for current provider
 smoke/A-B work. StepFun followed the local JSON-tool Research protocol reliably
 in earlier probes: one JSON object per turn and a completed fixture report.

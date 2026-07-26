@@ -50,11 +50,17 @@ class KnowledgeIndex:
             CREATE TABLE IF NOT EXISTS sources(
                 note_id TEXT, source TEXT, UNIQUE(note_id, source)
             );
+            CREATE TABLE IF NOT EXISTS concept_edges(
+                note_id TEXT, src TEXT, dst TEXT, kind TEXT,
+                UNIQUE(note_id, src, dst, kind)
+            );
             CREATE INDEX IF NOT EXISTS idx_notes_session ON notes(session_id, updated);
             CREATE INDEX IF NOT EXISTS idx_notes_type ON notes(type, updated);
             CREATE INDEX IF NOT EXISTS idx_links_src ON links(src_id);
             CREATE INDEX IF NOT EXISTS idx_links_dst ON links(dst_id);
             CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
+            CREATE INDEX IF NOT EXISTS idx_concept_src ON concept_edges(src);
+            CREATE INDEX IF NOT EXISTS idx_concept_dst ON concept_edges(dst);
             """
         )
         if self.fts_enabled:
@@ -100,6 +106,11 @@ class KnowledgeIndex:
                 "INSERT OR IGNORE INTO sources(note_id,source) VALUES(?,?)",
                 [(note.id, s) for s in note.sources],
             )
+            c.execute("DELETE FROM concept_edges WHERE note_id=?", (note.id,))
+            c.executemany(
+                "INSERT OR IGNORE INTO concept_edges(note_id,src,dst,kind) VALUES(?,?,?,?)",
+                [(note.id, r["src"], r["dst"], r["kind"]) for r in note.relations],
+            )
             c.execute("DELETE FROM links WHERE src_id=?", (note.id,))
             if self.fts_enabled:
                 c.execute("DELETE FROM notes_fts WHERE id=?", (note.id,))
@@ -115,6 +126,7 @@ class KnowledgeIndex:
             c.execute("DELETE FROM links WHERE src_id=? OR dst_id=?", (note_id, note_id))
             c.execute("DELETE FROM tags WHERE note_id=?", (note_id,))
             c.execute("DELETE FROM sources WHERE note_id=?", (note_id,))
+            c.execute("DELETE FROM concept_edges WHERE note_id=?", (note_id,))
             c.execute("DELETE FROM notes WHERE id=?", (note_id,))
             if self.fts_enabled:
                 c.execute("DELETE FROM notes_fts WHERE id=?", (note_id,))
@@ -126,6 +138,7 @@ class KnowledgeIndex:
             c.execute("DELETE FROM links")
             c.execute("DELETE FROM tags")
             c.execute("DELETE FROM sources")
+            c.execute("DELETE FROM concept_edges")
             c.execute("DELETE FROM notes")
             if self.fts_enabled:
                 c.execute("DELETE FROM notes_fts")
@@ -267,6 +280,92 @@ class KnowledgeIndex:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def tags_for(self, note_ids: list[str], *, active_only: bool = False) -> list[dict]:
+        ids = _unique(note_ids)
+        if not ids:
+            return []
+        marks = ",".join("?" * len(ids))
+        with self._lock:
+            if active_only:
+                rows = self._conn.execute(
+                    "SELECT t.note_id,t.tag FROM tags t"
+                    " JOIN notes n ON n.id=t.note_id"
+                    f" WHERE n.status='active' AND t.note_id IN ({marks})",
+                    ids,
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    f"SELECT note_id,tag FROM tags WHERE note_id IN ({marks})",
+                    ids,
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def concept_edge_rows(self, limit: int = 2048, *, session_id: str = "") -> list[dict]:
+        """Declared concept relations from active notes, newest first.
+
+        When a session is requested, rows from that session are read before the
+        global backfill so older target-session relations cannot be truncated by
+        newer unrelated vault activity.
+        """
+        limit = max(0, int(limit or 0))
+        if limit <= 0:
+            return []
+        select_sql = (
+            "SELECT e.note_id,e.src,e.dst,e.kind,n.session_id,n.title FROM concept_edges e"
+            " JOIN notes n ON n.id=e.note_id WHERE n.status='active'"
+        )
+        session_id = str(session_id or "").strip()
+        with self._lock:
+            rows = []
+            if session_id:
+                rows.extend(
+                    self._conn.execute(
+                        select_sql + " AND n.session_id=? ORDER BY n.updated DESC LIMIT ?",
+                        (session_id, limit),
+                    ).fetchall()
+                )
+            if len(rows) < limit:
+                rows.extend(
+                    self._conn.execute(
+                        select_sql + " ORDER BY n.updated DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+                )
+        return _unique_rows([dict(r) for r in rows], limit, ("note_id", "src", "dst", "kind"))
+
+    def tag_concept_rows(self, limit: int = 4096, *, session_id: str = "") -> list[dict]:
+        """Raw tag rows of active notes joined with note metadata.
+
+        Session rows are read first for the same reason as `concept_edge_rows`:
+        an old Research run should still be diagnosable after the vault grows.
+        """
+        limit = max(0, int(limit or 0))
+        if limit <= 0:
+            return []
+        select_sql = (
+            "SELECT t.note_id,t.tag,n.type,n.title,n.session_id,n.updated"
+            " FROM tags t JOIN notes n ON n.id=t.note_id"
+            " WHERE n.status='active'"
+        )
+        session_id = str(session_id or "").strip()
+        with self._lock:
+            rows = []
+            if session_id:
+                rows.extend(
+                    self._conn.execute(
+                        select_sql + " AND n.session_id=? ORDER BY n.updated DESC LIMIT ?",
+                        (session_id, limit),
+                    ).fetchall()
+                )
+            if len(rows) < limit:
+                rows.extend(
+                    self._conn.execute(
+                        select_sql + " ORDER BY n.updated DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+                )
+        return _unique_rows([dict(r) for r in rows], limit, ("note_id", "tag"))
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()
@@ -301,4 +400,18 @@ def _unique(values: list[str]) -> list[str]:
         if item and item not in seen:
             seen.add(item)
             out.append(item)
+    return out
+
+
+def _unique_rows(rows: list[dict], limit: int, keys: tuple[str, ...]) -> list[dict]:
+    out: list[dict] = []
+    seen: set[tuple[str, ...]] = set()
+    for row in rows:
+        key = tuple(str(row.get(item) or "") for item in keys)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+        if len(out) >= limit:
+            break
     return out

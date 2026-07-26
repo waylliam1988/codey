@@ -4,17 +4,23 @@ from __future__ import annotations
 
 import queue
 import threading
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Callable
 
 from codey import cancellation
 from codey.events import RunEvent
 from codey.knowledge.changes import KnowledgeChanges
+from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.models import ToolResult
 from codey.research.advisors import EvidenceNote, EvidencePack
-from codey.research.controller import ResearchController, controller_system_prompt
+from codey.research.controller import (
+    ResearchController,
+    ResearchControlState,
+    controller_system_prompt,
+)
 from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
 from codey.research.source_document import compact_pages
@@ -203,7 +209,7 @@ class ResearchRunner:
                 if protocol_errors > MAX_PROTOCOL_ERRORS:
                     stop_reason = "protocol"
                     break
-                message = _protocol_repair_prompt(self.codec, plan)
+                message = _protocol_repair_prompt(self.codec, plan, control_state)
                 continue
             protocol_errors = 0
             results: list = []
@@ -407,11 +413,17 @@ class ResearchRunner:
 
     def _persist_synthesis(self, question: str, summary: str) -> str:
         title = _synthesis_title(question)
+        tags = ["research"]
+        if self.session_id:
+            tags.append(f"session:{self.session_id}")
+        tags.extend(
+            _run_concept_tags(self.store, [*self.tools.created_ids, *self.tools.updated_ids])
+        )
         note = KnowledgeNote.create(
             type="synthesis",
             title=title,
             body=_synthesis_body(summary, self.tools.ledger),
-            tags=["research", f"session:{self.session_id}" if self.session_id else "research"],
+            tags=tags,
             sources=sorted(self.tools.sources_read),
             session_id=self.session_id,
             project=self.project,
@@ -546,7 +558,11 @@ def _quality_review_followup(
     return codec.format_results(results) + "\n\n" + prompt
 
 
-def _protocol_repair_prompt(codec: ProtocolCodec, plan) -> str:
+def _protocol_repair_prompt(
+    codec: ProtocolCodec,
+    plan,
+    state: ResearchControlState | None = None,
+) -> str:
     kind = str(getattr(plan, "protocol_error_kind", "") or "")
     error = str(getattr(plan, "protocol_error", "") or "invalid Research tool call")
     lines = [
@@ -557,11 +573,11 @@ def _protocol_repair_prompt(codec: ProtocolCodec, plan) -> str:
     if kind == PROTOCOL_TOO_MANY_TOOLS:
         lines.extend([
             "Codey Research executes exactly one action per turn.",
-            "Choose one next action and reply with only that JSON object.",
-            "",
-            "Example:",
-            tool_example("knowledge_search"),
+            "Choose one next action from the current allowed-actions block and reply with only that JSON object.",
+            "Do not wrap JSON in a markdown code fence. Do not repeat the same JSON object twice.",
         ])
+        if state is None:
+            lines.extend(["", "Example:", tool_example("knowledge_search")])
     elif kind == PROTOCOL_INVALID_ARGS:
         tool = _tool_from_protocol_error(error)
         lines.extend([
@@ -572,14 +588,20 @@ def _protocol_repair_prompt(codec: ProtocolCodec, plan) -> str:
             tool_example(tool) if tool else tool_example("web_search"),
         ])
     elif kind == PROTOCOL_DIRECT_ANSWER:
-        lines.extend([
-            "Do not write the research answer directly in prose.",
-            "If the report is final and grounded in Codey-opened sources, return it through done.",
-            "If more evidence is needed, call a local Research tool first.",
-            "",
-            "Final answer shape:",
-            tool_example("done"),
-        ])
+        lines.append("Do not write the research answer directly in prose.")
+        if state is None or "done" in state.allowed_tools:
+            lines.extend([
+                "If the report is final and grounded in Codey-opened sources, return it through done.",
+                "If more evidence is needed, call a local Research tool first.",
+                "",
+                "Final answer shape:",
+                tool_example("done"),
+            ])
+        else:
+            lines.extend([
+                "done is not allowed yet because Codey has no saved evidence for this run.",
+                "Choose one next action from the current allowed-actions block below.",
+            ])
     elif kind == PROTOCOL_NATIVE_SEARCH_LEAK:
         lines.extend([
             "Do not use the chat website's own search, browsing, plugins, or outside knowledge.",
@@ -596,10 +618,16 @@ def _protocol_repair_prompt(codec: ProtocolCodec, plan) -> str:
             tool_example("web_search"),
         ])
     elif kind == PROTOCOL_DISALLOWED_TOOL:
+        disallowed = _disallowed_tool_from_error(error)
         lines.extend([
             "The tool was valid JSON, but it is not allowed by the current Research controller state.",
-            "Use exactly one of the JSON shapes in the current allowed-actions block.",
-            "If you need evidence first, open/search/write evidence before done.",
+            (
+                f"Do not call {disallowed} again until it appears in the allowed tools list."
+                if disallowed
+                else "Do not call tools that are absent from the allowed tools list."
+            ),
+            "Use exactly one JSON shape from the current allowed-actions block.",
+            "If you need evidence first, search/open sources before writing notes or calling done.",
         ])
     elif kind == PROTOCOL_NO_JSON:
         lines.extend([
@@ -626,6 +654,15 @@ def _tool_from_protocol_error(error: str) -> str:
     return ""
 
 
+def _disallowed_tool_from_error(error: str) -> str:
+    text = str(error or "").strip()
+    marker = " is not allowed"
+    if marker not in text:
+        return ""
+    tool = text.split(marker, 1)[0].strip()
+    return tool if tool in TOOL_CONTRACTS else ""
+
+
 def _allowed_research_tools(codec: ProtocolCodec) -> str:
     tools = [
         "web_search",
@@ -646,6 +683,20 @@ def _synthesis_title(question: str, limit: int = 80) -> str:
     if len(text) > limit:
         text = text[: limit - 1].rstrip() + "…"
     return text or "Research synthesis"
+
+
+def _run_concept_tags(store: KnowledgeStore, note_ids: list[str], limit: int = 5) -> list[str]:
+    """Top concept tags from this run's notes, so synthesis joins the Concept Graph."""
+    try:
+        rows = store.index.tags_for([note_id for note_id in note_ids if note_id], active_only=True)
+    except Exception:
+        return []
+    counts: Counter[str] = Counter()
+    for row in rows:
+        concept = normalize_concept(row.get("tag"))
+        if concept:
+            counts[concept] += 1
+    return [concept for concept, _ in counts.most_common(limit)]
 
 
 def _advisor_followup_prompt(summary: str, advices: tuple[object, ...]) -> str:

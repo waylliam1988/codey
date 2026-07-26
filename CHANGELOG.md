@@ -4,6 +4,67 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.22 - Concept Graph Seed
+
+- Concept layer over the knowledge vault: notes can now declare typed
+  concept relations (`relations: [{src, dst, kind}]` with kinds
+  affects/uses/causes/part_of/enables/relates) in `knowledge_write`. Relations
+  are normalized by the new `knowledge/concept_schema.py` (lowercasing, URL /
+  machine-tag / year noise filtering, self-loop and duplicate removal, 8 per
+  note), stored in note front-matter (Markdown stays authoritative), and
+  cached in a rebuildable `concept_edges` SQLite table with per-note
+  provenance. Relation endpoints are auto-merged into the note's tags.
+- Concept Graph read model: new `knowledge/concepts.py` builds a virtual
+  concept graph -- concepts never become Markdown notes. Declared relations
+  become edges (support count in the label), recent synthesis notes attach to
+  their concept tags via faint `tagged` edges, and the current session's
+  concepts are focus-highlighted. Co-tags never create edges, and missing-link
+  candidates (two concepts sharing a declared neighbor but no declared edge)
+  appear only as text on the concept node, capped at 6 and marked
+  "unproven; not facts". The Evidence Graph (`knowledge/graph.py`) is
+  untouched.
+- New `GET /api/research/concept_graph` diagnostic endpoint plus a unified
+  Research drawer `Graph` tab. The user-facing graph is now composed from
+  concepts, the current synthesis/report, related notes, and source URLs with
+  depth 1/2/3, while the concept endpoint stays available for deterministic
+  tests and diagnostics.
+- Synthesis notes now aggregate the run's top concept tags from active notes
+  instead of only machine tags, so reports connect to the concept layer
+  without reviving contradicted/stale note tags.
+- Contract discipline: `knowledge_write.relations` must be a list of objects
+  (a single object is normalized to a one-item list; non-object items are
+  typed `invalid_args`); lenient cleaning happens in the tool with explicit
+  warnings in the tool result. The research prompt tells models to declare
+  only relations the cited sources actually state.
+- Review hardening: concept-node details list declared relations as grouped
+  Outgoing/Incoming summaries with supporting note titles (the canvas stays
+  undirected); open questions replace raw missing-link wording and remain
+  marked "unproven; not facts"; only `status='active'` notes feed the concept
+  layer; node/edge limits are hard -- synthesis attachments only spend leftover
+  budget, direct bad limit args sanitize, Concept Graph node selection keeps
+  declared relation endpoints in pairs before filling leftover space with
+  tag-only concepts, Concept Graph edge selection prioritizes relations
+  supported by notes from the current session instead of guessing from shared
+  concept names, `concept_edge_rows` / `tag_concept_rows` read requested-session
+  rows before global backfill so older runs survive vault growth, and the
+  unified Graph preserves the current evidence spine before spending remaining
+  budget on global concepts; the default Research
+  controller prompt and its `knowledge_write` JSON shape now teach tags +
+  relations too; an empty Graph shows the builder's guidance text instead of a
+  generic "No graph yet".
+- Live-provider hardening: MiMo code-block overlays are now read once by
+  ignoring hidden duplicate layers, so one visible JSON tool call is not
+  misclassified as `too_many_tools`; controller repairs now treat a
+  currently-forbidden tool such as premature `knowledge_write` as
+  `disallowed_tool` before teaching its argument schema; Research drawer tabs
+  stay compact by exposing one unified `Graph` tab instead of separate
+  evidence/concept graph tabs.
+- Source-node display polish: source URL nodes now use titles recovered
+  from synthesis source ledgers when available, and graph node details render
+  short Markdown excerpts with the existing zero-build renderer.
+- Not in this release by design: no concept context injected into research
+  prompts, no co-tag inference, no edge-click UI, no alias/embedding merging.
+
 ## 0.2.21 - UI Asset Modularization
 
 - Zero-build asset modules: the web UI is no longer one giant `index.html`.
