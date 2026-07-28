@@ -10,6 +10,12 @@ from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import (
     MAX_ACCIDENTAL_TOOL_CALLS,
     MAX_PARALLEL_CALLS,
+    PROTOCOL_DIRECT_ANSWER,
+    PROTOCOL_INVALID_ARGS,
+    PROTOCOL_NATIVE_TOOL_DENIAL,
+    PROTOCOL_NESTED_TOOL_IN_DONE,
+    PROTOCOL_NO_JSON,
+    PROTOCOL_UNKNOWN_TOOL,
     RESULT_TOOL_NAMES,
     TOOL_SPECS,
     TOOL_SPEC_BY_NAME,
@@ -88,6 +94,7 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(plan.calls[0].args["query"], "LOGIN_BUG")
         self.assertIsNotNone(plan.control)
         self.assertEqual(plan.control.kind, "continue")
+        self.assertEqual(plan.protocol_error_kind, "")
 
     def test_parse_done_control(self) -> None:
         codec = JsonToolCodec()
@@ -128,6 +135,7 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIsNone(plan.control)
         self.assertIn("done summary", plan.protocol_error)
         self.assertIn("Call the tool directly", plan.protocol_error)
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_NESTED_TOOL_IN_DONE)
 
     def test_contract_tells_read_only_discussion_to_answer_directly(self) -> None:
         prompt = JsonToolCodec().system_prompt()
@@ -161,6 +169,7 @@ class JsonToolCodecTests(unittest.TestCase):
             f"at most {MAX_ACCIDENTAL_TOOL_CALLS}",
             plan.protocol_error,
         )
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_parse_parallel_tool_calls(self) -> None:
         codec = JsonToolCodec()
@@ -187,6 +196,7 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertEqual(plan.calls, [])
         self.assertIsNone(plan.control)
         self.assertIn("read-only", plan.protocol_error)
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_parallel_rejects_every_non_leaf_or_mutating_tool(self) -> None:
         codec = JsonToolCodec()
@@ -200,6 +210,7 @@ class JsonToolCodecTests(unittest.TestCase):
                 }))
                 self.assertEqual(plan.calls, [])
                 self.assertIn("read-only", plan.protocol_error)
+                self.assertEqual(plan.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_parallel_rejects_more_than_the_contract_limit(self) -> None:
         calls = [
@@ -214,6 +225,7 @@ class JsonToolCodecTests(unittest.TestCase):
 
         self.assertEqual(plan.calls, [])
         self.assertIn(f"at most {MAX_PARALLEL_CALLS}", plan.protocol_error)
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_parse_read_file_page(self) -> None:
         plan = JsonToolCodec().parse(
@@ -240,6 +252,9 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("positive integer", zero.protocol_error)
         self.assertIn("positive integer", fractional.protocol_error)
         self.assertIn(f"at most {READ_MAX_LINES}", oversized.protocol_error)
+        self.assertEqual(zero.protocol_error_kind, PROTOCOL_INVALID_ARGS)
+        self.assertEqual(fractional.protocol_error_kind, PROTOCOL_INVALID_ARGS)
+        self.assertEqual(oversized.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_parse_atomic_replacements(self) -> None:
         plan = JsonToolCodec().parse(json.dumps({
@@ -283,6 +298,8 @@ class JsonToolCodecTests(unittest.TestCase):
 
         self.assertIn(f"at most {MAX_REPLACEMENTS}", too_many.protocol_error)
         self.assertIn("exactly one mode", mixed.protocol_error)
+        self.assertEqual(too_many.protocol_error_kind, PROTOCOL_INVALID_ARGS)
+        self.assertEqual(mixed.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_edit_requires_top_level_path_and_single_file_replacements(self) -> None:
         codec = JsonToolCodec()
@@ -306,6 +323,8 @@ class JsonToolCodecTests(unittest.TestCase):
 
         self.assertIn("top-level path", missing_path.protocol_error)
         self.assertIn("top-level path only", cross_file.protocol_error)
+        self.assertEqual(missing_path.protocol_error_kind, PROTOCOL_INVALID_ARGS)
+        self.assertEqual(cross_file.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_extracts_json_from_web_reply_noise(self) -> None:
         codec = JsonToolCodec()
@@ -336,6 +355,28 @@ class JsonToolCodecTests(unittest.TestCase):
 
         self.assertEqual(plan.calls, [])
         self.assertIsNone(plan.control)
+        self.assertIn("no JSON tool call", plan.protocol_error)
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_NO_JSON)
+
+    def test_direct_prose_answer_is_typed_protocol_error(self) -> None:
+        plan = JsonToolCodec().parse(
+            "I checked the requested change. No files need to be edited."
+        )
+
+        self.assertEqual(plan.calls, [])
+        self.assertIsNone(plan.control)
+        self.assertIn("direct answer", plan.protocol_error)
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_DIRECT_ANSWER)
+
+    def test_native_tool_denial_is_typed_protocol_error(self) -> None:
+        plan = JsonToolCodec().parse(
+            "The website says read_file is not available, so I cannot inspect app.py."
+        )
+
+        self.assertEqual(plan.calls, [])
+        self.assertIsNone(plan.control)
+        self.assertIn("website-native tool availability", plan.protocol_error)
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_NATIVE_TOOL_DENIAL)
 
     def test_format_results_and_repair_prompt_remind_json_only(self) -> None:
         codec = JsonToolCodec()
@@ -468,6 +509,7 @@ class JsonToolCodecTests(unittest.TestCase):
                 self.assertIn(f"unknown tool: {name}", plan.protocol_error)
                 self.assertIn("Use edit with content", plan.protocol_error)
                 self.assertIn('"tool":"edit"', plan.protocol_error)
+                self.assertEqual(plan.protocol_error_kind, PROTOCOL_UNKNOWN_TOOL)
 
     def test_repair_prompt_says_website_tool_errors_are_irrelevant(self) -> None:
         prompt = JsonToolCodec().repair_prompt()

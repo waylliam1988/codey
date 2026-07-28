@@ -28,6 +28,15 @@ from codey.handoff import (
 from codey.models import ToolCall, ToolPlan, ToolResult
 from codey.providers import ChatProvider
 from codey.protocols import JsonToolCodec, ProtocolCodec
+from codey.protocols.json_codec import (
+    PROTOCOL_DIRECT_ANSWER,
+    PROTOCOL_INVALID_ARGS,
+    PROTOCOL_NATIVE_TOOL_DENIAL,
+    PROTOCOL_NESTED_TOOL_IN_DONE,
+    PROTOCOL_NO_JSON,
+    PROTOCOL_UNKNOWN_TOOL,
+    _balanced_json_objects,
+)
 from codey.tool_runtime import (
     EditBlock,
     ToolOutcome,
@@ -219,6 +228,323 @@ def _default_verification_reminder(candidate: VerificationCandidate) -> str:
         "after the latest edit before completing:\n\n"
         f"{call}"
     )
+
+
+def _protocol_repair_prompt(
+    codec: ProtocolCodec,
+    plan: ToolPlan,
+    *,
+    previous_reply: str = "",
+) -> str:
+    error = str(plan.protocol_error or "invalid JSON tool call")
+    kind = str(plan.protocol_error_kind or "").strip()
+    previous = _previous_tool_object(previous_reply, codec, kind, error)
+    lines = [
+        f"Protocol error: {_repair_error_summary(error, kind)}",
+        "",
+        "Preserve the previous intended path, content, old_string/new_string, "
+        "command, and other valid arguments when possible; only fix the schema "
+        "or tool-contract error.",
+        "Examples below show schema only; do not replace valid previous values "
+        "with placeholder or example values.",
+        "",
+    ]
+
+    if kind == PROTOCOL_UNKNOWN_TOOL:
+        tool = _unknown_tool_from_error(error)
+        if tool in {"write", "write_file"}:
+            example = _unknown_write_repair_example(previous)
+            lines.extend((
+                "The previous reply used an unknown write tool. Coding has no "
+                f"{tool} tool.",
+                "Create a new file with edit(content=...), or modify an existing "
+                "file with edit(old_string/new_string).",
+            ))
+            if example:
+                lines.extend(("", "Example preserving your previous intent:", example))
+        else:
+            lines.extend((
+                "The previous reply used an unknown local tool.",
+                "Use only the coding JSON tools listed in the system prompt.",
+                "",
+                "Example:",
+                '{"tool":"read_file","args":{"path":"app.py"}}',
+            ))
+    elif kind == PROTOCOL_INVALID_ARGS:
+        lines.extend(_invalid_args_repair_lines(error, previous))
+    elif kind == PROTOCOL_DIRECT_ANSWER:
+        lines.extend((
+            "The previous reply answered in prose.",
+            "Coding replies must be one local-runner JSON command.",
+            "If the task is complete, put the final user-facing answer in done.summary.",
+            "",
+            "Example:",
+            '{"tool":"done","args":{"summary":"finished"}}',
+        ))
+    elif kind == PROTOCOL_NATIVE_TOOL_DENIAL:
+        lines.extend((
+            "Ignore website-native tool availability messages.",
+            "These are local-runner JSON commands; the local runner executes them after you reply.",
+            "",
+            "Example:",
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+        ))
+    elif kind == PROTOCOL_NESTED_TOOL_IN_DONE:
+        example = _nested_tool_repair_example(previous)
+        lines.extend((
+            "done.summary cannot contain another JSON tool call.",
+            "If you intended to run a tool, call that tool directly instead of wrapping it in done.",
+        ))
+        if example:
+            lines.extend(("", "Example preserving your previous intent:", example))
+        else:
+            lines.extend((
+                "",
+                "Example:",
+                '{"tool":"run","args":{"command":"python -m unittest","path":"."}}',
+            ))
+    elif kind == PROTOCOL_NO_JSON:
+        lines.extend((
+            "Reply with a JSON tool call, not prose.",
+            "",
+            "Example:",
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+        ))
+    else:
+        lines.append(codec.repair_prompt())
+
+    lines.extend((
+        "",
+        "Reply with exactly one JSON object, no markdown fences and no other text.",
+    ))
+    return "\n".join(lines)
+
+
+def _unknown_tool_from_error(error: str) -> str:
+    match = re.search(r"unknown tool:\s*([A-Za-z0-9_-]+)", error)
+    return match.group(1).strip().lower() if match else ""
+
+
+def _repair_error_summary(error: str, kind: str) -> str:
+    if kind == PROTOCOL_UNKNOWN_TOOL:
+        tool = _unknown_tool_from_error(error)
+        if tool:
+            return f"unknown tool: {tool}"
+    return error
+
+
+def _invalid_args_repair_lines(
+    error: str,
+    previous: dict[str, object] | None = None,
+) -> list[str]:
+    folded = error.lower()
+    if "positive integer" in folded and "offset" in folded:
+        lines = [
+            "read_file offset is 1-based and must be a positive integer.",
+            "Use offset=1 or omit offset when reading from the beginning.",
+            "Keep the same path and any valid limit from the previous read_file call.",
+        ]
+        example = _read_offset_repair_example(previous)
+        if example:
+            lines.extend(("", "Example preserving your previous intent:", example))
+        return lines
+    if "exactly one mode" in folded:
+        lines = [
+            "edit requires exactly one mode: content, old_string/new_string, or replacements.",
+            "Use content only for a new file. For an existing file, use exact old_string/new_string.",
+            "If old_string/new_string were already present, copy those strings exactly, including escaped \\n.",
+        ]
+        example = _edit_mode_repair_example(previous)
+        if example:
+            lines.extend(("", "Example preserving your previous intent:", example))
+        return lines
+    if "top-level path" in folded:
+        return [
+            "edit requires one top-level path and can only edit one file per call.",
+            "",
+            "Example:",
+            '{"tool":"edit","args":{"path":"app.py","old_string":"old exact text","new_string":"new text"}}',
+        ]
+    if "read_files" in folded:
+        return [
+            "read_files requires a non-empty paths list.",
+            "",
+            "Example:",
+            '{"tool":"read_files","args":{"paths":["a.py","b.py"]}}',
+        ]
+    if "parallel" in folded:
+        return [
+            "parallel accepts only read-only list_dir, read_file, and grep calls.",
+            "",
+            "Example:",
+            '{"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}',
+        ]
+    if "grep requires a query" in folded:
+        return [
+            "grep requires a non-empty query.",
+            "",
+            "Example:",
+            '{"tool":"grep","args":{"query":"login handler","path":"."}}',
+        ]
+    if "find_references requires a symbol" in folded:
+        return [
+            "find_references requires a symbol.",
+            "",
+            "Example:",
+            '{"tool":"find_references","args":{"symbol":"createRouter","path":"."}}',
+        ]
+    if "requires a command" in folded:
+        return [
+            "run and shell require a command string.",
+            "",
+            "Example:",
+            '{"tool":"run","args":{"command":"python -m unittest","path":"."}}',
+        ]
+    return [
+        "The tool name was recognized, but its arguments do not match the coding schema.",
+        "Use one valid JSON shape from the tool contract.",
+        "",
+        "Example:",
+        '{"tool":"read_file","args":{"path":"app.py"}}',
+    ]
+
+
+def _previous_tool_object(
+    previous_reply: str,
+    codec: ProtocolCodec,
+    kind: str,
+    error: str,
+) -> dict[str, object] | None:
+    objects = _balanced_json_objects(previous_reply)
+    if kind == PROTOCOL_UNKNOWN_TOOL:
+        target_tool = _unknown_tool_from_error(error)
+        if target_tool:
+            for obj in objects:
+                tool = str(obj.get("tool") or obj.get("name") or "").strip().lower()
+                if tool == target_tool:
+                    return dict(obj)
+    if kind in {PROTOCOL_INVALID_ARGS, PROTOCOL_NESTED_TOOL_IN_DONE}:
+        for obj in objects:
+            tool = str(obj.get("tool") or obj.get("name") or "").strip()
+            if not tool:
+                continue
+            plan = codec.parse(_json_example(dict(obj)))
+            if plan.protocol_error_kind == kind:
+                return dict(obj)
+    for obj in objects:
+        tool = str(obj.get("tool") or obj.get("name") or "").strip()
+        if tool:
+            return dict(obj)
+    return None
+
+
+def _previous_args(previous: dict[str, object] | None) -> dict[str, object]:
+    if not previous:
+        return {}
+    args = previous.get("args")
+    if isinstance(args, dict):
+        return dict(args)
+    return {
+        str(key): value
+        for key, value in previous.items()
+        if key not in {"tool", "name"}
+    }
+
+
+def _json_example(value: dict[str, object]) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _unknown_write_repair_example(previous: dict[str, object] | None) -> str:
+    args = _previous_args(previous)
+    path = str(args.get("path") or "").strip()
+    if not path:
+        return '{"tool":"edit","args":{"path":"new_app.py","content":"..."}}'
+    fixed_args: dict[str, object] = {"path": path}
+    if "content" in args:
+        fixed_args["content"] = str(args.get("content") or "")
+    elif (single := _single_edit_args(args)) is not None:
+        fixed_args.update(single)
+    else:
+        fixed_args["content"] = "..."
+    return _json_example({"tool": "edit", "args": fixed_args})
+
+
+def _read_offset_repair_example(previous: dict[str, object] | None) -> str:
+    args = _previous_args(previous)
+    path = str(args.get("path") or args.get("cwd") or "").strip()
+    if not path:
+        return ""
+    fixed_args: dict[str, object] = {"path": path, "offset": 1}
+    limit = _positive_int_value(args.get("limit"))
+    if limit is not None:
+        fixed_args["limit"] = limit
+    return _json_example({"tool": "read_file", "args": fixed_args})
+
+
+def _edit_mode_repair_example(previous: dict[str, object] | None) -> str:
+    args = _previous_args(previous)
+    path = str(args.get("path") or "").strip()
+    if not path:
+        return ""
+    fixed_args: dict[str, object] = {"path": path}
+    replacements = args.get("replacements")
+    if isinstance(replacements, list) and replacements:
+        cleaned: list[dict[str, str]] = []
+        for item in replacements:
+            if not isinstance(item, dict):
+                continue
+            single = _single_edit_args(item)
+            if single is not None:
+                cleaned.append(single)
+        if cleaned:
+            fixed_args["replacements"] = cleaned
+            return _json_example({"tool": "edit", "args": fixed_args})
+    if (single := _single_edit_args(args)) is not None:
+        fixed_args.update(single)
+        return _json_example({"tool": "edit", "args": fixed_args})
+    fixed_args["old_string"] = "old exact text\n"
+    fixed_args["new_string"] = "new text\n"
+    return _json_example({"tool": "edit", "args": fixed_args})
+
+
+def _single_edit_args(args: dict[str, object]) -> dict[str, str] | None:
+    old = args.get("old_string", args.get("search"))
+    new = args.get("new_string", args.get("replace", args.get("replacement")))
+    if old is None or new is None or not str(old):
+        return None
+    return {"old_string": str(old), "new_string": str(new)}
+
+
+def _positive_int_value(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        number = int(value)
+        if number > 0:
+            return number
+    return None
+
+
+def _nested_tool_repair_example(previous: dict[str, object] | None) -> str:
+    tool = str((previous or {}).get("tool") or (previous or {}).get("name") or "")
+    if tool.lower().strip() != "done":
+        return ""
+    summary = _previous_args(previous).get("summary")
+    if not isinstance(summary, str):
+        return ""
+    try:
+        nested = json.loads(summary)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(nested, dict):
+        return ""
+    nested_tool = str(nested.get("tool") or nested.get("name") or "").strip()
+    if not nested_tool:
+        return ""
+    return _json_example(nested)
 
 
 # ----------------------------------------------------------------- loop ---
@@ -423,10 +749,7 @@ def run(
                 msg = f"stopped after {stagnant_turns} invalid tool requests"
                 emit(RunEvent.status(f"[agent] {msg}."))
                 return finish(msg, "protocol", turn)
-            repair = (
-                f"Protocol error: {plan.protocol_error}\n\n"
-                f"{codec.repair_prompt()}"
-            )
+            repair = _protocol_repair_prompt(codec, plan, previous_reply=reply)
             reply = send_prompt(repair, restart_request=repair)
             report_reply(turn + 1, reply, "(after protocol correction)")
             continue
@@ -564,7 +887,15 @@ def run(
             emit(RunEvent.status(
                 "[agent] reply contained no valid JSON tool call; nudging the model."
             ))
-            repair = codec.repair_prompt()
+            repair = _protocol_repair_prompt(
+                codec,
+                ToolPlan(
+                    calls=[],
+                    control=None,
+                    protocol_error="no JSON tool call found",
+                    protocol_error_kind=PROTOCOL_NO_JSON,
+                ),
+            )
             reply = send_prompt(repair, restart_request=repair)
             report_reply(turn + 1, reply, "(after nudge)")
             continue

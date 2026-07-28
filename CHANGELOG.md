@@ -4,6 +4,34 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.23 - Coding Protocol Typed Repairs
+
+- Coding JSON protocol errors now carry typed `protocol_error_kind` values for
+  `no_json`, `unknown_tool`, `invalid_args`, `direct_answer`,
+  `native_tool_denial`, and `nested_tool_in_done`, reusing the
+  `ToolPlan.protocol_error_kind` field already proven in Research.
+- The coding run loop now sends specific repair prompts instead of the same
+  generic JSON reminder for every failure. Examples: `write_file` is corrected
+  toward `edit(content=...)`; mixed edit modes explain that only one edit mode
+  is allowed; `read_file offset=0` explains 1-based offsets; prose answers are
+  redirected into `done.summary`; website-native "tool unavailable" replies are
+  redirected back to local-runner JSON; and tool JSON nested inside
+  `done.summary` is corrected to a direct tool call.
+- Manual live A/B evidence now measures the production repair renderer
+  directly. After tightening the prompt to generate previous-intent examples
+  from the invalid JSON itself, DeepSeek improved from `clean_repair=5/6` to
+  `6/6`, Qwen from `4/6` to `6/6` (with one transient baseline send rerun), and
+  MiMo from `5/6` to `6/6` on six deliberately invalid coding replies. Earlier
+  prototype wording showed the same direction but was treated as over-strong
+  because it embedded ideal repaired shapes.
+- Scope intentionally stayed narrow: coding still accepts accidental multiple
+  top-level JSON tool objects for compatibility, and this release does not add
+  a coding allowed-tools gate, verification candidate IDs, or concept-context
+  prompt injection.
+- Manual-only Research probe archival: `concept_context_ab.py` records the
+  negative/neutral Concept Context injection result and remains outside
+  production Research prompts.
+
 ## 0.2.22 - Concept Graph Seed
 
 - Concept layer over the knowledge vault: notes can now declare typed

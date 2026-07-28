@@ -4,6 +4,28 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.23 - Coding Protocol Typed Repairs
+
+- Coding JSON 协议错误现在会带 typed `protocol_error_kind`：
+  `no_json`、`unknown_tool`、`invalid_args`、`direct_answer`、
+  `native_tool_denial`、`nested_tool_in_done`。这复用了 Research 已经验证过的
+  `ToolPlan.protocol_error_kind` 字段。
+- Coding run loop 不再对所有协议错误都发同一段泛化 JSON 提醒，而是按错误类型给
+  具体 repair：`write_file` 会被纠正到 `edit(content=...)`；混用 edit 模式会说明
+  一次只能选一种模式；`read_file offset=0` 会说明 offset 是 1-based；直接 prose
+  回答会被要求放进 `done.summary`；网页原生“工具不可用”提示会被纠正回本地 runner
+  JSON；把工具 JSON 包在 `done.summary` 里会被要求直接调用那个工具。
+- 实机 manual A/B 现在直接测生产 repair renderer。把 prompt 收紧为“从上一条无效
+  JSON 本身生成保留原意的示例”后，六个故意损坏的 coding 回复里，DeepSeek 从
+  `clean_repair=5/6` 提升到 `6/6`，Qwen 从 `4/6` 到 `6/6`（其中一次 baseline
+  网页 transient send failure 已单独补跑），MiMo 从 `5/6` 到 `6/6`。早期
+  prototype wording 也显示同方向，但因为嵌入了理想修复形状，只作为偏强方向证据。
+- 范围保持克制：coding 仍保留“多个顶层 JSON 工具对象”的历史兼容行为；本版本不加
+  coding allowed-tools gate、不加 verification candidate ID，也不注入 concept
+  context 到 prompt。
+- Manual-only Research probe 补档：`concept_context_ab.py` 记录 Concept Context
+  注入的负面/中性实验结果，仍然不进入生产 Research prompt。
+
 ## 0.2.22 - Concept Graph Seed
 
 - 知识库之上的概念层：笔记现在可以在 `knowledge_write` 中声明带类型的概念

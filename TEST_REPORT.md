@@ -1,5 +1,91 @@
 # Codey Test Report
 
+## 0.2.23 Coding Protocol Typed Repairs
+
+Codey 0.2.23 brings Research-style typed protocol repairs back into the coding
+loop without changing coding execution semantics. The coding `JsonToolCodec`
+now classifies protocol failures with `protocol_error_kind`, and `agent.run`
+uses that kind to send narrower repair prompts to web models.
+
+Production changes:
+
+- `codey/protocols/json_codec.py` now emits typed error kinds for coding:
+  `no_json`, `unknown_tool`, `invalid_args`, `direct_answer`,
+  `native_tool_denial`, and `nested_tool_in_done`.
+- `codey/agent.py` renders kind-specific repair prompts:
+  unknown `write_file`/`write` -> `edit(content=...)`; invalid edit modes ->
+  one edit mode only; invalid read offsets -> 1-based offsets; prose answers ->
+  `done.summary`; website-native tool denial -> local-runner JSON; nested tool
+  JSON inside `done.summary` -> call the tool directly. The repair prompt also
+  tells models to preserve the previous intended path/content/
+  old_string/new_string/command when those arguments are still valid.
+- Review hardening: previous-intent repair examples are now generated only when
+  they are still valid under the coding schema. Missing/empty `old_string`
+  falls back to a legal generic edit example instead of teaching
+  `old_string:""`, and `read_file` repair preserves valid numeric-string
+  limits such as `"120"` by normalizing them to integers.
+- Multi-JSON repair hardening: coding still accepts accidental multiple
+  top-level JSON tool objects, but repair examples now select the offending
+  object instead of blindly using the first object. Regression coverage locks
+  `read_file first.py` followed by invalid `read_file second.py offset=0`, and
+  `read_file first.py` followed by unknown `write_file second.txt`.
+- Existing compatibility is preserved: accidental multiple top-level JSON tool
+  objects still parse as multiple actions, and this release does not introduce
+  a coding allowed-tools gate or verification candidate IDs.
+
+Manual live A/B evidence (2026-07-28, already-open web-provider tabs, no local
+tools executed by the probe) now measures the production repair renderer
+directly. An earlier prototype run showed the same direction but was treated as
+over-strong because it embedded ideal repaired shapes. After review, production
+repair prompts generate previous-intent examples from the invalid JSON itself
+instead of using unrelated placeholder values.
+
+Production-prompt A/B:
+
+```text
+DeepSeek: baseline clean_repair=5/6 -> typed clean_repair=6/6
+Qwen:     baseline clean_repair=4/6 -> typed clean_repair=6/6
+          (one transient baseline send failure rerun for invalid_edit_mixed_modes)
+MiMo:     baseline clean_repair=5/6 -> typed clean_repair=6/6
+```
+
+The production gains were exact parameter repairs. Typed repair preserved edit
+newlines where the generic baseline often dropped them, and repaired
+`read_file offset=0` into `offset=1` while keeping the original `limit=120`.
+
+Manual-only Research probe archival:
+
+- `tests/manual/concept_context_ab.py` records the negative/neutral Concept
+  Context injection experiment and remains outside production Research prompts.
+
+Validation:
+
+```text
+python -B tests\manual\coding_repair_prompt_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\concept_context_ab.py --self-test
+# self-test passed
+
+python -m pytest tests\test_coding_repair_prompt_ab.py tests\test_protocols.py tests\test_agent.py -q
+# 134 passed, 2 skipped, 1 pytest cache warning, 25 subtests passed
+
+python -m pytest tests\test_server.py tests\test_consensus.py tests\test_review.py tests\test_agent_tools.py -q
+# 173 passed, 2 skipped, 1 pytest cache warning
+
+python -m pytest -q
+# 1394 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -m py_compile codey\protocols\json_codec.py codey\agent.py tests\manual\coding_repair_prompt_ab.py tests\manual\concept_context_ab.py
+# passed
+
+python -m ruff check codey tests
+# All checks passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.22 Concept Graph Seed
 
 Codey 0.2.22 adds a concept layer on top of the knowledge vault: notes can
@@ -8,7 +94,8 @@ table, and a virtual Concept Graph read model feeds a single unified Research
 drawer Graph. The persisted evidence graph is untouched, concepts never become
 Markdown notes, co-tags never create edges, and missing-link candidates stay
 text-only ("unproven; not facts"). By design this release does NOT inject
-concept context into research prompts (deferred to 0.2.23 behind an A/B).
+concept context into research prompts; the later manual A/B stayed outside
+production after showing no reliable discovery gain.
 
 Production changes:
 

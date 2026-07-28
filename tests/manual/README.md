@@ -317,6 +317,45 @@ python -B tests\manual\research_repair_prompt_ab.py `
   --keep-open
 ```
 
+`coding_repair_prompt_ab.py` is the matching coding-side probe for production
+typed protocol repairs. It sends deliberately invalid coding replies
+(`write_file`, mixed edit modes, bad read offsets, direct prose answers,
+native-tool denial, and nested tool JSON inside `done.summary`) and compares
+the legacy generic repair prompt with Codey's production typed repair prompt
+(`agent._protocol_repair_prompt`). It
+scores whether the next reply is accepted by the production coding codec,
+matches the expected action, and is a strict single JSON object. It does not
+execute local tools or edit project files.
+
+```powershell
+python -B tests\manual\coding_repair_prompt_ab.py --self-test
+python -B tests\manual\coding_repair_prompt_ab.py `
+  --provider mimo `
+  --port 9222 `
+  --timeout 120 `
+  --keep-open
+```
+
+2026-07-28 live A/B now measures the production repair prompt directly. An
+earlier prototype run showed the same direction but included ideal repaired
+shapes, so it is treated as over-strong directional evidence. The production
+prompt now generates previous-intent examples from the invalid JSON itself. The
+production probe ran the same six invalid coding replies against already-open
+web-model tabs and did not execute any local tools:
+
+- DeepSeek: baseline `clean_repair=5/6`, typed `clean_repair=6/6`.
+- Qwen: baseline `clean_repair=4/6`, typed `clean_repair=6/6` after rerunning
+  one transient baseline send failure for `invalid_edit_mixed_modes`.
+- MiMo: baseline `clean_repair=5/6`, typed `clean_repair=6/6`.
+
+The observed wins were exact argument repair, not broader planning: typed
+repair preserved edit newlines where the generic baseline often dropped them,
+and repaired invalid `read_file offset=0` into a 1-based page request while
+keeping the original `limit=120`. This evidence supports typed coding protocol
+repairs only; it does not change coding's existing
+multiple-top-level-JSON compatibility behavior, add an allowed-tools gate, or
+introduce verification candidate IDs.
+
 Provider fit note: StepFun is available alongside MiMo for current provider
 smoke/A-B work. StepFun followed the local JSON-tool Research protocol reliably
 in earlier probes: one JSON object per turn and a completed fixture report.
@@ -516,3 +555,70 @@ The unreadable control was weaker: Qwen and GLM were already semantically safe,
 with Qwen taking one extra tool call in the coverage arm. Oversized and budget
 controls remained safe and did not add `Scan coverage`, preserving the existing
 production messages.
+
+`concept_context_ab.py` is a Research-only A/B probe for Concept Context
+injection. It remains manual-only after the 2026-07-26 rerun. The `concept`
+arm inserts a bounded, probe-local
+Concept Context block into the Research intro: declared concept relations near
+the question plus missing-link "open questions" from the production
+`_missing_suggestions` query, followed by discipline lines that forbid citing
+the block as evidence. The `baseline` arm is the current production intro.
+Production prompts, tools, and UI are unchanged. The seeded vault declares
+war→helium-supply and war→copper-supply relations so "copper supply ? helium
+supply" appears as an open question; `bridge-real` includes a fixture document
+that genuinely connects the two materials, and `bridge-none` is the induction
+control with no such document. All outbound prompt text is de-branded at the
+send choke point: the model is addressed as a plain local runtime, never as
+"Codey".
+
+```powershell
+python -B tests\manual\concept_context_ab.py --self-test
+python -B tests\manual\concept_context_ab.py `
+  --provider deepseek `
+  --max-turns 8 `
+  --open-if-missing `
+  --output tests\manual\results\concept_context_deepseek.json
+```
+
+The scorer tracks bridge discovery with opened evidence
+(`bridge_found_and_supported`), relations declared without bridge evidence
+(`false_bridge_relation`, the induction failure mode), base-task quality,
+turns, protocol repairs, and first-prompt size.
+
+2026-07-26 live smoke, one provider per process (MiMo at 12 turns, DeepSeek at
+8 turns; one MiMo control sample rerun after a transient send failure):
+
+- Safety: across all 8 live samples the concept arm never declared a
+  copper–helium relation without opened bridge evidence. The induction control
+  stayed clean on both arms and both providers.
+- Efficiency signal: on DeepSeek `bridge-real`, the concept arm completed the
+  full loop (bridge evidence saved plus a report passing the quality gate)
+  within the same 8-turn budget where baseline hit max turns without a report.
+- Noise: the first fixture generation had a discovery ceiling (the bridge
+  document was reachable from helium-only searches, so baseline also found
+  it); one MiMo run emitted multi-tool replies and fabricated
+  outside-knowledge notes (known provider fit); one DeepSeek control run
+  leaked the chat site's native search and spent turns opening non-fixture
+  URLs before returning to fixtures.
+- Decision: not enough evidence to change production. The probe now matches
+  search results on title+snippet only with a copper-only bridge snippet to
+  remove the ceiling, and counts non-fixture `open_url` attempts
+  (`nonfixture_open_count`) to expose native-search leaks.
+
+2026-07-26 hardened rerun on DeepSeek (8 turns, ceiling removed):
+
+- Neither arm found the bridge. With the discovery ceiling gone, the concept
+  arm never acted on the "copper supply ? helium supply" open question: every
+  query stayed helium-only, so the permissive "may investigate when relevant"
+  wording does not change search behavior on its own.
+- Safety stayed clean: 12/12 live samples across MiMo and DeepSeek declared
+  zero relations without opened bridge evidence.
+- Both DeepSeek control+concept runs (original and hardened fixtures) started
+  by answering from outside knowledge on turn 1, while both control+baseline
+  runs stayed on fixtures; `nonfixture_open_count=3` captured the hardened
+  leak. Sample size is 2, but watch for concept context increasing premature
+  answer-from-memory confidence.
+- Conclusion: prompt injection of concept context is safe but shows no
+  discovery gain at this wording. Before retesting injection with stronger
+  wording, the cheaper product direction is surfacing open questions as
+  user-facing follow-up suggestions instead of hidden prompt context.

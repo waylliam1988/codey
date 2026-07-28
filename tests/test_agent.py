@@ -810,7 +810,42 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(tool_events[0].call.name, "edit")
         self.assertIn("Protocol error:", provider.sent[1])
         self.assertIn("unknown tool: write_file", provider.sent[1])
-        self.assertIn("Use edit with content", provider.sent[1])
+        self.assertIn("Preserve the previous intended path", provider.sent[1])
+        self.assertIn("do not replace valid previous values", provider.sent[1])
+        self.assertIn("Coding has no write_file tool", provider.sent[1])
+        self.assertIn("Create a new file with edit(content=...)", provider.sent[1])
+        self.assertIn(
+            '{"tool":"edit","args":{"path":"app.py","content":"bad\\n"}}',
+            provider.sent[1],
+        )
+
+    def test_unknown_tool_repair_uses_offending_object_not_first_valid_json(self) -> None:
+        invalid = (
+            '{"tool":"read_file","args":{"path":"first.py"}}\n'
+            '{"tool":"write_file","args":{"path":"second.txt","content":"hello\\n"}}'
+        )
+        done = '{"tool":"done","args":{"summary":"stopped after repair prompt"}}'
+        provider = FakeProvider(invalid, done)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "first.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Create second.txt.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("unknown tool: write_file", provider.sent[1])
+        self.assertIn(
+            '{"tool":"edit","args":{"path":"second.txt","content":"hello\\n"}}',
+            provider.sent[1],
+        )
+        self.assertNotIn('"path":"first.py","content"', provider.sent[1])
 
     def test_nested_tool_call_inside_done_requests_correction(self) -> None:
         nested_run_done = json.dumps({
@@ -855,7 +890,222 @@ class RunLoopTests(unittest.TestCase):
         self.assertTrue(tool_events[0].outcome.ok)
         self.assertIn("Protocol error:", provider.sent[1])
         self.assertIn("done summary", provider.sent[1])
-        self.assertIn("Call the tool directly", provider.sent[1])
+        self.assertIn("done.summary cannot contain another JSON tool call", provider.sent[1])
+        self.assertIn("call that tool directly", provider.sent[1])
+        self.assertIn(
+            '{"tool":"run","args":{"command":"python -m unittest","path":"."}}',
+            provider.sent[1],
+        )
+
+    def test_direct_prose_answer_requests_done_summary_json(self) -> None:
+        direct_answer = (
+            "I checked the requested change. No files need to be edited, so the "
+            "task is complete."
+        )
+        done = json.dumps({
+            "tool": "done",
+            "args": {"summary": "No files need to be edited."},
+        })
+        provider = FakeProvider(direct_answer, done)
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Answer if changes are needed.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("The previous reply answered in prose", provider.sent[1])
+        self.assertIn("done.summary", provider.sent[1])
+        self.assertIn('{"tool":"done","args":{"summary":"finished"}}', provider.sent[1])
+
+    def test_native_tool_denial_requests_local_runner_json(self) -> None:
+        denial = "The website says read_file is not available, so I cannot inspect app.py."
+        read = '{"tool":"read_file","args":{"path":"app.py"}}'
+        done = '{"tool":"done","args":{"summary":"read app.py"}}'
+        provider = FakeProvider(denial, read, done)
+        events = []
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Inspect app.py",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        tool_events = [event for event in events if event.kind == "tool"]
+        self.assertEqual(len(tool_events), 1)
+        self.assertEqual(tool_events[0].call.name, "read")
+        self.assertIn("Ignore website-native tool availability", provider.sent[1])
+        self.assertIn("local-runner JSON commands", provider.sent[1])
+        self.assertIn('{"tool":"read_file","args":{"path":"app.py"}}', provider.sent[1])
+
+    def test_invalid_read_offset_requests_one_based_offset(self) -> None:
+        invalid = '{"tool":"read_file","args":{"path":"app.py","offset":0,"limit":120}}'
+        corrected = (
+            '{"tool":"read_file","args":{"path":"app.py","offset":1,"limit":120}}'
+        )
+        done = '{"tool":"done","args":{"summary":"read first page"}}'
+        provider = FakeProvider(invalid, corrected, done)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Read app.py from the beginning.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("read_file offset is 1-based", provider.sent[1])
+        self.assertIn("Preserve the previous intended path", provider.sent[1])
+        self.assertIn("Keep the same path and any valid limit", provider.sent[1])
+        self.assertIn('"offset":1', provider.sent[1])
+        self.assertIn('"limit":120', provider.sent[1])
+        self.assertIn(
+            '{"tool":"read_file","args":{"path":"app.py","offset":1,"limit":120}}',
+            provider.sent[1],
+        )
+
+    def test_invalid_args_repair_uses_offending_object_not_first_valid_json(self) -> None:
+        invalid = (
+            '{"tool":"read_file","args":{"path":"first.py"}}\n'
+            '{"tool":"read_file","args":{"path":"second.py","offset":0,"limit":120}}'
+        )
+        done = '{"tool":"done","args":{"summary":"stopped after repair prompt"}}'
+        provider = FakeProvider(invalid, done)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "first.py").write_text("FIRST = 1\n", encoding="utf-8")
+            (root / "second.py").write_text("SECOND = 2\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Read the second file.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn(
+            '{"tool":"read_file","args":{"path":"second.py","offset":1,"limit":120}}',
+            provider.sent[1],
+        )
+        self.assertNotIn('"path":"first.py","offset"', provider.sent[1])
+
+    def test_invalid_read_offset_preserves_numeric_string_limit(self) -> None:
+        invalid = (
+            '{"tool":"read_file","args":{"path":"app.py","offset":0,"limit":"120"}}'
+        )
+        done = '{"tool":"done","args":{"summary":"stopped after repair prompt"}}'
+        provider = FakeProvider(invalid, done)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Read app.py from the beginning.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn(
+            '{"tool":"read_file","args":{"path":"app.py","offset":1,"limit":120}}',
+            provider.sent[1],
+        )
+
+    def test_invalid_edit_mixed_modes_requests_one_edit_mode(self) -> None:
+        invalid = json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "content": "VALUE = 2\n",
+                "old_string": "VALUE = 1\n",
+                "new_string": "VALUE = 2\n",
+            },
+        })
+        corrected = json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "old_string": "VALUE = 1\n",
+                "new_string": "VALUE = 2\n",
+            },
+        })
+        done = '{"tool":"done","args":{"summary":"stopped after correction"}}'
+        provider = FakeProvider(invalid, corrected, done)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Update app.py.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("edit requires exactly one mode", provider.sent[1])
+        self.assertIn("Preserve the previous intended path", provider.sent[1])
+        self.assertIn("including escaped \\n", provider.sent[1])
+        self.assertIn("old_string/new_string", provider.sent[1])
+        self.assertIn(
+            '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1\\n","new_string":"VALUE = 2\\n"}}',
+            provider.sent[1],
+        )
+
+    def test_invalid_edit_mode_does_not_generate_empty_old_string_example(self) -> None:
+        invalid = json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "app.py",
+                "content": "VALUE = 2\n",
+                "new_string": "VALUE = 2\n",
+            },
+        })
+        done = '{"tool":"done","args":{"summary":"stopped after repair prompt"}}'
+        provider = FakeProvider(invalid, done)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Update app.py.",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertNotIn('"old_string":""', provider.sent[1])
+        self.assertIn(
+            '{"tool":"edit","args":{"path":"app.py","old_string":"old exact text\\n","new_string":"new text\\n"}}',
+            provider.sent[1],
+        )
 
     def test_read_file_page_arguments_reach_runtime(self) -> None:
         read = (

@@ -15,6 +15,12 @@ from codey.tool_runtime import (
 
 MAX_ACCIDENTAL_TOOL_CALLS = 8
 MAX_PARALLEL_CALLS = 4
+PROTOCOL_NO_JSON = "no_json"
+PROTOCOL_UNKNOWN_TOOL = "unknown_tool"
+PROTOCOL_INVALID_ARGS = "invalid_args"
+PROTOCOL_DIRECT_ANSWER = "direct_answer"
+PROTOCOL_NATIVE_TOOL_DENIAL = "native_tool_denial"
+PROTOCOL_NESTED_TOOL_IN_DONE = "nested_tool_in_done"
 
 
 @dataclass(frozen=True)
@@ -307,7 +313,9 @@ def _summary_is_tool_call(summary: str) -> bool:
 
 
 class ProtocolValidationError(ValueError):
-    pass
+    def __init__(self, message: str, kind: str = PROTOCOL_INVALID_ARGS) -> None:
+        super().__init__(message)
+        self.kind = kind
 
 
 def _positive_int_arg(
@@ -322,6 +330,48 @@ def _positive_int_arg(
         raise ProtocolValidationError(str(exc)) from exc
 
 
+_DIRECT_ANSWER_MARKERS = (
+    "i checked",
+    "i have completed",
+    "task is complete",
+    "the task is complete",
+    "no files need",
+    "i fixed",
+    "我已经",
+    "已完成",
+    "任务完成",
+    "不需要修改",
+)
+_NATIVE_TOOL_DENIAL_MARKERS = (
+    "tool does not exist",
+    "tool doesn't exist",
+    "tool is not available",
+    "tools are not available",
+    "cannot use read_file",
+    "can't use read_file",
+    "cannot call read_file",
+    "can't call read_file",
+    "website says",
+    "网页提示",
+    "工具不存在",
+    "无法调用工具",
+)
+
+
+def _classify_no_json_reply(text: str) -> tuple[str, str]:
+    folded = str(text or "").strip().lower()
+    if not folded:
+        return PROTOCOL_NO_JSON, "no JSON tool call found"
+    if any(marker in folded for marker in _NATIVE_TOOL_DENIAL_MARKERS):
+        return (
+            PROTOCOL_NATIVE_TOOL_DENIAL,
+            "reply treated website-native tool availability as binding instead of returning local JSON",
+        )
+    if any(marker in folded for marker in _DIRECT_ANSWER_MARKERS):
+        return PROTOCOL_DIRECT_ANSWER, "reply was a direct answer, not a JSON tool call"
+    return PROTOCOL_NO_JSON, "no JSON tool call found"
+
+
 class JsonToolCodec:
     name = "json"
 
@@ -330,11 +380,25 @@ class JsonToolCodec:
 
     def parse(self, text: str) -> ToolPlan:
         calls: list[ToolCall] = []
-        for obj in _balanced_json_objects(text):
+        objects = _balanced_json_objects(text)
+        if not objects:
+            kind, message = _classify_no_json_reply(text)
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=message,
+                protocol_error_kind=kind,
+            )
+        for obj in objects:
             try:
                 plan = self._parse_object(obj)
             except ProtocolValidationError as exc:
-                return ToolPlan(calls=[], control=None, protocol_error=str(exc))
+                return ToolPlan(
+                    calls=[],
+                    control=None,
+                    protocol_error=str(exc),
+                    protocol_error_kind=exc.kind,
+                )
             if plan.protocol_error:
                 return plan
             if plan.calls:
@@ -406,7 +470,8 @@ class JsonToolCodec:
             if _summary_is_tool_call(summary):
                 raise ProtocolValidationError(
                     "done summary must be the final user-facing answer, not another "
-                    "tool call. Call the tool directly instead."
+                    "tool call. Call the tool directly instead.",
+                    PROTOCOL_NESTED_TOOL_IN_DONE,
                 )
             return ToolPlan(calls=[], control=Control(kind="done", body=summary))
         if normalized == "continue":
@@ -423,7 +488,8 @@ class JsonToolCodec:
         if normalized and normalized not in TOOL_SPEC_BY_NAME:
             raise ProtocolValidationError(
                 f"unknown tool: {tool}. Use edit with content to create a new file, "
-                'for example {"tool":"edit","args":{"path":"new_app.py","content":"..."}}.'
+                'for example {"tool":"edit","args":{"path":"new_app.py","content":"..."}}.',
+                PROTOCOL_UNKNOWN_TOOL,
             )
 
         call = self._tool_call(tool, args)
