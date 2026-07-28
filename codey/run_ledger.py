@@ -162,7 +162,13 @@ class RunLedgerWriter:
             message=_clip(getattr(failure, "message", ""), MAX_FAILURE_MESSAGE_CHARS) or None,
         )
 
-    def append_changes_collected(self, changes: dict | None, *, receipt: dict | None = None) -> None:
+    def append_changes_collected(
+        self,
+        changes: dict | None,
+        *,
+        checks_passed: bool | None = None,
+        receipt: dict | None = None,
+    ) -> None:
         if not isinstance(changes, dict):
             changes = {}
         source_files = changes.get("files") if isinstance(changes.get("files"), list) else []
@@ -188,6 +194,7 @@ class RunLedgerWriter:
             changed_count=_int_or_none(changes.get("changed_count")) or 0,
             files=files,
             files_truncated=len(source_files) > MAX_CHANGE_FILES,
+            checks_passed=bool(checks_passed) if checks_passed is not None else None,
             receipt=receipt if isinstance(receipt, dict) else None,
         )
 

@@ -87,45 +87,59 @@ Codey 已经很重视 diff、restore、verification、provider failure、Researc
 - 不做 headless runner。
 - 不迁移 Research ledger，也不记录 Research tool events。
 
-## 0.2.26 - Ledger Projections
+## 0.2.26 - Ledger Projections v1
+
+状态：第一版已落地为只读 ledger projection，并接入一条保守 receipt shadow-consume 路径。
 
 ### 做什么
 
-在不扩大 ledger 内容的前提下，先让一部分现有结果从 Run Ledger 投影出来：
+新增 `run_ledger_projection.py`，把 0.2.25 写下来的 JSONL 账本投影成稳定摘要：
 
 ```text
-task receipt
-work checkpoint
-verification summary
-provider debug summary
-manual A/B metrics
+run lifecycle / complete state
+provider selected / switched / failed
+model reply count and chars
+tool call counts and errors
+observed file_changed facts
+verified commands
+final changes_collected summary
+task receipt candidate
 ```
 
-这一步的重点是证明 ledger 不是空架构，而是真的能减少重复事实通道。
+`changes_collected` 增加顶层 `checks_passed` fact。Receipt projection 只使用
+`changed_count`、`mode` 和 `checks_passed`，不从嵌套 legacy `receipt` 字典反推自己。
+
+`TaskRunner` 在 `run_finished` 写入后、terminal event 发布前读取 projection。只有当
+projection complete、ledger 未截断、有 final changes，且 projected receipt 的
+`changed_count`、`restore_available`、`checks_passed` 与 legacy receipt 完全一致时，
+才采用 projected receipt；否则原样回退 legacy receipt。
 
 ### 为什么做
 
-如果只写 ledger 但没人读，它会变成额外维护成本。第二个版本应该立即让核心读模型开始消费 ledger。
+如果只写 ledger 但没人读，它会变成额外维护成本。0.2.26 的目标是证明 ledger 能被稳定读取，并且能服务一条真实生产路径，但不急着接管 checkpoint、restore 或 UI。
 
 ### 对 Codey 的好处
 
-- 任务收据更可靠：`files changed`、`checks passed`、`restore available` 来自统一事件。
-- checkpoint 更可解释：能知道最后一次 edit、最后一次 run、最后一次绿色检查分别发生在哪里。
-- provider debug 不再只看当前健康状态，也能回看导致熔断的 run 事实。
-- A/B 报告能更稳定地统计 turn、tool、repair、verification、failure。
+- Run Ledger 从“飞行记录仪”变成可测试的读模型。
+- receipt 的关键字段可以从统一事实投影出来，而不是永远依赖散落路径。
+- provider failure/switch、工具调用、验证命令、最终 diff 统计有了同一个查询入口。
+- 后续 checkpoint projection、export、headless JSONL、A/B metrics 可以复用同一层。
+- projection 失败、账本不完整或字段不一致时自动回旧路径，用户体验不变。
 
 ### 验收标准
 
-- receipt 至少有一项字段来自 ledger projection。
-- checkpoint 能在不读取完整聊天的情况下恢复关键任务事实。
-- A/B harness 可以读取 ledger 统计基础指标。
-- projection 失败时能回退到现有路径。
+- `project_run_ledger(records)` 是纯函数，未知事件、坏行和未来 schema 安全忽略。
+- projection 能回答 run 是否 complete、是否 truncated、最终 provider、失败/切换、工具统计、已观察修改文件、跑绿命令和最终 changes。
+- `changes_collected.checks_passed` 是顶层 fact，receipt 投影不读取 nested `receipt`。
+- terminal event 发布前至少有一条 project receipt shadow-consume projection。
+- projection 不完整、截断或与 legacy receipt 不一致时回退旧路径。
 
 ### 暂不做
 
-- 不把所有旧状态一次性删除。
-- 不改变用户的任务历史 UI。
-- 不做跨 session 复杂查询。
+- 不迁移 `WorkCheckpoint`。
+- 不替换 `ExecutionEvidence`。
+- 不改 UI、SSE 或任务历史。
+- 不做 API export、headless runner 或跨 session 查询。
 
 ## 0.2.27 - ToolDefinition v1
 

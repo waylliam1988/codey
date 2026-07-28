@@ -1,5 +1,64 @@
 # Codey Test Report
 
+## 0.2.26 Ledger Projections v1
+
+Codey 0.2.26 adds a read-only projection layer over project Run Ledgers. It
+turns append-only JSONL facts into bounded run summaries, then shadow-consumes
+one production path: the final project task receipt. The legacy receipt remains
+the source of truth unless the ledger projection is complete, not truncated, has
+final changes, and matches the legacy `changed_count`, `checks_passed`, and
+`restore_available` fields exactly.
+
+Production changes:
+
+- New `codey/run_ledger_projection.py` defines `RunLedgerProjection`,
+  `ChangesSummary`, `VerifiedCommandSummary`, `ProviderFailureSummary`, and
+  `ProviderSwitchSummary`.
+- `project_run_ledger(records)` is a pure projection over `RunLedgerRecord`
+  rows. It sorts by `seq`, ignores malformed/future/unknown events, and
+  summarizes lifecycle state, provider switches/failures, model reply sizes,
+  tool counts/errors, observed `file_changed` facts, verified commands, final
+  changes, and truncation state.
+- `changes_collected` now includes top-level `checks_passed`. Receipt projection
+  uses only `changed_count`, `mode`, and `checks_passed`; it does not read the
+  nested legacy `receipt` field.
+- `TaskRunner` appends `run_finished`, loads the projection, and only then
+  considers replacing the terminal event receipt with the projected receipt.
+  Projection failure or mismatch falls back to the existing receipt path.
+- UI/SSE shape, checkpoint, restore, `ExecutionEvidence`, Research ledger, API
+  export, and headless behavior are unchanged.
+
+Validation:
+
+```text
+python -m unittest tests.test_run_ledger_projection tests.test_run_ledger
+# 15 passed
+
+python -m unittest tests.test_server.TaskRunnerUiEventTests
+# 3 passed
+
+python -m unittest tests.test_server.SessionThreadingTests.test_run_task_emits_receipt_and_inline_changes tests.test_server.SessionThreadingTests.test_run_task_emits_provider_failure_diagnostic_on_error
+# 2 passed, with existing Node url.parse deprecation warning
+
+python -m unittest tests.test_work_checkpoint_flow
+# 15 passed
+
+python -m pytest tests\test_run_ledger_projection.py tests\test_run_ledger.py tests\test_server.py -q
+# 143 passed, 1 skipped, 1 pytest cache warning
+
+python -m pytest -q
+# 1422 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\run_ledger.py codey\run_ledger_projection.py codey\task_runner.py codey\server.py codey\__init__.py
+# passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.25 Run Ledger v1
 
 Codey 0.2.25 adds an observe-only project run ledger. It gives project coding

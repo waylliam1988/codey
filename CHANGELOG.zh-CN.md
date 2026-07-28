@@ -4,6 +4,23 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.26 - Ledger Projections v1
+
+- 新增 `codey/run_ledger_projection.py`：对 Run Ledger JSONL 记录做纯只读投影，
+  汇总 run 生命周期、provider 选择/切换/失败、模型回复次数、工具次数和错误、
+  已观察到的文件修改、跑绿的命令、最终 changes 统计，以及 complete/truncated 状态。
+- `changes_collected` 现在把 `checks_passed` 作为顶层 bounded fact 保存。Receipt
+  投影只读取 `changed_count`、`mode` 和 `checks_passed`，不会从 ledger 里嵌套的
+  legacy `receipt` 字典反推自己。
+- `TaskRunner` 现在会在写入 `run_finished` 之后 shadow-consume projection。只有当
+  ledger 完整、未截断、有 final changes，且投影出的 `changed_count`、
+  `restore_available`、`checks_passed` 与 legacy receipt 完全一致时，Codey 才采用
+  projected receipt；否则直接回退旧路径。
+- 这一版不改 UI、checkpoint、restore、`ExecutionEvidence`、Research ledger、
+  API export 或 headless 行为。Projection 失败仍然 fail-open。
+- 新增 focused projection 测试，并补 TaskRunner 覆盖，验证 terminal event 发布前
+  确实读取了 complete ledger projection。
+
 ## 0.2.25 - Run Ledger v1
 
 - 新增有边界的 `Run Ledger`：项目 coding run 现在会在本地 state 目录下写入

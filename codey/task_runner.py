@@ -40,6 +40,10 @@ from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
 from codey.receipt import build_task_receipt
 from codey.run_ledger import RunLedgerStore, RunLedgerWriter
+from codey.run_ledger_projection import (
+    load_run_projection,
+    receipt_from_projection_if_compatible,
+)
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
 from codey.review_coordinator import ReviewCoordinator, change_state
@@ -295,6 +299,26 @@ class TaskRunner:
         self.is_git_repository = is_git_repository or (lambda _project: False)
         self.review_fix_turns = review_fix_turns
         self.review_log_lines = review_log_lines
+
+    def _event_with_projected_receipt(
+        self,
+        event: dict,
+        *,
+        session_id: str,
+        run_id: str,
+    ) -> dict:
+        if not isinstance(event.get("receipt"), dict) or self.run_ledgers is None:
+            return event
+        projection = load_run_projection(self.run_ledgers, session_id, run_id)
+        receipt = receipt_from_projection_if_compatible(
+            projection,
+            event.get("receipt"),
+        )
+        if receipt is None:
+            return event
+        updated = dict(event)
+        updated["receipt"] = receipt.to_dict()
+        return updated
 
     def run(self, request: TaskRequest) -> None:
         state = self.state
@@ -715,7 +739,12 @@ class TaskRunner:
             else:
                 outcome = self._run_chat_mode(frame)
             append_ledger(lambda ledger: ledger.finish(**outcome.event))
-            state.finish_run(run_id, outcome.event)
+            event = self._event_with_projected_receipt(
+                outcome.event,
+                session_id=session_id,
+                run_id=run_id,
+            )
+            state.finish_run(run_id, event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             current_id = current_provider_id()
             state.set_provider_session(current_id, None)
@@ -1455,6 +1484,7 @@ class TaskRunner:
         hooks.append_ledger(
             lambda ledger: ledger.append_changes_collected(
                 task_changes,
+                checks_passed=result.checks_passed,
                 receipt=receipt.to_dict(),
             )
         )

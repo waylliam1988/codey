@@ -4,6 +4,27 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.26 - Ledger Projections v1
+
+- Added `codey/run_ledger_projection.py`, a pure read model over Run Ledger
+  JSONL records. It projects run lifecycle, provider selection/switch/failure,
+  model reply counts, tool counts/errors, observed file edits, verified
+  commands, final change summaries, and completion/truncation state.
+- `changes_collected` now stores `checks_passed` as a top-level bounded fact.
+  Receipt projection uses only `changed_count`, `mode`, and `checks_passed`;
+  it does not read the nested legacy `receipt` dictionary back out of the
+  ledger.
+- `TaskRunner` now shadow-consumes the projection after `run_finished` is
+  appended. Codey adopts the projected receipt only when the ledger is complete,
+  not truncated, has final changes, and the projected `changed_count`,
+  `restore_available`, and `checks_passed` exactly match the legacy receipt.
+  Otherwise it falls back to the existing receipt path.
+- This release does not change UI, checkpoint, restore, `ExecutionEvidence`,
+  Research ledgers, API export, or headless behavior. Projection failures remain
+  fail-open.
+- Added focused projection tests plus TaskRunner coverage that verifies a
+  complete ledger projection is read before the terminal event is published.
+
 ## 0.2.25 - Run Ledger v1
 
 - Added a bounded `Run Ledger`: project coding runs now write an append-only
