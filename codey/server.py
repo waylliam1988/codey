@@ -76,6 +76,7 @@ from codey.self_repair import SelfRepairJob, SelfRepairSupervisor
 from codey.self_repair_worker import run_self_repair_worker
 from codey.project_facts import ProjectFactsStore
 from codey.project_task_context import safe_verification_candidates
+from codey.run_ledger import RunLedgerStore
 from codey.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.setup_context import safe_setup_context
 from codey.work_checkpoint import WorkCheckpointStore
@@ -602,6 +603,7 @@ class State:
         self.work_checkpoints = (
             WorkCheckpointStore(state_home) if state_home else WorkCheckpointStore()
         )
+        self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.provider_supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
         )
@@ -1240,6 +1242,7 @@ def _run_task(
         run_research_advisors=_run_research_advisors,
         project_facts=STATE.project_facts,
         work_checkpoints=STATE.work_checkpoints,
+        run_ledgers=STATE.run_ledgers,
         knowledge_store=STATE.knowledge_store,
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,

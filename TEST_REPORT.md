@@ -1,5 +1,73 @@
 # Codey Test Report
 
+## 0.2.25 Run Ledger v1
+
+Codey 0.2.25 adds an observe-only project run ledger. It gives project coding
+runs a bounded append-only JSONL fact stream without changing `agent.py`, the
+web-model JSON tool protocol, UI/SSE events, receipts, checkpoints, restore, or
+Research execution.
+
+Production changes:
+
+- New `codey/run_ledger.py` defines `RunLedgerStore` and `RunLedgerWriter`.
+  Ledgers are stored below `state_home / "run_ledgers" / session_key /
+  "<run_id>.jsonl"` and every row carries `schema_version`, `seq`, `ts`,
+  `run_id`, and `session_id`.
+- Ledger events include `run_started`, `provider_selected`, `model_reply`,
+  `tool_started`, `tool_finished`, `file_changed`, `command_verified`,
+  `changes_collected`, `provider_failure`, `provider_switched`,
+  `ledger_truncated`, and `run_finished`.
+- `model_reply` stores reply length and a bounded note, never the full model
+  reply. Tool results store a bounded first line, never full source files,
+  full shell output, browser DOM, or webpage text.
+- The byte budget is derived from semantic constants:
+  `MAX_LEDGER_EVENTS * LEDGER_BYTES_PER_EVENT_BUDGET` (currently about
+  512 KiB). If the budget is exceeded, Codey writes one `ledger_truncated`
+  event and disables further appends for that run. Other write failures fail
+  open and do not break the task.
+- `TaskRunner` opens the ledger for project/hybrid runs and projects existing
+  facts into it. Hybrid runs may leave a lifecycle-only ledger when Research
+  fails before the Project Writer phase; Research tool events are intentionally
+  not part of 0.2.25.
+- Terminal error paths append a bounded `provider_failure` event before
+  `run_finished`, so ledger readers do not need to parse `task_done` to recover
+  the provider diagnostic.
+- `server.State()` without a durable `state_home` disables run ledgers. The
+  production app still passes `DEFAULT_STATE_HOME`, while tests and embedded
+  callers using bare `State()` do not write project-run ledgers into a real
+  user `~/.codey` directory.
+
+Validation:
+
+```text
+python -m unittest tests.test_run_ledger
+# 9 passed
+
+python -m unittest tests.test_work_checkpoint_flow
+# 15 passed
+
+python -m unittest tests.test_server.TaskRunnerUiEventTests
+# 3 passed
+
+python -m unittest tests.test_server.SessionThreadingTests.test_run_task_reads_empty_file_without_error_or_legacy_log_event tests.test_server.SessionThreadingTests.test_shell_request_includes_risk_explanation tests.test_server.SessionThreadingTests.test_run_task_emits_receipt_and_inline_changes tests.test_server.SessionThreadingTests.test_run_task_emits_provider_failure_diagnostic_on_error
+# 4 passed
+
+python -m pytest tests\test_run_ledger.py tests\test_server.py -q
+# 137 passed, 1 skipped, 1 pytest cache warning
+
+python -m pytest -q
+# 1416 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\run_ledger.py codey\task_runner.py codey\server.py codey\__init__.py
+# passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.24 Coding Current Context
 
 Codey 0.2.24 adds a thin coding read-model prompt after local tool results.

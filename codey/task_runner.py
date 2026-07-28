@@ -39,6 +39,7 @@ from codey.providers import PROVIDER_LABELS
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
 from codey.receipt import build_task_receipt
+from codey.run_ledger import RunLedgerStore, RunLedgerWriter
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
 from codey.review_coordinator import ReviewCoordinator, change_state
@@ -97,6 +98,8 @@ class _RunWork:
     recent_events: list[str]
     evidence: ExecutionEvidence
     work_checkpoint: WorkCheckpoint | None = None
+    ledger: RunLedgerWriter | None = None
+    record_agent_events_in_ledger: bool = False
 
 
 @dataclass(frozen=True)
@@ -108,6 +111,7 @@ class _RunHooks:
         None,
     ]
     record_provider_failure: Callable[[str, ProviderFailure], None]
+    append_ledger: Callable[[Callable[[RunLedgerWriter], None]], None]
     provider_failover_order: Callable[[], tuple[str, ...]]
     supervisor: Any | None
 
@@ -268,6 +272,7 @@ class TaskRunner:
         run_research_advisors: Callable | None = None,
         project_facts: ProjectFactsStore | None = None,
         work_checkpoints: WorkCheckpointStore | None = None,
+        run_ledgers: RunLedgerStore | None = None,
         knowledge_store: KnowledgeStore | None = None,
         search_factory: Callable[[], object] | None = None,
         is_git_repository: Callable[[str | Path], bool] | None = None,
@@ -284,6 +289,7 @@ class TaskRunner:
         self.capture_provider_failure = capture_provider_failure
         self.project_facts = project_facts
         self.work_checkpoints = work_checkpoints
+        self.run_ledgers = run_ledgers
         self.knowledge_store = knowledge_store
         self.search_factory = search_factory or BrowserSearchProvider
         self.is_git_repository = is_git_repository or (lambda _project: False)
@@ -336,8 +342,44 @@ class TaskRunner:
         })
 
         work = _RunWork(recent_events=[], evidence=ExecutionEvidence())
+        if project and task_kind in {"project", "hybrid"} and self.run_ledgers is not None:
+            try:
+                work.ledger = self.run_ledgers.open(
+                    run_id=run_id,
+                    session_id=session_id,
+                    project=project,
+                    task=task,
+                    provider=provider_id,
+                    mode=_ui_mode(task_kind, project),
+                )
+                work.record_agent_events_in_ledger = task_kind == "project"
+            except Exception:
+                work.ledger = None
         frame: _RunFrame | None = None
         provider: Any | None = None
+        logged_provider_failures: set[tuple[str, str, str, str]] = set()
+
+        def append_ledger(action: Callable[[RunLedgerWriter], None]) -> None:
+            if work.ledger is None:
+                return
+            try:
+                action(work.ledger)
+            except Exception:
+                work.ledger = None
+
+        def append_ledger_provider_failure(pid: str, failure: ProviderFailure) -> None:
+            key = (
+                str(pid),
+                str(getattr(failure, "action", "")),
+                str(getattr(failure, "kind", "")),
+                str(getattr(failure, "message", "")),
+            )
+            if key in logged_provider_failures:
+                return
+            logged_provider_failures.add(key)
+            append_ledger(
+                lambda ledger: ledger.append_provider_failure(pid, failure)
+            )
 
         def current_provider_id() -> str:
             return frame.provider_id if frame is not None else provider_id
@@ -359,6 +401,8 @@ class TaskRunner:
                 pass
 
         def on_event(event: RunEvent) -> None:
+            if work.record_agent_events_in_ledger:
+                append_ledger(lambda ledger: ledger.append_run_event(event))
             payload = self._ui_event(run_id, session_id, event)
             if payload is not None:
                 state.emit(payload)
@@ -451,6 +495,7 @@ class TaskRunner:
             self_repair = getattr(state, "self_repair", None)
 
             def record_provider_failure(pid: str, failure: ProviderFailure) -> None:
+                append_ledger_provider_failure(pid, failure)
                 if supervisor is None:
                     return
                 health = supervisor.record_failure(pid, failure)
@@ -478,8 +523,18 @@ class TaskRunner:
                     excluded=(provider_id,),
                 )
                 if replacement_id is not None:
+                    previous_provider_id = provider_id
                     provider_id = replacement_id
                     state.switch_run_provider(run_id, provider_id)
+                    append_ledger(
+                        lambda ledger: ledger.append(
+                            "provider_switched",
+                            from_provider=previous_provider_id,
+                            to_provider=provider_id,
+                            phase="preflight",
+                            reason="unavailable",
+                        )
+                    )
                     preflight_switches = 1
                 else:
                     raise RuntimeError("selected provider is unavailable")
@@ -517,9 +572,19 @@ class TaskRunner:
                     )
                     if replacement_id is None:
                         raise ProviderActionError(failure) from connect_error
+                    previous_provider_id = provider_id
                     provider_id = replacement_id
                     preflight_switches += 1
                     state.switch_run_provider(run_id, provider_id)
+                    append_ledger(
+                        lambda ledger: ledger.append(
+                            "provider_switched",
+                            from_provider=previous_provider_id,
+                            to_provider=provider_id,
+                            phase="connect",
+                            reason="provider_failure",
+                        )
+                    )
                     continue
                 if (
                     supervisor is None
@@ -540,9 +605,19 @@ class TaskRunner:
                 )
                 if replacement_id is None:
                     raise RuntimeError("no healthy provider available after canary failure")
+                previous_provider_id = provider_id
                 provider_id = replacement_id
                 preflight_switches += 1
                 state.switch_run_provider(run_id, provider_id)
+                append_ledger(
+                    lambda ledger: ledger.append(
+                        "provider_switched",
+                        from_provider=previous_provider_id,
+                        to_provider=provider_id,
+                        phase="canary",
+                        reason="provider_failure",
+                    )
+                )
             mode = "research" if task_kind == "research" else ("project" if project else "chat")
             project_text = str(Path(project).expanduser().resolve()) if project else ""
             conversation = state.conversation_for(session_id)
@@ -627,6 +702,7 @@ class TaskRunner:
                 on_shell_request=on_shell_request,
                 update_checkpoint=update_checkpoint,
                 record_provider_failure=record_provider_failure,
+                append_ledger=append_ledger,
                 provider_failover_order=provider_failover_order,
                 supervisor=supervisor,
             )
@@ -638,6 +714,7 @@ class TaskRunner:
                 outcome = self._run_project_mode(frame, work, hooks)
             else:
                 outcome = self._run_chat_mode(frame)
+            append_ledger(lambda ledger: ledger.finish(**outcome.event))
             state.finish_run(run_id, outcome.event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             current_id = current_provider_id()
@@ -656,7 +733,7 @@ class TaskRunner:
                     provider_id=current_id,
                     blocker="stopped",
                 ))
-            state.finish_run(run_id, {
+            stopped_event = {
                 "type": "task_done",
                 "run_id": run_id,
                 "session_id": session_id,
@@ -666,7 +743,9 @@ class TaskRunner:
                 "max_turns": max_turns,
                 "provider": current_id,
                 "provider_failure": None,
-            })
+            }
+            append_ledger(lambda ledger: ledger.finish(**stopped_event))
+            state.finish_run(run_id, stopped_event)
         except Exception as exc:
             current_id = current_provider_id()
             current_item = current_provider()
@@ -695,7 +774,9 @@ class TaskRunner:
                 )
             )
             state.last_provider_failure = failure
-            state.finish_run(run_id, {
+            if failure is not None:
+                append_ledger_provider_failure(current_id, failure)
+            error_event = {
                 "type": "task_done",
                 "run_id": run_id,
                 "session_id": session_id,
@@ -705,7 +786,9 @@ class TaskRunner:
                 "max_turns": max_turns,
                 "provider": current_id,
                 "provider_failure": failure.to_dict() if failure else None,
-            })
+            }
+            append_ledger(lambda ledger: ledger.finish(**error_event))
+            state.finish_run(run_id, error_event)
         finally:
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()
@@ -919,6 +1002,8 @@ class TaskRunner:
         project = request.project
         if project is None:
             raise RuntimeError("project mode requires a project")
+        if work.ledger is not None:
+            work.record_agent_events_in_ledger = True
         context_builder = ProjectTaskContextBuilder(
             project_facts=self.project_facts,
             work_checkpoints=self.work_checkpoints,
@@ -1096,7 +1181,17 @@ class TaskRunner:
             )
 
         def on_writer_switch(next_provider_id: str) -> None:
+            previous_provider_id = frame.provider_id
             state.switch_run_provider(frame.run_id, next_provider_id)
+            hooks.append_ledger(
+                lambda ledger: ledger.append(
+                    "provider_switched",
+                    from_provider=previous_provider_id,
+                    to_provider=next_provider_id,
+                    phase="writer_failover",
+                    reason="provider_failure",
+                )
+            )
             frame.conversation.update_snapshot(replace(
                 frame.conversation.snapshot,
                 provider_id=next_provider_id,
@@ -1356,6 +1451,12 @@ class TaskRunner:
         receipt = build_task_receipt(
             task_changes,
             checks_passed=result.checks_passed,
+        )
+        hooks.append_ledger(
+            lambda ledger: ledger.append_changes_collected(
+                task_changes,
+                receipt=receipt.to_dict(),
+            )
         )
         facts_write_required = (
             self.project_facts is not None

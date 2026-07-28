@@ -4,6 +4,28 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.25 - Run Ledger v1
+
+- 新增有边界的 `Run Ledger`：项目 coding run 现在会在本地 state 目录下写入
+  append-only JSONL 事实账本，记录 `run_started`、`provider_selected`、
+  `model_reply`、`tool_started`、`tool_finished`、`file_changed`、
+  `command_verified`、最终 `changes_collected` 和 `run_finished` 等事件。
+- 这是 observe-only 层：不改 `agent.py` 主循环，不改变网页模型 JSON 协议，
+  不替代 UI/SSE、`ExecutionEvidence`、`WorkCheckpoint`、receipt 或 restore。
+  `TaskRunner` 只是把已经存在的本地事实同步投影进 ledger。
+- Ledger 不保存完整模型回复、完整源码、完整 shell 输出、网页 DOM 或网页正文。
+  `model_reply` 只记录回复字符数和 bounded note；工具结果只保存短首行；长 run
+  仍按现有工具输出规则返回给模型和 UI。
+- Ledger 大小预算从语义常量推导：`MAX_LEDGER_EVENTS * LEDGER_BYTES_PER_EVENT_BUDGET`，
+  当前约 512 KiB。超过预算只写一次 `ledger_truncated` 后停止追加；写入失败会
+  fail-open，不影响正在执行的任务。
+- 终态错误路径现在会在 `run_finished` 前写入 bounded `provider_failure` 事件；
+  `State()` 没有 durable `state_home` 时会禁用 run ledger，避免测试或嵌入场景把
+  project run ledger 写到真实用户 `~/.codey`。
+- 覆盖新增单测和回归：路径逃逸防护、模型回复不落全文、edit/run 事实投影、
+  byte budget 截断、append 失败 fail-open，以及 TaskRunner project run 的端到端
+  ledger 写入。
+
 ## 0.2.24 - Coding Current Context
 
 - Coding 现在会在本地工具结果后追加一段有边界的 `Coding current local

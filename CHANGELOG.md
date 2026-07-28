@@ -4,6 +4,33 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.25 - Run Ledger v1
+
+- Added a bounded `Run Ledger`: project coding runs now write an append-only
+  JSONL fact stream under Codey's local state directory. The first slice records
+  events such as `run_started`, `provider_selected`, `model_reply`,
+  `tool_started`, `tool_finished`, `file_changed`, `command_verified`, final
+  `changes_collected`, and `run_finished`.
+- This is an observe-only layer. It does not change the `agent.py` loop, the web
+  model JSON protocol, UI/SSE events, `ExecutionEvidence`, `WorkCheckpoint`,
+  receipts, or restore. `TaskRunner` only projects already-observed local facts
+  into the ledger.
+- The ledger does not store full model replies, source files, shell output,
+  browser DOM, or webpage text. `model_reply` stores reply length and a bounded
+  note; tool results store a short first line.
+- The ledger byte budget is derived from semantic constants:
+  `MAX_LEDGER_EVENTS * LEDGER_BYTES_PER_EVENT_BUDGET`, currently about
+  512 KiB. When the budget is exceeded, Codey writes one `ledger_truncated`
+  event and stops appending. Ledger write failures fail open and do not break
+  the active task.
+- Terminal error paths now write a bounded `provider_failure` event before
+  `run_finished`. Bare `State()` instances without a durable `state_home`
+  disable run ledgers, so tests and embedded callers do not write project-run
+  ledgers into the real user `~/.codey` directory.
+- Added focused tests for path confinement, bounded model replies, edit/run fact
+  projection, byte-budget truncation, append failure fail-open behavior, and
+  TaskRunner project-run integration.
+
 ## 0.2.24 - Coding Current Context
 
 - Coding now appends a bounded `Coding current local context` block after local
