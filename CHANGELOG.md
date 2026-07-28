@@ -4,6 +4,29 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.27 - ToolDefinition v1
+
+- Added `codey/tool_definition.py` as the single internal metadata source for
+  coding tools. It covers the existing public JSON tool names only:
+  `list_dir`, `read_file`, `read_files`, `grep`, `find_references`, `parallel`,
+  `edit`, `run`, `shell`, and `done`.
+- `JsonToolCodec` now consumes tool definitions for the rendered tool contract,
+  aliases, parallel-safety checks, result tool names, and batch limits. The codec
+  no longer owns or re-exports the tool definition table.
+- `agent.py` now derives supported runtime tool names, information follow-up
+  tool names, repair examples, and tool activity rows from the definition layer.
+  The dispatch loop, schema validation, read-before-edit guard, shell approval,
+  and run allowlist remain unchanged.
+- `edit` declares the `file_changed` ledger fact and `run` declares
+  `command_verified`; tests assert those declarations match Run Ledger v1
+  output. `write` and `write_file` remain unknown tools and still repair toward
+  `edit(content=...)`.
+- Shell tool-start activity now uses the clearer text `Requesting shell approval
+  for ...`; tests lock this intentional visible wording change.
+- This is a small internal refactor, not a plugin system. No Research tools,
+  UI controls, permissions UI, runtime safety gates, checkpoint, restore, or
+  provider behavior changed.
+
 ## 0.2.26 - Ledger Projections v1
 
 - Added `codey/run_ledger_projection.py`, a pure read model over Run Ledger

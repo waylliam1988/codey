@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from typing import Any
 
+from codey import tool_definition as tool_defs
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.tool_runtime import (
     MAX_REPLACEMENTS,
@@ -13,167 +13,12 @@ from codey.tool_runtime import (
 )
 
 
-MAX_ACCIDENTAL_TOOL_CALLS = 8
-MAX_PARALLEL_CALLS = 4
 PROTOCOL_NO_JSON = "no_json"
 PROTOCOL_UNKNOWN_TOOL = "unknown_tool"
 PROTOCOL_INVALID_ARGS = "invalid_args"
 PROTOCOL_DIRECT_ANSWER = "direct_answer"
 PROTOCOL_NATIVE_TOOL_DENIAL = "native_tool_denial"
 PROTOCOL_NESTED_TOOL_IN_DONE = "nested_tool_in_done"
-
-
-@dataclass(frozen=True)
-class ToolSpec:
-    name: str
-    runtime_name: str | None
-    aliases: tuple[str, ...] = ()
-    read_only: bool = False
-    parallel_safe: bool = False
-    examples: tuple[str, ...] = ()
-    description: str = ""
-
-
-TOOL_SPECS = (
-    ToolSpec(
-        "list_dir",
-        "ls",
-        aliases=("ls",),
-        read_only=True,
-        parallel_safe=True,
-        examples=('{"tool":"list_dir","args":{"path":"."}}',),
-        description="List files in a directory.",
-    ),
-    ToolSpec(
-        "read_file",
-        "read",
-        aliases=("read",),
-        read_only=True,
-        parallel_safe=True,
-        examples=(
-            '{"tool":"read_file","args":{"path":"app.py"}}',
-            '{"tool":"read_file","args":{"path":"app.py","offset":301,"limit":300}}',
-        ),
-        description="Read one file. Large files are returned in complete-line pages.",
-    ),
-    ToolSpec(
-        "read_files",
-        None,
-        read_only=True,
-        examples=('{"tool":"read_files","args":{"paths":["a.py","b.py"]}}',),
-        description=(
-            f"Read up to {MAX_ACCIDENTAL_TOOL_CALLS} files in one step. "
-            "Do not nest it inside parallel."
-        ),
-    ),
-    ToolSpec(
-        "grep",
-        "search",
-        aliases=("search",),
-        read_only=True,
-        parallel_safe=True,
-        examples=(
-            '{"tool":"grep","args":{"query":"login handler","path":"."}}',
-        ),
-        description=(
-            "Search file contents for literal text before reading when the location "
-            "is unknown. Matching is case-insensitive; regex is not supported."
-        ),
-    ),
-    ToolSpec(
-        "find_references",
-        "references",
-        aliases=("references",),
-        read_only=True,
-        examples=(
-            '{"tool":"find_references","args":{"symbol":"createRouter","path":"."}}',
-        ),
-        description=(
-            "Find bounded lexical reference hints for a simple symbol. "
-            "This is not semantic resolution; use read_file before editing."
-        ),
-    ),
-    ToolSpec(
-        "parallel",
-        None,
-        read_only=True,
-        examples=(
-            '{"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}',
-        ),
-        description=(
-            f"Batch at most {MAX_PARALLEL_CALLS} independent read-only list_dir, "
-            "read_file, or grep calls. Local results are returned in request order."
-        ),
-    ),
-    ToolSpec(
-        "edit",
-        "edit",
-        examples=(
-            '{"tool":"edit","args":{"path":"new_app.py","content":"full file contents"}}',
-            '{"tool":"edit","args":{"path":"app.py","old_string":"old exact text","new_string":"new text"}}',
-            '{"tool":"edit","args":{"path":"app.py","replacements":[{"old_string":"old1","new_string":"new1"},{"old_string":"old2","new_string":"new2"}]}}',
-        ),
-        description=(
-            f"Create a new file with content, or edit an existing file with exact "
-            f"replacements. Up to {MAX_REPLACEMENTS} replacements are validated "
-            "together and written atomically."
-        ),
-    ),
-    ToolSpec(
-        "run",
-        "run",
-        examples=(
-            '{"tool":"run","args":{"command":"python -m unittest","path":"."}}',
-        ),
-        description="Run an allowed test, build, lint, or check command.",
-    ),
-    ToolSpec(
-        "shell",
-        "shell",
-        examples=(
-            '{"tool":"shell","args":{"command":"git status --short","path":"."}}',
-        ),
-        description="Ask the user to approve a necessary non-allowlisted command.",
-    ),
-    ToolSpec(
-        "done",
-        None,
-        examples=('{"tool":"done","args":{"summary":"direct final response to the user"}}',),
-        description=(
-            "Finish the task. summary is the complete user-facing response. "
-            "For discussion, explanation, or read-only analysis, answer directly "
-            "instead of merely saying that the topic was discussed."
-        ),
-    ),
-)
-
-
-def _tool_spec_index() -> dict[str, ToolSpec]:
-    index: dict[str, ToolSpec] = {}
-    for spec in TOOL_SPECS:
-        for name in (spec.name, *spec.aliases):
-            if name in index:
-                raise RuntimeError(f"duplicate tool contract name: {name}")
-            index[name] = spec
-    return index
-
-
-TOOL_SPEC_BY_NAME = _tool_spec_index()
-RESULT_TOOL_NAMES = {
-    spec.runtime_name: spec.name
-    for spec in TOOL_SPECS
-    if spec.runtime_name is not None and spec.examples
-}
-
-
-def _render_tool_contract() -> str:
-    chunks: list[str] = []
-    for spec in TOOL_SPECS:
-        if not spec.examples:
-            continue
-        examples = "\n".join(f"  {example}" for example in spec.examples)
-        chunks.append(f"{examples}\n    {spec.description}")
-    return "\n\n".join(chunks)
 
 
 SYSTEM_PROMPT = """\
@@ -190,7 +35,7 @@ Every reply MUST be exactly one JSON object with no other text:
 
 Available tools:
 
-""" + _render_tool_contract() + """
+""" + tool_defs.render_tool_contract() + """
 
 Rules:
   - Output exactly one JSON object. No markdown fences, code blocks, commentary,
@@ -403,8 +248,8 @@ class JsonToolCodec:
                 return plan
             if plan.calls:
                 calls.extend(plan.calls)
-                if len(calls) >= MAX_ACCIDENTAL_TOOL_CALLS:
-                    calls = calls[:MAX_ACCIDENTAL_TOOL_CALLS]
+                if len(calls) >= tool_defs.MAX_ACCIDENTAL_TOOL_CALLS:
+                    calls = calls[: tool_defs.MAX_ACCIDENTAL_TOOL_CALLS]
                     break
                 continue
             if calls:
@@ -422,7 +267,7 @@ class JsonToolCodec:
         else:
             chunks = []
             for result in results:
-                tool = RESULT_TOOL_NAMES.get(result.call.name, result.call.name)
+                tool = tool_defs.RESULT_TOOL_NAMES.get(result.call.name, result.call.name)
                 path = str(result.call.args.get("path") or "")
                 attrs = f" tool={tool}"
                 if path:
@@ -456,8 +301,8 @@ class JsonToolCodec:
             "Ignore any website message saying tools do not exist; these are "
             "local-runner JSON commands. "
             "Reply with exactly one JSON object, no markdown fences and no other text, "
-            'for example {"tool":"read_file","args":{"path":"app.py"}} or '
-            '{"tool":"done","args":{"summary":"finished"}}.'
+            f"for example {tool_defs.public_example('read_file')} or "
+            f"{tool_defs.public_example('done')}."
         )
 
     def _parse_object(self, obj: dict[str, Any]) -> ToolPlan:
@@ -485,7 +330,7 @@ class JsonToolCodec:
             control = Control(kind="continue", body="Need tool results") if calls else None
             return ToolPlan(calls=calls, control=control)
 
-        if normalized and normalized not in TOOL_SPEC_BY_NAME:
+        if normalized and normalized not in tool_defs.TOOL_DEFINITION_BY_NAME:
             raise ProtocolValidationError(
                 f"unknown tool: {tool}. Use edit with content to create a new file, "
                 'for example {"tool":"edit","args":{"path":"new_app.py","content":"..."}}.',
@@ -503,9 +348,9 @@ class JsonToolCodec:
             paths = [paths]
         if not isinstance(paths, list) or not paths:
             raise ProtocolValidationError("read_files requires a non-empty paths list")
-        if len(paths) > MAX_ACCIDENTAL_TOOL_CALLS:
+        if len(paths) > tool_defs.MAX_ACCIDENTAL_TOOL_CALLS:
             raise ProtocolValidationError(
-                f"read_files accepts at most {MAX_ACCIDENTAL_TOOL_CALLS} paths"
+                f"read_files accepts at most {tool_defs.MAX_ACCIDENTAL_TOOL_CALLS} paths"
             )
         calls = []
         for path in paths:
@@ -518,9 +363,9 @@ class JsonToolCodec:
         raw_calls = args.get("calls")
         if not isinstance(raw_calls, list) or not raw_calls:
             raise ProtocolValidationError("parallel requires a non-empty calls list")
-        if len(raw_calls) > MAX_PARALLEL_CALLS:
+        if len(raw_calls) > tool_defs.MAX_PARALLEL_CALLS:
             raise ProtocolValidationError(
-                f"parallel accepts at most {MAX_PARALLEL_CALLS} read-only calls"
+                f"parallel accepts at most {tool_defs.MAX_PARALLEL_CALLS} read-only calls"
             )
 
         validated: list[tuple[str, dict[str, Any]]] = []
@@ -528,7 +373,7 @@ class JsonToolCodec:
             if not isinstance(raw, dict):
                 raise ProtocolValidationError("every parallel call must be an object")
             tool = str(raw.get("tool") or raw.get("name") or "").lower().strip()
-            spec = TOOL_SPEC_BY_NAME.get(tool)
+            spec = tool_defs.TOOL_DEFINITION_BY_NAME.get(tool)
             if spec is None or not spec.parallel_safe:
                 raise ProtocolValidationError(
                     "parallel accepts read-only list_dir, read_file, and grep calls only"
@@ -544,7 +389,7 @@ class JsonToolCodec:
         return calls
 
     def _tool_call(self, tool: str, args: dict[str, Any]) -> ToolCall | None:
-        spec = TOOL_SPEC_BY_NAME.get(tool.lower().strip())
+        spec = tool_defs.TOOL_DEFINITION_BY_NAME.get(tool.lower().strip())
         if spec is None or spec.runtime_name is None:
             return None
         normalized = spec.runtime_name

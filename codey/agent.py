@@ -38,6 +38,12 @@ from codey.protocols.json_codec import (
     PROTOCOL_UNKNOWN_TOOL,
     _balanced_json_objects,
 )
+from codey.tool_definition import (
+    INFORMATION_RUNTIME_TOOL_NAMES,
+    SUPPORTED_RUNTIME_TOOL_NAMES,
+    public_example,
+    render_tool_activity,
+)
 from codey.tool_runtime import (
     EditBlock,
     ToolOutcome,
@@ -51,23 +57,8 @@ from codey.verification_policy import (
 
 DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
-SUPPORTED_TOOL_NAMES = frozenset({
-    "edit",
-    "ls",
-    "read",
-    "references",
-    "run",
-    "search",
-    "shell",
-})
-INFORMATION_TOOL_NAMES = frozenset({
-    "ls",
-    "read",
-    "references",
-    "run",
-    "search",
-    "shell",
-})
+SUPPORTED_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES
+INFORMATION_TOOL_NAMES = INFORMATION_RUNTIME_TOOL_NAMES
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
 VERIFICATION_REQUEST_RE = re.compile(
@@ -135,33 +126,6 @@ def _call_arg(call: ToolCall, name: str, default: str = "") -> str:
     if value is None:
         return default
     return str(value)
-
-
-def _clip_activity(value: str, limit: int = 80) -> str:
-    text = " ".join(str(value or "").split())
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3].rstrip() + "..."
-
-
-def _agent_tool_activity(call: ToolCall) -> str:
-    path = _call_arg(call, "path", ".")
-    if call.name == "read":
-        return f"Reading {path}"
-    if call.name == "ls":
-        return f"Listing {path}"
-    if call.name == "search":
-        query = _clip_activity(_call_arg(call, "query"))
-        return f"Searching {path} for {query}" if query else f"Searching {path}"
-    if call.name == "references":
-        symbol = _clip_activity(_call_arg(call, "symbol"))
-        return f"Finding references for {symbol}" if symbol else "Finding references"
-    if call.name == "edit":
-        return f"Writing {path}" if _edit_has_content(call) else f"Editing {path}"
-    if call.name == "run":
-        command = _clip_activity(_call_arg(call, "command"))
-        return f"Running {command}" if command else "Running command"
-    return f"Using {call.name}"
 
 
 def _edit_blocks_from_call(call: ToolCall) -> list[EditBlock]:
@@ -269,7 +233,7 @@ def _protocol_repair_prompt(
                 "Use only the coding JSON tools listed in the system prompt.",
                 "",
                 "Example:",
-                '{"tool":"read_file","args":{"path":"app.py"}}',
+                public_example("read_file"),
             ))
     elif kind == PROTOCOL_INVALID_ARGS:
         lines.extend(_invalid_args_repair_lines(error, previous))
@@ -288,7 +252,7 @@ def _protocol_repair_prompt(
             "These are local-runner JSON commands; the local runner executes them after you reply.",
             "",
             "Example:",
-            '{"tool":"read_file","args":{"path":"app.py"}}',
+            public_example("read_file"),
         ))
     elif kind == PROTOCOL_NESTED_TOOL_IN_DONE:
         example = _nested_tool_repair_example(previous)
@@ -302,14 +266,14 @@ def _protocol_repair_prompt(
             lines.extend((
                 "",
                 "Example:",
-                '{"tool":"run","args":{"command":"python -m unittest","path":"."}}',
+                public_example("run"),
             ))
     elif kind == PROTOCOL_NO_JSON:
         lines.extend((
             "Reply with a JSON tool call, not prose.",
             "",
             "Example:",
-            '{"tool":"read_file","args":{"path":"app.py"}}',
+            public_example("read_file"),
         ))
     else:
         lines.append(codec.repair_prompt())
@@ -371,42 +335,42 @@ def _invalid_args_repair_lines(
             "read_files requires a non-empty paths list.",
             "",
             "Example:",
-            '{"tool":"read_files","args":{"paths":["a.py","b.py"]}}',
+            public_example("read_files"),
         ]
     if "parallel" in folded:
         return [
             "parallel accepts only read-only list_dir, read_file, and grep calls.",
             "",
             "Example:",
-            '{"tool":"parallel","args":{"calls":[{"tool":"grep","args":{"query":"login","path":"."}},{"tool":"list_dir","args":{"path":"."}}]}}',
+            public_example("parallel"),
         ]
     if "grep requires a query" in folded:
         return [
             "grep requires a non-empty query.",
             "",
             "Example:",
-            '{"tool":"grep","args":{"query":"login handler","path":"."}}',
+            public_example("grep"),
         ]
     if "find_references requires a symbol" in folded:
         return [
             "find_references requires a symbol.",
             "",
             "Example:",
-            '{"tool":"find_references","args":{"symbol":"createRouter","path":"."}}',
+            public_example("find_references"),
         ]
     if "requires a command" in folded:
         return [
             "run and shell require a command string.",
             "",
             "Example:",
-            '{"tool":"run","args":{"command":"python -m unittest","path":"."}}',
+            public_example("run"),
         ]
     return [
         "The tool name was recognized, but its arguments do not match the coding schema.",
         "Use one valid JSON shape from the tool contract.",
         "",
         "Example:",
-        '{"tool":"read_file","args":{"path":"app.py"}}',
+        public_example("read_file"),
     ]
 
 
@@ -847,7 +811,7 @@ def run(
                     emit(RunEvent.tool_started(
                         turn,
                         call,
-                        _agent_tool_activity(call),
+                        render_tool_activity(call),
                         index=tool_index,
                     ))
                 if call.name == "edit":

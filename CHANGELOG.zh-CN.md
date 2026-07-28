@@ -4,6 +4,26 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.27 - ToolDefinition v1
+
+- 新增 `codey/tool_definition.py`，作为 coding tools 的唯一内部元数据来源。
+  第一版只覆盖现有公开 JSON 工具名：`list_dir`、`read_file`、`read_files`、
+  `grep`、`find_references`、`parallel`、`edit`、`run`、`shell` 和 `done`。
+- `JsonToolCodec` 现在从 tool definition 读取工具契约渲染、alias、
+  parallel-safe 判断、tool result 公共名称和 batch 限制。Codec 不再拥有或
+  re-export 工具定义表。
+- `agent.py` 现在从 definition 层派生 supported runtime tool names、需要
+  follow-up 的 information tools、repair 示例和 tool activity 行。实际 dispatch
+  loop、schema validation、read-before-edit guard、shell approval 和 run allowlist
+  都保持不变。
+- `edit` 声明 `file_changed` ledger fact，`run` 声明 `command_verified`；测试会
+  确认这些声明和 Run Ledger v1 实际事件一致。`write`、`write_file` 仍然是
+  unknown tool，并继续通过 repair prompt 引导到 `edit(content=...)`。
+- Shell tool-start activity 现在使用更清楚的 `Requesting shell approval for ...`
+  文案；测试会锁住这个有意的可见文案变化。
+- 这是小型内部重构，不是插件系统。不迁移 Research tools，不改 UI 控件、
+  permission UI、runtime 安全守门、checkpoint、restore 或 provider 行为。
+
 ## 0.2.26 - Ledger Projections v1
 
 - 新增 `codey/run_ledger_projection.py`：对 Run Ledger JSONL 记录做纯只读投影，

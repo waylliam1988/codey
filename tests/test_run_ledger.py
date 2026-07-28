@@ -21,6 +21,7 @@ from codey.run_ledger_projection import (
     load_run_projection,
     receipt_from_projection_if_compatible,
 )
+from codey.tool_definition import TOOL_DEFINITION_BY_NAME
 from codey.tool_runtime import ToolOutcome
 
 
@@ -83,6 +84,8 @@ class RunLedgerStoreTests(unittest.TestCase):
             changed = next(item for item in rows if item["type"] == "file_changed")
             verified = next(item for item in rows if item["type"] == "command_verified")
 
+            self.assertIn(changed["type"], TOOL_DEFINITION_BY_NAME["edit"].output_facts)
+            self.assertIn(verified["type"], TOOL_DEFINITION_BY_NAME["run"].output_facts)
             self.assertEqual(changed["path"], "app.py")
             self.assertEqual(verified["command"], "python -m pytest -q")
             self.assertEqual(verified["cwd"], ".")

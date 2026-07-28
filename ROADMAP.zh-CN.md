@@ -143,59 +143,84 @@ projection complete、ledger 未截断、有 final changes，且 projected recei
 
 ## 0.2.27 - ToolDefinition v1
 
+状态：第一版已落地为内部工具元数据层，并让 JSON codec 与 agent activity 读取同一份定义。
+
 ### 做什么
 
-把 coding tools 的契约收拢成内部 `ToolDefinition`，先覆盖现有核心工具：
+新增 `tool_definition.py`，把 coding JSON tools 的元数据集中到一个内部定义层。第一版只覆盖现有公开协议名，不新增工具名：
 
 ```text
+list_dir
 read_file
-edit_file
-write_file
-list_directory
-search_files
+read_files
+grep
 find_references
-run_command
+parallel
+edit
+run
+shell
 done
+```
+
+Runtime tool names 保持现状：
+
+```text
+ls
+read
+search
+references
+edit
+run
+shell
 ```
 
 每个工具定义包含：
 
 ```text
 name
-schema
+runtime_name
+aliases
+read_only
+parallel_safe
 permission
-output_projection
+examples
+description
+output_facts
 render_hint
 repair_hint
 ```
 
-这只是内部对象，不是插件系统。
+`JsonToolCodec` 现在从 definition 层读取工具契约、alias、parallel-safe、result tool names 和 batch limit；`agent.py` 从 definition 层派生 supported runtime names、information follow-up names、repair 示例和 tool activity 行。`json_codec.py` 不再拥有或 re-export 工具定义表。
 
 ### 为什么做
 
-Codey 现在已经有工具 runtime、JSON codec、typed repair、shell risk、UI tool line，但“工具是什么”仍然分散。ToolDefinition 让同一份工具契约同时服务协议提示、参数校验、权限判断、ledger 事件、UI 渲染和 repair prompt。
+Codey 现在已经有工具 runtime、JSON codec、typed repair、shell risk、Run Ledger 和 UI tool line，但“工具是什么”曾经主要藏在 codec 里。ToolDefinition v1 让工具元数据成为一等对象，同时不把 Codey 做成插件平台。
 
 ### 对 Codey 的好处
 
-- 新增或修改工具时，不必同时记得改 prompt、parser、UI、测试和权限说明。
-- typed repair 可以从工具定义生成更一致的示例。
-- ledger 里的工具事件可以带稳定 tool kind 和输出投影。
-- UI tool line 可以少解析散落字段。
-- 后续 ContextSource 和 permission profile 可以按工具定义组合。
+- 新增或修改工具时，工具名、alias、示例、parallel/read-only、权限描述和输出事实不再散落。
+- typed repair 和 system prompt 可以复用同一批公共示例。
+- agent 的 tool activity 行不再手写另一份工具分类。
+- Run Ledger 能用测试锁住 `edit -> file_changed`、`run -> command_verified` 的声明一致性。
+- 后续 permission profile、ContextSource、Provider Capability 可以围绕同一份工具定义扩展。
 
 ### 验收标准
 
-- coding tools 都有内部定义。
-- 现有 JSON tool protocol 对模型保持兼容。
-- 现有 `run` whitelist 和 read-before-edit guard 不被放宽。
-- tests 能覆盖工具 schema、错误 repair 和 tool event payload。
+- `tool_definition.py` 是唯一工具定义来源；codec 和测试都从它读取定义。
+- `write` / `write_file` 仍然是 unknown tool，并继续 repair 到 `edit(content=...)`。
+- 现有 JSON prompt contract fixture 不变，examples 全部能 parse。
+- `parallel_safe` 必须同时是 `read_only`。
+- runtime names 仍等于 agent 支持的工具集合。
+- `edit` 和 `run` 的 `output_facts` 与 Run Ledger v1 实际事件一致。
+- 现有 `JsonToolCodec._tool_call()` schema validation、read-before-edit guard、run allowlist、shell approval 都不被接管或放宽。
 
 ### 暂不做
 
 - 不开放第三方工具。
 - 不做插件市场。
 - 不把工具定义暴露到主 UI。
-- 暂不迁移 Research tools。
+- 不迁移 Research tools。
+- 不让 ToolDefinition 接管 schema validation 或 runtime dispatch。
 
 ## 0.2.28 - ContextSource v1
 

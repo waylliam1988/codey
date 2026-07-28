@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.26-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.27-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.26`
+版本：`0.2.27`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -542,6 +542,7 @@ codey/
   text_budget.py            有上限的命令输出头尾截取
   bounded_scan.py           共享的有边界本地文件遍历
   scan_report.py            紧凑的扫描遗漏事实和覆盖范围渲染
+  tool_definition.py        内部 coding 工具元数据和渲染提示
   tool_runtime.py           本地工具和结构化执行结果
   execution_evidence.py     有边界的内存执行证据账本
   run_ledger.py             append-only 项目任务运行事实账本

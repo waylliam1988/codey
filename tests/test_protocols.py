@@ -8,18 +8,20 @@ from codey.agent import SUPPORTED_TOOL_NAMES
 from codey.models import ToolCall, ToolResult
 from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import (
-    MAX_ACCIDENTAL_TOOL_CALLS,
-    MAX_PARALLEL_CALLS,
     PROTOCOL_DIRECT_ANSWER,
     PROTOCOL_INVALID_ARGS,
     PROTOCOL_NATIVE_TOOL_DENIAL,
     PROTOCOL_NESTED_TOOL_IN_DONE,
     PROTOCOL_NO_JSON,
     PROTOCOL_UNKNOWN_TOOL,
+)
+from codey.tool_definition import (
+    MAX_ACCIDENTAL_TOOL_CALLS,
+    MAX_PARALLEL_CALLS,
     RESULT_TOOL_NAMES,
-    TOOL_SPECS,
-    TOOL_SPEC_BY_NAME,
-    _render_tool_contract,
+    TOOL_DEFINITIONS,
+    TOOL_DEFINITION_BY_NAME,
+    render_tool_contract,
 )
 from codey.tool_runtime import MAX_REPLACEMENTS, READ_MAX_LINES
 
@@ -29,7 +31,7 @@ CONTRACT_FIXTURE = Path(__file__).parent / "fixtures" / "json_tool_contract.txt"
 
 def _canonical_tool_contract() -> str:
     lines = ["# Canonical JSON Tool Contract", ""]
-    for index, spec in enumerate(TOOL_SPECS, start=1):
+    for index, spec in enumerate(TOOL_DEFINITIONS, start=1):
         lines.extend((
             f"[{index}] {spec.name}",
             f"runtime_name: {spec.runtime_name or '-'}",
@@ -43,7 +45,7 @@ def _canonical_tool_contract() -> str:
         if not spec.examples:
             lines.append("-")
         lines.append("")
-    lines.extend(("--- rendered prompt contract ---", _render_tool_contract(), ""))
+    lines.extend(("--- rendered prompt contract ---", render_tool_contract(), ""))
     return "\n".join(lines)
 
 
@@ -458,11 +460,11 @@ class JsonToolCodecTests(unittest.TestCase):
 
     def test_tool_contract_names_and_examples_stay_in_sync(self) -> None:
         codec = JsonToolCodec()
-        names = [name for spec in TOOL_SPECS for name in (spec.name, *spec.aliases)]
+        names = [name for spec in TOOL_DEFINITIONS for name in (spec.name, *spec.aliases)]
 
         self.assertEqual(len(names), len(set(names)))
-        self.assertEqual(set(names), set(TOOL_SPEC_BY_NAME))
-        for spec in TOOL_SPECS:
+        self.assertEqual(set(names), set(TOOL_DEFINITION_BY_NAME))
+        for spec in TOOL_DEFINITIONS:
             self.assertFalse(spec.parallel_safe and not spec.read_only)
             for example in spec.examples:
                 with self.subTest(tool=spec.name, example=example):
@@ -473,7 +475,7 @@ class JsonToolCodecTests(unittest.TestCase):
     def test_tool_contract_runtime_names_match_agent_and_results(self) -> None:
         runtime_names = {
             spec.runtime_name
-            for spec in TOOL_SPECS
+            for spec in TOOL_DEFINITIONS
             if spec.runtime_name is not None
         }
 

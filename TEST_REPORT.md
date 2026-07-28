@@ -1,5 +1,62 @@
 # Codey Test Report
 
+## 0.2.27 ToolDefinition v1
+
+Codey 0.2.27 extracts the existing coding tool metadata out of
+`codey/protocols/json_codec.py` and into `codey/tool_definition.py`. This is a
+small architecture refactor, not a new tool system: public JSON tool names,
+runtime tool names, schema validation, dispatch, read-before-edit, shell
+approval, and the run allowlist remain unchanged.
+
+0.2.26 proof boundary:
+
+- `run_ledger_projection.py` is still a pure read model.
+- The only production projection consumer remains the terminal receipt
+  shadow-consume path in `TaskRunner._event_with_projected_receipt()`.
+- `WorkCheckpointStore`, checkpoint prompt rendering, checkpoint resume, and
+  restore paths still use the existing checkpoint/change tracker systems. The
+  0.2.26 projection tests prove conservative receipt adoption, not ledger-based
+  checkpoint recovery.
+
+Production changes:
+
+- New `codey/tool_definition.py` defines `ToolDefinition` and the only coding
+  tool metadata table. It covers the existing tools: `list_dir`, `read_file`,
+  `read_files`, `grep`, `find_references`, `parallel`, `edit`, `run`, `shell`,
+  and `done`.
+- `JsonToolCodec` now consumes the definition layer for the prompt contract,
+  aliases, parallel-safety checks, result tool names, and batch limits. It no
+  longer owns or re-exports the tool definition table.
+- `agent.py` derives supported runtime tools, information follow-up tools,
+  repair examples, and tool activity rows from the definition layer.
+- `edit` declares `file_changed` and `run` declares `command_verified`, the
+  only extra Run Ledger v1 facts currently declared by tool definitions. Tests
+  assert those declarations match Run Ledger events. `write` and `write_file`
+  remain unknown tools.
+- Shell tool-start activity now renders as `Requesting shell approval for ...`;
+  tests lock that intentional visible wording change.
+- Existing schema validation stays in `JsonToolCodec._tool_call()`, and runtime
+  safety stays in `tool_runtime.py`.
+
+Validation:
+
+```text
+python -m pytest tests\test_tool_definition.py tests\test_protocols.py tests\test_agent.py tests\test_run_ledger.py -q
+# 149 passed, 2 skipped, 1 pytest cache warning, 44 subtests passed
+
+python -m unittest tests.test_work_checkpoint_flow
+# 15 passed
+
+python -m pytest -q
+# 1428 passed, 8 skipped, 1 pytest cache warning, 131 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\tool_definition.py codey\protocols\json_codec.py codey\agent.py codey\run_ledger.py codey\__init__.py
+# passed
+```
+
 ## 0.2.26 Ledger Projections v1
 
 Codey 0.2.26 adds a read-only projection layer over project Run Ledgers. It

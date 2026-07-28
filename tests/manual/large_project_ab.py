@@ -24,7 +24,8 @@ if str(ROOT) not in sys.path:
 from codey import provider_controls
 from codey.agent import run
 from codey.agent_tools import AgentToolFns
-from codey.protocols.json_codec import JsonToolCodec, SYSTEM_PROMPT, TOOL_SPEC_BY_NAME
+from codey.protocols.json_codec import JsonToolCodec, SYSTEM_PROMPT
+from codey.tool_definition import TOOL_DEFINITION_BY_NAME
 from codey.providers.registry import connect_provider
 from codey.tool_runtime import ToolOutcome
 from tests.manual.project_task_context import render_production_project_map
@@ -72,7 +73,7 @@ def baseline_prompt() -> str:
     """Render the pre-navigation contract without maintaining a second prompt."""
     prompt = SYSTEM_PROMPT
     for name in NAVIGATION_TOOLS:
-        spec = TOOL_SPEC_BY_NAME[name]
+        spec = TOOL_DEFINITION_BY_NAME[name]
         examples = "\n".join(f"  {example}" for example in spec.examples)
         prompt = prompt.replace(f"{examples}\n    {spec.description}\n\n", "")
     prompt = prompt.replace(
