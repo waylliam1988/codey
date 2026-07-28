@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable, Protocol
 
 from codey import cancellation
+from codey.coding_context import CodingContext, render_coding_context
 from codey.events import RunEvent, print_run_event
 from codey.agent_tools import (
     DEFAULT_TOOL_FNS,
@@ -586,6 +587,7 @@ def run(
     ] | None = None,
     verification_changed_files: tuple[str, ...] = (),
     verification_successful_checks: tuple[VerificationCandidate, ...] = (),
+    coding_context_enabled: bool = True,
     tool_fns: AgentToolFns | None = None,
 ) -> RunResult:
     project = project.resolve()
@@ -601,6 +603,7 @@ def run(
     changed_files = set(conversation.snapshot.changed_files if conversation else ())
     changed_files.update(verification_changed_files)
     verification_paths = set(verification_changed_files)
+    read_file_paths: set[str] = set()
     known_file_paths: set[str] = set()
     verification_required = _task_requests_verification(user_task)
     edit_epoch = 0
@@ -716,6 +719,61 @@ def run(
             conversation.record_exchange(prompt, reply_text, snapshot())
         return reply_text
 
+    def ensure_verification_candidates() -> tuple[VerificationCandidate, ...]:
+        nonlocal verification_candidates
+        nonlocal verification_candidates_epoch
+        if (
+            verification_candidate_loader is not None
+            and verification_paths
+            and verification_candidates_epoch != edit_epoch
+        ):
+            try:
+                verification_candidates = verification_candidate_loader()
+            except (OSError, TypeError, ValueError):
+                verification_candidates = ()
+            verification_candidates_epoch = edit_epoch
+        return verification_candidates
+
+    def selected_verification_candidate() -> VerificationCandidate | None:
+        if not verification_paths:
+            return None
+        return select_verification_candidate(
+            ensure_verification_candidates(),
+            tuple(verification_paths),
+        )
+
+    def verification_is_fresh(candidate: VerificationCandidate | None) -> bool:
+        return candidate is not None and any(
+            epoch == edit_epoch
+            and check_covers_selected_candidate(
+                candidate,
+                command,
+                cwd,
+                tuple(verification_paths),
+            )
+            for command, cwd, epoch in successful_verifications
+        )
+
+    def current_coding_context() -> str:
+        if not coding_context_enabled:
+            return ""
+        candidate = selected_verification_candidate()
+        return render_coding_context(
+            CodingContext(
+                read_files=tuple(sorted(read_file_paths)),
+                edit_eligible_files=tuple(sorted(known_file_paths)),
+                changed_files=tuple(sorted(verification_paths)),
+                selected_verification=candidate,
+                verification_fresh=verification_is_fresh(candidate),
+            )
+        )
+
+    def append_coding_context(prompt: str) -> str:
+        context = current_coding_context()
+        if not context:
+            return prompt
+        return f"{prompt}\n\n{context}"
+
     if fresh_chat:
         opened_fresh_chat = open_fresh_chat()
         intro = project_intro(user_task, handoff)
@@ -772,7 +830,9 @@ def run(
                 ToolResult(call=call, output=out, truncated=outcome.truncated)
             )
             if call.name == "read" and outcome.ok:
-                known_file_paths.add(_canonical_project_path(project, path))
+                canonical = _canonical_project_path(project, path)
+                read_file_paths.add(canonical)
+                known_file_paths.add(canonical)
             produced_information = outcome.ok or outcome.exit_code is not None
             if call.name in INFORMATION_TOOL_NAMES and produced_information:
                 sig = (call.name, path, out)
@@ -922,30 +982,8 @@ def run(
                 report_reply(turn + 1, reply, "(verification reminder)")
                 continue
             else:
-                if (
-                    verification_candidate_loader is not None
-                    and verification_paths
-                    and verification_candidates_epoch != edit_epoch
-                ):
-                    try:
-                        verification_candidates = verification_candidate_loader()
-                    except (OSError, TypeError, ValueError):
-                        verification_candidates = ()
-                    verification_candidates_epoch = edit_epoch
-                candidate = select_verification_candidate(
-                    verification_candidates,
-                    tuple(verification_paths),
-                )
-                trusted_green = candidate is not None and any(
-                    epoch == edit_epoch
-                    and check_covers_selected_candidate(
-                        candidate,
-                        command,
-                        cwd,
-                        tuple(verification_paths),
-                    )
-                    for command, cwd, epoch in successful_verifications
-                )
+                candidate = selected_verification_candidate()
+                trusted_green = verification_is_fresh(candidate)
                 if candidate is not None:
                     checks_passed = trusted_green
                 if (
@@ -982,7 +1020,7 @@ def run(
             emit(RunEvent.status(f"[agent] hit max_turns={max_turns}, stopping."))
             return finish(control.body or f"hit max_turns={max_turns}", "max_turns", turn)
 
-        next_prompt = codec.format_results(results)
+        next_prompt = append_coding_context(codec.format_results(results))
         reply = send_prompt(
             next_prompt,
             restart_request=(

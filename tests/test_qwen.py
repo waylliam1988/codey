@@ -403,7 +403,7 @@ class QwenDriverTests(unittest.TestCase):
 
         with (
             mock.patch.object(qwen, "_fill_message", side_effect=["hello ", "hello "]) as fill,
-            mock.patch.object(qwen, "_composer_retains_text", side_effect=[False, True]),
+            mock.patch.object(qwen, "_composer_accepts_submission", side_effect=[False, True]),
             mock.patch.object(qwen.cancellation, "wait") as wait,
         ):
             submitted_text = qwen._fill_message_until_stable(page, textarea, "hello")
@@ -418,27 +418,50 @@ class QwenDriverTests(unittest.TestCase):
 
         with (
             mock.patch.object(qwen, "_fill_message", return_value="hello "),
-            mock.patch.object(qwen, "_composer_retains_text", return_value=False),
+            mock.patch.object(qwen, "_composer_accepts_submission", return_value=False),
             mock.patch.object(qwen.cancellation, "wait"),
         ):
             with self.assertRaisesRegex(ControlMissing, "did not keep"):
                 qwen._fill_message_until_stable(page, textarea, "hello")
 
-    def test_composer_retains_text_requires_stable_text_across_settle_ticks(self) -> None:
+    def test_composer_accepts_submission_requires_enabled_send_button(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+        send = mock.Mock()
+
+        with (
+            mock.patch.object(qwen.controls, "control_has_text", return_value=True),
+            mock.patch.object(qwen, "_send_button", side_effect=[None, send, send]) as send_button,
+            mock.patch.object(qwen.cancellation, "wait") as wait,
+        ):
+            accepted = qwen._composer_accepts_submission(
+                page,
+                textarea,
+                "hello ",
+                settle_time=qwen.COMPOSER_SETTLE_TICK * 2,
+            )
+
+        self.assertTrue(accepted)
+        self.assertEqual(send_button.call_count, 3)
+        self.assertEqual(wait.call_count, 2)
+
+    def test_composer_accepts_submission_rejects_late_hydration_clear(self) -> None:
+        page = mock.Mock()
         textarea = mock.Mock()
 
         with (
-            mock.patch.object(qwen.controls, "control_has_text", side_effect=[True, True, False]),
-            mock.patch.object(qwen.cancellation, "wait") as wait,
+            mock.patch.object(qwen.controls, "control_has_text", side_effect=[True, False]),
+            mock.patch.object(qwen, "_send_button", return_value=mock.Mock()),
+            mock.patch.object(qwen.cancellation, "wait"),
         ):
-            retained = qwen._composer_retains_text(
+            accepted = qwen._composer_accepts_submission(
+                page,
                 textarea,
                 "hello ",
-                settle_time=qwen.COMPOSER_SETTLE_TICK * 3,
+                settle_time=qwen.COMPOSER_SETTLE_TICK * 2,
             )
 
-        self.assertFalse(retained)
-        self.assertEqual(wait.call_count, 2)
+        self.assertFalse(accepted)
 
     def test_submit_confirms_that_qwen_accepted_message(self) -> None:
         page = mock.Mock()

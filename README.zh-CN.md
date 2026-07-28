@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.23-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.24-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.23`
+版本：`0.2.24`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -25,6 +25,8 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 - **使用你已经登录的网页 AI**：支持 DeepSeek、MiMo、StepFun、Qwen 和 GLM。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存证据笔记、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
 - **代码留在本机**：模型只能访问你选择的项目目录。
+- **写代码时不容易忘事**：每次本地工具结果后，Codey 会提醒模型已经读过哪些
+  文件、改了哪些文件，以及当前最该跑哪条验证命令。
 - **把研究带进项目**：研究结束后选择项目文件夹，Codey 只把带引用和限制条件的有边界 Research Brief 注入 Writer，不把整个 vault 塞进去。
 - **受控工具循环**：读取、编辑、测试、diff、Review 和 Restore 都有边界。
 - **可选本地模型**：`Local` 可以连接 OpenAI-compatible endpoint，并支持可选 API key。

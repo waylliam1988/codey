@@ -4,6 +4,32 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.24 - Coding Current Context
+
+- Coding now appends a bounded `Coding current local context` block after local
+  tool results. It tells the web model which files were read this run, which
+  existing files are eligible for exact edits, which changed files still need
+  verification or are already covered, and the selected verification command
+  when the current changes are not yet verified.
+- The context is intentionally advisory. It is not an allowed-tools gate, not a
+  hard state machine, and it does not change coding's existing multiple
+  top-level-JSON compatibility behavior. Protocol repair prompts stay short and
+  do not include the context block.
+- Verification candidates are refreshed once after edits before the next tool
+  prompt is sent, so the suggested check can appear before the model tries to
+  finish. "Verified" is shown only when a successful run covers the currently
+  selected candidate after the latest edit; once fresh, the context stops
+  showing runnable verification JSON to avoid redundant check loops.
+- Qwen submission handling now waits for both retained composer text and an
+  enabled send button. This fixes a live A/B failure mode where Codey typed
+  into Qwen before late page hydration finished, then the page cleared the
+  composer and the send failed.
+- Production-like live A/B on already-open provider tabs supported the change:
+  DeepSeek, MiMo, and Qwen all kept success at `2/2`, while the context arm
+  removed the generic default-verification reminder turns (`DeepSeek -2`,
+  `MiMo -1`, `Qwen -2`) and finished in fewer turns. Prompt text increased by
+  roughly 2K characters across two cases per provider.
+
 ## 0.2.23 - Coding Protocol Typed Repairs
 
 - Coding JSON protocol errors now carry typed `protocol_error_kind` values for

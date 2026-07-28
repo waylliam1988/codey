@@ -1,5 +1,95 @@
 # Codey Test Report
 
+## 0.2.24 Coding Current Context
+
+Codey 0.2.24 adds a thin coding read-model prompt after local tool results.
+It surfaces current local facts to the web model -- files read this run,
+existing files eligible for exact edit, changed files and verification status, and
+the selected verification command -- without turning coding into a hard
+controller.
+
+Production changes:
+
+- New `codey/coding_context.py` renders a bounded `Coding current local context`
+  block. Empty state renders nothing. Path lists are normalized, deduplicated,
+  capped at 8 entries, and the block explicitly says it is context, not a fixed
+  tool order.
+- `agent.run(..., coding_context_enabled=True)` now tracks `read_file_paths`
+  separately from `known_file_paths`. Successful reads appear under "Files read
+  this run"; successful reads and edits appear under "Existing files eligible
+  for exact edit".
+- Verification candidates are refreshed once after edits before the next tool
+  prompt is sent. The context marks verification as fresh only when a
+  successful command covers the selected candidate after the latest edit. When
+  fresh, it says changed files are covered and no longer shows a runnable
+  suggested-check JSON object, avoiding redundant re-verification loops.
+- The context is appended only after normal local tool results. Protocol repair
+  prompts, default verification reminders, and execution semantics remain
+  unchanged; coding still keeps the historical multiple-top-level-JSON
+  compatibility behavior.
+- Qwen submission readiness now requires both retained composer text and an
+  enabled send button. This prevents Codey from typing into a not-yet-hydrated
+  Qwen page whose composer later clears before send. The older text-only
+  retention helper was removed after the readiness helper replaced it.
+
+Production-like live A/B evidence (2026-07-28, already-open web-provider tabs)
+used `tests/manual/coding_current_context_ab.py`, which runs the real
+`agent.run` loop on temporary projects with real local read/edit/run tools. The
+baseline arm passes `coding_context_enabled=False`; the context arm uses the
+production default `coding_context_enabled=True`.
+
+Two-case live A/B summary:
+
+```text
+DeepSeek report: tests/manual/results/coding_current_context_ab-deepseek-20260728T122414.json
+baseline: success 2/2, default_verification_reminders=2, turns=10, tool_calls=6, sent_chars=15729
+context:  success 2/2, default_verification_reminders=0, turns=8,  tool_calls=6, sent_chars=17767
+delta: reminders -2, turns -2, sent_chars +2038
+
+MiMo report: tests/manual/results/coding_current_context_ab-mimo-20260728T122607.json
+baseline: success 2/2, default_verification_reminders=1, turns=9, tool_calls=6, sent_chars=15555
+context:  success 2/2, default_verification_reminders=0, turns=8, tool_calls=6, sent_chars=17767
+delta: reminders -1, turns -1, sent_chars +2212
+
+Qwen report: tests/manual/results/coding_current_context_ab-qwen-20260728T124810.json
+baseline: success 2/2, default_verification_reminders=2, turns=10, tool_calls=6, sent_chars=15729
+context:  success 2/2, default_verification_reminders=0, turns=8,  tool_calls=6, sent_chars=17767
+delta: reminders -2, turns -2, sent_chars +2038
+```
+
+Qwen diagnostic note: the first Qwen A/B attempt failed before the model could
+answer because the page was still hydrating. Codey filled the composer early;
+when Qwen finished rendering, the input cleared and send failed. The provider
+adapter fix above was applied before rerunning Qwen, and the rerun completed.
+
+Validation:
+
+```text
+python -B tests\manual\coding_current_context_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\coding_repair_prompt_ab.py --self-test
+# self-test ok
+
+python -m pytest tests\test_agent.py tests\test_coding_context.py tests\test_coding_current_context_ab.py tests\test_qwen.py -q
+# 153 passed, 2 skipped, 1 pytest cache warning
+
+python -m pytest tests\test_agent.py tests\test_protocols.py tests\test_coding_context.py tests\test_coding_current_context_ab.py tests\test_coding_repair_prompt_ab.py tests\test_qwen.py -q
+# 196 passed, 2 skipped, 1 pytest cache warning, 25 subtests passed
+
+python -m pytest -q
+# 1407 passed, 8 skipped, 1 pytest cache warning, 112 subtests passed
+
+python -m py_compile codey\agent.py codey\coding_context.py codey\qwen.py tests\manual\coding_current_context_ab.py
+# passed
+
+python -m ruff check codey tests
+# All checks passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.23 Coding Protocol Typed Repairs
 
 Codey 0.2.23 brings Research-style typed protocol repairs back into the coding

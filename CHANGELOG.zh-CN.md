@@ -4,6 +4,27 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.24 - Coding Current Context
+
+- Coding 现在会在本地工具结果后追加一段有边界的 `Coding current local
+  context`。它告诉网页模型：本轮已经读过哪些文件、哪些已存在文件适合做精确
+  edit、哪些改动文件还没验证或已经被验证覆盖，以及未验证时当前最适合跑的
+  验证命令。
+- 这段 context 只是提示本地事实，不是 allowed-tools gate，也不是硬状态机；
+  不改变 coding 对多个顶层 JSON 工具对象的历史兼容行为。协议 repair prompt
+  仍保持短，不混入 context。
+- edit 之后会在下一次工具 prompt 前刷新一次 verification candidate，所以模型
+  在准备结束前就能看到建议测试命令。“已验证”只会在最新 edit 之后跑过能覆盖
+  当前 selected candidate 的成功命令时显示；一旦 fresh，context 不再展示可直接
+  复制运行的验证 JSON，避免模型重复跑已经绿了的检查。
+- Qwen 提交逻辑现在会同时等待 composer 保留文本和 send button 可用。这修掉了
+  实机 A/B 里暴露的问题：页面还在 late hydration 时 Codey 已经输入，等页面渲染
+  完 composer 被清空，导致发送失败。
+- 贴近生产的实机 A/B 支持这个改动：DeepSeek、MiMo、Qwen 都保持 `2/2` 成功；
+  context 组减少了泛化默认验证提醒回合（DeepSeek `-2`、MiMo `-1`、Qwen
+  `-2`），并用更少 turn 完成。代价是每个 provider 两个 case 合计多发约 2K
+  字符。
+
 ## 0.2.23 - Coding Protocol Typed Repairs
 
 - Coding JSON 协议错误现在会带 typed `protocol_error_kind`：

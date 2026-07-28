@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.23-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.24-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.23`
+Version: `0.2.24`
 
 [Version history](CHANGELOG.md)
 
@@ -25,6 +25,9 @@ Version: `0.2.23`
 - **Use web AI accounts you already have**: DeepSeek, MiMo, StepFun, Qwen, and GLM are supported.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
 - **Keep code local**: models access only the project folder you choose.
+- **Stay oriented while coding**: after each local tool result, Codey reminds
+  the model which files were read, which files changed, and which verification
+  command best matches the current edits.
 - **Carry research into projects**: after research, choose a folder and Codey injects a bounded Research Brief with citations and limitations instead of the whole vault.
 - **Controlled tool loop**: read, edit, test, diff, review, and restore.
 - **Optional local model**: `Local` connects to an OpenAI-compatible endpoint with optional API key support.

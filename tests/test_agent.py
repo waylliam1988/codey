@@ -743,6 +743,110 @@ class RunLoopTests(unittest.TestCase):
         self.assertIn("[tool_result tool=find_references path=.]", provider.sent[1])
         self.assertIn("lexical scan, not semantic resolution", provider.sent[1])
 
+    def test_coding_context_lists_files_read_after_tool_result(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"done","args":{"summary":"read app.py"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Read app.py",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("[tool_result tool=read_file path=app.py]", provider.sent[1])
+        self.assertIn("Coding current local context:", provider.sent[1])
+        self.assertIn("- Files read this run: app.py", provider.sent[1])
+        self.assertIn("- Existing files eligible for exact edit: app.py", provider.sent[1])
+        self.assertNotIn("Changed files needing verification", provider.sent[1])
+
+    def test_coding_context_lists_changed_files_and_selected_verification(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"edit","args":{"path":"app.py","old_string":"VALUE = 1","new_string":"VALUE = 2"}}',
+            '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}',
+            '{"tool":"done","args":{"summary":"updated and checked"}}',
+        )
+        candidate = agent.VerificationCandidate("python -m py_compile app.py")
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Update app.py",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                verification_candidates=(candidate,),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertTrue(result.checks_passed)
+        self.assertIn("Changed files needing verification: app.py", provider.sent[2])
+        self.assertIn(
+            '{"tool":"run","args":{"command":"python -m py_compile app.py","path":"."}}',
+            provider.sent[2],
+        )
+        self.assertIn("not yet passed after the latest edit", provider.sent[2])
+        self.assertIn("Changed files covered by verification: app.py", provider.sent[3])
+        self.assertIn(
+            "Verification covering current changes: python -m py_compile app.py (path: .)",
+            provider.sent[3],
+        )
+        self.assertNotIn("Suggested verification for current changes", provider.sent[3])
+        self.assertIn("passed after the latest edit", provider.sent[3])
+
+    def test_coding_context_can_be_disabled_for_manual_baselines(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"done","args":{"summary":"read app.py"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            agent.run(
+                provider,
+                root,
+                "Read app.py",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                coding_context_enabled=False,
+            )
+
+        self.assertNotIn("Coding current local context:", provider.sent[1])
+
+    def test_protocol_repair_prompt_does_not_include_coding_context(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"write_file","args":{"path":"new.txt","content":"hello\\n"}}',
+            '{"tool":"done","args":{"summary":"stopped"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Read then create new.txt",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Coding current local context:", provider.sent[1])
+        self.assertIn("Protocol error:", provider.sent[2])
+        self.assertNotIn("Coding current local context:", provider.sent[2])
+
     def test_invalid_parallel_batch_executes_nothing_and_requests_correction(self) -> None:
         invalid = json.dumps({
             "tool": "parallel",

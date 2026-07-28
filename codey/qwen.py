@@ -112,25 +112,34 @@ def _fill_message(page: Page, textarea: Locator, text: str) -> str:
     return f"{text} "
 
 
-def _composer_retains_text(
+def _composer_accepts_submission(
+    page: Page,
     textarea: Locator,
     submitted_text: str,
     *,
     settle_time: float = COMPOSER_SETTLE_TIME,
 ) -> bool:
+    """Return true only after Qwen keeps text and enables submission."""
     ticks = max(1, int(max(0.0, settle_time) / COMPOSER_SETTLE_TICK))
+    send_ready = False
     for _ in range(ticks):
         if not controls.control_has_text(textarea, submitted_text):
             return False
+        if _send_button(page, timeout=0.0, require_enabled=True, teach=False) is not None:
+            send_ready = True
         cancellation.wait(COMPOSER_SETTLE_TICK)
-    return controls.control_has_text(textarea, submitted_text)
+    return (
+        send_ready
+        and controls.control_has_text(textarea, submitted_text)
+        and _send_button(page, timeout=0.0, require_enabled=True, teach=False) is not None
+    )
 
 
 def _fill_message_until_stable(page: Page, textarea: Locator, text: str) -> str:
     """Fill Qwen's controlled composer and survive late page hydration clears."""
     for attempt in range(max(1, COMPOSER_REFILL_ATTEMPTS)):
         submitted_text = _fill_message(page, textarea, text)
-        if _composer_retains_text(textarea, submitted_text):
+        if _composer_accepts_submission(page, textarea, submitted_text):
             return submitted_text
         if attempt + 1 < COMPOSER_REFILL_ATTEMPTS:
             cancellation.wait(COMPOSER_REFILL_DELAY)

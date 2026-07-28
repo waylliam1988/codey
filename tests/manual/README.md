@@ -356,6 +356,43 @@ repairs only; it does not change coding's existing
 multiple-top-level-JSON compatibility behavior, add an allowed-tools gate, or
 introduce verification candidate IDs.
 
+`coding_current_context_ab.py` is a production-like live probe for Coding
+Current Context. It runs the real `agent.run` loop on temporary projects,
+executes real local read/edit/run tools, and compares:
+
+- `baseline`: production loop with `coding_context_enabled=False`.
+- `context`: production loop with the default `coding_context_enabled=True`.
+
+It records task success, duplicate reads, protocol errors, whether the selected
+verification check passed after the edit, default verification reminder turns,
+tool calls, turns, and sent prompt characters.
+
+```powershell
+python -B tests\manual\coding_current_context_ab.py --self-test
+python -B tests\manual\coding_current_context_ab.py `
+  --provider qwen `
+  --port 9222 `
+  --case edit-then-verify `
+  --case avoid-duplicate-read `
+  --timeout 120 `
+  --keep-open
+```
+
+2026-07-28 live A/B on already-open web-provider tabs supported shipping the
+thin context block. DeepSeek, MiMo, and Qwen all stayed at `success=2/2`; the
+context arm removed generic default-verification reminder turns and completed
+with fewer turns:
+
+- DeepSeek: reminders `2 -> 0`, turns `10 -> 8`, sent chars `15729 -> 17767`.
+- MiMo: reminders `1 -> 0`, turns `9 -> 8`, sent chars `15555 -> 17767`.
+- Qwen: reminders `2 -> 0`, turns `10 -> 8`, sent chars `15729 -> 17767`.
+
+Qwen note: the first Qwen run exposed a provider-adapter readiness bug rather
+than a model failure. The page accepted typed text before late hydration
+finished, then cleared the composer and send failed. The Qwen adapter now waits
+for retained composer text plus an enabled send button before submitting; the
+rerun completed.
+
 Provider fit note: StepFun is available alongside MiMo for current provider
 smoke/A-B work. StepFun followed the local JSON-tool Research protocol reliably
 in earlier probes: one JSON object per turn and a completed fixture report.
