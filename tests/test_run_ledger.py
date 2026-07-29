@@ -76,13 +76,26 @@ class RunLedgerStoreTests(unittest.TestCase):
             writer.append_run_event(RunEvent.tool_finished(
                 2,
                 ToolCall("run", {"path": ".", "command": "python -m pytest -q"}),
-                ToolOutcome("ok", True, exit_code=0),
+                ToolOutcome(
+                    "ok",
+                    True,
+                    exit_code=0,
+                    output_handle="out_0001_abc",
+                    output_bytes=1234,
+                    output_stored_bytes=1000,
+                    output_sha256="abc123",
+                ),
                 index=1,
             ))
 
             rows = [item.payload for item in read_ledger(store.path_for("session-2", "run_2"))]
             changed = next(item for item in rows if item["type"] == "file_changed")
             verified = next(item for item in rows if item["type"] == "command_verified")
+            tool_finished = next(
+                item
+                for item in rows
+                if item["type"] == "tool_finished" and item["tool"] == "run"
+            )
 
             self.assertIn(changed["type"], TOOL_DEFINITION_BY_NAME["edit"].output_facts)
             self.assertIn(verified["type"], TOOL_DEFINITION_BY_NAME["run"].output_facts)
@@ -90,6 +103,10 @@ class RunLedgerStoreTests(unittest.TestCase):
             self.assertEqual(verified["command"], "python -m pytest -q")
             self.assertEqual(verified["cwd"], ".")
             self.assertEqual(verified["tool_id"], "2:1")
+            self.assertEqual(tool_finished["output_handle"], "out_0001_abc")
+            self.assertEqual(tool_finished["output_bytes"], 1234)
+            self.assertEqual(tool_finished["output_stored_bytes"], 1000)
+            self.assertEqual(tool_finished["output_sha256"], "abc123")
 
     def test_ledger_truncates_once_when_byte_budget_is_exceeded(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -126,6 +143,7 @@ class RunLedgerTaskRunnerIntegrationTests(unittest.TestCase):
             state = server.State()
 
         self.assertIsNone(state.run_ledgers)
+        self.assertIsNone(state.managed_outputs)
         store_class.assert_not_called()
 
     def test_project_task_writes_bounded_run_ledger(self) -> None:

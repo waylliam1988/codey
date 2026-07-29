@@ -23,6 +23,7 @@ from codey.tool_runtime import (
     find_references,
     read_file,
     run_command,
+    run_command_raw,
     write_file,
 )
 
@@ -133,6 +134,35 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIn("AssertionError: expected 42", outcome.output)
         self.assertNotIn("site-packages/pkg", outcome.output)
         self.assertNotIn("internal_0()", outcome.output)
+
+    def test_run_command_raw_preserves_output_before_projection_pruning(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            stdout = (
+                "Traceback (most recent call last):\n"
+                '  File "C:/Python/Lib/site-packages/pkg/mod.py", line 1, in call\n'
+                "    internal_call()\n"
+                "AssertionError: expected 42\n"
+            )
+            completed = subprocess.CompletedProcess(
+                ["python", "fail.py"],
+                1,
+                stdout=stdout,
+                stderr="",
+            )
+
+            with mock.patch(
+                "codey.tool_runtime.cancellation.run_process",
+                return_value=completed,
+            ):
+                raw = run_command_raw(root, ".", "python fail.py")
+                outcome = tool_runtime.project_run_command_result(root, raw)
+
+        self.assertIsInstance(raw, tool_runtime.RunCommandRawResult)
+        assert isinstance(raw, tool_runtime.RunCommandRawResult)
+        self.assertIn("site-packages/pkg", raw.output)
+        self.assertNotIn("site-packages/pkg", outcome.output)
+        self.assertIn("AssertionError: expected 42", outcome.output)
 
     def test_run_allowlist_accepts_common_verification_tools(self) -> None:
         for command in (

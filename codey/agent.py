@@ -831,7 +831,15 @@ def run(
             out = outcome.output
             emit(RunEvent.tool_finished(turn, call, outcome, index=tool_index))
             results.append(
-                ToolResult(call=call, output=out, truncated=outcome.truncated)
+                ToolResult(
+                    call=call,
+                    output=out,
+                    truncated=outcome.truncated,
+                    output_handle=outcome.output_handle,
+                    output_bytes=outcome.output_bytes,
+                    output_stored_bytes=outcome.output_stored_bytes,
+                    output_sha256=outcome.output_sha256,
+                )
             )
             if call.name == "read" and outcome.ok:
                 canonical = _canonical_project_path(project, path)
@@ -912,7 +920,12 @@ def run(
                     )
                 elif call.name == "run":
                     command = _call_arg(call, "command")
-                    outcome = tool_fns.run_command(project, path, command)
+                    outcome = tool_fns.execute_run_command(
+                        project,
+                        path,
+                        command,
+                        tool_id=f"{turn}:{tool_index}",
+                    )
                     checks_ran = True
                     checks_passed = outcome.ok
                     if outcome.ok:

@@ -348,6 +348,9 @@ Codey 的特殊价值是兼容网页 AI。网页模型不像 API 模型那样有
 
 ## 0.2.30 - Managed Output Handles
 
+状态：已落地。第一版只覆盖 Project Writer 的 `run` 工具长输出；只有模型可见
+projection 实际被裁剪时才保存本地 handle。
+
 ### 做什么
 
 为长输出建立 managed output handle：完整内容保存在本地受控位置，模型只看到摘要、head/tail、hash、大小和 handle。
@@ -382,13 +385,16 @@ Pi 和 OpenCode 都有类似思路：长输出不能全部塞进上下文，但�
 
 ### 验收标准
 
-- 长 `run_command` 输出会生成 handle，工具结果只返回 bounded projection。
-- handle 有生命周期和大小上限。
+- 长 `run_command` 输出在 projected result `truncated=True` 时生成 handle，工具结果只返回 bounded projection。
+- handle 有 run-scoped 生命周期、单输出大小上限和单 run 数量上限。
 - handle 路径不会逃出 Codey state 目录。
 - 默认不会把 handle 内容注入后续 prompt。
+- Run Ledger 只记录 handle、原始/保存字节数和保存输出 hash，不记录完整输出正文。
 
 ### 暂不做
 
+- 不做 UI 或 `/api/output`。
+- 不做 `read_output` 工具。
 - 不做全文搜索数据库。
 - 不做自动 RAG。
 - 不保存无限期日志。

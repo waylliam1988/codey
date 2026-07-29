@@ -27,6 +27,19 @@ class AgentToolFns:
         tool_runtime.edit_file
     )
     run_command: Callable[[Path, str, str], ToolOutcome] = tool_runtime.run_command
+    run_command_with_context: Callable[[Path, str, str, str], ToolOutcome] | None = None
+
+    def execute_run_command(
+        self,
+        root: Path,
+        rel: str,
+        command: str,
+        *,
+        tool_id: str = "",
+    ) -> ToolOutcome:
+        if self.run_command_with_context is not None:
+            return self.run_command_with_context(root, rel, command, tool_id)
+        return self.run_command(root, rel, command)
 
 
 DEFAULT_TOOL_FNS = AgentToolFns()

@@ -2007,6 +2007,28 @@ class RunLoopTests(unittest.TestCase):
         self.assertFalse(search_events[0].outcome.ok)
         self.assertIn("ERROR: boom", search_events[0].outcome.output)
 
+    def test_run_tool_passes_turn_and_index_to_context_tool_fn(self) -> None:
+        reply = '{"tool":"run","args":{"path":".","command":"python -m pytest -q"}}'
+        done = '{"tool":"done","args":{"summary":"verified"}}'
+        seen = []
+
+        def run_probe(_root: Path, rel: str, command: str, tool_id: str):
+            seen.append((rel, command, tool_id))
+            return tool_runtime.ToolOutcome("exit 0: ok", True, exit_code=0)
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                FakeProvider(reply, done),
+                Path(td),
+                "run tests",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                tool_fns=AgentToolFns(run_command_with_context=run_probe),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(seen, [(".", "python -m pytest -q", "1:0")])
+
     def test_read_before_edit_uses_canonical_project_paths(self) -> None:
         read = '{"tool":"read_file","args":{"path":"src/app.py"}}'
         edit = (

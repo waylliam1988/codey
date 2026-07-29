@@ -32,6 +32,7 @@ from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_discovery import Discovery
 from codey.providers.local_openai import LocalEndpoint
 from codey.research.runner import ResearchRunResult
+from codey.run_ledger import read_ledger
 from codey.task_runner import TaskRunner, _project_has_user_files
 from codey.tool_runtime import ToolOutcome
 from codey.verification_policy import VerificationCandidate
@@ -1895,6 +1896,96 @@ class SessionThreadingTests(unittest.TestCase):
         get_provider.assert_called_once_with("stepfun")
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
         self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+
+    def test_project_run_retains_truncated_run_output_as_managed_handle(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            (project / "large.py").write_text("print('large')\n", encoding="utf-8")
+            state = server.State(root / "state")
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            completed = subprocess.CompletedProcess(
+                ["python", "large.py"],
+                1,
+                stdout=(
+                    "HEAD"
+                    + ("x" * 200)
+                    + "MIDDLE_MANAGED_OUTPUT"
+                    + ("y" * 200)
+                    + "TAIL"
+                ),
+                stderr="",
+            )
+
+            def fake_agent_run(*_args, **kwargs):
+                tool_fns = kwargs["tool_fns"]
+                self.assertIsNotNone(tool_fns)
+                outcome = tool_fns.execute_run_command(
+                    project,
+                    ".",
+                    "python large.py",
+                    tool_id="1:0",
+                )
+                kwargs["on_event"](RunEvent.tool_finished(
+                    1,
+                    ToolCall("run", {"path": ".", "command": "python large.py"}),
+                    outcome,
+                ))
+                return RunResult("checked", "done", 1, False, False, True)
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
+                mock.patch.object(server, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}),
+                mock.patch.object(server, "_run_project_audit", return_value=()),
+                mock.patch("codey.tool_runtime.RUN_OUTPUT_LIMIT", 80),
+                mock.patch("codey.tool_runtime.cancellation.run_process", return_value=completed),
+            ):
+                server._run_task(
+                    "session-managed-output",
+                    str(project),
+                    "Run the check",
+                    8,
+                    False,
+                    "deepseek",
+                )
+
+            run_id = state.last_terminal_event["run_id"]
+            rows = [
+                item.payload
+                for item in read_ledger(
+                    state.run_ledgers.path_for("session-managed-output", run_id)
+                )
+            ]
+            run_row = next(
+                item
+                for item in rows
+                if item["type"] == "tool_finished" and item["tool"] == "run"
+            )
+            handle = run_row["output_handle"]
+            self.assertTrue(str(handle).startswith("out_"))
+            self.assertGreater(run_row["output_bytes"], 0)
+            self.assertGreater(run_row["output_stored_bytes"], 0)
+            self.assertRegex(str(run_row["output_sha256"]), r"^[0-9a-f]{64}$")
+            saved = state.managed_outputs.path_for(
+                "session-managed-output",
+                run_id,
+                str(handle),
+            ).read_text(encoding="utf-8")
+            metadata = json.loads(
+                state.managed_outputs.metadata_path_for(
+                    "session-managed-output",
+                    run_id,
+                    str(handle),
+                ).read_text(encoding="utf-8")
+            )
+            self.assertIn("MIDDLE_MANAGED_OUTPUT", saved)
+            self.assertNotIn("MIDDLE_MANAGED_OUTPUT", run_row["result"])
+            self.assertEqual(metadata["tool_id"], "1:0")
 
     def test_hybrid_unavailable_fallback_uses_research_capability_order(self) -> None:
         state = server.State()

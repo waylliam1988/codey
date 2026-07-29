@@ -437,6 +437,28 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("omitted content may contain relevant errors or code", prompt)
         self.assertIn("Do not assume omitted content is clean", prompt)
 
+    def test_format_results_renders_managed_output_footer_without_tool_hint(self) -> None:
+        codec = JsonToolCodec()
+        call = ToolCall("run", {"path": ".", "command": "python -m pytest -q"})
+        prompt = codec.format_results([
+            ToolResult(
+                call,
+                "HEAD\nTAIL",
+                truncated=True,
+                output_handle="out_0001_abcdef",
+                output_bytes=1234,
+                output_stored_bytes=1000,
+                output_sha256="abc123",
+            )
+        ])
+
+        self.assertIn("handle=out_0001_abcdef", prompt)
+        self.assertIn("original_bytes=1234", prompt)
+        self.assertIn("stored_bytes=1000", prompt)
+        self.assertIn("sha256=abc123", prompt)
+        self.assertIn("handle is for local audit/export, not a tool", prompt)
+        self.assertNotIn("read_output", prompt)
+
     def test_system_prompt_does_not_claim_model_is_codey(self) -> None:
         prompt = JsonToolCodec().system_prompt()
 

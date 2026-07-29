@@ -29,3 +29,7 @@ class ToolResult:
     call: ToolCall
     output: str
     truncated: bool = False
+    output_handle: str = ""
+    output_bytes: int = 0
+    output_stored_bytes: int = 0
+    output_sha256: str = ""

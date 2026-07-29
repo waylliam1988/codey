@@ -24,6 +24,24 @@ class AgentToolFnsTests(unittest.TestCase):
         self.assertIs(fns.read_file, fake_read)
         self.assertIs(fns.search_files, tool_runtime.search_files)
 
+    def test_execute_run_command_uses_context_hook_when_present(self) -> None:
+        seen = []
+
+        def run_with_context(_root, rel, command, tool_id):
+            seen.append((rel, command, tool_id))
+            return tool_runtime.ToolOutcome("ok", True, exit_code=0)
+
+        fns = AgentToolFns(run_command_with_context=run_with_context)
+        outcome = fns.execute_run_command(
+            None,
+            ".",
+            "python -m pytest -q",
+            tool_id="2:1",
+        )
+
+        self.assertTrue(outcome.ok)
+        self.assertEqual(seen, [(".", "python -m pytest -q", "2:1")])
+
 
 if __name__ == "__main__":
     unittest.main()

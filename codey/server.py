@@ -49,6 +49,7 @@ from codey.conversation_store import ConversationStore
 from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.handoff import ConversationContext
 from codey.local_store import DEFAULT_STATE_HOME
+from codey.managed_outputs import ManagedOutputStore
 from codey.knowledge.concepts import ConceptGraphBuilder
 from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
@@ -606,6 +607,7 @@ class State:
             WorkCheckpointStore(state_home) if state_home else WorkCheckpointStore()
         )
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
+        self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.provider_supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
         )
@@ -1245,6 +1247,7 @@ def _run_task(
         project_facts=STATE.project_facts,
         work_checkpoints=STATE.work_checkpoints,
         run_ledgers=STATE.run_ledgers,
+        managed_outputs=STATE.managed_outputs,
         knowledge_store=STATE.knowledge_store,
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,

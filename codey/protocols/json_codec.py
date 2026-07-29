@@ -283,6 +283,16 @@ class JsonToolCodec:
                         "Use narrower grep/read_file offsets or rerun a narrower "
                         "command if needed.]"
                     )
+                if result.output_handle:
+                    output = (
+                        f"{output}\n"
+                        "[full output retained locally: "
+                        f"handle={result.output_handle}, "
+                        f"original_bytes={result.output_bytes}, "
+                        f"stored_bytes={result.output_stored_bytes}, "
+                        f"sha256={result.output_sha256}; "
+                        "handle is for local audit/export, not a tool.]"
+                    )
                 chunks.append(f"[tool_result{attrs}]\n---\n{output}\n---")
             formatted = "\n\n".join(chunks)
         return (

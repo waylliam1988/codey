@@ -4,6 +4,27 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.30 - Managed Output Handles v1
+
+- 新增 `codey/managed_outputs.py`：为被模型可见 `run` 结果裁剪掉的命令输出保存
+  run 级本地 handle。
+- `run_command()` 现在内部拆成 raw/projection 两层。默认公开行为不变；生产
+  Project Writer run 可以在依赖栈 pruning 和 prompt clipping 前保存 raw stdout/stderr。
+- 只有 projected `run` 结果实际 `truncated=True` 时才写 managed output。短命令输出不会
+  被保存成本地日志。
+- managed output metadata 明确区分生产 `tool_id`、`original_bytes`、`stored_bytes`、
+  保存文本的 `sha256` 和 `stored_truncated`。单个输出和单 run handle 数都有上限，
+  路径被限制在 Codey state 目录下，写入失败 fail-open；超过保存上限的输出会保留
+  head/tail，并插入 omission marker。
+- `ToolOutcome` 和 `ToolResult` 增加可选 handle metadata。JSON tool codec 只渲染一行
+  短 footer，说明 handle 是 local audit/export 用途，不是工具；完整输出不会被注入 prompt。
+- Run Ledger 的 `tool_finished` 事件记录 handle id、原始/保存字节数和保存输出 hash，
+  但不保存完整命令输出。
+- `State()` 只有在传入 `state_home` 时启用 managed outputs，和 Run Ledger 纪律一致，
+  避免裸测试/嵌入场景写真实 `~/.codey`。
+- 本版本不做 UI、不做 `/api/output`、不做 `read_output`、不做全文搜索/RAG、不保存
+  Research 网页正文，也不让模型自动读取 handle。
+
 ## 0.2.29 - Provider Capability Registry v1
 
 - 新增 `codey/provider_capabilities.py`：静态内部 provider 能力注册表，记录

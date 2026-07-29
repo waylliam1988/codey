@@ -108,6 +108,10 @@ class ToolOutcome:
     exit_code: int | None = None
     changed: bool = False
     truncated: bool = False
+    output_handle: str = ""
+    output_bytes: int = 0
+    output_stored_bytes: int = 0
+    output_sha256: str = ""
 
     @classmethod
     def error(cls, message: str) -> ToolOutcome:
@@ -117,6 +121,14 @@ class ToolOutcome:
     def first_line(self, limit: int) -> str:
         """Return a display-safe first line, including for empty output."""
         return next(iter(self.output.splitlines()), "")[:limit]
+
+
+@dataclass(frozen=True)
+class RunCommandRawResult:
+    command: str
+    output: str
+    ok: bool
+    exit_code: int
 
 
 def _byte_limit_label(value: int) -> str:
@@ -994,7 +1006,7 @@ def _is_suite_run_command(argv: list[str]) -> bool:
     return False
 
 
-def run_command(root: Path, rel: str, command: str) -> ToolOutcome:
+def run_command_raw(root: Path, rel: str, command: str) -> RunCommandRawResult | ToolOutcome:
     command = command.strip()
     if not command:
         return ToolOutcome.error("command required")
@@ -1033,12 +1045,28 @@ def run_command(root: Path, rel: str, command: str) -> ToolOutcome:
     if proc.stderr:
         output_parts.append("[stderr]\n" + proc.stderr.rstrip())
     output = "\n\n".join(output_parts) or "(no output)"
-    output = prune_dependency_stack_frames(output, root)
+    return RunCommandRawResult(
+        command=command,
+        output=output,
+        ok=proc.returncode == 0,
+        exit_code=proc.returncode,
+    )
+
+
+def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutcome:
+    output = prune_dependency_stack_frames(raw.output, root)
     output, truncated = clip_middle(output, RUN_OUTPUT_LIMIT)
-    display = f"exit {proc.returncode}: {command}\n{output}"
+    display = f"exit {raw.exit_code}: {raw.command}\n{output}"
     return ToolOutcome(
         display,
-        proc.returncode == 0,
-        exit_code=proc.returncode,
+        raw.ok,
+        exit_code=raw.exit_code,
         truncated=truncated,
     )
+
+
+def run_command(root: Path, rel: str, command: str) -> ToolOutcome:
+    raw = run_command_raw(root, rel, command)
+    if isinstance(raw, ToolOutcome):
+        return raw
+    return project_run_command_result(root, raw)

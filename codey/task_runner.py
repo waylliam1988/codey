@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from codey import cancellation, provider_controls, provider_flow
 from codey.agent import RunResult
+from codey.agent_tools import AgentToolFns
 from codey.change_brief import (
     ChangeBrief,
     new_project_change_brief,
@@ -29,6 +30,10 @@ from codey.handoff import (
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.brief import KnowledgeBriefBuilder
+from codey.managed_outputs import (
+    ManagedOutputStore,
+    run_command_with_managed_output,
+)
 from codey.project_facts import ProjectFactsStore
 from codey.project_task_context import (
     ProjectTaskContextBuilder,
@@ -286,6 +291,7 @@ class TaskRunner:
         project_facts: ProjectFactsStore | None = None,
         work_checkpoints: WorkCheckpointStore | None = None,
         run_ledgers: RunLedgerStore | None = None,
+        managed_outputs: ManagedOutputStore | None = None,
         knowledge_store: KnowledgeStore | None = None,
         search_factory: Callable[[], object] | None = None,
         is_git_repository: Callable[[str | Path], bool] | None = None,
@@ -303,11 +309,29 @@ class TaskRunner:
         self.project_facts = project_facts
         self.work_checkpoints = work_checkpoints
         self.run_ledgers = run_ledgers
+        self.managed_outputs = managed_outputs
         self.knowledge_store = knowledge_store
         self.search_factory = search_factory or BrowserSearchProvider
         self.is_git_repository = is_git_repository or (lambda _project: False)
         self.review_fix_turns = review_fix_turns
         self.review_log_lines = review_log_lines
+
+    def _managed_tool_fns(self, *, session_id: str, run_id: str) -> AgentToolFns | None:
+        if self.managed_outputs is None:
+            return None
+
+        def run_command(root: Path, rel: str, command: str, tool_id: str):
+            return run_command_with_managed_output(
+                root,
+                rel,
+                command,
+                store=self.managed_outputs,
+                session_id=session_id,
+                run_id=run_id,
+                tool_id=tool_id,
+            )
+
+        return AgentToolFns(run_command_with_context=run_command)
 
     def _event_with_projected_receipt(
         self,
@@ -1193,6 +1217,10 @@ class TaskRunner:
                 verification_changed_files=spec.checkpoint.changed_files,
                 verification_successful_checks=(
                     spec.checkpoint.successful_checks
+                ),
+                tool_fns=self._managed_tool_fns(
+                    session_id=request.session_id,
+                    run_id=frame.run_id,
                 ),
             )
 

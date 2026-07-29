@@ -254,6 +254,13 @@ class RunLedgerWriter:
             payload["command"] = command
         if event.outcome.exit_code is not None:
             payload["exit_code"] = event.outcome.exit_code
+        if event.outcome.output_handle:
+            payload["output_handle"] = _clip(event.outcome.output_handle, 120)
+            payload["output_bytes"] = _int_or_none(event.outcome.output_bytes) or 0
+            payload["output_stored_bytes"] = (
+                _int_or_none(event.outcome.output_stored_bytes) or 0
+            )
+            payload["output_sha256"] = _clip(event.outcome.output_sha256, 80)
         return payload
 
     def _append_payload(self, payload: dict[str, object]) -> None:

@@ -1,5 +1,55 @@
 # Codey Test Report
 
+## 0.2.30 Managed Output Handles v1
+
+Codey 0.2.30 adds run-scoped managed output handles for truncated Project
+Writer `run` output. It keeps model-facing tool results bounded while retaining
+the raw command output locally for future audit/export/debug paths.
+
+Production changes:
+
+- New `codey/managed_outputs.py` defines `ManagedOutputStore`,
+  `ManagedOutputRef`, and `run_command_with_managed_output()`.
+- `tool_runtime.run_command()` now uses an internal raw/projection split. The
+  default public behavior remains the same; managed Project Writer runs can
+  save raw stdout/stderr before dependency stack pruning and prompt clipping.
+- Handles are written only when the projected `run` result is truncated. Short
+  command output is not stored.
+- Managed output metadata records the production `tool_id`, `original_bytes`,
+  `stored_bytes`, stored-text `sha256`, and `stored_truncated`. Single outputs
+  and per-run handle counts are capped, paths are constrained under
+  `state_home/managed_outputs`, and write failures fail open. Outputs that
+  exceed the stored byte cap keep head and tail text with an omission marker.
+- `ToolOutcome` and `ToolResult` carry optional handle metadata. `JsonToolCodec`
+  renders a short model-visible footer that says the handle is for local
+  audit/export, not a tool. Full output is not injected into prompts.
+- Run Ledger `tool_finished` events record handle id, original/stored byte
+  counts, and stored-output hash without saving full command output.
+- `State()` enables managed outputs only when `state_home` is provided. Bare
+  test/embedding state keeps `managed_outputs=None`.
+
+Validation:
+
+```text
+python -m pytest tests\test_managed_outputs.py tests\test_tool_runtime.py tests\test_protocols.py tests\test_run_ledger.py tests\test_server.py -q
+# 256 passed, 4 skipped, 1 pytest cache warning, 27 subtests passed
+
+python -m pytest tests\test_managed_outputs.py tests\test_tool_runtime.py tests\test_protocols.py tests\test_run_ledger.py tests\test_server.py tests\test_agent.py tests\test_agent_tools.py -q
+# 363 passed, 6 skipped, 1 pytest cache warning, 27 subtests passed
+
+python -m unittest tests.test_work_checkpoint_flow
+# 15 passed
+
+python -m pytest -q
+# 1467 passed, 8 skipped, 1 pytest cache warning, 145 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\managed_outputs.py codey\agent_tools.py codey\agent.py codey\task_runner.py codey\tool_runtime.py codey\models.py codey\protocols\json_codec.py codey\run_ledger.py codey\server.py codey\__init__.py
+# passed
+```
+
 ## 0.2.29 Provider Capability Registry v1
 
 Codey 0.2.29 adds a static provider capability registry for conservative

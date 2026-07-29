@@ -4,6 +4,30 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.30 - Managed Output Handles v1
+
+- Added `codey/managed_outputs.py`, a run-scoped local store for command output
+  that was too large for the model-facing `run` result.
+- `run_command()` now has an internal raw/projection split. The default public
+  behavior is unchanged; production Project Writer runs can save the raw
+  stdout/stderr before dependency-stack pruning and prompt clipping.
+- Managed output handles are written only when the projected `run` result is
+  actually truncated. Short command output is not stored.
+- Managed output metadata distinguishes the production `tool_id`,
+  `original_bytes`, `stored_bytes`, `sha256` of the stored text, and
+  `stored_truncated`. Single outputs and per-run handle counts are capped,
+  paths are constrained under Codey's state directory, write failures fail open,
+  and oversized stored outputs keep head and tail text with an omission marker.
+- `ToolOutcome` and `ToolResult` now carry optional handle metadata. The JSON
+  tool codec renders a short footer telling the model that the handle is for
+  local audit/export, not a tool; full output is not injected into prompts.
+- Run Ledger `tool_finished` events now record handle id, original/stored byte
+  counts, and stored-output hash without saving full command output.
+- `State()` enables managed outputs only when `state_home` is provided, matching
+  Run Ledger behavior and avoiding writes to real `~/.codey` in bare tests.
+- This release does not add UI, `/api/output`, `read_output`, full-text search,
+  RAG, Research webpage storage, or automatic handle reads by the model.
+
 ## 0.2.29 - Provider Capability Registry v1
 
 - Added `codey/provider_capabilities.py`, a static internal registry of
