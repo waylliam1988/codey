@@ -6,11 +6,17 @@ import json
 from pathlib import Path
 from unittest import mock
 
-from codey import agent
+from codey import agent, cancellation
 from codey.agent_tools import AgentToolFns
 from codey.events import render_run_event
 from codey.handoff import ConversationContext, ConversationSnapshot
 from codey import tool_runtime
+from codey.work_checkpoint import (
+    CheckpointCheck,
+    CheckpointFile,
+    WorkCheckpoint,
+    render_work_checkpoint,
+)
 
 
 class FakeProvider:
@@ -32,6 +38,10 @@ class FakeProvider:
 
     def close(self) -> None:
         pass
+
+
+def _long_checkpoint_path(index: int) -> str:
+    return f"src/module_{index:02d}/" + ("p" * 90) + ".py"
 
 
 class ParseReplyTests(unittest.TestCase):
@@ -601,6 +611,38 @@ class RunLoopTests(unittest.TestCase):
         self.assertIn("--- AGENTS.md ---", prompt)
         self.assertIn("Use tests first.", prompt)
 
+    def test_project_instructions_source_budget_preserves_legacy_two_file_cap(
+        self,
+    ) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
+        agents_tail = "AGENTS_TAIL_RULE"
+        claude_head = "CLAUDE_HEAD_RULE"
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "AGENTS.md").write_text(
+                ("A" * 9000) + agents_tail,
+                encoding="utf-8",
+            )
+            (root / "CLAUDE.md").write_text(
+                claude_head + ("C" * 9000),
+                encoding="utf-8",
+            )
+
+            agent.run(
+                provider,
+                root,
+                "update this project",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        prompt = provider.sent[0]
+        self.assertIn("--- AGENTS.md ---", prompt)
+        self.assertIn("--- CLAUDE.md ---", prompt)
+        self.assertIn(agents_tail, prompt)
+        self.assertIn(claude_head, prompt)
+        self.assertNotIn("middle of output omitted", prompt)
+
     def test_read_only_project_discussion_returns_direct_answer_without_changes(self) -> None:
         answer = "Start with one guided breathing rhythm.\n\nAdd customization later."
         provider = FakeProvider(json.dumps({
@@ -673,6 +715,86 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertIn("Local execution checkpoint", provider.sent[0])
         self.assertIn("src/app.py", provider.sent[0])
+
+    def test_work_checkpoint_source_budget_preserves_changed_files_list(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"resumed"}}')
+        files = tuple(
+            CheckpointFile(_long_checkpoint_path(index), "sha256:" + ("0" * 64))
+            for index in range(32)
+        )
+        checks = tuple(
+            CheckpointCheck("python -m pytest " + ("x" * 260), ".")
+            for _index in range(8)
+        )
+        checkpoint = WorkCheckpoint(
+            run_id="r",
+            session_id="s",
+            project="E:/project",
+            original_task="T" * 1000,
+            status="interrupted",
+            changed_files=files,
+            successful_checks_after_last_change=checks,
+        )
+        rendered_checkpoint = render_work_checkpoint(checkpoint)
+        self.assertGreater(len(rendered_checkpoint), 3000)
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Continue the task",
+                work_checkpoint=rendered_checkpoint,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        prompt = provider.sent[0]
+        self.assertNotIn("middle of output omitted", prompt)
+        self.assertIn(files[0].path, prompt)
+        self.assertIn(files[len(files) // 2].path, prompt)
+        self.assertIn(files[-1].path, prompt)
+
+    def test_initial_listing_failure_omits_listing_and_still_sends_prompt(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
+
+        def broken_listing(_root: Path, _path: str) -> tool_runtime.ToolOutcome:
+            raise OSError("listing unavailable")
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Continue without listing",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                tool_fns=AgentToolFns(list_directory=broken_listing),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(len(provider.sent), 1)
+        self.assertIn("Project workspace: use paths relative to the project root.", provider.sent[0])
+        self.assertIn("User task:\nContinue without listing", provider.sent[0])
+        self.assertNotIn("Initial listing:", provider.sent[0])
+        self.assertNotIn("why_included", provider.sent[0])
+        self.assertNotIn("freshness", provider.sent[0])
+
+    def test_initial_listing_cancel_is_not_swallowed(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"unreachable"}}')
+
+        def stopped_listing(_root: Path, _path: str) -> tool_runtime.ToolOutcome:
+            raise cancellation.TaskCancelled("task stopped")
+
+        with tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(cancellation.TaskCancelled):
+                agent.run(
+                    provider,
+                    Path(td),
+                    "Stop during context assembly",
+                    on_event=lambda _event: None,
+                    fresh_chat=False,
+                    tool_fns=AgentToolFns(list_directory=stopped_listing),
+                )
+
+        self.assertEqual(provider.sent, [])
 
     def test_emits_structured_turn_and_tool_events(self) -> None:
         provider = FakeProvider(

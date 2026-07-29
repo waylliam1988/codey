@@ -4,6 +4,32 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.28 - ContextSource v1
+
+- Added `codey/context_source.py`, a small prompt assembly layer that renders
+  named context sources with per-source character budgets, freshness metadata,
+  inclusion reasons, headings, and explicit failure policies.
+- `agent.py` now wraps the existing project prompt blocks as `ContextSource`
+  instances: project instructions, verified project facts, Research Brief,
+  Project Map, Work Checkpoint, and initial listing. `ProjectTaskContextBuilder`
+  still owns the business loading of facts, knowledge, maps, checkpoints, and
+  verification candidates.
+- `Coding current local context` is also rendered through `ContextSource`, but
+  it is still appended only after local tool results. It is not added to the
+  initial project prompt or protocol repair prompts.
+- Optional context source failures fail open, but `TaskCancelled` and
+  `DeadlineExceeded` are re-raised so user Stop and provider deadlines cannot
+  be swallowed during prompt assembly.
+- Work Checkpoint context budget is now derived from `work_checkpoint.py`
+  producer limits, so a bounded checkpoint does not lose its changed-file list
+  to source-level clipping.
+- Source metadata is not rendered into model prompts. This release keeps the
+  prompt content goal equivalent while making context blocks named, bounded,
+  testable, and easier to audit.
+- This release does not add live A/B, UI, provider routing, vector memory,
+  automatic Research vault injection, checkpoint/restore migration, or new
+  model capabilities.
+
 ## 0.2.27 - ToolDefinition v1
 
 - Added `codey/tool_definition.py` as the single internal metadata source for

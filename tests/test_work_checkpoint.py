@@ -7,9 +7,25 @@ from pathlib import Path
 
 from codey.work_checkpoint import (
     MAX_CHECKPOINT_BYTES,
+    MAX_CHANGED_FILES,
+    MAX_COMMAND_CHARS,
+    MAX_REL_PATH_CHARS,
+    MAX_STOP_REASON_CHARS,
+    MAX_SUCCESSFUL_CHECKS,
+    MAX_TASK_CHARS,
+    MAX_WORK_CHECKPOINT_PROMPT_CHARS,
+    CheckpointCheck,
+    CheckpointFile,
+    WorkCheckpoint,
     WorkCheckpointStore,
     render_work_checkpoint,
 )
+
+
+def _max_len_rel_path(index: int) -> str:
+    prefix = f"src/{index:02d}/"
+    suffix = ".py"
+    return prefix + ("p" * (MAX_REL_PATH_CHARS - len(prefix) - len(suffix))) + suffix
 
 
 class WorkCheckpointStoreTests(unittest.TestCase):
@@ -206,6 +222,35 @@ class WorkCheckpointStoreTests(unittest.TestCase):
             self.assertNotIn(str(project), rendered)
             self.assertNotIn("secret source body", rendered)
             self.assertNotIn("remaining", rendered.lower())
+
+    def test_rendered_checkpoint_fits_prompt_budget_contract(self) -> None:
+        files = tuple(
+            CheckpointFile(_max_len_rel_path(index), "sha256:" + ("0" * 64))
+            for index in range(MAX_CHANGED_FILES)
+        )
+        checks = tuple(
+            CheckpointCheck("x" * MAX_COMMAND_CHARS, _max_len_rel_path(index))
+            for index in range(MAX_SUCCESSFUL_CHECKS)
+        )
+        item = WorkCheckpoint(
+            run_id="r",
+            session_id="s",
+            project="E:/project",
+            original_task="T" * MAX_TASK_CHARS,
+            status="ready_for_review",
+            changed_files=files,
+            successful_checks_after_last_change=checks,
+            stop_reason="S" * MAX_STOP_REASON_CHARS,
+            workspace_changed=True,
+        )
+
+        rendered = render_work_checkpoint(item)
+
+        self.assertLessEqual(len(rendered), MAX_WORK_CHECKPOINT_PROMPT_CHARS)
+        self.assertIn(files[0].path, rendered)
+        self.assertIn(files[len(files) // 2].path, rendered)
+        self.assertIn(files[-1].path, rendered)
+        self.assertIn(checks[-1].command, rendered)
 
 
 if __name__ == "__main__":

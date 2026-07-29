@@ -224,18 +224,20 @@ Codey 现在已经有工具 runtime、JSON codec、typed repair、shell risk、R
 
 ## 0.2.28 - ContextSource v1
 
+状态：已落地。第一版是 prompt 上下文装配层，不接管业务 loader，不改变模型能力目标。
+
 ### 做什么
 
 把现有 prompt 上下文块统一成命名的 `ContextSource`：
 
 ```text
-project_map
-coding_current_context
-work_checkpoint
+project_instructions
 verified_facts
 research_brief
-project_instructions
-provider_repair_hint
+project_map
+work_checkpoint
+initial_listing
+coding_current_context
 ```
 
 每个 source 至少声明：
@@ -245,10 +247,14 @@ key
 loader
 budget
 freshness
-renderer
 why_included
 failure_policy
 ```
+
+`source` 的 metadata 先只给代码、测试和未来 projection 使用，不渲染进模型 prompt。
+`ProjectTaskContextBuilder` 继续负责 verified facts、Research Brief、Project Map、
+Work Checkpoint 和验证候选的业务加载；`ContextSource` 只负责把已经拿到的内容
+做命名、预算、heading 和失败降级。
 
 ### 为什么做
 
@@ -263,10 +269,12 @@ Codey 已经有很多上下文块，但它们都在回答同一个问题：这�
 
 ### 验收标准
 
-- 至少 Project Map、Coding Current Context、Work Checkpoint 和 Verified Facts 走 ContextSource。
-- 每个 source 有字符预算和失败降级。
-- tests 能证明普通聊天不会注入项目上下文，Project Writer 默认不会注入网页搜索能力。
-- prompt 输出与旧行为语义兼容。
+- Project instructions、Verified Facts、Research Brief、Project Map、Work
+  Checkpoint、Initial Listing 和 Coding Current Context 走 ContextSource。
+- 每个 source 有字符预算、freshness、why_included 和失败策略。
+- 普通 loader 失败 fail-open；`TaskCancelled` 和 `DeadlineExceeded` 不被吞掉。
+- `coding_current_context` 仍只在 tool result 后追加，不进入初始 prompt 或 repair prompt。
+- prompt 输出与旧行为语义兼容，source metadata 不进入 prompt。
 
 ### 暂不做
 
@@ -274,6 +282,9 @@ Codey 已经有很多上下文块，但它们都在回答同一个问题：这�
 - 不做自动长期记忆注入。
 - 不把整个 Research vault 注入 Writer。
 - 不新增 UI 模式。
+- 不做 provider routing。
+- 不迁移 checkpoint/restore。
+- 不做 live A/B 作为本版本开工门槛。
 
 ## 0.2.29 - Provider Capability Registry
 

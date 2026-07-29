@@ -4,6 +4,28 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.28 - ContextSource v1
+
+- 新增 `codey/context_source.py`：一个很小的 prompt 装配层，用命名
+  context source 渲染上下文块，并为每段 source 声明字符预算、freshness、
+  why_included、heading 和明确的 failure policy。
+- `agent.py` 现在把已有项目 prompt 块包装成 `ContextSource`：project
+  instructions、verified project facts、Research Brief、Project Map、Work
+  Checkpoint 和 initial listing。`ProjectTaskContextBuilder` 仍然负责 facts、
+  knowledge、map、checkpoint 和验证候选的业务加载。
+- `Coding current local context` 也通过 `ContextSource` 渲染，但仍然只在本地
+  tool result 之后追加；不会进入初始 project prompt，也不会进入 protocol repair
+  prompt。
+- 可选 context source 的普通失败会 fail-open，但 `TaskCancelled` 和
+  `DeadlineExceeded` 会继续抛出，避免用户 Stop 或 provider deadline 在 prompt
+  装配阶段被吞掉。
+- Work Checkpoint 的 context budget 现在从 `work_checkpoint.py` 的生产者上限推导，
+  避免有边界的 checkpoint 在 source-level clipping 时丢掉 changed files 列表。
+- source metadata 不渲染进模型 prompt。本版本保持 prompt 内容目标等价，只是让
+  上下文块变成有名字、有预算、可测试、可审计的内部边界。
+- 本版本不做 live A/B、不改 UI、不做 provider routing、不做向量记忆、不自动注入
+  Research vault、不迁移 checkpoint/restore，也不新增模型能力。
+
 ## 0.2.27 - ToolDefinition v1
 
 - 新增 `codey/tool_definition.py`，作为 coding tools 的唯一内部元数据来源。

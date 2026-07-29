@@ -16,6 +16,7 @@ from typing import Callable, Protocol
 
 from codey import cancellation
 from codey.coding_context import CodingContext, render_coding_context
+from codey.context_source import ContextSource, render_context_sources
 from codey.events import RunEvent, print_run_event
 from codey.agent_tools import (
     DEFAULT_TOOL_FNS,
@@ -54,6 +55,7 @@ from codey.verification_policy import (
     check_covers_selected_candidate,
     select_verification_candidate,
 )
+from codey.work_checkpoint import MAX_WORK_CHECKPOINT_PROMPT_CHARS
 
 DEFAULT_MAX_TURNS = 50
 DEFAULT_STAGNANT_TURNS = 4
@@ -61,6 +63,15 @@ SUPPORTED_TOOL_NAMES = SUPPORTED_RUNTIME_TOOL_NAMES
 INFORMATION_TOOL_NAMES = INFORMATION_RUNTIME_TOOL_NAMES
 PROJECT_INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md")
 MAX_PROJECT_INSTRUCTION_CHARS = 12000
+PROJECT_INSTRUCTIONS_CONTEXT_BUDGET = (
+    MAX_PROJECT_INSTRUCTION_CHARS * len(PROJECT_INSTRUCTION_FILES) + 1000
+)
+VERIFIED_FACTS_CONTEXT_BUDGET = 8000
+RESEARCH_CONTEXT_BUDGET = 7000
+PROJECT_MAP_CONTEXT_BUDGET = 12000
+WORK_CHECKPOINT_CONTEXT_BUDGET = MAX_WORK_CHECKPOINT_PROMPT_CHARS
+INITIAL_LISTING_CONTEXT_BUDGET = 4000
+CODING_CURRENT_CONTEXT_BUDGET = 3000
 VERIFICATION_REQUEST_RE = re.compile(
     r"\b("
     r"run|test|tests|unittest|pytest|verify|verification|check|build|lint|typecheck"
@@ -631,41 +642,60 @@ def run(
             if factual_handoff
             else request
         )
-        facts = (
-            f"Verified project facts from successful local runs:\n{project_facts}\n\n"
-            if project_facts
-            else ""
+        context = render_context_sources(
+            (
+                ContextSource(
+                    key="project_instructions",
+                    loader=lambda: format_project_instructions(project_instructions),
+                    budget=PROJECT_INSTRUCTIONS_CONTEXT_BUDGET,
+                    freshness="run_start",
+                    why_included="project instruction files from the project root",
+                    heading="Project instructions:",
+                ),
+                ContextSource(
+                    key="verified_facts",
+                    loader=lambda: project_facts,
+                    budget=VERIFIED_FACTS_CONTEXT_BUDGET,
+                    freshness="run_start",
+                    why_included="successful local checks recorded for this project",
+                    heading="Verified project facts from successful local runs:",
+                ),
+                ContextSource(
+                    key="research_brief",
+                    loader=lambda: research_context,
+                    budget=RESEARCH_CONTEXT_BUDGET,
+                    freshness="run_start",
+                    why_included="bounded research brief from the current chat",
+                ),
+                ContextSource(
+                    key="project_map",
+                    loader=lambda: project_map,
+                    budget=PROJECT_MAP_CONTEXT_BUDGET,
+                    freshness="run_start",
+                    why_included="bounded local project map prepared before writing",
+                ),
+                ContextSource(
+                    key="work_checkpoint",
+                    loader=lambda: work_checkpoint,
+                    budget=WORK_CHECKPOINT_CONTEXT_BUDGET,
+                    freshness="run_start",
+                    why_included="bounded local checkpoint from a previous project run",
+                ),
+                ContextSource(
+                    key="initial_listing",
+                    loader=lambda: tool_fns.list_directory(project, ".").output,
+                    budget=INITIAL_LISTING_CONTEXT_BUDGET,
+                    freshness="run_start",
+                    why_included="current top-level project listing",
+                    heading="Initial listing:",
+                ),
+            )
         )
-        map_block = (
-            f"{project_map}\n\n"
-            if project_map
-            else ""
-        )
-        checkpoint_block = (
-            f"{work_checkpoint}\n\n"
-            if work_checkpoint
-            else ""
-        )
-        research_block = (
-            f"{research_context.strip()}\n\n"
-            if research_context.strip()
-            else ""
-        )
-        instructions_block = (
-            "Project instructions:\n"
-            f"{format_project_instructions(project_instructions)}\n\n"
-            if project_instructions
-            else ""
-        )
+        context_block = f"{context}\n\n" if context else ""
         return (
             f"{codec.system_prompt()}\n\n"
             "Project workspace: use paths relative to the project root.\n"
-            f"{instructions_block}"
-            f"{facts}"
-            f"{research_block}"
-            f"{map_block}"
-            f"{checkpoint_block}"
-            f"Initial listing:\n{tool_fns.list_directory(project, '.').output}\n\n"
+            f"{context_block}"
             f"User task:\n{current}"
         )
 
@@ -733,7 +763,17 @@ def run(
         )
 
     def append_coding_context(prompt: str) -> str:
-        context = current_coding_context()
+        context = render_context_sources(
+            (
+                ContextSource(
+                    key="coding_current_context",
+                    loader=current_coding_context,
+                    budget=CODING_CURRENT_CONTEXT_BUDGET,
+                    freshness="after_tool_result",
+                    why_included="current read, edit, and verification facts",
+                ),
+            )
+        )
         if not context:
             return prompt
         return f"{prompt}\n\n{context}"

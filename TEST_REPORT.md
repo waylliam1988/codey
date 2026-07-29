@@ -1,5 +1,57 @@
 # Codey Test Report
 
+## 0.2.28 ContextSource v1
+
+Codey 0.2.28 adds a small named context assembly layer for project Writer
+prompts. It keeps business loading in the existing stores/builders and makes
+prompt context blocks explicit, bounded, fail-open where appropriate, and
+testable.
+
+Production changes:
+
+- New `codey/context_source.py` defines `ContextSource`,
+  `RenderedContextSource`, `render_context_source()`, and
+  `render_context_sources()`.
+- `agent.py` now renders project instructions, verified project facts, Research
+  Brief, Project Map, Work Checkpoint, and initial listing through
+  `ContextSource`.
+- `ProjectTaskContextBuilder` still owns loading verified facts, knowledge,
+  maps, checkpoints, and verification candidates. `ContextSource` does not
+  import or depend on those stores.
+- `Coding current local context` is rendered through `ContextSource` only in
+  the post-tool-result prompt path. It still does not enter protocol repair
+  prompts.
+- Optional source failures fail open, but `TaskCancelled` and
+  `DeadlineExceeded` are re-raised so Stop and provider deadlines are not
+  swallowed during prompt assembly.
+- Work Checkpoint context budget is derived from producer limits in
+  `work_checkpoint.py`; tests lock that bounded rendered checkpoints fit the
+  source budget and keep their changed-file list.
+- Source metadata is retained for code/tests/future projections and is not
+  rendered into model-visible prompts.
+
+Validation:
+
+```text
+python -m unittest tests.test_work_checkpoint tests.test_context_source tests.test_agent tests.test_project_task_context tests.test_coding_context
+# 136 tests passed, 2 skipped
+
+python -m unittest tests.test_work_checkpoint_flow
+# 15 passed
+
+python -m pytest tests\test_server.py -q
+# 128 passed, 1 skipped, 1 pytest cache warning
+
+python -m pytest -q
+# 1439 passed, 8 skipped, 1 pytest cache warning, 133 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\context_source.py codey\agent.py codey\work_checkpoint.py codey\project_task_context.py codey\coding_context.py codey\__init__.py
+# passed
+```
+
 ## 0.2.27 ToolDefinition v1
 
 Codey 0.2.27 extracts the existing coding tool metadata out of

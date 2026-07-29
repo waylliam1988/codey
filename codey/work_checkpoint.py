@@ -26,6 +26,16 @@ MAX_CHANGED_FILES = 32
 MAX_SUCCESSFUL_CHECKS = 8
 MAX_TASK_CHARS = 2_000
 MAX_COMMAND_CHARS = 500
+MAX_REL_PATH_CHARS = 240
+MAX_STOP_REASON_CHARS = 80
+WORK_CHECKPOINT_PROMPT_OVERHEAD_CHARS = 1_500
+MAX_WORK_CHECKPOINT_PROMPT_CHARS = (
+    MAX_TASK_CHARS
+    + MAX_CHANGED_FILES * (MAX_REL_PATH_CHARS + 2)
+    + MAX_SUCCESSFUL_CHECKS * (MAX_COMMAND_CHARS + MAX_REL_PATH_CHARS + 12)
+    + MAX_STOP_REASON_CHARS
+    + WORK_CHECKPOINT_PROMPT_OVERHEAD_CHARS
+)
 VALID_STATUSES = frozenset({"working", "ready_for_review", "fixing_review", "interrupted"})
 
 
@@ -41,7 +51,7 @@ def _text(value: object, limit: int) -> str:
 def _rel_path(value: object) -> str | None:
     text = str(value or "").strip().replace("\\", "/")
     path = PurePosixPath(text)
-    if not text or path.is_absolute() or ".." in path.parts or len(text) > 240:
+    if not text or path.is_absolute() or ".." in path.parts or len(text) > MAX_REL_PATH_CHARS:
         return None
     return path.as_posix()
 
@@ -191,7 +201,7 @@ class WorkCheckpointStore:
                 changed_files=tuple(files),
                 successful_checks_after_last_change=tuple(checks),
                 last_action=action,
-                stop_reason=_text(payload.get("stop_reason"), 80),
+                stop_reason=_text(payload.get("stop_reason"), MAX_STOP_REASON_CHARS),
             )
         except (OSError, TypeError, ValueError):
             return None
@@ -259,7 +269,12 @@ class WorkCheckpointStore:
     def set_status(self, checkpoint: WorkCheckpoint, status: str, stop_reason: str = "") -> WorkCheckpoint:
         if status not in VALID_STATUSES:
             raise ValueError(f"invalid checkpoint status: {status}")
-        updated = replace(checkpoint, status=status, updated_at=_now(), stop_reason=_text(stop_reason, 80))
+        updated = replace(
+            checkpoint,
+            status=status,
+            updated_at=_now(),
+            stop_reason=_text(stop_reason, MAX_STOP_REASON_CHARS),
+        )
         self.save(updated)
         return updated
 
