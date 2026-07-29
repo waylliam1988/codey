@@ -1,5 +1,60 @@
 # Codey Test Report
 
+## 0.2.29 Provider Capability Registry v1
+
+Codey 0.2.29 adds a static provider capability registry for conservative
+fallback ordering. It does not add provider ranking UI, runtime capability
+learning, model self-routing, or Research mid-run failover.
+
+Production changes:
+
+- New `codey/provider_capabilities.py` defines `ProviderCapability`,
+  `capability_for()`, and `rank_providers()`.
+- Capabilities describe static hints only: JSON reliability, coding/research/
+  review fit, context budget hint, native-tool interference risk, canary hint,
+  failure families, and notes.
+- `rank_providers()` is pure and deterministic. It preserves input order as the
+  tie-breaker, keeps explicit `preferred` providers first, treats `avoid` as
+  "rank later" rather than "disable", honors `excluded`, and returns defaults
+  for unknown providers. Generic hybrid ranking uses the stricter of Research
+  and Coding fit.
+- `TaskRunner` consumes capability ordering only on replacement paths:
+  selected provider unavailable, connect failure, canary failure, and Writer
+  failover. Hybrid startup fallback is ranked as Research because the first
+  phase runs Research; hybrid Writer failover is ranked as Project.
+  User-selected providers are not preempted while available.
+- `reviewer_candidates()` runs candidates through review-mode static ordering
+  while still filtering writer/local/unavailable providers and keeping UI
+  payloads free of capability fields.
+- `ProviderSupervisor` remains the runtime health/cooldown/canary owner.
+  Runtime failures do not mutate static capabilities and capabilities are not
+  stored in `provider-health.json`.
+- `failure_families` are tested against the real `ProviderFailure` kind
+  vocabulary. `context_budget_hint` is not consumed by production policy in
+  this release.
+
+Validation:
+
+```text
+python -m unittest tests.test_provider_capabilities tests.test_provider_supervisor tests.test_writer_failover
+# 32 passed
+
+python -m unittest tests.test_work_checkpoint_flow
+# 15 passed
+
+python -m pytest tests\test_server.py -q
+# 135 passed, 1 skipped, 1 pytest cache warning
+
+python -m pytest -q
+# 1455 passed, 8 skipped, 1 pytest cache warning, 145 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\provider_capabilities.py codey\task_runner.py codey\server.py codey\__init__.py
+# passed
+```
+
 ## 0.2.28 ContextSource v1
 
 Codey 0.2.28 adds a small named context assembly layer for project Writer

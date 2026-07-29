@@ -288,26 +288,28 @@ Codey 已经有很多上下文块，但它们都在回答同一个问题：这�
 
 ## 0.2.29 - Provider Capability Registry
 
+状态：已落地。第一版只做静态 provider 能力提示和 fallback 排序，不做调度系统。
+
 ### 做什么
 
-把网页模型和本地模型的运行能力数据化，形成内部 provider capability registry。
+把网页模型和本地模型的静态运行倾向数据化，形成内部 provider capability registry。
 
 能力可以包括：
 
 ```text
 json_reliability
-send_readiness
-completion_detection
 context_budget_hint
 research_fit
 coding_fit
 review_fit
 failure_families
 native_tool_interference_risk
-needs_canary
+needs_canary_by_default
 ```
 
-这不是排行榜，也不是用户选择器里的复杂说明；它服务内部路由、prompt 收紧和故障接管。
+这不是排行榜，也不是用户选择器里的复杂说明；它只服务内部 fallback 排序和后续策略收敛。
+`ProviderSupervisor` 继续只负责 runtime health、cooldown 和 canary；runtime failure
+不会改写静态 capability。
 
 ### 为什么做
 
@@ -315,18 +317,23 @@ Codey 的特殊价值是兼容网页 AI。网页模型不像 API 模型那样有
 
 ### 对 Codey 的好处
 
-- 不同 provider 可以拿到更合适的 prompt 和等待策略。
-- Research 可以避开明显不适合严格 JSON tool loop 的 provider。
-- Writer 接管可以基于能力和健康状态，而不是只看“是否在线”。
-- provider repair 和 canary 可以更有针对性。
+- Research fallback 有替代 provider 时，可以避开静态标记为 `research_fit=avoid` 的 provider。
+- Writer 接管的候选顺序可以逐步基于 task mode，而不是只看“是否在线”。
+- Review helper 候选可以共享同一套静态排序，而不向 UI 暴露复杂术语。
+- provider repair、canary 和 prompt 策略后续可以围绕同一份 capability 扩展。
 - 本地 OpenAI-compatible 模型也能纳入同一套能力判断。
 
 ### 验收标准
 
 - registry 有静态内置能力和运行时健康状态的清晰分界。
-- provider failure 能回写 bounded 统计，但不保存聊天正文。
+- `rank_providers()` 是纯函数，unknown provider 走 default，`avoid` 只排后不禁用；
+  通用 hybrid 排序取 Research/Coding 中更严的适配度。
+- `TaskRunner` 只在 selected provider 不可用、connect failure、canary failure 和
+  Writer failover 这些必须换 provider 的路径消费 capability 排序。
+- hybrid 启动 fallback 按 Research 排序；进入 Writer 后的 failover 按 Project 排序。
+- `failure_families` 必须被测试约束在真实 `ProviderFailure` kind 词表内。
 - provider 选择 UI 不增加复杂技术文案。
-- 至少一处 prompt / run policy 使用 capability，而不是硬编码 provider id。
+- runtime failure 不会修改静态 capability。
 
 ### 暂不做
 
@@ -334,6 +341,10 @@ Codey 的特殊价值是兼容网页 AI。网页模型不像 API 模型那样有
 - 不做 provider 排名页。
 - 不让模型自己决定切换 provider。
 - 不把 capability 当作训练数据长期上传。
+- 不做 Research 中途 failover。
+- 不做 live A/B 作为本版本开工门槛。
+- 暂不消费 capability 里的 canary 字段。
+- 暂不消费 `context_budget_hint`；未来使用前必须先补测量或实机证据。
 
 ## 0.2.30 - Managed Output Handles
 

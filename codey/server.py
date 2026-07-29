@@ -69,6 +69,7 @@ from codey.providers.local_openai import (
     probe_local_endpoint,
     save_local_config,
 )
+from codey.provider_capabilities import rank_providers
 from codey.provider_diagnostics import ProviderFailure, capture_provider_failure
 from codey.provider_supervisor import ProviderSupervisor
 from codey.adapter_repair import AdapterRepairResult
@@ -135,13 +136,14 @@ MAX_CONVERSATION_STATES = 32
 def reviewer_candidates(writer_id: str) -> tuple[str, ...]:
     writer = (writer_id or DEFAULT_PROVIDER_ID).strip().lower()
     supervisor = getattr(globals().get("STATE"), "provider_supervisor", None)
-    return tuple(
+    candidates = tuple(
         provider_id
         for provider_id in PROVIDER_LABELS
         if provider_id != writer
         and provider_id != "local"
         and (supervisor is None or supervisor.is_available(provider_id))
     )
+    return rank_providers(candidates, mode="review")
 
 
 def review_label(provider_id: str) -> str:

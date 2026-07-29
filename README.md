@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.28-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.29-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.28`
+Version: `0.2.29`
 
 [Version history](CHANGELOG.md)
 
@@ -642,6 +642,7 @@ codey/
   provider_submission.py    shared one-shot remote submission boundary
   provider_send_loop.py     shared send-loop lifecycle helpers for web providers
   provider_timeouts.py      shared provider deadline and navigation timeout helpers
+  provider_capabilities.py  static provider fit hints for fallback ordering
   provider_supervisor.py    passive health circuit, Writer selection, and canary
   adapter_overrides.py      local adapter candidates, promotion, and rollback
   adapter_repair.py         sandboxed provider adapter repair runner

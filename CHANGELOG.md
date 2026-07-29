@@ -4,6 +4,35 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.29 - Provider Capability Registry v1
+
+- Added `codey/provider_capabilities.py`, a static internal registry of
+  provider capability hints: JSON reliability, coding/research/review fit,
+  context budget hints, native-tool interference risk, canary hint, bounded
+  failure families, and notes.
+- `rank_providers()` is a pure deterministic ordering helper. It preserves
+  input order as the tie-breaker, keeps an explicit preferred provider first,
+  treats `avoid` as "rank later" rather than "disable", and returns default
+  capabilities for unknown providers. Generic hybrid ranking uses the stricter
+  of Research and Coding fit.
+- `TaskRunner` now uses mode-aware capability ordering only when it must choose
+  a replacement provider: selected provider unavailable, connect failure,
+  canary failure, and Writer failover. Hybrid startup fallback is ranked as
+  Research because the first phase is Research; hybrid Writer failover is ranked
+  as Project. User-selected providers are not preempted by capability.
+- `reviewer_candidates()` now runs candidate ids through the same static
+  ordering helper for review mode while still filtering writer/local/unavailable
+  providers and without exposing capability terminology to the UI.
+- `ProviderSupervisor` remains the runtime health/cooldown/canary owner.
+  Static capabilities are not persisted in `provider-health.json`, and runtime
+  failures do not mutate them.
+- Provider capability tests pin `failure_families` to the real
+  `ProviderFailure` kind vocabulary. `context_budget_hint` remains a static
+  hint and is not consumed by production policy in this release.
+- This release does not add a provider ranking UI, model self-routing, Research
+  mid-run failover, live A/B, runtime capability learning, or canary consumption
+  from capability fields.
+
 ## 0.2.28 - ContextSource v1
 
 - Added `codey/context_source.py`, a small prompt assembly layer that renders

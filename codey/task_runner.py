@@ -36,6 +36,7 @@ from codey.project_task_context import (
     safe_verification_candidates,
 )
 from codey.providers import PROVIDER_LABELS
+from codey.provider_capabilities import rank_providers
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
 from codey.receipt import build_task_receipt
@@ -211,6 +212,14 @@ def _resolve_task_kind(request: TaskRequest) -> str:
             return "chat"
         return intent
     return "project" if request.project else "chat"
+
+
+def _startup_failover_mode(task_kind: str) -> str:
+    return "research" if task_kind == "hybrid" else task_kind
+
+
+def _writer_failover_mode(task_kind: str) -> str:
+    return "project" if task_kind == "hybrid" else task_kind
 
 
 def _ui_mode(kind: str, project: str | None) -> str:
@@ -536,6 +545,12 @@ class TaskRunner:
                 except Exception:
                     return tuple(PROVIDER_LABELS)
 
+            def ranked_failover_order() -> tuple[str, ...]:
+                return rank_providers(
+                    provider_failover_order(),
+                    mode=_startup_failover_mode(task_kind),
+                )
+
             preflight_tried: set[str] = set()
             preflight_switches = 0
             if supervisor is not None:
@@ -543,7 +558,7 @@ class TaskRunner:
             if supervisor is not None and not supervisor.is_available(provider_id):
                 replacement_id = supervisor.select(
                     "",
-                    provider_failover_order(),
+                    ranked_failover_order(),
                     excluded=(provider_id,),
                 )
                 if replacement_id is not None:
@@ -581,14 +596,14 @@ class TaskRunner:
                     replacement_id = (
                         supervisor.select(
                             "",
-                            provider_failover_order(),
+                            ranked_failover_order(),
                             excluded=preflight_tried,
                         )
                         if supervisor is not None
                         else next(
                             (
                                 item
-                                for item in provider_failover_order()
+                                for item in ranked_failover_order()
                                 if item not in preflight_tried
                             ),
                             None,
@@ -624,7 +639,7 @@ class TaskRunner:
                     raise RuntimeError("no healthy provider available after canary failure")
                 replacement_id = supervisor.select(
                     "",
-                    provider_failover_order(),
+                    ranked_failover_order(),
                     excluded=preflight_tried,
                 )
                 if replacement_id is None:
@@ -1182,16 +1197,20 @@ class TaskRunner:
             )
 
         def select_next_writer(excluded: set[str]) -> str | None:
+            ranked_order = rank_providers(
+                hooks.provider_failover_order(),
+                mode=_writer_failover_mode(frame.task_kind),
+            )
             if hooks.supervisor is not None:
                 return hooks.supervisor.select(
                     "",
-                    hooks.provider_failover_order(),
+                    ranked_order,
                     excluded=excluded,
                 )
             return next(
                 (
                     item
-                    for item in hooks.provider_failover_order()
+                    for item in ranked_order
                     if item not in excluded
                 ),
                 None,

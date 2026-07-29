@@ -299,6 +299,7 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertFalse(by_id["qwen"]["available"])
         self.assertFalse(by_id["glm"]["available"])
         self.assertFalse(by_id["local"]["available"])
+        self.assertEqual(set(by_id["deepseek"]), {"id", "label", "available"})
 
     def test_provider_status_update_only_reports_changed_model(self) -> None:
         payload = server.provider_status_update("deepseek", True)
@@ -358,6 +359,19 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertNotIn("qwen", reviewers)
         self.assertNotIn("local", reviewers)
         self.assertIn("stepfun", reviewers)
+
+    def test_reviewer_candidates_keep_ui_terms_out_of_payload(self) -> None:
+        state = server.State()
+        with mock.patch.object(server, "STATE", state):
+            reviewers = server.reviewer_candidates("deepseek")
+            payload = server.provider_payload({"deepseek": True, "mimo": True})
+
+        self.assertNotIn("local", reviewers)
+        self.assertNotIn("deepseek", reviewers)
+        self.assertEqual(reviewers[0], "mimo")
+        for item in payload:
+            self.assertNotIn("capability", item)
+            self.assertNotIn("fit", item)
 
     def test_provider_warmup_emits_filtered_provider_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1847,6 +1861,282 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIs(provider_flow._handler.__self__, state)
         for name in provider_controls._TASK_CONTEXT_FIELDS:
             self.assertFalse(hasattr(provider_controls._context, name), name)
+
+    def test_research_unavailable_fallback_uses_capability_order(self) -> None:
+        state = server.State()
+        state.provider_failover_order = lambda: ("deepseek", "mimo", "stepfun")
+        state.provider_supervisor.record_failure(
+            "deepseek",
+            ProviderFailure("DeepSeek", "send", "", "", "limited", "now", "rate_limited"),
+        )
+        provider = mock.Mock()
+        provider.name = "StepFun Chat"
+        provider.location = "https://chat.stepfun.com/chats/"
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
+            mock.patch.object(
+                TaskRunner,
+                "_run_research_task",
+                return_value=ResearchRunResult("question", "summary", "done", 1),
+            ) as research_task,
+        ):
+            server._run_task(
+                "session-research-fallback",
+                None,
+                "Research storage",
+                8,
+                False,
+                "deepseek",
+                "research",
+            )
+
+        get_provider.assert_called_once_with("stepfun")
+        self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
+        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+
+    def test_hybrid_unavailable_fallback_uses_research_capability_order(self) -> None:
+        state = server.State()
+        state.provider_failover_order = lambda: ("deepseek", "mimo", "stepfun")
+        state.provider_supervisor.record_failure(
+            "deepseek",
+            ProviderFailure("DeepSeek", "send", "", "", "limited", "now", "rate_limited"),
+        )
+        provider = mock.Mock()
+        provider.name = "StepFun Chat"
+        provider.location = "https://chat.stepfun.com/chats/"
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
+            mock.patch.object(
+                TaskRunner,
+                "_run_research_task",
+                return_value=ResearchRunResult("question", "summary", "done", 1),
+            ) as research_task,
+            mock.patch.object(
+                server,
+                "agent_run",
+                return_value=RunResult("project done", "done", 1, False, False),
+            ),
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": []},
+            ),
+            mock.patch.object(server, "_run_project_audit", return_value=()),
+        ):
+            server._run_task(
+                "session-hybrid-fallback",
+                td,
+                "Research storage and update docs",
+                8,
+                False,
+                "deepseek",
+                "hybrid",
+            )
+
+        get_provider.assert_called_once_with("stepfun")
+        self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
+        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+
+    def test_research_connect_failure_uses_capability_order(self) -> None:
+        state = server.State()
+        state.provider_failover_order = lambda: ("deepseek", "mimo", "stepfun")
+        provider = mock.Mock()
+        provider.name = "StepFun Chat"
+        provider.location = "https://chat.stepfun.com/chats/"
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(
+                state,
+                "get_provider",
+                side_effect=[RuntimeError("tab unavailable"), provider],
+            ) as get_provider,
+            mock.patch.object(
+                TaskRunner,
+                "_run_research_task",
+                return_value=ResearchRunResult("question", "summary", "done", 1),
+            ) as research_task,
+        ):
+            server._run_task(
+                "session-research-connect-fallback",
+                None,
+                "Research storage",
+                8,
+                False,
+                "deepseek",
+                "research",
+            )
+
+        self.assertEqual(
+            [call.args[0] for call in get_provider.call_args_list],
+            ["deepseek", "stepfun"],
+        )
+        self.assertEqual(research_task.call_args.kwargs["provider_id"], "stepfun")
+        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
+
+    def test_research_fallback_does_not_block_only_avoid_provider(self) -> None:
+        state = server.State()
+        state.provider_failover_order = lambda: ("mimo",)
+        state.provider_supervisor.record_failure(
+            "deepseek",
+            ProviderFailure("DeepSeek", "send", "", "", "limited", "now", "rate_limited"),
+        )
+        provider = mock.Mock()
+        provider.name = "MiMo Chat"
+        provider.location = "https://kimi.moonshot.cn/"
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
+            mock.patch.object(
+                TaskRunner,
+                "_run_research_task",
+                return_value=ResearchRunResult("question", "summary", "done", 1),
+            ) as research_task,
+        ):
+            server._run_task(
+                "session-research-avoid-only",
+                None,
+                "Research storage",
+                8,
+                False,
+                "deepseek",
+                "research",
+            )
+
+        get_provider.assert_called_once_with("mimo")
+        self.assertEqual(research_task.call_args.kwargs["provider_id"], "mimo")
+        self.assertEqual(state.last_terminal_event["provider"], "mimo")
+
+    def test_writer_failover_uses_project_capability_order(self) -> None:
+        state = server.State()
+        state.provider_failover_order = lambda: ("stepfun", "glm")
+        first = mock.Mock()
+        first.name = "DeepSeek Web"
+        first.location = "https://chat.deepseek.com/"
+        second = mock.Mock()
+        second.name = "GLM Chat"
+        second.location = "https://chat.z.ai/"
+        failure = ProviderActionError(ProviderFailure(
+            "DeepSeek",
+            "send",
+            "",
+            "",
+            "missing",
+            "now",
+            "response_missing",
+        ))
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(
+                state,
+                "get_provider",
+                side_effect=[first, second],
+            ) as get_provider,
+            mock.patch.object(
+                server,
+                "agent_run",
+                side_effect=[failure, RunResult("done", "done", 1, False, False)],
+            ),
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": []},
+            ),
+            mock.patch.object(server, "_run_project_audit", return_value=()),
+            mock.patch(
+                "codey.task_runner.rank_providers",
+                return_value=("glm", "stepfun"),
+            ) as rank,
+        ):
+            server._run_task(
+                "session-project-ranked-failover",
+                td,
+                "Inspect app.py",
+                8,
+                False,
+                "deepseek",
+            )
+
+        self.assertEqual(
+            [call.args[0] for call in get_provider.call_args_list],
+            ["deepseek", "glm"],
+        )
+        rank.assert_called_with(("stepfun", "glm"), mode="project")
+        self.assertEqual(state.last_terminal_event["provider"], "glm")
+
+    def test_hybrid_writer_failover_uses_project_capability_order(self) -> None:
+        state = server.State()
+        state.provider_failover_order = lambda: ("mimo", "stepfun")
+        first = mock.Mock()
+        first.name = "DeepSeek Web"
+        first.location = "https://chat.deepseek.com/"
+        second = mock.Mock()
+        second.name = "StepFun Chat"
+        second.location = "https://chat.stepfun.com/chats/"
+        failure = ProviderActionError(ProviderFailure(
+            "DeepSeek",
+            "send",
+            "",
+            "",
+            "missing",
+            "now",
+            "response_missing",
+        ))
+
+        with (
+            tempfile.TemporaryDirectory() as td,
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(
+                state,
+                "get_provider",
+                side_effect=[first, second],
+            ) as get_provider,
+            mock.patch.object(
+                TaskRunner,
+                "_run_research_task",
+                return_value=ResearchRunResult("question", "summary", "done", 1),
+            ) as research_task,
+            mock.patch.object(
+                server,
+                "agent_run",
+                side_effect=[failure, RunResult("done", "done", 1, False, False)],
+            ),
+            mock.patch.object(
+                server,
+                "collect_changes",
+                return_value={"ok": True, "changed_count": 0, "files": []},
+            ),
+            mock.patch.object(server, "_run_project_audit", return_value=()),
+            mock.patch(
+                "codey.task_runner.rank_providers",
+                return_value=("stepfun", "mimo"),
+            ) as rank,
+        ):
+            server._run_task(
+                "session-hybrid-ranked-writer-failover",
+                td,
+                "Research then inspect app.py",
+                8,
+                False,
+                "deepseek",
+                "hybrid",
+            )
+
+        self.assertEqual(
+            [call.args[0] for call in get_provider.call_args_list],
+            ["deepseek", "stepfun"],
+        )
+        self.assertEqual(research_task.call_args.kwargs["provider_id"], "deepseek")
+        rank.assert_called_with(("mimo", "stepfun"), mode="project")
+        self.assertEqual(state.last_terminal_event["provider"], "stepfun")
 
     def test_shell_request_includes_risk_explanation(self) -> None:
         state = server.State()

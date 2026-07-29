@@ -4,6 +4,27 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.29 - Provider Capability Registry v1
+
+- 新增 `codey/provider_capabilities.py`：静态内部 provider 能力注册表，记录
+  JSON 可靠性、coding/research/review 适配度、上下文预算提示、网页原生工具干扰
+  风险、canary 提示、bounded failure families 和备注。
+- `rank_providers()` 是纯确定性排序 helper。它保留输入顺序作为 tie-break，
+  明确 selected/preferred provider 优先，`avoid` 只表示“有替代时排后”，不会禁用，
+  unknown provider 走 default capability。通用 hybrid 排序取 Research 和 Coding 中更严的适配度。
+- `TaskRunner` 只在必须找替代 provider 时消费 mode-aware capability 排序：selected
+  provider 不可用、connect failure、canary failure 和 Writer failover。hybrid 启动
+  fallback 按 Research 排序，因为第一阶段先跑 Research；hybrid 进入 Writer 后的
+  failover 按 Project 排序。用户明确选择的 provider 不会被 capability 偷换。
+- `reviewer_candidates()` 现在也会把候选 reviewer 走一次 review mode 静态排序，但仍然
+  过滤 writer/local/unavailable provider，并且不向 UI 暴露 capability 术语。
+- `ProviderSupervisor` 仍然只负责 runtime health、cooldown 和 canary。静态 capability
+  不写入 `provider-health.json`，runtime failure 也不会修改 capability。
+- 测试会约束 `failure_families` 必须属于真实 `ProviderFailure` kind 词表。
+  `context_budget_hint` 本版本仍然只是静态 hint，不进入生产策略消费。
+- 本版本不做 provider 排名 UI、不让模型自选 provider、不做 Research 中途 failover、
+  不做 live A/B、不做 runtime capability 学习，也暂不消费 capability 里的 canary 字段。
+
 ## 0.2.28 - ContextSource v1
 
 - 新增 `codey/context_source.py`：一个很小的 prompt 装配层，用命名
