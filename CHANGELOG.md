@@ -4,6 +4,35 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.31 - Internal Permission Profiles v1
+
+- Added `codey/permission_profiles.py`, a small internal registry for runtime
+  phase boundaries: `chat`, `research`, `coding_writer`, `reviewer`, and
+  `planning_readonly`.
+- Coding tool definitions can now be filtered by profile. `JsonToolCodec()`
+  still defaults to the full Project Writer contract, while
+  `JsonToolCodec(permission_profile="planning_readonly")` omits `edit`, `run`,
+  and `shell`.
+- Coding protocol errors now distinguish globally unknown tools from tools that
+  exist but are not allowed in the current profile. `write_file` remains
+  `unknown_tool`; `edit` in `planning_readonly` is `disallowed_tool`.
+- `parallel` now checks both `parallel_safe` and the active profile, so a
+  read-only profile cannot smuggle disallowed tools through a batch wrapper.
+- Empty coding tool definition sets render no contract, and non-coding profiles
+  fail fast if accidentally used to construct a coding codec. Tests also lock
+  `coding_writer` to all current coding tool definitions.
+- `agent.run()` accepts `permission_profile` for default codec creation and
+  ContextSource filtering, while still respecting any explicit codec supplied
+  by tests or manual probes.
+- The private consensus/project-audit codec now uses `planning_readonly`,
+  matching its existing read-only execution boundary.
+- Project Writer calls are explicitly bound to `coding_writer`. Research and
+  Reviewer profiles are declared and tested, but their stable runtimes are not
+  rewritten in this release.
+- This release does not add a user-visible mode switch, project-local permission
+  config, a new safety system, headless execution, or any relaxation of
+  `tool_runtime`, shell approval, safe-path, Research, or run allowlist guards.
+
 ## 0.2.30 - Managed Output Handles v1
 
 - Added `codey/managed_outputs.py`, a run-scoped local store for command output

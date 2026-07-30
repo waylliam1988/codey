@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.30-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.31-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.30`
+Version: `0.2.31`
 
 [Version history](CHANGELOG.md)
 
@@ -609,6 +609,7 @@ codey/
   bounded_scan.py           shared bounded local file traversal
   scan_report.py            compact scan omission facts and coverage rendering
   tool_definition.py        internal coding tool metadata and render hints
+  permission_profiles.py    internal tool/context permission profiles
   context_source.py         named bounded prompt context assembly
   tool_runtime.py           local tools and structured outcomes
   execution_evidence.py     bounded in-memory execution fact ledger

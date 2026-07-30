@@ -1,5 +1,51 @@
 # Codey Test Report
 
+## 0.2.31 Internal Permission Profiles v1
+
+Codey 0.2.31 adds internal permission profiles for runtime phase boundaries.
+It names and tests existing tool/context boundaries without adding a
+user-visible mode switch or replacing runtime safety gates.
+
+Production changes:
+
+- New `codey/permission_profiles.py` defines internal `chat`, `research`,
+  `coding_writer`, `reviewer`, and `planning_readonly` profiles.
+- `ToolDefinition` can now render contracts from filtered definition sets.
+- `JsonToolCodec()` still defaults to the full Project Writer contract, while
+  `JsonToolCodec(permission_profile="planning_readonly")` omits `edit`, `run`,
+  and `shell`.
+- Coding protocol errors now distinguish `unknown_tool` from `disallowed_tool`.
+  `write_file` remains unknown; `edit` in `planning_readonly` is disallowed.
+- `parallel` checks both `parallel_safe` and the active profile.
+- Empty coding tool sets no longer render the full writer contract, and
+  non-coding profiles fail fast if used to construct a coding codec.
+- Tests lock `coding_writer` to every current `ToolDefinition`, so future tool
+  permissions cannot silently split prompt rendering from parsing.
+- `agent.run()` uses `permission_profile` for default codec creation and
+  ContextSource filtering, while respecting explicit codecs.
+- `consensus.READ_ONLY_CODEC` now uses the `planning_readonly` profile. Project
+  Writer calls are explicitly bound to `coding_writer`; Research/Reviewer
+  profiles are declared and tested without rewriting those runtimes.
+
+Validation:
+
+```text
+python -m pytest tests\test_permission_profiles.py tests\test_tool_definition.py tests\test_protocols.py tests\test_agent.py tests\test_consensus.py tests\test_server.py tests\test_research.py -q
+# 408 passed, 4 skipped, 1 pytest cache warning, 60 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\permission_profiles.py codey\tool_definition.py codey\protocols\json_codec.py codey\protocols\base.py codey\agent.py codey\consensus.py codey\research\runner.py codey\task_runner.py codey\__init__.py
+# passed
+
+python -m pytest -q
+# 1485 passed, 8 skipped, 1 pytest cache warning, 161 subtests passed
+
+git diff --check
+# passed, with tests/test_consensus.py CRLF normalization warning
+```
+
 ## 0.2.30 Managed Output Handles v1
 
 Codey 0.2.30 adds run-scoped managed output handles for truncated Project

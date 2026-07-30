@@ -11,7 +11,11 @@ from codey.tool_definition import (
     SUPPORTED_RUNTIME_TOOL_NAMES,
     TOOL_DEFINITIONS,
     TOOL_DEFINITION_BY_NAME,
+    definitions_for_permissions,
+    definitions_for_tool_names,
+    public_example,
     render_tool_activity,
+    render_tool_contract,
 )
 
 
@@ -70,6 +74,23 @@ class ToolDefinitionTests(unittest.TestCase):
                     plan = JsonToolCodec().parse(example)
                     self.assertEqual(plan.protocol_error, "")
                     self.assertTrue(plan.calls or plan.control is not None)
+
+    def test_definition_filters_preserve_contract_order(self) -> None:
+        readonly = definitions_for_tool_names(("grep", "read_file", "done"))
+        writable = definitions_for_permissions(("project_write", "control"))
+
+        self.assertEqual(
+            tuple(definition.name for definition in readonly),
+            ("read_file", "grep", "done"),
+        )
+        self.assertEqual(
+            tuple(definition.name for definition in writable),
+            ("edit", "done"),
+        )
+        self.assertIn('{"tool":"grep"', render_tool_contract(readonly))
+        self.assertNotIn('{"tool":"edit"', render_tool_contract(readonly))
+        self.assertEqual(render_tool_contract(()), "")
+        self.assertEqual(public_example("edit", readonly), "")
 
     def test_write_file_remains_unknown_tool(self) -> None:
         plan = JsonToolCodec().parse(json.dumps({

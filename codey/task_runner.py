@@ -1218,6 +1218,7 @@ class TaskRunner:
                 verification_successful_checks=(
                     spec.checkpoint.successful_checks
                 ),
+                permission_profile="coding_writer",
                 tool_fns=self._managed_tool_fns(
                     session_id=request.session_id,
                     run_id=frame.run_id,
@@ -1645,6 +1646,7 @@ class TaskRunner:
                 session_id=session_id,
                 project=project,
                 chat_handoff=chat_handoff,
+                permission_profile="research",
                 review_advisors=(
                     (lambda pack: self.run_research_advisors(
                         selected_provider=provider,

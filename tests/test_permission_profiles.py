@@ -1,0 +1,97 @@
+from __future__ import annotations
+
+import unittest
+
+from codey.permission_profiles import (
+    KNOWN_CONTEXT_SOURCE_KEYS,
+    KNOWN_REVIEW_CONTEXT_SOURCE_KEYS,
+    PERMISSION_PROFILES,
+    allowed_coding_tool_names,
+    allows_context_source,
+    profile_for_name,
+    profile_for_task_kind,
+)
+from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_TOOL_CONTRACTS
+from codey.tool_definition import TOOL_DEFINITIONS
+
+
+class PermissionProfileTests(unittest.TestCase):
+    def test_expected_profiles_exist_and_are_internal(self) -> None:
+        self.assertEqual(
+            set(PERMISSION_PROFILES),
+            {"chat", "research", "coding_writer", "reviewer", "planning_readonly"},
+        )
+        for profile in PERMISSION_PROFILES.values():
+            with self.subTest(profile=profile.name):
+                self.assertFalse(profile.user_visible)
+
+    def test_coding_writer_allows_current_writer_tools_and_context(self) -> None:
+        profile = profile_for_name("coding_writer")
+
+        self.assertTrue(profile.project_read)
+        self.assertTrue(profile.project_write)
+        self.assertTrue(profile.can_request_shell)
+        self.assertEqual(
+            set(allowed_coding_tool_names(profile)),
+            {definition.name for definition in TOOL_DEFINITIONS},
+        )
+        self.assertIn("edit", allowed_coding_tool_names(profile))
+        self.assertIn("run", allowed_coding_tool_names(profile))
+        self.assertIn("shell", allowed_coding_tool_names(profile))
+        self.assertTrue(allows_context_source(profile, "coding_current_context"))
+
+    def test_planning_readonly_excludes_mutating_and_verification_tools(self) -> None:
+        tools = set(allowed_coding_tool_names("planning_readonly"))
+
+        self.assertEqual(
+            tools,
+            {
+                "list_dir",
+                "read_file",
+                "read_files",
+                "grep",
+                "find_references",
+                "parallel",
+                "done",
+            },
+        )
+        self.assertFalse(profile_for_name("planning_readonly").project_write)
+        self.assertNotIn("edit", tools)
+        self.assertNotIn("run", tools)
+        self.assertNotIn("shell", tools)
+
+    def test_reviewer_and_research_profiles_do_not_write_projects(self) -> None:
+        reviewer = profile_for_name("reviewer")
+        research = profile_for_name("research")
+
+        self.assertFalse(reviewer.project_write)
+        self.assertEqual(allowed_coding_tool_names(reviewer), ())
+        self.assertFalse(research.project_write)
+        self.assertEqual(allowed_coding_tool_names(research), ())
+        self.assertEqual(set(research.research_tools), set(RESEARCH_TOOL_CONTRACTS))
+
+    def test_profile_context_keys_are_known(self) -> None:
+        for profile in PERMISSION_PROFILES.values():
+            with self.subTest(profile=profile.name):
+                self.assertLessEqual(set(profile.context_sources), KNOWN_CONTEXT_SOURCE_KEYS)
+                self.assertLessEqual(
+                    set(profile.review_context_sources),
+                    KNOWN_REVIEW_CONTEXT_SOURCE_KEYS,
+                )
+
+    def test_task_kind_mapping_is_internal_and_stable(self) -> None:
+        self.assertEqual(profile_for_task_kind("chat").name, "chat")
+        self.assertEqual(profile_for_task_kind("research").name, "research")
+        self.assertEqual(profile_for_task_kind("project").name, "coding_writer")
+        self.assertEqual(profile_for_task_kind("research", phase="review").name, "reviewer")
+        self.assertEqual(profile_for_task_kind("hybrid", phase="research").name, "research")
+        self.assertEqual(profile_for_task_kind("hybrid", phase="writer").name, "coding_writer")
+        self.assertEqual(profile_for_task_kind("project", phase="review").name, "reviewer")
+        self.assertEqual(
+            profile_for_task_kind("project", phase="readonly").name,
+            "planning_readonly",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

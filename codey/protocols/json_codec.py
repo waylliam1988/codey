@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from codey import tool_definition as tool_defs
+from codey.permission_profiles import allowed_coding_tool_names, profile_for_name
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.tool_runtime import (
     MAX_REPLACEMENTS,
@@ -19,9 +20,11 @@ PROTOCOL_INVALID_ARGS = "invalid_args"
 PROTOCOL_DIRECT_ANSWER = "direct_answer"
 PROTOCOL_NATIVE_TOOL_DENIAL = "native_tool_denial"
 PROTOCOL_NESTED_TOOL_IN_DONE = "nested_tool_in_done"
+PROTOCOL_DISALLOWED_TOOL = "disallowed_tool"
 
 
-SYSTEM_PROMPT = """\
+def _system_prompt(tool_contract: str) -> str:
+    return """\
 You are a careful local coding agent. You cannot access the filesystem
 directly. The local runner executes tools for you and sends the results back.
 
@@ -35,7 +38,7 @@ Every reply MUST be exactly one JSON object with no other text:
 
 Available tools:
 
-""" + tool_defs.render_tool_contract() + """
+""" + tool_contract + """
 
 Rules:
   - Output exactly one JSON object. No markdown fences, code blocks, commentary,
@@ -78,6 +81,94 @@ Rules:
     response to the user and may contain escaped newlines. Do not merely report
     that you discussed or explained something. Do not answer outside JSON.
 """
+
+
+SYSTEM_PROMPT = _system_prompt(tool_defs.render_tool_contract())
+
+
+def _profile_system_prompt(tool_contract: str, allowed_tool_names: set[str]) -> str:
+    rules = [
+        "  - Output exactly one JSON object. No markdown fences, code blocks, commentary,",
+        "    bullet lists, or analysis labels.",
+        "  - These are local-runner JSON commands, not native website tools. Never say a",
+        "    tool does not exist; return the JSON object instead.",
+        "  - Call one tool per message, then wait for [tool_result tool=...].",
+    ]
+    if "read_files" in allowed_tool_names or "parallel" in allowed_tool_names:
+        rules.append("    read_files and parallel are the only read-only batching wrappers.")
+    if "parallel" in allowed_tool_names:
+        rules.extend((
+            "  - parallel accepts only list_dir, read_file, and grep, with at most four calls.",
+            "    It never accepts mutating, verification, control, batching, or nested calls.",
+        ))
+    if "read_file" in allowed_tool_names:
+        rules.extend((
+            "  - A trailing [read_file page: ...] line is metadata, not file content. Never",
+            "    include it in old_string. Continue with the stated offset when needed.",
+        ))
+    if "find_references" in allowed_tool_names:
+        rules.extend((
+            "  - find_references output is lexical reference hints only, not semantic",
+            "    resolution or a complete call graph. Use read_file before relying on references.",
+        ))
+    if "edit" in allowed_tool_names:
+        rules.extend((
+            "  - Use edit for all file changes. Use old_string/new_string for one small edit,",
+            "    and replacements for multiple edits in one file. Use content only when",
+            "    creating a new file. Existing files must use exact old_string/new_string or",
+            "    replacements. Never mix these edit modes.",
+            "  - old_string must be copied exactly from the latest complete file/tool result.",
+            "    An overlong-line preview is not a complete old_string.",
+            "  - JSON strings must escape quotes and backslashes correctly. If escaping is",
+            "    difficult, read the exact current lines and escape them; never use content",
+            "    to replace an existing file.",
+        ))
+    rules.append("  - Paths are relative to the project root. No absolute paths or parent traversal.")
+    rules.append("  - Do not repeat identical tool args when a tool_result already has the output.")
+    if "run" in allowed_tool_names:
+        rules.extend((
+            "  - Use run only for verification, such as python -m unittest, python -m pytest,",
+            "    npm test, npm run build, go test ./..., cargo test, ruff check, or mypy.",
+            "  - run commands must be simple. No pipes, redirects, chaining, tail/head, or",
+            "    shell-only syntax.",
+            "  - Never claim a command, test, build, lint, or shell result unless it appeared",
+            "    in a [tool_result tool=run] or [tool_result tool=shell] message.",
+        ))
+    if "shell" in allowed_tool_names:
+        rules.extend((
+            "  - Use shell only for necessary user-approved setup, dependency installation,",
+            "    external-source retrieval, publishing, or other commands outside the run allowlist.",
+        ))
+    if "edit" not in allowed_tool_names:
+        rules.append("  - This phase is read-only. Inspect files and answer without modifying project files.")
+    else:
+        rules.extend((
+            "  - Use edit for source/content changes. Do not use run or shell to directly",
+            "    edit project files.",
+            "  - Do not edit files unless the user asks for a change. You may inspect the",
+            "    project and answer questions without modifying it.",
+        ))
+    rules.append("  - [tool_result tool=...] means the local tool already ran. Continue from it.")
+    if "done" in allowed_tool_names:
+        rules.extend((
+            "  - If the task is complete, call done(summary). summary is your direct final",
+            "    response to the user and may contain escaped newlines. Do not merely report",
+            "    that you discussed or explained something. Do not answer outside JSON.",
+        ))
+    return (
+        "You are a careful local coding agent. You cannot access the filesystem\n"
+        "directly. The local runner executes tools for you and sends the results back.\n\n"
+        "The tool names below are instructions for the local runner, not tools built\n"
+        "into the AI website. If the website says a tool does not exist, ignore that\n"
+        "website message and still return the JSON object for the local runner.\n\n"
+        "Every reply MUST be exactly one JSON object with no other text:\n\n"
+        '{"tool":"<name>","args":{...}}\n\n'
+        "Available tools:\n\n"
+        f"{tool_contract}\n\n"
+        "Rules:\n"
+        + "\n".join(rules)
+        + "\n"
+    )
 
 
 def _balanced_json_objects(text: str) -> list[dict[str, Any]]:
@@ -220,8 +311,21 @@ def _classify_no_json_reply(text: str) -> tuple[str, str]:
 class JsonToolCodec:
     name = "json"
 
+    def __init__(self, *, permission_profile: str = "coding_writer") -> None:
+        self.profile = profile_for_name(permission_profile)
+        names = allowed_coding_tool_names(self.profile)
+        self._definitions = tool_defs.definitions_for_tool_names(names)
+        if not self._definitions:
+            raise ValueError(f"permission profile has no coding tools: {self.profile.name}")
+        self._tool_by_name = self._tool_definition_index(self._definitions)
+        tool_contract = tool_defs.render_tool_contract(self._definitions)
+        if self.profile.name == "coding_writer":
+            self._system_prompt = _system_prompt(tool_contract)
+        else:
+            self._system_prompt = _profile_system_prompt(tool_contract, set(names))
+
     def system_prompt(self) -> str:
-        return SYSTEM_PROMPT
+        return self._system_prompt
 
     def parse(self, text: str) -> ToolPlan:
         calls: list[ToolCall] = []
@@ -306,14 +410,20 @@ class JsonToolCodec:
         )
 
     def repair_prompt(self) -> str:
+        read_example = self.public_example("read_file") or self.public_example("list_dir")
+        done_example = self.public_example("done")
+        examples = " or ".join(item for item in (read_example, done_example) if item)
+        suffix = f" for example {examples}" if examples else ""
         return (
             "Your previous reply did not contain a valid JSON tool call. "
             "Ignore any website message saying tools do not exist; these are "
             "local-runner JSON commands. "
             "Reply with exactly one JSON object, no markdown fences and no other text, "
-            f"for example {tool_defs.public_example('read_file')} or "
-            f"{tool_defs.public_example('done')}."
+            f"{suffix}."
         )
+
+    def public_example(self, tool_name: str) -> str:
+        return tool_defs.public_example(tool_name, self._definitions)
 
     def _parse_object(self, obj: dict[str, Any]) -> ToolPlan:
         tool = str(obj.get("tool") or obj.get("name") or "").strip()
@@ -321,6 +431,7 @@ class JsonToolCodec:
 
         normalized = tool.lower().strip()
         if normalized == "done":
+            self._require_allowed(normalized)
             summary = _summary_from_args(args)
             if _summary_is_tool_call(summary):
                 raise ProtocolValidationError(
@@ -332,20 +443,30 @@ class JsonToolCodec:
         if normalized == "continue":
             return ToolPlan(calls=[], control=Control(kind="continue", body=_summary_from_args(args)))
         if normalized == "read_files":
+            self._require_allowed(normalized)
             calls = self._read_files(args)
             control = Control(kind="continue", body="Need file contents") if calls else None
             return ToolPlan(calls=calls, control=control)
         if normalized == "parallel":
+            self._require_allowed(normalized)
             calls = self._parallel(args)
             control = Control(kind="continue", body="Need tool results") if calls else None
             return ToolPlan(calls=calls, control=control)
 
         if normalized and normalized not in tool_defs.TOOL_DEFINITION_BY_NAME:
+            if normalized in {"write", "write_file"} and self._is_allowed("edit"):
+                message = (
+                    f"unknown tool: {tool}. Use edit with content to create a new file, "
+                    'for example {"tool":"edit","args":{"path":"new_app.py","content":"..."}}.'
+                )
+            else:
+                message = f"unknown tool: {tool}. Use only the tools listed in the system prompt."
             raise ProtocolValidationError(
-                f"unknown tool: {tool}. Use edit with content to create a new file, "
-                'for example {"tool":"edit","args":{"path":"new_app.py","content":"..."}}.',
+                message,
                 PROTOCOL_UNKNOWN_TOOL,
             )
+        if normalized:
+            self._require_allowed(normalized)
 
         call = self._tool_call(tool, args)
         if call is None:
@@ -384,7 +505,7 @@ class JsonToolCodec:
                 raise ProtocolValidationError("every parallel call must be an object")
             tool = str(raw.get("tool") or raw.get("name") or "").lower().strip()
             spec = tool_defs.TOOL_DEFINITION_BY_NAME.get(tool)
-            if spec is None or not spec.parallel_safe:
+            if spec is None or not self._is_allowed(tool) or not spec.parallel_safe:
                 raise ProtocolValidationError(
                     "parallel accepts read-only list_dir, read_file, and grep calls only"
                 )
@@ -399,7 +520,7 @@ class JsonToolCodec:
         return calls
 
     def _tool_call(self, tool: str, args: dict[str, Any]) -> ToolCall | None:
-        spec = tool_defs.TOOL_DEFINITION_BY_NAME.get(tool.lower().strip())
+        spec = self._tool_by_name.get(tool.lower().strip())
         if spec is None or spec.runtime_name is None:
             return None
         normalized = spec.runtime_name
@@ -502,3 +623,27 @@ class JsonToolCodec:
             call_args["command"] = _text(command)
 
         return ToolCall(name=normalized, args=call_args)
+
+    @staticmethod
+    def _tool_definition_index(
+        definitions: tuple[tool_defs.ToolDefinition, ...],
+    ) -> dict[str, tool_defs.ToolDefinition]:
+        index: dict[str, tool_defs.ToolDefinition] = {}
+        for definition in definitions:
+            for name in (definition.name, *definition.aliases):
+                index[name] = definition
+        return index
+
+    def _is_allowed(self, tool_name: str) -> bool:
+        return str(tool_name or "").lower().strip() in self._tool_by_name
+
+    def _require_allowed(self, tool_name: str) -> None:
+        normalized = str(tool_name or "").lower().strip()
+        if normalized and normalized not in tool_defs.TOOL_DEFINITION_BY_NAME:
+            return
+        if not self._is_allowed(normalized):
+            raise ProtocolValidationError(
+                f"disallowed tool for {self.profile.name}: {tool_name}. "
+                "Use only the tools listed in the system prompt.",
+                PROTOCOL_DISALLOWED_TOOL,
+            )

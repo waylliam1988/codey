@@ -946,6 +946,93 @@ class RunLoopTests(unittest.TestCase):
 
         self.assertNotIn("Coding current local context:", provider.sent[1])
 
+    def test_planning_readonly_profile_can_read_and_finish(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"done","args":{"summary":"read app.py"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Read app.py",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                permission_profile="planning_readonly",
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(result.summary, "read app.py")
+        self.assertIn('{"tool":"read_file"', provider.sent[0])
+        self.assertNotIn('{"tool":"edit"', provider.sent[0])
+        self.assertNotIn('{"tool":"run"', provider.sent[0])
+        self.assertNotIn('{"tool":"shell"', provider.sent[0])
+
+    def test_planning_readonly_profile_does_not_execute_disallowed_tools(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"edit","args":{"path":"app.py","content":"changed\\n"}}',
+            '{"tool":"done","args":{"summary":"stopped"}}',
+        )
+
+        def fail_edit(*_args, **_kwargs):
+            raise AssertionError("edit should not execute")
+
+        def fail_run(*_args, **_kwargs):
+            raise AssertionError("run should not execute")
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("original\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Inspect only",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                permission_profile="planning_readonly",
+                tool_fns=AgentToolFns(edit_file=fail_edit, run_command=fail_run),
+                on_shell_request=lambda _request: (_ for _ in ()).throw(
+                    AssertionError("shell should not execute")
+                ),
+            )
+            content = (root / "app.py").read_text(encoding="utf-8")
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Protocol error: disallowed tool", provider.sent[1])
+        self.assertNotIn('"tool":"edit"', provider.sent[1])
+        self.assertEqual(content, "original\n")
+
+    def test_explicit_codec_is_respected_while_profile_filters_context(self) -> None:
+        provider = FakeProvider(
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"done","args":{"summary":"read app.py"}}',
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                root,
+                "Read app.py",
+                codec=agent.JsonToolCodec(permission_profile="planning_readonly"),
+                permission_profile="chat",
+                project_facts="Fact that should be filtered",
+                project_map="Map that should be filtered",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn('{"tool":"read_file"', provider.sent[0])
+        self.assertNotIn("Fact that should be filtered", provider.sent[0])
+        self.assertNotIn("Map that should be filtered", provider.sent[0])
+        self.assertNotIn("Coding current local context:", provider.sent[1])
+
     def test_protocol_repair_prompt_does_not_include_coding_context(self) -> None:
         provider = FakeProvider(
             '{"tool":"read_file","args":{"path":"app.py"}}',

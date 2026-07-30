@@ -202,9 +202,31 @@ INFORMATION_RUNTIME_TOOL_NAMES = frozenset(
 )
 
 
-def render_tool_contract() -> str:
-    chunks: list[str] = []
+def definitions_for_permissions(permissions: tuple[str, ...] | list[str] | set[str]) -> tuple[ToolDefinition, ...]:
+    allowed = set(permissions)
+    return tuple(
+        definition
+        for definition in TOOL_DEFINITIONS
+        if definition.permission in allowed
+    )
+
+
+def definitions_for_tool_names(names: tuple[str, ...] | list[str] | set[str]) -> tuple[ToolDefinition, ...]:
+    requested = {str(name).lower().strip() for name in names}
+    definitions: list[ToolDefinition] = []
+    seen: set[str] = set()
     for definition in TOOL_DEFINITIONS:
+        if definition.name in requested or any(alias in requested for alias in definition.aliases):
+            if definition.name not in seen:
+                definitions.append(definition)
+                seen.add(definition.name)
+    return tuple(definitions)
+
+
+def render_tool_contract(definitions: tuple[ToolDefinition, ...] | None = None) -> str:
+    definitions_to_render = TOOL_DEFINITIONS if definitions is None else definitions
+    chunks: list[str] = []
+    for definition in definitions_to_render:
         if not definition.examples:
             continue
         examples = "\n".join(f"  {example}" for example in definition.examples)
@@ -212,8 +234,21 @@ def render_tool_contract() -> str:
     return "\n\n".join(chunks)
 
 
-def public_example(tool_name: str) -> str:
-    definition = TOOL_DEFINITION_BY_NAME.get(tool_name)
+def public_example(
+    tool_name: str,
+    definitions: tuple[ToolDefinition, ...] | None = None,
+) -> str:
+    if definitions is None:
+        definition = TOOL_DEFINITION_BY_NAME.get(tool_name)
+    else:
+        definition = next(
+            (
+                item
+                for item in definitions
+                if tool_name == item.name or tool_name in item.aliases
+            ),
+            None,
+        )
     if definition is None or not definition.examples:
         return ""
     return definition.examples[0]

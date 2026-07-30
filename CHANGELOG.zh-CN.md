@@ -4,6 +4,29 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.31 - Internal Permission Profiles v1
+
+- 新增 `codey/permission_profiles.py`：一个很小的内部 runtime 阶段边界注册表，
+  包含 `chat`、`research`、`coding_writer`、`reviewer` 和 `planning_readonly`。
+- Coding tool definition 现在可以按 profile 过滤。`JsonToolCodec()` 仍默认渲染完整
+  Project Writer 合同；`JsonToolCodec(permission_profile="planning_readonly")` 不再展示
+  `edit`、`run` 和 `shell`。
+- Coding 协议错误现在区分“全局不存在的工具”和“工具存在但当前 profile 不允许”。
+  `write_file` 仍然是 `unknown_tool`；`planning_readonly` 里的 `edit` 是
+  `disallowed_tool`。
+- `parallel` 现在同时检查 `parallel_safe` 和当前 profile，readonly profile 不能通过
+  batch wrapper 偷带不允许的工具。
+- 空 coding tool definition 集合会渲染为空 contract；非 coding profile 如果被误用于构造
+  coding codec，会直接 fail-fast。测试也锁住 `coding_writer` 必须覆盖当前全部 coding
+  tool definition。
+- `agent.run()` 接受 `permission_profile`，用于默认 codec 创建和 ContextSource 过滤；
+  但测试或 manual probe 显式传入 codec 时不会被替换。
+- 私有 consensus/project-audit codec 现在使用 `planning_readonly`，与它已有的只读执行边界一致。
+- Project Writer 调用显式绑定 `coding_writer`。Research 和 Reviewer profile 已声明并测试，
+  但本版本不重写它们已经稳定的 runtime。
+- 本版本不做用户可见 mode switch、不做项目本地权限配置、不做新安全系统、不做 headless
+  执行，也不放宽 `tool_runtime`、shell approval、safe path、Research 或 run allowlist 守门。
+
 ## 0.2.30 - Managed Output Handles v1
 
 - 新增 `codey/managed_outputs.py`：为被模型可见 `run` 结果裁剪掉的命令输出保存

@@ -31,6 +31,7 @@ from codey.models import ToolCall, ToolPlan, ToolResult
 from codey.providers import ChatProvider
 from codey.protocols import JsonToolCodec, ProtocolCodec
 from codey.protocols.json_codec import (
+    PROTOCOL_DISALLOWED_TOOL,
     PROTOCOL_DIRECT_ANSWER,
     PROTOCOL_INVALID_ARGS,
     PROTOCOL_NATIVE_TOOL_DENIAL,
@@ -39,10 +40,10 @@ from codey.protocols.json_codec import (
     PROTOCOL_UNKNOWN_TOOL,
     _balanced_json_objects,
 )
+from codey.permission_profiles import allows_context_source, profile_for_name
 from codey.tool_definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,
-    public_example,
     render_tool_activity,
 )
 from codey.tool_runtime import (
@@ -228,7 +229,8 @@ def _protocol_repair_prompt(
 
     if kind == PROTOCOL_UNKNOWN_TOOL:
         tool = _unknown_tool_from_error(error)
-        if tool in {"write", "write_file"}:
+        edit_example = _codec_public_example(codec, "edit")
+        if tool in {"write", "write_file"} and edit_example:
             example = _unknown_write_repair_example(previous)
             lines.extend((
                 "The previous reply used an unknown write tool. Coding has no "
@@ -239,15 +241,24 @@ def _protocol_repair_prompt(
             if example:
                 lines.extend(("", "Example preserving your previous intent:", example))
         else:
+            example = _preferred_read_example(codec)
             lines.extend((
                 "The previous reply used an unknown local tool.",
                 "Use only the coding JSON tools listed in the system prompt.",
-                "",
-                "Example:",
-                public_example("read_file"),
             ))
+            if example:
+                lines.extend(("", "Example:", example))
+    elif kind == PROTOCOL_DISALLOWED_TOOL:
+        example = _preferred_read_example(codec) or _codec_public_example(codec, "done")
+        lines.extend((
+            "The previous reply used a tool that exists, but this current phase "
+            "does not allow it.",
+            "Use only the tools listed in the system prompt for this phase.",
+        ))
+        if example:
+            lines.extend(("", "Example:", example))
     elif kind == PROTOCOL_INVALID_ARGS:
-        lines.extend(_invalid_args_repair_lines(error, previous))
+        lines.extend(_invalid_args_repair_lines(error, previous, codec))
     elif kind == PROTOCOL_DIRECT_ANSWER:
         lines.extend((
             "The previous reply answered in prose.",
@@ -263,10 +274,10 @@ def _protocol_repair_prompt(
             "These are local-runner JSON commands; the local runner executes them after you reply.",
             "",
             "Example:",
-            public_example("read_file"),
+            _preferred_read_example(codec),
         ))
     elif kind == PROTOCOL_NESTED_TOOL_IN_DONE:
-        example = _nested_tool_repair_example(previous)
+        example = _nested_tool_repair_example(previous, codec)
         lines.extend((
             "done.summary cannot contain another JSON tool call.",
             "If you intended to run a tool, call that tool directly instead of wrapping it in done.",
@@ -277,15 +288,15 @@ def _protocol_repair_prompt(
             lines.extend((
                 "",
                 "Example:",
-                public_example("run"),
+                _codec_public_example(codec, "run") or _preferred_read_example(codec),
             ))
     elif kind == PROTOCOL_NO_JSON:
+        example = _preferred_read_example(codec) or _codec_public_example(codec, "done")
         lines.extend((
             "Reply with a JSON tool call, not prose.",
-            "",
-            "Example:",
-            public_example("read_file"),
         ))
+        if example:
+            lines.extend(("", "Example:", example))
     else:
         lines.append(codec.repair_prompt())
 
@@ -312,6 +323,7 @@ def _repair_error_summary(error: str, kind: str) -> str:
 def _invalid_args_repair_lines(
     error: str,
     previous: dict[str, object] | None = None,
+    codec: ProtocolCodec | None = None,
 ) -> list[str]:
     folded = error.lower()
     if "positive integer" in folded and "offset" in folded:
@@ -346,43 +358,62 @@ def _invalid_args_repair_lines(
             "read_files requires a non-empty paths list.",
             "",
             "Example:",
-            public_example("read_files"),
+            _codec_public_example(codec, "read_files"),
         ]
     if "parallel" in folded:
         return [
             "parallel accepts only read-only list_dir, read_file, and grep calls.",
             "",
             "Example:",
-            public_example("parallel"),
+            _codec_public_example(codec, "parallel"),
         ]
     if "grep requires a query" in folded:
         return [
             "grep requires a non-empty query.",
             "",
             "Example:",
-            public_example("grep"),
+            _codec_public_example(codec, "grep"),
         ]
     if "find_references requires a symbol" in folded:
         return [
             "find_references requires a symbol.",
             "",
             "Example:",
-            public_example("find_references"),
+            _codec_public_example(codec, "find_references"),
         ]
     if "requires a command" in folded:
+        example = _codec_public_example(codec, "run") or _codec_public_example(codec, "shell")
         return [
             "run and shell require a command string.",
             "",
             "Example:",
-            public_example("run"),
+            example,
         ]
     return [
         "The tool name was recognized, but its arguments do not match the coding schema.",
         "Use one valid JSON shape from the tool contract.",
         "",
         "Example:",
-        public_example("read_file"),
+        _preferred_read_example(codec),
     ]
+
+
+def _codec_public_example(codec: ProtocolCodec | None, tool_name: str) -> str:
+    getter = getattr(codec, "public_example", None)
+    if callable(getter):
+        try:
+            return str(getter(tool_name) or "")
+        except (TypeError, ValueError):
+            return ""
+    return ""
+
+
+def _preferred_read_example(codec: ProtocolCodec | None) -> str:
+    for tool_name in ("read_file", "list_dir", "grep"):
+        example = _codec_public_example(codec, tool_name)
+        if example:
+            return example
+    return ""
 
 
 def _previous_tool_object(
@@ -399,7 +430,11 @@ def _previous_tool_object(
                 tool = str(obj.get("tool") or obj.get("name") or "").strip().lower()
                 if tool == target_tool:
                     return dict(obj)
-    if kind in {PROTOCOL_INVALID_ARGS, PROTOCOL_NESTED_TOOL_IN_DONE}:
+    if kind in {
+        PROTOCOL_INVALID_ARGS,
+        PROTOCOL_NESTED_TOOL_IN_DONE,
+        PROTOCOL_DISALLOWED_TOOL,
+    }:
         for obj in objects:
             tool = str(obj.get("tool") or obj.get("name") or "").strip()
             if not tool:
@@ -504,7 +539,10 @@ def _positive_int_value(value: object) -> int | None:
     return None
 
 
-def _nested_tool_repair_example(previous: dict[str, object] | None) -> str:
+def _nested_tool_repair_example(
+    previous: dict[str, object] | None,
+    codec: ProtocolCodec | None = None,
+) -> str:
     tool = str((previous or {}).get("tool") or (previous or {}).get("name") or "")
     if tool.lower().strip() != "done":
         return ""
@@ -519,6 +557,8 @@ def _nested_tool_repair_example(previous: dict[str, object] | None) -> str:
         return ""
     nested_tool = str(nested.get("tool") or nested.get("name") or "").strip()
     if not nested_tool:
+        return ""
+    if codec is not None and not _codec_public_example(codec, nested_tool):
         return ""
     return _json_example(nested)
 
@@ -540,7 +580,7 @@ def run(
     project: Path,
     user_task: str,
     *,
-    codec: ProtocolCodec = DEFAULT_CODEC,
+    codec: ProtocolCodec | None = None,
     max_turns: int = DEFAULT_MAX_TURNS,
     stagnant_turns: int = DEFAULT_STAGNANT_TURNS,
     on_event=print_run_event,
@@ -563,10 +603,13 @@ def run(
     verification_changed_files: tuple[str, ...] = (),
     verification_successful_checks: tuple[VerificationCandidate, ...] = (),
     coding_context_enabled: bool = True,
+    permission_profile: str = "coding_writer",
     tool_fns: AgentToolFns | None = None,
 ) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
+    profile = profile_for_name(permission_profile)
+    codec = codec or JsonToolCodec(permission_profile=profile.name)
     tool_fns = tool_fns or DEFAULT_TOOL_FNS
     max_turns = max(1, int(max_turns or DEFAULT_MAX_TURNS))
     stagnant_turns = max(1, int(stagnant_turns or DEFAULT_STAGNANT_TURNS))
@@ -642,54 +685,57 @@ def run(
             if factual_handoff
             else request
         )
+        sources = (
+            ContextSource(
+                key="project_instructions",
+                loader=lambda: format_project_instructions(project_instructions),
+                budget=PROJECT_INSTRUCTIONS_CONTEXT_BUDGET,
+                freshness="run_start",
+                why_included="project instruction files from the project root",
+                heading="Project instructions:",
+            ),
+            ContextSource(
+                key="verified_facts",
+                loader=lambda: project_facts,
+                budget=VERIFIED_FACTS_CONTEXT_BUDGET,
+                freshness="run_start",
+                why_included="successful local checks recorded for this project",
+                heading="Verified project facts from successful local runs:",
+            ),
+            ContextSource(
+                key="research_brief",
+                loader=lambda: research_context,
+                budget=RESEARCH_CONTEXT_BUDGET,
+                freshness="run_start",
+                why_included="bounded research brief from the current chat",
+            ),
+            ContextSource(
+                key="project_map",
+                loader=lambda: project_map,
+                budget=PROJECT_MAP_CONTEXT_BUDGET,
+                freshness="run_start",
+                why_included="bounded local project map prepared before writing",
+            ),
+            ContextSource(
+                key="work_checkpoint",
+                loader=lambda: work_checkpoint,
+                budget=WORK_CHECKPOINT_CONTEXT_BUDGET,
+                freshness="run_start",
+                why_included="bounded local checkpoint from a previous project run",
+            ),
+            ContextSource(
+                key="initial_listing",
+                loader=lambda: tool_fns.list_directory(project, ".").output,
+                budget=INITIAL_LISTING_CONTEXT_BUDGET,
+                freshness="run_start",
+                why_included="current top-level project listing",
+                heading="Initial listing:",
+            ),
+        )
         context = render_context_sources(
-            (
-                ContextSource(
-                    key="project_instructions",
-                    loader=lambda: format_project_instructions(project_instructions),
-                    budget=PROJECT_INSTRUCTIONS_CONTEXT_BUDGET,
-                    freshness="run_start",
-                    why_included="project instruction files from the project root",
-                    heading="Project instructions:",
-                ),
-                ContextSource(
-                    key="verified_facts",
-                    loader=lambda: project_facts,
-                    budget=VERIFIED_FACTS_CONTEXT_BUDGET,
-                    freshness="run_start",
-                    why_included="successful local checks recorded for this project",
-                    heading="Verified project facts from successful local runs:",
-                ),
-                ContextSource(
-                    key="research_brief",
-                    loader=lambda: research_context,
-                    budget=RESEARCH_CONTEXT_BUDGET,
-                    freshness="run_start",
-                    why_included="bounded research brief from the current chat",
-                ),
-                ContextSource(
-                    key="project_map",
-                    loader=lambda: project_map,
-                    budget=PROJECT_MAP_CONTEXT_BUDGET,
-                    freshness="run_start",
-                    why_included="bounded local project map prepared before writing",
-                ),
-                ContextSource(
-                    key="work_checkpoint",
-                    loader=lambda: work_checkpoint,
-                    budget=WORK_CHECKPOINT_CONTEXT_BUDGET,
-                    freshness="run_start",
-                    why_included="bounded local checkpoint from a previous project run",
-                ),
-                ContextSource(
-                    key="initial_listing",
-                    loader=lambda: tool_fns.list_directory(project, ".").output,
-                    budget=INITIAL_LISTING_CONTEXT_BUDGET,
-                    freshness="run_start",
-                    why_included="current top-level project listing",
-                    heading="Initial listing:",
-                ),
-            )
+            source
+            for source in sources
+            if allows_context_source(profile, source.key)
         )
         context_block = f"{context}\n\n" if context else ""
         return (
@@ -763,6 +809,8 @@ def run(
         )
 
     def append_coding_context(prompt: str) -> str:
+        if not allows_context_source(profile, "coding_current_context"):
+            return prompt
         context = render_context_sources(
             (
                 ContextSource(

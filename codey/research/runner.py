@@ -10,6 +10,7 @@ from typing import Callable
 
 from codey import cancellation
 from codey.events import RunEvent
+from codey.permission_profiles import profile_for_name
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.note import KnowledgeNote
@@ -119,6 +120,7 @@ class ResearchRunner:
         chat_handoff: str = "",
         review_advisors: Callable[[EvidencePack], tuple[object, ...]] | None = None,
         controller_enabled: bool = True,
+        permission_profile: str = "research",
     ) -> None:
         self.provider = provider
         self.search = search
@@ -129,6 +131,7 @@ class ResearchRunner:
         self.diagnostics = diagnostics
         self.session_id = session_id
         self.project = project
+        self.permission_profile = profile_for_name(permission_profile).name
         self.chat_handoff = (chat_handoff or "").strip()
         self.review_advisors = review_advisors
         self.controller_enabled = bool(controller_enabled)

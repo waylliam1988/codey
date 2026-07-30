@@ -373,6 +373,8 @@ class ProviderStatusTests(unittest.TestCase):
         for item in payload:
             self.assertNotIn("capability", item)
             self.assertNotIn("fit", item)
+            self.assertNotIn("profile", item)
+            self.assertNotIn("permission_profile", item)
 
     def test_provider_warmup_emits_filtered_provider_statuses(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1921,6 +1923,7 @@ class SessionThreadingTests(unittest.TestCase):
             )
 
             def fake_agent_run(*_args, **kwargs):
+                self.assertEqual(kwargs["permission_profile"], "coding_writer")
                 tool_fns = kwargs["tool_fns"]
                 self.assertIsNotNone(tool_fns)
                 outcome = tool_fns.execute_run_command(

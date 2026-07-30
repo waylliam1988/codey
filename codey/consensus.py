@@ -44,7 +44,7 @@ PROJECT_AUDIT_MAX_SCAN_FILES = 1_000
 PROJECT_AUDIT_MAX_SCAN_DIRS = 250
 PROJECT_AUDIT_MAX_DIR_ENTRIES = 1_000
 READ_ONLY_TOOL_NAMES = frozenset({"ls", "read", "search", "references"})
-READ_ONLY_CODEC = JsonToolCodec()
+READ_ONLY_CODEC = JsonToolCodec(permission_profile="planning_readonly")
 AUDIT_EXCLUDED_DIRS = {
     ".git",
     ".hg",
@@ -685,9 +685,14 @@ def run_project_audit_advisor(
             return ""
         plan = READ_ONLY_CODEC.parse(reply)
         if plan.protocol_error:
+            readonly_note = (
+                "\nProject audit advisors may not edit, write, run, shell, or approve."
+                if plan.protocol_error_kind == "disallowed_tool"
+                else ""
+            )
             with provider_controls.suppress_assistance():
                 reply = provider.send(
-                    f"Protocol error: {plan.protocol_error}\n\n"
+                    f"Protocol error: {plan.protocol_error}{readonly_note}\n\n"
                     "Reply with exactly one JSON object using only read-only tools.",
                     timeout=_advisor_timeout(deadline),
                 )

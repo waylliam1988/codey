@@ -37,6 +37,20 @@ class FakeProvider:
 
 
 class ConsensusTests(unittest.TestCase):
+    def test_read_only_codec_does_not_offer_writer_tools(self) -> None:
+        prompt = consensus.READ_ONLY_CODEC.system_prompt()
+
+        self.assertIn('{"tool":"read_file"', prompt)
+        self.assertNotIn('{"tool":"edit"', prompt)
+        self.assertNotIn('{"tool":"run"', prompt)
+        self.assertNotIn('{"tool":"shell"', prompt)
+        self.assertEqual(
+            consensus.READ_ONLY_CODEC.parse(
+                '{"tool":"edit","args":{"path":"app.py","content":"x"}}'
+            ).protocol_error_kind,
+            "disallowed_tool",
+        )
+
     def test_advisor_ids_use_available_models_without_trigger_words(self) -> None:
         ids = consensus.advisor_ids(
             "deepseek",

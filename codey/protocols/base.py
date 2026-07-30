@@ -19,3 +19,6 @@ class ProtocolCodec(Protocol):
 
     def repair_prompt(self) -> str:
         """Return a short prompt asking the model to fix protocol formatting."""
+
+    def public_example(self, tool_name: str) -> str:
+        """Return a public example for a tool allowed by this codec, if any."""

@@ -402,6 +402,9 @@ Pi 和 OpenCode 都有类似思路：长输出不能全部塞进上下文，但�
 
 ## 0.2.31 - Internal Permission Profiles
 
+状态：已落地。第一版只把已有 runtime 阶段边界命名和数据化，不新增用户可见
+mode，也不替换现有安全系统。
+
 ### 做什么
 
 在内部定义少量 permission profile，用于组合工具和上下文边界：
@@ -429,7 +432,10 @@ Codey 的用户不应该先理解 agent mode 才能工作，但运行时需要�
 
 ### 验收标准
 
-- profile 只影响内部 allowed tools 和 context sources。
+- profile 只影响内部 allowed tools 和 context sources；默认 Project Writer 行为保持等价。
+- `planning_readonly` codec 不展示或执行 `edit`、`run`、`shell`。
+- `unknown_tool` 和 `disallowed_tool` 被明确区分。
+- `parallel` 不能绕过当前 profile。
 - 主 UI 不新增 `mode`、`agent profile`、`planner` 等技术词。
 - tests 覆盖 chat 无项目权限、research 有网页工具但无项目写入、reviewer 不写文件。
 

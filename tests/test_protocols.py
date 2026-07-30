@@ -8,12 +8,14 @@ from codey.agent import SUPPORTED_TOOL_NAMES
 from codey.models import ToolCall, ToolResult
 from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import (
+    PROTOCOL_DISALLOWED_TOOL,
     PROTOCOL_DIRECT_ANSWER,
     PROTOCOL_INVALID_ARGS,
     PROTOCOL_NATIVE_TOOL_DENIAL,
     PROTOCOL_NESTED_TOOL_IN_DONE,
     PROTOCOL_NO_JSON,
     PROTOCOL_UNKNOWN_TOOL,
+    SYSTEM_PROMPT,
 )
 from codey.tool_definition import (
     MAX_ACCIDENTAL_TOOL_CALLS,
@@ -61,6 +63,25 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn('{"tool":"grep","args":{"query":"login handler"', prompt)
         self.assertIn("Matching is case-insensitive; regex is not supported.", prompt)
         self.assertNotIn('{"tool":"grep","args":{"pattern":', prompt)
+
+    def test_default_system_prompt_is_writer_prompt(self) -> None:
+        self.assertEqual(JsonToolCodec().system_prompt(), SYSTEM_PROMPT)
+
+    def test_planning_readonly_prompt_filters_mutating_tools(self) -> None:
+        prompt = JsonToolCodec(permission_profile="planning_readonly").system_prompt()
+
+        self.assertIn('{"tool":"read_file"', prompt)
+        self.assertIn('{"tool":"done"', prompt)
+        self.assertNotIn('{"tool":"edit"', prompt)
+        self.assertNotIn('{"tool":"run"', prompt)
+        self.assertNotIn('{"tool":"shell"', prompt)
+        self.assertIn("This phase is read-only", prompt)
+
+    def test_non_coding_profiles_cannot_construct_coding_codec(self) -> None:
+        for profile in ("chat", "research", "reviewer"):
+            with self.subTest(profile=profile):
+                with self.assertRaises(ValueError):
+                    JsonToolCodec(permission_profile=profile)
 
     def test_system_prompt_limits_content_to_new_file_creation(self) -> None:
         prompt = JsonToolCodec().system_prompt()
@@ -213,6 +234,22 @@ class JsonToolCodecTests(unittest.TestCase):
                 self.assertEqual(plan.calls, [])
                 self.assertIn("read-only", plan.protocol_error)
                 self.assertEqual(plan.protocol_error_kind, PROTOCOL_INVALID_ARGS)
+
+    def test_parallel_respects_permission_profile(self) -> None:
+        codec = JsonToolCodec(permission_profile="planning_readonly")
+        plan = codec.parse(json.dumps({
+            "tool": "parallel",
+            "args": {
+                "calls": [
+                    {"tool": "read_file", "args": {"path": "safe.py"}},
+                    {"tool": "find_references", "args": {"symbol": "main", "path": "."}},
+                ]
+            },
+        }))
+
+        self.assertEqual(plan.calls, [])
+        self.assertIn("parallel accepts read-only", plan.protocol_error)
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_INVALID_ARGS)
 
     def test_parallel_rejects_more_than_the_contract_limit(self) -> None:
         calls = [
@@ -534,6 +571,39 @@ class JsonToolCodecTests(unittest.TestCase):
                 self.assertIn("Use edit with content", plan.protocol_error)
                 self.assertIn('"tool":"edit"', plan.protocol_error)
                 self.assertEqual(plan.protocol_error_kind, PROTOCOL_UNKNOWN_TOOL)
+
+    def test_profile_disallowed_tool_is_not_unknown_tool(self) -> None:
+        codec = JsonToolCodec(permission_profile="planning_readonly")
+
+        for name in ("edit", "run", "shell"):
+            with self.subTest(tool=name):
+                plan = codec.parse(json.dumps({
+                    "tool": name,
+                    "args": {"path": ".", "command": "python -m pytest -q"},
+                }))
+
+                self.assertEqual(plan.calls, [])
+                self.assertIsNone(plan.control)
+                self.assertIn("disallowed tool", plan.protocol_error)
+                self.assertEqual(plan.protocol_error_kind, PROTOCOL_DISALLOWED_TOOL)
+
+    def test_profile_unknown_write_file_stays_unknown_without_edit_hint(self) -> None:
+        plan = JsonToolCodec(permission_profile="planning_readonly").parse(json.dumps({
+            "tool": "write_file",
+            "args": {"path": "app.py", "content": "VALUE = 1\n"},
+        }))
+
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_UNKNOWN_TOOL)
+        self.assertIn("unknown tool: write_file", plan.protocol_error)
+        self.assertNotIn('"tool":"edit"', plan.protocol_error)
+
+    def test_profile_public_examples_are_filtered(self) -> None:
+        codec = JsonToolCodec(permission_profile="planning_readonly")
+
+        self.assertIn('"tool":"read_file"', codec.public_example("read_file"))
+        self.assertEqual(codec.public_example("edit"), "")
+        self.assertNotIn('"tool":"edit"', codec.repair_prompt())
+        self.assertNotIn('"tool":"run"', codec.repair_prompt())
 
     def test_repair_prompt_says_website_tool_errors_are_irrelevant(self) -> None:
         prompt = JsonToolCodec().repair_prompt()
