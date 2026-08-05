@@ -25,7 +25,7 @@ from codey.review import (
 )
 
 
-PROVIDER_IDS = provider_ids()
+PROVIDER_IDS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
 
 
 def _record_event(events: list[str], event) -> None:

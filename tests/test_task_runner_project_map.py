@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey import project_task_context
+from codey.project_map import MAX_PROJECT_MAP_CHARS
 
 
 class TaskRunnerProjectMapTests(unittest.TestCase):
@@ -21,6 +22,8 @@ class TaskRunnerProjectMapTests(unittest.TestCase):
             Path("project"),
             "- successful check: python -m unittest",
             task="change json codec",
+            ignored_paths=(),
+            max_chars=MAX_PROJECT_MAP_CHARS,
         )
 
 

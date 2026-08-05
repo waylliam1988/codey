@@ -140,12 +140,17 @@ class HeadlessRunnerTests(unittest.TestCase):
             seen["permission_profile"] = kwargs.get("permission_profile")
             seen["change_tracker"] = kwargs.get("change_tracker")
             seen["project_map"] = kwargs.get("project_map")
+            seen["project_config_warnings"] = kwargs.get("project_config_warnings")
             return RunResult("plan only", "done", 1)
 
         with tempfile.TemporaryDirectory() as td:
+            project = Path(td, "project")
+            config = project / ".codey" / "config.json"
+            config.parent.mkdir(parents=True)
+            config.write_text("{bad json", encoding="utf-8")
             result = run_headless(
                 HeadlessRequest(
-                    project=Path(td, "project"),
+                    project=project,
                     task="explain architecture",
                     provider_id="qwen",
                     max_turns=3,
@@ -165,6 +170,7 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertEqual(seen["permission_profile"], "planning_readonly")
         self.assertIsNone(seen["change_tracker"])
         self.assertIn("Project Map", str(seen["project_map"]))
+        self.assertIn("invalid JSON", str(seen["project_config_warnings"]))
 
     def test_headless_event_payload_clips_large_fields(self) -> None:
         payload = headless_event_payload({

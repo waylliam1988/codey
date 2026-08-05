@@ -30,6 +30,10 @@ STEPFUN_URL = "https://chat.stepfun.com/chats/"
 
 READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 60.0
+COMPOSER_SETTLE_TIME = 1.5
+COMPOSER_SETTLE_TICK = 0.25
+COMPOSER_REFILL_ATTEMPTS = 3
+COMPOSER_REFILL_DELAY = 0.4
 SUBMIT_CONFIRM_TIMEOUT = 15.0
 JSON_TOOL_STABLE_TICKS = 2
 RESPONSE_FOOTER_TIMEOUT = 8.0
@@ -264,7 +268,7 @@ def _final_text(page: Page, baseline: int) -> str:
     raise RuntimeError("Could not read the StepFun response")
 
 
-def _fill_message(textarea: Locator, text: str) -> None:
+def _fill_message(textarea: Locator, text: str) -> str:
     cancellation.check()
     textarea.click()
     cancellation.check()
@@ -277,6 +281,36 @@ def _fill_message(textarea: Locator, text: str) -> None:
         textarea.evaluate(_SET_TEXTAREA_VALUE_JS, text)
     except Exception:
         textarea.fill(text)
+    return text
+
+
+def _composer_retains_text(
+    textarea: Locator,
+    submitted_text: str,
+    *,
+    settle_time: float = COMPOSER_SETTLE_TIME,
+) -> bool:
+    """Return true only after StepFun keeps text through late hydration."""
+    ticks = max(1, int(max(0.0, settle_time) / COMPOSER_SETTLE_TICK))
+    for _ in range(ticks):
+        if not controls.control_has_text(textarea, submitted_text):
+            return False
+        cancellation.wait(COMPOSER_SETTLE_TICK)
+    return controls.control_has_text(textarea, submitted_text)
+
+
+def _fill_message_until_stable(textarea: Locator, text: str) -> str:
+    """Fill StepFun's composer and survive late page hydration clears."""
+    for attempt in range(max(1, COMPOSER_REFILL_ATTEMPTS)):
+        submitted_text = _fill_message(textarea, text)
+        if _composer_retains_text(textarea, submitted_text):
+            return submitted_text
+        if attempt + 1 < COMPOSER_REFILL_ATTEMPTS:
+            cancellation.wait(COMPOSER_REFILL_DELAY)
+    raise ControlMissing(
+        "StepFun Chat input did not keep the complete message",
+        stage=provider_flow.STAGE_SUBMISSION,
+    )
 
 
 def _control_text(control: Locator) -> str:
@@ -348,12 +382,11 @@ def _submit(page: Page, textarea: Locator, baseline: int, submitted_text: str) -
         if _wait_submission_started(page, baseline, submitted_text):
             confirm_submission(retry, PROVIDER_ID)
         return retry
-    else:
-        controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON, page=page)
-        attempt.submit("enter", lambda: textarea.press("Enter"))
-    if _wait_submission_started(page, baseline, submitted_text):
-        confirm_submission(attempt, PROVIDER_ID)
-    return attempt
+    controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON, page=page)
+    raise ControlMissing(
+        "StepFun Chat send button did not become ready",
+        stage=provider_flow.STAGE_SUBMISSION,
+    )
 
 
 def _wait_late_response(
@@ -403,19 +436,16 @@ def chat(
             )
             raise ControlMissing("StepFun Chat input is not visible")
         try:
-            _fill_message(textarea, text)
+            submitted_text = _fill_message_until_stable(textarea, text)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception:
             controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
             raise
-        if not controls.control_has_text(textarea, text):
-            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
-            raise ControlMissing("StepFun Chat input did not accept the complete message")
         controls.confirm_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX)
         cancellation.wait(0.3)
 
-        attempt = _submit(page, textarea, baseline, text)
+        attempt = _submit(page, textarea, baseline, submitted_text)
         if not attempt.confirmed:
             if attempt.method == "click" and attempt.action_error is not None:
                 controls.reject_control(PROVIDER_ID, controls.CONTROL_SEND_BUTTON)

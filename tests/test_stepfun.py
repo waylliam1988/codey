@@ -5,6 +5,7 @@ from contextlib import nullcontext
 from unittest import mock
 
 from codey import stepfun
+from codey.provider_diagnostics import ControlMissing
 from codey.provider_submission import SendAttempt, SubmissionUncertain
 
 
@@ -109,6 +110,84 @@ class StepFunDriverTests(unittest.TestCase):
         self.assertTrue(started)
         flow_matches.assert_not_called()
 
+    def test_fill_message_until_stable_refills_after_stepfun_clears_draft(self) -> None:
+        textarea = mock.Mock()
+
+        with (
+            mock.patch.object(stepfun, "_fill_message", side_effect=["hello", "hello"]) as fill,
+            mock.patch.object(
+                stepfun,
+                "_composer_retains_text",
+                side_effect=[False, True],
+            ),
+            mock.patch.object(stepfun.cancellation, "wait") as wait,
+        ):
+            submitted = stepfun._fill_message_until_stable(textarea, "hello")
+
+        self.assertEqual(submitted, "hello")
+        self.assertEqual(fill.call_count, 2)
+        wait.assert_called_with(stepfun.COMPOSER_REFILL_DELAY)
+
+    def test_fill_message_until_stable_rejects_repeated_stepfun_hydration_clears(self) -> None:
+        textarea = mock.Mock()
+
+        with (
+            mock.patch.object(stepfun, "_fill_message", return_value="hello") as fill,
+            mock.patch.object(stepfun, "_composer_retains_text", return_value=False),
+            mock.patch.object(stepfun.cancellation, "wait"),
+        ):
+            with self.assertRaisesRegex(ControlMissing, "did not keep"):
+                stepfun._fill_message_until_stable(textarea, "hello")
+
+        self.assertEqual(fill.call_count, stepfun.COMPOSER_REFILL_ATTEMPTS)
+
+    def test_composer_retains_text_does_not_require_send_button(self) -> None:
+        textarea = mock.Mock()
+
+        with (
+            mock.patch.object(
+                stepfun.controls,
+                "control_has_text",
+                side_effect=[True, True, True],
+            ) as has_text,
+            mock.patch.object(stepfun, "_send_button") as send_button,
+            mock.patch.object(stepfun.cancellation, "wait"),
+        ):
+            retained = stepfun._composer_retains_text(
+                textarea,
+                "hello",
+                settle_time=stepfun.COMPOSER_SETTLE_TICK * 2,
+            )
+
+        self.assertTrue(retained)
+        self.assertEqual(has_text.call_count, 3)
+        send_button.assert_not_called()
+
+    def test_chat_reports_send_button_when_text_stable_but_button_missing(self) -> None:
+        page = mock.Mock()
+        textarea = mock.Mock()
+
+        with (
+            mock.patch.object(stepfun, "wait_ready"),
+            mock.patch.object(stepfun, "_response_count", return_value=0),
+            mock.patch.object(stepfun, "_response_action_count", return_value=0),
+            mock.patch.object(stepfun, "_message_box", return_value=textarea),
+            mock.patch.object(stepfun, "_fill_message_until_stable", return_value="hello"),
+            mock.patch.object(stepfun.send_loop, "response_watch", return_value=nullcontext()),
+            mock.patch.object(stepfun, "_send_button", return_value=None),
+            mock.patch.object(stepfun.controls, "confirm_control") as confirm,
+            mock.patch.object(stepfun.controls, "reject_control") as reject,
+        ):
+            with self.assertRaisesRegex(ControlMissing, "send button"):
+                stepfun.chat(page, "hello", response_timeout=120)
+
+        confirm.assert_called_once_with(stepfun.PROVIDER_ID, stepfun.controls.CONTROL_MESSAGE_BOX)
+        reject.assert_called_once_with(
+            stepfun.PROVIDER_ID,
+            stepfun.controls.CONTROL_SEND_BUTTON,
+            page=page,
+        )
+
     def test_wait_response_footer_ready_returns_after_new_stable_action(self) -> None:
         page = mock.Mock()
 
@@ -120,27 +199,23 @@ class StepFunDriverTests(unittest.TestCase):
 
         self.assertEqual(wait.call_count, 3)
 
-    def test_submit_uses_enter_when_no_profiled_send_button_is_visible(self) -> None:
+    def test_submit_requires_profiled_send_button(self) -> None:
         page = mock.Mock()
         textarea = mock.Mock()
 
         with (
             mock.patch.object(stepfun, "_send_button", return_value=None),
-            mock.patch.object(stepfun, "_wait_submission_started", return_value=True),
             mock.patch.object(stepfun.controls, "reject_control") as reject,
-            mock.patch.object(stepfun.controls, "confirm_control") as confirm,
         ):
-            attempt = stepfun._submit(page, textarea, baseline=0, submitted_text="hello")
+            with self.assertRaisesRegex(ControlMissing, "send button"):
+                stepfun._submit(page, textarea, baseline=0, submitted_text="hello")
 
-        textarea.press.assert_called_once_with("Enter")
-        self.assertIsInstance(attempt, SendAttempt)
-        self.assertTrue(attempt.confirmed)
+        textarea.press.assert_not_called()
         reject.assert_called_once_with(
             stepfun.PROVIDER_ID,
             stepfun.controls.CONTROL_SEND_BUTTON,
             page=page,
         )
-        confirm.assert_not_called()
 
     def test_submit_retries_click_when_first_click_does_not_start_submission(self) -> None:
         page = mock.Mock()
@@ -195,7 +270,7 @@ class StepFunDriverTests(unittest.TestCase):
             mock.patch.object(stepfun, "wait_ready"),
             mock.patch.object(stepfun, "_response_count", return_value=0),
             mock.patch.object(stepfun, "_message_box", return_value=textarea),
-            mock.patch.object(stepfun, "_fill_message"),
+            mock.patch.object(stepfun, "_fill_message_until_stable", return_value="hello"),
             mock.patch.object(stepfun.controls, "control_has_text", return_value=True),
             mock.patch.object(stepfun.controls, "confirm_control"),
             mock.patch.object(stepfun.send_loop, "response_watch", return_value=nullcontext()),

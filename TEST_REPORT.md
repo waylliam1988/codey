@@ -1,5 +1,86 @@
 # Codey Test Report
 
+## 0.2.33 Project-local Config v1
+
+Codey 0.2.33 adds a strict project-local config parser for explicit
+`.codey/config.json` files. The config is a bounded project fact/preference
+source; it does not authorize tools or relax runtime safety gates.
+
+Production changes:
+
+- New `codey/project_config.py` parses schema v1 config files with a 64 KiB
+  file cap, bounded warnings, regular-file checks, and project-relative path
+  validation. Oversized config files are rejected from `stat().st_size` before
+  reading the body.
+- Configured verification commands feed `discover_verification_candidates()`
+  with a stable source priority below previously successful checks and above
+  manifest discovery. They still must pass executable availability,
+  cwd-in-project validation, and the existing `tool_runtime` run allowlist.
+- `VerificationCandidate` now carries `source_priority`; selected verification
+  remains deterministic and historical green checks keep the highest priority.
+- `scan.ignored_paths` uses project-root-relative prefix matching and is applied
+  to Project Map listing, symbol overview, focused subtree, and verification
+  discovery. Existing hidden, secret, symlink, and default excluded-path guards
+  remain in force.
+- `context.budget_hints.project_map_chars` can only reduce the Project Map
+  render budget and has a lower bound. It cannot increase prompt budgets.
+- Project config warnings are rendered as a small ContextSource block for
+  Project Writer and read-only planning prompts. Protocol repair prompts do not
+  include project config context.
+- Provider preferences are parsed and validated as future hints only; this
+  release does not consume them for provider selection or failover. Validation
+  uses the lightweight static provider capability table, not the web adapter
+  registry.
+- Headless JSONL runs naturally reuse the config because they already flow
+  through `TaskRunner` and `ProjectTaskContextBuilder`.
+- Live web-provider smoke hardening: StepFun now refills its composer until
+  the submitted text survives late page hydration, then lets submission report
+  missing send controls as send-button failures; the manual submit probe closes
+  reused Playwright CDP sessions even when `--keep-open` is set;
+  `tools/live_smoke.py --provider all` now targets web providers only and
+  excludes `local`. StepFun no longer keeps an unreachable Enter fallback
+  behind the stable composer gate.
+- This release does not add a workflow DSL, shell auto-approval,
+  project-local permission matrix, automatic config writing, Research headless
+  config, UI changes, or any relaxation of runtime guards.
+
+Validation:
+
+```text
+python -m pytest tests\test_project_config.py tests\test_verification_policy.py tests\test_project_map.py tests\test_project_task_context.py tests\test_agent.py tests\test_headless_runner.py tests\test_permission_profiles.py -q
+# 208 passed, 4 skipped, 1 pytest cache warning, 15 subtests passed
+
+python -m pytest tests\test_project_config.py tests\test_verification_policy.py tests\test_project_map.py tests\test_project_task_context.py tests\test_agent.py tests\test_headless_runner.py tests\test_permission_profiles.py tests\test_server.py tests\test_run_ledger.py -q
+# 353 passed, 5 skipped, 1 pytest cache warning, 15 subtests passed
+
+python -m pytest tests\test_task_runner_project_map.py tests\test_project_task_context.py tests\test_project_map.py -q
+# 39 passed, 1 pytest cache warning
+
+python -m pytest tests\test_stepfun.py tests\test_provider_submit_probe.py tests\test_live_smoke.py tests\test_deepseek.py tests\test_mimo.py tests\test_qwen.py tests\test_glm.py -q
+# 183 passed, 1 pytest cache warning, 11 subtests passed
+
+python -m pytest tests\test_project_config.py tests\test_project_task_context.py tests\test_verification_policy.py tests\test_project_map.py tests\test_stepfun.py tests\test_provider_submit_probe.py tests\test_live_smoke.py -q
+# 126 passed, 2 skipped, 1 pytest cache warning, 5 subtests passed
+
+python -B tools\live_smoke.py --provider deepseek --case discussion --port 9222 --max-turns 4 --json
+# ok=true, stop_reason=done, turns=1, changed=false
+
+python -B tools\live_smoke.py --provider mimo --case discussion --port 9222 --max-turns 4 --json
+# ok=true, stop_reason=done, turns=1, changed=false
+
+python -B tools\live_smoke.py --provider stepfun --case discussion --port 9222 --max-turns 4 --json
+# ok=true, stop_reason=done, turns=1, changed=false
+
+python -B tools\live_smoke.py --provider qwen --case discussion --port 9222 --max-turns 4 --json
+# ok=true, stop_reason=done, turns=1, changed=false
+
+python -B tools\live_smoke.py --provider glm --case discussion --port 9222 --max-turns 4 --json
+# ok=true, stop_reason=done, turns=1, changed=false
+
+python -m pytest -q
+# 1518 passed, 9 skipped, 1 pytest cache warning, 161 subtests passed
+```
+
 ## 0.2.32 Headless JSONL Runner v1
 
 Codey 0.2.32 adds a TaskRunner-backed headless JSONL path for scripts, CI

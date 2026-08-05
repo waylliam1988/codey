@@ -4,6 +4,34 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.33 - Project-local Config v1
+
+- 新增 `codey/project_config.py`：严格解析项目内显式存在的
+  `.codey/config.json`。项目配置只是有边界的事实/偏好来源，不是授权系统。
+- 项目配置可以声明验证命令候选、扫描忽略路径前缀、`project_map_chars`
+  预算提示，以及未来 provider 偏好。provider 偏好本版只解析和校验，不影响
+  provider 选择。
+- 配置里的验证命令会进入现有 verification candidate 流水线，优先级低于历史成功检查、
+  高于 manifest 自动发现。它们仍必须通过可执行文件、cwd 在项目内，以及
+  `tool_runtime` run allowlist 检查。
+- `scan.ignored_paths` 使用项目根相对前缀语义，并作用于 Project Map 顶层列表、
+  symbol overview、focused subtree 和 verification discovery；现有 secret、hidden、
+  symlink 和默认排除规则不会被削弱。
+- 配置 warning 会以很短的 ContextSource block 进入 Writer / readonly planning prompt，
+  让模型知道配置有部分没生效。协议 repair prompt 仍保持短小，不夹带配置上下文。
+- `context.budget_hints.project_map_chars` 只能降低 Project Map 渲染预算，并有下限；
+  项目配置不能扩大 prompt 预算。
+- 网页 provider smoke 加固：StepFun 现在会等 composer 文本熬过页面 late hydration
+  后再提交，并把缺失发送按钮准确报成 send-button failure；manual submit probe
+  不再把复用 tab 的 Playwright CDP 会话留开；`tools/live_smoke.py --provider all`
+  只跑网页 provider，不再混入 `local`。
+- Review 加固：超大的 `.codey/config.json` 现在会先用文件元数据挡掉，不会先读完整
+  body；项目配置用轻量静态 capability 表校验 provider hint，不再导入网页 adapter；
+  config warning 的 omitted 计数变成真实可达路径；StepFun 在稳定 composer gate 之后
+  不再保留真实路径不可达的 Enter 提交兜底。
+- 本版本不做 workflow DSL、不做项目本地权限矩阵、不做 shell 自动批准、不自动写配置、
+  不做 Research headless 配置、不改 UI，也不放宽任何 runtime 安全守门。
+
 ## 0.2.32 - Headless JSONL Runner v1
 
 - 新增 `codey/headless_runner.py`：一个很薄的机器可读 runner，复用生产

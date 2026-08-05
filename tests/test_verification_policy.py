@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey.project_facts import VerifiedCommand
+from codey.project_config import ProjectVerificationCommand
 from codey.verification_policy import (
     VerificationCandidate,
     _bounded_directories,
@@ -104,6 +105,90 @@ class VerificationPolicyTests(unittest.TestCase):
 
         self.assertIsNotNone(selected)
         self.assertEqual(selected.command, "npm test")
+
+    def test_configured_command_beats_manifest_candidate_but_not_successful_history(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "codey.verification_policy.shutil.which",
+            return_value="python",
+        ):
+            root = Path(td)
+            (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+            candidates = discover_verification_candidates(
+                root,
+                (VerifiedCommand("python -m unittest discover", "."),),
+                configured_commands=(
+                    ProjectVerificationCommand(
+                        "python -m pytest tests/test_configured.py",
+                        ".",
+                        "configured tests",
+                    ),
+                ),
+            )
+            selected = select_verification_candidate(candidates, ("app.py",))
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.command, "python -m unittest discover")
+        self.assertTrue(selected.previously_passed)
+
+    def test_configured_command_beats_manifest_when_no_successful_history(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "codey.verification_policy.shutil.which",
+            return_value="python",
+        ):
+            root = Path(td)
+            (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+            candidates = discover_verification_candidates(
+                root,
+                configured_commands=(
+                    ProjectVerificationCommand(
+                        "python -m unittest discover",
+                        ".",
+                        "configured unittest",
+                    ),
+                ),
+            )
+            selected = select_verification_candidate(candidates, ("app.py",))
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected.command, "python -m unittest discover")
+        self.assertEqual(selected.source, "project config: configured unittest")
+
+    def test_configured_command_cannot_bypass_run_allowlist(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "codey.verification_policy.shutil.which",
+            return_value="git",
+        ):
+            root = Path(td)
+            candidates = discover_verification_candidates(
+                root,
+                configured_commands=(ProjectVerificationCommand("git status", "."),),
+            )
+
+        self.assertEqual(candidates, ())
+
+    def test_configured_ignored_paths_skip_verification_discovery(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "codey.verification_policy.shutil.which",
+            return_value="python",
+        ):
+            root = Path(td)
+            generated = root / "generated"
+            generated.mkdir()
+            (generated / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+            src_generated = root / "src" / "generated"
+            src_generated.mkdir(parents=True)
+            (src_generated / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+
+            candidates = discover_verification_candidates(root, ignored_paths=("generated",))
+
+        self.assertNotIn(
+            VerificationCandidate("python -m pytest", "generated", "pytest.ini"),
+            candidates,
+        )
+        self.assertIn(
+            VerificationCandidate("python -m pytest", "src/generated", "pytest.ini"),
+            candidates,
+        )
 
     def test_pytest_beats_unittest_discover(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(

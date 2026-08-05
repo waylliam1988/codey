@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.32-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.33-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.32`
+版本：`0.2.33`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -400,6 +400,17 @@ DONE · 2 files changed · checks passed · restore available        View diff
 
 ---
 
+## 项目本地配置
+
+项目可以选择放一个 `.codey/config.json`，声明本地事实和偏好，例如验证命令候选、
+扫描时忽略的项目根相对路径前缀，以及更小的 Project Map 预算。Codey 不会自动创建这个文件。
+
+配置里的命令只是建议，不是授权。它们仍必须通过可执行文件、cwd 在项目内，以及
+`tool_runtime` run allowlist 检查；shell approval 和 safe-path 守门不变。
+provider 偏好本版只作为 future hint 解析，不会覆盖你明确选择的 provider。
+
+---
+
 ## 安全边界
 
 Codey 不是无限制 shell。
@@ -553,6 +564,7 @@ codey/
   change_set.py             结构化 diff 文件、hunk 和 rename/copy 事实
   changed_symbols.py        从可见 diff 提取变化的 symbol
   project_map.py            确定性的有边界项目地图
+  project_config.py         严格项目本地配置事实和 warning
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
   research/                 Research controller/runner、隔离网页/source search 工具、evidence ledger 和 report quality gate

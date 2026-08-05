@@ -4,6 +4,45 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.33 - Project-local Config v1
+
+- Added `codey/project_config.py`, a strict parser for explicit
+  `.codey/config.json` files. Project config is a bounded fact/preference
+  source, not an authorization system.
+- Project config can declare verification command candidates, scan ignored
+  path prefixes, a `project_map_chars` budget hint, and future provider
+  preferences. Provider preferences are parsed and validated only; they do not
+  affect provider selection in this release.
+- Configured verification commands feed the existing verification candidate
+  pipeline with a stable source priority below previously successful checks and
+  above manifest discovery. They still must pass the normal executable,
+  cwd-in-project, and `tool_runtime` run allowlist checks.
+- Configured `scan.ignored_paths` use project-root-relative prefix semantics.
+  They are applied to Project Map listing, symbol overview, focused subtree,
+  and verification discovery scans without weakening the existing secret,
+  hidden, symlink, and default excluded-path filters.
+- Project config warnings are rendered as a short ContextSource block for
+  Writer/read-only planning prompts, so models can see when a config was
+  partly ignored. Repair prompts remain short and do not include config
+  context.
+- `context.budget_hints.project_map_chars` can only reduce the Project Map
+  render budget, with a lower bound; project config cannot expand prompt
+  budgets.
+- Live web-provider smoke hardening: StepFun now waits for composer text to
+  survive late page hydration before submitting and reports missing send
+  controls as send-button failures, the manual submit probe no longer leaves
+  reused Playwright CDP sessions open, and `tools/live_smoke.py --provider all`
+  targets web providers only instead of including `local`.
+- Review hardening: oversized `.codey/config.json` files are rejected from
+  file metadata before reading the body, project config validates provider
+  hints against the lightweight static capability table instead of importing
+  web adapters, config warning omission counts are reachable, and StepFun no
+  longer keeps an unreachable Enter-submission fallback after the stable
+  composer gate.
+- This release does not add a workflow DSL, project-local permission matrix,
+  shell auto-approval, automatic config writing, Research headless config, UI
+  changes, or any relaxation of runtime safety guards.
+
 ## 0.2.32 - Headless JSONL Runner v1
 
 - Added `codey/headless_runner.py`, a thin machine-readable runner backed by

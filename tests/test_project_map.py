@@ -440,6 +440,54 @@ class ProjectMapTests(unittest.TestCase):
         if link is not None:
             self.assertNotIn("linked.py", rendered)
 
+    def test_configured_ignored_paths_are_project_relative_prefixes(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "generated").mkdir()
+            (root / "generated" / "client.py").write_text("def hidden():\n    pass\n", encoding="utf-8")
+            (root / "src" / "generated").mkdir(parents=True)
+            (root / "src" / "generated" / "client.py").write_text(
+                "def visible_generated_router():\n    pass\n",
+                encoding="utf-8",
+            )
+
+            rendered = project_map.render_project_map(
+                root,
+                task="generated router",
+                ignored_paths=("generated",),
+            )
+
+        self.assertNotIn("- generated/client.py", rendered)
+        self.assertIn("src/generated/client.py", rendered)
+        self.assertIn("visible_generated_router", rendered)
+
+    def test_configured_ignored_paths_apply_to_focused_subtree(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            _write(
+                root / "apps" / "generated" / "src" / "router.py",
+                """
+                def generated_router_dispatch(request):
+                    return True
+                """,
+            )
+            _write(
+                root / "apps" / "real" / "src" / "router.py",
+                """
+                def real_router_dispatch(request):
+                    return True
+                """,
+            )
+            with mock.patch.object(project_map, "MAX_SYMBOL_FILES", 0):
+                focused = project_map.build_focused_subtree_overview(
+                    root,
+                    "router dispatch",
+                    ignored_paths=("apps/generated",),
+                )
+
+        self.assertNotIn("apps/generated", focused)
+        self.assertIn("apps/real", focused)
+
     def test_symbol_overview_skips_secret_dot_symlink_large_and_non_utf8_files(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

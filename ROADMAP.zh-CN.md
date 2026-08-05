@@ -505,20 +505,20 @@ Headless runner 是用户可见能力，但它必须建立在清楚的内部事�
 - 不做 shell 自动批准。
 - 不改 UI。
 
-## 0.2.33 - Project-local Config
+## 0.2.33 - Project-local Config ✅ 已完成
 
 ### 做什么
 
 新增克制的项目本地配置文件，用来声明项目级安全、验证和上下文偏好。
+第一版已落地为 `.codey/config.json`，由 `codey/project_config.py` 严格解析。
 
 第一版只考虑少量字段：
 
 ```text
 verification commands
-safe run allowlist
 ignored paths
-context budget hints
-preferred provider policy
+project_map_chars context budget hint
+preferred provider policy (parsed/validated only; not consumed)
 ```
 
 ### 为什么做
@@ -538,6 +538,7 @@ Codey 已经能从项目事实里学习成功命令，但有些项目需要显�
 - 危险 shell 命令不能仅因配置存在就绕过审批。
 - 无配置项目保持现有行为。
 - 配置解析失败有清楚错误，不导致隐式放权。
+- provider preferred policy 本版只解析和校验，不覆盖用户明确选择。
 
 ### 暂不做
 

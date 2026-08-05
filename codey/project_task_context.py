@@ -5,10 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from codey.project_config import (
+    ProjectVerificationCommand,
+    load_project_config,
+    render_project_config_warnings,
+)
 from codey.project_facts import ProjectFactsStore, VerifiedCommand
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.knowledge.store import KnowledgeStore
-from codey.project_map import render_project_map
+from codey.project_map import MAX_PROJECT_MAP_CHARS, render_project_map
 from codey.verification_policy import (
     VerificationCandidate,
     discover_verification_candidates,
@@ -40,8 +45,12 @@ class ProjectTaskContext:
     research_context: str = ""
     knowledge_context: str = ""
     project_map: str = ""
+    project_config_warnings: str = ""
     verification_verified_commands: tuple[VerifiedCommand, ...] = ()
     resumed_verification_commands: tuple[CheckpointCheck, ...] = ()
+    configured_verification_commands: tuple[ProjectVerificationCommand, ...] = ()
+    configured_ignored_paths: tuple[str, ...] = ()
+    project_map_chars: int = MAX_PROJECT_MAP_CHARS
     verification_candidates: tuple[VerificationCandidate, ...] = ()
     checkpoint: CheckpointContext = field(default_factory=CheckpointContext)
 
@@ -70,6 +79,8 @@ class ProjectTaskContextBuilder:
         continue_task: bool,
         provider_session_changed: bool,
     ) -> ProjectTaskContext:
+        config_result = load_project_config(project)
+        config = config_result.config
         verified_facts = self._verified_facts(project)
         verified_commands = self._verified_commands(project)
         checkpoint = self._initialize_checkpoint(
@@ -84,21 +95,30 @@ class ProjectTaskContextBuilder:
             project,
             verified_commands,
             checkpoint.resumed_verification_commands,
+            config.verification_commands,
+            config.ignored_paths,
         )
         command_lines = verification_candidate_lines(verification_candidates)
         research_context = self._research_context(session_id)
+        project_map_chars = _project_map_chars(config.context_budget_hints.project_map_chars)
         return ProjectTaskContext(
             verified_facts=verified_facts,
             research_context=research_context,
             knowledge_context=research_context,
+            project_config_warnings=render_project_config_warnings(config_result),
             project_map=safe_project_map(
                 project,
                 verified_facts,
                 task,
                 command_lines,
+                ignored_paths=config.ignored_paths,
+                max_chars=project_map_chars,
             ),
             verification_verified_commands=verified_commands,
             resumed_verification_commands=checkpoint.resumed_verification_commands,
+            configured_verification_commands=config.verification_commands,
+            configured_ignored_paths=config.ignored_paths,
+            project_map_chars=project_map_chars,
             verification_candidates=verification_candidates,
             checkpoint=checkpoint,
         )
@@ -198,11 +218,15 @@ def safe_verification_candidates(
     project: str | Path,
     verified_commands: tuple[VerifiedCommand, ...] = (),
     additional_commands: tuple[CheckpointCheck, ...] = (),
+    configured_commands: tuple[ProjectVerificationCommand, ...] = (),
+    ignored_paths: tuple[str, ...] = (),
 ) -> tuple[VerificationCandidate, ...]:
     try:
         return discover_verification_candidates(
             project,
             verified_commands + additional_commands,
+            configured_commands=configured_commands,
+            ignored_paths=ignored_paths,
         )
     except (OSError, TypeError, ValueError):
         return ()
@@ -213,15 +237,31 @@ def safe_project_map(
     verified_facts: str,
     task: str = "",
     candidate_commands: tuple[str, ...] | None = None,
+    ignored_paths: tuple[str, ...] = (),
+    max_chars: int = MAX_PROJECT_MAP_CHARS,
 ) -> str:
     try:
         if candidate_commands is None:
-            return render_project_map(project, verified_facts, task=task)
+            return render_project_map(
+                project,
+                verified_facts,
+                task=task,
+                ignored_paths=ignored_paths,
+                max_chars=max_chars,
+            )
         return render_project_map(
             project,
             verified_facts,
             task=task,
             candidate_commands=candidate_commands,
+            ignored_paths=ignored_paths,
+            max_chars=max_chars,
         )
     except Exception:
         return ""
+
+
+def _project_map_chars(configured: int | None) -> int:
+    if configured is None:
+        return MAX_PROJECT_MAP_CHARS
+    return min(MAX_PROJECT_MAP_CHARS, configured)

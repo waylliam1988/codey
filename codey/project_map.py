@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
 from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
+from codey.project_config import path_matches_ignored_prefix
 
 
 MAX_PROJECT_MAP_CHARS = 7_000
@@ -144,7 +145,7 @@ class ProjectMap:
     focused_subtree: str = ""
     truncated: bool = False
 
-    def render(self) -> str:
+    def render(self, *, max_chars: int = MAX_PROJECT_MAP_CHARS) -> str:
         lines = ["Project Map (bounded local scan; relative paths only):"]
         _extend_section(lines, "Source/test roots", _dedupe((*self.source_roots, *self.test_roots)))
         _extend_section(lines, "Manifests", self.manifests)
@@ -168,9 +169,9 @@ class ProjectMap:
         if self.truncated:
             lines.append("- map truncated: inspect narrower paths as needed")
         text = "\n".join(lines).strip()
-        if len(text) <= MAX_PROJECT_MAP_CHARS:
+        if len(text) <= max_chars:
             return text
-        return text[:MAX_PROJECT_MAP_CHARS].rstrip() + "\n- map truncated by character budget"
+        return text[:max_chars].rstrip() + "\n- map truncated by character budget"
 
 
 @dataclass(frozen=True)
@@ -202,6 +203,7 @@ def build_project_map(
     verified_facts: str = "",
     task: str = "",
     candidate_commands: Sequence[str] | None = None,
+    ignored_paths: Sequence[str] = (),
 ) -> ProjectMap:
     root = Path(project).expanduser().resolve()
     dirs: list[str] = []
@@ -228,7 +230,7 @@ def build_project_map(
         entries_seen += len(entries)
         for entry in entries:
             rel = _safe_relative(root, entry)
-            if not rel or _path_blocked(rel):
+            if not rel or _path_blocked(rel, ignored_paths):
                 continue
             try:
                 if entry.is_symlink():
@@ -262,10 +264,14 @@ def build_project_map(
             break
 
     observed = _observed_successful_checks(verified_facts)
-    focused_subtree = build_focused_subtree_overview(root, task) if task.strip() else ""
+    focused_subtree = (
+        build_focused_subtree_overview(root, task, ignored_paths=ignored_paths)
+        if task.strip()
+        else ""
+    )
     symbol_overview = ""
     if task.strip() and not focused_subtree:
-        symbol_overview = build_symbol_overview(root, task)
+        symbol_overview = build_symbol_overview(root, task, ignored_paths=ignored_paths)
     commands = candidate_commands or ()
     return ProjectMap(
         directories=tuple(dirs[:MAX_LISTED_DIRS]),
@@ -287,13 +293,16 @@ def render_project_map(
     verified_facts: str = "",
     task: str = "",
     candidate_commands: Sequence[str] | None = None,
+    ignored_paths: Sequence[str] = (),
+    max_chars: int = MAX_PROJECT_MAP_CHARS,
 ) -> str:
     return build_project_map(
         project,
         verified_facts,
         task,
         candidate_commands=candidate_commands,
-    ).render()
+        ignored_paths=ignored_paths,
+    ).render(max_chars=max_chars)
 
 
 def build_symbol_overview(
@@ -301,13 +310,14 @@ def build_symbol_overview(
     task: str,
     *,
     max_chars: int = MAX_SYMBOL_MAP_CHARS,
+    ignored_paths: Sequence[str] = (),
 ) -> str:
     task = (task or "").strip()
     if not task:
         return ""
     root = Path(project).expanduser().resolve()
     summaries: list[SymbolSummary] = []
-    for path in _iter_symbol_source_files(root):
+    for path in _iter_symbol_source_files(root, ignored_paths=ignored_paths):
         rel = _safe_relative(root, path)
         if not rel:
             continue
@@ -336,12 +346,13 @@ def build_focused_subtree_overview(
     task: str,
     *,
     max_chars: int = MAX_FOCUSED_SUBTREE_CHARS,
+    ignored_paths: Sequence[str] = (),
 ) -> str:
     task = (task or "").strip()
     if not task:
         return ""
     root = Path(project).expanduser().resolve()
-    candidates, budget = _scan_focus_candidates(root, task)
+    candidates, budget = _scan_focus_candidates(root, task, ignored_paths=ignored_paths)
     if not candidates:
         return ""
     if len(candidates) <= MAX_SYMBOL_FILES and not budget.limited:
@@ -408,7 +419,7 @@ def _bounded_directory_entries(path: Path, remaining: int) -> tuple[list[Path], 
     return sorted(entries, key=_entry_sort_key), False
 
 
-def _iter_symbol_source_files(root: Path) -> list[Path]:
+def _iter_symbol_source_files(root: Path, ignored_paths: Sequence[str] = ()) -> list[Path]:
     files: list[Path] = []
     total_bytes = 0
     directories_seen = 0
@@ -424,7 +435,7 @@ def _iter_symbol_source_files(root: Path) -> list[Path]:
         subdirs: list[Path] = []
         for path in entries:
             rel = _safe_relative(root, path)
-            if not rel or _path_blocked(rel):
+            if not rel or _path_blocked(rel, ignored_paths):
                 continue
             try:
                 if path.is_symlink():
@@ -454,6 +465,8 @@ def _iter_symbol_source_files(root: Path) -> list[Path]:
 def _scan_focus_candidates(
     root: Path,
     task: str,
+    *,
+    ignored_paths: Sequence[str] = (),
 ) -> tuple[list[FocusCandidate], BoundedScanBudget]:
     budget = BoundedScanBudget(
         max_files=MAX_FOCUS_SCAN_FILES,
@@ -466,8 +479,8 @@ def _scan_focus_candidates(
         root,
         excluded_dirs=EXCLUDED_DIRS,
         budget=budget,
-        allow_dir=lambda item: _focus_dir_allowed(root, item),
-        allow_file=lambda item: _focus_source_file_allowed(root, item),
+        allow_dir=lambda item: _focus_dir_allowed(root, item, ignored_paths),
+        allow_file=lambda item: _focus_source_file_allowed(root, item, ignored_paths),
     ):
         rel = _safe_relative(root, path)
         if not rel:
@@ -487,14 +500,18 @@ def _scan_focus_candidates(
     return candidates, budget
 
 
-def _focus_dir_allowed(root: Path, path: Path) -> bool:
+def _focus_dir_allowed(root: Path, path: Path, ignored_paths: Sequence[str] = ()) -> bool:
     rel = _safe_relative(root, path)
-    return bool(rel and not _path_blocked(rel))
+    return bool(rel and not _path_blocked(rel, ignored_paths))
 
 
-def _focus_source_file_allowed(root: Path, path: Path) -> bool:
+def _focus_source_file_allowed(
+    root: Path,
+    path: Path,
+    ignored_paths: Sequence[str] = (),
+) -> bool:
     rel = _safe_relative(root, path)
-    if not rel or _path_blocked(rel):
+    if not rel or _path_blocked(rel, ignored_paths):
         return False
     if path.suffix.lower() not in SOURCE_SUFFIXES:
         return False
@@ -584,9 +601,11 @@ def _safe_relative(root: Path, path: Path) -> str:
         return ""
 
 
-def _path_blocked(rel: str) -> bool:
+def _path_blocked(rel: str, ignored_paths: Sequence[str] = ()) -> bool:
     normalized = rel.replace("\\", "/").strip("/")
     if not normalized:
+        return True
+    if path_matches_ignored_prefix(normalized, ignored_paths):
         return True
     for part in PurePosixPath(normalized).parts:
         lower = part.lower()

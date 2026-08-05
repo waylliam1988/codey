@@ -678,6 +678,42 @@ class RunLoopTests(unittest.TestCase):
         self.assertIn("Project Map", provider.sent[0])
         self.assertIn("package.json", provider.sent[0])
 
+    def test_project_intro_includes_config_warnings_when_provided(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Review project config",
+                on_event=lambda _event: None,
+                project_config_warnings="- ignored .codey/config.json because it is invalid JSON",
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Project config warnings:", provider.sent[0])
+        self.assertIn("invalid JSON", provider.sent[0])
+
+    def test_protocol_repair_prompt_omits_project_config_warnings(self) -> None:
+        provider = FakeProvider(
+            "not json",
+            '{"tool":"done","args":{"summary":"ok"}}',
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Review project config",
+                on_event=lambda _event: None,
+                project_config_warnings="- invalid config warning",
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Project config warnings:", provider.sent[0])
+        self.assertNotIn("Project config warnings:", provider.sent[1])
+        self.assertNotIn("invalid config warning", provider.sent[1])
+
     def test_project_intro_includes_research_context_when_provided(self) -> None:
         provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
 

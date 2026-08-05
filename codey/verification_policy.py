@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
+from codey.project_config import path_matches_ignored_prefix
 from codey.tool_runtime import _is_allowed_run_command
 
 
@@ -60,6 +61,7 @@ class VerificationCandidate:
     cwd: str = "."
     source: str = ""
     previously_passed: bool = False
+    source_priority: int = 0
 
 
 def _safe_cwd(root: Path, value: object) -> str | None:
@@ -92,6 +94,7 @@ def _candidate(
     source: str,
     *,
     previously_passed: bool = False,
+    source_priority: int = 0,
 ) -> VerificationCandidate | None:
     text = str(command or "").strip()
     safe_cwd = _safe_cwd(root, cwd)
@@ -99,10 +102,11 @@ def _candidate(
         return None
     if not _allowed_and_available(text):
         return None
-    return VerificationCandidate(text, safe_cwd, source, previously_passed)
+    priority = max(source_priority, 100 if previously_passed else 0)
+    return VerificationCandidate(text, safe_cwd, source, previously_passed, priority)
 
 
-def _bounded_directories(root: Path) -> Iterable[Path]:
+def _bounded_directories(root: Path, ignored_paths: Sequence[str] = ()) -> Iterable[Path]:
     pending = [root]
     seen_dirs = 0
     seen_entries = 0
@@ -120,6 +124,12 @@ def _bounded_directories(root: Path) -> Iterable[Path]:
                 return
             name = child.name
             if name.startswith(".") or name.lower() in EXCLUDED_DIRS:
+                continue
+            try:
+                rel = child.relative_to(root).as_posix()
+            except ValueError:
+                continue
+            if path_matches_ignored_prefix(rel, ignored_paths):
                 continue
             try:
                 if child.is_dir() and not child.is_symlink():
@@ -332,6 +342,8 @@ def _historical_candidate_is_current(
 def discover_verification_candidates(
     project: str | Path,
     verified_commands: Sequence[object] = (),
+    configured_commands: Sequence[object] = (),
+    ignored_paths: Sequence[str] = (),
 ) -> tuple[VerificationCandidate, ...]:
     root = Path(project).expanduser().resolve()
     found: list[VerificationCandidate] = []
@@ -345,7 +357,19 @@ def discover_verification_candidates(
         )
         if candidate is not None and _historical_candidate_is_current(root, candidate):
             found.append(candidate)
-    for directory in _bounded_directories(root):
+    for item in configured_commands:
+        label = str(getattr(item, "label", "") or "").strip()
+        source = f"project config: {label}" if label else "project config"
+        candidate = _candidate(
+            root,
+            getattr(item, "command", ""),
+            getattr(item, "cwd", "."),
+            source,
+            source_priority=50,
+        )
+        if candidate is not None:
+            found.append(candidate)
+    for directory in _bounded_directories(root, ignored_paths):
         cwd = directory.relative_to(root).as_posix() or "."
         package_text = _read_manifest(directory / "package.json")
         if package_text:
@@ -442,7 +466,7 @@ def discover_verification_candidates(
     for item in found:
         key = (item.command, item.cwd)
         prior = unique.get(key)
-        if prior is None or item.previously_passed:
+        if prior is None or _effective_source_priority(item) > _effective_source_priority(prior):
             unique[key] = item
     return tuple(unique.values())
 
@@ -640,12 +664,12 @@ def select_verification_candidate(
     )
     if not code_paths:
         return None
-    scored: list[tuple[int, bool, int, VerificationCandidate]] = []
+    scored: list[tuple[int, int, int, VerificationCandidate]] = []
     for item in candidates:
         if not all(_covers(item.cwd, path) and _compatible(item, path) for path in code_paths):
             continue
         depth = 0 if item.cwd == "." else len(PurePosixPath(item.cwd).parts)
-        scored.append((depth, item.previously_passed, _command_priority(item), item))
+        scored.append((depth, _effective_source_priority(item), _command_priority(item), item))
     if not scored:
         return None
     scored.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
@@ -653,6 +677,10 @@ def select_verification_candidate(
     if len(scored) > 1 and best[:3] == scored[1][:3]:
         return None
     return best[3]
+
+
+def _effective_source_priority(candidate: VerificationCandidate) -> int:
+    return max(int(candidate.source_priority or 0), 100 if candidate.previously_passed else 0)
 
 
 def check_covers_changes(

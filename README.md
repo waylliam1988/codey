@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.32-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.33-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.32`
+Version: `0.2.33`
 
 [Version history](CHANGELOG.md)
 
@@ -459,6 +459,20 @@ DONE · 2 files changed · checks passed · restore available        View diff
 
 ---
 
+## Project-local Config
+
+Projects may optionally include `.codey/config.json` to declare local facts and
+preferences such as verification command candidates, scan ignored path
+prefixes, and a smaller Project Map budget. Codey never creates this file
+automatically.
+
+Configured commands are suggestions, not permissions. They still must pass the
+normal executable, cwd-in-project, and `tool_runtime` run allowlist checks; shell
+approval and safe-path guards are unchanged. Provider preferences are parsed as
+future hints only and do not override the provider you select.
+
+---
+
 ## Safety Model
 
 Codey is not an unrestricted shell.
@@ -619,6 +633,7 @@ codey/
   change_set.py             structured diff files, hunks, and rename/copy facts
   changed_symbols.py        lexical changed-symbol extraction from visible diffs
   project_map.py            deterministic bounded project orientation
+  project_config.py         strict project-local config facts and warnings
   project_task_context.py   project facts, map, checkpoint, and verification context
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
   research/                 Research controller/runner, isolated web/source search tools, evidence ledger, report quality gate

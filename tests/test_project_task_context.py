@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from dataclasses import fields
@@ -282,6 +283,130 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
         self.assertIn("- mypy .", context.project_map)
         self.assertNotIn("- python -m ruff check .", context.project_map)
         self.assertNotIn("- python -m mypy .", context.project_map)
+
+    def test_project_config_commands_feed_candidates_and_project_map(self) -> None:
+        with tempfile.TemporaryDirectory() as td, mock.patch(
+            "codey.verification_policy.shutil.which",
+            return_value="python",
+        ):
+            root = Path(td)
+            config = root / ".codey" / "config.json"
+            config.parent.mkdir()
+            config.write_text(
+                json.dumps({
+                    "schema_version": 1,
+                    "verification": {
+                        "commands": [
+                            {
+                                "command": "python -m unittest discover",
+                                "cwd": ".",
+                                "label": "project unittest",
+                            }
+                        ]
+                    },
+                }),
+                encoding="utf-8",
+            )
+
+            context = ProjectTaskContextBuilder().build(
+                project=root,
+                task="update app",
+                session_id="s",
+                run_id="r",
+                continue_task=False,
+                provider_session_changed=False,
+            )
+
+        self.assertIn(
+            "python -m unittest discover",
+            {item.command for item in context.verification_candidates},
+        )
+        self.assertIn("- python -m unittest discover", context.project_map)
+
+    def test_project_config_ignored_paths_feed_project_map(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            config = root / ".codey" / "config.json"
+            config.parent.mkdir()
+            config.write_text(
+                json.dumps({
+                    "schema_version": 1,
+                    "scan": {"ignored_paths": ["generated/"]},
+                }),
+                encoding="utf-8",
+            )
+            (root / "generated").mkdir()
+            (root / "generated" / "router.py").write_text(
+                "def hidden_router():\n    pass\n",
+                encoding="utf-8",
+            )
+            (root / "src" / "generated").mkdir(parents=True)
+            (root / "src" / "generated" / "router.py").write_text(
+                "def visible_router():\n    pass\n",
+                encoding="utf-8",
+            )
+
+            context = ProjectTaskContextBuilder().build(
+                project=root,
+                task="generated router",
+                session_id="s",
+                run_id="r",
+                continue_task=False,
+                provider_session_changed=False,
+            )
+
+        self.assertNotIn("- generated/router.py", context.project_map)
+        self.assertIn("src/generated/router.py", context.project_map)
+        self.assertIn("visible_router", context.project_map)
+
+    def test_project_config_warnings_are_bounded_context_facts(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            config = root / ".codey" / "config.json"
+            config.parent.mkdir()
+            config.write_text("{bad json", encoding="utf-8")
+
+            context = ProjectTaskContextBuilder().build(
+                project=root,
+                task="task",
+                session_id="s",
+                run_id="r",
+                continue_task=False,
+                provider_session_changed=False,
+            )
+
+        self.assertIn("invalid JSON", context.project_config_warnings)
+        self.assertNotIn("{bad json", context.project_config_warnings)
+
+    def test_project_config_project_map_budget_can_only_reduce_default(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            config = root / ".codey" / "config.json"
+            config.parent.mkdir()
+            config.write_text(
+                json.dumps({
+                    "schema_version": 1,
+                    "context": {"budget_hints": {"project_map_chars": 1000}},
+                }),
+                encoding="utf-8",
+            )
+            for index in range(120):
+                (root / f"long_named_project_file_{index:03}_for_budget_check.py").write_text(
+                    "x = 1\n",
+                    encoding="utf-8",
+                )
+
+            context = ProjectTaskContextBuilder().build(
+                project=root,
+                task="task",
+                session_id="s",
+                run_id="r",
+                continue_task=False,
+                provider_session_changed=False,
+            )
+
+        self.assertLessEqual(len(context.project_map), 1080)
+        self.assertIn("map truncated by character budget", context.project_map)
 
     def test_verified_project_facts_feed_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as td:

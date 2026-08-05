@@ -79,7 +79,7 @@ def _page_state(provider_id: str, page) -> dict:
         return {"state_error": f"{type(exc).__name__}: {exc}"}
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     choices = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
     parser = argparse.ArgumentParser(description="Live provider submit/idle smoke")
     parser.add_argument("--provider", choices=choices, default="stepfun")
@@ -94,7 +94,7 @@ def main() -> int:
         nargs="?",
         default='Reply with exactly {"ok":true} and no markdown.',
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     provider_controls.begin_task_context(f"{args.provider}-submit-probe")
     provider = None
@@ -141,7 +141,7 @@ def main() -> int:
         print("failed " + json.dumps(payload, ensure_ascii=False), flush=True)
         return 1
     finally:
-        if provider is not None and not args.keep_open:
+        if provider is not None and (not args.keep_open or not args.fresh):
             try:
                 provider.close()
             except Exception:

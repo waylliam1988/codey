@@ -10,6 +10,11 @@ from tools import live_smoke
 
 
 class LiveSmokeTests(unittest.TestCase):
+    def test_live_smoke_all_defaults_to_web_providers_only(self) -> None:
+        self.assertIn("deepseek", live_smoke.PROVIDER_IDS)
+        self.assertIn("mimo", live_smoke.PROVIDER_IDS)
+        self.assertNotIn("local", live_smoke.PROVIDER_IDS)
+
     def test_collect_changes_comes_from_changes_module(self) -> None:
         self.assertIs(live_smoke.collect_changes, changes.collect_changes)
 

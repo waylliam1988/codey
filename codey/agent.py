@@ -70,6 +70,7 @@ PROJECT_INSTRUCTIONS_CONTEXT_BUDGET = (
 VERIFIED_FACTS_CONTEXT_BUDGET = 8000
 RESEARCH_CONTEXT_BUDGET = 7000
 PROJECT_MAP_CONTEXT_BUDGET = 12000
+PROJECT_CONFIG_WARNINGS_CONTEXT_BUDGET = 1200
 WORK_CHECKPOINT_CONTEXT_BUDGET = MAX_WORK_CHECKPOINT_PROMPT_CHARS
 INITIAL_LISTING_CONTEXT_BUDGET = 4000
 CODING_CURRENT_CONTEXT_BUDGET = 3000
@@ -595,6 +596,7 @@ def run(
     project_facts: str = "",
     research_context: str = "",
     project_map: str = "",
+    project_config_warnings: str = "",
     work_checkpoint: str = "",
     verification_candidates: tuple[VerificationCandidate, ...] = (),
     verification_candidate_loader: Callable[
@@ -715,6 +717,14 @@ def run(
                 budget=PROJECT_MAP_CONTEXT_BUDGET,
                 freshness="run_start",
                 why_included="bounded local project map prepared before writing",
+            ),
+            ContextSource(
+                key="project_config_warnings",
+                loader=lambda: project_config_warnings,
+                budget=PROJECT_CONFIG_WARNINGS_CONTEXT_BUDGET,
+                freshness="run_start",
+                why_included="bounded project-local config warnings",
+                heading="Project config warnings:",
             ),
             ContextSource(
                 key="work_checkpoint",

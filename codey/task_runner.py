@@ -1112,6 +1112,7 @@ class TaskRunner:
             project_facts=project_context.verified_facts,
             research_context=project_context.research_context,
             project_map=project_context.project_map,
+            project_config_warnings=project_context.project_config_warnings,
             permission_profile="planning_readonly",
         )
         state.set_provider_session(
@@ -1196,6 +1197,11 @@ class TaskRunner:
         resumed_verification_commands = (
             project_context.resumed_verification_commands
         )
+        configured_verification_commands = (
+            project_context.configured_verification_commands
+        )
+        configured_ignored_paths = project_context.configured_ignored_paths
+        project_map_chars = project_context.project_map_chars
         project_map = project_context.project_map
         work.work_checkpoint = project_context.checkpoint.item
         checkpoint_prompt = project_context.checkpoint.prompt
@@ -1308,6 +1314,7 @@ class TaskRunner:
                 project_facts=verified_facts,
                 research_context=project_context.research_context,
                 project_map=project_map,
+                project_config_warnings=project_context.project_config_warnings,
                 work_checkpoint=spec.checkpoint.prompt,
                 verification_candidates=verification_candidates,
                 verification_candidate_loader=lambda: (
@@ -1315,6 +1322,8 @@ class TaskRunner:
                         project,
                         verification_verified_commands,
                         resumed_verification_commands,
+                        configured_verification_commands,
+                        configured_ignored_paths,
                     )
                 ),
                 verification_changed_files=spec.checkpoint.changed_files,
@@ -1501,12 +1510,16 @@ class TaskRunner:
                 project,
                 verification_verified_commands,
                 resumed_verification_commands,
+                configured_verification_commands,
+                configured_ignored_paths,
             )
             project_map = safe_project_map(
                 project,
                 verified_facts,
                 request.task,
                 verification_candidate_lines(verification_candidates),
+                ignored_paths=configured_ignored_paths,
+                max_chars=project_map_chars,
             )
             return project_map
 
@@ -1611,6 +1624,8 @@ class TaskRunner:
             project,
             verification_verified_commands,
             resumed_verification_commands,
+            configured_verification_commands,
+            configured_ignored_paths,
         )
         if result.stop_reason == "done" and task_changed and files:
             selected_check = select_verification_candidate(
