@@ -1,577 +1,905 @@
 # Codey 未来版本规划
 
-这份文档从 `0.2.24` 之后开始规划 Codey 的近期版本。它不是功能愿望清单，而是内部架构路线图：先把 Codey 已经具备的能力整理成更清楚的事实、工具、上下文和权限边界，再在这个地基上做导出、headless、项目配置等用户可见能力。
+这份文档记录 Codey 从 `0.3.0` 开始的路线。`0.2.25` 到 `0.2.33`
+已经完成了内部地基：Run Ledger、Ledger Projection、ToolDefinition、
+ContextSource、Provider Capability、Managed Outputs、Permission Profiles、
+Headless JSONL Runner 和 Project-local Config。
 
-## 总方向
-
-Codey 不应该变成 Pi 或 OpenCode 那样的大平台。Codey 的优势仍然是：
-
-> 网页 AI 负责思考，本地 Codey 负责边界、工具、来源、diff、恢复和验证。
-
-未来几个版本要做的核心事情，是把这些边界变成可命名、可投影、可测试的数据：
+接下来的主线不再是继续整理工具身体，而是进入新的产品阶段：
 
 ```text
-agent run
-tool definition
-permission / trust event
-session facts
-context source
-provider capability
-managed output
-diff / snapshot / restore id
+Ghost in Codey
 ```
 
-这样做的目标不是增加主界面概念，而是让 Codey 内部更稳：同一份事实可以同时服务 checkpoint、receipt、review、restore、provider debug、A/B report 和未来的 headless runner。
+更准确地说：
+
+```text
+Ghost / Nezha-mini = 主体、长期连续性、偏好、记忆、意图
+Codey = 工具身体、本地执行、安全边界、工作台
+外部模型 = 可替换的推理器官
+```
+
+这里有一个不可放松的边界：
+
+```text
+产品核心：Ghost 应该是核心
+安全核心：Codey 仍然必须是核心
+```
+
+Ghost 可以决定“我想帮用户聊天、研究、写代码、复盘、记住偏好、整理长期问题”。
+但真正读文件、改文件、跑命令、联网研究、提交 git 的动作，仍然必须经过 Codey 的
+Permission Profile、Research Controller、ToolRuntime、shell approval、Run Ledger、
+verification、restore 和 Project-local Config。
+
+## 0.2 地基已经完成
+
+`0.2.25` 到 `0.2.33` 的目标是把 Codey 的身体边界整理清楚。现在这些已经落地：
+
+```text
+0.2.25 Run Ledger v1
+0.2.26 Ledger Projections v1
+0.2.27 ToolDefinition v1
+0.2.28 ContextSource v1
+0.2.29 Provider Capability Registry v1
+0.2.30 Managed Output Handles v1
+0.2.31 Internal Permission Profiles v1
+0.2.32 Headless JSONL Runner v1
+0.2.33 Project-local Config v1
+```
+
+这些能力共同提供了 Ghost 需要的身体接口：
+
+- `headless_runner.py` 让 Ghost 能以 JSONL 方式调用 Codey。
+- `permission_profiles.py` 让 Ghost 不能越权，只能提出意图。
+- `context_source.py` 让 Ghost Directive 能作为有预算的上下文进入 prompt。
+- `run_ledger.py` 和 `run_ledger_projection.py` 让 Ghost 能从真实执行事实里学习。
+- `managed_outputs.py` 让长日志保留本地证据，但不塞爆模型上下文。
+- `tool_definition.py` 让工具边界可命名、可过滤、可测试。
+- `provider_capabilities.py` 让 Ghost 能理解 provider 的静态适配倾向，但不覆盖用户选择。
+- `project_config.py` 让项目本地偏好和验证命令有安全入口。
+- `research/controller.py` 让 Research 仍然由 Codey 控制证据链和工具顺序边界。
+
+所以 0.3 不是推翻 0.2，而是把 Ghost 接在这些地基上。
+
+## 总架构
+
+```text
+User
+  -> Ghost Core
+       - long-term continuity
+       - Hebbian preferences
+       - correction ledger
+       - memory inbox
+       - research interests
+       - route intention
+       - Ghost Directive
+  -> Codey Action Layer
+       - TaskRunner
+       - ResearchRunner
+       - ToolRuntime
+       - PermissionProfile
+       - approval / ledger / restore / verification
+  -> External Model
+       - DeepSeek / Qwen / MiMo / StepFun / GLM / local API
+```
+
+Ghost 负责“我是谁、我记得什么、我为什么做这件事”。
+Codey 负责“我能安全做什么、做完有没有证据、失败后能不能恢复”。
+外部模型负责“语言推理和生成”，可以随时替换。
+
+## Nezha-mini 的迁移边界
+
+不要把 `E:\Nezha\Nezha-mini\core\ghost.py` 原样搬进 Codey。它是
+`torch.nn.Module`，还带着 `transformers`、checkpoint、token logit bias、Nezha
+自己的 `Config` 和动作协议。Codey 的方向是 API-first / web-model-first，不应该把
+HF 运行时带进核心。
+
+应该借鉴的是 Nezha-mini 的思想和小契约：
+
+```text
+可以借：
+- LLM 判断学习信号，而不是硬编码规则
+- memory inbox / candidate / conflict_key
+- learning gate
+- correction ledger
+- hot memory
+- cognitive sleep
+- research open question / task queue
+- Ghost translator / directive 思想
+- user world model 的可审计预测思想
+
+不要借：
+- torch Ghost
+- transformers logits processor
+- HF checkpoint
+- 早期 MemoryFabric 大 SQLite/vector 体系
+- Nezha-mini 完整 web research loop
+- Nezha-mini action executor 覆盖 Codey ToolRuntime
+```
 
 ## 规划原则
 
-1. 每个版本只收拢一个核心边界，避免大重构。
-2. 新增架构对象先只服务内部，不增加用户需要理解的新模式。
-3. 不保存完整源码、完整网页正文、完整 DOM、Cookie 或完整长期聊天 transcript。
-4. Research 仍然必须由用户显式开启；Project Writer 默认不联网。
-5. shell、edit、restore 等本地能力继续保持保守审批和可恢复边界。
-6. 所有新状态都要有生命周期、大小上限和失败降级策略。
-7. UI 继续保持安静：用户看到的是 Chat、Research、Project、Review、Diff、Restore，而不是 registry、profile、epoch、ledger 这类内部词。
+1. Hebbian 网络是 0.3 的主线，不是后期装饰。
+2. Hebbian 状态必须是纯 Python / JSON / SQLite 可审计状态，不依赖 torch、HF 或 transformers。
+3. LLM 可以判断学习信号，但不能直接永久写记忆。
+4. 所有学习先进 inbox，经过 gate 才能强化 Hebbian state。
+5. Ghost Directive 只能影响表达、偏好和任务倾向，不能授权工具。
+6. Research 事实仍然来自 Codey Research evidence，不来自 Ghost 关联边。
+7. 关联边表示“相关性”或“值得研究”，不表示“事实为真”。
+8. Ghost Router 只输出意图，不能直接调用 edit/run/shell/git。
+9. 所有 Ghost 状态都要有大小上限、衰减、冲突处理、导出和删除路径。
+10. UI 先保持安静，最后再做 Ghost 审计面板。
+11. Ghost 必须从第一版就有 disable、export、reset 和 delete scope 的控制入口；UI 可以晚做，控制权不能晚给。
+12. `state_home=None` 时 Ghost 写入默认禁用，避免测试、嵌入和一次性脚本写入真实长期状态。
 
-## 0.2.25 - Run Ledger v1
+## 0.3 首版边界常量
 
-状态：第一版已落地为 observe-only coding run ledger。
+第一版先写清量级，后续可以根据实测调整：
+
+```text
+MAX_GHOST_EVENTS = 5000
+MAX_INBOX_ITEMS = 200
+MAX_GHOST_NODES = 500
+MAX_GHOST_EDGES = 2000
+MAX_DIRECTIVE_CHARS = 1200
+MAX_SIGNAL_TEXT_CHARS = 600
+MAX_SIGNAL_QUOTE_CHARS = 240
+MAX_SLEEP_INPUT_RUNS = 20
+```
+
+这些数字不是产品承诺，而是工程边界：Ghost 状态可以长期存在，但不能无限长大。
+
+## 0.3.0 - Ghost Signal Extractor v1
 
 ### 做什么
 
-新增一个 append-only 的运行事实账本，先覆盖 coding run，不重写现有 agent loop，不改 UI 大结构。
+第一步不是写 Hebbian 权重，而是先让 Codey 能用 LLM 判断“用户这句话是否包含显式学习信号”。
 
-第一版只记录有边界事实：
+新增模块：
 
 ```text
-run_started
-provider_selected
-model_reply
-tool_started
-tool_finished
-file_changed
-command_verified
-changes_collected
-provider_failure
-provider_switched
-run_finished
+codey/ghost/__init__.py
+codey/ghost/schema.py
+codey/ghost/signal_codec.py
+codey/ghost/extractor.py
+tests/test_ghost_signal_extractor.py
+tests/manual/ghost_signal_extractor_ab.py
 ```
 
-账本复用现有 `RunEvent`、`WorkCheckpoint`、changes tracker、provider supervisor 和 receipt 产生的事实，但不要求这些模块一次性迁移。`model_reply` 只记录回复字符数和 bounded note，不保存模型回复正文；`changes_collected` 只记录最终用于 receipt 的那份 changes 统计，不制造 snapshot id。
+LLM extractor 输出固定 JSON：
 
-Hybrid run 会在 run lifecycle 开始时打开 ledger；Research 阶段不记录 Research tool events，只有进入 Project Writer 后才记录 coding tool facts。如果 Research 阶段提前失败，ledger 可能只包含 `run_started`、`provider_selected` 和 `run_finished` 这类生命周期事实。
-
-### 为什么做
-
-Codey 已经很重视 diff、restore、verification、provider failure、Research evidence 和 A/B report，但这些事实现在分散在不同模块里。Run Ledger 让一次任务有一个统一事实来源。
-
-### 对 Codey 的好处
-
-- checkpoint 可以从真实事件恢复，而不是只依赖最新摘要。
-- review 和 restore 能引用同一批 diff / snapshot 事实。
-- provider 故障可以关联到具体 run、turn 和发送阶段。
-- A/B harness 可以直接比较事件指标，而不是再解析散文日志。
-- 未来 export、fork、headless 都有干净的数据基础。
-
-### 验收标准
-
-- coding run 结束后能落盘一份 bounded ledger。
-- ledger 写入失败不能破坏正在执行的任务；关键 snapshot 写入失败仍按现有安全策略阻止对应写入。
-- ledger 不保存完整模型回复正文、完整文件内容或完整 shell 输出。
-- 现有 UI、receipt、checkpoint 行为保持兼容。
-
-### 暂不做
-
-- 不做完整聊天 JSONL 导出。
-- 不做训练 episode。
-- 不做 headless runner。
-- 不迁移 Research ledger，也不记录 Research tool events。
-
-## 0.2.26 - Ledger Projections v1
-
-状态：第一版已落地为只读 ledger projection，并接入一条保守 receipt shadow-consume 路径。
-
-### 做什么
-
-新增 `run_ledger_projection.py`，把 0.2.25 写下来的 JSONL 账本投影成稳定摘要：
-
-```text
-run lifecycle / complete state
-provider selected / switched / failed
-model reply count and chars
-tool call counts and errors
-observed file_changed facts
-verified commands
-final changes_collected summary
-task receipt candidate
+```json
+{
+  "signals": [
+    {
+      "kind": "style_preference",
+      "summary": "用户偏好回答先给结论",
+      "scope": "user",
+      "confidence": 0.86,
+      "evidence_quote": "以后请先给结论"
+    }
+  ]
+}
 ```
 
-`changes_collected` 增加顶层 `checks_passed` fact。Receipt projection 只使用
-`changed_count`、`mode` 和 `checks_passed`，不从嵌套 legacy `receipt` 字典反推自己。
-
-`TaskRunner` 在 `run_finished` 写入后、terminal event 发布前读取 projection。只有当
-projection complete、ledger 未截断、有 final changes，且 projected receipt 的
-`changed_count`、`restore_available`、`checks_passed` 与 legacy receipt 完全一致时，
-才采用 projected receipt；否则原样回退 legacy receipt。
-
-### 为什么做
-
-如果只写 ledger 但没人读，它会变成额外维护成本。0.2.26 的目标是证明 ledger 能被稳定读取，并且能服务一条真实生产路径，但不急着接管 checkpoint、restore 或 UI。
-
-### 对 Codey 的好处
-
-- Run Ledger 从“飞行记录仪”变成可测试的读模型。
-- receipt 的关键字段可以从统一事实投影出来，而不是永远依赖散落路径。
-- provider failure/switch、工具调用、验证命令、最终 diff 统计有了同一个查询入口。
-- 后续 checkpoint projection、export、headless JSONL、A/B metrics 可以复用同一层。
-- projection 失败、账本不完整或字段不一致时自动回旧路径，用户体验不变。
-
-### 验收标准
-
-- `project_run_ledger(records)` 是纯函数，未知事件、坏行和未来 schema 安全忽略。
-- projection 能回答 run 是否 complete、是否 truncated、最终 provider、失败/切换、工具统计、已观察修改文件、跑绿命令和最终 changes。
-- `changes_collected.checks_passed` 是顶层 fact，receipt 投影不读取 nested `receipt`。
-- terminal event 发布前至少有一条 project receipt shadow-consume projection。
-- projection 不完整、截断或与 legacy receipt 不一致时回退旧路径。
-
-### 暂不做
-
-- 不迁移 `WorkCheckpoint`。
-- 不替换 `ExecutionEvidence`。
-- 不改 UI、SSE 或任务历史。
-- 不做 API export、headless runner 或跨 session 查询。
-
-## 0.2.27 - ToolDefinition v1
-
-状态：第一版已落地为内部工具元数据层，并让 JSON codec 与 agent activity 读取同一份定义。
-
-### 做什么
-
-新增 `tool_definition.py`，把 coding JSON tools 的元数据集中到一个内部定义层。第一版只覆盖现有公开协议名，不新增工具名：
+允许的 signal kind：
 
 ```text
-list_dir
-read_file
-read_files
-grep
-find_references
-parallel
-edit
-run
-shell
-done
-```
-
-Runtime tool names 保持现状：
-
-```text
-ls
-read
-search
-references
-edit
-run
-shell
-```
-
-每个工具定义包含：
-
-```text
-name
-runtime_name
-aliases
-read_only
-parallel_safe
-permission
-examples
-description
-output_facts
-render_hint
-repair_hint
-```
-
-`JsonToolCodec` 现在从 definition 层读取工具契约、alias、parallel-safe、result tool names 和 batch limit；`agent.py` 从 definition 层派生 supported runtime names、information follow-up names、repair 示例和 tool activity 行。`json_codec.py` 不再拥有或 re-export 工具定义表。
-
-### 为什么做
-
-Codey 现在已经有工具 runtime、JSON codec、typed repair、shell risk、Run Ledger 和 UI tool line，但“工具是什么”曾经主要藏在 codec 里。ToolDefinition v1 让工具元数据成为一等对象，同时不把 Codey 做成插件平台。
-
-### 对 Codey 的好处
-
-- 新增或修改工具时，工具名、alias、示例、parallel/read-only、权限描述和输出事实不再散落。
-- typed repair 和 system prompt 可以复用同一批公共示例。
-- agent 的 tool activity 行不再手写另一份工具分类。
-- Run Ledger 能用测试锁住 `edit -> file_changed`、`run -> command_verified` 的声明一致性。
-- 后续 permission profile、ContextSource、Provider Capability 可以围绕同一份工具定义扩展。
-
-### 验收标准
-
-- `tool_definition.py` 是唯一工具定义来源；codec 和测试都从它读取定义。
-- `write` / `write_file` 仍然是 unknown tool，并继续 repair 到 `edit(content=...)`。
-- 现有 JSON prompt contract fixture 不变，examples 全部能 parse。
-- `parallel_safe` 必须同时是 `read_only`。
-- runtime names 仍等于 agent 支持的工具集合。
-- `edit` 和 `run` 的 `output_facts` 与 Run Ledger v1 实际事件一致。
-- 现有 `JsonToolCodec._tool_call()` schema validation、read-before-edit guard、run allowlist、shell approval 都不被接管或放宽。
-
-### 暂不做
-
-- 不开放第三方工具。
-- 不做插件市场。
-- 不把工具定义暴露到主 UI。
-- 不迁移 Research tools。
-- 不让 ToolDefinition 接管 schema validation 或 runtime dispatch。
-
-## 0.2.28 - ContextSource v1
-
-状态：已落地。第一版是 prompt 上下文装配层，不接管业务 loader，不改变模型能力目标。
-
-### 做什么
-
-把现有 prompt 上下文块统一成命名的 `ContextSource`：
-
-```text
-project_instructions
-verified_facts
-research_brief
-project_map
-work_checkpoint
-initial_listing
-coding_current_context
-```
-
-每个 source 至少声明：
-
-```text
-key
-loader
-budget
-freshness
-why_included
-failure_policy
-```
-
-`source` 的 metadata 先只给代码、测试和未来 projection 使用，不渲染进模型 prompt。
-`ProjectTaskContextBuilder` 继续负责 verified facts、Research Brief、Project Map、
-Work Checkpoint 和验证候选的业务加载；`ContextSource` 只负责把已经拿到的内容
-做命名、预算、heading 和失败降级。
-
-### 为什么做
-
-Codey 已经有很多上下文块，但它们都在回答同一个问题：这段信息为什么进入 prompt、来自哪里、预算多少、什么时候刷新。ContextSource 让这些问题变成代码契约，而不是手写拼接习惯。
-
-### 对 Codey 的好处
-
-- prompt 更可测试，少出现重复、过期或越界上下文。
-- Project Map、checkpoint、verified facts、Research Brief 的预算可以统一管理。
-- provider 接管时能更干净地重建“只包含本地事实”的新会话提示。
-- 未来 headless runner 可以复用同一套上下文装配，而不是另写一套 prompt。
-
-### 验收标准
-
-- Project instructions、Verified Facts、Research Brief、Project Map、Work
-  Checkpoint、Initial Listing 和 Coding Current Context 走 ContextSource。
-- 每个 source 有字符预算、freshness、why_included 和失败策略。
-- 普通 loader 失败 fail-open；`TaskCancelled` 和 `DeadlineExceeded` 不被吞掉。
-- `coding_current_context` 仍只在 tool result 后追加，不进入初始 prompt 或 repair prompt。
-- prompt 输出与旧行为语义兼容，source metadata 不进入 prompt。
-
-### 暂不做
-
-- 不做向量索引。
-- 不做自动长期记忆注入。
-- 不把整个 Research vault 注入 Writer。
-- 不新增 UI 模式。
-- 不做 provider routing。
-- 不迁移 checkpoint/restore。
-- 不做 live A/B 作为本版本开工门槛。
-
-## 0.2.29 - Provider Capability Registry
-
-状态：已落地。第一版只做静态 provider 能力提示和 fallback 排序，不做调度系统。
-
-### 做什么
-
-把网页模型和本地模型的静态运行倾向数据化，形成内部 provider capability registry。
-
-能力可以包括：
-
-```text
-json_reliability
-context_budget_hint
-research_fit
-coding_fit
-review_fit
-failure_families
-native_tool_interference_risk
-needs_canary_by_default
-```
-
-这不是排行榜，也不是用户选择器里的复杂说明；它只服务内部 fallback 排序和后续策略收敛。
-`ProviderSupervisor` 继续只负责 runtime health、cooldown 和 canary；runtime failure
-不会改写静态 capability。
-
-### 为什么做
-
-Codey 的特殊价值是兼容网页 AI。网页模型不像 API 模型那样有稳定能力声明，所以 Codey 需要自己的、本地验证过的 capability 层。
-
-### 对 Codey 的好处
-
-- Research fallback 有替代 provider 时，可以避开静态标记为 `research_fit=avoid` 的 provider。
-- Writer 接管的候选顺序可以逐步基于 task mode，而不是只看“是否在线”。
-- Review helper 候选可以共享同一套静态排序，而不向 UI 暴露复杂术语。
-- provider repair、canary 和 prompt 策略后续可以围绕同一份 capability 扩展。
-- 本地 OpenAI-compatible 模型也能纳入同一套能力判断。
-
-### 验收标准
-
-- registry 有静态内置能力和运行时健康状态的清晰分界。
-- `rank_providers()` 是纯函数，unknown provider 走 default，`avoid` 只排后不禁用；
-  通用 hybrid 排序取 Research/Coding 中更严的适配度。
-- `TaskRunner` 只在 selected provider 不可用、connect failure、canary failure 和
-  Writer failover 这些必须换 provider 的路径消费 capability 排序。
-- hybrid 启动 fallback 按 Research 排序；进入 Writer 后的 failover 按 Project 排序。
-- `failure_families` 必须被测试约束在真实 `ProviderFailure` kind 词表内。
-- provider 选择 UI 不增加复杂技术文案。
-- runtime failure 不会修改静态 capability。
-
-### 暂不做
-
-- 不做自动成本优化平台。
-- 不做 provider 排名页。
-- 不让模型自己决定切换 provider。
-- 不把 capability 当作训练数据长期上传。
-- 不做 Research 中途 failover。
-- 不做 live A/B 作为本版本开工门槛。
-- 暂不消费 capability 里的 canary 字段。
-- 暂不消费 `context_budget_hint`；未来使用前必须先补测量或实机证据。
-
-## 0.2.30 - Managed Output Handles
-
-状态：已落地。第一版只覆盖 Project Writer 的 `run` 工具长输出；只有模型可见
-projection 实际被裁剪时才保存本地 handle。
-
-### 做什么
-
-为长输出建立 managed output handle：完整内容保存在本地受控位置，模型只看到摘要、head/tail、hash、大小和 handle。
-
-覆盖对象可以从 coding run 开始：
-
-```text
-long shell output
-large test logs
-large search results
-large file scan reports
-```
-
-Research 后续也可以复用：
-
-```text
-opened webpage text
-PDF extracted text
-source_search long hits
+style_preference
+correction
+long_term_goal
+research_interest
+action_tendency
+boundary_preference
+no_signal
 ```
 
 ### 为什么做
 
-Pi 和 OpenCode 都有类似思路：长输出不能全部塞进上下文，但也不能直接丢。Codey 现在已经会截断输出，下一步应该保留全文 handle，让验证和 debug 更可追溯。
+如果第一版靠正则判断：
 
-### 对 Codey 的好处
+```text
+以后请...
+不要...
+我喜欢...
+```
 
-- 模型上下文更短，仍能在需要时按 handle 读取局部。
-- 测试失败、构建日志、网页证据都能保留可审计来源。
-- ledger 可以记录输出 hash 和 handle，receipt/checkpoint 不再丢关键证据。
-- A/B 报告能比较真实输出大小和截断情况。
+规则会很快变丑，而且会有大量漏洞。Nezha-mini 方向里最值得保留的一点就是：
+语义判断交给 LLM，但永久写入权交给本地 gate。
 
-### 验收标准
+### 边界
 
-- 长 `run_command` 输出在 projected result `truncated=True` 时生成 handle，工具结果只返回 bounded projection。
-- handle 有 run-scoped 生命周期、单输出大小上限和单 run 数量上限。
-- handle 路径不会逃出 Codey state 目录。
-- 默认不会把 handle 内容注入后续 prompt。
-- Run Ledger 只记录 handle、原始/保存字节数和保存输出 hash，不记录完整输出正文。
+- extractor 只产生 candidate signal，不写长期记忆。
+- `evidence_quote` 必须来自用户原文，不能凭空补。
+- `confidence` 必须 bounded。
+- 坏 JSON、未知 kind、缺 quote 都丢弃或进入 diagnostics，不写状态。
+- 不从普通闲聊偷偷学习。
+- 不进入 protocol repair prompt。
+- 不影响 Research / Coding 执行。
 
-### 暂不做
+### 运行策略
 
-- 不做 UI 或 `/api/output`。
-- 不做 `read_output` 工具。
-- 不做全文搜索数据库。
-- 不做自动 RAG。
-- 不保存无限期日志。
-- 不把网页正文长期混入项目事实。
+0.3.0 先走 shadow / manual / async-after-response 路径：
 
-## 0.2.31 - Internal Permission Profiles
+```text
+用户主聊天先完成
+  -> 后台或手动 extractor 读取本轮 user/assistant bounded text
+  -> 生成 signal candidates
+  -> 写 diagnostics 或 inbox candidate
+```
 
-状态：已落地。第一版只把已有 runtime 阶段边界命名和数据化，不新增用户可见
-mode，也不替换现有安全系统。
+首版不允许同步阻塞主聊天。extractor 失败等价于 `no_signal`。`state_home=None`
+时禁用 Ghost 写入。用户或测试可以通过配置/CLI 关闭 extractor。
+
+### A/B
+
+新增 manual A/B：
+
+```text
+A: no extractor / fixture baseline
+B: LLM signal extractor
+```
+
+Provider 覆盖：
+
+```text
+DeepSeek
+Qwen
+MiMo
+StepFun
+GLM
+local API
+```
+
+指标：
+
+```text
+explicit preference recall
+false memory rate
+kind classification accuracy
+evidence_quote groundedness
+JSON compliance
+provider disagreement
+```
+
+验收标准不是“LLM 很聪明”，而是：
+
+```text
+能抓住明确偏好和纠错
+普通聊天误记率低
+坏输出不会写入 Ghost 状态
+```
+
+## 0.3.1 - Ghost Memory Inbox v1
 
 ### 做什么
 
-在内部定义少量 permission profile，用于组合工具和上下文边界：
+新增本地候选箱。所有学习信号先进入 inbox，不直接写永久状态。
+
+新增模块：
+
+```text
+codey/ghost/store.py
+codey/ghost/inbox.py
+codey/ghost/gate.py
+tests/test_ghost_inbox.py
+```
+
+状态位置：
+
+```text
+~/.codey/ghost/events.jsonl
+~/.codey/ghost/inbox.json
+~/.codey/ghost/state.json
+```
+
+控制入口必须在这一版就存在，即使 UI 延后：
+
+```text
+disable ghost learning
+export ghost state
+reset all ghost state
+delete scope: user / project / session
+list pending candidates
+```
+
+候选类型：
+
+```text
+preference_candidate
+correction_candidate
+goal_candidate
+research_interest_candidate
+action_tendency_candidate
+boundary_candidate
+```
+
+候选状态：
+
+```text
+candidate
+accepted
+rejected
+expired
+superseded
+```
+
+### Gate 规则
+
+gate 不做复杂智能，但做本地安全审计：
+
+```text
+schema valid
+quote grounded
+scope valid: user / project / session
+confidence above threshold
+conflict_key not silently overwriting active memory
+size within budget
+has event/run/session ref
+```
+
+第一版策略：
+
+- 高置信、明确 style preference 可以自动接受。
+- correction 默认保留 candidate，除非用户非常明确地说“记住，正确是...”。
+- long-term goal 和 research interest 默认 candidate。
+- boundary preference 默认 candidate，避免把临时抱怨永久化。
+
+### Scope 优先级
+
+Ghost 记忆按 scope 分层：
+
+```text
+session > project > user
+```
+
+规则：
+
+- session correction 优先于 project/user correction。
+- project scope 只能在同一个项目根内生效，不能泄漏到其他项目。
+- user scope 是默认长期偏好，但不能覆盖明确的 session correction。
+- 删除 scope 必须只删除对应范围，不得顺手清空其他层。
+
+### Schema / Migration
+
+长期状态必须有版本纪律：
+
+- 每个持久文件必须有 `schema_version`。
+- 不兼容 state 要 quarantine，不要静默读错。
+- events 必须能重放生成 state projection。
+- 坏 JSON、半写文件、未来 schema 都有测试。
+- migration 失败不能影响 Codey 的非 Ghost 功能。
+
+### 验收
+
+- 原子写和坏文件恢复。
+- candidate 去重和 conflict_key 合并。
+- accepted/rejected/superseded 状态可重放。
+- 单条和总文件都有大小上限。
+- inbox 写入失败 fail-open，不影响 Codey 正常任务。
+
+## 0.3.2 - Ghost Hebbian State v1
+
+### 做什么
+
+把 accepted signals 强化成本地 Hebbian state。
+
+新增模块：
+
+```text
+codey/ghost/hebbian.py
+tests/test_ghost_hebbian.py
+```
+
+核心数据：
+
+```text
+GhostNode
+- id
+- kind
+- label
+- weight
+- scope
+- confidence
+- evidence_refs
+- created_at
+- updated_at
+- last_reinforced_at
+
+GhostEdge
+- source
+- target
+- relation
+- weight
+- evidence_refs
+- created_at
+- updated_at
+- last_reinforced_at
+```
+
+节点类型：
+
+```text
+style_preference
+correction
+long_term_goal
+research_interest
+action_tendency
+boundary_preference
+project_affinity
+provider_affinity
+```
+
+更新规则：
+
+```text
+node.weight = decay(old_weight) + learning_rate * reward * confidence
+edge.weight = decay(old_edge_weight) + learning_rate * coactivation
+```
+
+### 边界
+
+- 纯 Python，不引入 torch。
+- 不修改任何模型权重。
+- edge 表示相关性，不表示事实。
+- correction 节点优先级高于 style preference。
+- correction 是用户纠错/偏好事实，不等同于 Research-verified external truth。
+  涉及外部世界事实时，Directive 只能说“用户纠正过...”，不能把它当证据结论。
+- 同一 evidence ref 不能重复强化。
+- 权重 bounded，衰减 deterministic。
+- state 可导出、可删除、可重建。
+
+### 验收
+
+- 明确偏好多次出现会强化。
+- 久不用会衰减。
+- 冲突偏好不会静默覆盖，生成 competing node 或 superseded 事件。
+- 相同 evidence 不重复加权。
+- 关联边不会渲染成事实断言。
+- 无 `torch` / `transformers` import。
+
+## 0.3.3 - Ghost Directive ContextSource v1
+
+### 做什么
+
+让 Hebbian state 真正影响外部模型说话方式。
+
+新增模块：
+
+```text
+codey/ghost/directive.py
+tests/test_ghost_directive.py
+```
+
+输出短 prompt：
+
+```text
+Ghost Directive:
+- Prefer: concise, direct, answer-first Chinese.
+- Avoid: marketing tone, vague reassurance.
+- Corrections: ...
+- Current long-term focus: ...
+```
+
+接入：
+
+```text
+ContextSource key = ghost_directive
+```
+
+默认策略：
+
+- Chat 默认开启。
+- `planning_readonly` 默认开启。
+- Project Writer 默认生产不注入 Ghost Directive，直到 A/B 证明不破坏 JSON tool compliance。
+  在此之前只允许 shadow 或显式实验开关开启。
+- Research 默认不开，避免污染证据判断。
+- Protocol repair prompt 永远不夹 Ghost Directive。
+
+### 边界
+
+Ghost Directive 不能：
+
+```text
+授权工具
+改变 shell approval
+改变 edit/run allowlist
+覆盖 Research evidence
+覆盖 project config
+进入 JSON repair prompt
+```
+
+### A/B
+
+新增：
+
+```text
+tools/ghost_directive_ab.py
+tests/fixtures/ghost_directive_cases.json
+```
+
+指标：
+
+```text
+style adherence
+correction hit rate
+answer length
+forbidden-tone hit rate
+JSON tool compliance
+coding smoke success
+research citation quality
+```
+
+验收：
+
+```text
+B 更像用户偏好
+B 不破坏工具协议
+B 不降低 coding/research smoke 成功率
+```
+
+## 0.3.4 - Ghost Learning Loop v1
+
+### 做什么
+
+打通第一条闭环：
+
+```text
+user input
+  -> signal extractor
+  -> inbox candidate
+  -> gate
+  -> Hebbian reinforce
+  -> next turn Ghost Directive changes
+```
+
+这一步开始让 Ghost 在日常 Chat 中真实学习，但仍然只学习通过 gate 的显式信号。
+
+### 验收
+
+- 用户说“以后短一点”，下一轮同 provider 回答变短。
+- 切换 provider 后，方向仍然一致。
+- “你错了”这种普通抱怨不会直接写成偏好。
+- correction 不会污染 style preference。
+- 学习失败不影响 Codey 正常聊天或任务。
+
+## 0.3.5 - Ghost Continuity v1
+
+### 做什么
+
+让 Ghost 记得长期上下文，但不保存完整聊天全文。
+
+来源：
+
+```text
+accepted memory candidates
+correction ledger
+run ledger projection
+research synthesis notes
+recent task summaries
+project-local config
+```
+
+输出：
+
+```text
+recent_focus
+long_term_goals
+active_projects
+open_questions
+fresh_corrections
+recently_reinforced_preferences
+```
+
+### 边界
+
+- 不保存完整 transcript。
+- 不保存完整源码。
+- 不保存完整网页正文。
+- 只从已有 bounded facts 和 accepted memory 构建 continuity summary。
+- 可清空、可导出、可审计。
+
+## 0.3.6 - Cognitive Sleep v1
+
+### 做什么
+
+借 Nezha-mini `cognitive_sleep.py` 的思想，但改成 Codey 风格的 bounded maintenance。
+
+输入：
+
+```text
+最近 N 个 run ledger
+最近 Research synthesis notes
+Concept Graph / Unified Graph
+accepted / rejected candidates
+provider failure summaries
+```
+
+输出：
+
+```text
+new memory candidates
+decay updates
+merge suggestions
+research open questions
+provider/action tendency candidates
+```
+
+### 边界
+
+- 手动触发或任务结束后短暂执行。
+- 不后台无限 wander。
+- 不自动永久写高风险事实。
+- 所有结果先进 inbox。
+- 可取消、bounded、fail-open。
+
+## 0.3.7 - Ghost Router v1
+
+### 做什么
+
+Ghost 开始判断用户意图，但不直接执行工具。
+
+输出只能是：
 
 ```text
 chat
-planning_readonly
-coding_writer
-reviewer
 research
+project
+review
+planning_readonly
 ```
 
-这些 profile 由运行时选择，不作为复杂模式 UI 暴露给用户。
-
-### 为什么做
-
-Codey 的用户不应该先理解 agent mode 才能工作，但运行时需要更明确地知道当前任务允许什么。permission profile 可以把“Research 能联网但不写项目”“Reviewer 只读 diff 和检查”“Writer 能 edit 但默认不联网”这些规则数据化。
-
-### 对 Codey 的好处
-
-- 权限边界更容易测试。
-- Research 和 Project Writer 的隔离更清楚。
-- Review 不会意外获得写权限。
-- 未来高频 action 可以复用 profile，而不是新增散落 if/else。
-
-### 验收标准
-
-- profile 只影响内部 allowed tools 和 context sources；默认 Project Writer 行为保持等价。
-- `planning_readonly` codec 不展示或执行 `edit`、`run`、`shell`。
-- `unknown_tool` 和 `disallowed_tool` 被明确区分。
-- `parallel` 不能绕过当前 profile。
-- 主 UI 不新增 `mode`、`agent profile`、`planner` 等技术词。
-- tests 覆盖 chat 无项目权限、research 有网页工具但无项目写入、reviewer 不写文件。
-
-### 暂不做
-
-- 不做多 agent 图形编排。
-- 不做用户可配置权限矩阵。
-- 不做后台自主 agent。
-
-## 0.2.32 - Headless JSONL Runner
-
-状态：已落地。第一版只覆盖 Project coding 和 readonly planning；`agent --json`
-已迁到 TaskRunner-backed headless path，普通 `agent` CLI 暂时保留旧直接路径。
-
-### 做什么
-
-在 Run Ledger、ToolDefinition 和 ContextSource 稳定后，新增一个 headless JSONL runner，用于可重复任务、smoke、A/B 和外部脚本调用。
-
-输入输出复用生产 TaskRunner 和有边界事件投影：
-
-```text
-input: task, project, provider, max turns, readonly flag
-output: bounded JSONL run events, receipt, ledger path, exit status
-```
-
-`python -m codey agent --json` 现在走 `codey/headless_runner.py`。这条路径复用：
+Codey 仍然负责执行：
 
 ```text
 TaskRunner
-TaskRequest
-Run Ledger
-Managed Outputs
-Provider fallback ordering
-Permission Profiles
-Change tracking and receipt generation
+ResearchRunner
+PermissionProfile
+ToolRuntime
+approval
+verification
+ledger
+restore
 ```
 
-`--readonly` 映射到内部 `planning_readonly` profile，只给读/搜索/引用类工具，
-不创建 Work Checkpoint、不收集 diff、不写 ProjectFacts。Project coding headless
-第一版使用 no-op review callback，不静默多开 reviewer 模型。
+### 第一版策略
 
-### 为什么做
+先 shadow：
 
-Headless runner 是用户可见能力，但它必须建立在清楚的内部事实模型上。否则它会复制一套 agent loop、prompt 拼接和事件格式，最终让架构更散。
+```text
+ghost_suggested_route
+actual_route
+agreement / disagreement
+reason
+```
 
-### 对 Codey 的好处
+稳定后再考虑让 UI 的“自动模式”消费。
 
-- 自动化 smoke 和回归测试更容易。
-- 用户可以在 CI 或脚本里运行受控 Codey 任务。
-- A/B harness 可以从临时脚本变成正式能力。
-- 未来 export/fork 可以基于同一份 ledger。
+### 验收
 
-### 验收标准
+- Ghost 不能输出 edit/run/shell。
+- Ghost 不能批准 shell。
+- Ghost 不能让 Project Writer 默认联网。
+- route disagreement 有 ledger 记录。
+- 手动入口优先于 Ghost 建议。
 
-- headless 输出 bounded JSONL，不原样 dump UI-only state、完整模型回复或完整命令日志。
-- 可以跑只读 planning/explain 类任务，也可以跑受控 Project coding task。
-- shell 审批在 headless 下默认拒绝，输出 `shell_rejected`，不等待用户。
-- 不绕过 Codey 的项目边界、工具权限和 Research 显式开关。
-- `agent --json` 走 headless；普通 `agent` 本版本暂不迁移。
-
-### 暂不做
-
-- 不做无人值守的全电脑 agent。
-- 不默认允许安装、发布、删除或外部账号操作。
-- 不把 headless 做成新的产品主入口。
-- 不做 Research headless 自动搜索。
-- 不做 shell 自动批准。
-- 不改 UI。
-
-## 0.2.33 - Project-local Config ✅ 已完成
+## 0.3.8 - Research Interest Queue v1
 
 ### 做什么
 
-新增克制的项目本地配置文件，用来声明项目级安全、验证和上下文偏好。
-第一版已落地为 `.codey/config.json`，由 `codey/project_config.py` 严格解析。
+把“战争-氦气、战争-铜，之后发现铜和氦可能有关”变成可审计的研究问题队列。
 
-第一版只考虑少量字段：
-
-```text
-verification commands
-ignored paths
-project_map_chars context budget hint
-preferred provider policy (parsed/validated only; not consumed)
-```
-
-### 为什么做
-
-Codey 已经能从项目事实里学习成功命令，但有些项目需要显式配置：例如 monorepo 的正确测试命令、不能扫描的生成目录、默认检查预算。项目配置可以减少模型猜测。
-
-### 对 Codey 的好处
-
-- 新项目更快进入正确验证路径。
-- 大仓上下文预算更稳定。
-- 团队可以共享安全的默认检查命令。
-- headless runner 可以使用项目声明，而不是依赖临时参数。
-
-### 验收标准
-
-- 配置文件必须项目内显式存在，不自动写入。
-- 危险 shell 命令不能仅因配置存在就绕过审批。
-- 无配置项目保持现有行为。
-- 配置解析失败有清楚错误，不导致隐式放权。
-- provider preferred policy 本版只解析和校验，不覆盖用户明确选择。
-
-### 暂不做
-
-- 不做插件配置。
-- 不做复杂 workflow DSL。
-- 不做云同步。
-- 不把用户私密 provider 登录状态写入项目。
-
-## 全部做完后的 Codey 会变成什么
-
-这些版本完成后，Codey 表面不会变成更复杂的产品。用户仍然看到一个安静的本地 AI 编程与研究工作台：
+数据：
 
 ```text
-Chat
-Research
-Project
-Review
-Diff
-Restore
+question
+related_concepts
+shared_neighbors
+why_now
+status
+source_refs
+priority
 ```
 
-但内部会发生明显变化：
+例子：
 
-1. 一次任务会有清楚的事实账本，所有收据、checkpoint、review、restore、debug 都能回到同一份 run facts。
-2. 工具会有统一定义，协议提示、权限、输出、UI 和测试不再各写一份。
-3. Prompt 上下文会由命名 source 组成，每段信息为什么出现、预算多少、何时刷新都可证明。
-4. Provider 的网页特性和失败模式会数据化，接管、修复、Research 选择会更稳。
-5. 长输出不再二选一地“塞爆上下文”或“直接丢掉”，而是保留本地 handle，只给模型有界视图。
-6. Review、diff、restore、checkpoint 会围绕同一批 snapshot/diff id 协作。
-7. Headless 和 export 可以自然出现，而不是另建一套 runner。
+```text
+helium ? copper
+reason: shared neighbor: semiconductor supply chain
+status: open_question
+source: concept co-activation
+```
 
-最终效果应该是：
+### 边界
 
-> Codey 看起来仍然小而安静，但内部每一步都更可追溯、更可恢复、更可验证。
+- open question 不是事实。
+- missing edge 不落入 knowledge note。
+- 只有用户显式启动 Research，Codey 才查证据。
+- Research Controller 仍然负责工具边界和 citation quality。
 
-这也是 Codey 区别于全能 agent 平台的方向：不追求把所有能力暴露给用户，而是把本地边界、来源、验证、恢复这些基本功做得越来越扎实。
+## 0.3.9 - Affinity Index v1
+
+### 做什么
+
+把 Hebbian state 扩展成更完整的本地关联网络。
+
+节点：
+
+```text
+user preference
+project
+research concept
+correction
+action tendency
+provider behavior
+task type
+```
+
+影响：
+
+```text
+Ghost Directive
+Research query seed
+Router tendency
+Review strictness
+Provider fallback hint
+Project planning style
+```
+
+### 边界
+
+- affinity 不是 truth。
+- 事实判断仍然走 Research evidence。
+- provider hint 不覆盖用户明确选择。
+- routing hint 不覆盖 PermissionProfile。
+
+## 0.3.10 - Ghost Control Surface v1
+
+### 做什么
+
+最后再做 UI。它不是人格面板，而是审计面板。
+
+显示：
+
+```text
+Ghost 记住了什么
+候选记忆有哪些
+偏好权重最高的是什么
+纠错规则有哪些
+这次 Ghost Directive 为什么这样写
+哪些 open questions 等待研究
+```
+
+操作：
+
+```text
+accept
+reject
+delete
+demote
+export
+reset scope
+```
+
+### 边界
+
+- 不做花哨人格编辑器。
+- 不让用户在 UI 里放宽工具权限。
+- 不显示内部技术词过多。
+- 所有修改写入 Ghost events。
+
+## 验证体系
+
+0.3 需要新增一组 Ghost 专用验证，而不是只靠现有 coding/research tests。
+
+### 单元测试
+
+```text
+tests/test_ghost_signal_extractor.py
+tests/test_ghost_inbox.py
+tests/test_ghost_hebbian.py
+tests/test_ghost_directive.py
+tests/test_ghost_learning_loop.py
+tests/test_ghost_continuity.py
+tests/test_cognitive_sleep.py
+tests/test_research_interest_queue.py
+tests/test_affinity_index.py
+```
+
+### 架构测试
+
+必须锁住：
+
+```text
+codey/ghost 不 import torch
+codey/ghost 不 import transformers
+Ghost 不能 import tool_runtime 执行函数
+ToolRuntime 不 import Ghost
+Research evidence 不依赖 Ghost affinity
+repair prompt 不包含 Ghost Directive
+PermissionProfile 仍然是执行边界
+```
+
+### A/B 测试
+
+逐步新增：
+
+```text
+tests/manual/ghost_signal_extractor_ab.py
+tests/manual/ghost_directive_ab.py
+tests/manual/ghost_router_ab.py
+tests/manual/research_interest_queue_ab.py
+```
+
+每个 A/B 都要记录：
+
+```text
+provider
+case_id
+baseline output
+ghost output
+pass/fail metrics
+protocol compliance
+side effects
+```
+
+首版通过阈值方向：
+
+```text
+evidence_quote groundedness 必须 100%
+false memory rate 必须低于明确阈值
+JSON tool compliance 不能低于 baseline
+coding smoke 不能回退
+research citation quality 不能回退
+extractor failure 必须 fail closed / no_signal
+```
+
+### Live smoke
+
+Provider 覆盖：
+
+```text
+DeepSeek
+Qwen
+MiMo
+StepFun
+GLM
+local API
+```
+
+最小 smoke：
+
+```text
+style preference learning
+correction candidate extraction
+Ghost Directive render
+Chat with directive
+planning_readonly with directive
+Project Writer protocol compliance without directive
+Research quality unaffected when directive disabled
+```
+
+## 成功定义
+
+0.3 做完后，Codey 应该从：
+
+```text
+一个可靠的本地 coding/research workbench
+```
+
+变成：
+
+```text
+一个有长期连续性的 Ghost，使用 Codey 作为安全身体工作和研究
+```
+
+用户体验上不应该变复杂。理想状态是：
+
+```text
+你继续自然聊天、研究、写代码
+Ghost 慢慢更懂你
+Codey 仍然可靠、可恢复、可验证
+外部模型可以换，但“懂你的东西”留在本地
+```
+
+这是 0.3 的核心目标。
