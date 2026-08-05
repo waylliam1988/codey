@@ -4,6 +4,28 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.2.32 - Headless JSONL Runner v1
+
+- 新增 `codey/headless_runner.py`：一个很薄的机器可读 runner，复用生产
+  `TaskRunner`，不是第二套 agent loop。
+- `python -m codey agent --json` 现在走 headless TaskRunner 路径。本版本里普通
+  `python -m codey agent` 仍保留旧的直接 CLI 路径，降低行为变更范围。
+- Headless JSONL 输出有边界的事件投影：task start、status/info、turn、
+  tool start/finish、shell rejection 和 task done。它不原样 dump UI-only state、
+  完整命令日志或完整模型回复。
+- Project coding 的 headless run 复用 UI 同一条编排主干里的 Run Ledger、
+  Managed Outputs、provider fallback 排序、change tracking 和 receipt 生成。
+  第一版 headless review callback 是 no-op，不会静默多开 reviewer 模型。
+- 新增 JSONL 模式的 `--readonly`。它映射到内部 `planning_readonly` profile，
+  只暴露读/搜索/引用类工具，不收集 diff，不创建 Work Checkpoint，也不写
+  ProjectFacts。
+- Headless shell approval 默认拒绝：`shell_request` 会被投影成
+  `shell_rejected`，reason 为 `headless_default_deny`，不会审批，也不会等待用户。
+- TaskRunner 现在有明确的内部 `planning_readonly` task kind。terminal event 里
+  投影为 `planning`，不再含混当作普通 Project Writer run。
+- 本版本不做后台 agent、不做 Research headless 自动搜索、不做 shell 自动批准、
+  不做 CI 发布/安装/删除动作、不改 UI，也不新增 provider 选择产品界面。
+
 ## 0.2.31 - Internal Permission Profiles v1
 
 - 新增 `codey/permission_profiles.py`：一个很小的内部 runtime 阶段边界注册表，

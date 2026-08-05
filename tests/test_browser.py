@@ -216,7 +216,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         pw.chromium.connect_over_cdp.return_value = browser_obj
 
         with (
-            mock.patch.object(browser, "_ensure_cdp_port", return_value=9222),
+            mock.patch.object(browser, "_ensure_cdp_endpoint", return_value=browser.CdpEndpoint(9222)),
             mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
         ):
             with self.assertRaisesRegex(RuntimeError, "no existing provider tab"):

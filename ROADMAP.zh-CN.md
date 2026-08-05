@@ -447,16 +447,35 @@ Codey 的用户不应该先理解 agent mode 才能工作，但运行时需要�
 
 ## 0.2.32 - Headless JSONL Runner
 
+状态：已落地。第一版只覆盖 Project coding 和 readonly planning；`agent --json`
+已迁到 TaskRunner-backed headless path，普通 `agent` CLI 暂时保留旧直接路径。
+
 ### 做什么
 
 在 Run Ledger、ToolDefinition 和 ContextSource 稳定后，新增一个 headless JSONL runner，用于可重复任务、smoke、A/B 和外部脚本调用。
 
-输入输出都应尽量复用 ledger event schema：
+输入输出复用生产 TaskRunner 和有边界事件投影：
 
 ```text
-input: task, project, provider policy, max turns, research flag
-output: bounded run events, receipt, ledger path, exit status
+input: task, project, provider, max turns, readonly flag
+output: bounded JSONL run events, receipt, ledger path, exit status
 ```
+
+`python -m codey agent --json` 现在走 `codey/headless_runner.py`。这条路径复用：
+
+```text
+TaskRunner
+TaskRequest
+Run Ledger
+Managed Outputs
+Provider fallback ordering
+Permission Profiles
+Change tracking and receipt generation
+```
+
+`--readonly` 映射到内部 `planning_readonly` profile，只给读/搜索/引用类工具，
+不创建 Work Checkpoint、不收集 diff、不写 ProjectFacts。Project coding headless
+第一版使用 no-op review callback，不静默多开 reviewer 模型。
 
 ### 为什么做
 
@@ -471,16 +490,20 @@ Headless runner 是用户可见能力，但它必须建立在清楚的内部事�
 
 ### 验收标准
 
-- headless 输出 JSONL 与 Run Ledger schema 对齐。
-- 可以跑只读 explain / review 类任务，也可以跑受控 coding task。
-- shell 审批在 headless 下有明确策略：默认拒绝或要求预先 allowlist。
+- headless 输出 bounded JSONL，不原样 dump UI-only state、完整模型回复或完整命令日志。
+- 可以跑只读 planning/explain 类任务，也可以跑受控 Project coding task。
+- shell 审批在 headless 下默认拒绝，输出 `shell_rejected`，不等待用户。
 - 不绕过 Codey 的项目边界、工具权限和 Research 显式开关。
+- `agent --json` 走 headless；普通 `agent` 本版本暂不迁移。
 
 ### 暂不做
 
 - 不做无人值守的全电脑 agent。
 - 不默认允许安装、发布、删除或外部账号操作。
 - 不把 headless 做成新的产品主入口。
+- 不做 Research headless 自动搜索。
+- 不做 shell 自动批准。
+- 不改 UI。
 
 ## 0.2.33 - Project-local Config
 

@@ -4,6 +4,34 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.2.32 - Headless JSONL Runner v1
+
+- Added `codey/headless_runner.py`, a thin machine-readable runner backed by
+  the production `TaskRunner` rather than a second agent loop.
+- `python -m codey agent --json` now runs through the headless TaskRunner path.
+  Plain `python -m codey agent` remains on the existing direct CLI path for this
+  release.
+- Headless JSONL emits bounded event projections for task start, status/info,
+  turns, tool start/finish, shell rejection, and task completion. It does not
+  dump UI-only state, full command logs, or full model replies.
+- Project coding headless runs reuse Run Ledger, Managed Outputs, provider
+  fallback ordering, change tracking, and receipt generation from the same
+  orchestration spine as the UI. The first headless version uses a no-op review
+  callback rather than silently opening a reviewer model.
+- Added `--readonly` for JSONL mode. It maps to the internal
+  `planning_readonly` profile, exposes read/search/reference tools only, does
+  not collect diffs, does not create Work Checkpoints, and does not write
+  ProjectFacts.
+- Headless shell approval is default-deny: a `shell_request` is projected as
+  `shell_rejected` with reason `headless_default_deny`, and the command is not
+  approved or waited on.
+- TaskRunner now has an explicit internal `planning_readonly` task kind. It is
+  projected as `planning` in terminal events instead of being treated as a
+  normal Project Writer run.
+- This release does not add a background agent, Research headless automation,
+  shell auto-approval, CI deployment actions, UI changes, or a new provider
+  selection product surface.
+
 ## 0.2.31 - Internal Permission Profiles v1
 
 - Added `codey/permission_profiles.py`, a small internal registry for runtime

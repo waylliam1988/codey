@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.2.31-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.2.32-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.2.31`
+版本：`0.2.32`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -561,6 +561,7 @@ codey/
   change_brief.py           隐藏任务意图 brief
   review_coordinator.py     有边界的 diff review 生命周期
   task_runner.py            任务、会话、review 和收据编排
+  headless_runner.py        复用 TaskRunner 的 JSONL 脚本/CI 入口
   browser.py                Chromium CDP 连接
   browser_worker.py         Playwright 线程调度
   changes.py                Git 与 snapshot diff / restore

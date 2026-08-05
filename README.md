@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.2.31-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.32-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.2.31`
+Version: `0.2.32`
 
 [Version history](CHANGELOG.md)
 
@@ -627,6 +627,7 @@ codey/
   change_brief.py           hidden task intent brief
   review_coordinator.py     bounded diff review lifecycle
   task_runner.py            task, conversation, review, and receipt orchestration
+  headless_runner.py        TaskRunner-backed JSONL entry point for scripts/CI
   browser.py                Chromium CDP connection helpers
   browser_worker.py         Playwright thread scheduler
   changes.py                Git and snapshot diff / restore support

@@ -210,6 +210,8 @@ def _changed_file_paths(changes: object) -> tuple[str, ...]:
 
 def _resolve_task_kind(request: TaskRequest) -> str:
     intent = (request.intent or "auto").strip().lower()
+    if intent in {"planning", "planning_readonly", "readonly"}:
+        return "planning_readonly" if request.project else "chat"
     if intent in {"research", "project", "hybrid", "chat"}:
         if intent == "hybrid" and not request.project:
             return "research"
@@ -232,6 +234,8 @@ def _ui_mode(kind: str, project: str | None) -> str:
         return "research"
     if kind == "hybrid":
         return "hybrid"
+    if kind == "planning_readonly":
+        return "planning"
     return "agent" if project else "chat"
 
 
@@ -399,7 +403,7 @@ class TaskRunner:
         })
 
         work = _RunWork(recent_events=[], evidence=ExecutionEvidence())
-        if project and task_kind in {"project", "hybrid"} and self.run_ledgers is not None:
+        if project and task_kind in {"project", "hybrid", "planning_readonly"} and self.run_ledgers is not None:
             try:
                 work.ledger = self.run_ledgers.open(
                     run_id=run_id,
@@ -409,7 +413,7 @@ class TaskRunner:
                     provider=provider_id,
                     mode=_ui_mode(task_kind, project),
                 )
-                work.record_agent_events_in_ledger = task_kind == "project"
+                work.record_agent_events_in_ledger = task_kind in {"project", "planning_readonly"}
             except Exception:
                 work.ledger = None
         frame: _RunFrame | None = None
@@ -681,7 +685,12 @@ class TaskRunner:
                         reason="provider_failure",
                     )
                 )
-            mode = "research" if task_kind == "research" else ("project" if project else "chat")
+            if task_kind == "research":
+                mode = "research"
+            elif task_kind == "planning_readonly":
+                mode = "planning"
+            else:
+                mode = "project" if project else "chat"
             project_text = str(Path(project).expanduser().resolve()) if project else ""
             conversation = state.conversation_for(session_id)
             provider_session_changed = state.provider_session_changed(
@@ -773,6 +782,8 @@ class TaskRunner:
                 outcome = self._run_research_mode(frame, hooks)
             elif task_kind == "hybrid":
                 outcome = self._run_hybrid_mode(frame, work, hooks)
+            elif task_kind == "planning_readonly":
+                outcome = self._run_planning_readonly_mode(frame, work)
             elif project:
                 outcome = self._run_project_mode(frame, work, hooks)
             else:
@@ -1056,6 +1067,98 @@ class TaskRunner:
             "provider": frame.provider_id,
             "mode": "chat",
         })
+
+    def _run_planning_readonly_mode(
+        self,
+        frame: _RunFrame,
+        work: _RunWork,
+    ) -> _ModeOutcome:
+        state = self.state
+        request = frame.request
+        project = request.project
+        if project is None:
+            raise RuntimeError("planning_readonly mode requires a project")
+        if frame.provider is None:
+            raise RuntimeError("provider is not connected")
+        if work.ledger is not None:
+            work.record_agent_events_in_ledger = True
+        context_builder = ProjectTaskContextBuilder(
+            project_facts=self.project_facts,
+            work_checkpoints=None,
+            knowledge_store=self.knowledge_store,
+        )
+        project_context = context_builder.build(
+            project=project,
+            task=request.task,
+            session_id=request.session_id,
+            run_id=frame.run_id,
+            continue_task=False,
+            provider_session_changed=frame.provider_session_changed,
+        )
+        result = self.agent_run(
+            frame.provider,
+            Path(project),
+            request.task,
+            max_turns=request.max_turns,
+            on_event=lambda event: self._planning_event(frame, work, event),
+            on_shell_request=None,
+            stop_flag=state.stop_flag,
+            fresh_chat=frame.fresh_chat,
+            strict_fresh_chat=False,
+            change_tracker=None,
+            conversation=frame.conversation,
+            provider_id=frame.provider_id,
+            handoff=frame.handoff,
+            project_facts=project_context.verified_facts,
+            research_context=project_context.research_context,
+            project_map=project_context.project_map,
+            permission_profile="planning_readonly",
+        )
+        state.set_provider_session(
+            frame.provider_id,
+            None if result.stop_reason == "stopped" else request.session_id,
+        )
+        frame.conversation.update_snapshot(replace(
+            frame.conversation.snapshot,
+            provider_id=frame.provider_id,
+            checks_passed=False,
+            summary=result.summary,
+            blocker="" if result.stop_reason == "done" else result.summary,
+        ))
+        return _ModeOutcome({
+            "type": "task_done",
+            "run_id": frame.run_id,
+            "session_id": request.session_id,
+            "summary": result.summary,
+            "stop_reason": result.stop_reason,
+            "turns": result.turns,
+            "max_turns": request.max_turns,
+            "provider": frame.provider_id,
+            "mode": "planning",
+            "changed": False,
+        })
+
+    def _planning_event(
+        self,
+        frame: _RunFrame,
+        work: _RunWork,
+        event: RunEvent,
+    ) -> None:
+        if work.record_agent_events_in_ledger and work.ledger is not None:
+            try:
+                work.ledger.append_run_event(event)
+            except Exception:
+                work.ledger = None
+        payload = self._ui_event(frame.run_id, frame.request.session_id, event)
+        if payload is not None:
+            self.state.emit(payload)
+        if event.kind == "tool_start":
+            return
+        work.evidence.record(event)
+        message = render_run_event(event)
+        work.recent_events.append(message)
+        if len(work.recent_events) > self.review_log_lines * 2:
+            del work.recent_events[:self.review_log_lines]
 
     def _run_project_mode(
         self,
@@ -1736,7 +1839,7 @@ class TaskRunner:
             path = str(event.call.args.get("path") or "")
             display_kind, display_path = _display_tool(event.call.name, event.call.args, path)
             tool_index = int(event.metadata.get("tool_index") or 0)
-            return {
+            payload = {
                 "type": "tool_started",
                 "run_id": run_id,
                 "session_id": session_id,
@@ -1746,6 +1849,10 @@ class TaskRunner:
                 "path": display_path,
                 "activity": event.message,
             }
+            command = str(event.call.args.get("command") or "")
+            if command:
+                payload["command"] = command
+            return payload
         if event.kind != "tool" or event.call is None or event.outcome is None:
             return None
         path = str(event.call.args.get("path") or "")
@@ -1753,7 +1860,7 @@ class TaskRunner:
         result = event.outcome.first_line(200)
         tool_index = int(event.metadata.get("tool_index") or 0)
         status = str(getattr(event.outcome, "status", "") or ("ok" if event.outcome.ok else "error"))
-        return {
+        payload = {
             "type": "tool",
             "run_id": run_id,
             "session_id": session_id,
@@ -1764,4 +1871,23 @@ class TaskRunner:
             "result": result,
             "status": status,
             "error": status == "error",
+            "ok": event.outcome.ok,
+            "changed": event.outcome.changed,
+            "truncated": event.outcome.truncated,
         }
+        command = str(event.call.args.get("command") or "")
+        if command:
+            payload["command"] = command
+        if event.outcome.exit_code is not None:
+            payload["exit_code"] = event.outcome.exit_code
+        output_handle = str(getattr(event.outcome, "output_handle", "") or "")
+        if output_handle:
+            payload["output_handle"] = output_handle
+            payload["output_bytes"] = int(getattr(event.outcome, "output_bytes", 0) or 0)
+            payload["output_stored_bytes"] = int(
+                getattr(event.outcome, "output_stored_bytes", 0) or 0
+            )
+            payload["output_sha256"] = str(
+                getattr(event.outcome, "output_sha256", "") or ""
+            )
+        return payload

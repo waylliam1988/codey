@@ -1,5 +1,64 @@
 # Codey Test Report
 
+## 0.2.32 Headless JSONL Runner v1
+
+Codey 0.2.32 adds a TaskRunner-backed headless JSONL path for scripts, CI
+smoke checks, and future Ghost/automation callers. It migrates
+`python -m codey agent --json` onto the production orchestration spine without
+adding a second agent loop.
+
+Production changes:
+
+- New `codey/headless_runner.py` defines `HeadlessRequest`,
+  `HeadlessResult`, `HeadlessState`, `run_headless()`, and bounded JSONL event
+  projection helpers.
+- `HeadlessState` reuses `server.State` and overrides only `get_provider()` and
+  `emit()`. It keeps `reserve_run`, `start_run`, `finish_run`,
+  `change_tracker_for`, Run Ledger, Managed Outputs, and provider supervision
+  on the same path as the UI.
+- `python -m codey agent --json` now calls `run_headless()`. Plain
+  `python -m codey agent` remains on the existing direct path for this release.
+- Headless JSONL emits bounded task, status/info, turn, tool, shell rejection,
+  and task completion rows. Full model replies, full command output, and
+  UI-only state are not dumped.
+- `--readonly` maps to the internal `planning_readonly` profile. The
+  TaskRunner now has an explicit `planning_readonly` task kind, projected as
+  `planning` in terminal events. It does not collect diffs, create Work
+  Checkpoints, run Review, or write ProjectFacts.
+- Project coding headless runs reuse Run Ledger, Managed Outputs, provider
+  fallback ordering, change tracking, and receipt generation. The first
+  headless version uses a no-op review callback rather than silently opening a
+  reviewer model.
+- Headless shell requests are default-deny: `shell_request` emits
+  `shell_rejected` with `headless_default_deny`, does not approve the command,
+  and returns a non-zero exit.
+- Review hardening: a caller-supplied `HeadlessRequest.run_id` is now
+  pre-reserved in `HeadlessState` before entering `TaskRunner`, so it cannot
+  produce an empty no-op run. Terminal `task_done` JSONL now includes
+  `ledger_path` when a ledger was written and a stable `mode` matching
+  `task_start`.
+- Removed the unused legacy CLI JSONL helper now that `agent --json` delegates
+  to `headless_runner.emit_jsonl()`.
+- The stale browser attach-only test mock was updated to patch the current
+  `_ensure_cdp_endpoint()` seam instead of depending on a real CDP browser
+  being open.
+
+Validation:
+
+```text
+python -m pytest tests\test_headless_runner.py tests\test_cli.py tests\test_browser.py tests\test_agent.py tests\test_server.py tests\test_run_ledger.py -q
+# 309 passed, 3 skipped, 1 pytest cache warning
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m py_compile codey\headless_runner.py codey\cli.py codey\task_runner.py codey\server.py codey\agent.py codey\__init__.py
+# passed
+
+python -m pytest -q
+# 1491 passed, 8 skipped, 1 pytest cache warning, 161 subtests passed
+```
+
 ## 0.2.31 Internal Permission Profiles v1
 
 Codey 0.2.31 adds internal permission profiles for runtime phase boundaries.
