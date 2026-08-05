@@ -117,6 +117,41 @@ HF 运行时带进核心。
 - Nezha-mini action executor 覆盖 Codey ToolRuntime
 ```
 
+## Symphony 的借鉴边界
+
+OpenAI Symphony 值得借的不是“多 agent daemon”或“自动从 issue tracker 抢活”，而是
+work orchestration 的产品抽象：
+
+```text
+长期意图
+  -> bounded work item
+  -> isolated run
+  -> proof of work
+  -> ledger / review / verification / restore
+```
+
+Codey/Ghost 应该借：
+
+```text
+可以借：
+- Work Item 是一等对象，不只是聊天轮次。
+- 工作流事实可以放在 repo 里，例如 `.codey/config.json` 和未来 `.codey/WORKFLOW.md`。
+- 每个 work item 有 scope、status、priority、run refs 和 evidence refs。
+- 任务完成必须有 proof of work：diff、verification、research citations、ledger path。
+- Orchestrator state 要单一、可重放、可恢复。
+
+不要借：
+- always-on 多 agent daemon。
+- 自动从 GitHub/Linear 抢任务。
+- 无人值守自动落 PR。
+- 高信任 hook shell。
+- 复杂并发调度。
+- 让 Ghost 直接执行工具。
+```
+
+这条线和 Nezha-mini 互补：Nezha-mini 给 Ghost 长期连续性，Symphony 给 Ghost
+长期意图如何变成可追踪 work item，Codey 继续提供安全身体。
+
 ## 规划原则
 
 1. Hebbian 网络是 0.3 的主线，不是后期装饰。
@@ -131,6 +166,8 @@ HF 运行时带进核心。
 10. UI 先保持安静，最后再做 Ghost 审计面板。
 11. Ghost 必须从第一版就有 disable、export、reset 和 delete scope 的控制入口；UI 可以晚做，控制权不能晚给。
 12. `state_home=None` 时 Ghost 写入默认禁用，避免测试、嵌入和一次性脚本写入真实长期状态。
+13. Ghost 的长期意图必须落成可审计 work item，不能变成隐藏后台冲动。
+14. Work item 可以建议下一步，但不能绕过用户显式入口、PermissionProfile 或 TaskRunner。
 
 ## 0.3 首版边界常量
 
@@ -141,6 +178,7 @@ MAX_GHOST_EVENTS = 5000
 MAX_INBOX_ITEMS = 200
 MAX_GHOST_NODES = 500
 MAX_GHOST_EDGES = 2000
+MAX_GHOST_WORK_ITEMS = 200
 MAX_DIRECTIVE_CHARS = 1200
 MAX_SIGNAL_TEXT_CHARS = 600
 MAX_SIGNAL_QUOTE_CHARS = 240
@@ -683,11 +721,88 @@ reason
 - route disagreement 有 ledger 记录。
 - 手动入口优先于 Ghost 建议。
 
-## 0.3.8 - Research Interest Queue v1
+## 0.3.8 - Ghost Work Queue v1
 
 ### 做什么
 
-把“战争-氦气、战争-铜，之后发现铜和氦可能有关”变成可审计的研究问题队列。
+借 Symphony 的 work item 思想，但改成个人 Ghost 的长期任务队列。它不是后台自动
+agent，而是把 Ghost 的长期意图变成可审计、可排序、可恢复的 work item。
+
+数据：
+
+```text
+GhostWorkItem
+- id
+- kind: research / coding / review / memory_sleep / open_question / project_followup
+- title
+- why_now
+- scope: user / project / session
+- status
+- priority
+- evidence_refs
+- run_refs
+- created_at
+- updated_at
+- blocked_reason
+```
+
+状态：
+
+```text
+candidate
+queued
+running
+blocked
+done
+rejected
+expired
+```
+
+典型来源：
+
+```text
+Ghost Continuity
+Cognitive Sleep
+Research open questions
+Run Ledger projection
+Project-local config
+user explicit follow-up
+```
+
+### Proof of Work
+
+每个完成的 work item 至少引用一种 proof：
+
+```text
+coding: diff / receipt / verification / ledger
+research: report note / citations / concept refs
+review: findings / verification map / diff refs
+memory_sleep: generated candidates / decay report
+open_question: promoted research task or rejected reason
+```
+
+### 边界
+
+- Work Queue 不自动执行任务。
+- 用户显式启动、headless 调用或未来自动模式确认后，才进入 TaskRunner/ResearchRunner。
+- 每个 work item 只能保存 bounded summary、scope、priority 和 refs，不保存完整源码、完整网页正文或完整 transcript。
+- project scope work item 不能泄漏到其他项目。
+- `status=running` 必须有 `run_id`，完成后必须有 proof refs。
+- work item 失败不能影响 Codey 主任务。
+- GhostWorkItem 不是 tool call。
+- GhostWorkItem 不能批准 shell、edit、run、git 或联网。
+- Work item priority 不能覆盖用户当前明确请求。
+- 不做多 agent 并发调度。
+- 不做 GitHub/Linear 自动 issue ingestion。
+- 不做无人值守自动 PR。
+
+## 0.3.9 - Research Interest Queue v1
+
+### 做什么
+
+把“战争-氦气、战争-铜，之后发现铜和氦可能有关”变成可审计的研究问题。第一版作为
+`GhostWorkItem(kind="open_question")` 或 `GhostWorkItem(kind="research")` 存在，
+不单独建立第二套队列。
 
 数据：
 
@@ -699,6 +814,7 @@ why_now
 status
 source_refs
 priority
+work_item_id
 ```
 
 例子：
@@ -716,8 +832,9 @@ source: concept co-activation
 - missing edge 不落入 knowledge note。
 - 只有用户显式启动 Research，Codey 才查证据。
 - Research Controller 仍然负责工具边界和 citation quality。
+- Research Interest Queue 不自动跑后台 web search。
 
-## 0.3.9 - Affinity Index v1
+## 0.3.10 - Affinity Index v1
 
 ### 做什么
 
@@ -753,7 +870,7 @@ Project planning style
 - provider hint 不覆盖用户明确选择。
 - routing hint 不覆盖 PermissionProfile。
 
-## 0.3.10 - Ghost Control Surface v1
+## 0.3.11 - Ghost Control Surface v1
 
 ### 做什么
 
@@ -768,6 +885,7 @@ Ghost 记住了什么
 纠错规则有哪些
 这次 Ghost Directive 为什么这样写
 哪些 open questions 等待研究
+哪些 work items 正在等待处理
 ```
 
 操作：
@@ -802,6 +920,7 @@ tests/test_ghost_directive.py
 tests/test_ghost_learning_loop.py
 tests/test_ghost_continuity.py
 tests/test_cognitive_sleep.py
+tests/test_ghost_work_queue.py
 tests/test_research_interest_queue.py
 tests/test_affinity_index.py
 ```
@@ -816,6 +935,7 @@ codey/ghost 不 import transformers
 Ghost 不能 import tool_runtime 执行函数
 ToolRuntime 不 import Ghost
 Research evidence 不依赖 Ghost affinity
+GhostWorkItem 不能直接调用工具
 repair prompt 不包含 Ghost Directive
 PermissionProfile 仍然是执行边界
 ```
@@ -828,6 +948,7 @@ PermissionProfile 仍然是执行边界
 tests/manual/ghost_signal_extractor_ab.py
 tests/manual/ghost_directive_ab.py
 tests/manual/ghost_router_ab.py
+tests/manual/ghost_work_queue_ab.py
 tests/manual/research_interest_queue_ab.py
 ```
 
@@ -876,6 +997,7 @@ Ghost Directive render
 Chat with directive
 planning_readonly with directive
 Project Writer protocol compliance without directive
+Ghost WorkItem creation without automatic execution
 Research quality unaffected when directive disabled
 ```
 
