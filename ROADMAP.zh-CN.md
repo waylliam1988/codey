@@ -189,6 +189,11 @@ MAX_SLEEP_INPUT_RUNS = 20
 
 ## 0.3.0 - Ghost Signal Extractor v1
 
+状态：已落地。`0.3.0` 已经接入 Ghost signal schema、JSON codec、
+fail-open extractor、append-only candidate event log、manual A/B probe 和
+配套浏览器生命周期加固；它仍然不写 accepted memory，也不改变 Chat / Coding /
+Research 的执行行为。
+
 ### 做什么
 
 第一步不是写 Hebbian 权重，而是先让 Codey 能用 LLM 判断“用户这句话是否包含显式学习信号”。
