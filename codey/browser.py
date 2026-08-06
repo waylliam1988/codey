@@ -339,8 +339,12 @@ def _ensure_cdp_endpoint(
         raise RuntimeError(f"CDP port {preferred} is not open")
 
     cdp_port = _find_free_cdp_port(preferred)
-    _launch_browser(cdp_port, profile, start_url, **launch_kwargs)
-    _wait_port(cdp_port)
+    process = _launch_browser(cdp_port, profile, start_url, **launch_kwargs)
+    try:
+        _wait_port(cdp_port)
+    except Exception:
+        _terminate_browser_process(process)
+        raise
     return CdpEndpoint(_remember_cdp_port(cdp_port))
 
 

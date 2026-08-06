@@ -200,6 +200,7 @@ codey/ghost/__init__.py
 codey/ghost/schema.py
 codey/ghost/signal_codec.py
 codey/ghost/extractor.py
+codey/ghost/store.py
 tests/test_ghost_signal_extractor.py
 tests/manual/ghost_signal_extractor_ab.py
 ```
@@ -228,9 +229,10 @@ correction
 long_term_goal
 research_interest
 action_tendency
-boundary_preference
-no_signal
 ```
+
+`no_signal` 用 `{"signals":[]}` 表达。`boundary_preference` 暂不进 0.3.0，
+避免 Ghost 早期直接触碰安全边界偏好；它可以在后续 gate/control surface 里作为更高风险候选处理。
 
 ### 为什么做
 
@@ -254,6 +256,7 @@ no_signal
 - 不从普通闲聊偷偷学习。
 - 不进入 protocol repair prompt。
 - 不影响 Research / Coding 执行。
+- `GhostSignalStore` 只写候选事件日志，不代表 accepted memory。
 
 ### 运行策略
 

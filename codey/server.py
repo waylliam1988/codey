@@ -50,6 +50,7 @@ from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run
 from codey.handoff import ConversationContext
 from codey.local_store import DEFAULT_STATE_HOME
 from codey.managed_outputs import ManagedOutputStore
+from codey.ghost.store import GhostSignalStore
 from codey.knowledge.concepts import ConceptGraphBuilder
 from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
@@ -608,6 +609,7 @@ class State:
         )
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
+        self.ghost_signals = GhostSignalStore(state_home) if state_home else None
         self.provider_supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
         )

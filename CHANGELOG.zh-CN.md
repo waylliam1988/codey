@@ -4,6 +4,34 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.0 - Ghost Signal Extractor v1
+
+- 新增 `codey/ghost/`：provider-neutral 的 Ghost 信号抽取层，只识别显式学习信号。
+  v1 候选类型包括 `style_preference`、`correction`、`research_interest`、
+  `long_term_goal` 和 `action_tendency`。
+- 新增 `GhostSignalCodec`：一个很窄的 JSON 合同，让外部 provider 返回有边界的
+  signal candidates。`evidence_quote` 必须来自当前用户原文；编造 quote、未知 kind、
+  非法 scope、非法 confidence、坏 JSON 和多个 JSON object 都会进入 diagnostics。
+  疑似密码、API key、bearer token、私钥或高熵密钥的 candidate signal 会在写入本地
+  signal log 前被拒绝。
+- 新增 `GhostSignalExtractor`：fail-open 的 provider wrapper，只用于 manual/shadow。
+  provider 报错等价于没有信号，不影响 chat、coding 或 Research 执行。
+- 新增 `GhostSignalStore`：写入 `state_home/ghost/signals.jsonl` 的 append-only
+  候选事件日志。它只保存有边界的 candidate summary、quote、diagnostics 和 metadata，
+  不保存完整 transcript，也不代表长期记忆已被接受。裸 `State()` 会禁用该 store。
+- 新增 `tests/manual/ghost_signal_extractor_ab.py`：一次只测一个 provider 的 live probe，
+  并带 self-test，覆盖显式偏好、纠错、研究兴趣、行动倾向和 no-signal control。
+  连接失败会写入有边界的 failure row，不会再被 probe 自己的二次异常盖住原始
+  provider/CDP 错误。
+- 根据 live A/B 暴露的 CDP 问题加固浏览器生命周期：Ghost manual probe 即使保留
+  provider tab，也会释放非 isolated Playwright 自动化连接；非 isolated 浏览器启动失败
+  会终止新子进程。Codey 不会在 Playwright attach 失败后静默切到另一个 provider 端口；
+  正确恢复方式是重启那个 CDP 浏览器会话。
+- 本版本不注入 Ghost directive、不写 accepted memory、不更新 Hebbian 权重、不改变
+  TaskRunner 行为、不改 Research/coding 工具协议、不改 UI，也不引入 `torch` /
+  `transformers`。包根保持轻量：schema/store 导入不会加载 provider/browser 代码，
+  只有显式 extractor 路径才会加载 provider wrapper。
+
 ## 0.2.33 - Project-local Config v1
 
 - 新增 `codey/project_config.py`：严格解析项目内显式存在的

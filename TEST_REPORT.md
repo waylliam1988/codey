@@ -1,5 +1,94 @@
 # Codey Test Report
 
+## 0.3.0 Ghost Signal Extractor v1
+
+Codey 0.3.0 starts the Ghost line with a narrow explicit-signal extractor. It
+does not add accepted memory, Hebbian updates, prompt directives, UI, or
+production behavior changes.
+
+Production changes:
+
+- New `codey/ghost/` package with schema, JSON signal codec, fail-open provider
+  extractor, and append-only candidate event store.
+- `GhostSignalCodec` accepts only one JSON object with a `signals` list. Valid
+  candidates are bounded and limited to `style_preference`, `correction`,
+  `research_interest`, `long_term_goal`, and `action_tendency`.
+- `evidence_quote` is validated against the current user message; invented
+  quotes are rejected. No-signal replies use an empty `signals` list. Signals
+  that look like passwords, API keys, bearer tokens, private keys, or
+  high-entropy secrets are rejected before they can be written to disk.
+- `GhostSignalExtractor` is manual/shadow oriented. Provider failures return no
+  signals and do not affect chat, coding, Research, TaskRunner, or repair
+  prompts.
+- `GhostSignalStore` writes bounded candidate extraction events to
+  `state_home/ghost/signals.jsonl` and stores no full user/assistant transcript.
+  `State(state_home=None)` disables Ghost writes. Importing the store/schema
+  path stays lightweight and does not load provider/browser adapters.
+- Added `tests/manual/ghost_signal_extractor_ab.py` for one-provider-at-a-time
+  live A/B. The baseline arm emits no signals; the extractor arm calls the
+  provider. Its self-test uses a fake provider and does not open browser tabs.
+  Provider/CDP connection failures are written as bounded failure rows instead
+  of masking the original error with a probe exception.
+- Live A/B also exposed a CDP lifecycle issue in the manual path: skipping
+  `Session.close()` with `--keep-open` can leave Playwright/CDP automation in a
+  half-stale state, while production Codey normally closes provider sessions.
+  The Ghost probe now always closes non-isolated automation, and failed
+  non-isolated browser launches clean up the child process. Codey deliberately
+  does not silently switch to a different CDP port after Playwright attach
+  failure, because the opened port may carry the user's logged-in provider
+  tabs.
+- Architecture guard: the Ghost package imports neither `torch` nor
+  `transformers`.
+
+Validation:
+
+```text
+python -m pytest tests\test_ghost_signal_extractor.py -q
+# 21 passed, 1 pytest cache warning, 5 subtests passed
+
+python -B tests\manual\ghost_signal_extractor_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\ghost_signal_extractor_ab.py --provider deepseek --port 9222 --timeout 120 --new-chat-timeout 60 --output tests\manual\results\ghost_signal_extractor_deepseek.json
+# extractor 7/7, explicit 5/5, no-signal 2/2, grounded 7/7; baseline 2/7
+
+python -B tests\manual\ghost_signal_extractor_ab.py --provider qwen --port 9222 --timeout 120 --new-chat-timeout 60 --output tests\manual\results\ghost_signal_extractor_qwen.json
+# extractor 7/7, explicit 5/5, no-signal 2/2, grounded 7/7; baseline 2/7
+
+python -B tests\manual\ghost_signal_extractor_ab.py --provider mimo --port 9222 --timeout 120 --new-chat-timeout 60 --output tests\manual\results\ghost_signal_extractor_mimo.json
+# extractor 7/7, explicit 5/5, no-signal 2/2, grounded 7/7; baseline 2/7
+
+python -B tests\manual\ghost_signal_extractor_ab.py --provider stepfun --port 9222 --timeout 120 --new-chat-timeout 60 --output tests\manual\results\ghost_signal_extractor_stepfun.json
+# extractor 7/7, explicit 5/5, no-signal 2/2, grounded 7/7; baseline 2/7
+
+python -B tests\manual\ghost_signal_extractor_ab.py --provider glm --port 9222 --timeout 120 --new-chat-timeout 60 --output tests\manual\results\ghost_signal_extractor_glm.json
+# extractor 7/7, explicit 5/5, no-signal 2/2, grounded 7/7; baseline 2/7
+
+Live A/B note: DeepSeek and Qwen initially exposed two classification-boundary
+issues. The prompt was tightened so communication format/tone preferences map
+to `style_preference`, workflow/process preferences map to `action_tendency`,
+and internal product names are not shown in the model-visible extractor prompt.
+After the prompt fix, all five web providers passed the same seven-case probe.
+
+python -m py_compile codey\ghost\schema.py codey\ghost\signal_codec.py codey\ghost\extractor.py codey\ghost\store.py
+# passed
+
+python -m pytest tests\test_browser.py tests\test_ghost_signal_extractor.py -q
+# 65 passed, 1 pytest cache warning, 5 subtests passed
+
+python -m pytest tests\test_ghost_signal_extractor.py tests\test_architecture.py tests\test_server.py -q
+# 162 passed, 1 skipped, 1 pytest cache warning, 8 subtests passed
+
+python -m ruff check codey tests
+# All checks passed
+
+python -m pytest -q
+# 1541 passed, 9 skipped, 1 pytest cache warning, 166 subtests passed
+
+git diff --check
+# passed
+```
+
 ## 0.2.33 Project-local Config v1
 
 Codey 0.2.33 adds a strict project-local config parser for explicit

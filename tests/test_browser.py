@@ -358,6 +358,28 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         )
         self.assertIs(session.page, new_page)
 
+    def test_open_chat_page_does_not_switch_ports_after_attach_failure(self) -> None:
+        pw = mock.Mock()
+        pw.chromium.connect_over_cdp.side_effect = TimeoutError("attach hung")
+
+        with (
+            mock.patch.object(
+                browser,
+                "_ensure_cdp_endpoint",
+                return_value=browser.CdpEndpoint(9222),
+            ) as ensure,
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "attach hung"):
+                browser.open_chat_page("https://chat.qwen.ai/", "chat.qwen.ai")
+
+        ensure.assert_called_once()
+        pw.stop.assert_called_once_with()
+        pw.chromium.connect_over_cdp.assert_called_once_with(
+            "http://127.0.0.1:9222",
+            timeout=browser.CDP_CONNECT_TIMEOUT_MS,
+        )
+
     def test_fresh_tab_opens_new_page_even_when_provider_tab_exists_and_closes_it(self) -> None:
         existing = mock.Mock(url="https://chat.qwen.ai/existing")
         ctx = mock.Mock(pages=[existing])
@@ -542,6 +564,28 @@ class BrowserProviderWrapperTests(unittest.TestCase):
                     url_contains="chat.qwen.ai",
                     open_if_missing=True,
                     isolated=True,
+                )
+
+        process.terminate.assert_called_once()
+        process.wait.assert_called_once_with(timeout=2)
+
+    def test_non_isolated_launch_failure_terminates_process(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+        with (
+            mock.patch.object(browser, "_find_cdp_port_with_target", return_value=None),
+            mock.patch.object(browser, "_find_existing_cdp_port", return_value=None),
+            mock.patch.object(browser, "_find_free_cdp_port", return_value=9444),
+            mock.patch.object(browser, "_launch_browser", return_value=process),
+            mock.patch.object(browser, "_wait_port", side_effect=TimeoutError("no port")),
+        ):
+            with self.assertRaisesRegex(TimeoutError, "no port"):
+                browser._ensure_cdp_endpoint(
+                    preferred=9444,
+                    profile=Path("profile"),
+                    start_url="https://chat.qwen.ai/",
+                    url_contains="chat.qwen.ai",
+                    open_if_missing=True,
                 )
 
         process.terminate.assert_called_once()

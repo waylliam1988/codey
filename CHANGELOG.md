@@ -4,6 +4,43 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.0 - Ghost Signal Extractor v1
+
+- Added `codey/ghost/`, a provider-neutral Ghost signal extraction layer for
+  explicit learning signals. It recognizes candidate `style_preference`,
+  `correction`, `research_interest`, `long_term_goal`, and `action_tendency`
+  signals.
+- Added `GhostSignalCodec`, a narrow JSON contract that asks an external
+  provider to return bounded signal candidates. `evidence_quote` must be
+  grounded in the current user message; invented quotes, unknown kinds, invalid
+  scopes, bad confidence values, malformed JSON, and multiple JSON objects are
+  rejected into diagnostics. Candidate signals that look like passwords, API
+  keys, bearer tokens, private keys, or high-entropy secrets are rejected before
+  they can be written to the local signal log.
+- Added `GhostSignalExtractor`, a fail-open provider wrapper intended for
+  manual/shadow use. Provider errors produce no signals and do not affect chat,
+  coding, or Research execution.
+- Added `GhostSignalStore`, an append-only candidate event log under
+  `state_home/ghost/signals.jsonl`. It stores bounded candidate summaries,
+  quotes, diagnostics, and metadata, not full transcripts or accepted long-term
+  memory. Bare `State()` disables the store.
+- Added `tests/manual/ghost_signal_extractor_ab.py`, a one-provider-at-a-time
+  live probe with self-test coverage for explicit preferences, corrections,
+  research interests, action tendencies, and no-signal controls. Connection
+  failures are written as bounded failure rows instead of masking the original
+  provider/CDP error with a probe exception.
+- CDP robustness hardening from the live A/B: the Ghost manual probe always
+  releases non-isolated Playwright automation even when keeping the provider
+  tab open, and failed non-isolated browser launches now terminate their child
+  process. Codey does not silently switch away from an attached provider port
+  after Playwright attach failure; the correct recovery is to restart that CDP
+  browser session.
+- This release does not inject a Ghost directive into prompts, write accepted
+  memory, update Hebbian weights, alter TaskRunner behavior, change Research or
+  coding tool protocols, add UI, or import `torch` / `transformers`. The
+  package root stays lightweight; provider/browser code is loaded only by the
+  explicit extractor path, not by schema/store imports.
+
 ## 0.2.33 - Project-local Config v1
 
 - Added `codey/project_config.py`, a strict parser for explicit

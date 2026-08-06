@@ -356,6 +356,59 @@ repairs only; it does not change coding's existing
 multiple-top-level-JSON compatibility behavior, add an allowed-tools gate, or
 introduce verification candidate IDs.
 
+`ghost_signal_extractor_ab.py` is a Ghost-only A/B probe for 0.3.0's explicit
+learning signal extractor. The `baseline` arm emits no signals; the
+`extractor` arm asks one live provider at a time to classify current user
+messages into candidate signals such as style preferences, corrections,
+research interests, long-term goals, and action tendencies. It does not execute
+local tools, write accepted memory, inject a Ghost directive, or change
+production chat/coding/Research behavior.
+
+```powershell
+python -B tests\manual\ghost_signal_extractor_ab.py --self-test
+python -B tests\manual\ghost_signal_extractor_ab.py `
+  --provider qwen `
+  --port 9222 `
+  --timeout 90
+```
+
+Run providers one process at a time. The scorer tracks kind hits, no-signal
+false positives, JSON parse success, and whether every `evidence_quote` is
+grounded in the user message.
+
+2026-08-06 live A/B after prompt tightening:
+
+- DeepSeek: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
+  grounded quotes `7/7`; baseline `2/7`.
+- Qwen: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
+  grounded quotes `7/7`; baseline `2/7`.
+- MiMo: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
+  grounded quotes `7/7`; baseline `2/7`.
+- StepFun: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
+  grounded quotes `7/7`; baseline `2/7`.
+- GLM: extractor `7/7`, explicit signals `5/5`, no-signal controls `2/2`,
+  grounded quotes `7/7`; baseline `2/7`.
+
+The model-visible extractor prompt is intentionally generic and does not expose
+internal product names. DeepSeek and Qwen initially showed useful boundary
+failures (`action_tendency` vs `correction`, then `style_preference` vs
+`action_tendency`); the current prompt fixes those distinctions.
+
+Privacy note: candidate signals that look like passwords, API keys, bearer
+tokens, private keys, or high-entropy secrets are rejected by the schema parser
+before they can be written to `state_home/ghost/signals.jsonl`.
+
+CDP note: this probe now always releases non-isolated Playwright automation,
+even when a caller passes `--keep-open`; regular `Session.close()` leaves reused
+provider tabs open. This avoids half-stale CDP attachments between one-provider
+manual runs. If `/json/version` responds but Playwright attach stalls, Codey
+fails fast instead of silently switching to another provider port, because the
+opened port may be the one with the user's logged-in provider tabs.
+
+Failure-path note: provider/CDP connection failures are written to the JSON
+output as bounded failure rows and the probe exits non-zero. The probe should not
+mask the original web-provider failure with its own reporting error.
+
 `coding_current_context_ab.py` is a production-like live probe for Coding
 Current Context. It runs the real `agent.run` loop on temporary projects,
 executes real local read/edit/run tools, and compares:
