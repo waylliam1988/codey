@@ -11,7 +11,8 @@ from pathlib import Path
 from unittest import mock
 
 import codey.cli as cli
-from codey.ghost.inbox import GhostInboxStore, conflict_key_for_signal
+from codey.ghost.hebbian import GhostHebbianStore
+from codey.ghost.inbox import GhostInboxStore, conflict_key_for_signal, value_key_for_signal
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.store import GhostSignalStore
 from codey.server import State
@@ -65,6 +66,8 @@ class GhostInboxStoreTests(unittest.TestCase):
             self.assertEqual(candidate.session_id, "s1")
             self.assertEqual(candidate.run_id, "r1")
             self.assertEqual(candidate.project, str(Path(td).resolve()))
+            self.assertTrue(candidate.value_key)
+            self.assertEqual(candidate.evidence_refs, (f"{candidate.id}:1",))
 
     def test_correction_is_candidate_even_when_confident(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -174,6 +177,185 @@ class GhostInboxStoreTests(unittest.TestCase):
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0].reinforcement_count, 2)
             self.assertEqual(rows[0].run_id, "r2")
+            self.assertEqual(rows[0].evidence_refs, (f"{rows[0].id}:1", f"{rows[0].id}:2"))
+
+    def test_accepted_candidate_is_not_downgraded_by_lower_status_ingest(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = GhostInboxStore(td)
+            metadata = {"conflict_key": "reply_structure", "value_key": "answer_first"}
+            store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    summary="Prefer answer first.",
+                    quote="以后先给结论",
+                    confidence=0.9,
+                    metadata=metadata,
+                )),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+            )
+            updated = store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    summary="Weak answer first signal.",
+                    quote="以后先给结论",
+                    confidence=0.2,
+                    metadata=metadata,
+                )),
+                session_id="s1",
+                run_id="r2",
+                project=td,
+            )
+
+            self.assertEqual(updated[0].status, "accepted")
+            self.assertEqual(store.list_candidates()[0].status, "accepted")
+
+    def test_review_metadata_is_not_overwritten_by_ordinary_ingest(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = GhostInboxStore(td)
+            metadata = {"conflict_key": "reply_structure", "value_key": "answer_first"}
+            created = store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    summary="Prefer answer first.",
+                    quote="以后先给结论",
+                    confidence=0.6,
+                    metadata=metadata,
+                )),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+            )[0]
+            reviewed = store.review_candidate(created.id, "accept", reviewed_by="test")
+            assert reviewed is not None
+
+            store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    summary="Prefer answer first.",
+                    quote="以后先给结论",
+                    confidence=0.95,
+                    metadata=metadata,
+                )),
+                session_id="s1",
+                run_id="r2",
+                project=td,
+            )
+            row = store.list_candidates()[0]
+
+            self.assertEqual(row.status, "accepted")
+            self.assertEqual(row.gate_reason, "manual_accept")
+            self.assertEqual(row.reviewed_by, "test")
+            self.assertTrue(row.reviewed_at)
+
+    def test_same_conflict_different_value_is_not_merged(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = GhostInboxStore(td)
+            store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    summary="Prefer answer first.",
+                    quote="以后先给结论",
+                    metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
+                )),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+            )
+            store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    summary="Prefer detailed reasoning.",
+                    quote="以后展开细节",
+                    metadata={"conflict_key": "reply_structure", "value_key": "detailed"},
+                )),
+                session_id="s1",
+                run_id="r2",
+                project=td,
+            )
+
+            rows = store.list_candidates()
+            self.assertEqual(len(rows), 2)
+            self.assertEqual({row.value_key for row in rows}, {"answer_first", "detailed"})
+            self.assertEqual({row.status for row in rows}, {"accepted"})
+
+    def test_review_candidate_accept_supersedes_conflicting_accepted_value(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = GhostInboxStore(td)
+            first = store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    summary="Prefer answer first.",
+                    quote="以后先给结论",
+                    metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
+                )),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+            )[0]
+            second = store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    summary="Prefer detailed reasoning.",
+                    quote="以后展开细节",
+                    metadata={"conflict_key": "reply_structure", "value_key": "detailed"},
+                )),
+                session_id="s1",
+                run_id="r2",
+                project=td,
+            )[0]
+
+            reviewed = store.review_candidate(second.id, "accept", reviewed_by="test")
+            rows = {row.id: row for row in store.list_candidates()}
+
+            self.assertIsNotNone(reviewed)
+            self.assertEqual(rows[second.id].status, "accepted")
+            self.assertEqual(rows[second.id].reviewed_by, "test")
+            self.assertEqual(rows[first.id].status, "superseded")
+            self.assertEqual(rows[first.id].superseded_by, second.id)
+            events = store.events_path.read_text(encoding="utf-8")
+            self.assertIn("ghost_memory_candidate_reviewed", events)
+            self.assertIn("superseded", events)
+
+    def test_superseded_candidate_is_not_revived_by_ordinary_ingest(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = GhostInboxStore(td)
+            first_signal = _signal(
+                "style_preference",
+                summary="Prefer answer first.",
+                quote="以后先给结论",
+                metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
+            )
+            first = store.ingest_signals(
+                _result(first_signal),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+            )[0]
+            second = store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    summary="Prefer detailed reasoning.",
+                    quote="以后展开细节",
+                    metadata={"conflict_key": "reply_structure", "value_key": "detailed"},
+                )),
+                session_id="s1",
+                run_id="r2",
+                project=td,
+            )[0]
+            store.review_candidate(second.id, "accept", reviewed_by="test")
+
+            store.ingest_signals(
+                _result(first_signal),
+                session_id="s1",
+                run_id="r3",
+                project=td,
+            )
+            rows = {row.id: row for row in store.list_candidates()}
+
+            self.assertEqual(rows[first.id].status, "superseded")
+            self.assertEqual(rows[first.id].superseded_by, second.id)
 
     def test_events_compact_when_byte_limit_is_exceeded(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -247,10 +429,11 @@ class GhostInboxStoreTests(unittest.TestCase):
     def test_conflict_key_can_use_structured_metadata_without_local_language_rules(self) -> None:
         signal = _signal(
             "style_preference",
-            metadata={"conflict_key": "reply_structure"},
+            metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
         )
 
         self.assertEqual(conflict_key_for_signal(signal), "style_preference:reply_structure")
+        self.assertEqual(value_key_for_signal(signal), "answer_first")
 
     def test_applicable_candidates_order_session_project_user(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -496,6 +679,7 @@ class GhostInboxStoreTests(unittest.TestCase):
 
     def test_bare_state_disables_ghost_inbox(self) -> None:
         self.assertIsNone(State().ghost_inbox)
+        self.assertIsNone(State().ghost_hebbian)
 
 
 class GhostSignalStoreScopeTests(unittest.TestCase):
@@ -551,8 +735,10 @@ class GhostCliTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 0)
         help_text = stdout.getvalue()
-        self.assertIn("export Ghost inbox/events/signals", help_text)
-        self.assertIn("delete Ghost inbox/events/signals", help_text)
+        self.assertIn("export Ghost inbox/events/signals/state", help_text)
+        self.assertIn("delete Ghost inbox/events/signals/state", help_text)
+        self.assertIn("accept", help_text)
+        self.assertIn("rebuild-state", help_text)
 
     def test_ghost_export_and_reset_cover_raw_signal_audit(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -570,6 +756,7 @@ class GhostCliTests(unittest.TestCase):
 
             self.assertEqual(export_code, 0)
             self.assertEqual(len(export_payload["signals"]), 1)
+            self.assertIn("hebbian", export_payload)
 
             stdout = io.StringIO()
             with mock.patch("sys.stdout", stdout):
@@ -579,6 +766,100 @@ class GhostCliTests(unittest.TestCase):
             self.assertEqual(reset_code, 0)
             self.assertTrue(reset_payload["ok"])
             self.assertFalse(signal_store.path.exists())
+
+    def test_ghost_accept_reject_state_and_rebuild_state_cli(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            inbox = GhostInboxStore(td)
+            candidate = inbox.ingest_signals(
+                _result(_signal(
+                    "correction",
+                    summary="Use the local provider.",
+                    quote="正确是使用 local provider",
+                    confidence=0.95,
+                    metadata={"conflict_key": "provider", "value_key": "local"},
+                )),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+            )[0]
+
+            stdout = io.StringIO()
+            with mock.patch("sys.stdout", stdout):
+                accept_code = cli.main(["ghost", "accept", "--state-home", td, candidate.id])
+            accept_payload = json.loads(stdout.getvalue())
+
+            self.assertEqual(accept_code, 0)
+            self.assertTrue(accept_payload["ok"])
+            self.assertTrue(accept_payload["hebbian"]["applied"])
+            self.assertEqual(len(GhostHebbianStore(td).list_nodes()), 1)
+
+            GhostHebbianStore(td).state_path.unlink()
+            stdout = io.StringIO()
+            with mock.patch("sys.stdout", stdout):
+                rebuild_code = cli.main(["ghost", "rebuild-state", "--state-home", td, "--yes"])
+            rebuild_payload = json.loads(stdout.getvalue())
+
+            self.assertEqual(rebuild_code, 0)
+            self.assertTrue(rebuild_payload["ok"])
+
+            stdout = io.StringIO()
+            with mock.patch("sys.stdout", stdout):
+                state_code = cli.main(["ghost", "state", "--state-home", td])
+            state_payload = json.loads(stdout.getvalue())
+
+            self.assertEqual(state_code, 0)
+            self.assertTrue(state_payload["ok"])
+            self.assertEqual(len(state_payload["state"]["nodes"]), 1)
+
+            stdout = io.StringIO()
+            with mock.patch("sys.stdout", stdout):
+                reject_code = cli.main(["ghost", "reject", "--state-home", td, candidate.id])
+            reject_payload = json.loads(stdout.getvalue())
+
+            self.assertEqual(reject_code, 0)
+            self.assertTrue(reject_payload["ok"])
+            self.assertEqual(reject_payload["candidate"]["status"], "rejected")
+            self.assertEqual(reject_payload["hebbian_removed"], {"edges": 0, "nodes": 1})
+            self.assertEqual(GhostHebbianStore(td).list_nodes(status="active"), ())
+
+    def test_ghost_accept_cli_creates_coactivation_edges_for_same_run_siblings(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            inbox = GhostInboxStore(td)
+            first = inbox.ingest_signals(
+                _result(_signal(
+                    "correction",
+                    summary="Use the local provider.",
+                    quote="正确是使用 local provider",
+                    confidence=0.95,
+                    metadata={"conflict_key": "provider", "value_key": "local"},
+                )),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+            )[0]
+            second = inbox.ingest_signals(
+                _result(_signal(
+                    "correction",
+                    summary="Keep the response concise.",
+                    quote="正确是回答要简洁",
+                    confidence=0.95,
+                    metadata={"conflict_key": "reply_length", "value_key": "concise"},
+                )),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+            )[0]
+
+            with mock.patch("sys.stdout", io.StringIO()):
+                self.assertEqual(cli.main(["ghost", "accept", "--state-home", td, first.id]), 0)
+            stdout = io.StringIO()
+            with mock.patch("sys.stdout", stdout):
+                self.assertEqual(cli.main(["ghost", "accept", "--state-home", td, second.id]), 0)
+            payload = json.loads(stdout.getvalue())
+
+            self.assertTrue(payload["hebbian"]["applied"])
+            self.assertEqual(len(payload["hebbian"]["edges"]), 1)
+            self.assertEqual(len(GhostHebbianStore(td).list_edges()), 1)
 
     def test_ghost_delete_scope_reports_storage_errors_as_json(self) -> None:
         with tempfile.TemporaryDirectory() as td:

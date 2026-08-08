@@ -49,6 +49,7 @@ from codey.conversation_store import ConversationStore
 from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.handoff import ConversationContext
 from codey.local_store import DEFAULT_STATE_HOME
+from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.managed_outputs import ManagedOutputStore
 from codey.ghost.store import GhostSignalStore
@@ -611,6 +612,7 @@ class State:
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
+        self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
         self.ghost_signals = GhostSignalStore(state_home) if state_home else None
         self.provider_supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()

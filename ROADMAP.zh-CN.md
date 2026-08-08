@@ -454,9 +454,13 @@ session > project > user
 
 ## 0.3.2 - Ghost Hebbian State v1
 
+状态：已落地。`0.3.2` 是可审计的本地记忆权重账本，只把 accepted inbox
+candidate 强化成 bounded Hebbian state；不接 prompt、不接 TaskRunner、不做 UI、
+不做自动日常学习。
+
 ### 做什么
 
-把 accepted signals 强化成本地 Hebbian state。
+把 accepted Ghost inbox candidates 强化成本地 Hebbian state。
 
 新增模块：
 
@@ -465,6 +469,27 @@ codey/ghost/hebbian.py
 tests/test_ghost_hebbian.py
 ```
 
+同时补齐 0.3.1 inbox 的 review/value/evidence 语义：
+
+```text
+GhostMemoryCandidate
+- value_key
+- evidence_refs
+- reviewed_at
+- reviewed_by
+- superseded_by
+```
+
+语义：
+
+- `conflict_key` 是槽位，例如 `style_preference:reply_structure`。
+- `value_key` 是具体值，例如 `answer_first`。
+- 同 scope/ref/conflict/value 才合并，并追加 bounded evidence ref。
+- 同 scope/ref/conflict、不同 value 保留为 competing candidates。
+- 后续 candidate/rejected ingest 不能降级已有 accepted candidate。
+- 用户显式 accept 新值时，旧 accepted value 会被标成 superseded。
+- 自动 accepted 的不同 value 不会自动互相 supersede。
+
 核心数据：
 
 ```text
@@ -472,23 +497,32 @@ GhostNode
 - id
 - kind
 - label
+- conflict_key
+- value_key
+- status
 - weight
 - scope
+- scope_ref
 - confidence
+- candidate_ids
 - evidence_refs
 - created_at
 - updated_at
 - last_reinforced_at
+- last_decayed_at
+- superseded_by
 
 GhostEdge
 - source
 - target
 - relation
 - weight
+- candidate_ids
 - evidence_refs
 - created_at
 - updated_at
 - last_reinforced_at
+- last_decayed_at
 ```
 
 节点类型：
@@ -499,37 +533,90 @@ correction
 long_term_goal
 research_interest
 action_tendency
-boundary_preference
-project_affinity
-provider_affinity
 ```
+
+0.3.2 的 Hebbian node kind 严格对齐 0.3.0 extractor 当前能产生的五类 signal。
+`boundary_preference`、`project_affinity`、`provider_affinity` 等 future kind 不提前
+进入 state schema，等对应 extractor/gate 路径存在后再开放。
+
+存储：
+
+```text
+~/.codey/ghost/signals.jsonl          # 0.3.0 raw extractor audit
+~/.codey/ghost/events.jsonl           # 0.3.1 inbox/gate/control event log
+~/.codey/ghost/inbox.json             # 0.3.1 inbox projection
+~/.codey/ghost/settings.json          # Ghost learning enable/disable
+~/.codey/ghost/state.json             # 0.3.2 Hebbian state projection
+~/.codey/ghost/hebbian_events.jsonl   # 0.3.2 Hebbian audit/replay log
+```
+
+`hebbian_events.jsonl` 独立于 0.3.1 `events.jsonl`，避免 inbox compact 和 Hebbian
+replay 混在一起。`state.json` 是 projection，可以从 Hebbian events 重建。
 
 更新规则：
 
 ```text
-node.weight = decay(old_weight) + learning_rate * reward * confidence
-edge.weight = decay(old_edge_weight) + learning_rate * coactivation
+decay_rate = ln(2) / half_life
+decayed = old_weight * exp(-decay_rate * age)
+node.weight = clamp(decayed + node_learning_rate * reward * confidence, 0.0, 1.0)
+edge.weight = clamp(decayed + edge_learning_rate * reward * coactivation_confidence, 0.0, 1.0)
+```
+
+同一 evidence ref 重放必须不重复加 node 权重，但可以补缺失的同 run coactivation
+edge。Coactivation edge evidence 使用 candidate pair/run 级别的 key，所以 A->B 和
+B->A 不会重复加权。衰减使用半衰期定义推导出的连续指数曲线，而不是调一个裸常量；
+持久化衰减用 `last_decayed_at` 记录当前 weight 的计算基准，所以同一 timestamp 重复
+decay 是幂等的。衰减不更新 `last_reinforced_at`；它只代表用户或候选再次确认，不代表
+系统维护时间。
+
+CLI：
+
+```powershell
+python -m codey ghost accept <candidate-id>
+python -m codey ghost reject <candidate-id>
+python -m codey ghost state
+python -m codey ghost rebuild-state --yes
+python -m codey ghost export
+python -m codey ghost reset --yes
+python -m codey ghost delete-scope user --yes
+python -m codey ghost delete-scope project --project E:\codey --yes
 ```
 
 ### 边界
 
 - 纯 Python，不引入 torch。
 - 不修改任何模型权重。
+- 不生成 Ghost Directive。
+- 不注入 prompt。
+- 不接默认 TaskRunner。
+- 不改变 Chat、Coding、Research 行为。
+- 不做 UI。
+- 不做自动日常学习。
 - edge 表示相关性，不表示事实。
 - correction 节点优先级高于 style preference。
 - correction 是用户纠错/偏好事实，不等同于 Research-verified external truth。
   涉及外部世界事实时，Directive 只能说“用户纠正过...”，不能把它当证据结论。
 - 同一 evidence ref 不能重复强化。
 - 权重 bounded，衰减 deterministic。
+- 持久化 decay 在同一 timestamp 幂等，不会重复扣同一段时间。
 - state 可导出、可删除、可重建。
+- `ghost reject` 会同步移除对应 Hebbian node 和相连 edge。
+- `sync_from_inbox()` 是 reconcile，不只是 reinforce accepted；rejected/superseded
+  inbox row 会同步清掉对应 Hebbian state。
 
 ### 验收
 
 - 明确偏好多次出现会强化。
 - 久不用会衰减。
 - 冲突偏好不会静默覆盖，生成 competing node 或 superseded 事件。
+- 普通 ingest 不能复活被 manual accept supersede 的旧值。
 - 相同 evidence 不重复加权。
+- CLI accept 能为同 run 且 node 已存在的 sibling candidates 建 coactivation edge。
+- 同一 coactivation pair/run 不会因为 sync 双向遍历而重复加权。
 - 关联边不会渲染成事实断言。
+- state 可从 events 重建。
+- reset/delete-scope 同步清理 Hebbian state 和 event log。
+- 裸 `State()` 禁用 `ghost_hebbian`。
 - 无 `torch` / `transformers` import。
 
 ## 0.3.3 - Ghost Directive ContextSource v1

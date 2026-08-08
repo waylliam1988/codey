@@ -118,6 +118,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
 
 
 def cmd_ghost(args: argparse.Namespace) -> int:
+    from codey.ghost.hebbian import GhostHebbianStore
     from codey.ghost.inbox import GhostInboxStore
     from codey.ghost.store import GhostSignalStore
     from codey.local_store import DEFAULT_STATE_HOME
@@ -125,6 +126,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
     state_home_arg = getattr(args, "state_home", "") or ""
     state_home = Path(state_home_arg).expanduser() if state_home_arg else DEFAULT_STATE_HOME
     store = GhostInboxStore(state_home)
+    hebbian_store = GhostHebbianStore(state_home)
     signal_store = GhostSignalStore(state_home)
     action = str(getattr(args, "ghost_cmd", "") or "").strip()
     if action == "list":
@@ -148,21 +150,79 @@ def cmd_ghost(args: argparse.Namespace) -> int:
     if action == "export":
         payload = store.export_state()
         payload["signals"] = list(signal_store.read_all())
+        payload["hebbian"] = hebbian_store.export_state()
         payload["ok"] = True
         _print_json(payload)
         return 0
+    if action in {"accept", "reject"}:
+        try:
+            candidate = store.review_candidate(
+                args.candidate_id,
+                "accept" if action == "accept" else "reject",
+                reviewed_by="cli",
+            )
+        except ValueError as exc:
+            _print_error_json(exc)
+            return 2
+        except (OSError, TypeError) as exc:
+            _print_error_json(exc)
+            return 1
+        if candidate is None:
+            _print_error_json("candidate not found or storage failed")
+            return 1
+        payload: dict[str, object] = {
+            "schema_version": 1,
+            "ok": True,
+            "candidate": candidate.to_payload(),
+        }
+        if action == "accept":
+            related_candidates = [
+                row for row in store.list_candidates(status="accepted")
+                if row.id != candidate.id and row.run_id and row.run_id == candidate.run_id
+            ]
+            result = hebbian_store.reinforce_candidate(
+                candidate,
+                related_candidates=related_candidates,
+            )
+            payload["hebbian"] = {
+                "applied": result.applied,
+                "reason": result.reason,
+                "node": result.node.to_payload() if result.node is not None else None,
+                "edges": [edge.to_payload() for edge in result.edges],
+            }
+        else:
+            try:
+                payload["hebbian_removed"] = hebbian_store.remove_candidate(candidate)
+            except (OSError, TypeError, ValueError) as exc:
+                _print_error_json(exc)
+                return 1
+        _print_json(payload)
+        return 0
+    if action == "state":
+        payload = hebbian_store.export_state()
+        payload["ok"] = True
+        _print_json(payload)
+        return 0
+    if action == "rebuild-state":
+        if not getattr(args, "yes", False):
+            _print_error_json("rebuild-state requires --yes")
+            return 2
+        ok = hebbian_store.rebuild_from_events()
+        _print_json({"schema_version": 1, "ok": ok})
+        return 0 if ok else 1
     if action == "reset":
         if not getattr(args, "yes", False):
             _print_error_json("reset requires --yes")
             return 2
         try:
             ok = store.reset_all(preserve_settings=True)
+            hebbian_ok = hebbian_store.reset_all()
             signal_store.delete_all()
         except OSError as exc:
             _print_error_json(exc)
             return 1
-        _print_json({"schema_version": 1, "ok": ok})
-        return 0 if ok else 1
+        _print_json({"schema_version": 1, "ok": ok and hebbian_ok, "hebbian_ok": hebbian_ok})
+        return 0 if ok and hebbian_ok else 1
     if action == "delete-scope":
         if not getattr(args, "yes", False):
             _print_error_json("delete-scope requires --yes")
@@ -178,6 +238,11 @@ def cmd_ghost(args: argparse.Namespace) -> int:
                 project=getattr(args, "project", "") or "",
                 session_id=getattr(args, "session_id", "") or "",
             )
+            hebbian_removed = hebbian_store.delete_scope(
+                args.scope_name,
+                project=getattr(args, "project", "") or "",
+                session_id=getattr(args, "session_id", "") or "",
+            )
         except ValueError as exc:
             _print_error_json(exc)
             return 2
@@ -189,6 +254,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             "ok": True,
             "removed_count": removed,
             "signal_removed_count": signal_removed,
+            "hebbian_removed": hebbian_removed,
         })
         return 0
     if action in {"enable", "disable"}:
@@ -230,10 +296,25 @@ def _add_ghost_subcommands(sub) -> None:
     sp_ghost_list.add_argument("--session-id", default="", help="session id for session scope filtering")
     sp_ghost_list.set_defaults(func=cmd_ghost)
 
-    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export Ghost inbox/events/signals")
+    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export Ghost inbox/events/signals/state")
     sp_ghost_export.set_defaults(func=cmd_ghost)
 
-    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete Ghost inbox/events/signals")
+    sp_ghost_accept = sub.add_parser("accept", parents=[ghost_common], help="accept an inbox candidate")
+    sp_ghost_accept.add_argument("candidate_id")
+    sp_ghost_accept.set_defaults(func=cmd_ghost)
+
+    sp_ghost_reject = sub.add_parser("reject", parents=[ghost_common], help="reject an inbox candidate")
+    sp_ghost_reject.add_argument("candidate_id")
+    sp_ghost_reject.set_defaults(func=cmd_ghost)
+
+    sp_ghost_state = sub.add_parser("state", parents=[ghost_common], help="export Ghost Hebbian state")
+    sp_ghost_state.set_defaults(func=cmd_ghost)
+
+    sp_ghost_rebuild = sub.add_parser("rebuild-state", parents=[ghost_common], help="rebuild Ghost Hebbian state from events")
+    sp_ghost_rebuild.add_argument("--yes", action="store_true")
+    sp_ghost_rebuild.set_defaults(func=cmd_ghost)
+
+    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete Ghost inbox/events/signals/state")
     sp_ghost_reset.add_argument("--yes", action="store_true")
     sp_ghost_reset.set_defaults(func=cmd_ghost)
 

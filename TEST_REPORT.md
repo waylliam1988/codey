@@ -1,5 +1,63 @@
 # Codey Test Report
 
+## 0.3.2 Ghost Hebbian State v1
+
+Codey 0.3.2 adds an auditable local memory weight ledger for accepted Ghost
+inbox candidates. It still does not inject Ghost state into prompts, wire Ghost
+into TaskRunner, add UI, run automatic daily learning, or change chat/coding/
+Research behavior.
+
+Production changes:
+
+- New `codey/ghost/hebbian.py` stores bounded `GhostNode` and
+  `coactivated_with` `GhostEdge` rows in `state_home/ghost/state.json`, with
+  `state_home/ghost/hebbian_events.jsonl` as the separate audit/replay log.
+- Inbox candidates now include `value_key`, `evidence_refs`, review metadata,
+  and `superseded_by`. Same scope/ref/conflict/value rows merge evidence;
+  competing values stay separate.
+- Later candidate/rejected ingest can no longer downgrade an accepted
+  candidate. Manual `accept` can supersede older accepted values for the same
+  scope and conflict key, ordinary ingest cannot revive a superseded value, and
+  ordinary ingest preserves manual review metadata.
+- Hebbian reinforcement is deterministic and local: bounded weight updates,
+  evidence-ref dedupe, continuous and idempotent half-life decay using `ln(2)`,
+  pair/run-scoped coactivation evidence, edge fanout caps, scope filtering,
+  export, reset, delete-scope, and event replay.
+- Bad Hebbian projections are quarantined, bad event lines are skipped with
+  warnings, oversized event logs block rebuild instead of overwriting state,
+  and projection write failures fail open.
+- Ghost CLI now supports
+  `list/export/accept/reject/state/rebuild-state/reset/delete-scope/enable/disable`.
+  `export`, `reset`, and `delete-scope` include raw signals, inbox/events, and
+  Hebbian state/events. `accept` can backfill same-run coactivation edges, and
+  `reject` removes the corresponding Hebbian node and connected edges.
+- `sync_from_inbox()` reconciles rejected and superseded inbox rows instead of
+  only reinforcing accepted rows.
+- Hebbian node kinds are limited to the current five Ghost signal kinds until
+  future extractor/gate paths exist.
+- `server.State` creates `ghost_hebbian` only when `state_home` exists; bare
+  `State()` disables Ghost writes.
+
+Validation:
+
+```text
+python -B -m py_compile codey\ghost\inbox.py codey\ghost\hebbian.py codey\ghost\gate.py codey\cli.py codey\server.py codey\ghost\__init__.py codey\__init__.py tests\test_ghost_inbox.py tests\test_ghost_hebbian.py
+# passed
+
+python -B -m unittest tests.test_ghost_hebbian tests.test_ghost_inbox
+# Ran 61 tests in 4.343s
+# OK
+
+python -m pytest tests\test_ghost_inbox.py tests\test_ghost_hebbian.py tests\test_ghost_signal_extractor.py tests\test_cli.py tests\test_architecture.py tests\test_server.py -q
+# 232 passed, 1 skipped, 1 pytest cache warning, 40 subtests passed in 155.47s
+
+python -m ruff check .
+# All checks passed!
+
+python -m pytest -q
+# 1602 passed, 9 skipped, 1 pytest cache warning, 198 subtests passed in 404.66s
+```
+
 ## 0.3.1 Ghost Memory Inbox v1
 
 Codey 0.3.1 adds the local Ghost memory inbox and deterministic gate. It keeps

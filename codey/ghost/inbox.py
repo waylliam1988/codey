@@ -35,6 +35,7 @@ MAX_INBOX_ITEMS = 200
 MAX_INBOX_BYTES = 2 * 1024 * 1024
 MAX_EVENTS_BYTES = 4 * 1024 * 1024
 MAX_CANDIDATE_METADATA_KEYS = 8
+MAX_CANDIDATE_EVIDENCE_REFS = 32
 MAX_EVENT_WARNINGS = 20
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]+", re.IGNORECASE)
@@ -53,6 +54,7 @@ class GhostMemoryCandidate:
     evidence_quote: str
     confidence: float
     conflict_key: str
+    value_key: str
     session_id: str
     run_id: str
     project: str
@@ -61,6 +63,10 @@ class GhostMemoryCandidate:
     gate_reason: str
     metadata: dict[str, object] = field(default_factory=dict)
     reinforcement_count: int = 1
+    evidence_refs: tuple[str, ...] = ()
+    reviewed_at: str = ""
+    reviewed_by: str = ""
+    superseded_by: str = ""
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -73,6 +79,7 @@ class GhostMemoryCandidate:
             "evidence_quote": self.evidence_quote,
             "confidence": self.confidence,
             "conflict_key": self.conflict_key,
+            "value_key": self.value_key,
             "session_id": self.session_id,
             "run_id": self.run_id,
             "project": self.project,
@@ -81,6 +88,10 @@ class GhostMemoryCandidate:
             "gate_reason": self.gate_reason,
             "metadata": dict(self.metadata),
             "reinforcement_count": self.reinforcement_count,
+            "evidence_refs": list(self.evidence_refs),
+            "reviewed_at": self.reviewed_at,
+            "reviewed_by": self.reviewed_by,
+            "superseded_by": self.superseded_by,
         }
 
     @classmethod
@@ -108,6 +119,8 @@ class GhostMemoryCandidate:
         confidence = _coerce_confidence(payload.get("confidence"))
         if confidence is None:
             return None
+        reinforcement_count = max(1, _int_or_default(payload.get("reinforcement_count"), 1))
+        value_key = clip_signal_text(payload.get("value_key"), 180) or _legacy_value_key(summary, evidence_quote)
         return cls(
             id=candidate_id,
             candidate_type=candidate_type,
@@ -118,6 +131,7 @@ class GhostMemoryCandidate:
             evidence_quote=evidence_quote,
             confidence=confidence,
             conflict_key=conflict_key,
+            value_key=value_key,
             session_id=clip_signal_text(payload.get("session_id"), 120),
             run_id=clip_signal_text(payload.get("run_id"), 120),
             project=_normalize_project(payload.get("project")),
@@ -125,7 +139,15 @@ class GhostMemoryCandidate:
             updated_at=clip_signal_text(payload.get("updated_at"), 80),
             gate_reason=clip_signal_text(payload.get("gate_reason"), 160),
             metadata=_clean_metadata(payload.get("metadata")),
-            reinforcement_count=max(1, _int_or_default(payload.get("reinforcement_count"), 1)),
+            reinforcement_count=reinforcement_count,
+            evidence_refs=_clean_evidence_refs(
+                payload.get("evidence_refs"),
+                candidate_id=candidate_id,
+                reinforcement_count=reinforcement_count,
+            ),
+            reviewed_at=clip_signal_text(payload.get("reviewed_at"), 80),
+            reviewed_by=clip_signal_text(payload.get("reviewed_by"), 80),
+            superseded_by=clip_signal_text(payload.get("superseded_by"), 120),
         )
 
 
@@ -262,6 +284,89 @@ class GhostInboxStore:
             "warnings": list(self.last_warnings),
         }
 
+    def review_candidate(
+        self,
+        candidate_id: str,
+        action: str,
+        *,
+        reviewed_by: str = "cli",
+    ) -> GhostMemoryCandidate | None:
+        normalized_id = clip_signal_text(candidate_id, 120)
+        normalized_action = str(action or "").strip().lower()
+        if normalized_action not in {"accept", "reject"}:
+            raise ValueError("action must be accept or reject")
+        if not normalized_id:
+            return None
+        candidates = list(self._load_candidates())
+        target_index: int | None = None
+        for index, candidate in enumerate(candidates):
+            if candidate.id == normalized_id:
+                target_index = index
+                break
+        if target_index is None:
+            return None
+        now = _now()
+        reviewer = clip_signal_text(reviewed_by or "cli", 80)
+        target = candidates[target_index]
+        new_status = "accepted" if normalized_action == "accept" else "rejected"
+        target = replace(
+            target,
+            status=new_status,
+            updated_at=now,
+            reviewed_at=now,
+            reviewed_by=reviewer,
+            gate_reason=f"manual_{normalized_action}",
+            superseded_by="" if new_status == "accepted" else target.superseded_by,
+        )
+        candidates[target_index] = target
+        changed: list[tuple[GhostMemoryCandidate, str]] = [(target, f"review_{normalized_action}")]
+        superseded_ids: list[str] = []
+        if new_status == "accepted":
+            target_ref = _scope_ref(target)
+            for index, candidate in enumerate(candidates):
+                if candidate.id == target.id:
+                    continue
+                if candidate.status != "accepted":
+                    continue
+                if candidate.scope != target.scope or _scope_ref(candidate) != target_ref:
+                    continue
+                if candidate.conflict_key != target.conflict_key:
+                    continue
+                if candidate.value_key == target.value_key:
+                    continue
+                superseded = replace(
+                    candidate,
+                    status="superseded",
+                    updated_at=now,
+                    reviewed_at=now,
+                    reviewed_by=reviewer,
+                    superseded_by=target.id,
+                )
+                candidates[index] = superseded
+                changed.append((superseded, "superseded"))
+                superseded_ids.append(superseded.id)
+        events = [
+            self._candidate_event(candidate, action=event_action)
+            for candidate, event_action in changed
+        ]
+        events.append(self._control_event(
+            "ghost_memory_candidate_reviewed",
+            {
+                "candidate_id": target.id,
+                "action": normalized_action,
+                "reviewed_by": reviewer,
+                "superseded_ids": superseded_ids,
+            },
+        ))
+        if not self._append_events(events):
+            return None
+        try:
+            self._write_projection(candidates)
+        except (OSError, TypeError, ValueError):
+            delete_file(self.inbox_path)
+        self._compact_if_needed(candidates)
+        return target
+
     def reset_all(self, *, preserve_settings: bool = True) -> bool:
         try:
             delete_file(self.inbox_path)
@@ -351,8 +456,9 @@ class GhostInboxStore:
     ) -> GhostMemoryCandidate:
         now = _now()
         signal_kind = str(signal.kind or "").strip().lower()
+        candidate_id = "gmc_" + uuid.uuid4().hex[:24]
         return GhostMemoryCandidate(
-            id="gmc_" + uuid.uuid4().hex[:24],
+            id=candidate_id,
             candidate_type=decision.candidate_type or candidate_type_for_signal_kind(signal_kind),
             signal_kind=signal_kind,
             status=decision.status,
@@ -361,6 +467,7 @@ class GhostInboxStore:
             evidence_quote=clip_signal_text(signal.evidence_quote, 240),
             confidence=_coerce_confidence(signal.confidence) or 0.0,
             conflict_key=conflict_key_for_signal(signal),
+            value_key=value_key_for_signal(signal),
             session_id=clip_signal_text(session_id, 120),
             run_id=clip_signal_text(run_id, 120),
             project=_normalize_project(project),
@@ -369,6 +476,7 @@ class GhostInboxStore:
             gate_reason=decision.reason,
             metadata=_clean_metadata(signal.metadata),
             reinforcement_count=1,
+            evidence_refs=(f"{candidate_id}:1",),
         )
 
     def _merge_candidate(
@@ -376,9 +484,15 @@ class GhostInboxStore:
         current: GhostMemoryCandidate,
         incoming: GhostMemoryCandidate,
     ) -> GhostMemoryCandidate:
+        reinforcement_count = current.reinforcement_count + 1
+        reviewed = bool(current.reviewed_at)
         return replace(
             current,
-            status=incoming.status,
+            status=_merged_ingest_status(
+                current.status,
+                incoming.status,
+                reviewed=reviewed,
+            ),
             summary=incoming.summary or current.summary,
             evidence_quote=incoming.evidence_quote or current.evidence_quote,
             confidence=max(current.confidence, incoming.confidence),
@@ -386,9 +500,10 @@ class GhostInboxStore:
             run_id=incoming.run_id or current.run_id,
             project=incoming.project or current.project,
             updated_at=incoming.updated_at,
-            gate_reason=incoming.gate_reason,
+            gate_reason=current.gate_reason if reviewed else incoming.gate_reason,
             metadata=_merge_metadata(current.metadata, incoming.metadata),
-            reinforcement_count=current.reinforcement_count + 1,
+            reinforcement_count=reinforcement_count,
+            evidence_refs=_append_evidence_ref(current, reinforcement_count),
         )
 
     def _find_conflict_index(
@@ -401,6 +516,8 @@ class GhostInboxStore:
             if candidate.scope != incoming.scope:
                 continue
             if candidate.conflict_key != incoming.conflict_key:
+                continue
+            if candidate.value_key != incoming.value_key:
                 continue
             if _scope_ref(candidate) != incoming_ref:
                 continue
@@ -701,6 +818,13 @@ def conflict_key_for_signal(signal: GhostSignal) -> str:
     return f"{kind}:{_token_slug(text)}"
 
 
+def value_key_for_signal(signal: GhostSignal) -> str:
+    metadata_key = _metadata_value_key(getattr(signal, "metadata", {}) or {})
+    if metadata_key:
+        return metadata_key
+    return _legacy_value_key(signal.summary, signal.evidence_quote)
+
+
 def _metadata_conflict_key(metadata: object) -> str:
     if not isinstance(metadata, dict):
         return ""
@@ -710,6 +834,22 @@ def _metadata_conflict_key(metadata: object) -> str:
         return ""
     tokens = _TOKEN_RE.findall(text.replace("-", "_"))
     return "_".join(tokens[:8])[:120]
+
+
+def _metadata_value_key(metadata: object) -> str:
+    if not isinstance(metadata, dict):
+        return ""
+    raw = metadata.get("value_key") or metadata.get("value_key_hint")
+    text = str(raw or "").strip().casefold()
+    if not text:
+        return ""
+    tokens = _TOKEN_RE.findall(text.replace("-", "_"))
+    return "_".join(tokens[:8])[:120]
+
+
+def _legacy_value_key(summary: object, evidence_quote: object) -> str:
+    text = f"{summary} {evidence_quote}".casefold()
+    return _token_slug(text)
 
 
 def _token_slug(value: object) -> str:
@@ -789,6 +929,56 @@ def _should_store_decision(decision: GhostGateDecision) -> bool:
     if decision.status != "rejected":
         return True
     return decision.reason in _STORED_REJECTION_REASONS
+
+
+def _merged_ingest_status(
+    current_status: str,
+    incoming_status: str,
+    *,
+    reviewed: bool = False,
+) -> str:
+    if reviewed and current_status in {"accepted", "rejected", "superseded"}:
+        return current_status
+    if current_status == "superseded":
+        return "superseded"
+    if current_status in {"accepted", "superseded"} and incoming_status in {"candidate", "rejected"}:
+        return current_status
+    if incoming_status == "accepted":
+        return "accepted"
+    if current_status == "accepted":
+        return "accepted"
+    return incoming_status or current_status
+
+
+def _append_evidence_ref(
+    candidate: GhostMemoryCandidate,
+    reinforcement_count: int,
+) -> tuple[str, ...]:
+    refs = list(candidate.evidence_refs)
+    ref = f"{candidate.id}:{max(1, reinforcement_count)}"
+    if ref not in refs:
+        refs.append(ref)
+    return tuple(refs[-MAX_CANDIDATE_EVIDENCE_REFS:])
+
+
+def _clean_evidence_refs(
+    value: object,
+    *,
+    candidate_id: str,
+    reinforcement_count: int,
+) -> tuple[str, ...]:
+    refs: list[str] = []
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            ref = clip_signal_text(item, 160)
+            if ref and ref not in refs:
+                refs.append(ref)
+            if len(refs) >= MAX_CANDIDATE_EVIDENCE_REFS:
+                break
+    if refs:
+        return tuple(refs)
+    count = min(MAX_CANDIDATE_EVIDENCE_REFS, max(1, reinforcement_count))
+    return tuple(f"{candidate_id}:{index}" for index in range(1, count + 1))
 
 
 def _normalize_project(value: object) -> str:

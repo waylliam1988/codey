@@ -59,8 +59,8 @@ def candidate_type_for_signal_kind(kind: str) -> str:
 class GhostMemoryGate:
     """Local-only quality and safety gate.
 
-    ``accepted`` means the candidate is eligible for a future Hebbian reinforce
-    step.  It does not inject prompts or change model behavior in 0.3.1.
+    ``accepted`` means the candidate is eligible for local Hebbian reinforce.
+    It does not inject prompts or change model behavior.
     """
 
     def evaluate(

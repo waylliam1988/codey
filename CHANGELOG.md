@@ -4,6 +4,48 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.2 - Ghost Hebbian State v1
+
+- Added `codey/ghost/hebbian.py`, a bounded local Hebbian state ledger that can
+  reinforce accepted Ghost inbox candidates into weighted `GhostNode` rows and
+  `coactivated_with` `GhostEdge` rows. Edges only mean local co-occurrence, not
+  external facts.
+- Added inbox review and value semantics. Candidates now carry `value_key`,
+  `evidence_refs`, review metadata, and `superseded_by`. Same
+  scope/ref/conflict/value rows merge evidence; same scope/ref/conflict with
+  different values stay as competing candidates instead of silently overwriting
+  each other.
+- Accepted candidates are no longer downgraded by later lower-confidence
+  candidate/rejected ingest. A manual `accept` can supersede older accepted
+  values for the same scope and conflict key, and ordinary ingest cannot revive
+  a superseded value.
+- Hebbian state is stored as `state_home/ghost/state.json`, with
+  `state_home/ghost/hebbian_events.jsonl` as the separate audit/replay log.
+  Projection and event files are bounded, bad projections are quarantined, bad
+  event lines are skipped with warnings, and event replay can rebuild state.
+- Reinforcement is deterministic and local: bounded weights, evidence-ref
+  dedupe, continuous and idempotent half-life decay, edge fanout caps,
+  project/session/user scope isolation, reset, export, and delete-scope
+  support. Write failures fail open and do not affect chat, coding, or Research
+  execution.
+- Extended Ghost CLI controls:
+  `python -m codey ghost accept/reject/state/rebuild-state`, and updated
+  `export`, `reset`, and `delete-scope` to include Hebbian state and events.
+  `accept` now backfills same-run coactivation edges when sibling nodes already
+  exist; `reject` removes the corresponding active Hebbian node and connected
+  edges from the active Hebbian log. `sync_from_inbox()` reconciles rejected and
+  superseded inbox rows instead of only reinforcing accepted rows.
+- Coactivation edge evidence is pair/run scoped, so the same candidate pair in
+  the same run can backfill an edge once regardless of traversal order.
+- Hebbian node kinds remain aligned with the five current Ghost signal kinds;
+  future affinity/boundary node kinds are not accepted until their extractor and
+  gate paths exist.
+- `server.State` now creates `ghost_hebbian` only when `state_home` is present.
+  Bare `State()` still disables Ghost writes.
+- This release still does not generate Ghost Directives, inject prompt context,
+  wire Ghost into TaskRunner, run automatic daily learning, alter
+  chat/coding/Research behavior, add UI, or import `torch` / `transformers`.
+
 ## 0.3.1 - Ghost Memory Inbox v1
 
 - Added `codey/ghost/inbox.py` and `codey/ghost/gate.py`. Ghost signals from

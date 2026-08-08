@@ -4,6 +4,39 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.2 - Ghost Hebbian State v1
+
+- 新增 `codey/ghost/hebbian.py`：把 accepted Ghost inbox candidate 强化成有界的
+  本地 Hebbian 记忆权重账本，包含加权 `GhostNode` 和 `coactivated_with`
+  `GhostEdge`。Edge 只表示本地共同出现，不表示外部事实关系。
+- 补齐 inbox review 和 value 语义。Candidate 现在包含 `value_key`、
+  `evidence_refs`、review 元数据和 `superseded_by`；同 scope/ref/conflict/value
+  会合并证据，同 scope/ref/conflict 但不同 value 会作为 competing candidates
+  保留，不再静默覆盖。
+- 已 accepted 的候选不会被后续较弱的 candidate/rejected ingest 降级。用户显式
+  `accept` 新值时，可以把同 scope/conflict 下旧 accepted 值标成 superseded；
+  普通 ingest 不能把 superseded 旧值复活。
+- Hebbian state 写入 `state_home/ghost/state.json`，独立事件日志写入
+  `state_home/ghost/hebbian_events.jsonl`。Projection 和事件日志都有上限；坏
+  projection 会 quarantine，坏 event 行会跳过并记录 warning，state 可从 events 重建。
+- 强化算法保持确定性和本地化：权重有界、同 evidence ref 去重、连续且幂等的
+  half-life 衰减、edge fanout 上限、user/project/session scope 隔离，并支持
+  export/reset/delete-scope。写入失败 fail-open，不影响 chat、coding 或 Research。
+- 扩展 Ghost CLI：
+  `python -m codey ghost accept/reject/state/rebuild-state`，并让 `export`、`reset`
+  和 `delete-scope` 覆盖 Hebbian state 与事件日志。`accept` 会在 sibling node
+  已存在时补同 run coactivation edge；`reject` 会从 active Hebbian log 移除对应
+  node 和相连 edge。`sync_from_inbox()` 会 reconcile rejected/superseded inbox row，
+  不只是强化 accepted row。
+- Coactivation edge evidence 改成 candidate pair/run 级别，所以同一 run 里的同一对
+  candidate 不会因为 A->B / B->A 遍历顺序重复加权。
+- Hebbian node kind 仍严格对齐当前 Ghost 五类 signal；future affinity/boundary
+  node kind 要等 extractor 和 gate 路径存在后再开放。
+- `server.State` 在 `state_home` 存在时创建 `ghost_hebbian`；裸 `State()` 仍禁用
+  Ghost 写入。
+- 本版本仍不生成 Ghost Directive、不注入 prompt、不接 TaskRunner、不做自动日常学习、
+  不改变 chat/coding/Research 行为、不加 UI，也不引入 `torch` / `transformers`。
+
 ## 0.3.1 - Ghost Memory Inbox v1
 
 - 新增 `codey/ghost/inbox.py` 和 `codey/ghost/gate.py`：把 0.3.0 抽出的
