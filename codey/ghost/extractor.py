@@ -17,7 +17,7 @@ class GhostSignalExtractor:
     """Run the Ghost signal JSON contract against a ChatProvider.
 
     The extractor is fail-open: provider or parsing failures produce no signals.
-    It is intended for manual/shadow use in 0.3.0, not for blocking user-facing
+    It is intended for manual/shadow use in 0.3.x, not for blocking user-facing
     chat, coding, or Research turns.
     """
 

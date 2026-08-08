@@ -4,6 +4,38 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.1 - Ghost Memory Inbox v1
+
+- 新增 `codey/ghost/inbox.py` 和 `codey/ghost/gate.py`：把 0.3.0 抽出的
+  `GhostSignal` 投影成可审计的本地 memory inbox candidate，并用纯本地 deterministic
+  gate 决定 `accepted`、`candidate` 或 `rejected`。这里的 `accepted` 只表示未来
+  0.3.2 Hebbian State 可消费，不会在本版影响模型。
+- Ghost 状态现在分层为 `signals.jsonl`、`events.jsonl`、`inbox.json` 和
+  `settings.json`。`events.jsonl` 是 append-only 真源，`inbox.json` 是可重建
+  projection；坏 projection 或未来 schema 会 quarantine，坏 event 行会跳过并记录
+  warning。
+- `events.jsonl` 现在同时按行数和字节数做 compact；如果事件日志超限但 projection
+  坏掉，Codey 会保留 `events_too_large` warning，而不是静默重建成空 projection。
+- 0.3.1 不写 `state.json`，它保留给 0.3.2 Hebbian State。候选类型严格来自
+  0.3.0 的五类 signal，不新增 `boundary_candidate`。
+- Gate 保持保守：高置信 `style_preference` 可以自动 `accepted`；`correction`、
+  `research_interest`、`long_term_goal` 和 `action_tendency` 默认留在候选箱等待后续
+  控制或强化。Gate 不使用中文/英文短语硬编码来自动接受 correction 或划分偏好语义。
+- `conflict_key` 使用结构化 `metadata.conflict_key` / `conflict_key_hint` 或稳定文本
+  指纹生成，不靠本地语言词表猜 `tone`、`reply_structure` 等语义。相同 scope 和
+  conflict key 的候选会合并并增加 `reinforcement_count`。
+- 新增本地控制入口：`python -m codey ghost list/export/reset/delete-scope/enable/disable`。
+  `export` 现在同时导出 inbox projection 和 raw `signals.jsonl` audit。`reset`
+  / `delete-scope` 会同步清理 raw signal audit 与 inbox/events active store，不只是留下
+  tombstone。`reset` 和 `delete-scope` 需要 `--yes`。
+- `disable` 只阻止未来 ingest，不影响 list/export/delete。`enable/disable` 的 audit event
+  写入失败会返回 false，而不是静默当成成功。
+- `server.State` 在 `state_home` 存在时创建 `ghost_inbox`；裸 `State()` 仍禁用 Ghost
+  写入，保持嵌入和测试路径不写真实长期状态。
+- 本版本仍不生成 Ghost Directive、不更新 Hebbian 权重、不注入 prompt、不接入默认
+  TaskRunner 日常学习循环、不改变 chat/coding/Research 行为，也不引入 `torch` /
+  `transformers`。
+
 ## 0.3.0 - Ghost Signal Extractor v1
 
 - 新增 `codey/ghost/`：provider-neutral 的 Ghost 信号抽取层，只识别显式学习信号。

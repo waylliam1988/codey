@@ -7,8 +7,10 @@ does not mark any signal as accepted long-term memory.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
+import uuid
 
 from codey.ghost.schema import (
     SCHEMA_VERSION,
@@ -80,8 +82,56 @@ class GhostSignalStore:
             return ()
         return tuple(rows[-count:])
 
+    def read_all(self) -> tuple[dict[str, object], ...]:
+        return tuple(self._read_rows())
+
     def delete_all(self) -> None:
         delete_file(self.path)
+
+    def delete_scope(
+        self,
+        scope: str,
+        *,
+        project: str = "",
+        session_id: str = "",
+    ) -> int:
+        normalized_scope = str(scope or "").strip().lower()
+        if normalized_scope not in {"user", "project", "session"}:
+            raise ValueError("scope must be user, project, or session")
+        normalized_project = _normalize_project(project)
+        normalized_session = clip_signal_text(session_id, 120)
+        if normalized_scope == "project" and not normalized_project:
+            raise ValueError("project is required for project scope deletion")
+        if normalized_scope == "session" and not normalized_session:
+            raise ValueError("session_id is required for session scope deletion")
+        rows = self._read_rows()
+        removed = 0
+        rewritten: list[dict[str, object]] = []
+        for row in rows:
+            signals = row.get("signals")
+            if not isinstance(signals, list):
+                rewritten.append(row)
+                continue
+            kept_signals = []
+            for signal in signals:
+                if _signal_scope_match(
+                    signal,
+                    normalized_scope,
+                    row_project=_normalize_project(row.get("project")),
+                    row_session=clip_signal_text(row.get("session_id"), 120),
+                    project=normalized_project,
+                    session_id=normalized_session,
+                ):
+                    removed += 1
+                else:
+                    kept_signals.append(signal)
+            clean_row = dict(row)
+            clean_row["signals"] = kept_signals
+            if kept_signals:
+                rewritten.append(clean_row)
+        if removed:
+            self._write_rows_atomic(rewritten)
+        return removed
 
     def _read_rows(self) -> list[dict[str, object]]:
         try:
@@ -103,13 +153,61 @@ class GhostSignalStore:
         if len(rows) <= MAX_GHOST_EVENTS:
             return
         try:
-            with self.path.open("w", encoding="utf-8", newline="\n") as handle:
-                for row in rows[-MAX_GHOST_EVENTS:]:
-                    handle.write(json.dumps(
-                        row,
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                        sort_keys=True,
-                    ) + "\n")
+            self._write_rows_atomic(rows[-MAX_GHOST_EVENTS:])
         except OSError:
             pass
+
+    def _write_rows_atomic(self, rows: list[dict[str, object]]) -> None:
+        self.directory.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_name(f".{self.path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with temporary.open("xb") as handle:
+                for row in rows:
+                    handle.write(_json_line(row).encode("utf-8"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, self.path)
+        finally:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+
+
+def _signal_scope_match(
+    signal: object,
+    scope: str,
+    *,
+    row_project: str,
+    row_session: str,
+    project: str,
+    session_id: str,
+) -> bool:
+    if not isinstance(signal, dict):
+        return False
+    if str(signal.get("scope") or "").strip().lower() != scope:
+        return False
+    if scope == "project":
+        return bool(project) and row_project == project
+    if scope == "session":
+        return bool(session_id) and row_session == session_id
+    return True
+
+
+def _normalize_project(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return clip_signal_text(Path(text).expanduser().resolve(), 240)
+    except (OSError, RuntimeError, ValueError):
+        return clip_signal_text(text, 240)
+
+
+def _json_line(value: dict[str, object]) -> str:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ) + "\n"

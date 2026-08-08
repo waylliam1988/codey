@@ -1,5 +1,71 @@
 # Codey Test Report
 
+## 0.3.1 Ghost Memory Inbox v1
+
+Codey 0.3.1 adds the local Ghost memory inbox and deterministic gate. It keeps
+Ghost candidates auditable and user-controllable without injecting prompt
+context, updating Hebbian state, or changing chat/coding/Research behavior.
+
+Production changes:
+
+- New `codey/ghost/inbox.py` projects 0.3.0 `GhostSignal` values into bounded
+  `GhostMemoryCandidate` rows with status, scope, evidence quote, confidence,
+  provenance, conflict key, gate reason, metadata, and reinforcement count.
+- New `codey/ghost/gate.py` performs local-only safety and quality checks.
+  High-confidence style preferences can be marked `accepted`; corrections,
+  research interests, long-term goals, and action tendencies remain candidates
+  by default. Correction auto-accept and conflict grouping do not use
+  hard-coded Chinese/English phrase lists.
+- `state_home/ghost/events.jsonl` is the inbox/gate/control source of truth.
+  `state_home/ghost/inbox.json` is a rebuildable projection, and
+  `state_home/ghost/settings.json` stores learning enablement. 0.3.1 does not
+  write `state.json`.
+- `events.jsonl` compacts by both event count and byte size. Oversized event
+  logs produce an `events_too_large` warning and do not cause Codey to rewrite
+  a missing/bad projection as empty or overwrite it with only new candidates.
+- Bad projection JSON and future projection/settings schemas are quarantined;
+  bad event lines are skipped with bounded warnings. Projection write failures
+  are fail-open and can rebuild from events.
+- Sensitive rejected signals write only sanitized rejection events and do not
+  enter the active inbox projection.
+- `delete-scope` and `reset` physically compact or remove active Ghost store
+  content and raw `signals.jsonl` audit entries instead of preserving deleted
+  text behind tombstones.
+- New local CLI controls:
+  `python -m codey ghost list/export/reset/delete-scope/enable/disable`.
+  These commands do not load provider/browser/tool runtime modules. CLI storage
+  failures return bounded JSON instead of tracebacks.
+- `server.State` creates `ghost_inbox` only when `state_home` is present; bare
+  `State()` disables Ghost writes.
+
+Validation:
+
+```text
+python -m ruff check .
+# All checks passed!
+
+python -B -m unittest tests.test_ghost_inbox
+# 31 passed
+
+python -B -m unittest tests.test_ghost_signal_extractor
+# 21 passed
+
+python -B -m unittest tests.test_cli
+# 9 passed
+
+python -B -m unittest tests.test_architecture
+# 5 passed
+
+python -B -m unittest tests.test_server
+# 137 passed, 1 skipped
+
+python -B -m unittest tests.test_ghost_inbox tests.test_ghost_signal_extractor tests.test_cli tests.test_architecture tests.test_server
+# 203 passed, 1 skipped
+
+python -m pytest
+# 1572 passed, 9 skipped, 1 pytest cache warning, 196 subtests passed
+```
+
 ## 0.3.0 Ghost Signal Extractor v1
 
 Codey 0.3.0 starts the Ghost line with a narrow explicit-signal extractor. It

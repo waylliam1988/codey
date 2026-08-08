@@ -4,6 +4,49 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.1 - Ghost Memory Inbox v1
+
+- Added `codey/ghost/inbox.py` and `codey/ghost/gate.py`. Ghost signals from
+  0.3.0 can now be projected into auditable local memory inbox candidates, with
+  a deterministic local gate deciding `accepted`, `candidate`, or `rejected`.
+  In this release `accepted` only means "eligible for future 0.3.2 Hebbian
+  reinforcement"; it does not affect model behavior.
+- Ghost state is now split across `signals.jsonl`, `events.jsonl`,
+  `inbox.json`, and `settings.json`. `events.jsonl` is the append-only source
+  of truth, while `inbox.json` is a rebuildable projection. Bad projections or
+  future schemas are quarantined; bad event lines are skipped with warnings.
+- `events.jsonl` is compacted by both event count and byte size. If an
+  oversized event log cannot be read after a projection is lost, Codey keeps an
+  `events_too_large` warning instead of silently writing an empty projection.
+- 0.3.1 deliberately does not write `state.json`; that file is reserved for the
+  0.3.2 Hebbian state. Candidate types stay aligned with the five 0.3.0 signal
+  kinds, with no early `boundary_candidate`.
+- The gate is conservative: high-confidence `style_preference` signals may be
+  auto-accepted, while `correction`, `research_interest`, `long_term_goal`, and
+  `action_tendency` remain candidates by default. The gate does not use
+  hard-coded Chinese/English phrase lists to auto-accept corrections or
+  classify preference semantics.
+- `conflict_key` uses structured `metadata.conflict_key` /
+  `conflict_key_hint` when present, otherwise a stable text fingerprint. It
+  does not rely on local language marker lists such as `tone` or
+  `reply_structure`. Duplicate candidates with the same scope and conflict key
+  are merged and counted with `reinforcement_count`.
+- Added local controls:
+  `python -m codey ghost list/export/reset/delete-scope/enable/disable`.
+  `export` includes both the inbox projection and raw `signals.jsonl` audit.
+  `reset` / `delete-scope` clean both raw signal audit and the inbox/events
+  active store instead of leaving deleted text behind as tombstones. `reset`
+  and `delete-scope` require `--yes`.
+- `disable` blocks future ingest only; list/export/delete continue to work.
+  `enable` / `disable` return false when the audit event cannot be written
+  instead of silently reporting success.
+- `server.State` now creates `ghost_inbox` only when `state_home` is present.
+  Bare `State()` still disables Ghost writes for embedded and test paths.
+- This release still does not generate Ghost Directives, update Hebbian
+  weights, inject prompt context, wire Ghost into the default TaskRunner
+  learning loop, alter chat/coding/Research behavior, or import `torch` /
+  `transformers`.
+
 ## 0.3.0 - Ghost Signal Extractor v1
 
 - Added `codey/ghost/`, a provider-neutral Ghost signal extraction layer for

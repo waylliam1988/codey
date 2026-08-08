@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -116,14 +117,159 @@ def cmd_agent(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    from codey.providers import DEFAULT_PROVIDER_ID, provider_ids
+def cmd_ghost(args: argparse.Namespace) -> int:
+    from codey.ghost.inbox import GhostInboxStore
+    from codey.ghost.store import GhostSignalStore
+    from codey.local_store import DEFAULT_STATE_HOME
 
+    state_home_arg = getattr(args, "state_home", "") or ""
+    state_home = Path(state_home_arg).expanduser() if state_home_arg else DEFAULT_STATE_HOME
+    store = GhostInboxStore(state_home)
+    signal_store = GhostSignalStore(state_home)
+    action = str(getattr(args, "ghost_cmd", "") or "").strip()
+    if action == "list":
+        candidates = [
+            candidate.to_payload()
+            for candidate in store.list_candidates(
+                status=getattr(args, "status", "") or None,
+                scope=getattr(args, "scope", "") or "",
+                project=getattr(args, "project", "") or "",
+                session_id=getattr(args, "session_id", "") or "",
+            )
+        ]
+        _print_json({
+            "schema_version": 1,
+            "ok": True,
+            "learning_enabled": store.learning_enabled(),
+            "candidates": candidates,
+            "warnings": list(store.last_warnings),
+        })
+        return 0
+    if action == "export":
+        payload = store.export_state()
+        payload["signals"] = list(signal_store.read_all())
+        payload["ok"] = True
+        _print_json(payload)
+        return 0
+    if action == "reset":
+        if not getattr(args, "yes", False):
+            _print_error_json("reset requires --yes")
+            return 2
+        try:
+            ok = store.reset_all(preserve_settings=True)
+            signal_store.delete_all()
+        except OSError as exc:
+            _print_error_json(exc)
+            return 1
+        _print_json({"schema_version": 1, "ok": ok})
+        return 0 if ok else 1
+    if action == "delete-scope":
+        if not getattr(args, "yes", False):
+            _print_error_json("delete-scope requires --yes")
+            return 2
+        try:
+            removed = store.delete_scope(
+                args.scope_name,
+                project=getattr(args, "project", "") or "",
+                session_id=getattr(args, "session_id", "") or "",
+            )
+            signal_removed = signal_store.delete_scope(
+                args.scope_name,
+                project=getattr(args, "project", "") or "",
+                session_id=getattr(args, "session_id", "") or "",
+            )
+        except ValueError as exc:
+            _print_error_json(exc)
+            return 2
+        except (OSError, TypeError) as exc:
+            _print_error_json(exc)
+            return 1
+        _print_json({
+            "schema_version": 1,
+            "ok": True,
+            "removed_count": removed,
+            "signal_removed_count": signal_removed,
+        })
+        return 0
+    if action in {"enable", "disable"}:
+        enabled = action == "enable"
+        ok = store.set_learning_enabled(enabled)
+        _print_json({
+            "schema_version": 1,
+            "ok": ok,
+            "learning_enabled": store.learning_enabled(),
+        })
+        return 0 if ok else 1
+    _safe_print("ghost subcommand required", file=sys.stderr)
+    return 2
+
+
+def _print_error_json(error: object) -> None:
+    _print_json({
+        "schema_version": 1,
+        "ok": False,
+        "error": str(error or "error")[:240],
+    })
+
+
+def _print_json(payload: dict[str, object]) -> None:
+    _safe_print(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True),
+        file=sys.stdout,
+    )
+
+
+def _add_ghost_subcommands(sub) -> None:
+    ghost_common = argparse.ArgumentParser(add_help=False)
+    ghost_common.add_argument("--state-home", default="", help="local Codey state directory")
+
+    sp_ghost_list = sub.add_parser("list", parents=[ghost_common], help="list inbox candidates")
+    sp_ghost_list.add_argument("--status", default="", help="optional status filter")
+    sp_ghost_list.add_argument("--scope", choices=("user", "project", "session"), default="", help="optional scope filter")
+    sp_ghost_list.add_argument("--project", default="", help="project path for project scope filtering")
+    sp_ghost_list.add_argument("--session-id", default="", help="session id for session scope filtering")
+    sp_ghost_list.set_defaults(func=cmd_ghost)
+
+    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export Ghost inbox/events/signals")
+    sp_ghost_export.set_defaults(func=cmd_ghost)
+
+    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete Ghost inbox/events/signals")
+    sp_ghost_reset.add_argument("--yes", action="store_true")
+    sp_ghost_reset.set_defaults(func=cmd_ghost)
+
+    sp_ghost_delete = sub.add_parser("delete-scope", parents=[ghost_common], help="delete one Ghost memory scope")
+    sp_ghost_delete.add_argument("scope_name", choices=("user", "project", "session"))
+    sp_ghost_delete.add_argument("--project", default="", help="required for project scope")
+    sp_ghost_delete.add_argument("--session-id", default="", help="required for session scope")
+    sp_ghost_delete.add_argument("--yes", action="store_true")
+    sp_ghost_delete.set_defaults(func=cmd_ghost)
+
+    sp_ghost_enable = sub.add_parser("enable", parents=[ghost_common], help="enable future Ghost learning ingest")
+    sp_ghost_enable.set_defaults(func=cmd_ghost)
+
+    sp_ghost_disable = sub.add_parser("disable", parents=[ghost_common], help="disable future Ghost learning ingest")
+    sp_ghost_disable.set_defaults(func=cmd_ghost)
+
+
+def _main_ghost(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="codey ghost")
+    sub = ap.add_subparsers(dest="ghost_cmd", required=True)
+    _add_ghost_subcommands(sub)
+    args = ap.parse_args(argv)
+    return args.func(args)
+
+
+def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
 
     # Default: if no subcommand given, launch the UI.
-    if not argv or argv[0] not in {"ui", "chat", "agent", "-h", "--help"}:
+    if not argv or argv[0] not in {"ui", "chat", "agent", "ghost", "-h", "--help"}:
         argv = ["ui", *argv]
+
+    if argv[0] == "ghost":
+        return _main_ghost(argv[1:])
+
+    from codey.providers import DEFAULT_PROVIDER_ID, provider_ids
 
     ap = argparse.ArgumentParser(prog="codey")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -150,6 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     sp_agent.add_argument("--state-home", default="", help="local Codey state directory for JSONL mode")
     sp_agent.add_argument("task", nargs="+")
     sp_agent.set_defaults(func=cmd_agent)
+
+    sub.add_parser("ghost", help="inspect and control Ghost memory inbox")
 
     args = ap.parse_args(argv)
     return args.func(args)

@@ -318,6 +318,10 @@ provider disagreement
 
 ## 0.3.1 - Ghost Memory Inbox v1
 
+状态：已落地。`0.3.1` 新增本地 memory inbox、deterministic gate 和最小
+CLI 控制入口。它仍然不生成 Ghost Directive、不更新 Hebbian 权重、不注入 prompt、
+不接入默认 TaskRunner 日常 learning loop，也不改变 Chat / Coding / Research 行为。
+
 ### 做什么
 
 新增本地候选箱。所有学习信号先进入 inbox，不直接写永久状态。
@@ -325,7 +329,7 @@ provider disagreement
 新增模块：
 
 ```text
-codey/ghost/store.py
+codey/ghost/store.py      # 0.3.0 已有 signal audit log
 codey/ghost/inbox.py
 codey/ghost/gate.py
 tests/test_ghost_inbox.py
@@ -334,20 +338,35 @@ tests/test_ghost_inbox.py
 状态位置：
 
 ```text
+~/.codey/ghost/signals.jsonl
 ~/.codey/ghost/events.jsonl
 ~/.codey/ghost/inbox.json
-~/.codey/ghost/state.json
+~/.codey/ghost/settings.json
 ```
+
+`events.jsonl` 是 0.3.1 inbox/gate/control 事件真源；`inbox.json` 是当前
+projection，可以从 events 重建。`state.json` 不在 0.3.1 写入，保留给 0.3.2
+Hebbian State。
+事件日志按行数和字节数 compact；如果已有 events 超字节上限而 projection 又丢失，
+Codey 会保留 `events_too_large` warning，不会静默写出空 projection。
 
 控制入口必须在这一版就存在，即使 UI 延后：
 
 ```text
-disable ghost learning
-export ghost state
-reset all ghost state
-delete scope: user / project / session
-list pending candidates
+python -m codey ghost list
+python -m codey ghost export
+python -m codey ghost reset --yes
+python -m codey ghost delete-scope user --yes
+python -m codey ghost delete-scope project --project <path> --yes
+python -m codey ghost delete-scope session --session-id <id> --yes
+python -m codey ghost disable
+python -m codey ghost enable
 ```
+
+这些命令只操作本地 Ghost 状态，不连接 provider、不读项目源码、不调用工具。
+`export` 同时导出 inbox 和 raw `signals.jsonl` audit；`reset` / `delete-scope`
+同步清理 raw signal audit 与 inbox/events active store。`disable` 只阻止未来 ingest，
+不影响 list/export/delete。
 
 候选类型：
 
@@ -357,8 +376,10 @@ correction_candidate
 goal_candidate
 research_interest_candidate
 action_tendency_candidate
-boundary_candidate
 ```
+
+候选类型严格从 0.3.0 五类 signal 投影。`boundary_candidate` 不进 0.3.1，避免
+extractor 不产、inbox 却提前支持的语义漂移。
 
 候选状态：
 
@@ -387,9 +408,15 @@ has event/run/session ref
 第一版策略：
 
 - 高置信、明确 style preference 可以自动接受。
-- correction 默认保留 candidate，除非用户非常明确地说“记住，正确是...”。
+- correction 默认保留 candidate。0.3.1 不用中文/英文短语硬编码来判断“明确记住”，
+  后续如果需要自动接受 correction，应该由 extractor 提供结构化字段再让 gate 消费。
 - long-term goal 和 research interest 默认 candidate。
-- boundary preference 默认 candidate，避免把临时抱怨永久化。
+- action_tendency 默认 candidate。
+- 敏感内容、非法 scope、缺 provenance、未 grounded quote 等拒绝只写脱敏事件，不进入
+  `inbox.json` active projection。
+- `conflict_key` 优先消费未来可选的 `metadata.conflict_key` / `conflict_key_hint`，
+  否则使用稳定文本指纹；不靠本地语言词表猜 `tone`、`reply_structure` 或 workflow
+  子类。
 
 ### Scope 优先级
 
@@ -404,14 +431,15 @@ session > project > user
 - session correction 优先于 project/user correction。
 - project scope 只能在同一个项目根内生效，不能泄漏到其他项目。
 - user scope 是默认长期偏好，但不能覆盖明确的 session correction。
-- 删除 scope 必须只删除对应范围，不得顺手清空其他层。
+- 删除 scope 必须只删除对应范围，不得顺手清空其他层；删除和 reset 要物理清理 active
+  store 和 raw signal audit，不能只追加 tombstone 后继续保留目标 scope 正文。
 
 ### Schema / Migration
 
 长期状态必须有版本纪律：
 
 - 每个持久文件必须有 `schema_version`。
-- 不兼容 state 要 quarantine，不要静默读错。
+- 不兼容 projection/settings 要 quarantine，不要静默读错。
 - events 必须能重放生成 state projection。
 - 坏 JSON、半写文件、未来 schema 都有测试。
 - migration 失败不能影响 Codey 的非 Ghost 功能。
