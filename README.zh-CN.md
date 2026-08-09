@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.3.3-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.4-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.3`
+版本：`0.3.4`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -98,7 +98,10 @@ Codey 想解决的是一个很朴素的问题：
   planning。模型可见 prompt 文本由显式 allowlist 里的 typed memory field 生成，
   不渲染 raw label 或任意未知 slug，也不会暴露内部 `Ghost` / `Ghost Directive`
   命名、敏感 secret-like 文本或指令层级覆盖语言，也仍不进入 Project Writer、Research、
-  repair prompt、权限系统或自动学习循环
+  repair prompt 或权限系统。普通 Chat 现在会在回合结束后 best-effort 跑显式学习闭环：
+  extractor 使用 fresh provider tab，不污染当前聊天；raw signal audit 写成功后才进入
+  inbox/gate/Hebbian，下一轮 Chat 可以反映学到的本地上下文。`ghost disable` 会阻止未来
+  extractor 调用，同时保留 list/export/delete 控制
 - 网页输入框或发送按钮改版时，先做有边界的本地发现，仍不确定则让健康兄弟模型
   从脱敏候选中选择；真实发送成功后才能保存、晋级或回滚恢复包
 - 控件恢复仍不足时，只根据脱敏布尔事实恢复一条有边界的网页状态规则；不同网页的

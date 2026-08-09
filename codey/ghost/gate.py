@@ -12,6 +12,7 @@ from codey.ghost.schema import (
     contains_sensitive_signal_text,
     quote_is_grounded,
 )
+from codey.ghost.typed_fields import is_renderable_signal_typed_field
 
 
 MIN_CANDIDATE_CONFIDENCE = 0.45
@@ -106,7 +107,9 @@ class GhostMemoryGate:
             return GhostGateDecision(candidate_type, "rejected", "confidence_below_candidate_threshold")
 
         if kind == "style_preference" and confidence >= STYLE_AUTO_ACCEPT_CONFIDENCE:
-            return GhostGateDecision(candidate_type, "accepted", "high_confidence_style_preference")
+            if is_renderable_signal_typed_field(signal):
+                return GhostGateDecision(candidate_type, "accepted", "high_confidence_style_preference")
+            return GhostGateDecision(candidate_type, "candidate", "style_preference_requires_typed_field")
         if kind == "correction":
             return GhostGateDecision(candidate_type, "candidate", "correction_requires_review")
         return GhostGateDecision(candidate_type, "candidate", "requires_review")

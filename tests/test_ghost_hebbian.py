@@ -62,6 +62,12 @@ def _ingest_one(
     return created[0]
 
 
+def _accept(inbox: GhostInboxStore, candidate: GhostMemoryCandidate) -> GhostMemoryCandidate:
+    reviewed = inbox.review_candidate(candidate.id, "accept", reviewed_by="test")
+    assert reviewed is not None
+    return reviewed
+
+
 class GhostHebbianStoreTests(unittest.TestCase):
     def test_accepted_candidate_creates_weighted_node(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -379,8 +385,8 @@ class GhostHebbianStoreTests(unittest.TestCase):
                 run_id="rb",
                 project=project_b,
             )
-            hebbian.reinforce_candidate(node_a)
-            hebbian.reinforce_candidate(node_b)
+            hebbian.reinforce_candidate(_accept(inbox, node_a))
+            hebbian.reinforce_candidate(_accept(inbox, node_b))
 
             self.assertEqual(len(hebbian.list_nodes(scope="project", project=project_a)), 1)
             self.assertEqual(len(hebbian.list_nodes(scope="project", project=project_b)), 1)
@@ -447,7 +453,7 @@ class GhostHebbianStoreTests(unittest.TestCase):
                 for index in range(3)
             ]
             for candidate in related:
-                hebbian.reinforce_candidate(candidate)
+                hebbian.reinforce_candidate(_accept(inbox, candidate))
             main = _ingest_one(
                 inbox,
                 _signal(
@@ -461,7 +467,10 @@ class GhostHebbianStoreTests(unittest.TestCase):
             )
 
             with mock.patch("codey.ghost.hebbian.MAX_EDGE_OUT_DEGREE", 1):
-                hebbian.reinforce_candidate(main, related_candidates=tuple(related))
+                hebbian.reinforce_candidate(
+                    _accept(inbox, main),
+                    related_candidates=tuple(_accept(inbox, item) for item in related),
+                )
 
             self.assertEqual(len(hebbian.list_edges()), 1)
 
@@ -511,7 +520,7 @@ class GhostHebbianStoreTests(unittest.TestCase):
             inbox = GhostInboxStore(td)
             hebbian = GhostHebbianStore(td)
             old_candidate = _ingest_one(inbox, _signal(value_key="old"), run_id="r1", project=td)
-            hebbian.reinforce_candidate(old_candidate)
+            hebbian.reinforce_candidate(_accept(inbox, old_candidate))
             old_events = hebbian.events_path.read_text(encoding="utf-8")
             hebbian.state_path.unlink()
             new_candidate = _ingest_one(
@@ -522,7 +531,7 @@ class GhostHebbianStoreTests(unittest.TestCase):
             )
 
             with mock.patch("codey.ghost.hebbian.MAX_HEBBIAN_EVENTS_BYTES", 1):
-                result = hebbian.reinforce_candidate(new_candidate)
+                result = hebbian.reinforce_candidate(_accept(inbox, new_candidate))
 
             self.assertFalse(result.applied)
             self.assertEqual(result.reason, "events_read_blocked")

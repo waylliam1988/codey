@@ -1,5 +1,95 @@
 # Codey Test Report
 
+## 0.3.4 Ghost Learning Loop v1
+
+Codey 0.3.4 closes the first Ghost learning loop for normal Chat: after
+`task_done` is emitted, Codey can best-effort extract explicit learning signals
+in a fresh provider tab, write the raw signal audit first, ingest inbox/gate
+candidates, sync accepted typed style preferences into Hebbian state, and let
+the next Chat turn pick up the resulting neutral Local Context.
+
+Production changes:
+
+- New `codey/ghost/typed_fields.py` is the shared typed field contract for
+  extractor guidance, deterministic gate decisions, inbox conflict/value keys,
+  and directive rendering. The model-visible directive still renders only known
+  safe slot/value templates; unknown fields and protected topics do not become
+  free text.
+- New `codey/ghost/learning_loop.py` implements a synchronous post-turn,
+  best-effort flow. It is provider-injected from outside `codey/ghost`, uses
+  a fresh provider tab when available, writes `signals.jsonl` before inbox or
+  Hebbian state, closes the learning provider, and returns bounded diagnostics.
+- Normal Chat triggers learning only after the user-facing `task_done` event.
+  `planning_readonly` has code coverage but is not enabled by default. Project
+  Writer, Research, Reviewer, protocol repair prompts, tool permissions, and
+  command execution do not receive automatic learning.
+- `ghost disable` prevents post-turn extractor calls while keeping local
+  controls such as list/export/directive/reset/delete-scope available.
+- Auto-accept is stricter than the inbox-only release: high-confidence
+  `style_preference` signals must include grounded known typed metadata before
+  they can be accepted and reinforced. Unknown style fields remain candidates;
+  `correction` and `action_tendency` are not automatically reinforced.
+- Added `tests/manual/ghost_learning_loop_ab.py`, a one-provider-at-a-time live
+  A/B probe that checks fresh-tab extraction, learned directive context, answer
+  style change, negative no-signal behavior, and internal naming leakage.
+  The live harness opens the extractor in a temporary sibling tab from the same
+  provider browser context to avoid nested Playwright sync attachments while
+  still keeping the extractor prompt out of the user's current chat tab.
+
+Validation:
+
+```text
+python -B -m py_compile codey\ghost\typed_fields.py codey\ghost\directive.py codey\ghost\gate.py codey\ghost\inbox.py codey\ghost\signal_codec.py codey\ghost\learning_loop.py codey\task_runner.py codey\server.py
+# passed
+
+python -m pytest tests\test_ghost_learning_loop.py tests\test_ghost_inbox.py tests\test_ghost_hebbian.py tests\test_ghost_signal_extractor.py tests\test_ghost_directive.py tests\test_cli.py tests\test_server.py tests\test_agent.py tests\test_permission_profiles.py tests\test_architecture.py -q
+# 390 passed, 3 skipped, 1 pytest cache warning, 87 subtests passed in 172.81s
+
+python -m ruff check .
+# All checks passed!
+
+python -B tests\manual\ghost_learning_loop_ab.py --self-test
+# self-test ok
+
+python -m pytest -q
+# 1645 passed, 9 skipped, 1 pytest cache warning, 235 subtests passed in 328.25s
+```
+
+Manual live A/B, restarting the dedicated 9222 Edge CDP session between
+providers:
+
+```text
+python -B tests\manual\ghost_learning_loop_ab.py --provider deepseek --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_learning_loop_deepseek.json
+# ok: true
+python -B tests\manual\ghost_learning_loop_ab.py --provider mimo --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_learning_loop_mimo.json
+# ok: true
+python -B tests\manual\ghost_learning_loop_ab.py --provider qwen --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_learning_loop_qwen.json
+# ok: true
+python -B tests\manual\ghost_learning_loop_ab.py --provider glm --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_learning_loop_glm.json
+# ok: true
+python -B tests\manual\ghost_learning_loop_ab.py --provider stepfun --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_learning_loop_stepfun.json
+# ok: true
+```
+
+Live provider A/B result, one provider per restarted Edge/CDP session:
+
+- DeepSeek: passed. Extracted and accepted two typed style preferences,
+  reinforced two active Hebbian nodes, rendered `reply length = concise` and
+  `reply structure = answer first`, shortened the next answer, and did not leak
+  internal naming.
+- MiMo: passed with the same typed learning/directive/leak checks. It produced
+  one extra candidate row, but only the two renderable style preferences became
+  active Hebbian nodes.
+- Qwen: passed. The directive arm was much shorter than baseline and preserved
+  the learned `concise` / `answer first` context without internal naming
+  leakage.
+- GLM: passed after a scoped restart of the 9222 Edge CDP session. It learned
+  and reinforced the same two typed style preferences and shortened the next
+  answer.
+- StepFun: passed with the same typed learning/directive/leak checks. It also
+  produced one extra candidate row, but only the two safe typed preferences were
+  active.
+
 ## 0.3.3 Ghost Directive ContextSource v1
 
 Codey 0.3.3 renders confirmed local Hebbian memory into a short, bounded prompt

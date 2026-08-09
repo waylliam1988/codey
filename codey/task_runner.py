@@ -21,6 +21,12 @@ from codey.consensus import (
 from codey.events import RunEvent, render_run_event
 from codey.execution_evidence import ExecutionEvidence
 from codey.ghost.directive import build_ghost_directive
+from codey.ghost.learning_loop import (
+    DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT,
+    DEFAULT_GHOST_LEARNING_TIMEOUT,
+    GhostLearningLoop,
+    GhostLearningTurn,
+)
 from codey.handoff import (
     ConversationContext,
     ConversationSnapshot,
@@ -317,6 +323,8 @@ class TaskRunner:
         is_git_repository: Callable[[str | Path], bool] | None = None,
         review_fix_turns: int = 12,
         review_log_lines: int = 80,
+        ghost_learning_provider_factory: Callable[[str], Any] | None = None,
+        ghost_learning_modes: tuple[str, ...] = ("chat",),
     ) -> None:
         self.state = state
         self.agent_run = agent_run
@@ -335,6 +343,8 @@ class TaskRunner:
         self.is_git_repository = is_git_repository or (lambda _project: False)
         self.review_fix_turns = review_fix_turns
         self.review_log_lines = review_log_lines
+        self.ghost_learning_provider_factory = ghost_learning_provider_factory
+        self.ghost_learning_modes = tuple(str(item or "").strip() for item in ghost_learning_modes)
 
     def _managed_tool_fns(self, *, session_id: str, run_id: str) -> AgentToolFns | None:
         if self.managed_outputs is None:
@@ -370,6 +380,45 @@ class TaskRunner:
             ).text
         except Exception:
             return ""
+
+    def _maybe_run_ghost_learning(
+        self,
+        frame: _RunFrame | None,
+        event: dict[str, object],
+    ) -> None:
+        if frame is None or self.ghost_learning_provider_factory is None:
+            return
+        mode = str(event.get("mode") or "")
+        if mode not in self.ghost_learning_modes:
+            return
+        if str(event.get("stop_reason") or "") != "done":
+            return
+        try:
+            loop = GhostLearningLoop(
+                signal_store=getattr(self.state, "ghost_signals", None),
+                inbox_store=getattr(self.state, "ghost_inbox", None),
+                hebbian_store=getattr(self.state, "ghost_hebbian", None),
+            )
+            result = loop.learn_from_turn(
+                GhostLearningTurn(
+                    mode=mode,
+                    user_text=frame.request.task,
+                    assistant_text=str(event.get("summary") or ""),
+                    session_id=frame.request.session_id,
+                    run_id=frame.run_id,
+                    project=frame.project_text if mode != "chat" else "",
+                    provider_id=frame.provider_id,
+                ),
+                provider_factory=self.ghost_learning_provider_factory,
+                timeout=DEFAULT_GHOST_LEARNING_TIMEOUT,
+                new_chat_timeout=DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT,
+            )
+            self.state.emit(result.to_event(
+                run_id=frame.run_id,
+                session_id=frame.request.session_id,
+            ))
+        except Exception:
+            return
 
     def _event_with_projected_receipt(
         self,
@@ -829,6 +878,7 @@ class TaskRunner:
                 run_id=run_id,
             )
             state.finish_run(run_id, event)
+            self._maybe_run_ghost_learning(frame, event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             current_id = current_provider_id()
             state.set_provider_session(current_id, None)

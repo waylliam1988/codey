@@ -30,13 +30,16 @@ def _signal(
     confidence: float = 0.9,
     metadata: dict[str, object] | None = None,
 ) -> GhostSignal:
+    clean_metadata = metadata
+    if clean_metadata is None and kind == "style_preference":
+        clean_metadata = {"conflict_key": "reply_length", "value_key": "concise"}
     return GhostSignal(
         kind=kind,
         scope=scope,
         summary=summary,
         evidence_quote=quote,
         confidence=confidence,
-        metadata=metadata or {},
+        metadata=clean_metadata or {},
         source="test",
     )
 
@@ -88,6 +91,23 @@ class GhostInboxStoreTests(unittest.TestCase):
 
             self.assertEqual(created[0].status, "candidate")
             self.assertEqual(created[0].gate_reason, "correction_requires_review")
+
+    def test_high_confidence_style_without_renderable_typed_field_requires_review(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = GhostInboxStore(td)
+            created = store.ingest_signals(
+                _result(_signal(
+                    "style_preference",
+                    metadata={"conflict_key": "tool_use", "value_key": "delete_files"},
+                )),
+                session_id="s1",
+                run_id="r1",
+                project=td,
+                user_text="以后回答短一点",
+            )
+
+            self.assertEqual(created[0].status, "candidate")
+            self.assertEqual(created[0].gate_reason, "style_preference_requires_typed_field")
 
     def test_interest_goal_and_action_tendency_remain_candidates(self) -> None:
         cases = (
@@ -480,6 +500,7 @@ class GhostInboxStoreTests(unittest.TestCase):
                         "style_preference",
                         summary="Old user preference",
                         quote="以后回答短一点",
+                        metadata={"conflict_key": "reply_length", "value_key": "concise"},
                     )),
                     session_id="s1",
                     run_id="r-old",
@@ -491,6 +512,7 @@ class GhostInboxStoreTests(unittest.TestCase):
                         "style_preference",
                         summary="New user preference",
                         quote="以后回答先给结论",
+                        metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
                     )),
                     session_id="s1",
                     run_id="r-new",

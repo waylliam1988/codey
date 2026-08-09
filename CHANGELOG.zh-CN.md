@@ -4,6 +4,35 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.4 - Ghost Learning Loop v1
+
+- 新增 `codey/ghost/typed_fields.py`：把 signal extractor、deterministic gate
+  和 directive renderer 共用的 typed memory field allowlist 收到一个地方。
+  模型可见记忆文本仍只从已知 slot/value 模板生成；未知字段或 protected 字段
+  不会渲染。
+- 新增 `codey/ghost/learning_loop.py`：在普通 Chat 回合结束后 best-effort
+  跑显式学习闭环，顺序是 `GhostSignalExtractor` -> raw signal audit ->
+  inbox/gate -> Hebbian sync。Provider/browser 访问由外层注入，`codey/ghost`
+  仍不 import provider、browser、Research 或 tool runtime。
+- 普通 Chat 会在 `task_done` 发出后触发 learning loop。Extractor 使用 server
+  注入的 fresh provider tab，因此不会把 extractor JSON 合同输入到用户当前聊天页。
+  `planning_readonly` 有代码和测试覆盖，但默认不启用自动学习。
+- Auto-accept 更严格：高置信 `style_preference` 只有在包含 grounded 且可安全渲染的
+  已知 typed field 时才会 accepted。未知 style field 保持 candidate；
+  `correction` 和 `action_tendency` 不会自动 reinforced。
+- `ghost disable` 现在会阻止 post-turn extractor 调用；list/export、directive
+  preview、reset 和 delete-scope 等控制命令继续可用。
+- 新增 `tests/test_ghost_learning_loop.py` 和
+  `tests/manual/ghost_learning_loop_ab.py`。manual probe 一次只测一个网页 provider，
+  检查 fresh-tab extraction、directive 是否变化、回答风格是否变化、负面 no-signal
+  行为，以及是否泄露内部命名。
+- 串行 live A/B 已在 DeepSeek、MiMo、Qwen、GLM 和 StepFun 上通过；每个 provider
+  之间都重启了专用 Edge CDP 会话。五个 provider 都学到了 typed
+  `reply_length=concise` 和 `reply_structure=answer_first` 风格偏好，强化出两个
+  active Hebbian node，普通抱怨没有进入 accepted memory，模型回复也没有泄露内部命名。
+- 本版本仍不把 Ghost learning 接入 Project Writer、Research、Reviewer、
+  protocol repair 或权限系统，也不新增后台队列、UI 或 `torch` / `transformers`。
+
 ## 0.3.3 - Ghost Directive ContextSource v1
 
 - 新增 `codey/ghost/directive.py`：把 confirmed active Hebbian memory node 渲染成

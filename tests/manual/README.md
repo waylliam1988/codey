@@ -434,6 +434,49 @@ Run providers one at a time. A failure row means the provider/CDP path or the
 model response did not satisfy the narrow probe; it should not be hidden by
 retrying all providers in one batch.
 
+`ghost_learning_loop_ab.py` is a Ghost-only A/B probe for 0.3.4's post-turn
+learning loop. It runs against a temporary `state_home`, sends a baseline chat
+prompt, teaches an explicit typed style preference in a separate learning turn,
+uses a fresh provider tab for extraction, and then sends the same task with the
+newly learned neutral `Local Context`. It checks that the typed style preference
+is accepted/reinforced, that a plain complaint such as "you are wrong" does not
+become accepted memory, that the directive text changes, and that model replies
+do not leak internal Ghost naming. It does not edit files, scan a project, call
+Research, enable Project Writer learning, or change permissions.
+
+```powershell
+python -B tests\manual\ghost_learning_loop_ab.py --self-test
+python -B tests\manual\ghost_learning_loop_ab.py `
+  --provider deepseek `
+  --port 9222 `
+  --timeout 90 `
+  --new-chat-timeout 45 `
+  --output tests\manual\results\ghost_learning_loop_deepseek.json
+```
+
+Run one provider per browser process. Restart the 9222 Edge CDP session between
+providers so stale pages, half-attached Playwright sessions, and unfinished
+extractor tabs cannot contaminate the next result.
+
+The live harness opens the extractor in a temporary sibling tab from the same
+provider browser context. That keeps the extractor prompt out of the user's
+current chat tab and avoids nested Playwright sync attachments in the manual
+process; production still receives its provider factory from the server.
+
+2026-08-09 Ghost Learning Loop live A/B, run one provider per restarted Edge CDP
+session:
+
+- DeepSeek: passed. The learning loop accepted/reinforced `reply_length=concise`
+  and `reply_structure=answer_first`; the next answer was shorter and did not
+  leak internal naming.
+- MiMo: passed. It produced one extra candidate row, but only the two safe typed
+  style preferences became active Hebbian nodes.
+- Qwen: passed. The directive arm was much shorter than baseline and preserved
+  the typed local context without internal naming leakage.
+- GLM: passed after a scoped restart of the 9222 Edge CDP session.
+- StepFun: passed. It also produced one extra candidate row, but only the two
+  renderable typed preferences were active.
+
 2026-08-08 live A/B, run one provider per process:
 
 - DeepSeek: passed. Directive corrected the state backend to bounded JSON

@@ -1607,6 +1607,122 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertNotIn("Prefer concise answer-first replies.", prompt)
         self.assertEqual(done["mode"], "chat")
 
+    def test_chat_mode_runs_post_turn_ghost_learning_after_task_done(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            events = state.subscribe()
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.return_value = "normal reply"
+            learning_provider = mock.Mock()
+            learning_provider.send.return_value = (
+                '{"signals":[{'
+                '"kind":"style_preference",'
+                '"scope":"user",'
+                '"summary":"Prefer concise replies.",'
+                '"evidence_quote":"以后回答短一点",'
+                '"confidence":0.94,'
+                '"metadata":{"conflict_key":"reply_length","value_key":"concise"}'
+                '}]}'
+            )
+            state.ghost_learning_provider_factory = mock.Mock(return_value=learning_provider)
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+            ):
+                server._run_task(
+                    "session-learn",
+                    None,
+                    "以后回答短一点",
+                    8,
+                    False,
+                    "deepseek",
+                    "chat",
+                )
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+            assert state.ghost_hebbian is not None
+            from codey.ghost.directive import build_ghost_directive
+
+            directive_text = build_ghost_directive(state.ghost_hebbian).text
+
+        event_types = [event["type"] for event in emitted]
+        self.assertLess(event_types.index("task_done"), event_types.index("ghost_learning_done"))
+        learning_event = next(event for event in emitted if event["type"] == "ghost_learning_done")
+        self.assertTrue(learning_event["ok"])
+        self.assertEqual(learning_event["accepted_count"], 1)
+        self.assertEqual(learning_event["reinforced_count"], 1)
+        self.assertIn("User message:", learning_provider.send.call_args.args[0])
+        self.assertNotIn("User message:", provider.send.call_args.args[0])
+        self.assertIn("reply length = concise", directive_text)
+
+    def test_chat_ghost_disable_skips_post_turn_provider_call(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            assert state.ghost_inbox is not None
+            state.ghost_inbox.set_learning_enabled(False)
+            events = state.subscribe()
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.return_value = "normal reply"
+            state.ghost_learning_provider_factory = mock.Mock(return_value=mock.Mock())
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+            ):
+                server._run_task(
+                    "session-disabled",
+                    None,
+                    "以后回答短一点",
+                    8,
+                    False,
+                    "deepseek",
+                    "chat",
+                )
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+
+        state.ghost_learning_provider_factory.assert_not_called()
+        learning_event = next(event for event in emitted if event["type"] == "ghost_learning_done")
+        self.assertEqual(learning_event["skipped_reason"], "learning_disabled")
+
+    def test_planning_readonly_does_not_run_ghost_learning_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            state.ghost_learning_provider_factory = mock.Mock(return_value=mock.Mock())
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(
+                    server,
+                    "agent_run",
+                    return_value=RunResult("planned", "done", 1),
+                ),
+            ):
+                server._run_task(
+                    "session-plan-no-learn",
+                    td,
+                    "Plan only",
+                    8,
+                    False,
+                    "deepseek",
+                    "planning",
+                )
+
+        state.ghost_learning_provider_factory.assert_not_called()
+
     def test_chat_consensus_receives_ghost_directive_only_as_owner_prompt(self) -> None:
         self.consensus_mock.return_value = ConsensusResult("consensus reply", 1)
         with tempfile.TemporaryDirectory() as td:

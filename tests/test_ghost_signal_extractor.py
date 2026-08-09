@@ -65,6 +65,7 @@ class GhostSignalCodecTests(unittest.TestCase):
                 "summary": "Prefer answers that start with the conclusion.",
                 "evidence_quote": "以后请先给结论",
                 "confidence": 0.94,
+                "metadata": {"conflict_key": "reply_structure", "value_key": "answer_first"},
             }),
             user_text=user_text,
         )
@@ -72,6 +73,8 @@ class GhostSignalCodecTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(len(result.signals), 1)
         self.assertEqual(result.signals[0].kind, "style_preference")
+        self.assertEqual(result.signals[0].metadata["conflict_key"], "reply_structure")
+        self.assertEqual(result.signals[0].metadata["value_key"], "answer_first")
         self.assertTrue(quote_is_grounded(result.signals[0].evidence_quote, user_text))
 
     def test_parse_correction_signal(self) -> None:
@@ -197,6 +200,8 @@ class GhostSignalCodecTests(unittest.TestCase):
         self.assertIn("User message:", prompt)
         self.assertIn("do not quote this as evidence", prompt)
         self.assertIn("以后请先给结论", prompt)
+        self.assertIn("Allowed metadata conflict_key/value_key pairs", prompt)
+        self.assertIn("reply_length=concise", prompt)
 
     def test_model_visible_system_prompt_does_not_expose_internal_product_names(self) -> None:
         prompt = self.codec.system_prompt()

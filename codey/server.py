@@ -614,6 +614,7 @@ class State:
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
         self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
         self.ghost_signals = GhostSignalStore(state_home) if state_home else None
+        self.ghost_learning_provider_factory = None
         self.provider_supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
         )
@@ -1172,6 +1173,7 @@ class State:
 
 
 STATE = State(DEFAULT_STATE_HOME)
+STATE.ghost_learning_provider_factory = connect_fresh_provider_tab
 provider_controls.set_teach_handler(STATE.handle_control_teach)
 provider_controls.set_doctor_handler(STATE.handle_profile_doctor)
 provider_flow.set_recovery_handler(STATE.handle_flow_recovery)
@@ -1258,6 +1260,7 @@ def _run_task(
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
+        ghost_learning_provider_factory=getattr(STATE, "ghost_learning_provider_factory", None),
     )
     try:
         runner.run(TaskRequest(

@@ -2,7 +2,7 @@
 
 **Use web AI models as a local coding and research assistant.**
 
-[![Version](https://img.shields.io/badge/version-0.3.3-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.4-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
 
@@ -14,7 +14,7 @@ It is a local-first, low-cost AI coding and research workspace for people who wa
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.3`
+Version: `0.3.4`
 
 [Version history](CHANGELOG.md)
 
@@ -107,7 +107,12 @@ This is not about replacing professional tools. It is about making the first ste
   an explicit typed-field allowlist, not raw labels or arbitrary slugs, and does
   not expose internal Ghost/Ghost Directive naming, sensitive secret-like text,
   or instruction-hierarchy override language. It still does not enter Project
-  Writer, Research, repair prompts, permissions, or any automatic learning loop
+  Writer, Research, repair prompts, or permissions. Normal Chat now runs a
+  post-turn best-effort learning loop for explicit typed style preferences:
+  the extractor uses a fresh provider tab, writes the raw signal audit first,
+  then inbox/gate/Hebbian state, and the next Chat turn can reflect the learned
+  local context. `ghost disable` prevents future extractor calls while keeping
+  list/export/delete controls available
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
 - Recover one bounded web-chat state rule from boolean-only evidence when a

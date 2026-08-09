@@ -11,6 +11,7 @@ from codey.ghost.schema import (
     GhostSignalParseResult,
     signals_from_payload,
 )
+from codey.ghost.typed_fields import extractor_metadata_guidance
 from codey.text_budget import clip_middle
 
 
@@ -142,7 +143,7 @@ def extract_json_objects(text: str) -> list[dict[str, Any]]:
     return objects
 
 
-_SYSTEM_PROMPT = """\
+_SYSTEM_PROMPT = f"""\
 You extract explicit learning signals for a local assistant.
 
 Your job is narrow: decide whether the user's current message contains an
@@ -161,11 +162,13 @@ Rules:
   correction, goal, research interest, or future action tendency.
 - evidence_quote must be a short exact quote from the user message, not from
   assistant context.
-- If there is no explicit signal, return {"signals":[]}.
+- If there is no explicit signal, return {{"signals":[]}}.
 - Use correction only when the user explicitly says the assistant was wrong, mistaken,
   or gives a replacement truth, such as "你刚才说错了，正确是...".
 - Use style_preference for communication format, tone, length, ordering, or
   wording preferences, such as "先给结论", "短一点", or "不要营销味".
+- If one style_preference message contains multiple allowed metadata fields,
+  return one signal per field, such as one for "shorter" and one for "answer first".
 - Use action_tendency for workflow/process behavior, such as searching,
   verifying evidence, reading files, testing, or checking sources before future
   answers or actions.
@@ -174,7 +177,8 @@ Rules:
 - Return exactly one JSON object and no prose.
 - Return at most five signals.
 - scope must be one of: user, project, session.
+- {extractor_metadata_guidance()}
 
 JSON shape:
-{"signals":[{"kind":"style_preference","scope":"user","summary":"...","evidence_quote":"...","confidence":0.0}]}
+{{"signals":[{{"kind":"style_preference","scope":"user","summary":"...","evidence_quote":"...","confidence":0.0,"metadata":{{"conflict_key":"reply_length","value_key":"concise"}}}}]}}
 """

@@ -4,6 +4,40 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.4 - Ghost Learning Loop v1
+
+- Added `codey/ghost/typed_fields.py` as the shared typed memory-field
+  allowlist used by the signal extractor contract, deterministic gate, and
+  directive renderer. Model-visible memory text remains generated from known
+  slot/value templates; unknown or protected fields stay non-renderable.
+- Added `codey/ghost/learning_loop.py`, a post-turn best-effort learning flow
+  that runs `GhostSignalExtractor`, writes the raw signal audit first, ingests
+  into the inbox/gate, then syncs accepted candidates into Hebbian state.
+  Provider/browser access is injected from outside the Ghost package, so
+  `codey/ghost` still does not import provider, browser, Research, or tool
+  runtime modules.
+- Normal Chat now triggers the learning loop after `task_done` is emitted.
+  The extractor uses a fresh provider tab through the server-injected factory,
+  so it does not type the extractor JSON contract into the user's current chat.
+  `planning_readonly` has code coverage but is not enabled for automatic
+  learning by default.
+- Auto-accept is stricter: high-confidence `style_preference` signals are
+  accepted only when they include a grounded, known typed field that can render
+  safely in the next directive. Unknown style fields remain candidates, and
+  `correction` / `action_tendency` are not automatically reinforced.
+- `ghost disable` now prevents post-turn extractor calls while list/export,
+  directive preview, reset, and delete-scope controls continue to work.
+- Added `tests/test_ghost_learning_loop.py` and
+  `tests/manual/ghost_learning_loop_ab.py`. The manual probe runs one web
+  provider at a time and checks fresh-tab extraction, directive change, answer
+  style change, negative no-signal behavior, and internal naming leakage.
+- Live A/B passed one provider at a time on DeepSeek, MiMo, Qwen, GLM, and
+  StepFun after restarting the dedicated Edge CDP session between providers.
+  Each provider learned the typed `reply_length=concise` and
+  `reply_structure=answer_first` style preferences, reinforced two active
+  Hebbian nodes, kept plain complaints out of accepted memory, and avoided
+  internal naming leakage in model replies.
+
 ## 0.3.3 - Ghost Directive ContextSource v1
 
 - Added `codey/ghost/directive.py`, a pure local renderer that turns confirmed

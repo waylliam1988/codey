@@ -26,6 +26,7 @@ from codey.ghost.schema import (
     GhostSignalParseResult,
     clip_signal_text,
 )
+from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
 from codey.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
 
@@ -826,25 +827,11 @@ def value_key_for_signal(signal: GhostSignal) -> str:
 
 
 def _metadata_conflict_key(metadata: object) -> str:
-    if not isinstance(metadata, dict):
-        return ""
-    raw = metadata.get("conflict_key") or metadata.get("conflict_key_hint")
-    text = str(raw or "").strip().casefold()
-    if not text:
-        return ""
-    tokens = _TOKEN_RE.findall(text.replace("-", "_"))
-    return "_".join(tokens[:8])[:120]
+    return metadata_conflict_key(metadata)
 
 
 def _metadata_value_key(metadata: object) -> str:
-    if not isinstance(metadata, dict):
-        return ""
-    raw = metadata.get("value_key") or metadata.get("value_key_hint")
-    text = str(raw or "").strip().casefold()
-    if not text:
-        return ""
-    tokens = _TOKEN_RE.findall(text.replace("-", "_"))
-    return "_".join(tokens[:8])[:120]
+    return metadata_value_key(metadata)
 
 
 def _legacy_value_key(summary: object, evidence_quote: object) -> str:

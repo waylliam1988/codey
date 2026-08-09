@@ -740,6 +740,11 @@ Research 和 Project Writer 路径确认不接 directive
 
 ## 0.3.4 - Ghost Learning Loop v1
 
+状态：已落地。`0.3.4` 打通第一条克制闭环：普通 Chat 回合结束后，
+Codey 可以从显式学习信号中更新 inbox / Hebbian state，让下一轮 Chat 的
+Local Context 发生变化。`planning_readonly` 保留代码路径和测试覆盖，但默认不启用
+自动学习。
+
 ### 做什么
 
 打通第一条闭环：
@@ -754,6 +759,16 @@ user input
 ```
 
 这一步开始让 Ghost 在日常 Chat 中真实学习，但仍然只学习通过 gate 的显式信号。
+
+实际落地边界：
+
+- learning loop 在 `task_done` 之后运行，失败 fail-open，不阻塞用户看到最终回答。
+- extractor 使用 fresh provider tab，不污染用户当前聊天页。
+- raw signal audit 写入成功后，才允许进入 inbox/gate/Hebbian。
+- `ghost disable` 会阻止未来 extractor 调用，但不影响 list/export/delete/reset。
+- 只有 grounded 且命中 typed field allowlist 的高置信 `style_preference` 可自动 accepted。
+- `correction`、`action_tendency` 和未知 typed field 不自动 reinforced。
+- 不接 Project Writer、Research、Reviewer、protocol repair、权限系统或后台队列。
 
 ### 验收
 
@@ -1109,6 +1124,7 @@ PermissionProfile 仍然是执行边界
 ```text
 tests/manual/ghost_signal_extractor_ab.py
 tests/manual/ghost_directive_ab.py
+tests/manual/ghost_learning_loop_ab.py
 tests/manual/ghost_router_ab.py
 tests/manual/ghost_work_queue_ab.py
 tests/manual/research_interest_queue_ab.py
