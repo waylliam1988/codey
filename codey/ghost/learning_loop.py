@@ -121,10 +121,18 @@ class GhostLearningLoop:
                     signal_audit_written=False,
                     diagnostics=diagnostics,
                 )
+            if not result.ok:
+                return GhostLearningResult(
+                    False,
+                    skipped_reason="extractor_failed",
+                    extracted_count=len(result.signals),
+                    signal_audit_written=True,
+                    diagnostics=diagnostics,
+                )
             if not result.signals:
                 return GhostLearningResult(
-                    bool(result.ok),
-                    skipped_reason="no_signal" if result.ok else "extractor_failed",
+                    True,
+                    skipped_reason="no_signal",
                     extracted_count=0,
                     signal_audit_written=True,
                     diagnostics=diagnostics,

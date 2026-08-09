@@ -109,6 +109,26 @@ class GhostInboxStoreTests(unittest.TestCase):
             self.assertEqual(created[0].status, "candidate")
             self.assertEqual(created[0].gate_reason, "style_preference_requires_typed_field")
 
+    def test_high_confidence_style_with_disallowed_typed_pair_requires_review(self) -> None:
+        cases = (
+            {"conflict_key": "format", "value_key": "concise"},
+            {"conflict_key": "tone", "value_key": "table"},
+            {"conflict_key": "freshness", "value_key": "detailed"},
+        )
+        for metadata in cases:
+            with self.subTest(metadata=metadata), tempfile.TemporaryDirectory() as td:
+                store = GhostInboxStore(td)
+                created = store.ingest_signals(
+                    _result(_signal("style_preference", metadata=metadata)),
+                    session_id="s1",
+                    run_id="r1",
+                    project=td,
+                    user_text="以后回答短一点",
+                )
+
+                self.assertEqual(created[0].status, "candidate")
+                self.assertEqual(created[0].gate_reason, "style_preference_requires_typed_field")
+
     def test_interest_goal_and_action_tendency_remain_candidates(self) -> None:
         cases = (
             ("research_interest", "research_interest_candidate"),
@@ -275,9 +295,9 @@ class GhostInboxStoreTests(unittest.TestCase):
             store.ingest_signals(
                 _result(_signal(
                     "style_preference",
-                    summary="Prefer answer first.",
-                    quote="以后先给结论",
-                    metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
+                    summary="Prefer concise replies.",
+                    quote="以后回答短一点",
+                    metadata={"conflict_key": "reply_length", "value_key": "concise"},
                 )),
                 session_id="s1",
                 run_id="r1",
@@ -288,7 +308,7 @@ class GhostInboxStoreTests(unittest.TestCase):
                     "style_preference",
                     summary="Prefer detailed reasoning.",
                     quote="以后展开细节",
-                    metadata={"conflict_key": "reply_structure", "value_key": "detailed"},
+                    metadata={"conflict_key": "reply_length", "value_key": "detailed"},
                 )),
                 session_id="s1",
                 run_id="r2",
@@ -297,7 +317,7 @@ class GhostInboxStoreTests(unittest.TestCase):
 
             rows = store.list_candidates()
             self.assertEqual(len(rows), 2)
-            self.assertEqual({row.value_key for row in rows}, {"answer_first", "detailed"})
+            self.assertEqual({row.value_key for row in rows}, {"concise", "detailed"})
             self.assertEqual({row.status for row in rows}, {"accepted"})
 
     def test_review_candidate_accept_supersedes_conflicting_accepted_value(self) -> None:
@@ -306,9 +326,9 @@ class GhostInboxStoreTests(unittest.TestCase):
             first = store.ingest_signals(
                 _result(_signal(
                     "style_preference",
-                    summary="Prefer answer first.",
-                    quote="以后先给结论",
-                    metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
+                    summary="Prefer concise replies.",
+                    quote="以后回答短一点",
+                    metadata={"conflict_key": "reply_length", "value_key": "concise"},
                 )),
                 session_id="s1",
                 run_id="r1",
@@ -319,7 +339,7 @@ class GhostInboxStoreTests(unittest.TestCase):
                     "style_preference",
                     summary="Prefer detailed reasoning.",
                     quote="以后展开细节",
-                    metadata={"conflict_key": "reply_structure", "value_key": "detailed"},
+                    metadata={"conflict_key": "reply_length", "value_key": "detailed"},
                 )),
                 session_id="s1",
                 run_id="r2",
@@ -343,9 +363,9 @@ class GhostInboxStoreTests(unittest.TestCase):
             store = GhostInboxStore(td)
             first_signal = _signal(
                 "style_preference",
-                summary="Prefer answer first.",
-                quote="以后先给结论",
-                metadata={"conflict_key": "reply_structure", "value_key": "answer_first"},
+                summary="Prefer concise replies.",
+                quote="以后回答短一点",
+                metadata={"conflict_key": "reply_length", "value_key": "concise"},
             )
             first = store.ingest_signals(
                 _result(first_signal),
@@ -358,7 +378,7 @@ class GhostInboxStoreTests(unittest.TestCase):
                     "style_preference",
                     summary="Prefer detailed reasoning.",
                     quote="以后展开细节",
-                    metadata={"conflict_key": "reply_structure", "value_key": "detailed"},
+                    metadata={"conflict_key": "reply_length", "value_key": "detailed"},
                 )),
                 session_id="s1",
                 run_id="r2",

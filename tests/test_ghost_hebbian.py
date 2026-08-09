@@ -203,12 +203,23 @@ class GhostHebbianStoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             hebbian = GhostHebbianStore(td)
-            first = _ingest_one(inbox, _signal(value_key="answer_first"), run_id="r1", project=td)
+            first = _ingest_one(
+                inbox,
+                _signal(
+                    summary="Prefer concise replies.",
+                    quote="以后回答短一点",
+                    conflict_key="reply_length",
+                    value_key="concise",
+                ),
+                run_id="r1",
+                project=td,
+            )
             second = _ingest_one(
                 inbox,
                 _signal(
                     summary="Prefer detailed replies.",
                     quote="以后展开细节",
+                    conflict_key="reply_length",
                     value_key="detailed",
                 ),
                 run_id="r2",
@@ -219,20 +230,31 @@ class GhostHebbianStoreTests(unittest.TestCase):
             hebbian.reinforce_candidate(second)
             nodes = hebbian.list_nodes(status="active")
 
-            self.assertEqual({node.value_key for node in nodes}, {"answer_first", "detailed"})
+            self.assertEqual({node.value_key for node in nodes}, {"concise", "detailed"})
             self.assertEqual({node.status for node in nodes}, {"active"})
 
     def test_manual_accept_new_value_supersedes_old_active_node(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)
             hebbian = GhostHebbianStore(td)
-            first = _ingest_one(inbox, _signal(value_key="answer_first"), run_id="r1", project=td)
+            first = _ingest_one(
+                inbox,
+                _signal(
+                    summary="Prefer concise replies.",
+                    quote="以后回答短一点",
+                    conflict_key="reply_length",
+                    value_key="concise",
+                ),
+                run_id="r1",
+                project=td,
+            )
             second = _ingest_one(
                 inbox,
                 _signal(
                     summary="Prefer detailed replies.",
                     quote="以后展开细节",
                     confidence=0.6,
+                    conflict_key="reply_length",
                     value_key="detailed",
                 ),
                 run_id="r2",
@@ -247,8 +269,8 @@ class GhostHebbianStoreTests(unittest.TestCase):
 
             self.assertTrue(result.applied)
             self.assertEqual(nodes["detailed"].status, "active")
-            self.assertEqual(nodes["answer_first"].status, "superseded")
-            self.assertEqual(nodes["answer_first"].superseded_by, nodes["detailed"].id)
+            self.assertEqual(nodes["concise"].status, "superseded")
+            self.assertEqual(nodes["concise"].superseded_by, nodes["detailed"].id)
 
     def test_remove_candidate_deletes_node_and_connected_edges_from_active_log(self) -> None:
         with tempfile.TemporaryDirectory() as td:

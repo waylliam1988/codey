@@ -29,6 +29,15 @@ Production changes:
   `style_preference` signals must include grounded known typed metadata before
   they can be accepted and reinforced. Unknown style fields remain candidates;
   `correction` and `action_tendency` are not automatically reinforced.
+- Post-review hardening keeps automatic learning out of inbox/Hebbian when the
+  extractor result has diagnostics, even if schema parsing recovered partial
+  valid signals. The raw `signals.jsonl` audit row is still written so the
+  failure is inspectable.
+- Typed field safety is pair-based: directive rendering and gate auto-accept
+  require an explicit kind/slot/value entry such as
+  `style_preference/reply_length/concise`. Known slots and known values are not
+  cross-combined, so `format=concise`, `tone=table`, and hidden aliases like
+  `style_preference:length` stay non-renderable and cannot be auto-accepted.
 - Added `tests/manual/ghost_learning_loop_ab.py`, a one-provider-at-a-time live
   A/B probe that checks fresh-tab extraction, learned directive context, answer
   style change, negative no-signal behavior, and internal naming leakage.
@@ -42,8 +51,8 @@ Validation:
 python -B -m py_compile codey\ghost\typed_fields.py codey\ghost\directive.py codey\ghost\gate.py codey\ghost\inbox.py codey\ghost\signal_codec.py codey\ghost\learning_loop.py codey\task_runner.py codey\server.py
 # passed
 
-python -m pytest tests\test_ghost_learning_loop.py tests\test_ghost_inbox.py tests\test_ghost_hebbian.py tests\test_ghost_signal_extractor.py tests\test_ghost_directive.py tests\test_cli.py tests\test_server.py tests\test_agent.py tests\test_permission_profiles.py tests\test_architecture.py -q
-# 390 passed, 3 skipped, 1 pytest cache warning, 87 subtests passed in 172.81s
+python -m pytest tests\test_ghost_learning_loop.py tests\test_ghost_directive.py tests\test_ghost_inbox.py tests\test_ghost_hebbian.py tests\test_ghost_signal_extractor.py tests\test_cli.py tests\test_server.py tests\test_architecture.py -q
+# 275 passed, 1 skipped, 1 pytest cache warning, 83 subtests passed in 103.17s
 
 python -m ruff check .
 # All checks passed!
@@ -52,7 +61,7 @@ python -B tests\manual\ghost_learning_loop_ab.py --self-test
 # self-test ok
 
 python -m pytest -q
-# 1645 passed, 9 skipped, 1 pytest cache warning, 235 subtests passed in 328.25s
+# 1648 passed, 9 skipped, 1 pytest cache warning, 241 subtests passed in 357.15s
 ```
 
 Manual live A/B, restarting the dedicated 9222 Edge CDP session between

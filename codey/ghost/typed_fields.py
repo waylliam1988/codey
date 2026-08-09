@@ -13,7 +13,6 @@ SLOT_PHRASES = {
     "ghost": "local memory",
     "ghost_state_backend": "local memory state backend",
     "language": "language",
-    "length": "reply length",
     "memory_state": "local memory state",
     "detail_level": "detail level",
     "reply_length": "reply length",
@@ -40,6 +39,27 @@ VALUE_PHRASES = {
     "table": "table",
     "technical": "technical",
 }
+ALLOWED_TYPED_FIELD_PAIRS = frozenset({
+    ("correction", "ghost_state_backend", "json_projection_jsonl"),
+    ("correction", "memory_state", "jsonl"),
+    ("correction", "state_backend", "jsonl"),
+    ("correction", "state_backend", "json_projection_jsonl"),
+    ("correction", "state_store", "json"),
+    ("correction", "state_store", "jsonl"),
+    ("long_term_goal", "ghost", "auditable"),
+    ("long_term_goal", "memory_state", "auditable"),
+    ("style_preference", "format", "bullets"),
+    ("style_preference", "format", "markdown"),
+    ("style_preference", "format", "table"),
+    ("style_preference", "freshness", "fresh"),
+    ("style_preference", "reply_length", "brief"),
+    ("style_preference", "reply_length", "concise"),
+    ("style_preference", "reply_length", "detailed"),
+    ("style_preference", "reply_structure", "answer_first"),
+    ("style_preference", "reply_structure", "answer_first_concise"),
+    ("style_preference", "tone", "direct"),
+    ("style_preference", "tone", "technical"),
+})
 
 _DANGEROUS_DIRECTIVE_RE = re.compile(
     r"(?i)\b("
@@ -156,6 +176,8 @@ def render_typed_field(
     *,
     max_chars: int = 136,
 ) -> str:
+    if not typed_field_pair_allowed(kind, conflict_key, value_key):
+        return ""
     slot = slot_phrase(kind, conflict_key)
     value = value_phrase(value_key)
     if not slot or not value:
@@ -168,6 +190,11 @@ def render_typed_field(
 
 def is_renderable_typed_field(kind: object, conflict_key: object, value_key: object) -> bool:
     return bool(render_typed_field(kind, conflict_key, value_key))
+
+
+def typed_field_pair_allowed(kind: object, conflict_key: object, value_key: object) -> bool:
+    pair = (safe_slug(kind), slot_key(kind, conflict_key), safe_slug(value_key))
+    return pair in ALLOWED_TYPED_FIELD_PAIRS
 
 
 def is_renderable_signal_typed_field(signal: object) -> bool:
@@ -279,6 +306,7 @@ def extractor_metadata_guidance() -> str:
 
 
 __all__ = [
+    "ALLOWED_TYPED_FIELD_PAIRS",
     "SLOT_PHRASES",
     "VALUE_PHRASES",
     "dangerous_text",
@@ -292,5 +320,6 @@ __all__ = [
     "safe_slug",
     "slot_key",
     "slot_phrase",
+    "typed_field_pair_allowed",
     "value_phrase",
 ]

@@ -13,6 +13,7 @@ from codey.ghost.directive import (
 from codey.ghost.hebbian import GhostNode
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+from codey.ghost.typed_fields import is_renderable_typed_field, render_typed_field
 
 
 FRESH_TS = "2999-01-01T00:00:00Z"
@@ -85,6 +86,21 @@ class GhostDirectiveTests(unittest.TestCase):
         self.assertEqual(directive.text, "")
         self.assertEqual(directive.selected_nodes, ())
 
+    def test_typed_fields_require_allowed_kind_slot_value_pair(self) -> None:
+        self.assertEqual(
+            render_typed_field("style_preference", "style_preference:reply_length", "concise"),
+            "reply length = concise",
+        )
+        blocked_pairs = (
+            ("style_preference", "style_preference:format", "concise"),
+            ("style_preference", "style_preference:tone", "table"),
+            ("style_preference", "style_preference:freshness", "detailed"),
+        )
+        for kind, conflict_key, value_key in blocked_pairs:
+            with self.subTest(conflict_key=conflict_key, value_key=value_key):
+                self.assertFalse(is_renderable_typed_field(kind, conflict_key, value_key))
+                self.assertEqual(render_typed_field(kind, conflict_key, value_key), "")
+
     def test_renders_active_nodes_by_kind_priority(self) -> None:
         directive = render_ghost_directive((
             _node(node_id="style", kind="style_preference", label="Prefer concise replies."),
@@ -132,16 +148,16 @@ class GhostDirectiveTests(unittest.TestCase):
                 _node(
                     node_id="user",
                     label="Prefer user-level style.",
-                    conflict_key="style_preference:tone",
-                    value_key="direct",
+                    conflict_key="style_preference:reply_length",
+                    value_key="detailed",
                     scope="user",
                     weight=0.8,
                 ),
                 _node(
                     node_id="project",
                     label="Prefer project-level style.",
-                    conflict_key="style_preference:tone",
-                    value_key="technical",
+                    conflict_key="style_preference:reply_length",
+                    value_key="concise",
                     scope="project",
                     scope_ref=project_ref,
                     weight=0.6,
@@ -149,7 +165,7 @@ class GhostDirectiveTests(unittest.TestCase):
                 _node(
                     node_id="session",
                     label="Prefer session-level style.",
-                    conflict_key="style_preference:tone",
+                    conflict_key="style_preference:reply_length",
                     value_key="brief",
                     scope="session",
                     scope_ref="s1",
@@ -169,11 +185,11 @@ class GhostDirectiveTests(unittest.TestCase):
             session_id="s1",
         )
 
-        self.assertIn("tone = brief", directive.text)
+        self.assertIn("reply length = brief", directive.text)
         self.assertNotIn("Prefer project-level style.", directive.text)
         self.assertNotIn("Prefer user-level style.", directive.text)
-        self.assertNotIn("tone = technical", directive.text)
-        self.assertNotIn("tone = direct", directive.text)
+        self.assertNotIn("reply length = concise", directive.text)
+        self.assertNotIn("reply length = detailed", directive.text)
         self.assertNotIn("Other project should not appear.", directive.text)
         self.assertIn("lower_scope_conflict_skipped", " ".join(directive.warnings))
 
@@ -219,22 +235,46 @@ class GhostDirectiveTests(unittest.TestCase):
 
     def test_competing_values_with_small_gap_are_skipped(self) -> None:
         directive = render_ghost_directive((
-            _node(node_id="brief", label="Prefer brief replies.", value_key="brief", weight=0.4),
-            _node(node_id="detailed", label="Prefer detailed replies.", value_key="detailed", weight=0.37),
+            _node(
+                node_id="brief",
+                label="Prefer brief replies.",
+                conflict_key="style_preference:reply_length",
+                value_key="brief",
+                weight=0.4,
+            ),
+            _node(
+                node_id="detailed",
+                label="Prefer detailed replies.",
+                conflict_key="style_preference:reply_length",
+                value_key="detailed",
+                weight=0.37,
+            ),
         ))
 
         self.assertEqual(directive.text, "")
-        self.assertIn("competing_values_skipped:user:style_preference:reply_structure", directive.warnings)
+        self.assertIn("competing_values_skipped:user:style_preference:reply_length", directive.warnings)
 
     def test_competing_values_with_clear_gap_select_top(self) -> None:
         directive = render_ghost_directive((
-            _node(node_id="brief", label="Prefer brief replies.", value_key="brief", weight=0.46),
-            _node(node_id="detailed", label="Prefer detailed replies.", value_key="detailed", weight=0.3),
+            _node(
+                node_id="brief",
+                label="Prefer brief replies.",
+                conflict_key="style_preference:reply_length",
+                value_key="brief",
+                weight=0.46,
+            ),
+            _node(
+                node_id="detailed",
+                label="Prefer detailed replies.",
+                conflict_key="style_preference:reply_length",
+                value_key="detailed",
+                weight=0.3,
+            ),
         ))
 
-        self.assertIn("reply structure = brief", directive.text)
+        self.assertIn("reply length = brief", directive.text)
         self.assertNotIn("Prefer detailed replies.", directive.text)
-        self.assertNotIn("reply structure = detailed", directive.text)
+        self.assertNotIn("reply length = detailed", directive.text)
 
     def test_same_priority_orders_newer_memory_first(self) -> None:
         directive = render_ghost_directive((
@@ -249,7 +289,7 @@ class GhostDirectiveTests(unittest.TestCase):
             _node(
                 node_id="new",
                 label="Prefer new formatting.",
-                conflict_key="style_preference:length",
+                conflict_key="style_preference:reply_length",
                 value_key="concise",
                 weight=0.3,
                 updated_at="2026-08-08T00:00:00Z",
@@ -318,7 +358,7 @@ class GhostDirectiveTests(unittest.TestCase):
             _node(
                 node_id="good",
                 label="Prefer concise replies.",
-                conflict_key="style_preference:length",
+                conflict_key="style_preference:reply_length",
                 value_key="concise",
             ),
         ))
@@ -368,7 +408,7 @@ class GhostDirectiveTests(unittest.TestCase):
                     _node(
                         node_id="good",
                         label="Prefer concise replies.",
-                        conflict_key="style_preference:length",
+                        conflict_key="style_preference:reply_length",
                         value_key="concise",
                     ),
                 ))
@@ -383,7 +423,6 @@ class GhostDirectiveTests(unittest.TestCase):
             "Prefer memory notes over system diagrams.",
             "Prefer local-memory cache before current-request processing.",
             "Prefer memory-safe code over system calls.",
-            "Prefer memory usage over system throughput.",
         )
         directive = render_ghost_directive(
             tuple(
@@ -391,11 +430,10 @@ class GhostDirectiveTests(unittest.TestCase):
                     node_id=f"safe-{idx}",
                     label=label,
                     conflict_key=(
-                        "style_preference:length",
+                        "style_preference:reply_length",
                         "style_preference:format",
                         "style_preference:reply_structure",
                         "style_preference:tone",
-                        "style_preference:language",
                         "style_preference:freshness",
                     )[idx],
                     value_key=(
@@ -403,7 +441,6 @@ class GhostDirectiveTests(unittest.TestCase):
                         "table",
                         "answer_first",
                         "direct",
-                        "technical",
                         "fresh",
                     )[idx],
                 )
@@ -476,7 +513,7 @@ class GhostDirectiveTests(unittest.TestCase):
             _node(
                 node_id="good",
                 label="Prefer concise replies.",
-                conflict_key="style_preference:length",
+                conflict_key="style_preference:reply_length",
                 value_key="concise",
             ),
         ))
@@ -501,10 +538,7 @@ class GhostDirectiveTests(unittest.TestCase):
             ("style_preference:reply_length", "concise"),
             ("style_preference:format", "table"),
             ("style_preference:tone", "direct"),
-            ("style_preference:language", "technical"),
             ("style_preference:freshness", "fresh"),
-            ("style_preference:detail_level", "detailed"),
-            ("style_preference:reply_order", "brief"),
         )
         style_nodes = tuple(
             _node(
@@ -518,21 +552,22 @@ class GhostDirectiveTests(unittest.TestCase):
             )
             for idx, (conflict_key, value_key) in enumerate(style_pairs)
         )
-        directive = render_ghost_directive((
-            *style_nodes,
-            _node(
-                node_id="correction",
-                kind="correction",
-                label="The state backend is JSONL audit.",
-                conflict_key="correction:state_backend",
-                value_key="jsonl",
-                scope="user",
-                weight=0.2,
-            ),
-        ), session_id="s1")
+        with mock.patch("codey.ghost.directive.MAX_DIRECTIVE_ITEMS", 2):
+            directive = render_ghost_directive((
+                *style_nodes,
+                _node(
+                    node_id="correction",
+                    kind="correction",
+                    label="The state backend is JSONL audit.",
+                    conflict_key="correction:state_backend",
+                    value_key="jsonl",
+                    scope="user",
+                    weight=0.2,
+                ),
+            ), session_id="s1")
 
         self.assertIn("- Correction: state backend = JSONL.", directive.text)
-        self.assertEqual(len(directive.selected_nodes), 8)
+        self.assertEqual(len(directive.selected_nodes), 2)
 
     def test_preview_decay_excludes_stale_high_weight_node_without_writing(self) -> None:
         with mock.patch("codey.ghost.directive._now", return_value="2026-08-08T00:00:00Z"):

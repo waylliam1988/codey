@@ -30,6 +30,11 @@
   之间都重启了专用 Edge CDP 会话。五个 provider 都学到了 typed
   `reply_length=concise` 和 `reply_structure=answer_first` 风格偏好，强化出两个
   active Hebbian node，普通抱怨没有进入 accepted memory，模型回复也没有泄露内部命名。
+- post-review hardening：如果 extractor 返回 diagnostics，即使 schema parser 恢复出
+  部分合法 signal，也只写 raw signal audit，不进入 inbox/Hebbian 自动学习。
+- typed field 渲染和 auto-accept 现在必须命中明确的 kind/slot/value pair，不再把已知
+  slot 和已知 value 任意交叉组合。隐藏 alias `style_preference:length` 已删除，
+  自动学习合同和 extractor guidance 保持一致。
 - 本版本仍不把 Ghost learning 接入 Project Writer、Research、Reviewer、
   protocol repair 或权限系统，也不新增后台队列、UI 或 `torch` / `transformers`。
 

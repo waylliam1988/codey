@@ -37,6 +37,13 @@ This file records Codey's release history. The newest release appears first.
   `reply_structure=answer_first` style preferences, reinforced two active
   Hebbian nodes, kept plain complaints out of accepted memory, and avoided
   internal naming leakage in model replies.
+- Post-review hardening keeps automatic learning out of inbox/Hebbian when the
+  extractor returns diagnostics, even if the parser recovered partial valid
+  signals. The raw signal audit is still written for review.
+- Typed field rendering and auto-accept now require explicit kind/slot/value
+  pairs rather than independently combining known slots and values. Hidden
+  aliases such as `style_preference:length` were removed; the learning contract
+  now matches the extractor guidance exactly.
 
 ## 0.3.3 - Ghost Directive ContextSource v1
 

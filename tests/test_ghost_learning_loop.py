@@ -113,6 +113,39 @@ class GhostLearningLoopTests(unittest.TestCase):
             self.assertIn("reply length = concise", directive.text)
             self.assertNotIn("Prefer concise answer-first replies.", directive.text)
 
+    def test_partial_extractor_failure_writes_audit_but_does_not_learn(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            provider = FakeProvider(
+                '{"signals":[{'
+                '"kind":"style_preference",'
+                '"scope":"user",'
+                '"summary":"Prefer concise replies.",'
+                '"evidence_quote":"以后回答短一点，先给结论",'
+                '"confidence":0.94,'
+                '"metadata":{"conflict_key":"reply_length","value_key":"concise"}'
+                '},{'
+                '"kind":"personality",'
+                '"scope":"user",'
+                '"summary":"Invalid future personality.",'
+                '"evidence_quote":"以后回答短一点，先给结论",'
+                '"confidence":0.9'
+                '}]}'
+            )
+
+            result = _loop(td).learn_from_turn(_turn(), provider_factory=lambda _pid: provider)
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.skipped_reason, "extractor_failed")
+            self.assertEqual(result.extracted_count, 1)
+            self.assertTrue(result.signal_audit_written)
+            self.assertIn("unknown kind personality", result.diagnostics[0])
+            audit_rows = GhostSignalStore(td).read_all()
+            self.assertEqual(len(audit_rows), 1)
+            self.assertFalse(audit_rows[0]["ok"])
+            self.assertEqual(len(audit_rows[0]["signals"]), 1)
+            self.assertEqual(GhostInboxStore(td).list_candidates(), ())
+            self.assertEqual(GhostHebbianStore(td).list_nodes(), ())
+
     def test_signal_audit_failure_blocks_inbox_and_hebbian_writes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             provider = FakeProvider(
