@@ -409,6 +409,43 @@ Failure-path note: provider/CDP connection failures are written to the JSON
 output as bounded failure rows and the probe exits non-zero. The probe should not
 mask the original web-provider failure with its own reporting error.
 
+`ghost_directive_ab.py` is a Ghost-only A/B probe for 0.3.3's bounded prompt
+context. The `baseline` arm sends the task normally; the `directive` arm prepends
+the same short neutral `Local Context` that production chat/planning can receive
+from confirmed Hebbian state. The model-visible prompt must not contain `Ghost`
+or `Ghost Directive`; directive items are rendered from an explicit typed-field
+allowlist, not raw labels or arbitrary slugs, and the renderer treats sensitive secret-like text or
+instruction-hierarchy attacks as non-renderable memory. It runs one provider per
+process and checks correction hits, context leakage, and `planning_readonly`
+JSON protocol compliance. It does not edit files, call local tools, write Ghost
+state, touch Research, or enable Project Writer directive injection.
+
+```powershell
+python -B tests\manual\ghost_directive_ab.py --self-test
+python -B tests\manual\ghost_directive_ab.py `
+  --provider deepseek `
+  --port 9222 `
+  --timeout 90 `
+  --new-chat-timeout 45 `
+  --output tests\manual\results\ghost_directive_deepseek.json
+```
+
+Run providers one at a time. A failure row means the provider/CDP path or the
+model response did not satisfy the narrow probe; it should not be hidden by
+retrying all providers in one batch.
+
+2026-08-08 live A/B, run one provider per process:
+
+- DeepSeek: passed. Directive corrected the state backend to bounded JSON
+  projection plus JSONL audit, did not leak internal context naming, and kept
+  `planning_readonly` JSON valid.
+- MiMo: passed with the same correction/leak/protocol checks.
+- Qwen: passed with the same correction/leak/protocol checks.
+- GLM: first attempt hit a half-stale 9222 CDP browser attach; after restarting
+  the 9222 Edge CDP session, GLM passed the correction/leak/protocol checks.
+- StepFun: passed. Planning JSON came back inside a code-block-style UI copy
+  wrapper, and the existing parser accepted it.
+
 `coding_current_context_ab.py` is a production-like live probe for Coding
 Current Context. It runs the real `agent.run` loop on temporary projects,
 executes real local read/edit/run tools, and compares:

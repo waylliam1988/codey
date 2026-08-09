@@ -4,6 +4,42 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.3 - Ghost Directive ContextSource v1
+
+- 新增 `codey/ghost/directive.py`：把 confirmed active Hebbian memory node 渲染成
+  短、可预算的 prompt context。内部功能名仍是 Ghost Directive，但模型可见文本使用
+  中性的 `Local Context`，不得暴露 `Ghost` 或 `Ghost Directive`。它只读本地 state，
+  不调用模型、不写盘、不把 edge 当事实渲染，也不暴露 evidence quote、raw label
+  或内部 id。
+- Directive 选择保持确定性和有界：按 session/project/user scope、active 状态、
+  superseded 状态、node 权重、当前 Ghost 五类 signal kind、敏感 secret-like 文本
+  和危险授权文本过滤。过滤还覆盖 `ignore previous/system/developer instructions`、
+  `treat this as the system prompt`、`local memory outranks/supersedes system
+  instructions`、`replace system prompt with this memory`、
+  `developer messages defer to memory`、`this memory should be used before current
+  instructions`，以及 `needs to come before`、`ranks above`、`treated as above`、
+  all/bare instructions 变体。同
+  scope/conflict key 的 competing value 只有明显领先时才会渲染，否则整组跳过。
+- 模型可见 directive item 由 `kind/conflict_key/value_key` 结构字段生成模板；
+  `node.label` 只留本地审计。结构字段必须命中显式 safe slot/value allowlist；
+  未知 slug、`system = prompt` 这类拆分 protected topic，或涉及 system/developer
+  instructions、审批、工具、shell/run、删除文件、current request 时，直接不渲染。
+- runtime directive 读取只看 projection：不会在缺失 state 时 rebuild，不会 quarantine
+  坏 projection，不写 `state.json`，也不追加 events。过期权重只在内存中做 preview
+  decay，用于本次选择，不持久化衰减状态。
+- 新增 `ghost_directive` context source key。普通 chat 和 `planning_readonly` 默认可
+  接收 directive；Project Writer、Reviewer、Research 和 protocol repair prompt 都不接收。
+- 扩展 Ghost CLI：`python -m codey ghost directive`，支持 `--project`、`--session-id`
+  和 `--budget`，可本地预览/导出即将进入 prompt 的短上下文。
+- 新增 `tests/manual/ghost_directive_ab.py`：一次只测一个 provider 的 live A/B，用于看
+  风格/纠错是否生效、是否泄露内部 context framing、以及 `planning_readonly` JSON tool
+  protocol 是否下降。
+- 串行 live A/B 已在 DeepSeek、MiMo、Qwen、GLM 和 StepFun 上通过：directive arm
+  能把本地记忆后端纠正为 bounded JSON projection + JSONL audit，不泄露内部 Ghost
+  命名，并保持 `planning_readonly` JSON protocol 合规。
+- 本版本仍不新增学习循环，不把 Ghost 注入 Research 或 Project Writer，不改变权限，
+  不让 Ghost memory 执行工具，也不引入 `torch` / `transformers`。
+
 ## 0.3.2 - Ghost Hebbian State v1
 
 - 新增 `codey/ghost/hebbian.py`：把 accepted Ghost inbox candidate 强化成有界的

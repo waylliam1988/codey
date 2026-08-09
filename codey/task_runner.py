@@ -20,6 +20,7 @@ from codey.consensus import (
 )
 from codey.events import RunEvent, render_run_event
 from codey.execution_evidence import ExecutionEvidence
+from codey.ghost.directive import build_ghost_directive
 from codey.handoff import (
     ConversationContext,
     ConversationSnapshot,
@@ -129,6 +130,21 @@ class _RunHooks:
 @dataclass(frozen=True)
 class _ModeOutcome:
     event: dict
+
+
+def _prepend_ghost_directive(prompt: str, directive: str) -> str:
+    text = str(directive or "").strip()
+    if not text:
+        return prompt
+    return f"{text}\n\n{prompt}"
+
+
+def _owner_prompt_with_ghost_directive(owner_prompt: str, directive: str) -> str:
+    text = str(directive or "").strip()
+    existing = str(owner_prompt or "").strip()
+    if text and existing:
+        return f"{text}\n\n{existing}"
+    return text or existing
 
 
 NEW_PROJECT_IGNORED_DIRS = {
@@ -336,6 +352,24 @@ class TaskRunner:
             )
 
         return AgentToolFns(run_command_with_context=run_command)
+
+    def _ghost_directive_text(
+        self,
+        *,
+        project: str = "",
+        session_id: str = "",
+    ) -> str:
+        store = getattr(self.state, "ghost_hebbian", None)
+        if store is None:
+            return ""
+        try:
+            return build_ghost_directive(
+                store,
+                project=project,
+                session_id=session_id,
+            ).text
+        except Exception:
+            return ""
 
     def _event_with_projected_receipt(
         self,
@@ -1006,6 +1040,10 @@ class TaskRunner:
             if frame.handoff
             else request.task
         )
+        ghost_directive = self._ghost_directive_text(
+            session_id=request.session_id,
+        )
+        prompt = _prepend_ghost_directive(prompt, ghost_directive)
         consulted = None
         if self.run_consensus is not None:
             compact_context = (
@@ -1024,7 +1062,10 @@ class TaskRunner:
                     task=request.task,
                     context=compact_context,
                     draft_first=True,
-                    owner_prompt=frame.recovered_owner_prompt,
+                    owner_prompt=_owner_prompt_with_ghost_directive(
+                        frame.recovered_owner_prompt,
+                        ghost_directive,
+                    ),
                 )
             except cancellation.TaskCancelled:
                 raise
@@ -1113,6 +1154,10 @@ class TaskRunner:
             research_context=project_context.research_context,
             project_map=project_context.project_map,
             project_config_warnings=project_context.project_config_warnings,
+            ghost_directive=self._ghost_directive_text(
+                project=project,
+                session_id=request.session_id,
+            ),
             permission_profile="planning_readonly",
         )
         state.set_provider_session(
@@ -1330,6 +1375,7 @@ class TaskRunner:
                 verification_successful_checks=(
                     spec.checkpoint.successful_checks
                 ),
+                ghost_directive="",
                 permission_profile="coding_writer",
                 tool_fns=self._managed_tool_fns(
                     session_id=request.session_id,

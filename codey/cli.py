@@ -118,6 +118,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
 
 
 def cmd_ghost(args: argparse.Namespace) -> int:
+    from codey.ghost.directive import build_ghost_directive
     from codey.ghost.hebbian import GhostHebbianStore
     from codey.ghost.inbox import GhostInboxStore
     from codey.ghost.store import GhostSignalStore
@@ -200,6 +201,19 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         return 0
     if action == "state":
         payload = hebbian_store.export_state()
+        payload["ok"] = True
+        _print_json(payload)
+        return 0
+    if action == "directive":
+        budget_arg = getattr(args, "budget", 900)
+        directive = build_ghost_directive(
+            hebbian_store,
+            project=getattr(args, "project", "") or "",
+            session_id=getattr(args, "session_id", "") or "",
+            budget=900 if budget_arg is None else budget_arg,
+        )
+        payload = directive.to_payload()
+        payload["schema_version"] = 1
         payload["ok"] = True
         _print_json(payload)
         return 0
@@ -309,6 +323,12 @@ def _add_ghost_subcommands(sub) -> None:
 
     sp_ghost_state = sub.add_parser("state", parents=[ghost_common], help="export Ghost Hebbian state")
     sp_ghost_state.set_defaults(func=cmd_ghost)
+
+    sp_ghost_directive = sub.add_parser("directive", parents=[ghost_common], help="preview Ghost Directive prompt context")
+    sp_ghost_directive.add_argument("--project", default="", help="project path for project-scoped memory")
+    sp_ghost_directive.add_argument("--session-id", default="", help="session id for session-scoped memory")
+    sp_ghost_directive.add_argument("--budget", type=int, default=900, help="maximum directive characters")
+    sp_ghost_directive.set_defaults(func=cmd_ghost)
 
     sp_ghost_rebuild = sub.add_parser("rebuild-state", parents=[ghost_common], help="rebuild Ghost Hebbian state from events")
     sp_ghost_rebuild.add_argument("--yes", action="store_true")

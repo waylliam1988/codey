@@ -4,6 +4,54 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.3 - Ghost Directive ContextSource v1
+
+- Added `codey/ghost/directive.py`, a pure local renderer that turns confirmed
+  active Hebbian memory nodes into a short, budgeted prompt context. The
+  internal feature is still called Ghost Directive, but model-visible prompt
+  text uses neutral `Local Context` wording and must not expose `Ghost` or
+  `Ghost Directive`. It is read-only: no model calls, no disk writes, no edges
+  rendered as facts, and no evidence quotes, raw labels, or internal ids are
+  exposed.
+- Directive selection is deterministic and bounded. It filters by
+  session/project/user scope, active status, supersession state, node weight,
+  current Ghost signal kind, sensitive secret-like text, dangerous
+  authorization language, and generic instruction-hierarchy attacks such as
+  "ignore previous/system/developer instructions" or "treat this as the system
+  prompt". Priority attacks such as "local memory outranks/supersedes system
+  instructions", "replace system prompt with this memory", "developer messages
+  defer to memory", or "this memory should be used before current instructions"
+  are skipped too, including `needs to come before`, `ranks above`,
+  `treated as above`, and all/bare-instructions variants.
+  Conflicting values for the same scope/conflict key are skipped unless one
+  value is clearly stronger.
+- Model-visible directive items are typed templates generated from
+  `kind/conflict_key/value_key`; `node.label` stays local audit text. Structured
+  fields must match an explicit safe slot/value allowlist; unknown slugs, split
+  protected topics like `system = prompt`, or fields that refer to
+  system/developer instructions, approvals, tools, shell/run actions, file
+  deletion, or the current request are skipped.
+- Runtime directive reads are projection-only. They do not rebuild missing
+  Hebbian state, quarantine corrupt projections, write `state.json`, or append
+  events. Stale node weights are decayed in-memory for selection, without
+  persisting decay state.
+- Added the `ghost_directive` context source key. Normal chat and
+  `planning_readonly` can receive the directive by default. Project Writer,
+  Reviewer, Research, and protocol repair prompts do not receive it.
+- Extended Ghost CLI with `python -m codey ghost directive`, including
+  `--project`, `--session-id`, and `--budget` for local preview/export of the
+  exact prompt context.
+- Added `tests/manual/ghost_directive_ab.py`, a one-provider-at-a-time live
+  A/B probe for style/correction effect, directive leakage, and
+  `planning_readonly` JSON protocol compliance.
+- Live A/B passed one provider at a time on DeepSeek, MiMo, Qwen, GLM, and
+  StepFun. The directive arm corrected the local memory backend to bounded JSON
+  projection plus JSONL audit, did not leak internal Ghost naming, and preserved
+  `planning_readonly` JSON compliance.
+- This release still does not add a new learning loop, inject Ghost into
+  Research or Project Writer, change permissions, run tools from Ghost memory,
+  or import `torch` / `transformers`.
+
 ## 0.3.2 - Ghost Hebbian State v1
 
 - Added `codey/ghost/hebbian.py`, a bounded local Hebbian state ledger that can

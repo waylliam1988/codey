@@ -39,6 +39,7 @@ class PermissionProfileTests(unittest.TestCase):
         self.assertIn("run", allowed_coding_tool_names(profile))
         self.assertIn("shell", allowed_coding_tool_names(profile))
         self.assertTrue(allows_context_source(profile, "coding_current_context"))
+        self.assertFalse(allows_context_source(profile, "ghost_directive"))
 
     def test_planning_readonly_excludes_mutating_and_verification_tools(self) -> None:
         tools = set(allowed_coding_tool_names("planning_readonly"))
@@ -59,6 +60,7 @@ class PermissionProfileTests(unittest.TestCase):
         self.assertNotIn("edit", tools)
         self.assertNotIn("run", tools)
         self.assertNotIn("shell", tools)
+        self.assertTrue(allows_context_source("planning_readonly", "ghost_directive"))
 
     def test_reviewer_and_research_profiles_do_not_write_projects(self) -> None:
         reviewer = profile_for_name("reviewer")
@@ -66,9 +68,11 @@ class PermissionProfileTests(unittest.TestCase):
 
         self.assertFalse(reviewer.project_write)
         self.assertEqual(allowed_coding_tool_names(reviewer), ())
+        self.assertFalse(allows_context_source(reviewer, "ghost_directive"))
         self.assertFalse(research.project_write)
         self.assertEqual(allowed_coding_tool_names(research), ())
         self.assertEqual(set(research.research_tools), set(RESEARCH_TOOL_CONTRACTS))
+        self.assertFalse(allows_context_source(research, "ghost_directive"))
 
     def test_profile_context_keys_are_known(self) -> None:
         for profile in PERMISSION_PROFILES.values():

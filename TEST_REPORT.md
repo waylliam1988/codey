@@ -1,5 +1,119 @@
 # Codey Test Report
 
+## 0.3.3 Ghost Directive ContextSource v1
+
+Codey 0.3.3 renders confirmed local Hebbian memory into a short, bounded prompt
+context. It changes only normal chat and `planning_readonly` prompt assembly;
+Project Writer, Research, Reviewer, protocol repair prompts, permissions, and
+learning loops remain outside the directive path.
+
+Production changes:
+
+- New `codey/ghost/directive.py` builds `GhostDirective(text, selected_nodes,
+  warnings, truncated)` from active Hebbian nodes without writing state or
+  calling a provider. Model-visible item text is generated from typed
+  `kind/conflict_key/value_key` templates; raw `node.label` stays local audit
+  text and is not rendered. The template grammar is an explicit slot/value
+  allowlist; unknown slugs and split protected topics such as `system = prompt`
+  are skipped instead of being tokenized into free text.
+- Directive selection filters by active status, supersession, scope, weight,
+  current Ghost signal kind, sensitive secret-like text, dangerous
+  authorization text, and generic instruction-hierarchy attacks, including
+  "ignore previous instructions", "treat this as the system prompt", and
+  "memory outranks/supersedes/replaces system instructions" or "developer
+  messages defer to memory" variants. Reverse and modal forms such as
+  "replace system prompt with this memory" and "this memory should be used
+  before current instructions" are covered by the same structural guard,
+  including `needs to come before`, `ranks above`, `treated as above`, and
+  `all/bare instructions` variants. Broad ordering terms such as
+  before/over/rather-than only match explicit `this memory` / `local memory`
+  against protected instruction objects, so ordinary phrases like "memory
+  efficient code before system optimization" still render. Same scope/conflict
+  competing values are skipped unless one value is clearly stronger.
+- Runtime directive reads are projection-only. Missing/corrupt `state.json`
+  returns empty context without rebuilding from events, quarantining files, or
+  writing projection/events. Stale weights are decayed in-memory for selection
+  only; persistent decay remains an explicit Hebbian maintenance action.
+- Rendered directive text uses neutral `Local Context` wording. The
+  model-visible prompt must not expose internal `Ghost` / `Ghost Directive`
+  naming; structured fields containing those terms are redacted to neutral
+  local-memory wording. It also does not expose raw labels, evidence quotes,
+  candidate ids, event ids, edge ids, or `coactivated_with` edges as facts.
+  There is no raw-label redaction fallback path in the renderer; labels remain
+  local audit text only.
+  Structured fields that cannot be rendered by the safe template grammar, or
+  that refer to system/developer instructions, approvals, tools, or the current
+  request, are skipped. This includes split fields such as `developer =
+  instructions`, tool/shell/run/delete-file values, and unknown value slugs like
+  `use_tools`.
+- Added `ghost_directive` as a known context source. Chat prepends the directive
+  locally, consensus chat sends it only through `owner_prompt`, and
+  `planning_readonly` receives it through `agent.run`.
+- `coding_writer`, Reviewer, Research, and protocol repair prompts do not
+  receive `ghost_directive`.
+- Ghost CLI now supports
+  `python -m codey ghost directive --project <path> --session-id <id> --budget 900`.
+- Added `tests/manual/ghost_directive_ab.py` as a one-provider-at-a-time manual
+  A/B probe. It has a self-test and writes bounded JSON failure rows.
+
+Validation:
+
+```text
+$env:PYTHONPYCACHEPREFIX = Join-Path $env:TEMP 'codey-pycache'
+python -B -m py_compile codey\ghost\directive.py codey\ghost\__init__.py codey\cli.py codey\permission_profiles.py codey\agent.py codey\task_runner.py codey\__init__.py tests\test_ghost_directive.py tests\test_cli.py tests\test_permission_profiles.py tests\test_agent.py tests\test_server.py tests\manual\ghost_directive_ab.py
+# passed
+
+python -m pytest tests\test_ghost_directive.py tests\test_cli.py tests\test_agent.py tests\test_server.py tests\test_permission_profiles.py -q
+# 291 passed, 3 skipped, 1 pytest cache warning, 41 subtests passed in 167.48s
+
+python -m ruff check .
+# All checks passed!
+
+python -B tests\manual\ghost_directive_ab.py --self-test
+# self-test ok
+
+python -m pytest -q
+# 1633 passed, 9 skipped, 1 pytest cache warning, 231 subtests passed in 429.12s
+```
+
+Manual live A/B:
+
+```text
+python -B tests\manual\ghost_directive_ab.py --provider deepseek --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_directive_deepseek.json
+# ok: true
+python -B tests\manual\ghost_directive_ab.py --provider mimo --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_directive_mimo.json
+# ok: true
+python -B tests\manual\ghost_directive_ab.py --provider qwen --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_directive_qwen.json
+# ok: true
+python -B tests\manual\ghost_directive_ab.py --provider glm --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_directive_glm.json
+# ok: true
+python -B tests\manual\ghost_directive_ab.py --provider stepfun --port 9222 --timeout 90 --new-chat-timeout 45 --output tests\manual\results\ghost_directive_stepfun.json
+# ok: true
+```
+
+Live provider A/B result, one provider per process:
+
+- DeepSeek: passed. Baseline answered SQLite; directive answered
+  "bounded local JSON projection plus JSONL audit". No internal context naming
+  leaked, and planning JSON stayed valid.
+- MiMo: passed. Baseline asked for more context; directive answered
+  "bounded local JSON projection plus a JSONL audit log". No internal context
+  naming leaked, and planning JSON stayed valid.
+- Qwen: passed. Baseline answered unrelated JVM/stream-processing memory;
+  directive answered "Bounded local JSON projection plus JSONL audit". No
+  internal context naming leaked, and planning JSON stayed valid.
+- GLM: passed after restarting a half-stale 9222 CDP browser. Baseline answered
+  ephemeral in-memory state; directive answered "bounded local JSON projection
+  plus JSONL audit". No internal context naming leaked, and planning JSON stayed
+  valid.
+- StepFun: passed. Baseline said implementation details were not public;
+  directive answered bounded JSON projection plus JSONL audit. No internal
+  context naming leaked. Planning JSON stayed valid; StepFun wrapped the JSON in
+  a code-block-style UI copy prefix, which the existing parser accepted.
+
+- Project Writer and Research remain covered by deterministic tests only in
+  this release; they do not receive directive context.
+
 ## 0.3.2 Ghost Hebbian State v1
 
 Codey 0.3.2 adds an auditable local memory weight ledger for accepted Ghost

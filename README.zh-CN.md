@@ -2,7 +2,7 @@
 
 **让网页版 AI 成为本地编程与研究助手。**
 
-[![版本](https://img.shields.io/badge/version-0.3.2-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.3-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
 
@@ -14,7 +14,7 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.2`
+版本：`0.3.3`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -91,10 +91,14 @@ Codey 想解决的是一个很朴素的问题：
 - 重启 Codey 或切换模型后，同一聊天可以通过精简事实 handoff 和最近可见对话自然继续
 - 连续 Research 或项目内 Hybrid Research 会带上同一聊天的有边界前文，所以“继续查刚才那个方案”不会丢上下文
 - 非 Git 项目的 diff 和 restore 在 Codey 重启后仍然可用
-- Ghost 现在有本地 memory inbox 和 Hebbian state：显式学习信号会先成为可审计
-  候选，accepted 候选可以进入有界的本地记忆权重账本，并可通过
-  `python -m codey ghost list/export/accept/reject/state/rebuild-state/reset/delete-scope/enable/disable`
-  控制；本版仍不把 Ghost state 注入 prompt，也不改变 chat、coding 或 Research 行为
+- Ghost 现在有本地 memory inbox、Hebbian state 和 prompt preview：显式学习信号会
+  先成为可审计候选，accepted 候选可以进入有界的本地记忆权重账本，并可通过
+  `python -m codey ghost list/export/directive/accept/reject/state/rebuild-state/reset/delete-scope/enable/disable`
+  控制；confirmed memory 现在可以作为很短的中性本地上下文进入普通聊天和只读
+  planning。模型可见 prompt 文本由显式 allowlist 里的 typed memory field 生成，
+  不渲染 raw label 或任意未知 slug，也不会暴露内部 `Ghost` / `Ghost Directive`
+  命名、敏感 secret-like 文本或指令层级覆盖语言，也仍不进入 Project Writer、Research、
+  repair prompt、权限系统或自动学习循环
 - 网页输入框或发送按钮改版时，先做有边界的本地发现，仍不确定则让健康兄弟模型
   从脱敏候选中选择；真实发送成功后才能保存、晋级或回滚恢复包
 - 控件恢复仍不足时，只根据脱敏布尔事实恢复一条有边界的网页状态规则；不同网页的
@@ -570,7 +574,7 @@ codey/
   project_map.py            确定性的有边界项目地图
   project_config.py         严格项目本地配置事实和 warning
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
-  ghost/                    Ghost 信号抽取、memory inbox 和本地 gate
+  ghost/                    Ghost 信号抽取、inbox/gate、Hebbian state 和 directive 渲染
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
   research/                 Research controller/runner、隔离网页/source search 工具、evidence ledger 和 report quality gate
   verification_map.py       Review 阶段的有边界验证候选

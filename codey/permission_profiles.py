@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 
 KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
+    "ghost_directive",
     "project_instructions",
     "verified_facts",
     "research_brief",
@@ -20,6 +21,27 @@ KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
     "initial_listing",
     "coding_current_context",
 })
+CODING_WRITER_CONTEXT_SOURCE_KEYS = (
+    "project_instructions",
+    "verified_facts",
+    "research_brief",
+    "project_map",
+    "project_config_warnings",
+    "work_checkpoint",
+    "initial_listing",
+    "coding_current_context",
+)
+PLANNING_READONLY_CONTEXT_SOURCE_KEYS = (
+    "ghost_directive",
+    "project_instructions",
+    "verified_facts",
+    "research_brief",
+    "project_map",
+    "project_config_warnings",
+    "work_checkpoint",
+    "initial_listing",
+    "coding_current_context",
+)
 
 KNOWN_REVIEW_CONTEXT_SOURCE_KEYS = frozenset({
     "task",
@@ -75,7 +97,7 @@ PERMISSION_PROFILES = {
             "user_approved_shell",
             "control",
         ),
-        context_sources=tuple(KNOWN_CONTEXT_SOURCE_KEYS),
+        context_sources=CODING_WRITER_CONTEXT_SOURCE_KEYS,
         project_read=True,
         project_write=True,
         can_request_shell=True,
@@ -110,16 +132,7 @@ PERMISSION_PROFILES = {
             "parallel",
             "done",
         ),
-        context_sources=(
-            "project_instructions",
-            "verified_facts",
-            "research_brief",
-            "project_map",
-            "project_config_warnings",
-            "work_checkpoint",
-            "initial_listing",
-            "coding_current_context",
-        ),
+        context_sources=PLANNING_READONLY_CONTEXT_SOURCE_KEYS,
         project_read=True,
         project_write=False,
     ),

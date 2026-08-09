@@ -212,6 +212,70 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(run_headless.call_args.args[0].intent, "planning_readonly")
 
+    def test_cmd_ghost_directive_exports_bounded_preview(self) -> None:
+        from codey.ghost.hebbian import GhostHebbianStore
+        from codey.ghost.inbox import GhostInboxStore
+        from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+
+        with tempfile.TemporaryDirectory() as td:
+            inbox = GhostInboxStore(td)
+            created = inbox.ingest_signals(
+                GhostSignalParseResult(
+                    signals=(
+                        GhostSignal(
+                            kind="style_preference",
+                            scope="user",
+                            summary="Prefer concise answer-first replies.",
+                            evidence_quote="以后先给结论",
+                            confidence=0.9,
+                            metadata={
+                                "conflict_key": "reply_structure",
+                                "value_key": "answer_first",
+                            },
+                            source="test",
+                        ),
+                    ),
+                    ok=True,
+                    provider_id="test",
+                ),
+                session_id="s1",
+                run_id="r1",
+                user_text="以后先给结论",
+            )
+            assert len(created) == 1
+            GhostHebbianStore(td).reinforce_candidate(created[0])
+            args = mock.Mock(
+                ghost_cmd="directive",
+                state_home=td,
+                project="",
+                session_id="s1",
+                budget=900,
+            )
+            stdout = io.StringIO()
+
+            with mock.patch("sys.stdout", stdout):
+                exit_code = cli.cmd_ghost(args)
+
+            args.budget = 0
+            zero_budget_stdout = io.StringIO()
+            with mock.patch("sys.stdout", zero_budget_stdout):
+                zero_budget_exit_code = cli.cmd_ghost(args)
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertIn("Local Context:", payload["text"])
+        self.assertNotIn("Ghost", payload["text"])
+        self.assertIn("reply structure = answer first", payload["text"])
+        self.assertNotIn("Prefer concise answer-first replies.", payload["text"])
+        self.assertEqual(payload["selected_count"], 1)
+        self.assertEqual(zero_budget_exit_code, 0)
+        zero_budget_payload = json.loads(zero_budget_stdout.getvalue())
+        self.assertTrue(zero_budget_payload["ok"])
+        self.assertEqual(zero_budget_payload["text"], "")
+        self.assertEqual(zero_budget_payload["selected_count"], 0)
+        self.assertTrue(zero_budget_payload["truncated"])
+
 
 if __name__ == "__main__":
     unittest.main()

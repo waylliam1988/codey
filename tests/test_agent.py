@@ -734,6 +734,66 @@ class RunLoopTests(unittest.TestCase):
         self.assertIn("Research context from this chat", provider.sent[0])
         self.assertIn("synthesis-1", provider.sent[0])
 
+    def test_planning_readonly_intro_includes_ghost_directive(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Plan the change",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                permission_profile="planning_readonly",
+                ghost_directive="Local Context:\n- Prefer: concise answer-first replies.",
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Local Context:", provider.sent[0])
+        self.assertIn("concise answer-first", provider.sent[0])
+        self.assertNotIn("Ghost", provider.sent[0])
+
+    def test_coding_writer_intro_omits_ghost_directive(self) -> None:
+        provider = FakeProvider('{"tool":"done","args":{"summary":"ok"}}')
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Implement the change",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                ghost_directive="Local Context:\n- Prefer: concise answer-first replies.",
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertNotIn("Local Context:", provider.sent[0])
+        self.assertNotIn("Ghost", provider.sent[0])
+        self.assertNotIn("concise answer-first", provider.sent[0])
+
+    def test_protocol_repair_prompt_omits_ghost_directive(self) -> None:
+        provider = FakeProvider(
+            "not json",
+            '{"tool":"done","args":{"summary":"ok"}}',
+        )
+
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                provider,
+                Path(td),
+                "Plan the change",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                permission_profile="planning_readonly",
+                ghost_directive="Local Context:\n- Prefer: concise answer-first replies.",
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("Local Context:", provider.sent[0])
+        self.assertNotIn("Local Context:", provider.sent[1])
+        self.assertNotIn("Ghost", provider.sent[1])
+        self.assertNotIn("concise answer-first", provider.sent[1])
+
     def test_project_intro_includes_local_execution_checkpoint_when_provided(self) -> None:
         provider = FakeProvider('{"tool":"done","args":{"summary":"resumed"}}')
         with tempfile.TemporaryDirectory() as td:

@@ -58,6 +58,45 @@ def valid_research_report(url: str, conclusion: str = "Helium conclusion.") -> s
     )
 
 
+def seed_ghost_style_memory(
+    state,
+    *,
+    session_id: str = "session-ghost",
+    run_id: str = "run-ghost",
+    project: str = "",
+) -> None:
+    from codey.ghost.schema import GhostSignal, GhostSignalParseResult
+
+    assert state.ghost_inbox is not None
+    assert state.ghost_hebbian is not None
+    created = state.ghost_inbox.ingest_signals(
+        GhostSignalParseResult(
+            signals=(
+                GhostSignal(
+                    kind="style_preference",
+                    scope="user",
+                    summary="Prefer concise answer-first replies.",
+                    evidence_quote="以后先给结论",
+                    confidence=0.9,
+                    metadata={
+                        "conflict_key": "reply_structure",
+                        "value_key": "answer_first",
+                    },
+                    source="test",
+                ),
+            ),
+            ok=True,
+            provider_id="test",
+        ),
+        session_id=session_id,
+        run_id=run_id,
+        project=project,
+        user_text="以后先给结论",
+    )
+    assert len(created) == 1
+    state.ghost_hebbian.reinforce_candidate(created[0])
+
+
 class GitChangesTests(unittest.TestCase):
     def test_parse_git_status(self) -> None:
         files = changes.parse_git_status(" M codey/server.py\n?? new.txt\nR  old.py -> new.py\n")
@@ -1532,6 +1571,134 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(connected.call_count, 2)
         self.assertEqual(connected.call_args_list, [mock.call("qwen"), mock.call("qwen")])
 
+    def test_chat_mode_prepends_ghost_directive(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            seed_ghost_style_memory(state, session_id="session-ghost")
+            events = state.subscribe()
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.return_value = "direct reply"
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+            ):
+                server._run_task(
+                    "session-ghost",
+                    None,
+                    "Answer this directly",
+                    8,
+                    False,
+                    "deepseek",
+                    "chat",
+                )
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+
+        prompt = provider.send.call_args.args[0]
+        done = next(event for event in emitted if event["type"] == "task_done")
+        self.assertIn("Local Context:", prompt)
+        self.assertNotIn("Ghost", prompt)
+        self.assertIn("reply structure = answer first", prompt)
+        self.assertNotIn("Prefer concise answer-first replies.", prompt)
+        self.assertEqual(done["mode"], "chat")
+
+    def test_chat_consensus_receives_ghost_directive_only_as_owner_prompt(self) -> None:
+        self.consensus_mock.return_value = ConsensusResult("consensus reply", 1)
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            seed_ghost_style_memory(state, session_id="session-ghost")
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+            ):
+                server._run_task(
+                    "session-ghost",
+                    None,
+                    "Answer this directly",
+                    8,
+                    False,
+                    "deepseek",
+                    "chat",
+                )
+
+        kwargs = self.consensus_mock.call_args.kwargs
+        self.assertIn("Local Context:", kwargs["owner_prompt"])
+        self.assertNotIn("Ghost", kwargs["owner_prompt"])
+        self.assertIn("reply structure = answer first", kwargs["owner_prompt"])
+        self.assertNotIn("Prefer concise answer-first replies.", kwargs["owner_prompt"])
+        self.assertNotIn("Local Context:", kwargs["context"])
+        self.assertNotIn("Ghost", kwargs["context"])
+
+    def test_planning_readonly_passes_ghost_directive_to_agent(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            seed_ghost_style_memory(state, session_id="session-plan", project=td)
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(
+                    server,
+                    "agent_run",
+                    return_value=RunResult("planned", "done", 1),
+                ) as agent_run,
+            ):
+                server._run_task(
+                    "session-plan",
+                    td,
+                    "Plan only",
+                    8,
+                    False,
+                    "deepseek",
+                    "planning",
+                )
+
+        self.assertEqual(agent_run.call_args.kwargs["permission_profile"], "planning_readonly")
+        self.assertIn("Local Context:", agent_run.call_args.kwargs["ghost_directive"])
+        self.assertNotIn("Ghost", agent_run.call_args.kwargs["ghost_directive"])
+
+    def test_project_writer_receives_empty_ghost_directive(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            seed_ghost_style_memory(state, session_id="session-project", project=td)
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(
+                    server,
+                    "agent_run",
+                    return_value=RunResult("done", "done", 1),
+                ) as agent_run,
+            ):
+                server._run_task(
+                    "session-project",
+                    td,
+                    "Build the feature",
+                    8,
+                    False,
+                    "deepseek",
+                    "project",
+                )
+
+        self.assertEqual(agent_run.call_args.kwargs["permission_profile"], "coding_writer")
+        self.assertEqual(agent_run.call_args.kwargs["ghost_directive"], "")
+
     def test_state_marks_provider_available_after_connect(self) -> None:
         class FakeProvider:
             name = "StepFun Chat"
@@ -2318,6 +2485,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
+            seed_ghost_style_memory(state, session_id="session-research")
             from codey.knowledge import KnowledgeStore
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             conversation = state.conversation_for("session-research")
@@ -2376,6 +2544,8 @@ class SessionThreadingTests(unittest.TestCase):
         research_intro = provider.send.call_args_list[0].args[0]
         self.assertIn("Conversation context from this chat", research_intro)
         self.assertIn("Choose the storage layer", research_intro)
+        self.assertNotIn("Local Context:", research_intro)
+        self.assertNotIn("Ghost", research_intro)
         agent_run.assert_not_called()
 
     def test_research_ui_path_reads_pdf_and_recovers_bad_excerpt(self) -> None:

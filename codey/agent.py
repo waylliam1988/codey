@@ -74,6 +74,7 @@ PROJECT_CONFIG_WARNINGS_CONTEXT_BUDGET = 1200
 WORK_CHECKPOINT_CONTEXT_BUDGET = MAX_WORK_CHECKPOINT_PROMPT_CHARS
 INITIAL_LISTING_CONTEXT_BUDGET = 4000
 CODING_CURRENT_CONTEXT_BUDGET = 3000
+GHOST_DIRECTIVE_CONTEXT_BUDGET = 900
 VERIFICATION_REQUEST_RE = re.compile(
     r"\b("
     r"run|test|tests|unittest|pytest|verify|verification|check|build|lint|typecheck"
@@ -605,6 +606,7 @@ def run(
     verification_changed_files: tuple[str, ...] = (),
     verification_successful_checks: tuple[VerificationCandidate, ...] = (),
     coding_context_enabled: bool = True,
+    ghost_directive: str = "",
     permission_profile: str = "coding_writer",
     tool_fns: AgentToolFns | None = None,
 ) -> RunResult:
@@ -681,13 +683,29 @@ def run(
         names = ", ".join(doc.name for doc in project_instructions)
         emit(RunEvent.info("loaded project instructions", names=names))
 
-    def project_intro(request: str, factual_handoff: str = "") -> str:
+    def project_intro(
+        request: str,
+        factual_handoff: str = "",
+        *,
+        include_ghost_directive: bool = True,
+    ) -> str:
         current = (
             render_continuation_prompt(factual_handoff, request)
             if factual_handoff
             else request
         )
-        sources = (
+        sources = []
+        if include_ghost_directive:
+            sources.append(
+                ContextSource(
+                    key="ghost_directive",
+                    loader=lambda: ghost_directive,
+                    budget=GHOST_DIRECTIVE_CONTEXT_BUDGET,
+                    freshness="run_start",
+                    why_included="bounded local confirmed Ghost memory",
+                )
+            )
+        sources.extend((
             ContextSource(
                 key="project_instructions",
                 loader=lambda: format_project_instructions(project_instructions),
@@ -741,7 +759,7 @@ def run(
                 why_included="current top-level project listing",
                 heading="Initial listing:",
             ),
-        )
+        ))
         context = render_context_sources(
             source
             for source in sources
@@ -755,12 +773,21 @@ def run(
             f"User task:\n{current}"
         )
 
-    def send_prompt(prompt: str, *, restart_request: str | None = None) -> str:
+    def send_prompt(
+        prompt: str,
+        *,
+        restart_request: str | None = None,
+        include_ghost_directive: bool = True,
+    ) -> str:
         opened_fresh_chat = False
         if conversation is not None and conversation.needs_rollover(prompt):
             factual_handoff = conversation.prepare_model_handoff(provider.send)
             if open_fresh_chat():
-                prompt = project_intro(restart_request or prompt, factual_handoff)
+                prompt = project_intro(
+                    restart_request or prompt,
+                    factual_handoff,
+                    include_ghost_directive=include_ghost_directive,
+                )
                 opened_fresh_chat = True
         reply_text = provider.send(prompt)
         if conversation is not None:
@@ -870,7 +897,11 @@ def run(
                 emit(RunEvent.status(f"[agent] {msg}."))
                 return finish(msg, "protocol", turn)
             repair = _protocol_repair_prompt(codec, plan, previous_reply=reply)
-            reply = send_prompt(repair, restart_request=repair)
+            reply = send_prompt(
+                repair,
+                restart_request=repair,
+                include_ghost_directive=False,
+            )
             report_reply(turn + 1, reply, "(after protocol correction)")
             continue
         calls = plan.calls
@@ -1031,7 +1062,11 @@ def run(
                     protocol_error_kind=PROTOCOL_NO_JSON,
                 ),
             )
-            reply = send_prompt(repair, restart_request=repair)
+            reply = send_prompt(
+                repair,
+                restart_request=repair,
+                include_ghost_directive=False,
+            )
             report_reply(turn + 1, reply, "(after nudge)")
             continue
 
