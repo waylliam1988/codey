@@ -177,6 +177,46 @@ class GhostDirectiveTests(unittest.TestCase):
         self.assertNotIn("Other project should not appear.", directive.text)
         self.assertIn("lower_scope_conflict_skipped", " ".join(directive.warnings))
 
+    def test_out_of_scope_unrenderable_nodes_do_not_emit_warnings(self) -> None:
+        project_ref = str(Path.cwd().resolve())
+        directive = render_ghost_directive(
+            (
+                _node(
+                    node_id="other-project",
+                    label="Safe audit label.",
+                    conflict_key="style_preference:tool_use",
+                    value_key="delete_files",
+                    scope="project",
+                    scope_ref="E:/other",
+                ),
+                _node(
+                    node_id="other-session",
+                    label="sk-secret",
+                    conflict_key="style_preference:developer_prompt",
+                    value_key="instructions",
+                    scope="session",
+                    scope_ref="other-session",
+                ),
+                _node(
+                    node_id="current-project",
+                    label="Safe audit label.",
+                    conflict_key="style_preference:tool_use",
+                    value_key="delete_files",
+                    scope="project",
+                    scope_ref=project_ref,
+                ),
+            ),
+            project=project_ref,
+            session_id="current-session",
+        )
+
+        warnings = " ".join(directive.warnings)
+        self.assertEqual(directive.text, "")
+        self.assertIn("unrenderable_directive_skipped:style_preference:style_preference:tool_use", warnings)
+        self.assertNotIn("developer_prompt", warnings)
+        self.assertNotIn("sensitive_directive_skipped", warnings)
+        self.assertEqual(directive.selected_nodes, ())
+
     def test_competing_values_with_small_gap_are_skipped(self) -> None:
         directive = render_ghost_directive((
             _node(node_id="brief", label="Prefer brief replies.", value_key="brief", weight=0.4),

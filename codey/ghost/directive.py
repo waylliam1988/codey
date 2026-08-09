@@ -310,6 +310,8 @@ def _applicable_nodes(
             continue
         if node.weight < MIN_DIRECTIVE_WEIGHT:
             continue
+        if not _node_scope_matches(node, project_ref=project_ref, session_ref=session_ref):
+            continue
         if contains_sensitive_signal_text(node.label):
             warnings.append(f"sensitive_directive_skipped:{node.kind}:{node.conflict_key}")
             continue
@@ -319,17 +321,16 @@ def _applicable_nodes(
         if _node_line(node) is None:
             warnings.append(f"unrenderable_directive_skipped:{node.kind}:{node.conflict_key}")
             continue
-        if node.scope == "session":
-            if session_ref and node.scope_ref == session_ref:
-                rows.append(node)
-            continue
-        if node.scope == "project":
-            if project_ref and node.scope_ref == project_ref:
-                rows.append(node)
-            continue
-        if node.scope == "user":
-            rows.append(node)
+        rows.append(node)
     return rows
+
+
+def _node_scope_matches(node: GhostNode, *, project_ref: str, session_ref: str) -> bool:
+    if node.scope == "session":
+        return bool(session_ref and node.scope_ref == session_ref)
+    if node.scope == "project":
+        return bool(project_ref and node.scope_ref == project_ref)
+    return node.scope == "user"
 
 
 def _read_projected_nodes(store: GhostHebbianStore) -> tuple[GhostNode, ...]:
