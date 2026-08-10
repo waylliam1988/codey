@@ -20,6 +20,7 @@ from codey.consensus import (
 )
 from codey.events import RunEvent, render_run_event
 from codey.execution_evidence import ExecutionEvidence
+from codey.ghost.continuity import build_ghost_continuity
 from codey.ghost.directive import build_ghost_directive
 from codey.ghost.learning_loop import (
     DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT,
@@ -151,6 +152,10 @@ def _owner_prompt_with_ghost_directive(owner_prompt: str, directive: str) -> str
     if text and existing:
         return f"{text}\n\n{existing}"
     return text or existing
+
+
+def _join_local_contexts(*values: str) -> str:
+    return "\n\n".join(str(value or "").strip() for value in values if str(value or "").strip())
 
 
 NEW_PROJECT_IGNORED_DIRS = {
@@ -381,6 +386,24 @@ class TaskRunner:
         except Exception:
             return ""
 
+    def _ghost_continuity_text(
+        self,
+        *,
+        project: str = "",
+        session_id: str = "",
+    ) -> str:
+        store = getattr(self.state, "ghost_continuity", None)
+        if store is None:
+            return ""
+        try:
+            return build_ghost_continuity(
+                store,
+                project=project,
+                session_id=session_id,
+            ).text
+        except Exception:
+            return ""
+
     def _maybe_run_ghost_learning(
         self,
         frame: _RunFrame | None,
@@ -412,6 +435,58 @@ class TaskRunner:
                 provider_factory=self.ghost_learning_provider_factory,
                 timeout=DEFAULT_GHOST_LEARNING_TIMEOUT,
                 new_chat_timeout=DEFAULT_GHOST_LEARNING_NEW_CHAT_TIMEOUT,
+            )
+            self.state.emit(result.to_event(
+                run_id=frame.run_id,
+                session_id=frame.request.session_id,
+            ))
+        except Exception:
+            return
+
+    def _maybe_sync_ghost_continuity(
+        self,
+        frame: _RunFrame | None,
+        event: dict[str, object],
+    ) -> None:
+        if frame is None:
+            return
+        store = getattr(self.state, "ghost_continuity", None)
+        if store is None:
+            return
+        mode = str(event.get("mode") or "")
+        if mode not in {"chat", "planning"}:
+            return
+        inbox_store = getattr(self.state, "ghost_inbox", None)
+        if inbox_store is not None and not inbox_store.learning_enabled():
+            try:
+                self.state.emit({
+                    "type": "ghost_continuity_done",
+                    "run_id": frame.run_id,
+                    "session_id": frame.request.session_id,
+                    "ok": True,
+                    "skipped_reason": "learning_disabled",
+                    "items_changed": 0,
+                    "total_items": 0,
+                    "warnings": [],
+                })
+            except Exception:
+                pass
+            return
+        try:
+            projection = (
+                load_run_projection(self.run_ledgers, frame.request.session_id, frame.run_id)
+                if self.run_ledgers is not None
+                else None
+            )
+            result = store.sync_from_sources(
+                hebbian_store=getattr(self.state, "ghost_hebbian", None),
+                run_projection=projection,
+                knowledge_store=self.knowledge_store,
+                user_focus_excerpt=frame.request.task,
+                session_id=frame.request.session_id,
+                run_id=frame.run_id,
+                project=frame.project_text if mode != "chat" else "",
+                mode=mode,
             )
             self.state.emit(result.to_event(
                 run_id=frame.run_id,
@@ -879,6 +954,7 @@ class TaskRunner:
             )
             state.finish_run(run_id, event)
             self._maybe_run_ghost_learning(frame, event)
+            self._maybe_sync_ghost_continuity(frame, event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             current_id = current_provider_id()
             state.set_provider_session(current_id, None)
@@ -1093,7 +1169,11 @@ class TaskRunner:
         ghost_directive = self._ghost_directive_text(
             session_id=request.session_id,
         )
-        prompt = _prepend_ghost_directive(prompt, ghost_directive)
+        ghost_context = _join_local_contexts(
+            ghost_directive,
+            self._ghost_continuity_text(session_id=request.session_id),
+        )
+        prompt = _prepend_ghost_directive(prompt, ghost_context)
         consulted = None
         if self.run_consensus is not None:
             compact_context = (
@@ -1114,7 +1194,7 @@ class TaskRunner:
                     draft_first=True,
                     owner_prompt=_owner_prompt_with_ghost_directive(
                         frame.recovered_owner_prompt,
-                        ghost_directive,
+                        ghost_context,
                     ),
                 )
             except cancellation.TaskCancelled:
@@ -1205,6 +1285,10 @@ class TaskRunner:
             project_map=project_context.project_map,
             project_config_warnings=project_context.project_config_warnings,
             ghost_directive=self._ghost_directive_text(
+                project=project,
+                session_id=request.session_id,
+            ),
+            ghost_continuity=self._ghost_continuity_text(
                 project=project,
                 session_id=request.session_id,
             ),
@@ -1426,6 +1510,7 @@ class TaskRunner:
                     spec.checkpoint.successful_checks
                 ),
                 ghost_directive="",
+                ghost_continuity="",
                 permission_profile="coding_writer",
                 tool_fns=self._managed_tool_fns(
                     session_id=request.session_id,

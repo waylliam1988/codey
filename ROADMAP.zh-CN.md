@@ -780,6 +780,10 @@ user input
 
 ## 0.3.5 - Ghost Continuity v1
 
+状态：已落地。`0.3.5` 新增有界 continuity projection，让普通 Chat 和
+`planning_readonly` 可以读取最近关注点、开放问题、活跃项目和刚强化的偏好，但不保存
+完整聊天全文，也不把 continuity 当成事实真相层或第二套学习系统。
+
 ### 做什么
 
 让 Ghost 记得长期上下文，但不保存完整聊天全文。
@@ -795,6 +799,14 @@ recent task summaries
 project-local config
 ```
 
+实际落地来源保持更窄：
+
+- accepted / active Hebbian memory node。
+- 普通 Chat 的极短 `user_focus_excerpt`，不保存完整 assistant reply。
+- `planning_readonly` 的 bounded run ledger projection。
+- Research synthesis / decision note 的 `title` 元数据，以及 bounded
+  `Open questions` section 行；不渲染 raw body、证据段、来源片段或网页正文。
+
 输出：
 
 ```text
@@ -806,6 +818,31 @@ fresh_corrections
 recently_reinforced_preferences
 ```
 
+新增文件：
+
+```text
+codey/ghost/continuity.py
+tests/test_ghost_continuity.py
+tests/manual/ghost_continuity_ab.py
+```
+
+存储：
+
+```text
+~/.codey/ghost/continuity.json
+~/.codey/ghost/continuity_events.jsonl
+```
+
+CLI：
+
+```powershell
+python -m codey ghost continuity
+python -m codey ghost rebuild-continuity --yes
+python -m codey ghost export
+python -m codey ghost reset --yes
+python -m codey ghost delete-scope session --session-id <id> --yes
+```
+
 ### 边界
 
 - 不保存完整 transcript。
@@ -813,6 +850,29 @@ recently_reinforced_preferences
 - 不保存完整网页正文。
 - 只从已有 bounded facts 和 accepted memory 构建 continuity summary。
 - 可清空、可导出、可审计。
+- Runtime prompt 读取只看 `continuity.json` projection，不 rebuild、不 quarantine、不写盘。
+- Continuity 是 post-turn eventual consistency；`ghost_continuity_done` 完成后，后续
+  Chat / `planning_readonly` 才应稳定读取到刚同步的 continuity。
+- 模型可见文本使用中性的 `Local Context`，不能出现内部 `Ghost` 命名。
+- Continuity 不是 Research evidence，也不能授权工具、绕过审批、覆盖当前请求或项目指令。
+- 只接普通 Chat 和 `planning_readonly`；Project Writer、Research、Reviewer 和 repair
+  prompt 不接。
+- `ghost disable` 阻止未来自动 continuity sync，但不影响 preview/export/delete/reset。
+
+实机 A/B：
+
+需要，因为 0.3.5 改变网页模型可见 prompt。A/B 使用固定 `continuity.json` 种子，
+不引入 learning extractor 变量；DeepSeek、Qwen、MiMo、GLM、StepFun 一个一个跑，
+每个 provider 之间重启 Edge CDP。验收看：
+
+```text
+recent_focus 是否可用
+当前请求是否覆盖 continuity
+open_question 不被当成事实
+planning_readonly JSON compliance 不下降
+不泄露 Ghost / Local Context framing
+Research 和 Project Writer 路径确认不接 continuity
+```
 
 ## 0.3.6 - Cognitive Sleep v1
 

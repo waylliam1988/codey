@@ -4,6 +4,46 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.5 - Ghost Continuity v1
+
+- Added `codey/ghost/continuity.py`, a bounded local continuity projection built
+  from existing audited facts rather than full chat transcripts. It can project
+  recent focus, open questions, active projects, fresh corrections, recently
+  reinforced preferences, and long-term goals.
+- Continuity state is stored in `state_home/ghost/continuity.json`, with
+  `state_home/ghost/continuity_events.jsonl` as a small audit/rebuild log. It
+  supports export, reset, delete-scope, and explicit rebuild controls.
+- Runtime continuity reads are projection-only. Prompt rendering does not
+  rebuild missing projections, quarantine corrupt files, append events, call a
+  provider, or scan project source.
+- Model-visible text uses neutral `Local Context` wording: bounded local
+  continuity is not new user input, not Research evidence, cannot grant tools,
+  cannot bypass approval, and cannot override the current request or project
+  instructions. Internal Ghost naming, sensitive text, dangerous instruction
+  hierarchy language, raw model replies, raw Research bodies, webpage text, and
+  source snippets are not rendered.
+- Normal Chat and `planning_readonly` can read continuity context. Consensus
+  sends it only to the owner prompt. Project Writer, Reviewer, Research, and
+  protocol repair prompts still receive no Ghost context.
+- Task completion now runs a best-effort local continuity sync after the
+  learning loop. It does not call providers; Chat contributes only a short
+  user-focus excerpt, while planning can also contribute bounded run ledger
+  projection facts. The new context is eventual-consistent and is intended to
+  be relied on after the post-turn `ghost_continuity_done` event rather than at
+  the exact instant `task_done` is emitted. `ghost disable` prevents automatic
+  continuity sync while keeping local preview/export/delete/reset controls
+  available.
+- Research synthesis / decision notes contribute only titles and bounded
+  `Open questions` section lines. Raw note bodies, evidence sections, source
+  snippets, and webpage text are not rendered into model-visible continuity.
+- Extended Ghost CLI with `python -m codey ghost continuity` and
+  `python -m codey ghost rebuild-continuity --yes`; `export`, `reset`, and
+  `delete-scope` now cover continuity files too.
+- Added `tests/test_ghost_continuity.py` and
+  `tests/manual/ghost_continuity_ab.py`. The manual probe uses a fixed
+  temporary `continuity.json` seed so live A/B checks context behavior without
+  involving the learning extractor.
+
 ## 0.3.4 - Ghost Learning Loop v1
 
 - Added `codey/ghost/typed_fields.py` as the shared typed memory-field

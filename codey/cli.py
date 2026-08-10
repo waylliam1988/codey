@@ -118,6 +118,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
 
 
 def cmd_ghost(args: argparse.Namespace) -> int:
+    from codey.ghost.continuity import GhostContinuityStore, build_ghost_continuity
     from codey.ghost.directive import build_ghost_directive
     from codey.ghost.hebbian import GhostHebbianStore
     from codey.ghost.inbox import GhostInboxStore
@@ -128,6 +129,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
     state_home = Path(state_home_arg).expanduser() if state_home_arg else DEFAULT_STATE_HOME
     store = GhostInboxStore(state_home)
     hebbian_store = GhostHebbianStore(state_home)
+    continuity_store = GhostContinuityStore(state_home)
     signal_store = GhostSignalStore(state_home)
     action = str(getattr(args, "ghost_cmd", "") or "").strip()
     if action == "list":
@@ -152,6 +154,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         payload = store.export_state()
         payload["signals"] = list(signal_store.read_all())
         payload["hebbian"] = hebbian_store.export_state()
+        payload["continuity"] = continuity_store.export_state()
         payload["ok"] = True
         _print_json(payload)
         return 0
@@ -217,11 +220,31 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         payload["ok"] = True
         _print_json(payload)
         return 0
+    if action == "continuity":
+        budget_arg = getattr(args, "budget", 900)
+        continuity = build_ghost_continuity(
+            continuity_store,
+            project=getattr(args, "project", "") or "",
+            session_id=getattr(args, "session_id", "") or "",
+            budget=900 if budget_arg is None else budget_arg,
+        )
+        payload = continuity.to_payload()
+        payload["schema_version"] = 1
+        payload["ok"] = True
+        _print_json(payload)
+        return 0
     if action == "rebuild-state":
         if not getattr(args, "yes", False):
             _print_error_json("rebuild-state requires --yes")
             return 2
         ok = hebbian_store.rebuild_from_events()
+        _print_json({"schema_version": 1, "ok": ok})
+        return 0 if ok else 1
+    if action == "rebuild-continuity":
+        if not getattr(args, "yes", False):
+            _print_error_json("rebuild-continuity requires --yes")
+            return 2
+        ok = continuity_store.rebuild_from_events()
         _print_json({"schema_version": 1, "ok": ok})
         return 0 if ok else 1
     if action == "reset":
@@ -231,12 +254,19 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         try:
             ok = store.reset_all(preserve_settings=True)
             hebbian_ok = hebbian_store.reset_all()
+            continuity_ok = continuity_store.reset_all()
             signal_store.delete_all()
         except OSError as exc:
             _print_error_json(exc)
             return 1
-        _print_json({"schema_version": 1, "ok": ok and hebbian_ok, "hebbian_ok": hebbian_ok})
-        return 0 if ok and hebbian_ok else 1
+        all_ok = ok and hebbian_ok and continuity_ok
+        _print_json({
+            "schema_version": 1,
+            "ok": all_ok,
+            "hebbian_ok": hebbian_ok,
+            "continuity_ok": continuity_ok,
+        })
+        return 0 if all_ok else 1
     if action == "delete-scope":
         if not getattr(args, "yes", False):
             _print_error_json("delete-scope requires --yes")
@@ -257,6 +287,11 @@ def cmd_ghost(args: argparse.Namespace) -> int:
                 project=getattr(args, "project", "") or "",
                 session_id=getattr(args, "session_id", "") or "",
             )
+            continuity_removed = continuity_store.delete_scope(
+                args.scope_name,
+                project=getattr(args, "project", "") or "",
+                session_id=getattr(args, "session_id", "") or "",
+            )
         except ValueError as exc:
             _print_error_json(exc)
             return 2
@@ -269,6 +304,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             "removed_count": removed,
             "signal_removed_count": signal_removed,
             "hebbian_removed": hebbian_removed,
+            "continuity_removed_count": continuity_removed,
         })
         return 0
     if action in {"enable", "disable"}:
@@ -310,7 +346,7 @@ def _add_ghost_subcommands(sub) -> None:
     sp_ghost_list.add_argument("--session-id", default="", help="session id for session scope filtering")
     sp_ghost_list.set_defaults(func=cmd_ghost)
 
-    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export Ghost inbox/events/signals/state")
+    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export Ghost inbox/events/signals/state/continuity")
     sp_ghost_export.set_defaults(func=cmd_ghost)
 
     sp_ghost_accept = sub.add_parser("accept", parents=[ghost_common], help="accept an inbox candidate")
@@ -330,11 +366,25 @@ def _add_ghost_subcommands(sub) -> None:
     sp_ghost_directive.add_argument("--budget", type=int, default=900, help="maximum directive characters")
     sp_ghost_directive.set_defaults(func=cmd_ghost)
 
+    sp_ghost_continuity = sub.add_parser("continuity", parents=[ghost_common], help="preview Ghost continuity prompt context")
+    sp_ghost_continuity.add_argument("--project", default="", help="project path for project-scoped continuity")
+    sp_ghost_continuity.add_argument("--session-id", default="", help="session id for session-scoped continuity")
+    sp_ghost_continuity.add_argument("--budget", type=int, default=900, help="maximum continuity characters")
+    sp_ghost_continuity.set_defaults(func=cmd_ghost)
+
     sp_ghost_rebuild = sub.add_parser("rebuild-state", parents=[ghost_common], help="rebuild Ghost Hebbian state from events")
     sp_ghost_rebuild.add_argument("--yes", action="store_true")
     sp_ghost_rebuild.set_defaults(func=cmd_ghost)
 
-    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete Ghost inbox/events/signals/state")
+    sp_ghost_rebuild_continuity = sub.add_parser(
+        "rebuild-continuity",
+        parents=[ghost_common],
+        help="rebuild Ghost continuity projection from events",
+    )
+    sp_ghost_rebuild_continuity.add_argument("--yes", action="store_true")
+    sp_ghost_rebuild_continuity.set_defaults(func=cmd_ghost)
+
+    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete Ghost inbox/events/signals/state/continuity")
     sp_ghost_reset.add_argument("--yes", action="store_true")
     sp_ghost_reset.set_defaults(func=cmd_ghost)
 

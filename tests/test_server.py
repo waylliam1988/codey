@@ -97,6 +97,24 @@ def seed_ghost_style_memory(
     state.ghost_hebbian.reinforce_candidate(created[0])
 
 
+def seed_ghost_continuity(
+    state,
+    *,
+    session_id: str = "session-ghost",
+    run_id: str = "run-continuity",
+    project: str = "",
+    text: str = "Continue bounded local projection work",
+) -> None:
+    assert state.ghost_continuity is not None
+    state.ghost_continuity.sync_from_sources(
+        user_focus_excerpt=text,
+        session_id=session_id,
+        run_id=run_id,
+        project=project,
+        mode="chat" if not project else "planning",
+    )
+
+
 class GitChangesTests(unittest.TestCase):
     def test_parse_git_status(self) -> None:
         files = changes.parse_git_status(" M codey/server.py\n?? new.txt\nR  old.py -> new.py\n")
@@ -1475,6 +1493,8 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(state.run_state_payload()["pending_event"])
 
     def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
+        from codey.ghost.continuity import build_ghost_continuity
+
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
             state.last_terminal_event = {
@@ -1489,15 +1509,39 @@ class RunSnapshotTests(unittest.TestCase):
                 "id": "shell-old",
                 "session_id": "session-1",
             }
+            seed_ghost_continuity(
+                state,
+                session_id="session-1",
+                run_id="run-continuity-1",
+                text="Session one scoped focus",
+            )
+            seed_ghost_continuity(
+                state,
+                session_id="session-2",
+                run_id="run-continuity-2",
+                text="Session two scoped focus",
+            )
 
             state.forget_conversation("session-2")
             self.assertIsNotNone(state.last_terminal_event)
+            self.assertIn(
+                "Session one scoped focus",
+                build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
+            )
+            self.assertNotIn(
+                "Session two scoped focus",
+                build_ghost_continuity(state.ghost_continuity, session_id="session-2").text,
+            )
             state.forget_conversation("session-1")
 
             self.assertIsNone(state.last_terminal_event)
             self.assertIsNone(state.last_shell_result)
             self.assertEqual(state.last_summary, "")
             self.assertEqual(state.last_stop_reason, "")
+            self.assertNotIn(
+                "Session one scoped focus",
+                build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
+            )
 
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.State()
@@ -1575,6 +1619,7 @@ class SessionThreadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
             seed_ghost_style_memory(state, session_id="session-ghost")
+            seed_ghost_continuity(state, session_id="session-ghost")
             events = state.subscribe()
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
@@ -1604,6 +1649,7 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Local Context:", prompt)
         self.assertNotIn("Ghost", prompt)
         self.assertIn("reply structure = answer first", prompt)
+        self.assertIn("Continue bounded local projection work", prompt)
         self.assertNotIn("Prefer concise answer-first replies.", prompt)
         self.assertEqual(done["mode"], "chat")
 
@@ -1652,10 +1698,14 @@ class SessionThreadingTests(unittest.TestCase):
 
         event_types = [event["type"] for event in emitted]
         self.assertLess(event_types.index("task_done"), event_types.index("ghost_learning_done"))
+        self.assertLess(event_types.index("ghost_learning_done"), event_types.index("ghost_continuity_done"))
         learning_event = next(event for event in emitted if event["type"] == "ghost_learning_done")
+        continuity_event = next(event for event in emitted if event["type"] == "ghost_continuity_done")
         self.assertTrue(learning_event["ok"])
         self.assertEqual(learning_event["accepted_count"], 1)
         self.assertEqual(learning_event["reinforced_count"], 1)
+        self.assertTrue(continuity_event["ok"])
+        self.assertGreaterEqual(continuity_event["items_changed"], 1)
         self.assertIn("User message:", learning_provider.send.call_args.args[0])
         self.assertNotIn("User message:", provider.send.call_args.args[0])
         self.assertIn("reply length = concise", directive_text)
@@ -1692,7 +1742,9 @@ class SessionThreadingTests(unittest.TestCase):
 
         state.ghost_learning_provider_factory.assert_not_called()
         learning_event = next(event for event in emitted if event["type"] == "ghost_learning_done")
+        continuity_event = next(event for event in emitted if event["type"] == "ghost_continuity_done")
         self.assertEqual(learning_event["skipped_reason"], "learning_disabled")
+        self.assertEqual(continuity_event["skipped_reason"], "learning_disabled")
 
     def test_planning_readonly_does_not_run_ghost_learning_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1728,6 +1780,7 @@ class SessionThreadingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
             seed_ghost_style_memory(state, session_id="session-ghost")
+            seed_ghost_continuity(state, session_id="session-ghost")
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -1750,14 +1803,22 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertIn("Local Context:", kwargs["owner_prompt"])
         self.assertNotIn("Ghost", kwargs["owner_prompt"])
         self.assertIn("reply structure = answer first", kwargs["owner_prompt"])
+        self.assertIn("Continue bounded local projection work", kwargs["owner_prompt"])
         self.assertNotIn("Prefer concise answer-first replies.", kwargs["owner_prompt"])
         self.assertNotIn("Local Context:", kwargs["context"])
         self.assertNotIn("Ghost", kwargs["context"])
+        self.assertNotIn("Continue bounded local projection work", kwargs["context"])
 
     def test_planning_readonly_passes_ghost_directive_to_agent(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
             seed_ghost_style_memory(state, session_id="session-plan", project=td)
+            seed_ghost_continuity(
+                state,
+                session_id="session-plan",
+                project=td,
+                text="Plan bounded continuity projection",
+            )
             provider = mock.Mock()
             provider.name = "DeepSeek Web"
             provider.location = "https://chat.deepseek.com/"
@@ -1784,6 +1845,9 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(agent_run.call_args.kwargs["permission_profile"], "planning_readonly")
         self.assertIn("Local Context:", agent_run.call_args.kwargs["ghost_directive"])
         self.assertNotIn("Ghost", agent_run.call_args.kwargs["ghost_directive"])
+        self.assertIn("Local Context:", agent_run.call_args.kwargs["ghost_continuity"])
+        self.assertIn("Plan bounded continuity projection", agent_run.call_args.kwargs["ghost_continuity"])
+        self.assertNotIn("Ghost", agent_run.call_args.kwargs["ghost_continuity"])
 
     def test_project_writer_receives_empty_ghost_directive(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1814,6 +1878,7 @@ class SessionThreadingTests(unittest.TestCase):
 
         self.assertEqual(agent_run.call_args.kwargs["permission_profile"], "coding_writer")
         self.assertEqual(agent_run.call_args.kwargs["ghost_directive"], "")
+        self.assertEqual(agent_run.call_args.kwargs["ghost_continuity"], "")
 
     def test_state_marks_provider_available_after_connect(self) -> None:
         class FakeProvider:
@@ -3180,10 +3245,12 @@ class SessionThreadingTests(unittest.TestCase):
         second.send.assert_not_called()
         consensus_kwargs = self.consensus_mock.call_args.kwargs
         self.assertTrue(consensus_kwargs["draft_first"])
-        self.assertEqual(consensus_kwargs.get("owner_prompt", ""), "")
+        self.assertIn("Local Context:", consensus_kwargs.get("owner_prompt", ""))
+        self.assertIn("Choose a database", consensus_kwargs.get("owner_prompt", ""))
         self.assertIn("Choose a database", consensus_kwargs["context"])
         self.assertIn("First answer", consensus_kwargs["context"])
         self.assertNotIn("Current request:", consensus_kwargs["context"])
+        self.assertNotIn("Local Context:", consensus_kwargs["context"])
 
     def test_recovered_chat_handoff_goes_to_owner_not_advisor_context(self) -> None:
         with tempfile.TemporaryDirectory() as state_home:

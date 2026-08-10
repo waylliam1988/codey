@@ -1,5 +1,77 @@
 # Codey Test Report
 
+## 0.3.5 Ghost Continuity v1
+
+Codey 0.3.5 adds a bounded local continuity projection. It is not a transcript
+store, a second memory system, or a Research evidence layer. Runtime reads are
+projection-only from `continuity.json`; rendering does not rebuild state,
+quarantine files, write events, call providers, or scan project source.
+
+Production changes:
+
+- New `codey/ghost/continuity.py` stores `continuity.json` and
+  `continuity_events.jsonl`, with export, reset, delete-scope, and explicit
+  rebuild controls.
+- Continuity can project accepted typed memory, recent Chat focus excerpts,
+  bounded planning run-ledger facts, Research synthesis / decision titles, and
+  bounded `Open questions` section lines. Raw transcripts, raw Research bodies,
+  evidence sections, source snippets, webpage text, and source files are not
+  rendered.
+- Normal Chat and `planning_readonly` can read the neutral `Local Context`.
+  Consensus sends it only to the owner prompt. Project Writer, Research,
+  Reviewer, protocol repair, permissions, and tool approval paths do not receive
+  continuity context.
+- Task completion runs a local best-effort continuity sync after the learning
+  loop. The context is eventual-consistent: newly synced continuity should be
+  relied on after the post-turn `ghost_continuity_done` event, not at the exact
+  instant `task_done` is emitted.
+- `forget_conversation(session_id)` now best-effort deletes session-scoped
+  continuity, so deleting a chat clears its recent-focus/open-question
+  projection as well as the conversation store.
+- Continuity event rebuild is blocked when `continuity_events.jsonl` exceeds
+  the byte limit, preventing an oversized audit log from silently rebuilding an
+  empty projection. Repeated sync of the same source/text is idempotent and does
+  not append duplicate item events.
+
+Validation:
+
+```text
+python -m pytest -q
+# 1667 passed, 9 skipped, 1 pytest cache warning, 255 subtests passed
+
+python -m pytest tests\test_ghost_continuity.py tests\test_ghost_directive.py tests\test_ghost_learning_loop.py tests\test_cli.py tests\test_agent.py tests\test_server.py tests\test_permission_profiles.py tests\test_architecture.py -q
+# 328 passed, 3 skipped, 1 pytest cache warning, 59 subtests passed
+
+python -m ruff check .
+# All checks passed!
+
+python -B tests\manual\ghost_continuity_ab.py --self-test
+# self-test ok
+
+git diff --check
+# passed
+```
+
+Manual live A/B, restarting the dedicated 9222 Edge CDP session between
+providers:
+
+```text
+python -B tests\manual\ghost_continuity_ab.py --provider deepseek --port 9222 --timeout 90 --new-chat-timeout 45 --no-open-if-missing --output tests\manual\results\ghost_continuity_deepseek.json
+# ok: true
+python -B tests\manual\ghost_continuity_ab.py --provider qwen --port 9222 --timeout 90 --new-chat-timeout 45 --no-open-if-missing --output tests\manual\results\ghost_continuity_qwen.json
+# ok: true
+python -B tests\manual\ghost_continuity_ab.py --provider mimo --port 9222 --timeout 90 --new-chat-timeout 45 --no-open-if-missing --output tests\manual\results\ghost_continuity_mimo.json
+# ok: true
+python -B tests\manual\ghost_continuity_ab.py --provider glm --port 9222 --timeout 90 --new-chat-timeout 45 --no-open-if-missing --output tests\manual\results\ghost_continuity_glm.json
+# ok: true
+python -B tests\manual\ghost_continuity_ab.py --provider stepfun --port 9222 --timeout 90 --new-chat-timeout 45 --no-open-if-missing --output tests\manual\results\ghost_continuity_stepfun.json
+# ok: true
+```
+
+The live cases verified recent-focus carryover, current-request precedence over
+continuity, open questions not being treated as facts, planning JSON compliance,
+and no model-visible internal `Ghost` naming.
+
 ## 0.3.4 Ghost Learning Loop v1
 
 Codey 0.3.4 closes the first Ghost learning loop for normal Chat: after

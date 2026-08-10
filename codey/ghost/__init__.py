@@ -5,6 +5,13 @@ accepted candidates into bounded local Hebbian state, and render confirmed
 state as a small prompt directive.
 """
 
+from codey.ghost.continuity import (
+    GhostContinuity,
+    GhostContinuityItem,
+    GhostContinuityResult,
+    GhostContinuityStore,
+    build_ghost_continuity,
+)
 from codey.ghost.directive import GhostDirective, build_ghost_directive
 from codey.ghost.hebbian import GhostEdge, GhostHebbianStore, GhostNode
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
@@ -14,6 +21,10 @@ from codey.ghost.store import GhostSignalStore
 
 __all__ = [
     "GhostDirective",
+    "GhostContinuity",
+    "GhostContinuityItem",
+    "GhostContinuityResult",
+    "GhostContinuityStore",
     "GhostEdge",
     "GhostHebbianStore",
     "GhostInboxStore",
@@ -25,5 +36,6 @@ __all__ = [
     "GhostSignal",
     "GhostSignalParseResult",
     "GhostSignalStore",
+    "build_ghost_continuity",
     "build_ghost_directive",
 ]

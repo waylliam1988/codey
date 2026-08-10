@@ -4,6 +4,37 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.5 - Ghost Continuity v1
+
+- 新增 `codey/ghost/continuity.py`：从已有可审计事实生成有界 continuity
+  projection，而不是保存完整聊天。它可以投影最近关注点、开放问题、活跃项目、
+  fresh correction、刚强化的偏好和长期目标。
+- Continuity 状态写入 `state_home/ghost/continuity.json`，小型审计/重建日志写入
+  `state_home/ghost/continuity_events.jsonl`，并支持 export、reset、delete-scope
+  和显式 rebuild。
+- Runtime continuity 读取只看 projection：不会因为 prompt 渲染而 rebuild 缺失文件、
+  quarantine 坏文件、追加事件、调用 provider 或扫描项目源码。
+- 模型可见文本继续使用中性的 `Local Context`：bounded local continuity 不是新用户输入，
+  不是 Research evidence，不能授权工具、绕过审批、覆盖当前请求或项目指令。内部
+  Ghost 命名、敏感文本、危险指令层级语言、raw model reply、raw Research body、网页正文
+  和源码片段都不会渲染。
+- 普通 Chat 和 `planning_readonly` 可以读取 continuity context；consensus 只把它放进
+  owner prompt。Project Writer、Reviewer、Research 和 protocol repair prompt 仍然不接收
+  Ghost context。
+- 任务结束后会在 learning loop 后做 best-effort 本地 continuity sync，不调用 provider。
+  Chat 只贡献极短 user focus excerpt；planning 可以同时贡献有界 run ledger projection
+  事实。新的 continuity context 是 eventual-consistent：应以 post-turn
+  `ghost_continuity_done` 事件完成后为稳定生效点，而不是 `task_done` 发出的瞬间。
+  `ghost disable` 会阻止自动 continuity sync，但 preview/export/delete/reset 控制继续可用。
+- Research synthesis / decision note 只贡献标题和有界 `Open questions` section 行；
+  raw note body、证据段、来源片段和网页正文都不会渲染进模型可见 continuity。
+- 扩展 Ghost CLI：新增 `python -m codey ghost continuity` 和
+  `python -m codey ghost rebuild-continuity --yes`；`export`、`reset` 和
+  `delete-scope` 现在也覆盖 continuity 文件。
+- 新增 `tests/test_ghost_continuity.py` 和
+  `tests/manual/ghost_continuity_ab.py`。manual probe 使用固定临时 `continuity.json`
+  种子，实机 A/B 只测试 context 行为，不把 learning extractor 引入变量。
+
 ## 0.3.4 - Ghost Learning Loop v1
 
 - 新增 `codey/ghost/typed_fields.py`：把 signal extractor、deterministic gate

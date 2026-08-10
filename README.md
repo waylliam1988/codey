@@ -1,20 +1,26 @@
 # Codey
 
-**Use web AI models as a local coding and research assistant.**
+**Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.4-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.5-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
-[![Local first](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#safety-model)
+[![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
 [中文说明](README.zh-CN.md)
 
-Codey connects to AI chat websites you already use, such as DeepSeek, MiMo, StepFun, Qwen, and GLM, or to a local OpenAI-compatible model, then gives them controlled local work loops: chat, research with evidence, read files, edit files, run tests, show diffs, review changes, and restore safely.
+Codey connects to AI chat websites you already use, such as DeepSeek, MiMo,
+StepFun, Qwen, and GLM, or to a local OpenAI-compatible model, then gives them
+controlled local work loops: chat, research with evidence, read files, edit
+files, run tests, show diffs, review changes, restore safely, and carry bounded
+local memory/continuity that you can inspect, export, delete, or disable.
 
-It is a local-first, low-cost AI coding and research workspace for people who want useful coding help without wiring paid model APIs into every project.
+It is a local-first, low-cost AI coding, research, and controllable-memory
+workspace for people who want useful help without wiring paid model APIs into
+every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.4`
+Version: `0.3.5`
 
 [Version history](CHANGELOG.md)
 
@@ -23,6 +29,9 @@ Version: `0.3.4`
 ## At a Glance
 
 - **Use web AI accounts you already have**: DeepSeek, MiMo, StepFun, Qwen, and GLM are supported.
+- **Keep memory controllable**: explicit preferences and short continuity
+  context stay in bounded local files that can be previewed, exported, deleted,
+  reset, or disabled.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
 - **Keep code local**: models access only the project folder you choose.
 - **Stay oriented while coding**: after each local tool result, Codey reminds
@@ -100,7 +109,7 @@ This is not about replacing professional tools. It is about making the first ste
 - Keep non-Git diff and restore available across Codey restarts
 - Inspect and control the local Ghost memory inbox, Hebbian state, and prompt
   preview with
-  `python -m codey ghost list/export/directive/accept/reject/state/rebuild-state/reset/delete-scope/enable/disable`.
+  `python -m codey ghost list/export/directive/continuity/accept/reject/state/rebuild-state/rebuild-continuity/reset/delete-scope/enable/disable`.
   Accepted candidates can become a bounded local weighted memory ledger, and
   confirmed memory can now appear as a short neutral local context in normal
   chat and read-only planning. The model-visible prompt text is generated from
@@ -111,8 +120,16 @@ This is not about replacing professional tools. It is about making the first ste
   post-turn best-effort learning loop for explicit typed style preferences:
   the extractor uses a fresh provider tab, writes the raw signal audit first,
   then inbox/gate/Hebbian state, and the next Chat turn can reflect the learned
-  local context. `ghost disable` prevents future extractor calls while keeping
-  list/export/delete controls available
+  local context after the post-turn `ghost_learning_done` /
+  `ghost_continuity_done` events have completed. `ghost disable` prevents future extractor calls while keeping
+  list/export/delete controls available. Codey now also maintains a bounded
+  continuity projection from accepted memory, short task focus, run ledger
+  projections, Research synthesis/decision titles, and bounded open-question
+  section lines. It can surface recent focus, open questions, active projects,
+  and recently reinforced preferences as neutral `Local Context` in normal Chat
+  and read-only planning, without storing full chat transcripts, source files,
+  Research bodies, or webpage bodies, and without entering Project Writer,
+  Research, Reviewer, repair prompts, or permissions
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
 - Recover one bounded web-chat state rule from boolean-only evidence when a

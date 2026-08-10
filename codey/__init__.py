@@ -1,3 +1,3 @@
-"""Codey: use web AI models as a local coding and research assistant."""
+"""Codey: local-first coding, research, and controllable memory with web AI."""
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"

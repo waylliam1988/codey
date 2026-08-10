@@ -49,6 +49,7 @@ from codey.conversation_store import ConversationStore
 from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.handoff import ConversationContext
 from codey.local_store import DEFAULT_STATE_HOME
+from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.managed_outputs import ManagedOutputStore
@@ -613,6 +614,7 @@ class State:
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
         self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
+        self.ghost_continuity = GhostContinuityStore(state_home) if state_home else None
         self.ghost_signals = GhostSignalStore(state_home) if state_home else None
         self.ghost_learning_provider_factory = None
         self.provider_supervisor = (
@@ -1023,6 +1025,12 @@ class State:
             with self.conversation_store_lock:
                 self.conversation_tokens.pop(session_id, None)
                 self.conversation_store.delete(session_id)
+        continuity = getattr(self, "ghost_continuity", None)
+        if continuity is not None:
+            try:
+                continuity.delete_scope("session", session_id=session_id)
+            except Exception:
+                pass
 
     def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
         with self.lock:

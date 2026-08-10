@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 
 KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
+    "ghost_continuity",
     "ghost_directive",
     "project_instructions",
     "verified_facts",
@@ -32,6 +33,7 @@ CODING_WRITER_CONTEXT_SOURCE_KEYS = (
     "coding_current_context",
 )
 PLANNING_READONLY_CONTEXT_SOURCE_KEYS = (
+    "ghost_continuity",
     "ghost_directive",
     "project_instructions",
     "verified_facts",

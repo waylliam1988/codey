@@ -75,6 +75,7 @@ WORK_CHECKPOINT_CONTEXT_BUDGET = MAX_WORK_CHECKPOINT_PROMPT_CHARS
 INITIAL_LISTING_CONTEXT_BUDGET = 4000
 CODING_CURRENT_CONTEXT_BUDGET = 3000
 GHOST_DIRECTIVE_CONTEXT_BUDGET = 900
+GHOST_CONTINUITY_CONTEXT_BUDGET = 900
 VERIFICATION_REQUEST_RE = re.compile(
     r"\b("
     r"run|test|tests|unittest|pytest|verify|verification|check|build|lint|typecheck"
@@ -607,6 +608,7 @@ def run(
     verification_successful_checks: tuple[VerificationCandidate, ...] = (),
     coding_context_enabled: bool = True,
     ghost_directive: str = "",
+    ghost_continuity: str = "",
     permission_profile: str = "coding_writer",
     tool_fns: AgentToolFns | None = None,
 ) -> RunResult:
@@ -703,6 +705,15 @@ def run(
                     budget=GHOST_DIRECTIVE_CONTEXT_BUDGET,
                     freshness="run_start",
                     why_included="bounded local confirmed Ghost memory",
+                )
+            )
+            sources.append(
+                ContextSource(
+                    key="ghost_continuity",
+                    loader=lambda: ghost_continuity,
+                    budget=GHOST_CONTINUITY_CONTEXT_BUDGET,
+                    freshness="run_start",
+                    why_included="bounded local continuity projection",
                 )
             )
         sources.extend((

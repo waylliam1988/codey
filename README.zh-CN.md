@@ -1,20 +1,24 @@
 # Codey
 
-**让网页版 AI 成为本地编程与研究助手。**
+**把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.3.4-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.5-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
-[![本地优先](https://img.shields.io/badge/local--first-web%20AI%20coding-2ea44f)](#安全模型)
+[![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
 [English](README.md)
 
-Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、StepFun、Qwen 和 GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的本地工作闭环：聊天、带证据的 Research、读文件、改文件、跑测试、看 diff、审查改动、必要时恢复。
+Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、StepFun、Qwen 和
+GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的本地工作闭环：
+聊天、带证据的 Research、读文件、改文件、跑测试、看 diff、审查改动、必要时
+恢复，以及可检查、可导出、可删除、可禁用的本地有界记忆 / continuity。
 
-它是一个本地优先、低成本、多网页模型兼容的 AI 编程与研究工作台，适合不想为每个项目接入付费模型 API 的用户。
+它是一个本地优先、低成本、多网页模型兼容的 AI 编程、研究和可控记忆工作台，
+适合不想为每个项目接入付费模型 API 的用户。
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.4`
+版本：`0.3.5`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -25,6 +29,8 @@ Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、Step
 ## 一眼看懂
 
 - **使用你已经登录的网页 AI**：支持 DeepSeek、MiMo、StepFun、Qwen 和 GLM。
+- **记忆可控**：显式偏好和很短的 continuity context 会保存在本地有界文件里，
+  可以预览、导出、删除、重置或禁用。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存证据笔记、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
 - **代码留在本机**：模型只能访问你选择的项目目录。
 - **写代码时不容易忘事**：每次本地工具结果后，Codey 会提醒模型已经读过哪些
@@ -93,15 +99,21 @@ Codey 想解决的是一个很朴素的问题：
 - 非 Git 项目的 diff 和 restore 在 Codey 重启后仍然可用
 - Ghost 现在有本地 memory inbox、Hebbian state 和 prompt preview：显式学习信号会
   先成为可审计候选，accepted 候选可以进入有界的本地记忆权重账本，并可通过
-  `python -m codey ghost list/export/directive/accept/reject/state/rebuild-state/reset/delete-scope/enable/disable`
+  `python -m codey ghost list/export/directive/continuity/accept/reject/state/rebuild-state/rebuild-continuity/reset/delete-scope/enable/disable`
   控制；confirmed memory 现在可以作为很短的中性本地上下文进入普通聊天和只读
   planning。模型可见 prompt 文本由显式 allowlist 里的 typed memory field 生成，
   不渲染 raw label 或任意未知 slug，也不会暴露内部 `Ghost` / `Ghost Directive`
   命名、敏感 secret-like 文本或指令层级覆盖语言，也仍不进入 Project Writer、Research、
   repair prompt 或权限系统。普通 Chat 现在会在回合结束后 best-effort 跑显式学习闭环：
   extractor 使用 fresh provider tab，不污染当前聊天；raw signal audit 写成功后才进入
-  inbox/gate/Hebbian，下一轮 Chat 可以反映学到的本地上下文。`ghost disable` 会阻止未来
-  extractor 调用，同时保留 list/export/delete 控制
+  inbox/gate/Hebbian；`ghost_learning_done` / `ghost_continuity_done` 这些 post-turn
+  事件完成后，后续 Chat 可以稳定反映学到的本地上下文。`ghost disable` 会阻止未来
+  extractor 调用，同时保留 list/export/delete 控制。Codey 现在还会维护有界的
+  continuity projection：只从 accepted memory、短 task focus、run ledger projection
+  和 Research synthesis/decision 标题、bounded open-question section 行等本地有界事实里
+  生成最近关注点、开放问题、活跃项目和刚强化的偏好；它不保存完整聊天、完整源码、
+  Research body 或完整网页正文，只以中性的 `Local Context` 进入普通 Chat 和只读 planning，
+  不进入 Project Writer、Research、Reviewer、repair prompt 或权限系统
 - 网页输入框或发送按钮改版时，先做有边界的本地发现，仍不确定则让健康兄弟模型
   从脱敏候选中选择；真实发送成功后才能保存、晋级或回滚恢复包
 - 控件恢复仍不足时，只根据脱敏布尔事实恢复一条有边界的网页状态规则；不同网页的

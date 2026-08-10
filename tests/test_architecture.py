@@ -56,6 +56,21 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("http.server", imports)
         self.assertNotIn("codey.server", imports)
 
+    def test_ghost_runtime_has_no_provider_browser_tool_or_research_dependency(self) -> None:
+        forbidden = {
+            "torch",
+            "transformers",
+            "codey.browser",
+            "codey.providers",
+            "codey.tool_runtime",
+            "codey.research.runner",
+            "codey.research.tools",
+        }
+        for path in (ROOT / "codey" / "ghost").glob("*.py"):
+            with self.subTest(path=path.name):
+                imports = imported_modules(path)
+                self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
         agent_source = (ROOT / "codey" / "agent.py").read_text(encoding="utf-8")
         tool_source = (ROOT / "codey" / "tool_runtime.py").read_text(encoding="utf-8")

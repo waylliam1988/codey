@@ -746,11 +746,13 @@ class RunLoopTests(unittest.TestCase):
                 fresh_chat=False,
                 permission_profile="planning_readonly",
                 ghost_directive="Local Context:\n- Prefer: concise answer-first replies.",
+                ghost_continuity="Local Context:\n- Recent focus: bounded projection.",
             )
 
         self.assertEqual(result.stop_reason, "done")
         self.assertIn("Local Context:", provider.sent[0])
         self.assertIn("concise answer-first", provider.sent[0])
+        self.assertIn("bounded projection", provider.sent[0])
         self.assertNotIn("Ghost", provider.sent[0])
 
     def test_coding_writer_intro_omits_ghost_directive(self) -> None:
@@ -764,12 +766,14 @@ class RunLoopTests(unittest.TestCase):
                 on_event=lambda _event: None,
                 fresh_chat=False,
                 ghost_directive="Local Context:\n- Prefer: concise answer-first replies.",
+                ghost_continuity="Local Context:\n- Recent focus: bounded projection.",
             )
 
         self.assertEqual(result.stop_reason, "done")
         self.assertNotIn("Local Context:", provider.sent[0])
         self.assertNotIn("Ghost", provider.sent[0])
         self.assertNotIn("concise answer-first", provider.sent[0])
+        self.assertNotIn("bounded projection", provider.sent[0])
 
     def test_protocol_repair_prompt_omits_ghost_directive(self) -> None:
         provider = FakeProvider(
@@ -786,6 +790,7 @@ class RunLoopTests(unittest.TestCase):
                 fresh_chat=False,
                 permission_profile="planning_readonly",
                 ghost_directive="Local Context:\n- Prefer: concise answer-first replies.",
+                ghost_continuity="Local Context:\n- Recent focus: bounded projection.",
             )
 
         self.assertEqual(result.stop_reason, "done")
@@ -793,6 +798,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertNotIn("Local Context:", provider.sent[1])
         self.assertNotIn("Ghost", provider.sent[1])
         self.assertNotIn("concise answer-first", provider.sent[1])
+        self.assertNotIn("bounded projection", provider.sent[1])
 
     def test_project_intro_includes_local_execution_checkpoint_when_provided(self) -> None:
         provider = FakeProvider('{"tool":"done","args":{"summary":"resumed"}}')

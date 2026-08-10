@@ -276,6 +276,49 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(zero_budget_payload["selected_count"], 0)
         self.assertTrue(zero_budget_payload["truncated"])
 
+    def test_cmd_ghost_continuity_exports_bounded_preview(self) -> None:
+        from codey.ghost.continuity import GhostContinuityStore
+
+        with tempfile.TemporaryDirectory() as td:
+            store = GhostContinuityStore(td)
+            store.sync_from_sources(
+                user_focus_excerpt="Continue the bounded continuity projection",
+                session_id="s1",
+                run_id="r1",
+                mode="chat",
+            )
+            args = mock.Mock(
+                ghost_cmd="continuity",
+                state_home=td,
+                project="",
+                session_id="s1",
+                budget=900,
+            )
+            stdout = io.StringIO()
+
+            with mock.patch("sys.stdout", stdout):
+                exit_code = cli.cmd_ghost(args)
+
+            args.budget = 0
+            zero_budget_stdout = io.StringIO()
+            with mock.patch("sys.stdout", zero_budget_stdout):
+                zero_budget_exit_code = cli.cmd_ghost(args)
+
+        self.assertEqual(exit_code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertTrue(payload["ok"])
+        self.assertIn("Local Context:", payload["text"])
+        self.assertIn("Bounded local continuity", payload["text"])
+        self.assertIn("bounded continuity projection", payload["text"])
+        self.assertNotIn("Ghost", payload["text"])
+        self.assertEqual(payload["selected_count"], 1)
+        self.assertEqual(zero_budget_exit_code, 0)
+        zero_budget_payload = json.loads(zero_budget_stdout.getvalue())
+        self.assertTrue(zero_budget_payload["ok"])
+        self.assertEqual(zero_budget_payload["text"], "")
+        self.assertEqual(zero_budget_payload["selected_count"], 0)
+        self.assertTrue(zero_budget_payload["truncated"])
+
 
 if __name__ == "__main__":
     unittest.main()
