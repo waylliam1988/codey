@@ -4,6 +4,34 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.6 - Cognitive Sleep v1
+
+- Added `codey/ghost/sleep.py`, a short-lived local Ghost maintenance cycle
+  that runs after successful tasks. It checks projection/event health, applies
+  Hebbian decay only when due, refreshes continuity from existing bounded local
+  sources, compacts Ghost event logs when limits require it, and writes a
+  bounded sleep report.
+- Cognitive Sleep is not a background agent and does not call providers, browse
+  the web, run shell commands, generate new memory candidates, create
+  prompt-visible free text, or change the `Local Context` format. It is
+  invisible in the UI and emits no SSE event.
+- Added `state_home/ghost/sleep_state.json` and
+  `state_home/ghost/sleep_events.jsonl`. Reports store only cycle metadata,
+  step names, counts, warnings, timings, cancellation state, and run/session/
+  project references; they do not store user tasks, assistant replies, prompts,
+  Research bodies, webpage text, source snippets, or source code.
+- Sleep is single-flight and cancellable between steps. New user work keeps the
+  main task slot first; sleep fails open and never blocks task completion.
+- Existing Ghost privacy controls now cover sleep files: `ghost export` includes
+  sleep state/events, `ghost reset --yes` removes them, and `ghost delete-scope`
+  filters matching session/project/user report references.
+- Hebbian decay now supports a minimum maintenance interval and skips projection
+  and audit writes when no weight/status change is due, avoiding per-turn event
+  noise.
+- Added `tests/test_ghost_sleep.py` plus server, CLI, UI, architecture, and
+  Hebbian coverage. No live web A/B is required for this release because it
+  does not change model-visible prompts, provider adapters, or UI behavior.
+
 ## 0.3.5 - Ghost Continuity v1
 
 - Added `codey/ghost/continuity.py`, a bounded local continuity projection built

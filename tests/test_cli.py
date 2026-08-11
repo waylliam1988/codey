@@ -319,6 +319,72 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(zero_budget_payload["selected_count"], 0)
         self.assertTrue(zero_budget_payload["truncated"])
 
+    def test_cmd_ghost_export_includes_sleep_state(self) -> None:
+        from codey.ghost.sleep import GhostSleepStore
+
+        with tempfile.TemporaryDirectory() as td:
+            GhostSleepStore(td).run_once(run_id="r1", session_id="s1")
+            args = mock.Mock(ghost_cmd="export", state_home=td)
+            stdout = io.StringIO()
+
+            with mock.patch("sys.stdout", stdout):
+                exit_code = cli.cmd_ghost(args)
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertIn("sleep", payload)
+        self.assertIn("sleep_events", payload["sleep"])
+
+    def test_cmd_ghost_reset_deletes_sleep_files(self) -> None:
+        from codey.ghost.sleep import GhostSleepStore
+
+        with tempfile.TemporaryDirectory() as td:
+            sleep = GhostSleepStore(td)
+            sleep.run_once(run_id="r1", session_id="s1")
+            self.assertTrue(sleep.state_path.exists())
+            self.assertTrue(sleep.events_path.exists())
+            args = mock.Mock(ghost_cmd="reset", state_home=td, yes=True)
+            stdout = io.StringIO()
+
+            with mock.patch("sys.stdout", stdout):
+                exit_code = cli.cmd_ghost(args)
+
+            self.assertFalse(sleep.state_path.exists())
+            self.assertFalse(sleep.events_path.exists())
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["sleep_ok"])
+
+    def test_cmd_ghost_delete_scope_cleans_sleep_session_refs(self) -> None:
+        from codey.ghost.sleep import GhostSleepStore
+
+        with tempfile.TemporaryDirectory() as td:
+            sleep = GhostSleepStore(td)
+            sleep.run_once(run_id="r1", session_id="session-delete")
+            args = mock.Mock(
+                ghost_cmd="delete-scope",
+                state_home=td,
+                scope_name="session",
+                project="",
+                session_id="session-delete",
+                yes=True,
+            )
+            stdout = io.StringIO()
+
+            with mock.patch("sys.stdout", stdout):
+                exit_code = cli.cmd_ghost(args)
+
+            exported = sleep.export_state()
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["sleep_removed"]["reports"], 1)
+        self.assertEqual(exported["sleep"], {})
+
 
 if __name__ == "__main__":
     unittest.main()

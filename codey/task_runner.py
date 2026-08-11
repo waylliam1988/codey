@@ -495,6 +495,34 @@ class TaskRunner:
         except Exception:
             return
 
+    def _maybe_kick_ghost_sleep(
+        self,
+        frame: _RunFrame | None,
+        event: dict[str, object],
+    ) -> None:
+        if frame is None:
+            return
+        if str(event.get("stop_reason") or "") != "done":
+            return
+        kick = getattr(self.state, "kick_ghost_sleep", None)
+        if not callable(kick):
+            return
+        try:
+            projection = (
+                load_run_projection(self.run_ledgers, frame.request.session_id, frame.run_id)
+                if self.run_ledgers is not None
+                else None
+            )
+            kick(
+                trigger="post_turn",
+                run_id=frame.run_id,
+                session_id=frame.request.session_id,
+                project=frame.project_text,
+                run_projection=projection,
+            )
+        except Exception:
+            return
+
     def _event_with_projected_receipt(
         self,
         event: dict,
@@ -955,6 +983,7 @@ class TaskRunner:
             state.finish_run(run_id, event)
             self._maybe_run_ghost_learning(frame, event)
             self._maybe_sync_ghost_continuity(frame, event)
+            self._maybe_kick_ghost_sleep(frame, event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             current_id = current_provider_id()
             state.set_provider_session(current_id, None)

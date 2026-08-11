@@ -122,6 +122,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
     from codey.ghost.directive import build_ghost_directive
     from codey.ghost.hebbian import GhostHebbianStore
     from codey.ghost.inbox import GhostInboxStore
+    from codey.ghost.sleep import GhostSleepStore
     from codey.ghost.store import GhostSignalStore
     from codey.local_store import DEFAULT_STATE_HOME
 
@@ -130,6 +131,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
     store = GhostInboxStore(state_home)
     hebbian_store = GhostHebbianStore(state_home)
     continuity_store = GhostContinuityStore(state_home)
+    sleep_store = GhostSleepStore(state_home)
     signal_store = GhostSignalStore(state_home)
     action = str(getattr(args, "ghost_cmd", "") or "").strip()
     if action == "list":
@@ -155,6 +157,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         payload["signals"] = list(signal_store.read_all())
         payload["hebbian"] = hebbian_store.export_state()
         payload["continuity"] = continuity_store.export_state()
+        payload["sleep"] = sleep_store.export_state()
         payload["ok"] = True
         _print_json(payload)
         return 0
@@ -255,16 +258,18 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             ok = store.reset_all(preserve_settings=True)
             hebbian_ok = hebbian_store.reset_all()
             continuity_ok = continuity_store.reset_all()
+            sleep_ok = sleep_store.reset_all()
             signal_store.delete_all()
         except OSError as exc:
             _print_error_json(exc)
             return 1
-        all_ok = ok and hebbian_ok and continuity_ok
+        all_ok = ok and hebbian_ok and continuity_ok and sleep_ok
         _print_json({
             "schema_version": 1,
             "ok": all_ok,
             "hebbian_ok": hebbian_ok,
             "continuity_ok": continuity_ok,
+            "sleep_ok": sleep_ok,
         })
         return 0 if all_ok else 1
     if action == "delete-scope":
@@ -292,6 +297,11 @@ def cmd_ghost(args: argparse.Namespace) -> int:
                 project=getattr(args, "project", "") or "",
                 session_id=getattr(args, "session_id", "") or "",
             )
+            sleep_removed = sleep_store.delete_scope(
+                args.scope_name,
+                project=getattr(args, "project", "") or "",
+                session_id=getattr(args, "session_id", "") or "",
+            )
         except ValueError as exc:
             _print_error_json(exc)
             return 2
@@ -305,6 +315,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             "signal_removed_count": signal_removed,
             "hebbian_removed": hebbian_removed,
             "continuity_removed_count": continuity_removed,
+            "sleep_removed": sleep_removed,
         })
         return 0
     if action in {"enable", "disable"}:
@@ -346,7 +357,7 @@ def _add_ghost_subcommands(sub) -> None:
     sp_ghost_list.add_argument("--session-id", default="", help="session id for session scope filtering")
     sp_ghost_list.set_defaults(func=cmd_ghost)
 
-    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export Ghost inbox/events/signals/state/continuity")
+    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export Ghost inbox/events/signals/state/continuity/sleep")
     sp_ghost_export.set_defaults(func=cmd_ghost)
 
     sp_ghost_accept = sub.add_parser("accept", parents=[ghost_common], help="accept an inbox candidate")
@@ -384,7 +395,7 @@ def _add_ghost_subcommands(sub) -> None:
     sp_ghost_rebuild_continuity.add_argument("--yes", action="store_true")
     sp_ghost_rebuild_continuity.set_defaults(func=cmd_ghost)
 
-    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete Ghost inbox/events/signals/state/continuity")
+    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete Ghost inbox/events/signals/state/continuity/sleep")
     sp_ghost_reset.add_argument("--yes", action="store_true")
     sp_ghost_reset.set_defaults(func=cmd_ghost)
 

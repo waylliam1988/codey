@@ -876,37 +876,51 @@ Research 和 Project Writer 路径确认不接 continuity
 
 ## 0.3.6 - Cognitive Sleep v1
 
+状态：已按更克制的 v1 落地。`0.3.6` 是任务结束后短暂运行的本地维护线程，
+不是后台 agent，也不是第二条学习入口。
+
 ### 做什么
 
-借 Nezha-mini `cognitive_sleep.py` 的思想，但改成 Codey 风格的 bounded maintenance。
+借 Nezha-mini `cognitive_sleep.py` 的思想，但改成 Codey 风格的 bounded maintenance：
+step-by-step report、step 间可取消、有界维护、最后写本地审计。
 
 输入：
 
 ```text
-最近 N 个 run ledger
-最近 Research synthesis notes
-Concept Graph / Unified Graph
-accepted / rejected candidates
-provider failure summaries
+accepted Hebbian state
+continuity projection
+inbox / Hebbian / continuity event logs
+刚完成 run 的有界 run ledger projection（如果存在）
+最近 Research synthesis / decision note 的标题和 bounded Open questions
 ```
 
 输出：
 
 ```text
-new memory candidates
-decay updates
-merge suggestions
-research open questions
-provider/action tendency candidates
+sleep_state.json
+sleep_events.jsonl
+projection health warnings
+Hebbian decay updates（仅到期且有 meaningful change）
+continuity refresh（不使用用户原文）
+event compaction（仅超过既有上限时）
 ```
 
 ### 边界
 
-- 手动触发或任务结束后短暂执行。
-- 不后台无限 wander。
-- 不自动永久写高风险事实。
-- 所有结果先进 inbox。
-- 可取消、bounded、fail-open。
+- 成功任务结束后自动短暂执行；不新增面向小白用户的 UI 或主流程 CLI。
+- `state_home=None` 或 `ghost disable` 时不自动运行。
+- single-flight：同一时间最多一个 `codey-ghost-sleep` daemon thread。
+- 新任务优先；sleep 只在 step 边界取消或延后。
+- 不调用网页模型，不联网，不跑 shell，不扫描项目源码。
+- 不生成 prompt-visible 新自由文本，不改变 `Local Context` 格式。
+- 不生成新 memory candidate；roadmap 原始的 candidate harvesting 延期到后续
+  Work Queue / Candidate Harvester。
+- Report 不保存用户任务原文、assistant reply、Research body、网页正文、source snippet、
+  prompt text、Local Context text 或源码内容。
+- `ghost export` / `reset` / `delete-scope` 覆盖 sleep state/events。
+- 不需要 live web A/B；验收依赖 deterministic tests。只有未来改 `Local Context`
+  文案或让 sleep 生成 prompt-visible 内容时，才需要 DeepSeek/Qwen/MiMo/GLM/StepFun
+  串行 A/B。
 
 ## 0.3.7 - Ghost Router v1
 

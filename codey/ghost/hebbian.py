@@ -460,25 +460,119 @@ class GhostHebbianStore:
         except Exception:
             return False
 
-    def decay(self) -> dict[str, int]:
+    def decay(self, *, min_interval_seconds: int = 0) -> dict[str, object]:
+        if self.events_path.exists():
+            self._read_events()
+            if self._events_read_blocked:
+                return {
+                    "removed_nodes": 0,
+                    "removed_edges": 0,
+                    "decayed_nodes": 0,
+                    "decayed_edges": 0,
+                    "skipped_reason": "events_read_blocked",
+                    "warnings": list(self.last_warnings),
+                }
         nodes, edges = self._load_state()
         now = _now()
+        interval = max(0, int(min_interval_seconds or 0))
+        if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
+            return {
+                "removed_nodes": 0,
+                "removed_edges": 0,
+                "decayed_nodes": 0,
+                "decayed_edges": 0,
+                "skipped_reason": "min_interval",
+            }
         decayed_nodes = [_decay_node(node, now=now) for node in nodes]
         decayed_edges = [_decay_edge(edge, now=now) for edge in edges]
         bounded_nodes = _bounded_nodes(decayed_nodes)
         bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
         removed_nodes = len(nodes) - len(bounded_nodes)
         removed_edges = len(edges) - len(bounded_edges)
+        decayed_node_count = sum(
+            1 for before, after in zip(nodes, decayed_nodes, strict=False)
+            if before.weight != after.weight or before.status != after.status
+        )
+        decayed_edge_count = sum(
+            1 for before, after in zip(edges, decayed_edges, strict=False)
+            if before.weight != after.weight
+        )
+        if not removed_nodes and not removed_edges and not decayed_node_count and not decayed_edge_count:
+            return {
+                "removed_nodes": 0,
+                "removed_edges": 0,
+                "decayed_nodes": 0,
+                "decayed_edges": 0,
+                "skipped_reason": "no_change",
+            }
         self._rewrite_events_from_state(
             bounded_nodes,
             bounded_edges,
             control_event=_control_event(
                 "ghost_hebbian_state_decayed",
-                {"removed_nodes": removed_nodes, "removed_edges": removed_edges},
+                {
+                    "removed_nodes": removed_nodes,
+                    "removed_edges": removed_edges,
+                    "decayed_nodes": decayed_node_count,
+                    "decayed_edges": decayed_edge_count,
+                },
             ),
         )
         self._write_projection(bounded_nodes, bounded_edges)
-        return {"removed_nodes": removed_nodes, "removed_edges": removed_edges}
+        return {
+            "removed_nodes": removed_nodes,
+            "removed_edges": removed_edges,
+            "decayed_nodes": decayed_node_count,
+            "decayed_edges": decayed_edge_count,
+            "skipped_reason": "",
+        }
+
+    def compact_if_needed(self) -> dict[str, object]:
+        before = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
+        if not before["readable"]:
+            warning = str(before["warning"] or "hebbian_events_unreadable")
+            self.last_warnings = (warning,)
+            return {
+                "ok": False,
+                "compacted": False,
+                "events_before": before["events"],
+                "events_after": before["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": before["bytes"],
+                "warnings": [warning],
+            }
+        if before["events"] <= MAX_HEBBIAN_EVENTS and before["bytes"] <= MAX_HEBBIAN_EVENTS_BYTES:
+            return {
+                "ok": True,
+                "compacted": False,
+                "events_before": before["events"],
+                "events_after": before["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": before["bytes"],
+                "warnings": list(self.last_warnings),
+            }
+        nodes, edges = self._load_state()
+        if self._events_read_blocked:
+            return {
+                "ok": False,
+                "compacted": False,
+                "events_before": before["events"],
+                "events_after": before["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": before["bytes"],
+                "warnings": list(self.last_warnings),
+            }
+        self._compact_if_needed(nodes, edges)
+        after = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
+        return {
+            "ok": True,
+            "compacted": after != before,
+            "events_before": before["events"],
+            "events_after": after["events"],
+            "bytes_before": before["bytes"],
+            "bytes_after": after["bytes"],
+            "warnings": list(self.last_warnings),
+        }
 
     def _load_state(self) -> tuple[list[GhostNode], list[GhostEdge]]:
         self._events_read_blocked = False
@@ -666,7 +760,10 @@ class GhostHebbianStore:
     ) -> None:
         try:
             event_bytes = self.events_path.stat().st_size
-            line_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
+            if event_bytes > MAX_HEBBIAN_EVENTS_BYTES:
+                line_count = MAX_HEBBIAN_EVENTS + 1
+            else:
+                line_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
         except (OSError, UnicodeDecodeError):
             return
         if line_count <= MAX_HEBBIAN_EVENTS and event_bytes <= MAX_HEBBIAN_EVENTS_BYTES:
@@ -873,6 +970,23 @@ def _decayed_weight(weight: float, last_reinforced_at: str, now: str, half_life_
     half_life_seconds = max(1.0, float(half_life_days) * 24.0 * 60.0 * 60.0)
     decay_rate = math.log(2.0) / half_life_seconds
     return _clamp01(float(weight or 0.0) * math.exp(-decay_rate * age))
+
+
+def _any_decay_due(
+    rows: Iterable[GhostNode | GhostEdge],
+    *,
+    now: str,
+    min_interval_seconds: int,
+) -> bool:
+    threshold = max(0, int(min_interval_seconds or 0))
+    if threshold <= 0:
+        return True
+    now_ts = _parse_ts(now)
+    for row in rows:
+        age = max(0.0, (now_ts - _parse_ts(_decay_basis(row))).total_seconds())
+        if age >= threshold:
+            return True
+    return False
 
 
 def _bounded_nodes(nodes: Iterable[GhostNode]) -> list[GhostNode]:
@@ -1090,6 +1204,24 @@ def _now() -> str:
 
 def _compact_timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
+    try:
+        if not path.is_file():
+            return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
+        event_bytes = path.stat().st_size
+        if event_bytes > max(0, int(max_bytes or 0)):
+            return {
+                "events": 0,
+                "bytes": event_bytes,
+                "readable": True,
+                "warning": "hebbian_events_too_large",
+            }
+        event_count = len(path.read_text(encoding="utf-8").splitlines())
+    except (OSError, UnicodeDecodeError):
+        return {"events": 0, "bytes": 0, "readable": False, "warning": "hebbian_events_unreadable"}
+    return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 
 
 def _json_line(value: dict[str, object]) -> str:

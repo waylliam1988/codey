@@ -722,6 +722,7 @@ class GhostInboxStoreTests(unittest.TestCase):
     def test_bare_state_disables_ghost_inbox(self) -> None:
         self.assertIsNone(State().ghost_inbox)
         self.assertIsNone(State().ghost_hebbian)
+        self.assertIsNone(State().ghost_sleep)
 
 
 class GhostSignalStoreScopeTests(unittest.TestCase):
@@ -776,9 +777,9 @@ class GhostCliTests(unittest.TestCase):
                 cli.main(["ghost", "--help"])
 
         self.assertEqual(raised.exception.code, 0)
-        help_text = stdout.getvalue()
-        self.assertIn("export Ghost inbox/events/signals/state", help_text)
-        self.assertIn("delete Ghost inbox/events/signals/state", help_text)
+        help_text = " ".join(stdout.getvalue().split())
+        self.assertIn("export Ghost inbox/events/signals/state/continuity/sleep", help_text)
+        self.assertIn("delete Ghost inbox/events/signals/state/continuity/sleep", help_text)
         self.assertIn("accept", help_text)
         self.assertIn("rebuild-state", help_text)
 

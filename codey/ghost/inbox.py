@@ -446,6 +446,53 @@ class GhostInboxStore:
     def learning_enabled(self) -> bool:
         return bool(self._read_settings().get("learning_enabled", True))
 
+    def compact_if_needed(self) -> dict[str, object]:
+        before = _event_file_stats(self.events_path, max_bytes=MAX_EVENTS_BYTES)
+        if not before["readable"]:
+            warning = str(before["warning"] or "events_unreadable")
+            self.last_warnings = (warning,)
+            return {
+                "ok": False,
+                "compacted": False,
+                "events_before": before["events"],
+                "events_after": before["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": before["bytes"],
+                "warnings": [warning],
+            }
+        if before["events"] <= MAX_GHOST_EVENTS and before["bytes"] <= MAX_EVENTS_BYTES:
+            return {
+                "ok": True,
+                "compacted": False,
+                "events_before": before["events"],
+                "events_after": before["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": before["bytes"],
+                "warnings": list(self.last_warnings),
+            }
+        candidates = self._load_candidates()
+        if self._events_read_blocked:
+            return {
+                "ok": False,
+                "compacted": False,
+                "events_before": before["events"],
+                "events_after": before["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": before["bytes"],
+                "warnings": list(self.last_warnings),
+            }
+        self._compact_if_needed(candidates)
+        after = _event_file_stats(self.events_path, max_bytes=MAX_EVENTS_BYTES)
+        return {
+            "ok": True,
+            "compacted": after != before,
+            "events_before": before["events"],
+            "events_after": after["events"],
+            "bytes_before": before["bytes"],
+            "bytes_after": after["bytes"],
+            "warnings": list(self.last_warnings),
+        }
+
     def _candidate_from_signal(
         self,
         signal: GhostSignal,
@@ -737,7 +784,10 @@ class GhostInboxStore:
     def _compact_if_needed(self, candidates: Iterable[GhostMemoryCandidate]) -> None:
         try:
             event_bytes = self.events_path.stat().st_size
-            line_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
+            if event_bytes > MAX_EVENTS_BYTES:
+                line_count = MAX_GHOST_EVENTS + 1
+            else:
+                line_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
         except (OSError, UnicodeDecodeError):
             return
         if line_count <= MAX_GHOST_EVENTS and event_bytes <= MAX_EVENTS_BYTES:
@@ -852,6 +902,19 @@ def _scope_ref(candidate: GhostMemoryCandidate) -> str:
     if candidate.scope == "session":
         return candidate.session_id
     return ""
+
+
+def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
+    try:
+        if not path.is_file():
+            return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
+        event_bytes = path.stat().st_size
+        if event_bytes > max(0, int(max_bytes or 0)):
+            return {"events": 0, "bytes": event_bytes, "readable": True, "warning": "events_too_large"}
+        event_count = len(path.read_text(encoding="utf-8").splitlines())
+    except (OSError, UnicodeDecodeError):
+        return {"events": 0, "bytes": 0, "readable": False, "warning": "events_unreadable"}
+    return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 
 
 def _scope_filter_matches(

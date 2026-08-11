@@ -1746,6 +1746,142 @@ class SessionThreadingTests(unittest.TestCase):
         self.assertEqual(learning_event["skipped_reason"], "learning_disabled")
         self.assertEqual(continuity_event["skipped_reason"], "learning_disabled")
 
+    def test_state_kicks_ghost_sleep_without_sse_event(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            events = state.subscribe()
+            started = threading.Event()
+            assert state.ghost_sleep is not None
+            state.ghost_sleep.run_once = mock.Mock(side_effect=lambda **_kwargs: started.set())
+
+            started_ok = state.kick_ghost_sleep(run_id="r1", session_id="s1")
+
+            self.assertTrue(started_ok)
+            self.assertTrue(started.wait(2))
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+
+        self.assertEqual(emitted, [])
+
+    def test_state_ghost_sleep_is_single_flight(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            started = threading.Event()
+            release = threading.Event()
+            active = 0
+            max_active = 0
+            calls = 0
+            lock = threading.Lock()
+
+            def run_once(**_kwargs):
+                nonlocal active, calls, max_active
+                with lock:
+                    active += 1
+                    calls += 1
+                    max_active = max(max_active, active)
+                started.set()
+                release.wait(2)
+                with lock:
+                    active -= 1
+
+            assert state.ghost_sleep is not None
+            state.ghost_sleep.run_once = mock.Mock(side_effect=run_once)
+
+            first = state.kick_ghost_sleep(run_id="r1", session_id="s1")
+            self.assertTrue(started.wait(2))
+            second = state.kick_ghost_sleep(run_id="r2", session_id="s1")
+            release.set()
+            for _ in range(50):
+                with state.lock:
+                    running = state._ghost_sleep_running
+                if not running:
+                    break
+                threading.Event().wait(0.02)
+
+        self.assertTrue(first)
+        self.assertFalse(second)
+        self.assertGreaterEqual(calls, 1)
+        self.assertEqual(max_active, 1)
+
+    def test_pending_ghost_sleep_uses_latest_cursor(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            seen: list[dict[str, object]] = []
+
+            def run_once(**kwargs):
+                seen.append(kwargs)
+                if len(seen) == 1:
+                    state.kick_ghost_sleep(
+                        trigger="post_turn",
+                        run_id="run-2",
+                        session_id="session-2",
+                        project="project-2",
+                        run_projection={"run": 2},
+                    )
+
+            assert state.ghost_sleep is not None
+            state.ghost_sleep.run_once = mock.Mock(side_effect=run_once)
+
+            kicked = state.kick_ghost_sleep(
+                trigger="post_turn",
+                run_id="run-1",
+                session_id="session-1",
+                project="project-1",
+                run_projection={"run": 1},
+            )
+            state.wait_for_ghost_sleep(timeout=2)
+
+        self.assertTrue(kicked)
+        self.assertEqual([row["run_id"] for row in seen], ["run-1", "run-2"])
+        self.assertEqual(seen[1]["session_id"], "session-2")
+        self.assertEqual(seen[1]["project"], "project-2")
+        self.assertEqual(seen[1]["run_projection"], {"run": 2})
+
+    def test_ghost_disable_blocks_auto_sleep(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            assert state.ghost_inbox is not None
+            assert state.ghost_sleep is not None
+            state.ghost_inbox.set_learning_enabled(False)
+            state.ghost_sleep.run_once = mock.Mock()
+
+            kicked = state.kick_ghost_sleep(run_id="r1", session_id="s1")
+
+        self.assertFalse(kicked)
+        state.ghost_sleep.run_once.assert_not_called()
+
+    def test_task_done_kicks_ghost_sleep_without_sleep_event(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            events = state.subscribe()
+            provider = mock.Mock()
+            provider.name = "DeepSeek Web"
+            provider.location = "https://chat.deepseek.com/"
+            provider.send.return_value = "normal reply"
+
+            with (
+                mock.patch.object(server, "STATE", state),
+                mock.patch.object(state, "get_provider", return_value=provider),
+                mock.patch.object(state, "kick_ghost_sleep") as kick_sleep,
+            ):
+                server._run_task(
+                    "session-sleep",
+                    None,
+                    "hello",
+                    8,
+                    False,
+                    "deepseek",
+                    "chat",
+                )
+
+            emitted = []
+            while not events.empty():
+                emitted.append(events.get_nowait())
+
+        kick_sleep.assert_called_once()
+        self.assertNotIn("ghost_sleep_done", [event["type"] for event in emitted])
+
     def test_planning_readonly_does_not_run_ghost_learning_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)

@@ -52,6 +52,7 @@ from codey.local_store import DEFAULT_STATE_HOME
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
+from codey.ghost.sleep import GhostSleepStore
 from codey.managed_outputs import ManagedOutputStore
 from codey.ghost.store import GhostSignalStore
 from codey.knowledge.concepts import ConceptGraphBuilder
@@ -589,6 +590,10 @@ class State:
         self.research_changes: dict[str, object] = {}
         self._knowledge_rebuild_running = False
         self._knowledge_rebuild_pending = False
+        self._ghost_sleep_running = False
+        self._ghost_sleep_pending = False
+        self._ghost_sleep_pending_payload: dict[str, object] | None = None
+        self._ghost_sleep_thread: threading.Thread | None = None
         self.change_trackers: dict[str, ChangeTracker] = {}
         self.conversations: dict[str, ConversationContext] = {}
         self.conversation_tokens: dict[str, object] = {}
@@ -615,6 +620,7 @@ class State:
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
         self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
         self.ghost_continuity = GhostContinuityStore(state_home) if state_home else None
+        self.ghost_sleep = GhostSleepStore(state_home) if state_home else None
         self.ghost_signals = GhostSignalStore(state_home) if state_home else None
         self.ghost_learning_provider_factory = None
         self.provider_supervisor = (
@@ -827,6 +833,89 @@ class State:
                 self._knowledge_rebuild_running = False
                 return
 
+    def kick_ghost_sleep(
+        self,
+        *,
+        trigger: str = "post_turn",
+        run_id: str = "",
+        session_id: str = "",
+        project: str = "",
+        run_projection: object = None,
+    ) -> bool:
+        sleep = getattr(self, "ghost_sleep", None)
+        if sleep is None:
+            return False
+        inbox = getattr(self, "ghost_inbox", None)
+        if inbox is not None:
+            try:
+                if not inbox.learning_enabled():
+                    return False
+            except Exception:
+                return False
+        payload = {
+            "trigger": trigger,
+            "run_id": run_id,
+            "session_id": session_id,
+            "project": project,
+            "run_projection": run_projection,
+        }
+        with self.lock:
+            if self.busy:
+                self._ghost_sleep_pending = True
+                self._ghost_sleep_pending_payload = payload
+                return False
+            if self._ghost_sleep_running:
+                self._ghost_sleep_pending = True
+                self._ghost_sleep_pending_payload = payload
+                return False
+            self._ghost_sleep_running = True
+            self._ghost_sleep_pending = False
+            self._ghost_sleep_pending_payload = None
+
+        def _worker() -> None:
+            current_payload = payload
+            while True:
+                try:
+                    sleep.run_once(
+                        inbox_store=getattr(self, "ghost_inbox", None),
+                        hebbian_store=getattr(self, "ghost_hebbian", None),
+                        continuity_store=getattr(self, "ghost_continuity", None),
+                        knowledge_store=getattr(self, "knowledge_store", None),
+                        run_projection=current_payload.get("run_projection"),
+                        trigger=str(current_payload.get("trigger") or "post_turn"),
+                        run_id=str(current_payload.get("run_id") or ""),
+                        session_id=str(current_payload.get("session_id") or ""),
+                        project=str(current_payload.get("project") or ""),
+                        should_cancel=lambda: self.busy or self.stop_flag.is_set(),
+                    )
+                except Exception:
+                    pass
+                with self.lock:
+                    if self._ghost_sleep_pending and not self.busy:
+                        current_payload = self._ghost_sleep_pending_payload or current_payload
+                        self._ghost_sleep_pending = False
+                        self._ghost_sleep_pending_payload = None
+                        continue
+                    self._ghost_sleep_running = False
+                    self._ghost_sleep_pending_payload = None
+                    if self._ghost_sleep_thread is threading.current_thread():
+                        self._ghost_sleep_thread = None
+                    return
+
+        thread = threading.Thread(target=_worker, name="codey-ghost-sleep", daemon=True)
+        with self.lock:
+            self._ghost_sleep_thread = thread
+        thread.start()
+        return True
+
+    def wait_for_ghost_sleep(self, timeout: float | None = None) -> bool:
+        with self.lock:
+            thread = self._ghost_sleep_thread
+        if thread is None:
+            return True
+        thread.join(timeout)
+        return not thread.is_alive()
+
     def run_state_payload(self) -> dict:
         with self.lock:
             active = self.active_run
@@ -1031,6 +1120,12 @@ class State:
                 continuity.delete_scope("session", session_id=session_id)
             except Exception:
                 pass
+        sleep = getattr(self, "ghost_sleep", None)
+        if sleep is not None:
+            try:
+                sleep.delete_scope("session", session_id=session_id)
+            except Exception:
+                pass
 
     def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
         with self.lock:
@@ -1229,6 +1324,15 @@ def pick_folder(mode: str = "open", initial: str | None = None) -> str | None:
     return str(path)
 
 
+def _should_wait_for_local_ghost_sleep(state_home: Path | None) -> bool:
+    if state_home is None:
+        return False
+    try:
+        return state_home.expanduser().resolve() != DEFAULT_STATE_HOME.expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        return True
+
+
 # ----------------------------------------------------------- task runner ---
 
 def _run_task(
@@ -1282,6 +1386,8 @@ def _run_task(
             run_id=run_id,
         ))
     finally:
+        if _should_wait_for_local_ghost_sleep(STATE.state_home):
+            STATE.wait_for_ghost_sleep()
         STATE.kick_self_repair()
 
 

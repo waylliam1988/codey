@@ -414,6 +414,53 @@ class GhostContinuityStore:
                 pass
         return rebuilt
 
+    def compact_if_needed(self) -> dict[str, object]:
+        before = _event_file_stats(self.events_path, max_bytes=MAX_CONTINUITY_EVENTS_BYTES)
+        if not before["readable"]:
+            warning = str(before["warning"] or "continuity_events_unreadable")
+            self.last_warnings = (warning,)
+            return {
+                "ok": False,
+                "compacted": False,
+                "events_before": before["events"],
+                "events_after": before["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": before["bytes"],
+                "warnings": [warning],
+            }
+        if before["events"] <= MAX_CONTINUITY_EVENTS and before["bytes"] <= MAX_CONTINUITY_EVENTS_BYTES:
+            return {
+                "ok": True,
+                "compacted": False,
+                "events_before": before["events"],
+                "events_after": before["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": before["bytes"],
+                "warnings": list(self.last_warnings),
+            }
+        items = self._load_items()
+        if self._events_read_blocked:
+            return {
+                "ok": False,
+                "compacted": False,
+                "events_before": before["events"],
+                "events_after": before["events"],
+                "bytes_before": before["bytes"],
+                "bytes_after": before["bytes"],
+                "warnings": list(self.last_warnings),
+            }
+        self._compact_if_needed(items)
+        after = _event_file_stats(self.events_path, max_bytes=MAX_CONTINUITY_EVENTS_BYTES)
+        return {
+            "ok": True,
+            "compacted": after != before,
+            "events_before": before["events"],
+            "events_after": after["events"],
+            "bytes_before": before["bytes"],
+            "bytes_after": after["bytes"],
+            "warnings": list(self.last_warnings),
+        }
+
     def _write_projection(
         self,
         items: Iterable[GhostContinuityItem],
@@ -488,8 +535,11 @@ class GhostContinuityStore:
 
     def _compact_if_needed(self, items: Iterable[GhostContinuityItem]) -> None:
         try:
-            event_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
             event_bytes = self.events_path.stat().st_size
+            if event_bytes > MAX_CONTINUITY_EVENTS_BYTES:
+                event_count = MAX_CONTINUITY_EVENTS + 1
+            else:
+                event_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
         except (OSError, UnicodeDecodeError):
             return
         if event_count <= MAX_CONTINUITY_EVENTS and event_bytes <= MAX_CONTINUITY_EVENTS_BYTES:
@@ -1187,6 +1237,24 @@ def _json_line(value: dict[str, object]) -> str:
         separators=(",", ":"),
         sort_keys=True,
     ) + "\n"
+
+
+def _event_file_stats(path: Path, *, max_bytes: int) -> dict[str, object]:
+    try:
+        if not path.is_file():
+            return {"events": 0, "bytes": 0, "readable": True, "warning": ""}
+        event_bytes = path.stat().st_size
+        if event_bytes > max(0, int(max_bytes or 0)):
+            return {
+                "events": 0,
+                "bytes": event_bytes,
+                "readable": True,
+                "warning": "continuity_events_too_large",
+            }
+        event_count = len(path.read_text(encoding="utf-8").splitlines())
+    except (OSError, UnicodeDecodeError):
+        return {"events": 0, "bytes": 0, "readable": False, "warning": "continuity_events_unreadable"}
+    return {"events": event_count, "bytes": event_bytes, "readable": True, "warning": ""}
 
 
 __all__ = [

@@ -20,7 +20,13 @@ from codey.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_even
 from codey.local_store import DEFAULT_STATE_HOME
 from codey.provider_diagnostics import capture_provider_failure as default_capture_provider_failure
 from codey.providers import DEFAULT_PROVIDER_ID, connect_provider as default_connect_provider
-from codey.server import REVIEW_FIX_TURNS, REVIEW_LOG_LINES, State, is_git_repository
+from codey.server import (
+    REVIEW_FIX_TURNS,
+    REVIEW_LOG_LINES,
+    State,
+    _should_wait_for_local_ghost_sleep,
+    is_git_repository,
+)
 from codey.task_runner import TaskRequest, TaskRunner
 
 
@@ -171,16 +177,20 @@ def run_headless(
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
     )
-    runner.run(TaskRequest(
-        session_id=session_id,
-        project=str(project),
-        task=request.task,
-        max_turns=request.max_turns,
-        continue_task=False,
-        provider_id=request.provider_id,
-        intent=_request_intent(request.intent),
-        run_id=pre_reserved_run_id,
-    ))
+    try:
+        runner.run(TaskRequest(
+            session_id=session_id,
+            project=str(project),
+            task=request.task,
+            max_turns=request.max_turns,
+            continue_task=False,
+            provider_id=request.provider_id,
+            intent=_request_intent(request.intent),
+            run_id=pre_reserved_run_id,
+        ))
+    finally:
+        if _should_wait_for_local_ghost_sleep(state.state_home):
+            state.wait_for_ghost_sleep()
     terminal = dict(state.last_terminal_event or {})
     run_id = str(terminal.get("run_id") or request.run_id or "")
     stop_reason = str(terminal.get("stop_reason") or "error")

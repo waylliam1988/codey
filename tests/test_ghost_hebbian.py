@@ -199,6 +199,21 @@ class GhostHebbianStoreTests(unittest.TestCase):
             self.assertEqual(second_decay.last_reinforced_at, first_decay.last_reinforced_at)
             self.assertEqual(second_decay.last_decayed_at, first_decay.last_decayed_at)
 
+    def test_decay_min_interval_noop_does_not_write_event(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            inbox = GhostInboxStore(td)
+            hebbian = GhostHebbianStore(td)
+            candidate = _ingest_one(inbox, _signal(confidence=0.9), project=td)
+            hebbian.reinforce_candidate(candidate)
+            before = hebbian.events_path.read_text(encoding="utf-8")
+
+            result = hebbian.decay(min_interval_seconds=24 * 60 * 60)
+            after = hebbian.events_path.read_text(encoding="utf-8")
+
+            self.assertEqual(result["skipped_reason"], "min_interval")
+            self.assertEqual(after, before)
+            self.assertNotIn("ghost_hebbian_state_decayed", after)
+
     def test_same_conflict_different_values_are_competing_nodes_until_manual_accept(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             inbox = GhostInboxStore(td)

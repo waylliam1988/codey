@@ -4,6 +4,30 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.6 - Cognitive Sleep v1
+
+- 新增 `codey/ghost/sleep.py`：成功任务结束后短暂运行的本地 Ghost
+  维护周期。它会检查 projection / event 健康、只在到期时执行 Hebbian decay、
+  从已有有界本地来源刷新 continuity、超过上限时压缩 Ghost event log，并写入
+  有界 sleep report。
+- Cognitive Sleep 不是后台 agent：不调用 provider、不浏览网页、不跑 shell、
+  不生成新 memory candidate、不创建新的 prompt-visible 自由文本，也不改变
+  `Local Context` 格式。它在 UI 中不可见，也不 emit SSE 事件。
+- 新增 `state_home/ghost/sleep_state.json` 和
+  `state_home/ghost/sleep_events.jsonl`。Report 只存 cycle 元数据、step 名称、
+  counts、warnings、耗时、取消状态和 run/session/project 引用；不存用户任务原文、
+  assistant reply、prompt、Research body、网页正文、source snippet 或源码。
+- Sleep 是 single-flight，并且只在 step 边界取消。新的用户任务优先占用主任务槽；
+  sleep 失败会 fail-open，不影响任务完成。
+- 现有 Ghost 隐私控制覆盖 sleep 文件：`ghost export` 包含 sleep state/events，
+  `ghost reset --yes` 会删除它们，`ghost delete-scope` 会过滤匹配的
+  session/project/user report 引用。
+- Hebbian decay 支持最小维护间隔；如果没有到期的权重 / 状态变化，就不重写
+  projection，也不追加审计 event，避免每回合制造账本噪声。
+- 新增 `tests/test_ghost_sleep.py`，并扩展 server、CLI、UI、architecture 和
+  Hebbian 测试。这个版本不需要 live web A/B，因为它不改变模型可见 prompt、
+  provider adapter 或 UI 行为。
+
 ## 0.3.5 - Ghost Continuity v1
 
 - 新增 `codey/ghost/continuity.py`：从已有可审计事实生成有界 continuity

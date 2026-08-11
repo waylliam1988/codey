@@ -1,5 +1,60 @@
 # Codey Test Report
 
+## 0.3.6 Cognitive Sleep v1
+
+Codey 0.3.6 adds an invisible local Ghost maintenance pass. It is not a
+background agent, a second learning loop, or a prompt-writing system. It runs
+after successful tasks, checks Ghost projection/event health, applies Hebbian
+decay only when due, refreshes continuity from existing bounded local sources,
+compacts event logs when existing limits require it, and writes a bounded sleep
+report.
+
+Production changes:
+
+- New `codey/ghost/sleep.py` stores `sleep_state.json` and
+  `sleep_events.jsonl`. Reports contain only cycle metadata, step names, counts,
+  warnings, timings, cancellation state, and run/session/project references.
+- Sleep reports do not store user task text, assistant replies, prompts,
+  `Local Context`, Research bodies, webpage bodies, source snippets, or source
+  code.
+- Post-turn sleep is single-flight and runs in a daemon thread. It emits no SSE
+  event, changes no UI state, calls no provider, opens no browser, runs no
+  shell command, and generates no new memory candidates or prompt-visible free
+  text.
+- `ghost disable` prevents automatic sleep along with automatic Ghost learning
+  and continuity sync. Existing `ghost export`, `ghost reset --yes`, and
+  `ghost delete-scope` controls now cover sleep state/events.
+- Hebbian decay now has a minimum maintenance interval for sleep and does not
+  rewrite state/events when no weight/status change is due.
+- Server and headless runner paths wait for local non-default `state_home`
+  sleep completion before returning, preventing tests or CI callers from
+  deleting temporary state while the maintenance thread is still writing. The
+  default desktop state path remains an invisible background thread.
+- No live web A/B was required because 0.3.6 does not change model-visible
+  prompt text, provider adapters, or UI behavior.
+
+Validation:
+
+```text
+python -m pytest -q
+# 1686 passed, 9 skipped, 1 pytest cache warning, 264 subtests passed
+
+python -m pytest tests\test_ghost_sleep.py tests\test_ghost_continuity.py tests\test_ghost_directive.py tests\test_ghost_learning_loop.py tests\test_ghost_inbox.py tests\test_ghost_hebbian.py tests\test_ghost_signal_extractor.py tests\test_cli.py tests\test_agent.py tests\test_server.py tests\test_permission_profiles.py tests\test_architecture.py tests\test_ui.py -q
+# 479 passed, 3 skipped, 1 pytest cache warning, 116 subtests passed
+
+python -m pytest tests\test_headless_runner.py tests\test_ghost_sleep.py tests\test_server.py -q
+# 164 passed, 1 skipped, 1 pytest cache warning, 6 subtests passed
+
+python -m ruff check .
+# All checks passed!
+
+python -B tests\manual\ghost_continuity_ab.py --self-test
+# self-test ok
+
+git diff --check
+# passed
+```
+
 ## 0.3.5 Ghost Continuity v1
 
 Codey 0.3.5 adds a bounded local continuity projection. It is not a transcript

@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.5-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.6-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.5`
+Version: `0.3.6`
 
 [Version history](CHANGELOG.md)
 
@@ -31,7 +31,7 @@ Version: `0.3.5`
 - **Use web AI accounts you already have**: DeepSeek, MiMo, StepFun, Qwen, and GLM are supported.
 - **Keep memory controllable**: explicit preferences and short continuity
   context stay in bounded local files that can be previewed, exported, deleted,
-  reset, or disabled.
+  reset, disabled, and quietly maintained after tasks.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
 - **Keep code local**: models access only the project folder you choose.
 - **Stay oriented while coding**: after each local tool result, Codey reminds
@@ -107,29 +107,20 @@ This is not about replacing professional tools. It is about making the first ste
   factual handoff plus recent visible conversation context
 - Continue follow-up Research or Project Hybrid work from the same bounded chat handoff, so prompts like "continue researching that plan" keep the prior context
 - Keep non-Git diff and restore available across Codey restarts
-- Inspect and control the local Ghost memory inbox, Hebbian state, and prompt
-  preview with
-  `python -m codey ghost list/export/directive/continuity/accept/reject/state/rebuild-state/rebuild-continuity/reset/delete-scope/enable/disable`.
-  Accepted candidates can become a bounded local weighted memory ledger, and
-  confirmed memory can now appear as a short neutral local context in normal
-  chat and read-only planning. The model-visible prompt text is generated from
-  an explicit typed-field allowlist, not raw labels or arbitrary slugs, and does
-  not expose internal Ghost/Ghost Directive naming, sensitive secret-like text,
-  or instruction-hierarchy override language. It still does not enter Project
-  Writer, Research, repair prompts, or permissions. Normal Chat now runs a
-  post-turn best-effort learning loop for explicit typed style preferences:
-  the extractor uses a fresh provider tab, writes the raw signal audit first,
-  then inbox/gate/Hebbian state, and the next Chat turn can reflect the learned
-  local context after the post-turn `ghost_learning_done` /
-  `ghost_continuity_done` events have completed. `ghost disable` prevents future extractor calls while keeping
-  list/export/delete controls available. Codey now also maintains a bounded
-  continuity projection from accepted memory, short task focus, run ledger
-  projections, Research synthesis/decision titles, and bounded open-question
-  section lines. It can surface recent focus, open questions, active projects,
-  and recently reinforced preferences as neutral `Local Context` in normal Chat
-  and read-only planning, without storing full chat transcripts, source files,
-  Research bodies, or webpage bodies, and without entering Project Writer,
-  Research, Reviewer, repair prompts, or permissions
+- Keep explicit learning signals in a local Ghost inbox first; only accepted
+  typed preferences can become short neutral `Local Context` for normal chat
+  and read-only planning
+- Learn clear chat style preferences after a turn in a fresh provider tab,
+  without typing extractor prompts into the current chat; `ghost disable` stops
+  future learning
+- Carry bounded continuity from accepted memory, short task focus, run ledgers,
+  and Research note titles/open questions without storing full transcripts,
+  source files, Research bodies, or webpage text
+- Inspect, export, delete, reset, or disable local Ghost state with
+  `python -m codey ghost ...`
+- Quietly maintain Ghost state after successful tasks with local health checks,
+  due decay, continuity refresh, and event compaction; no web model, shell, UI
+  change, or user-facing sleep control is involved
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
 - Recover one bounded web-chat state rule from boolean-only evidence when a
