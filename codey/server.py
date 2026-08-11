@@ -52,6 +52,7 @@ from codey.local_store import DEFAULT_STATE_HOME
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
+from codey.ghost.router import GhostRouteStore
 from codey.ghost.sleep import GhostSleepStore
 from codey.managed_outputs import ManagedOutputStore
 from codey.ghost.store import GhostSignalStore
@@ -620,9 +621,11 @@ class State:
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
         self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
         self.ghost_continuity = GhostContinuityStore(state_home) if state_home else None
+        self.ghost_router = GhostRouteStore(state_home) if state_home else None
         self.ghost_sleep = GhostSleepStore(state_home) if state_home else None
         self.ghost_signals = GhostSignalStore(state_home) if state_home else None
         self.ghost_learning_provider_factory = None
+        self.ghost_router_provider_factory = None
         self.provider_supervisor = (
             ProviderSupervisor(state_home) if state_home else ProviderSupervisor()
         )
@@ -1120,6 +1123,12 @@ class State:
                 continuity.delete_scope("session", session_id=session_id)
             except Exception:
                 pass
+        router = getattr(self, "ghost_router", None)
+        if router is not None:
+            try:
+                router.delete_scope("session", session_id=session_id)
+            except Exception:
+                pass
         sleep = getattr(self, "ghost_sleep", None)
         if sleep is not None:
             try:
@@ -1277,6 +1286,7 @@ class State:
 
 STATE = State(DEFAULT_STATE_HOME)
 STATE.ghost_learning_provider_factory = connect_fresh_provider_tab
+STATE.ghost_router_provider_factory = connect_fresh_provider_tab
 provider_controls.set_teach_handler(STATE.handle_control_teach)
 provider_controls.set_doctor_handler(STATE.handle_profile_doctor)
 provider_flow.set_recovery_handler(STATE.handle_flow_recovery)
@@ -1373,6 +1383,7 @@ def _run_task(
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
         ghost_learning_provider_factory=getattr(STATE, "ghost_learning_provider_factory", None),
+        ghost_router_provider_factory=getattr(STATE, "ghost_router_provider_factory", None),
     )
     try:
         runner.run(TaskRequest(
@@ -1535,7 +1546,7 @@ def _run_submit_response(body: dict) -> tuple[int, dict]:
     continue_task = bool(body.get("continue_task"))
     provider_id = str(body.get("provider") or DEFAULT_PROVIDER_ID).strip().lower()
     intent = str(body.get("intent") or "auto").strip().lower()
-    if intent not in {"auto", "chat", "research", "project", "hybrid"}:
+    if intent not in {"auto", "chat", "research", "project", "hybrid", "planning_readonly", "readonly", "planning", "review"}:
         return 400, {"error": "invalid intent"}
     try:
         max_turns = int(body.get("max_turns") or DEFAULT_MAX_TURNS)
@@ -1546,6 +1557,8 @@ def _run_submit_response(body: dict) -> tuple[int, dict]:
         return 400, {"error": "task required"}
     if provider_id not in PROVIDER_LABELS:
         return 400, {"error": f"unsupported provider: {provider_id}"}
+    if intent == "review" and not project:
+        return 400, {"error": "project required for review"}
     if project:
         Path(project).mkdir(parents=True, exist_ok=True)
     try:

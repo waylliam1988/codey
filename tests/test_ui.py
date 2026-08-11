@@ -92,7 +92,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("Durable Snapshot", HTML)
         self.assertNotIn("Recovered", HTML)
         self.assertNotIn("ghost_sleep", UI_SOURCE)
+        self.assertNotIn("ghost_router", UI_SOURCE)
         self.assertNotIn("Cognitive Sleep", UI_SOURCE)
+        self.assertNotIn("Ghost Router", UI_SOURCE)
 
     def test_retry_uses_current_session_model_picker(self) -> None:
         retry_start = HTML.index("function retryTask(sessionId)")

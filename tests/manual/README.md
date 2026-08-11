@@ -477,7 +477,49 @@ session:
 - StepFun: passed. It also produced one extra candidate row, but only the two
   renderable typed preferences were active.
 
-2026-08-08 live A/B, run one provider per process:
+`ghost_router_ab.py` and `ghost_router_production_ab.py` cover 0.3.7 automatic
+task routing. The router-only probe asks a live provider for one JSON route
+decision. The production-spine probe runs the real `TaskRunner` routing entry
+point with safe mode-body stubs, so it verifies `task_start.mode`,
+`task_done.mode`, and dispatch without editing the repository or running shell
+commands.
+
+```powershell
+python -B tests\manual\ghost_router_ab.py --self-test
+python -B tests\manual\ghost_router_ab.py `
+  --provider deepseek `
+  --port 9222 `
+  --timeout 90 `
+  --new-chat-timeout 45 `
+  --output tests\manual\results\ghost_router_deepseek.json
+
+python -B tests\manual\ghost_router_production_ab.py --self-test
+python -B tests\manual\ghost_router_production_ab.py `
+  --provider deepseek `
+  --port 9222 `
+  --output tests\manual\results\ghost_router_production_deepseek.json
+```
+
+Run one provider per restarted Edge CDP session. The score weights
+Writer/Hybrid confusion more heavily than Chat/Planning confusion because mode
+errors have different blast radii. Production A/B reports are written
+atomically after each case with `complete=false` until the full run finishes.
+The fixture also includes a project-attached chat regression where the user
+explicitly forbids project file access; production code must keep that case in
+chat even if the router model selects Writer.
+
+2026-08-11 Ghost Router live A/B, original 10-case matrix, run one provider per
+restarted Edge CDP session:
+
+- DeepSeek: router-only 10/10; production-spine 10/10.
+- Qwen: router-only 10/10; production-spine 10/10.
+- MiMo: router-only 10/10; production-spine 9/10. The miss was a
+  provider/CDP transient fallback; the failed case passed 1/1 when rerun alone.
+- GLM: router-only 10/10; production-spine 10/10.
+- StepFun: router-only 10/10; production-spine 9/10. The miss was a
+  provider/CDP transient fallback; the failed case passed 1/1 when rerun alone.
+
+2026-08-08 Ghost Directive live A/B, run one provider per process:
 
 - DeepSeek: passed. Directive corrected the state backend to bounded JSON
   projection plus JSONL audit, did not leak internal context naming, and kept

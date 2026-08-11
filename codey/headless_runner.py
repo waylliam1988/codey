@@ -19,7 +19,11 @@ from codey.changes import collect_changes as default_collect_changes
 from codey.events import MAX_EVENT_RESULT_CHARS, MAX_EVENT_TEXT_CHARS, clip_event_text
 from codey.local_store import DEFAULT_STATE_HOME
 from codey.provider_diagnostics import capture_provider_failure as default_capture_provider_failure
-from codey.providers import DEFAULT_PROVIDER_ID, connect_provider as default_connect_provider
+from codey.providers import (
+    DEFAULT_PROVIDER_ID,
+    connect_fresh_provider_tab as default_connect_fresh_provider_tab,
+    connect_provider as default_connect_provider,
+)
 from codey.server import (
     REVIEW_FIX_TURNS,
     REVIEW_LOG_LINES,
@@ -145,6 +149,7 @@ def run_headless(
     collect_changes: Callable | None = None,
     capture_provider_failure: Callable | None = None,
     connect_provider: Callable[..., Any] = default_connect_provider,
+    connect_fresh_provider: Callable[..., Any] = default_connect_fresh_provider_tab,
 ) -> HeadlessResult:
     project = Path(request.project).expanduser().resolve()
     project.mkdir(parents=True, exist_ok=True)
@@ -176,6 +181,11 @@ def run_headless(
         is_git_repository=is_git_repository,
         review_fix_turns=REVIEW_FIX_TURNS,
         review_log_lines=REVIEW_LOG_LINES,
+        ghost_router_provider_factory=(
+            (lambda provider_id: connect_fresh_provider(provider_id, port=request.port))
+            if _request_intent(request.intent) == "auto"
+            else None
+        ),
     )
     try:
         runner.run(TaskRequest(
@@ -339,6 +349,8 @@ def _request_intent(value: str) -> str:
     text = str(value or "project").strip().lower()
     if text in {"readonly", "planning", "planning_readonly"}:
         return "planning_readonly"
+    if text in {"auto", "chat", "research", "project", "hybrid", "review"}:
+        return text
     return "project"
 
 

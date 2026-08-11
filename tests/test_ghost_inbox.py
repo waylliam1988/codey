@@ -778,8 +778,8 @@ class GhostCliTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 0)
         help_text = " ".join(stdout.getvalue().split())
-        self.assertIn("export Ghost inbox/events/signals/state/continuity/sleep", help_text)
-        self.assertIn("delete Ghost inbox/events/signals/state/continuity/sleep", help_text)
+        self.assertIn("export Ghost inbox/events/signals/state/continuity/router/sleep", help_text)
+        self.assertIn("delete Ghost inbox/events/signals/state/continuity/router/sleep", help_text)
         self.assertIn("accept", help_text)
         self.assertIn("rebuild-state", help_text)
 

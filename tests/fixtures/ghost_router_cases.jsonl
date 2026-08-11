@@ -1,0 +1,11 @@
+{"name":"plain_chat_no_project","project":false,"task":"你觉得这个想法靠谱吗？先讲人话。","expected_mode":"chat","risk":"low","notes":"ordinary conversational answer, no local project or web research needed"}
+{"name":"plain_chat_with_project","project":true,"task":"解释一下这个项目的整体设计，不要读写项目文件。","expected_mode":"chat","risk":"low","notes":"project is attached, but the user asks for a plain conversational explanation and forbids project file access"}
+{"name":"readonly_plan_project","project":true,"task":"先别改代码，给我一个修改方案。","expected_mode":"planning_readonly","risk":"read","notes":"explicitly asks for a plan and says not to edit"}
+{"name":"debug_explain_no_edit","project":true,"task":"这个报错是什么意思？先帮我看看原因，不要改文件。","expected_mode":"planning_readonly","risk":"read","notes":"project context may be useful, but the request forbids edits"}
+{"name":"fix_bug_project","project":true,"task":"测试失败了，直接修到 pytest 通过。","expected_mode":"project","risk":"write","notes":"explicit local code modification task"}
+{"name":"readme_edit","project":true,"task":"把 README 这段说明改短一点，更适合小白。","expected_mode":"project","risk":"write","notes":"explicit documentation edit in the local project"}
+{"name":"web_research_no_project","project":false,"task":"帮我查一下 OpenAI API 今天最新的 Responses 文档变化。","expected_mode":"research","risk":"research","notes":"fresh external information is required"}
+{"name":"research_then_update_project","project":true,"task":"先查一下 pytest 最新推荐写法，然后更新项目里的测试说明。","expected_mode":"hybrid","risk":"write","notes":"requires web research followed by local project writing"}
+{"name":"diff_review_only","project":true,"has_reviewable_diff":true,"task":"review 一下这次 diff，有问题只列 findings，不要修改。","expected_mode":"review","risk":"review","notes":"explicit review-only request"}
+{"name":"continue_chat","project":false,"task":"继续。","expected_mode":"chat","risk":"low","notes":"ambiguous continuation without project context should remain chat"}
+{"name":"research_only_with_project","project":true,"task":"帮我调研一下 ruff 和 pyright 最新版本差异，先不要动代码。","expected_mode":"research","risk":"research","notes":"project is open, but the task asks for research and forbids edits"}

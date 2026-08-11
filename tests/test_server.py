@@ -988,6 +988,23 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(payload, {"ok": True, "run_id": "run-1"})
         submit.assert_called_once_with("default", None, "hello", 500, True, "deepseek", "research")
 
+        self.assertEqual(
+            server._run_submit_response({"task": "review diff", "intent": "review"}),
+            (400, {"error": "project required for review"}),
+        )
+
+        with tempfile.TemporaryDirectory() as td, mock.patch.object(server, "_submit_task", return_value="run-2") as submit:
+            review_status, review_payload = server._run_submit_response({
+                "task": "review diff",
+                "project": td,
+                "provider": "deepseek",
+                "intent": "review",
+            })
+
+        self.assertEqual(review_status, 200)
+        self.assertEqual(review_payload, {"ok": True, "run_id": "run-2"})
+        submit.assert_called_once_with("default", td, "review diff", server.DEFAULT_MAX_TURNS, False, "deepseek", "review")
+
         with mock.patch.object(server, "_submit_task", return_value=None):
             busy_status, busy_payload = server._run_submit_response({"task": "hello"})
         with mock.patch.object(server, "_submit_task", side_effect=RuntimeError("boom")):
@@ -1494,6 +1511,11 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
         from codey.ghost.continuity import build_ghost_continuity
+        from codey.ghost.router import (
+            GhostRouteDecision,
+            GhostRouteRequest,
+            finalize_route_decision,
+        )
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
@@ -1521,9 +1543,38 @@ class RunSnapshotTests(unittest.TestCase):
                 run_id="run-continuity-2",
                 text="Session two scoped focus",
             )
+            assert state.ghost_router is not None
+            keep_request = GhostRouteRequest(
+                task="keep",
+                baseline_mode="chat",
+                session_id="session-1",
+                run_id="run-router-1",
+            )
+            delete_request = GhostRouteRequest(
+                task="delete",
+                baseline_mode="chat",
+                session_id="session-2",
+                run_id="run-router-2",
+            )
+            state.ghost_router.append_result(
+                finalize_route_decision(
+                    keep_request,
+                    GhostRouteDecision("research", 0.9, "fresh", True),
+                ),
+                keep_request,
+            )
+            state.ghost_router.append_result(
+                finalize_route_decision(
+                    delete_request,
+                    GhostRouteDecision("research", 0.9, "fresh", True),
+                ),
+                delete_request,
+            )
 
             state.forget_conversation("session-2")
+            router_records = state.ghost_router.export_state()["router"]["records"]
             self.assertIsNotNone(state.last_terminal_event)
+            self.assertEqual([row["session_id"] for row in router_records], ["session-1"])
             self.assertIn(
                 "Session one scoped focus",
                 build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
@@ -1542,6 +1593,7 @@ class RunSnapshotTests(unittest.TestCase):
                 "Session one scoped focus",
                 build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
             )
+            self.assertEqual(state.ghost_router.export_state()["router"]["records"], [])
 
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.State()

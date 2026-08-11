@@ -16,6 +16,13 @@ from codey.ghost.directive import GhostDirective, build_ghost_directive
 from codey.ghost.hebbian import GhostEdge, GhostHebbianStore, GhostNode
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.learning_loop import GhostLearningLoop, GhostLearningResult, GhostLearningTurn
+from codey.ghost.router import (
+    GhostRouteDecision,
+    GhostRouteRequest,
+    GhostRouteResult,
+    GhostRouteStore,
+    GhostRouter,
+)
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.sleep import (
     GhostSleepBudget,
@@ -40,6 +47,11 @@ __all__ = [
     "GhostLearningTurn",
     "GhostMemoryCandidate",
     "GhostNode",
+    "GhostRouteDecision",
+    "GhostRouteRequest",
+    "GhostRouteResult",
+    "GhostRouteStore",
+    "GhostRouter",
     "GhostSignal",
     "GhostSignalParseResult",
     "GhostSignalStore",

@@ -28,6 +28,13 @@ from codey.ghost.learning_loop import (
     GhostLearningLoop,
     GhostLearningTurn,
 )
+from codey.ghost.router import (
+    DEFAULT_GHOST_ROUTER_NEW_CHAT_TIMEOUT,
+    DEFAULT_GHOST_ROUTER_TIMEOUT,
+    GhostRouteRequest,
+    GhostRouteResult,
+    GhostRouter,
+)
 from codey.handoff import (
     ConversationContext,
     ConversationSnapshot,
@@ -60,6 +67,7 @@ from codey.run_ledger_projection import (
 )
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
+from codey.review import has_reviewable_changes
 from codey.review_coordinator import ReviewCoordinator, change_state
 from codey.shell_risk import classify_shell_risk
 from codey.verification_map import render_verification_map
@@ -78,6 +86,11 @@ from codey.writer_failover import (
     WriterAttempt,
     WriterFailoverRunner,
 )
+
+
+PRODUCTION_GHOST_ROUTER_TIMEOUT = 12.0
+PRODUCTION_GHOST_ROUTER_NEW_CHAT_TIMEOUT = 8.0
+PRODUCTION_GHOST_ROUTER_ATTEMPTS = 1
 
 
 @dataclass(frozen=True)
@@ -239,10 +252,12 @@ def _resolve_task_kind(request: TaskRequest) -> str:
     intent = (request.intent or "auto").strip().lower()
     if intent in {"planning", "planning_readonly", "readonly"}:
         return "planning_readonly" if request.project else "chat"
-    if intent in {"research", "project", "hybrid", "chat"}:
+    if intent in {"research", "project", "hybrid", "chat", "review"}:
         if intent == "hybrid" and not request.project:
             return "research"
         if intent == "project" and not request.project:
+            return "chat"
+        if intent == "review" and not request.project:
             return "chat"
         return intent
     return "project" if request.project else "chat"
@@ -257,12 +272,16 @@ def _writer_failover_mode(task_kind: str) -> str:
 
 
 def _ui_mode(kind: str, project: str | None) -> str:
+    if kind == "chat":
+        return "chat"
     if kind == "research":
         return "research"
     if kind == "hybrid":
         return "hybrid"
     if kind == "planning_readonly":
         return "planning"
+    if kind == "review":
+        return "review"
     return "agent" if project else "chat"
 
 
@@ -285,6 +304,27 @@ def _display_tool(name: str, args: dict, path: str = "") -> tuple[str, str]:
         kind, label = research_names[name]
         return kind, label[:160]
     return name, "" if path == "." else path
+
+
+def _render_review_only_summary(review: object) -> str:
+    approved = bool(getattr(review, "approved", False))
+    summary = str(getattr(review, "summary", "") or "").strip()
+    if approved:
+        return f"Review approved: {summary or 'No issues found.'}"
+    lines = [f"Review requested changes: {summary or 'Issues found.'}"]
+    findings = getattr(review, "findings", ()) or ()
+    for index, finding in enumerate(list(findings)[:8], start=1):
+        path = str(getattr(finding, "path", "") or "").strip()
+        issue = str(getattr(finding, "issue", "") or "").strip()
+        fix = str(getattr(finding, "suggested_fix", "") or "").strip()
+        prefix = f"{index}. "
+        if path:
+            prefix += f"{path}: "
+        text = issue or "Issue found"
+        if fix:
+            text += f" Suggested fix: {fix}"
+        lines.append(prefix + text)
+    return "\n".join(lines)
 
 
 def _research_payload(result) -> dict:
@@ -330,6 +370,7 @@ class TaskRunner:
         review_log_lines: int = 80,
         ghost_learning_provider_factory: Callable[[str], Any] | None = None,
         ghost_learning_modes: tuple[str, ...] = ("chat",),
+        ghost_router_provider_factory: Callable[[str], Any] | None = None,
     ) -> None:
         self.state = state
         self.agent_run = agent_run
@@ -350,6 +391,7 @@ class TaskRunner:
         self.review_log_lines = review_log_lines
         self.ghost_learning_provider_factory = ghost_learning_provider_factory
         self.ghost_learning_modes = tuple(str(item or "").strip() for item in ghost_learning_modes)
+        self.ghost_router_provider_factory = ghost_router_provider_factory
 
     def _managed_tool_fns(self, *, session_id: str, run_id: str) -> AgentToolFns | None:
         if self.managed_outputs is None:
@@ -523,6 +565,84 @@ class TaskRunner:
         except Exception:
             return
 
+    def _maybe_route_auto(
+        self,
+        request: TaskRequest,
+        *,
+        baseline_mode: str,
+        run_id: str,
+    ) -> GhostRouteResult | None:
+        intent = str(request.intent or "auto").strip().lower()
+        if intent != "auto":
+            return None
+        store = getattr(self.state, "ghost_router", None)
+        if store is None:
+            return None
+        inbox_store = getattr(self.state, "ghost_inbox", None)
+        if inbox_store is not None and not inbox_store.learning_enabled():
+            return None
+        provider_factory = self.ghost_router_provider_factory
+        if provider_factory is None:
+            return None
+        route_request = GhostRouteRequest(
+            task=request.task,
+            baseline_mode=baseline_mode,
+            run_id=run_id,
+            session_id=request.session_id,
+            project=request.project or "",
+            provider_id=request.provider_id,
+            continue_request=request.continue_task,
+            has_reviewable_diff=self._has_reviewable_diff(request.project),
+        )
+        try:
+            with provider_controls.suppress_assistance():
+                return GhostRouter(store).route(
+                    route_request,
+                    provider_factory=provider_factory,
+                    timeout=min(DEFAULT_GHOST_ROUTER_TIMEOUT, PRODUCTION_GHOST_ROUTER_TIMEOUT),
+                    new_chat_timeout=min(
+                        DEFAULT_GHOST_ROUTER_NEW_CHAT_TIMEOUT,
+                        PRODUCTION_GHOST_ROUTER_NEW_CHAT_TIMEOUT,
+                    ),
+                    max_attempts=PRODUCTION_GHOST_ROUTER_ATTEMPTS,
+                )
+        except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
+            raise
+        except Exception:
+            return None
+
+    def _has_reviewable_diff(self, project: str | None) -> bool:
+        if not project:
+            return False
+        try:
+            return has_reviewable_changes(self._collect_review_changes(project))
+        except Exception:
+            return False
+
+    def _collect_review_changes(self, project: str | None) -> dict:
+        if not project:
+            return {"ok": False, "error": "project required", "files": [], "diff": ""}
+        return self.collect_changes(project, self._review_change_tracker(project))
+
+    def _review_change_tracker(self, project: str | None):
+        if not project:
+            return None
+        try:
+            key = str(Path(project).expanduser().resolve())
+        except (OSError, RuntimeError, ValueError):
+            return None
+        tracker_for = getattr(self.state, "change_tracker_for", None)
+        if not callable(tracker_for):
+            return None
+        try:
+            persistent = not self.is_git_repository(key)
+        except Exception:
+            persistent = True
+        try:
+            return tracker_for(key, persistent=persistent)
+        except Exception:
+            return None
+
     def _event_with_projected_receipt(
         self,
         event: dict,
@@ -551,7 +671,8 @@ class TaskRunner:
         max_turns = request.max_turns
         continue_task = request.continue_task
         provider_id = request.provider_id
-        task_kind = _resolve_task_kind(request)
+        baseline_task_kind = _resolve_task_kind(request)
+        task_kind = baseline_task_kind
         run_id = request.run_id
 
         if not run_id:
@@ -575,6 +696,32 @@ class TaskRunner:
         provider_controls.begin_task_context(session_id)
         state.last_provider_failure = None
         previous_cancel_event = cancellation.set_event(state.stop_flag)
+        try:
+            route_result = self._maybe_route_auto(
+                request,
+                baseline_mode=baseline_task_kind,
+                run_id=run_id,
+            )
+        except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
+            state.set_provider_session(provider_id, None)
+            stopped_event = {
+                "type": "task_done",
+                "run_id": run_id,
+                "session_id": session_id,
+                "summary": "",
+                "stop_reason": "stopped",
+                "turns": 0,
+                "max_turns": max_turns,
+                "provider": provider_id,
+                "mode": _ui_mode(baseline_task_kind, project),
+                "provider_failure": None,
+            }
+            state.finish_run(run_id, stopped_event)
+            cancellation.set_event(previous_cancel_event)
+            provider_controls.end_task_context()
+            return
+        if route_result is not None:
+            task_kind = route_result.final_mode
         state.emit({
             "type": "task_start",
             "run_id": run_id,
@@ -589,7 +736,7 @@ class TaskRunner:
         })
 
         work = _RunWork(recent_events=[], evidence=ExecutionEvidence())
-        if project and task_kind in {"project", "hybrid", "planning_readonly"} and self.run_ledgers is not None:
+        if project and task_kind in {"project", "hybrid", "planning_readonly", "review"} and self.run_ledgers is not None:
             try:
                 work.ledger = self.run_ledgers.open(
                     run_id=run_id,
@@ -765,6 +912,39 @@ class TaskRunner:
                     mode=_startup_failover_mode(task_kind),
                 )
 
+            if task_kind == "review":
+                project_text = str(Path(project).expanduser().resolve()) if project else ""
+                conversation = state.conversation_for(session_id)
+                frame = _RunFrame(
+                    request=request,
+                    run_id=run_id,
+                    task_kind=task_kind,
+                    provider=None,
+                    provider_id=provider_id,
+                    project_text=project_text,
+                    conversation=conversation,
+                    fresh_chat=False,
+                    handoff="",
+                    research_handoff="",
+                    prior_snapshot=conversation.snapshot,
+                    recovered_owner_prompt="",
+                    provider_session_changed=False,
+                    preflight_tried=set(),
+                    preflight_switches=0,
+                )
+                outcome = self._run_review_mode(frame)
+                append_ledger(lambda ledger: ledger.finish(**outcome.event))
+                event = self._event_with_projected_receipt(
+                    outcome.event,
+                    session_id=session_id,
+                    run_id=run_id,
+                )
+                state.finish_run(run_id, event)
+                self._maybe_run_ghost_learning(frame, event)
+                self._maybe_sync_ghost_continuity(frame, event)
+                self._maybe_kick_ghost_sleep(frame, event)
+                return
+
             preflight_tried: set[str] = set()
             preflight_switches = 0
             if supervisor is not None:
@@ -875,8 +1055,10 @@ class TaskRunner:
                 mode = "research"
             elif task_kind == "planning_readonly":
                 mode = "planning"
-            else:
+            elif task_kind in {"project", "hybrid"}:
                 mode = "project" if project else "chat"
+            else:
+                mode = "chat"
             project_text = str(Path(project).expanduser().resolve()) if project else ""
             conversation = state.conversation_for(session_id)
             provider_session_changed = state.provider_session_changed(
@@ -970,7 +1152,7 @@ class TaskRunner:
                 outcome = self._run_hybrid_mode(frame, work, hooks)
             elif task_kind == "planning_readonly":
                 outcome = self._run_planning_readonly_mode(frame, work)
-            elif project:
+            elif task_kind == "project":
                 outcome = self._run_project_mode(frame, work, hooks)
             else:
                 outcome = self._run_chat_mode(frame)
@@ -1010,6 +1192,7 @@ class TaskRunner:
                 "turns": 0,
                 "max_turns": max_turns,
                 "provider": current_id,
+                "mode": _ui_mode(task_kind, project),
                 "provider_failure": None,
             }
             append_ledger(lambda ledger: ledger.finish(**stopped_event))
@@ -1345,6 +1528,139 @@ class TaskRunner:
             "provider": frame.provider_id,
             "mode": "planning",
             "changed": False,
+        })
+
+    def _run_review_mode(self, frame: _RunFrame) -> _ModeOutcome:
+        state = self.state
+        request = frame.request
+        project = request.project
+        if project is None:
+            summary = "No attached project is available to review."
+            state.emit({
+                "type": "review",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "text": summary,
+            })
+            return _ModeOutcome({
+                "type": "task_done",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "summary": summary,
+                "stop_reason": "done",
+                "turns": 0,
+                "max_turns": request.max_turns,
+                "provider": frame.provider_id,
+                "mode": "review",
+                "changed": False,
+            })
+        changes = self._collect_review_changes(project)
+        if not isinstance(changes, dict) or changes.get("ok") is not True:
+            summary = "Could not collect a local diff to review."
+            state.emit({
+                "type": "review",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "text": summary,
+            })
+            return _ModeOutcome({
+                "type": "task_done",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "summary": summary,
+                "stop_reason": "done",
+                "turns": 0,
+                "max_turns": request.max_turns,
+                "provider": frame.provider_id,
+                "mode": "review",
+                "changed": False,
+            })
+        if not has_reviewable_changes(changes):
+            summary = "No reviewable local diff was found."
+            state.emit({
+                "type": "review",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "text": summary,
+            })
+            return _ModeOutcome({
+                "type": "task_done",
+                "run_id": frame.run_id,
+                "session_id": request.session_id,
+                "summary": summary,
+                "stop_reason": "done",
+                "turns": 0,
+                "max_turns": request.max_turns,
+                "provider": frame.provider_id,
+                "mode": "review",
+                "changed": False,
+                "changes": {
+                    "changed_count": changes.get("changed_count", 0),
+                    "files": changes.get("files", [])[:3],
+                    "mode": changes.get("mode"),
+                    "project": project,
+                },
+            })
+        try:
+            reviewed = self.run_review(
+                session_id=request.session_id,
+                project=project,
+                task=request.task,
+                writer_summary="Review-only mode did not run a writer.",
+                changes=changes,
+                recent_log="",
+                writer_id=frame.provider_id,
+                change_brief="",
+                project_map="",
+                verification_map="",
+                execution_evidence="",
+            )
+        except cancellation.TaskCancelled:
+            raise
+        except Exception:
+            reviewed = None
+        if reviewed is None:
+            summary = "Review unavailable. No files were changed."
+        else:
+            _reviewer_id, review = reviewed
+            summary = _render_review_only_summary(review)
+        state.set_provider_session(frame.provider_id, None)
+        frame.conversation.update_snapshot(replace(
+            frame.conversation.snapshot,
+            mode="review",
+            goal=request.task,
+            project=frame.project_text,
+            provider_id=frame.provider_id,
+            changed_files=_changed_file_paths(changes),
+            checks_passed=False,
+            summary=summary,
+            blocker="",
+            latest_user=request.task,
+            latest_reply=summary,
+        ))
+        state.emit({
+            "type": "review",
+            "run_id": frame.run_id,
+            "session_id": request.session_id,
+            "text": summary,
+        })
+        return _ModeOutcome({
+            "type": "task_done",
+            "run_id": frame.run_id,
+            "session_id": request.session_id,
+            "summary": summary,
+            "stop_reason": "done",
+            "turns": 1 if reviewed is not None else 0,
+            "max_turns": request.max_turns,
+            "provider": frame.provider_id,
+            "mode": "review",
+            "changed": False,
+            "changes": {
+                "changed_count": changes.get("changed_count", 0),
+                "files": changes.get("files", [])[:3],
+                "mode": changes.get("mode"),
+                "project": project,
+            },
         })
 
     def _planning_event(
@@ -1944,6 +2260,7 @@ class TaskRunner:
                 "project": project,
             }
         if research_result is not None:
+            event["mode"] = "hybrid"
             event["research"] = _research_payload(research_result)
         return _ModeOutcome(event)
 

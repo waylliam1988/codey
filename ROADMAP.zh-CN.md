@@ -924,9 +924,13 @@ event compaction（仅超过既有上限时）
 
 ## 0.3.7 - Ghost Router v1
 
+状态：已按生产 v1 落地。`0.3.7` 不是 shadow-only，也不是权限系统；它只让
+`auto` 模式在任务开始前更会选执行路径。
+
 ### 做什么
 
-Ghost 开始判断用户意图，但不直接执行工具。
+Ghost 开始判断用户意图，但不直接执行工具。只有 `intent=auto` 会触发 Router；
+手动入口永远优先。
 
 输出只能是：
 
@@ -934,6 +938,7 @@ Ghost 开始判断用户意图，但不直接执行工具。
 chat
 research
 project
+hybrid
 review
 planning_readonly
 ```
@@ -951,26 +956,60 @@ ledger
 restore
 ```
 
-### 第一版策略
+### v1 策略
 
-先 shadow：
+生产链路真实消费 route：
 
 ```text
-ghost_suggested_route
-actual_route
-agreement / disagreement
-reason
+baseline_route
+selected_route
+final_route
+confidence
+accepted
+skipped_reason
 ```
 
-稳定后再考虑让 UI 的“自动模式”消费。
+Router 通过 fresh provider tab 返回单个顶层 JSON object；正文包裹、数组包裹、
+多个 JSON object 都按 parse error 回 baseline。本地规则再做降级：
+
+- 低置信、parse error、provider error -> baseline route。
+- no project -> 不接受 project / hybrid / review。
+- no reviewable diff -> review 降级到 planning_readonly / chat。
+- 用户明确“不要改 / 只给方案” -> 不接受 project / hybrid。
+- 用户明确“只聊天 / 不访问项目文件” -> 不接受 project / planning_readonly /
+  review；hybrid 只在明确需要网页 research 时降级到 research，否则 chat。
+- chat/planning 升级到 project/hybrid 需要更高置信。
+
+审计写入：
+
+```text
+~/.codey/ghost/router_events.jsonl
+~/.codey/ghost/router_state.json
+```
+
+审计只保存 bounded metadata、task hash、mode、confidence、本地 reason code 和
+diagnostic code；不保存完整用户输入、完整 router prompt、raw provider reply 或模型返回的
+自然语言 reason。Event audit 写失败时，route 不改变行为；projection/compaction
+在 event append 成功后失败只记录 warning。所有重写 event log 的路径以
+`router_events.jsonl` 为真源；events 存在但不可读/过大时不使用 stale projection
+覆盖 audit，events 缺失时才允许从 projection bootstrap。
+
+`review` 是独立 review-only path：只收集当前 Git / snapshot diff，调用 reviewer，
+不启动 Writer、不自动 repair、不写文件、不连接主聊天 provider。
 
 ### 验收
 
 - Ghost 不能输出 edit/run/shell。
 - Ghost 不能批准 shell。
 - Ghost 不能让 Project Writer 默认联网。
-- route disagreement 有 ledger 记录。
 - 手动入口优先于 Ghost 建议。
+- `ghost disable` 禁用自动 Router。
+- 用户取消必须停止任务，不能 fallback 继续跑。
+- Router JSON 必须是单个顶层 object。
+- Router 失败必须 fail-open 到 baseline。
+- 用户拒绝项目文件访问时，auto 不得进入会读写项目的路径。
+- `task_start.mode` 和 `task_done.mode` 反映真实执行路径。
+- `ghost export` / `reset` / `delete-scope` 覆盖 router audit。
 
 ## 0.3.8 - Ghost Work Queue v1
 

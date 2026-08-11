@@ -4,6 +4,43 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.7 - Ghost Router v1
+
+- Added `codey/ghost/router.py`, a bounded automatic routing layer for
+  `intent=auto`. Before `task_start`, Codey can ask a fresh provider tab to
+  choose one execution mode: `chat`, `planning_readonly`, `research`, `project`,
+  `hybrid`, or `review`.
+- The router is not a permission system. Manual intents still win, shell/tool
+  approval is unchanged, and the router cannot choose tool arguments, grant
+  capabilities, or let Research/Writer cross permission boundaries.
+- Local safety rails reject malformed routing replies with multiple, prose-
+  wrapped, or array-wrapped JSON objects, and block project-reading/writing
+  modes when the user explicitly asks for chat without project file access.
+- Router decisions are consumed by the production `TaskRunner`. `task_start`,
+  run ledger mode, provider ranking, and mode dispatch now reflect the final
+  routed mode.
+- Added review-only mode for explicit diff review. It collects the current diff,
+  calls the reviewer, does not start Writer, does not repair, does not edit
+  files, and does not connect the main chat provider.
+- Added bounded router audit files:
+  `state_home/ghost/router_events.jsonl` and
+  `state_home/ghost/router_state.json`. Audit stores only route metadata,
+  hashes, mode choices, confidence, local reason codes, and bounded diagnostics;
+  it does not store full user tasks, raw router prompts, raw replies, or model
+  reason text.
+- Fail-open boundaries were tightened: cancellation stops the task, provider
+  parse/timeout failures fall back to the existing baseline route, and event
+  audit failure prevents a route from changing behavior. Projection/compaction
+  failure after a successful event append only adds warnings. Any path that
+  rewrites router events uses `router_events.jsonl` as the source of truth; if
+  events are missing, the projection is bootstrapped before new audit is added.
+- CLI/headless support: `python -m codey agent --json --auto` opts headless
+  runs into auto routing. Existing `ghost export`, `ghost reset --yes`, and
+  `ghost delete-scope` now cover router audit files.
+- Added `tests/test_ghost_router.py`, `tests/test_task_runner_router.py`,
+  router A/B fixtures, and both router-only and production-spine manual A/B
+  harnesses.
+
 ## 0.3.6 - Cognitive Sleep v1
 
 - Added `codey/ghost/sleep.py`, a short-lived local Ghost maintenance cycle

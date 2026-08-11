@@ -212,6 +212,33 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(run_headless.call_args.args[0].intent, "planning_readonly")
 
+    def test_cmd_agent_json_auto_maps_to_headless_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            args = mock.Mock(
+                provider="qwen",
+                port=9222,
+                project=td,
+                task=["route", "this"],
+                max_turns=4,
+                json=True,
+                readonly=False,
+                auto=True,
+                state_home="",
+            )
+            stdout = io.StringIO()
+
+            with (
+                mock.patch(
+                    "codey.headless_runner.run_headless",
+                    return_value=HeadlessResult(0, "run-1", "session-1", "done"),
+                ) as run_headless,
+                mock.patch("sys.stdout", stdout),
+            ):
+                exit_code = cli.cmd_agent(args)
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(run_headless.call_args.args[0].intent, "auto")
+
     def test_cmd_ghost_directive_exports_bounded_preview(self) -> None:
         from codey.ghost.hebbian import GhostHebbianStore
         from codey.ghost.inbox import GhostInboxStore
@@ -319,10 +346,26 @@ class ProviderCliTests(unittest.TestCase):
         self.assertEqual(zero_budget_payload["selected_count"], 0)
         self.assertTrue(zero_budget_payload["truncated"])
 
-    def test_cmd_ghost_export_includes_sleep_state(self) -> None:
+    def test_cmd_ghost_export_includes_router_and_sleep_state(self) -> None:
+        from codey.ghost.router import GhostRouteDecision, GhostRouteRequest, GhostRouteStore, finalize_route_decision
         from codey.ghost.sleep import GhostSleepStore
 
         with tempfile.TemporaryDirectory() as td:
+            router = GhostRouteStore(td)
+            request = GhostRouteRequest(
+                task="do not store this full task",
+                baseline_mode="chat",
+                session_id="s1",
+                run_id="r1",
+                provider_id="deepseek",
+            )
+            router.append_result(
+                finalize_route_decision(
+                    request,
+                    GhostRouteDecision("research", 0.9, "fresh", True),
+                ),
+                request,
+            )
             GhostSleepStore(td).run_once(run_id="r1", session_id="s1")
             args = mock.Mock(ghost_cmd="export", state_home=td)
             stdout = io.StringIO()
@@ -333,15 +376,30 @@ class ProviderCliTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertTrue(payload["ok"])
+        self.assertIn("router", payload)
+        self.assertIn("router_events", payload["router"])
+        self.assertNotIn("do not store this full task", json.dumps(payload, ensure_ascii=False))
         self.assertIn("sleep", payload)
         self.assertIn("sleep_events", payload["sleep"])
 
-    def test_cmd_ghost_reset_deletes_sleep_files(self) -> None:
+    def test_cmd_ghost_reset_deletes_router_and_sleep_files(self) -> None:
+        from codey.ghost.router import GhostRouteDecision, GhostRouteRequest, GhostRouteStore, finalize_route_decision
         from codey.ghost.sleep import GhostSleepStore
 
         with tempfile.TemporaryDirectory() as td:
+            router = GhostRouteStore(td)
+            request = GhostRouteRequest(task="route", baseline_mode="chat", session_id="s1")
+            router.append_result(
+                finalize_route_decision(
+                    request,
+                    GhostRouteDecision("research", 0.9, "fresh", True),
+                ),
+                request,
+            )
             sleep = GhostSleepStore(td)
             sleep.run_once(run_id="r1", session_id="s1")
+            self.assertTrue(router.state_path.exists())
+            self.assertTrue(router.events_path.exists())
             self.assertTrue(sleep.state_path.exists())
             self.assertTrue(sleep.events_path.exists())
             args = mock.Mock(ghost_cmd="reset", state_home=td, yes=True)
@@ -350,18 +408,31 @@ class ProviderCliTests(unittest.TestCase):
             with mock.patch("sys.stdout", stdout):
                 exit_code = cli.cmd_ghost(args)
 
+            self.assertFalse(router.state_path.exists())
+            self.assertFalse(router.events_path.exists())
             self.assertFalse(sleep.state_path.exists())
             self.assertFalse(sleep.events_path.exists())
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertTrue(payload["ok"])
+        self.assertTrue(payload["router_ok"])
         self.assertTrue(payload["sleep_ok"])
 
-    def test_cmd_ghost_delete_scope_cleans_sleep_session_refs(self) -> None:
+    def test_cmd_ghost_delete_scope_cleans_router_and_sleep_session_refs(self) -> None:
+        from codey.ghost.router import GhostRouteDecision, GhostRouteRequest, GhostRouteStore, finalize_route_decision
         from codey.ghost.sleep import GhostSleepStore
 
         with tempfile.TemporaryDirectory() as td:
+            router = GhostRouteStore(td)
+            request = GhostRouteRequest(task="route", baseline_mode="chat", session_id="session-delete")
+            router.append_result(
+                finalize_route_decision(
+                    request,
+                    GhostRouteDecision("research", 0.9, "fresh", True),
+                ),
+                request,
+            )
             sleep = GhostSleepStore(td)
             sleep.run_once(run_id="r1", session_id="session-delete")
             args = mock.Mock(
@@ -378,12 +449,15 @@ class ProviderCliTests(unittest.TestCase):
                 exit_code = cli.cmd_ghost(args)
 
             exported = sleep.export_state()
+            router_exported = router.export_state()
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertTrue(payload["ok"])
+        self.assertEqual(payload["router_removed_count"], 1)
         self.assertEqual(payload["sleep_removed"]["reports"], 1)
         self.assertEqual(exported["sleep"], {})
+        self.assertEqual(router_exported["router"]["records"], [])
 
 
 if __name__ == "__main__":

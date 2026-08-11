@@ -1,5 +1,78 @@
 # Codey Test Report
 
+## 0.3.7 Ghost Router v1
+
+Codey 0.3.7 adds production automatic routing for `intent=auto`. Before
+`task_start`, Codey asks a fresh provider tab for a bounded JSON route decision
+and then the production `TaskRunner` consumes the final mode. The router can
+choose only `chat`, `planning_readonly`, `research`, `project`, `hybrid`, or
+`review`; it cannot grant permissions, approve shell commands, choose tool
+arguments, or override manual user mode.
+
+Production changes:
+
+- New `codey/ghost/router.py` stores bounded route audit in
+  `router_events.jsonl` and `router_state.json`.
+- Audit does not store full user tasks, raw prompts, raw provider replies, or
+  model reason text. Diagnostics are local error codes rather than exception
+  messages.
+- Parser policy is strict for production routing: fenced JSON is accepted, but
+  prose-wrapped, array-wrapped, or multiple JSON objects are rejected.
+- Local hard rules block project-reading/writing modes when the user explicitly
+  asks for chat without project file access.
+- `TaskCancelled` / `ControlTeachCancelled` stops the task instead of falling
+  back to the baseline route.
+- Event audit failure prevents a route from changing behavior. Projection or
+  compaction failure after a successful event append only adds warnings. Router
+  event rewrites use `router_events.jsonl` as the source of truth, and missing
+  events are bootstrapped from projection before new audit is appended.
+- Production router preflight uses one short attempt before `task_start`; manual
+  A/B scripts can still use wider timeouts.
+- Added review-only mode. It reviews current Git or snapshot diffs without
+  starting Writer, connecting the main provider, repairing, or editing files.
+- `python -m codey agent --json --auto` opts headless runs into auto routing.
+  Existing Ghost export/reset/delete-scope controls cover router audit files.
+
+Validation:
+
+```text
+python -m pytest -q
+# 1740 passed, 9 skipped, 1 pytest cache warning, 267 subtests passed
+
+python -m pytest tests\test_ghost_router.py tests\test_task_runner_router.py tests\test_ghost_router_ab.py tests\test_cli.py tests\test_headless_runner.py tests\test_server.py tests\test_ui.py tests\test_architecture.py -q
+# 276 passed, 1 skipped, 1 pytest cache warning, 17 subtests passed
+
+python -m ruff check .
+# All checks passed!
+
+python -B tests\manual\ghost_router_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\ghost_router_production_ab.py --self-test
+# self-test ok
+
+git diff --check
+# passed
+```
+
+Live A/B:
+
+```text
+DeepSeek router-only:        10/10; production-spine: 10/10
+Qwen router-only:            10/10; production-spine: 10/10
+MiMo router-only:            10/10; production-spine: 9/10
+MiMo failed case retry:       1/1
+GLM router-only:             10/10; production-spine: 10/10
+StepFun router-only:         10/10; production-spine: 9/10
+StepFun failed case retry:    1/1
+```
+
+The MiMo and StepFun full production-spine misses were provider/CDP transient
+failures that triggered the intended baseline fallback. The same failed cases
+passed when rerun individually after a fresh browser session. These live runs
+used the original 10-case fixture; the later project-attached chat regression
+case is covered by deterministic tests and the manual harness self-tests.
+
 ## 0.3.6 Cognitive Sleep v1
 
 Codey 0.3.6 adds an invisible local Ghost maintenance pass. It is not a

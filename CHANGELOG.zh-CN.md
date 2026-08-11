@@ -4,6 +4,36 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.7 - Ghost Router v1
+
+- 新增 `codey/ghost/router.py`：`intent=auto` 时的有界自动路由层。
+  在 `task_start` 前，Codey 可以用 fresh provider tab 判断本轮该走
+  `chat`、`planning_readonly`、`research`、`project`、`hybrid` 还是
+  `review`。
+- Router 不是权限系统。手动 intent 永远优先；shell / tool approval 不变；
+  Router 不能决定工具参数、授予权限，也不能让 Research 和 Writer 串权限。
+- 本地安全兜底会拒绝多个 JSON、正文包裹 JSON、数组包裹 JSON 这类不干净的
+  route 回复；用户明确要求“只聊天 / 不访问项目文件”时，也不会接受会读写项目的
+  路径。
+- 生产 `TaskRunner` 会真实消费路由结果；`task_start`、run ledger mode、
+  provider ranking 和模式分发都会使用最终 route。
+- 新增独立 review-only 模式：只收集当前 diff 并调用 reviewer，不启动 Writer、
+  不自动 repair、不写文件，也不连接主聊天 provider。
+- 新增有界审计文件：`state_home/ghost/router_events.jsonl` 和
+  `state_home/ghost/router_state.json`。审计只保存 route 元数据、hash、模式、
+  confidence、本地 reason code 和有界 diagnostics；不保存完整用户任务、完整
+  router prompt、raw reply 或模型返回的自然语言 reason。
+- 收紧 fail-open 边界：用户取消会停止任务，不会 fallback 继续跑；provider
+  解析/超时失败会回退现有 baseline；event audit 失败时 route 不改变行为。
+  Event append 成功后的 projection / compaction 失败只追加 warning。任何会重写
+  router events 的路径都以 `router_events.jsonl` 为真源；events 缺失时先用
+  projection bootstrap，再追加新的审计。
+- CLI / headless 支持：`python -m codey agent --json --auto` 可以显式启用
+  auto routing。现有 `ghost export`、`ghost reset --yes` 和
+  `ghost delete-scope` 现在覆盖 router 审计文件。
+- 新增 `tests/test_ghost_router.py`、`tests/test_task_runner_router.py`、router
+  A/B fixture，以及 router-only / production-spine 两套 manual A/B harness。
+
 ## 0.3.6 - Cognitive Sleep v1
 
 - 新增 `codey/ghost/sleep.py`：成功任务结束后短暂运行的本地 Ghost

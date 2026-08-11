@@ -19,6 +19,26 @@ class _FakeProvider:
         pass
 
 
+class _RouteProvider:
+    name = "Router"
+
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+        self.prompt = ""
+        self.closed = False
+
+    def new_chat(self, timeout: float | None = None) -> None:
+        del timeout
+
+    def send(self, text: str, timeout: float | None = None) -> str:
+        del timeout
+        self.prompt = text
+        return self.reply
+
+    def close(self) -> None:
+        self.closed = True
+
+
 class HeadlessRunnerTests(unittest.TestCase):
     def test_project_task_emits_jsonl_and_writes_ledger(self) -> None:
         rows: list[dict[str, object]] = []
@@ -171,6 +191,49 @@ class HeadlessRunnerTests(unittest.TestCase):
         self.assertIsNone(seen["change_tracker"])
         self.assertIn("Project Map", str(seen["project_map"]))
         self.assertIn("invalid JSON", str(seen["project_config_warnings"]))
+
+    def test_auto_intent_uses_router_before_headless_task_mode(self) -> None:
+        seen: dict[str, object] = {}
+        rows: list[dict[str, object]] = []
+        route_provider = _RouteProvider(
+            '{"mode":"planning_readonly","confidence":0.91,"reason":"plan only"}'
+        )
+
+        def fake_agent(*_args, **kwargs):
+            seen["permission_profile"] = kwargs.get("permission_profile")
+            seen["change_tracker"] = kwargs.get("change_tracker")
+            return RunResult("plan only", "done", 1)
+
+        with tempfile.TemporaryDirectory() as td:
+            result = run_headless(
+                HeadlessRequest(
+                    project=Path(td, "project"),
+                    task="先别改代码，只给我一个方案",
+                    provider_id="qwen",
+                    max_turns=3,
+                    session_id="session-1",
+                    intent="auto",
+                    state_home=Path(td, "state"),
+                ),
+                emit_jsonl=rows.append,
+                agent_run=fake_agent,
+                collect_changes=lambda *_args, **_kwargs: {
+                    "ok": True,
+                    "changed_count": 0,
+                    "files": [],
+                    "diff": "",
+                },
+                connect_provider=lambda *_args, **_kwargs: _FakeProvider(),
+                connect_fresh_provider=lambda *_args, **_kwargs: route_provider,
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(rows[0]["mode"], "planning")
+        self.assertEqual(rows[-1]["mode"], "planning")
+        self.assertEqual(seen["permission_profile"], "planning_readonly")
+        self.assertIsNone(seen["change_tracker"])
+        self.assertNotIn("Ghost", route_provider.prompt)
+        self.assertTrue(route_provider.closed)
 
     def test_headless_event_payload_clips_large_fields(self) -> None:
         payload = headless_event_payload({
