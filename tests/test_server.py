@@ -1516,6 +1516,7 @@ class RunSnapshotTests(unittest.TestCase):
             GhostRouteRequest,
             finalize_route_decision,
         )
+        from codey.ghost.work_queue import GhostWorkQueueStore
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
@@ -1535,13 +1536,13 @@ class RunSnapshotTests(unittest.TestCase):
                 state,
                 session_id="session-1",
                 run_id="run-continuity-1",
-                text="Session one scoped focus",
+                text="Should Session one scoped focus continue?",
             )
             seed_ghost_continuity(
                 state,
                 session_id="session-2",
                 run_id="run-continuity-2",
-                text="Session two scoped focus",
+                text="Should Session two scoped focus continue?",
             )
             assert state.ghost_router is not None
             keep_request = GhostRouteRequest(
@@ -1570,11 +1571,22 @@ class RunSnapshotTests(unittest.TestCase):
                 ),
                 delete_request,
             )
+            assert state.ghost_work_queue is not None
+            GhostWorkQueueStore(td).sync_from_sources(
+                continuity_store=state.ghost_continuity,
+                session_id="session-1",
+            )
+            GhostWorkQueueStore(td).sync_from_sources(
+                continuity_store=state.ghost_continuity,
+                session_id="session-2",
+            )
 
             state.forget_conversation("session-2")
             router_records = state.ghost_router.export_state()["router"]["records"]
+            work_items = state.ghost_work_queue.export_state()["work_queue"]["items"]
             self.assertIsNotNone(state.last_terminal_event)
             self.assertEqual([row["session_id"] for row in router_records], ["session-1"])
+            self.assertEqual(len(work_items), 1)
             self.assertIn(
                 "Session one scoped focus",
                 build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
@@ -1594,6 +1606,7 @@ class RunSnapshotTests(unittest.TestCase):
                 build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
             )
             self.assertEqual(state.ghost_router.export_state()["router"]["records"], [])
+            self.assertEqual(state.ghost_work_queue.export_state()["work_queue"]["items"], [])
 
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.State()

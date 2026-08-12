@@ -1013,10 +1013,14 @@ diagnostic code；不保存完整用户输入、完整 router prompt、raw provi
 
 ## 0.3.8 - Ghost Work Queue v1
 
+状态：已按生产 v1 落地。0.3.8 是受 Symphony 启发的本地 work item
+状态机，不是后台 agent，也不是把队列塞给 Router 自由解释。只有严格
+continuation 请求才会消费队列。
+
 ### 做什么
 
 借 Symphony 的 work item 思想，但改成个人 Ghost 的长期任务队列。它不是后台自动
-agent，而是把 Ghost 的长期意图变成可审计、可排序、可恢复的 work item。
+agent，而是把已有本地有界事实变成可审计、可排序、可恢复的 work item。
 
 数据：
 
@@ -1059,6 +1063,37 @@ Project-local config
 user explicit follow-up
 ```
 
+v1 实际启用的来源保持克制：
+
+```text
+Continuity open_question
+Research note bounded open questions
+WorkCheckpoint interrupted / ready_for_review / fixing_review
+RunLedgerProjection error / no_progress / stopped / tool_errors
+Review follow-up
+```
+
+普通 recent_focus 不会自动生成 work item，避免把闲聊塞进队列。
+
+### 消费流程
+
+```text
+TaskRequest(intent=auto)
+-> 严格 continuation 请求先尝试 WorkQueue claim
+-> claim 成功：按 item.kind 映射到 research/project/review，绕过 Router
+-> claim 失败：继续走 Ghost Router / baseline
+-> 非 continuation 明确请求：不消费队列
+```
+
+严格 continuation 第一版只识别很窄的表达，例如：
+
+```text
+继续 / 继续吧 / 下一个 / 处理待办
+continue / next item / continue saved task
+```
+
+“继续查 pytest 变化”这类有明确新内容的请求不会消费队列。
+
 ### Proof of Work
 
 每个完成的 work item 至少引用一种 proof：
@@ -1074,7 +1109,7 @@ open_question: promoted research task or rejected reason
 ### 边界
 
 - Work Queue 不自动执行任务。
-- 用户显式启动、headless 调用或未来自动模式确认后，才进入 TaskRunner/ResearchRunner。
+- 只有用户严格 continuation 才会 claim；claim 后仍由 TaskRunner 执行。
 - 每个 work item 只能保存 bounded summary、scope、priority 和 refs，不保存完整源码、完整网页正文或完整 transcript。
 - project scope work item 不能泄漏到其他项目。
 - `status=running` 必须有 `run_id`，完成后必须有 proof refs。
@@ -1082,6 +1117,7 @@ open_question: promoted research task or rejected reason
 - GhostWorkItem 不是 tool call。
 - GhostWorkItem 不能批准 shell、edit、run、git 或联网。
 - Work item priority 不能覆盖用户当前明确请求。
+- Event log 是真源；events 不可读或超限时，mutating write 必须阻断，不能用 stale projection 覆盖 audit。
 - 不做多 agent 并发调度。
 - 不做 GitHub/Linear 自动 issue ingestion。
 - 不做无人值守自动 PR。

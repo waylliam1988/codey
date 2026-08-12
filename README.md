@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.7-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.8-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.7`
+Version: `0.3.8`
 
 [Version history](CHANGELOG.md)
 
@@ -35,6 +35,8 @@ Version: `0.3.7`
 - **Keep memory controllable**: explicit preferences and short continuity
   context stay in bounded local files that can be previewed, exported, deleted,
   reset, disabled, and quietly maintained after tasks.
+- **Continue saved work naturally**: when Codey has a queued local follow-up,
+  saying "continue" can claim one item and run the right path with proof.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
 - **Keep code local**: models access only the project folder you choose.
 - **Stay oriented while coding**: after each local tool result, Codey reminds
@@ -124,6 +126,9 @@ This is not about replacing professional tools. It is about making the first ste
 - Quietly maintain Ghost state after successful tasks with local health checks,
   due decay, continuity refresh, and event compaction; no web model, shell, UI
   change, or user-facing sleep control is involved
+- Keep a bounded local work queue for saved follow-ups; strict continuation
+  prompts like "continue" can claim one queued item, run it through Research,
+  Writer, or Review, and mark it done only with local proof
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
 - Recover one bounded web-chat state rule from boolean-only evidence when a
@@ -661,7 +666,7 @@ codey/
   project_map.py            deterministic bounded project orientation
   project_config.py         strict project-local config facts and warnings
   project_task_context.py   project facts, map, checkpoint, and verification context
-  ghost/                    Ghost signal extraction, inbox/gate, Hebbian state, and directive rendering
+  ghost/                    Ghost signal extraction, memory state, continuity, routing, and local work queue
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
   research/                 Research controller/runner, isolated web/source search tools, evidence ledger, report quality gate
   verification_map.py       bounded review-time verification candidates

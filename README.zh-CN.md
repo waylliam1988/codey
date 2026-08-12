@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.3.7-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.8-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.7`
+版本：`0.3.8`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -33,6 +33,8 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
   Research、Writer、Hybrid 还是 Review；手动选择和权限边界仍然优先。
 - **记忆可控**：显式偏好和很短的 continuity context 会保存在本地有界文件里，
   可以预览、导出、删除、重置、禁用，并在任务结束后安静维护。
+- **自然继续待办**：Codey 有本地排队的后续任务时，你说“继续”就能认领一条，
+  走对应的 Research、Writer 或 Review，并用本地 proof 收尾。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存证据笔记、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
 - **代码留在本机**：模型只能访问你选择的项目目录。
 - **写代码时不容易忘事**：每次本地工具结果后，Codey 会提醒模型已经读过哪些
@@ -109,6 +111,8 @@ Codey 想解决的是一个很朴素的问题：
 - 成功任务结束后，Codey 会无感做本地 Ghost 维护：健康检查、到期衰减、
   continuity refresh 和 event compaction；不调用网页模型、不跑 shell、不改 UI，
   也不暴露额外 sleep 控制入口
+- Codey 会维护一个有界本地待办队列；只有“继续 / 下一个 / 处理待办”这类严格
+  continuation 才会认领一条，并且完成时必须写入本地 proof
 - 网页输入框或发送按钮改版时，先做有边界的本地发现，仍不确定则让健康兄弟模型
   从脱敏候选中选择；真实发送成功后才能保存、晋级或回滚恢复包
 - 控件恢复仍不足时，只根据脱敏布尔事实恢复一条有边界的网页状态规则；不同网页的
@@ -584,7 +588,7 @@ codey/
   project_map.py            确定性的有边界项目地图
   project_config.py         严格项目本地配置事实和 warning
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
-  ghost/                    Ghost 信号抽取、inbox/gate、Hebbian state 和 directive 渲染
+  ghost/                    Ghost 信号抽取、记忆状态、continuity、路由和本地待办队列
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
   research/                 Research controller/runner、隔离网页/source search 工具、evidence ledger 和 report quality gate
   verification_map.py       Review 阶段的有边界验证候选

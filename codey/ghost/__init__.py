@@ -32,6 +32,12 @@ from codey.ghost.sleep import (
     GhostSleepStore,
 )
 from codey.ghost.store import GhostSignalStore
+from codey.ghost.work_queue import (
+    GhostWorkClaimResult,
+    GhostWorkItem,
+    GhostWorkQueueStore,
+    GhostWorkSyncResult,
+)
 
 __all__ = [
     "GhostDirective",
@@ -60,6 +66,10 @@ __all__ = [
     "GhostSleepReport",
     "GhostSleepStepResult",
     "GhostSleepStore",
+    "GhostWorkClaimResult",
+    "GhostWorkItem",
+    "GhostWorkQueueStore",
+    "GhostWorkSyncResult",
     "build_ghost_continuity",
     "build_ghost_directive",
 ]

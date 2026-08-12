@@ -15,6 +15,7 @@ from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.sleep import GhostSleepBudget, GhostSleepStore
+from codey.ghost.work_queue import GhostWorkQueueStore
 
 
 def _accepted_signal() -> GhostSignal:
@@ -167,6 +168,41 @@ class GhostSleepTests(unittest.TestCase):
         self.assertEqual(decay_step.skipped_reason, "min_interval")
         self.assertEqual(after, before)
         self.assertNotIn("ghost_hebbian_state_decayed", after)
+
+    def test_sleep_reconciles_stale_work_queue_claim_without_executing(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            continuity = GhostContinuityStore(td)
+            continuity.sync_from_sources(
+                knowledge_store=mock.Mock(index=mock.Mock(recent=mock.Mock(return_value=[{
+                    "id": "note-1",
+                    "type": "synthesis",
+                    "title": "Provider recovery",
+                    "body": "## Open questions\n- Should we keep tracking provider recovery?\n",
+                    "updated": "2999-01-01T00:00:00Z",
+                    "session_id": "s1",
+                    "project": "",
+                }]))),
+                session_id="s1",
+                run_id="r1",
+                mode="chat",
+            )
+            queue = GhostWorkQueueStore(td)
+            queue.sync_from_sources(continuity_store=continuity, session_id="s1")
+            claimed = queue.claim_next(
+                session_id="s1",
+                run_id="run-1",
+                user_request="continue",
+                lease_seconds=-1,
+            )
+            sleep = GhostSleepStore(td)
+
+            report = sleep.run_once(work_queue_store=queue)
+            item = queue.list_items()[0]
+
+        self.assertTrue(claimed.ok)
+        compaction = next(step for step in report.steps if step.name == "event_compaction")
+        self.assertEqual(compaction.counts["stale_work_claims"], 1)
+        self.assertEqual(item.status, "queued")
 
     def test_public_compaction_reports_unreadable_event_logs(self) -> None:
         with tempfile.TemporaryDirectory() as td:

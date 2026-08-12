@@ -56,6 +56,7 @@ from codey.ghost.router import GhostRouteStore
 from codey.ghost.sleep import GhostSleepStore
 from codey.managed_outputs import ManagedOutputStore
 from codey.ghost.store import GhostSignalStore
+from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.concepts import ConceptGraphBuilder
 from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
@@ -623,6 +624,7 @@ class State:
         self.ghost_continuity = GhostContinuityStore(state_home) if state_home else None
         self.ghost_router = GhostRouteStore(state_home) if state_home else None
         self.ghost_sleep = GhostSleepStore(state_home) if state_home else None
+        self.ghost_work_queue = GhostWorkQueueStore(state_home) if state_home else None
         self.ghost_signals = GhostSignalStore(state_home) if state_home else None
         self.ghost_learning_provider_factory = None
         self.ghost_router_provider_factory = None
@@ -883,6 +885,7 @@ class State:
                         inbox_store=getattr(self, "ghost_inbox", None),
                         hebbian_store=getattr(self, "ghost_hebbian", None),
                         continuity_store=getattr(self, "ghost_continuity", None),
+                        work_queue_store=getattr(self, "ghost_work_queue", None),
                         knowledge_store=getattr(self, "knowledge_store", None),
                         run_projection=current_payload.get("run_projection"),
                         trigger=str(current_payload.get("trigger") or "post_turn"),
@@ -1133,6 +1136,12 @@ class State:
         if sleep is not None:
             try:
                 sleep.delete_scope("session", session_id=session_id)
+            except Exception:
+                pass
+        work_queue = getattr(self, "ghost_work_queue", None)
+        if work_queue is not None:
+            try:
+                work_queue.delete_scope("session", session_id=session_id)
             except Exception:
                 pass
 

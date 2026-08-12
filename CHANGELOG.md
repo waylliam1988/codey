@@ -4,6 +4,39 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.8 - Ghost Work Queue v1
+
+- Added `codey/ghost/work_queue.py`, a bounded local work-item state machine
+  inspired by Symphony's claim/running/done/blocked flow. It stores
+  `work_events.jsonl` as the audit source of truth and `work_items.json` as a
+  rebuildable projection.
+- Work items can be synced from existing bounded facts: continuity open
+  questions, Research note open questions, interrupted work checkpoints, run
+  ledger failure projections, and review follow-ups. It does not read full chat
+  transcripts, source files, webpage bodies, raw Research bodies, or prompts.
+- Automatic consumption is deliberately narrow. Only `intent=auto` plus a
+  strict continuation request such as `continue`, `next item`, `继续`, or
+  `下一个` can claim one queued item. Non-continuation requests keep going
+  through the normal Router/baseline path.
+- Claimed items map to existing execution modes: research/open-question items
+  run Research, coding/project follow-ups run Project Writer, and review items
+  run review-only. The queue cannot grant permissions, approve shell commands,
+  choose tool arguments, or execute by itself.
+- Completion requires local proof refs from the task event, run ledger,
+  receipt, diff, Research report, or review result. Missing proof blocks the
+  item instead of marking it done.
+- Existing Ghost controls now cover work queue state. `ghost export` includes
+  work items/events, `ghost reset --yes` removes them, and
+  `ghost delete-scope` filters matching queue rows. CLI also has thin
+  inspection/control commands: `ghost work-list`, `ghost work-queue`, and
+  `ghost work-reject`.
+- Cognitive Sleep now includes work queue projection/event health and compacts
+  work queue events only when limits require it. Sleep still does not execute
+  work, call providers, change prompts, emit UI events, or generate new tasks.
+- Added `tests/test_ghost_work_queue.py`,
+  `tests/test_task_runner_work_queue.py`, `tests/test_ghost_work_queue_ab.py`,
+  and `tests/manual/ghost_work_queue_production_ab.py`.
+
 ## 0.3.7 - Ghost Router v1
 
 - Added `codey/ghost/router.py`, a bounded automatic routing layer for

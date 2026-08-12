@@ -19,6 +19,7 @@ from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
+from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
 
@@ -146,6 +147,7 @@ class GhostSleepStore:
         inbox_store: GhostInboxStore | None = None,
         hebbian_store: GhostHebbianStore | None = None,
         continuity_store: GhostContinuityStore | None = None,
+        work_queue_store: GhostWorkQueueStore | None = None,
         knowledge_store: Any = None,
         run_projection: Any = None,
         trigger: str = "post_turn",
@@ -173,6 +175,7 @@ class GhostSleepStore:
                 inbox_store=inbox_store,
                 hebbian_store=hebbian_store,
                 continuity_store=continuity_store,
+                work_queue_store=work_queue_store,
             ),
             "hebbian_decay": lambda: self._hebbian_decay_step(
                 hebbian_store,
@@ -191,6 +194,7 @@ class GhostSleepStore:
                 inbox_store=inbox_store,
                 hebbian_store=hebbian_store,
                 continuity_store=continuity_store,
+                work_queue_store=work_queue_store,
             ),
         }
         for index, name in enumerate(_STEP_NAMES[:-1]):
@@ -334,6 +338,7 @@ class GhostSleepStore:
         inbox_store: GhostInboxStore | None,
         hebbian_store: GhostHebbianStore | None,
         continuity_store: GhostContinuityStore | None,
+        work_queue_store: GhostWorkQueueStore | None,
     ) -> GhostSleepStepResult:
         specs = [
             ("inbox_projection", getattr(inbox_store, "inbox_path", None), 2 * 1024 * 1024, "json"),
@@ -342,6 +347,8 @@ class GhostSleepStore:
             ("hebbian_events", getattr(hebbian_store, "events_path", None), 4 * 1024 * 1024, "jsonl"),
             ("continuity_projection", getattr(continuity_store, "projection_path", None), 1024 * 1024, "json"),
             ("continuity_events", getattr(continuity_store, "events_path", None), 1024 * 1024, "jsonl"),
+            ("work_queue_projection", getattr(work_queue_store, "projection_path", None), 1024 * 1024, "json"),
+            ("work_queue_events", getattr(work_queue_store, "events_path", None), 1024 * 1024, "jsonl"),
             ("sleep_projection", self.state_path, MAX_SLEEP_STATE_BYTES, "json"),
             ("sleep_events", self.events_path, MAX_SLEEP_EVENTS_BYTES, "jsonl"),
         ]
@@ -425,18 +432,32 @@ class GhostSleepStore:
         inbox_store: GhostInboxStore | None,
         hebbian_store: GhostHebbianStore | None,
         continuity_store: GhostContinuityStore | None,
+        work_queue_store: GhostWorkQueueStore | None,
     ) -> GhostSleepStepResult:
         warnings: list[str] = []
-        counts = {"stores_checked": 0, "stores_compacted": 0, "stores_failed": 0}
+        counts = {"stores_checked": 0, "stores_compacted": 0, "stores_failed": 0, "stale_work_claims": 0}
         for name, store in (
             ("inbox", inbox_store),
             ("hebbian", hebbian_store),
             ("continuity", continuity_store),
+            ("work_queue", work_queue_store),
         ):
             compact = getattr(store, "compact_if_needed", None)
             if compact is None:
                 continue
             counts["stores_checked"] += 1
+            reconcile = getattr(store, "reconcile_stale_claims", None)
+            if callable(reconcile):
+                try:
+                    reconcile_result = reconcile()
+                except Exception as exc:
+                    counts["stores_failed"] += 1
+                    warnings.append(f"{name}_reconcile_error:{type(exc).__name__}")
+                    continue
+                if not bool(getattr(reconcile_result, "ok", True)):
+                    counts["stores_failed"] += 1
+                counts["stale_work_claims"] += int(getattr(reconcile_result, "items_changed", 0) or 0)
+                warnings.extend(str(item) for item in getattr(reconcile_result, "warnings", ()) if item)
             try:
                 result = compact()
             except Exception as exc:

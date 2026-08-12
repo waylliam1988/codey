@@ -35,6 +35,11 @@ from codey.ghost.router import (
     GhostRouteResult,
     GhostRouter,
 )
+from codey.ghost.work_queue import (
+    GhostWorkItem,
+    is_strict_work_continuation,
+    proof_refs_from_task_event,
+)
 from codey.handoff import (
     ConversationContext,
     ConversationSnapshot,
@@ -131,6 +136,7 @@ class _RunWork:
     work_checkpoint: WorkCheckpoint | None = None
     ledger: RunLedgerWriter | None = None
     record_agent_events_in_ledger: bool = False
+    claimed_work_item: GhostWorkItem | None = None
 
 
 @dataclass(frozen=True)
@@ -565,6 +571,134 @@ class TaskRunner:
         except Exception:
             return
 
+    def _maybe_claim_ghost_work_item(
+        self,
+        request: TaskRequest,
+        *,
+        run_id: str,
+    ):
+        if str(request.intent or "auto").strip().lower() != "auto":
+            return None
+        if not is_strict_work_continuation(request.task):
+            return None
+        store = getattr(self.state, "ghost_work_queue", None)
+        if store is None:
+            return None
+        inbox_store = getattr(self.state, "ghost_inbox", None)
+        if inbox_store is not None:
+            try:
+                if not inbox_store.learning_enabled():
+                    return None
+            except Exception:
+                return None
+        try:
+            result = store.claim_next(
+                session_id=request.session_id,
+                project=request.project or "",
+                run_id=run_id,
+                user_request=request.task,
+            )
+        except Exception:
+            return None
+        return result if getattr(result, "ok", False) and getattr(result, "item", None) is not None else None
+
+    def _maybe_sync_ghost_work_queue(
+        self,
+        frame: _RunFrame | None,
+        event: dict[str, object],
+    ) -> None:
+        if frame is None:
+            return
+        store = getattr(self.state, "ghost_work_queue", None)
+        if store is None:
+            return
+        inbox_store = getattr(self.state, "ghost_inbox", None)
+        if inbox_store is not None:
+            try:
+                if not inbox_store.learning_enabled():
+                    return
+            except Exception:
+                return
+        try:
+            projection = (
+                load_run_projection(self.run_ledgers, frame.request.session_id, frame.run_id)
+                if self.run_ledgers is not None
+                else None
+            )
+            store.sync_from_sources(
+                continuity_store=getattr(self.state, "ghost_continuity", None),
+                work_checkpoint_store=self.work_checkpoints,
+                run_projection=projection,
+                terminal_event=event,
+                session_id=frame.request.session_id,
+                run_id=frame.run_id,
+                project=frame.project_text,
+            )
+        except Exception:
+            return
+
+    def _maybe_complete_ghost_work_item(
+        self,
+        frame: _RunFrame | None,
+        event: dict[str, object],
+        item: GhostWorkItem | None,
+    ) -> None:
+        if item is None:
+            return
+        store = getattr(self.state, "ghost_work_queue", None)
+        if store is None:
+            return
+        try:
+            run_id = str(event.get("run_id") or getattr(item, "started_run_id", "") or "")
+            if frame is None:
+                if str(event.get("stop_reason") or "") != "done":
+                    store.block_item(
+                        item.id,
+                        run_id=run_id,
+                        blocked_reason=str(event.get("stop_reason") or "run_not_done"),
+                    )
+                return
+            projection = (
+                load_run_projection(self.run_ledgers, frame.request.session_id, frame.run_id)
+                if self.run_ledgers is not None
+                else None
+            )
+            if str(event.get("stop_reason") or "") == "done":
+                store.complete_item(
+                    item.id,
+                    run_id=frame.run_id,
+                    proof_refs=proof_refs_from_task_event(
+                        item,
+                        event,
+                        run_projection=projection,
+                    ),
+                )
+            else:
+                store.block_item(
+                    item.id,
+                    run_id=frame.run_id,
+                    blocked_reason=str(event.get("stop_reason") or "run_not_done"),
+                )
+        except Exception:
+            return
+
+    def _maybe_release_ghost_work_item(
+        self,
+        item: GhostWorkItem | None,
+        *,
+        run_id: str,
+        reason: str,
+    ) -> None:
+        if item is None:
+            return
+        store = getattr(self.state, "ghost_work_queue", None)
+        if store is None:
+            return
+        try:
+            store.release_item(item.id, run_id=run_id, reason=reason)
+        except Exception:
+            return
+
     def _maybe_route_auto(
         self,
         request: TaskRequest,
@@ -674,6 +808,7 @@ class TaskRunner:
         baseline_task_kind = _resolve_task_kind(request)
         task_kind = baseline_task_kind
         run_id = request.run_id
+        claimed_work_item: GhostWorkItem | None = None
 
         if not run_id:
             reserved = state.reserve_run(
@@ -697,13 +832,32 @@ class TaskRunner:
         state.last_provider_failure = None
         previous_cancel_event = cancellation.set_event(state.stop_flag)
         try:
-            route_result = self._maybe_route_auto(
-                request,
-                baseline_mode=baseline_task_kind,
-                run_id=run_id,
-            )
+            claim_result = self._maybe_claim_ghost_work_item(request, run_id=run_id)
+            if claim_result is not None:
+                claimed_work_item = claim_result.item
+                task_kind = claim_result.mode or task_kind
+                request = replace(
+                    request,
+                    task=claim_result.task or request.task,
+                    continue_task=True,
+                )
+                task = request.task
+                continue_task = request.continue_task
+            else:
+                route_result = self._maybe_route_auto(
+                    request,
+                    baseline_mode=baseline_task_kind,
+                    run_id=run_id,
+                )
+                if route_result is not None:
+                    task_kind = route_result.final_mode
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             state.set_provider_session(provider_id, None)
+            self._maybe_release_ghost_work_item(
+                claimed_work_item,
+                run_id=run_id,
+                reason="stopped_before_start",
+            )
             stopped_event = {
                 "type": "task_done",
                 "run_id": run_id,
@@ -720,8 +874,6 @@ class TaskRunner:
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()
             return
-        if route_result is not None:
-            task_kind = route_result.final_mode
         state.emit({
             "type": "task_start",
             "run_id": run_id,
@@ -735,7 +887,11 @@ class TaskRunner:
             "intent": request.intent,
         })
 
-        work = _RunWork(recent_events=[], evidence=ExecutionEvidence())
+        work = _RunWork(
+            recent_events=[],
+            evidence=ExecutionEvidence(),
+            claimed_work_item=claimed_work_item,
+        )
         if project and task_kind in {"project", "hybrid", "planning_readonly", "review"} and self.run_ledgers is not None:
             try:
                 work.ledger = self.run_ledgers.open(
@@ -940,8 +1096,10 @@ class TaskRunner:
                     run_id=run_id,
                 )
                 state.finish_run(run_id, event)
+                self._maybe_complete_ghost_work_item(frame, event, work.claimed_work_item)
                 self._maybe_run_ghost_learning(frame, event)
                 self._maybe_sync_ghost_continuity(frame, event)
+                self._maybe_sync_ghost_work_queue(frame, event)
                 self._maybe_kick_ghost_sleep(frame, event)
                 return
 
@@ -1163,8 +1321,10 @@ class TaskRunner:
                 run_id=run_id,
             )
             state.finish_run(run_id, event)
+            self._maybe_complete_ghost_work_item(frame, event, work.claimed_work_item)
             self._maybe_run_ghost_learning(frame, event)
             self._maybe_sync_ghost_continuity(frame, event)
+            self._maybe_sync_ghost_work_queue(frame, event)
             self._maybe_kick_ghost_sleep(frame, event)
         except (provider_controls.ControlTeachCancelled, cancellation.TaskCancelled):
             current_id = current_provider_id()
@@ -1197,6 +1357,11 @@ class TaskRunner:
             }
             append_ledger(lambda ledger: ledger.finish(**stopped_event))
             state.finish_run(run_id, stopped_event)
+            self._maybe_release_ghost_work_item(
+                work.claimed_work_item if "work" in locals() else claimed_work_item,
+                run_id=run_id,
+                reason="stopped",
+            )
         except Exception as exc:
             current_id = current_provider_id()
             current_item = current_provider()
@@ -1240,6 +1405,11 @@ class TaskRunner:
             }
             append_ledger(lambda ledger: ledger.finish(**error_event))
             state.finish_run(run_id, error_event)
+            self._maybe_complete_ghost_work_item(
+                frame,
+                error_event,
+                work.claimed_work_item if "work" in locals() else claimed_work_item,
+            )
         finally:
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()
@@ -2249,6 +2419,7 @@ class TaskRunner:
             "turns": result.turns,
             "max_turns": request.max_turns,
             "provider": frame.provider_id,
+            "mode": "hybrid" if research_result is not None else "agent",
             "changed": task_changed,
             "receipt": receipt.to_dict(),
         }
@@ -2260,7 +2431,6 @@ class TaskRunner:
                 "project": project,
             }
         if research_result is not None:
-            event["mode"] = "hybrid"
             event["research"] = _research_payload(research_result)
         return _ModeOutcome(event)
 

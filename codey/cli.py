@@ -125,6 +125,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
     from codey.ghost.router import GhostRouteStore
     from codey.ghost.sleep import GhostSleepStore
     from codey.ghost.store import GhostSignalStore
+    from codey.ghost.work_queue import GhostWorkQueueStore
     from codey.local_store import DEFAULT_STATE_HOME
 
     state_home_arg = getattr(args, "state_home", "") or ""
@@ -134,6 +135,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
     continuity_store = GhostContinuityStore(state_home)
     router_store = GhostRouteStore(state_home)
     sleep_store = GhostSleepStore(state_home)
+    work_queue_store = GhostWorkQueueStore(state_home)
     signal_store = GhostSignalStore(state_home)
     action = str(getattr(args, "ghost_cmd", "") or "").strip()
     if action == "list":
@@ -161,8 +163,46 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         payload["continuity"] = continuity_store.export_state()
         payload["router"] = router_store.export_state()
         payload["sleep"] = sleep_store.export_state()
+        payload["work_queue"] = work_queue_store.export_state()
         payload["ok"] = True
         _print_json(payload)
+        return 0
+    if action == "work-list":
+        items = [
+            item.to_payload()
+            for item in work_queue_store.list_items(
+                status=getattr(args, "status", "") or "",
+                kind=getattr(args, "kind", "") or "",
+                scope=getattr(args, "scope", "") or "",
+                project=getattr(args, "project", "") or "",
+                session_id=getattr(args, "session_id", "") or "",
+            )
+        ]
+        _print_json({
+            "schema_version": 1,
+            "ok": True,
+            "items": items,
+            "warnings": list(work_queue_store.last_warnings),
+        })
+        return 0
+    if action in {"work-queue", "work-reject"}:
+        try:
+            item = (
+                work_queue_store.queue_item(args.item_id)
+                if action == "work-queue"
+                else work_queue_store.reject_item(args.item_id)
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            _print_error_json(exc)
+            return 1
+        if item is None:
+            _print_error_json("work item not found or invalid transition")
+            return 1
+        _print_json({
+            "schema_version": 1,
+            "ok": True,
+            "item": item.to_payload(),
+        })
         return 0
     if action in {"accept", "reject"}:
         try:
@@ -263,11 +303,12 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             continuity_ok = continuity_store.reset_all()
             router_ok = router_store.reset_all()
             sleep_ok = sleep_store.reset_all()
+            work_queue_ok = work_queue_store.reset_all()
             signal_store.delete_all()
         except OSError as exc:
             _print_error_json(exc)
             return 1
-        all_ok = ok and hebbian_ok and continuity_ok and router_ok and sleep_ok
+        all_ok = ok and hebbian_ok and continuity_ok and router_ok and sleep_ok and work_queue_ok
         _print_json({
             "schema_version": 1,
             "ok": all_ok,
@@ -275,6 +316,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             "continuity_ok": continuity_ok,
             "router_ok": router_ok,
             "sleep_ok": sleep_ok,
+            "work_queue_ok": work_queue_ok,
         })
         return 0 if all_ok else 1
     if action == "delete-scope":
@@ -312,6 +354,11 @@ def cmd_ghost(args: argparse.Namespace) -> int:
                 project=getattr(args, "project", "") or "",
                 session_id=getattr(args, "session_id", "") or "",
             )
+            work_queue_removed = work_queue_store.delete_scope(
+                args.scope_name,
+                project=getattr(args, "project", "") or "",
+                session_id=getattr(args, "session_id", "") or "",
+            )
         except ValueError as exc:
             _print_error_json(exc)
             return 2
@@ -327,6 +374,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             "continuity_removed_count": continuity_removed,
             "router_removed_count": router_removed,
             "sleep_removed": sleep_removed,
+            "work_queue_removed_count": work_queue_removed,
         })
         return 0
     if action in {"enable", "disable"}:
@@ -368,8 +416,24 @@ def _add_ghost_subcommands(sub) -> None:
     sp_ghost_list.add_argument("--session-id", default="", help="session id for session scope filtering")
     sp_ghost_list.set_defaults(func=cmd_ghost)
 
-    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export Ghost inbox/events/signals/state/continuity/router/sleep")
+    sp_ghost_export = sub.add_parser("export", parents=[ghost_common], help="export all Ghost local state")
     sp_ghost_export.set_defaults(func=cmd_ghost)
+
+    sp_ghost_work_list = sub.add_parser("work-list", parents=[ghost_common], help="list Ghost work items")
+    sp_ghost_work_list.add_argument("--status", default="", help="optional status filter")
+    sp_ghost_work_list.add_argument("--kind", default="", help="optional kind filter")
+    sp_ghost_work_list.add_argument("--scope", choices=("user", "project", "session"), default="", help="optional scope filter")
+    sp_ghost_work_list.add_argument("--project", default="", help="project path for project scope filtering")
+    sp_ghost_work_list.add_argument("--session-id", default="", help="session id for session scope filtering")
+    sp_ghost_work_list.set_defaults(func=cmd_ghost)
+
+    sp_ghost_work_queue = sub.add_parser("work-queue", parents=[ghost_common], help="queue a Ghost work item")
+    sp_ghost_work_queue.add_argument("item_id")
+    sp_ghost_work_queue.set_defaults(func=cmd_ghost)
+
+    sp_ghost_work_reject = sub.add_parser("work-reject", parents=[ghost_common], help="reject a Ghost work item")
+    sp_ghost_work_reject.add_argument("item_id")
+    sp_ghost_work_reject.set_defaults(func=cmd_ghost)
 
     sp_ghost_accept = sub.add_parser("accept", parents=[ghost_common], help="accept an inbox candidate")
     sp_ghost_accept.add_argument("candidate_id")
@@ -406,7 +470,7 @@ def _add_ghost_subcommands(sub) -> None:
     sp_ghost_rebuild_continuity.add_argument("--yes", action="store_true")
     sp_ghost_rebuild_continuity.set_defaults(func=cmd_ghost)
 
-    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete Ghost inbox/events/signals/state/continuity/router/sleep")
+    sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete all Ghost local state")
     sp_ghost_reset.add_argument("--yes", action="store_true")
     sp_ghost_reset.set_defaults(func=cmd_ghost)
 

@@ -4,6 +4,32 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.8 - Ghost Work Queue v1
+
+- 新增 `codey/ghost/work_queue.py`：受 Symphony 启发的本地有界 work item
+  状态机，包含 claim / running / done / blocked 等状态。`work_events.jsonl`
+  是审计真源，`work_items.json` 是可重建 projection。
+- Work item 只从已有有界事实同步：continuity open question、Research note
+  开放问题、未完成 checkpoint、run ledger 失败 projection、review follow-up。
+  它不读取完整聊天、源码文件、网页正文、Research raw body 或 prompt。
+- 自动消费非常窄：只有 `intent=auto`，并且用户说“继续 / 下一个 / 处理待办 /
+  continue / next item”这类严格 continuation 时，才会认领一条 queued item。
+  有明确内容的新请求继续走 Router 或原 baseline。
+- 被认领的 item 映射到现有执行模式：research / open question 走 Research，
+  coding / project follow-up 走 Project Writer，review 走 review-only。队列不能
+  授权权限、批准 shell、选择工具参数，也不能自己执行。
+- 完成 item 必须有本地 proof refs，来自 task event、run ledger、receipt、diff、
+  Research report 或 review 结果。没有 proof 就标记 blocked，不会假装完成。
+- 现有 Ghost 控制覆盖 work queue：`ghost export` 包含 work items/events，
+  `ghost reset --yes` 删除它们，`ghost delete-scope` 过滤匹配队列项。CLI 另有
+  很薄的检查/控制入口：`ghost work-list`、`ghost work-queue`、`ghost work-reject`。
+- Cognitive Sleep 现在会检查 work queue projection/event 健康，并只在超过上限时
+  compact work queue events。Sleep 仍不执行任务、不调用 provider、不改 prompt、
+  不 emit UI 事件，也不生成新任务。
+- 新增 `tests/test_ghost_work_queue.py`、`tests/test_task_runner_work_queue.py`、
+  `tests/test_ghost_work_queue_ab.py` 和
+  `tests/manual/ghost_work_queue_production_ab.py`。
+
 ## 0.3.7 - Ghost Router v1
 
 - 新增 `codey/ghost/router.py`：`intent=auto` 时的有界自动路由层。

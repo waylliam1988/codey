@@ -508,6 +508,42 @@ The fixture also includes a project-attached chat regression where the user
 explicitly forbids project file access; production code must keep that case in
 chat even if the router model selects Writer.
 
+`ghost_work_queue_production_ab.py` covers 0.3.8 Work Queue continuation. It
+uses the production `TaskRunner` entry point and real queue claim/complete/block
+transitions, while mode bodies are safe stubs so the probe does not edit the
+repository or run shell commands. The live provider is only used as the normal
+main provider for paths that need it; Work Queue itself does not call a model.
+
+```powershell
+python -B tests\manual\ghost_work_queue_production_ab.py --self-test
+python -B tests\manual\ghost_work_queue_production_ab.py `
+  --provider deepseek `
+  --port 9222 `
+  --output tests\manual\results\ghost_work_queue_production_deepseek.json
+```
+
+Run one provider per restarted Edge CDP session when doing live smoke. The
+report is written atomically after each case with `complete=false` until the
+full run finishes, so interrupted provider runs still show which rows completed.
+The matrix verifies that no queued item leaves "continue" as ordinary chat, a
+research item enters Research, a project follow-up enters Writer, a review item
+enters review-only, and a contentful request such as "continue researching
+pytest changes" does not consume the queue.
+
+2026-08-11 Ghost Work Queue production-spine A/B, five-case matrix, run one
+provider per restarted Edge CDP session:
+
+- DeepSeek: baseline 4/5; queue 5/5.
+- Qwen: baseline 4/5; queue 5/5.
+- MiMo: baseline 4/5; queue 5/5.
+- GLM: baseline 4/5; queue 5/5.
+- StepFun: baseline 4/5; queue 5/5.
+
+The baseline miss was the intended Research follow-up: without the queue,
+"continue" stayed in Chat; with the queue, Codey claimed the saved item and
+dispatched Research. Output JSON files were written under
+`tests/manual/results/ghost_work_queue_production_*.json`.
+
 2026-08-11 Ghost Router live A/B, original 10-case matrix, run one provider per
 restarted Edge CDP session:
 

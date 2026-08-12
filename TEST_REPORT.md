@@ -1,5 +1,75 @@
 # Codey Test Report
 
+## 0.3.8 Ghost Work Queue v1
+
+Codey 0.3.8 adds a bounded local work-item queue. Existing local facts can
+create auditable follow-ups, but nothing runs in the background. Only
+`intent=auto` plus a strict continuation request such as `continue`, `next
+item`, `继续`, or `下一个` can claim one queued item before Router runs.
+
+Production changes:
+
+- New `codey/ghost/work_queue.py` stores `work_events.jsonl` as the audit source
+  of truth and `work_items.json` as a rebuildable projection.
+- Work items sync from bounded continuity open questions, Research note open
+  questions, interrupted checkpoints, run ledger failure projections, and review
+  follow-ups. They do not store full user text, prompts, source files, Research
+  bodies, or webpage text.
+- Claimed items map only to existing modes: Research, Project Writer, or
+  review-only. Work Queue cannot grant permissions, approve shell commands,
+  choose tool arguments, or execute by itself.
+- Completion requires local proof refs from the task event, run ledger, receipt,
+  diff, Research report, or review result. Missing proof blocks the item.
+- Existing Ghost export/reset/delete-scope controls now cover work queue files.
+  Thin CLI controls were added for listing, queueing, and rejecting work items.
+- Cognitive Sleep includes work queue health and threshold-based compaction,
+  but still does not execute tasks, call providers, emit UI events, or change
+  prompts.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_ghost_work_queue.py tests\test_task_runner_work_queue.py tests\test_ghost_work_queue_ab.py -q
+# 36 passed, 1 pytest cache warning
+
+python -m pytest tests\test_ghost_work_queue.py tests\test_task_runner_work_queue.py tests\test_ghost_work_queue_ab.py tests\test_ghost_sleep.py tests\test_cli.py tests\test_server.py tests\test_architecture.py -q
+# 216 passed, 1 skipped, 1 pytest cache warning, 24 subtests passed
+
+python -m pytest -q
+# 1777 passed, 9 skipped, 1 pytest cache warning, 270 subtests passed
+
+python -m ruff check codey tests
+# All checks passed!
+
+python -B tests\manual\ghost_work_queue_production_ab.py --self-test
+# self-test ok
+```
+
+Live A/B is required before release because strict continuation can change the
+real execution path. Run one provider per restarted Edge CDP session and write
+each output file atomically:
+
+```text
+python -B tests\manual\ghost_work_queue_production_ab.py --provider deepseek --port 9222 --output tests\manual\results\ghost_work_queue_production_deepseek.json
+```
+
+2026-08-11 Ghost Work Queue production-spine A/B, five-case matrix, run one
+provider per restarted Edge CDP session:
+
+```text
+DeepSeek: baseline 4/5; queue 5/5
+Qwen:     baseline 4/5; queue 5/5
+MiMo:     baseline 4/5; queue 5/5
+GLM:      baseline 4/5; queue 5/5
+StepFun:  baseline 4/5; queue 5/5
+```
+
+The baseline miss was the intended research follow-up case: with a queued
+Research item, plain "continue" stayed in Chat. The queue arm claimed the item
+and dispatched Research. The other cases verified no-queue fallback, project
+follow-up dispatch, review-only dispatch, and contentful continuation not
+consuming the queue.
+
 ## 0.3.7 Ghost Router v1
 
 Codey 0.3.7 adds production automatic routing for `intent=auto`. Before
