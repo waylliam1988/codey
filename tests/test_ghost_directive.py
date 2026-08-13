@@ -10,6 +10,7 @@ from codey.ghost.directive import (
     build_ghost_directive,
     render_ghost_directive,
 )
+from codey.ghost.affinity import AffinityHint
 from codey.ghost.hebbian import GhostNode
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
@@ -126,6 +127,55 @@ class GhostDirectiveTests(unittest.TestCase):
         self.assertIn("- Correction: state store = JSON.", directive.text)
         self.assertIn("- Prefer: reply structure = answer first.", directive.text)
         self.assertIn("- Long-term focus: local memory = auditable.", directive.text)
+
+    def test_header_uses_neutral_model_visible_terms(self) -> None:
+        directive = render_ghost_directive((
+            _node(node_id="style", kind="style_preference", label="Prefer concise replies."),
+        ))
+
+        self.assertIn("Local Context:", directive.text)
+        self.assertNotIn("Ghost", directive.text)
+        self.assertNotIn("Affinity", directive.text)
+        self.assertNotIn("Confirmed local memory", directive.text)
+
+    def test_affinity_hints_only_reorder_renderable_typed_nodes(self) -> None:
+        directive = render_ghost_directive(
+            (
+                _node(
+                    node_id="short",
+                    label="Prefer short replies.",
+                    conflict_key="style_preference:reply_length",
+                    value_key="brief",
+                    weight=0.30,
+                ),
+                _node(
+                    node_id="format",
+                    label="Prefer answer-first replies.",
+                    conflict_key="style_preference:reply_structure",
+                    value_key="answer_first",
+                    weight=0.28,
+                ),
+                _node(
+                    node_id="unsafe",
+                    label="Raw label must not be emitted.",
+                    conflict_key="style_preference:tool_use",
+                    value_key="delete_files",
+                    weight=0.99,
+                ),
+            ),
+            affinity_hints=(AffinityHint(
+                kind="directive_order",
+                target="format",
+                confidence=0.9,
+                weight=1.0,
+                reason_code="test_affinity",
+                source_refs=("affinity:test",),
+            ),),
+        )
+
+        self.assertLess(directive.text.index("reply structure"), directive.text.index("reply length"))
+        self.assertNotIn("Raw label must not be emitted", directive.text)
+        self.assertNotIn("tool use", directive.text)
 
     def test_skips_inactive_low_weight_and_superseded_nodes(self) -> None:
         directive = render_ghost_directive((

@@ -11,8 +11,10 @@ from codey.knowledge.concepts import ConceptGraphBuilder
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import (
     ResearchInterestCandidate,
+    apply_research_affinity_hints,
     build_research_interest_candidates,
 )
+from codey.ghost.affinity import AffinityHint
 from codey.knowledge.store import KnowledgeStore
 
 
@@ -88,6 +90,56 @@ def test_concept_missing_link_yields_structured_research_interest_candidate() ->
     assert "helium supply" in candidate.question
     assert "war" in candidate.shared_neighbors
     assert "Concept Graph" not in candidate.question
+
+
+def test_affinity_hint_only_reorders_research_interest_priority() -> None:
+    low = ResearchInterestCandidate(
+        id="ric-low",
+        question="Should alpha be checked?",
+        related_concepts=("alpha",),
+        shared_neighbors=(),
+        source_refs=("note:alpha",),
+        scope="session",
+        scope_ref="s1",
+        priority=0.50,
+        confidence=0.9,
+        why_now="Bounded follow-up.",
+        source="research_note",
+        source_ref="note:alpha",
+        strong_support=True,
+    )
+    high = ResearchInterestCandidate(
+        id="ric-high",
+        question="Should beta be checked?",
+        related_concepts=("beta",),
+        shared_neighbors=(),
+        source_refs=("note:beta",),
+        scope="session",
+        scope_ref="s1",
+        priority=0.60,
+        confidence=0.9,
+        why_now="Bounded follow-up.",
+        source="research_note",
+        source_ref="note:beta",
+        strong_support=True,
+    )
+
+    boosted = apply_research_affinity_hints(
+        (high, low),
+        (AffinityHint(
+            kind="research_priority",
+            target="ric-low",
+            confidence=0.9,
+            weight=1.0,
+            reason_code="test_affinity",
+            source_refs=("affinity:test",),
+        ),),
+    )
+
+    assert [candidate.id for candidate in boosted] == ["ric-low", "ric-high"]
+    assert boosted[0].question == "Should alpha be checked?"
+    assert boosted[0].source_refs == ("note:alpha",)
+    assert boosted[0].priority > high.priority
 
 
 def test_direct_declared_concept_edge_suppresses_missing_link_candidate() -> None:

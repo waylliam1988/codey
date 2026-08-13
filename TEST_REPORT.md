@@ -1,5 +1,112 @@
 # Codey Test Report
 
+## 0.3.10 Affinity Index v1
+
+Codey 0.3.10 adds a bounded local Affinity Index. It is a deterministic
+association ledger, not a truth layer, permission layer, router authority, or
+autonomous runner. It records which bounded local facts tend to co-occur and
+uses that only for low-risk ordering.
+
+Production changes:
+
+- New `codey/ghost/affinity.py` stores `affinity_events.jsonl` as the source of
+  truth and `affinity.json` as a rebuildable projection. Mutating sync is
+  blocked when the event log is unreadable or over the byte cap.
+- Affinity sync reads only bounded local facts from Hebbian, Work Queue,
+  Research Interest candidates, Router audit metadata, provider failure kinds,
+  and task outcome summaries.
+- It does not store full chat text, Research bodies, webpage/source snippets,
+  source code, prompts, provider raw replies, or raw provider error messages.
+- Default consumption is limited to ordering: Ghost Directive can reorder
+  already-renderable typed memory nodes, Work Queue strict continuation claim
+  order can get a small boost, and Research Interest candidates can get a
+  priority boost. It does not generate prompt text or bypass execution
+  boundaries.
+- `ghost export`, `ghost reset --yes`, `ghost delete-scope`,
+  `forget_conversation()`, and Cognitive Sleep maintenance cover Affinity.
+  `ghost disable` prevents automatic sync and hint consumption.
+
+Validation during implementation:
+
+```text
+python -m py_compile codey\ghost\affinity.py codey\ghost\directive.py codey\ghost\work_queue.py codey\ghost\sleep.py codey\server.py codey\task_runner.py codey\cli.py codey\knowledge\research_interest.py tests\manual\ghost_affinity_ab.py tests\manual\ghost_affinity_quality_ab.py
+# passed
+
+python -m pytest tests\test_ghost_affinity.py -q
+# 19 passed, 1 pytest cache warning
+
+python -m pytest tests\test_ghost_affinity.py tests\test_ghost_work_queue.py tests\test_research_interest_queue.py tests\test_ghost_directive.py -q
+# 89 passed, 1 pytest cache warning, 34 subtests passed
+
+python -m pytest tests\test_ghost_sleep.py -q
+# 12 passed, 1 pytest cache warning, 6 subtests passed
+
+python -m pytest tests\test_task_runner_affinity.py -q
+# 4 passed, 1 pytest cache warning
+
+python -m pytest tests\test_cli.py tests\test_architecture.py -q
+# 22 passed, 1 pytest cache warning, 19 subtests passed
+
+python -m pytest tests\test_server.py -k "forgetting_session_clears_only_its_terminal_event" -q
+# 1 passed, 148 deselected, 1 pytest cache warning
+
+python -m pytest tests\test_task_runner_work_queue.py tests\test_task_runner_affinity.py -q
+# 12 passed, 1 pytest cache warning
+
+python -m pytest tests\test_ghost_affinity.py tests\test_task_runner_affinity.py tests\test_ghost_work_queue.py tests\test_task_runner_work_queue.py tests\test_research_interest_queue.py tests\test_ghost_directive.py tests\test_ghost_sleep.py tests\test_cli.py tests\test_server.py tests\test_architecture.py -q
+# 284 passed, 1 skipped, 1 pytest cache warning, 59 subtests passed
+
+python -m pytest tests\test_ghost_directive.py tests\test_research_interest_queue.py -q
+# 42 passed, 1 pytest cache warning, 34 subtests passed
+
+python -m pytest -q
+# 1863 passed, 9 skipped, 1 pytest cache warning, 273 subtests passed
+
+python -m ruff check codey tests
+# All checks passed!
+
+python -B tests\manual\ghost_affinity_ab.py --self-test --provider deepseek --output tests\manual\results\ghost_affinity_selftest.json
+# baseline 5/5; affinity 5/5
+
+python -B tests\manual\ghost_affinity_quality_ab.py --self-test --provider deepseek --output tests\manual\results\ghost_affinity_quality_selftest.json
+# baseline 0/2; affinity 2/2; uplift +2
+```
+
+2026-08-13 Affinity Index production-spine A/B, five-case matrix, run one
+provider per fresh webpage tab. This validates the real `TaskRunner` spine,
+provider prompt submission, directive prompt ordering, queue claim ordering,
+and boundary checks. Research/Writer/Review bodies are safe stubs, so this is
+not a full live Research or project-writing model-quality A/B:
+
+```text
+DeepSeek: baseline 5/5; affinity 5/5
+Qwen:     baseline 5/5; affinity 5/5
+MiMo:     baseline 5/5; affinity 5/5
+GLM:      baseline 5/5; affinity 5/5
+StepFun:  baseline 5/5; affinity 5/5
+```
+
+2026-08-13 Affinity Index quality/uplift A/B, two-case matrix, run one provider
+per fresh webpage tab. This uses the production `TaskRunner` chat path and real
+provider replies, then scores both arms with the same metric:
+`first_line_uses_affinity_target_alpha_marker`. A result is `ok` only when all
+rows execute cleanly and affinity has strictly more target hits than baseline.
+Rows also check that provider replies and the model-visible prompt avoid
+internal Ghost/Affinity terms while allowing the neutral `Local Context` label.
+This validates Directive ordering uplift on a controlled preference choice; it
+is not a broad Research, Writer, or planning quality benchmark:
+
+```text
+DeepSeek: baseline 2/2; affinity 2/2; uplift 0
+Qwen:     baseline 0/2; affinity 2/2; uplift +2
+MiMo:     baseline 0/2; affinity 2/2; uplift +2
+GLM:      baseline 0/2; affinity 2/2; uplift +2
+StepFun:  baseline 0/2; affinity 2/2; uplift +2
+```
+
+DeepSeek executed cleanly with no prompt/reply leakage, but this marker probe
+did not show uplift because the baseline arm also matched the target marker.
+
 ## 0.3.9 Research Interest Queue v1
 
 Codey 0.3.9 improves the existing Ghost Work Queue research sources. It does

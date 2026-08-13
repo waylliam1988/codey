@@ -347,8 +347,10 @@ class ProviderCliTests(unittest.TestCase):
         self.assertTrue(zero_budget_payload["truncated"])
 
     def test_cmd_ghost_export_includes_router_and_sleep_state(self) -> None:
+        from codey.ghost.affinity import GhostAffinityStore
         from codey.ghost.router import GhostRouteDecision, GhostRouteRequest, GhostRouteStore, finalize_route_decision
         from codey.ghost.sleep import GhostSleepStore
+        from codey.knowledge.research_interest import ResearchInterestCandidate
 
         with tempfile.TemporaryDirectory() as td:
             router = GhostRouteStore(td)
@@ -367,6 +369,24 @@ class ProviderCliTests(unittest.TestCase):
                 request,
             )
             GhostSleepStore(td).run_once(run_id="r1", session_id="s1")
+            GhostAffinityStore(td).sync_from_sources(
+                research_interest_candidates=(ResearchInterestCandidate(
+                    id="ric-cli",
+                    question="Research whether alpha and beta connect",
+                    related_concepts=("alpha", "beta"),
+                    shared_neighbors=(),
+                    source_refs=("note:alpha",),
+                    scope="session",
+                    scope_ref="s1",
+                    priority=0.7,
+                    confidence=0.8,
+                    why_now="Bounded CLI test.",
+                    source="concept_open_question",
+                    source_ref="concept:alpha-beta",
+                    strong_support=True,
+                ),),
+                session_id="s1",
+            )
             args = mock.Mock(ghost_cmd="export", state_home=td)
             stdout = io.StringIO()
 
@@ -381,10 +401,14 @@ class ProviderCliTests(unittest.TestCase):
         self.assertNotIn("do not store this full task", json.dumps(payload, ensure_ascii=False))
         self.assertIn("sleep", payload)
         self.assertIn("sleep_events", payload["sleep"])
+        self.assertIn("affinity", payload)
+        self.assertIn("affinity_events", payload["affinity"])
 
     def test_cmd_ghost_reset_deletes_router_and_sleep_files(self) -> None:
+        from codey.ghost.affinity import GhostAffinityStore
         from codey.ghost.router import GhostRouteDecision, GhostRouteRequest, GhostRouteStore, finalize_route_decision
         from codey.ghost.sleep import GhostSleepStore
+        from codey.knowledge.research_interest import ResearchInterestCandidate
 
         with tempfile.TemporaryDirectory() as td:
             router = GhostRouteStore(td)
@@ -398,10 +422,31 @@ class ProviderCliTests(unittest.TestCase):
             )
             sleep = GhostSleepStore(td)
             sleep.run_once(run_id="r1", session_id="s1")
+            affinity = GhostAffinityStore(td)
+            affinity.sync_from_sources(
+                research_interest_candidates=(ResearchInterestCandidate(
+                    id="ric-reset",
+                    question="Research whether alpha and beta connect",
+                    related_concepts=("alpha", "beta"),
+                    shared_neighbors=(),
+                    source_refs=("note:alpha",),
+                    scope="session",
+                    scope_ref="s1",
+                    priority=0.7,
+                    confidence=0.8,
+                    why_now="Bounded CLI test.",
+                    source="concept_open_question",
+                    source_ref="concept:alpha-beta",
+                    strong_support=True,
+                ),),
+                session_id="s1",
+            )
             self.assertTrue(router.state_path.exists())
             self.assertTrue(router.events_path.exists())
             self.assertTrue(sleep.state_path.exists())
             self.assertTrue(sleep.events_path.exists())
+            self.assertTrue(affinity.projection_path.exists())
+            self.assertTrue(affinity.events_path.exists())
             args = mock.Mock(ghost_cmd="reset", state_home=td, yes=True)
             stdout = io.StringIO()
 
@@ -412,16 +457,21 @@ class ProviderCliTests(unittest.TestCase):
             self.assertFalse(router.events_path.exists())
             self.assertFalse(sleep.state_path.exists())
             self.assertFalse(sleep.events_path.exists())
+            self.assertFalse(affinity.projection_path.exists())
+            self.assertFalse(affinity.events_path.exists())
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["router_ok"])
         self.assertTrue(payload["sleep_ok"])
+        self.assertTrue(payload["affinity_ok"])
 
     def test_cmd_ghost_delete_scope_cleans_router_and_sleep_session_refs(self) -> None:
+        from codey.ghost.affinity import GhostAffinityStore
         from codey.ghost.router import GhostRouteDecision, GhostRouteRequest, GhostRouteStore, finalize_route_decision
         from codey.ghost.sleep import GhostSleepStore
+        from codey.knowledge.research_interest import ResearchInterestCandidate
 
         with tempfile.TemporaryDirectory() as td:
             router = GhostRouteStore(td)
@@ -435,6 +485,25 @@ class ProviderCliTests(unittest.TestCase):
             )
             sleep = GhostSleepStore(td)
             sleep.run_once(run_id="r1", session_id="session-delete")
+            affinity = GhostAffinityStore(td)
+            affinity.sync_from_sources(
+                research_interest_candidates=(ResearchInterestCandidate(
+                    id="ric-delete",
+                    question="Research whether alpha and beta connect",
+                    related_concepts=("alpha", "beta"),
+                    shared_neighbors=(),
+                    source_refs=("note:alpha",),
+                    scope="session",
+                    scope_ref="session-delete",
+                    priority=0.7,
+                    confidence=0.8,
+                    why_now="Bounded CLI test.",
+                    source="concept_open_question",
+                    source_ref="concept:alpha-beta",
+                    strong_support=True,
+                ),),
+                session_id="session-delete",
+            )
             args = mock.Mock(
                 ghost_cmd="delete-scope",
                 state_home=td,
@@ -450,14 +519,17 @@ class ProviderCliTests(unittest.TestCase):
 
             exported = sleep.export_state()
             router_exported = router.export_state()
+            affinity_exported = affinity.export_state()
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(exit_code, 0)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["router_removed_count"], 1)
         self.assertEqual(payload["sleep_removed"]["reports"], 1)
+        self.assertGreater(payload["affinity_removed"]["nodes"], 0)
         self.assertEqual(exported["sleep"], {})
         self.assertEqual(router_exported["router"]["records"], [])
+        self.assertEqual(affinity_exported["affinity"]["nodes"], [])
 
 
 if __name__ == "__main__":

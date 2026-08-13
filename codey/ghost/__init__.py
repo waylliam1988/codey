@@ -5,6 +5,13 @@ accepted candidates into bounded local Hebbian state, and render confirmed
 state as a small prompt directive.
 """
 
+from codey.ghost.affinity import (
+    AffinityEdge,
+    AffinityHint,
+    AffinityNode,
+    GhostAffinityStore,
+    GhostAffinitySyncResult,
+)
 from codey.ghost.continuity import (
     GhostContinuity,
     GhostContinuityItem,
@@ -41,11 +48,16 @@ from codey.ghost.work_queue import (
 
 __all__ = [
     "GhostDirective",
+    "AffinityEdge",
+    "AffinityHint",
+    "AffinityNode",
     "GhostContinuity",
     "GhostContinuityItem",
     "GhostContinuityResult",
     "GhostContinuityStore",
     "GhostEdge",
+    "GhostAffinityStore",
+    "GhostAffinitySyncResult",
     "GhostHebbianStore",
     "GhostInboxStore",
     "GhostLearningLoop",

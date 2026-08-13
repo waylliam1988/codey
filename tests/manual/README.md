@@ -574,6 +574,79 @@ one provider per restarted Edge CDP session:
 - GLM: partial, baseline 2/4; queue 4/4. The remaining cases timed out because
   the webpage was slow/self-searching.
 
+`ghost_affinity_ab.py` covers 0.3.10 Affinity Index ordering consumption.
+The harness uses production `TaskRunner` paths with safe Research stubs. It
+compares baseline ordering against affinity-boosted ordering, writes progress
+atomically after each row, and verifies that explicit chat selection and
+permission boundaries are not expanded.
+
+```powershell
+python -B tests\manual\ghost_affinity_ab.py --self-test
+python -B tests\manual\ghost_affinity_ab.py `
+  --provider deepseek `
+  --port 9222 `
+  --output tests\manual\results\ghost_affinity_deepseek.json
+```
+
+Run one provider per restarted Edge CDP session. The matrix verifies directive
+chat stays Chat, Work Queue continuation changes only ordering, Research
+Interest priority changes only queued item priority, explicit mode is not
+overridden, and affinity does not add tool or permission authority.
+
+2026-08-13 Affinity Index production-spine A/B, five-case matrix, run one
+provider per fresh webpage tab. The harness validates the real `TaskRunner`
+spine, provider prompt submission, directive prompt ordering, queue claim
+ordering, and boundary checks. Research/Writer/Review bodies are safe stubs, so
+this is not a full live Research or project-writing model-quality A/B:
+
+- DeepSeek: baseline 5/5; affinity 5/5.
+- Qwen: baseline 5/5; affinity 5/5.
+- MiMo: baseline 5/5; affinity 5/5.
+- GLM: baseline 5/5; affinity 5/5.
+- StepFun: baseline 5/5; affinity 5/5.
+
+Both arms are expected to pass their own checks: baseline consumes the higher
+native Work Queue priority item, while the affinity arm consumes the lower
+native priority item with stronger local association support. Output JSON files
+are written under `tests/manual/results/ghost_affinity_*.json`.
+
+`ghost_affinity_quality_ab.py` is the next-layer Affinity quality/uplift A/B.
+It uses the production `TaskRunner` chat path and real provider replies, but
+scores both arms with the same success metric: whether the first line follows
+the Affinity-target preference surfaced by Directive ordering. The metric is
+deliberately narrow. It proves ordering uplift on a controlled preference
+choice, not broad Research, Writer, or planning quality. It also checks that
+provider replies and the model-visible prompt do not leak internal Ghost or
+Affinity terms; the neutral `Local Context` label is allowed.
+
+```powershell
+python -B tests\manual\ghost_affinity_quality_ab.py --self-test `
+  --provider deepseek `
+  --output tests\manual\results\ghost_affinity_quality_selftest.json
+python -B tests\manual\ghost_affinity_quality_ab.py `
+  --provider qwen `
+  --port 9222 `
+  --output tests\manual\results\ghost_affinity_quality_qwen.json
+```
+
+Run one provider per fresh webpage tab. The harness writes progress atomically
+after each row. A provider result is `ok` only when every row executes cleanly
+and the affinity arm has strictly more target hits than baseline.
+
+2026-08-13 Affinity Index quality/uplift A/B, two-case matrix, run one provider
+per fresh webpage tab:
+
+- DeepSeek: baseline 2/2; affinity 2/2; uplift 0. Execution was clean, but
+  this marker probe did not show quality uplift because DeepSeek matched the
+  target marker even in the baseline order.
+- Qwen: baseline 0/2; affinity 2/2; uplift +2.
+- MiMo: baseline 0/2; affinity 2/2; uplift +2.
+- GLM: baseline 0/2; affinity 2/2; uplift +2.
+- StepFun: baseline 0/2; affinity 2/2; uplift +2.
+
+Output JSON files are written under
+`tests/manual/results/ghost_affinity_quality_*.json`.
+
 2026-08-11 Ghost Router live A/B, original 10-case matrix, run one provider per
 restarted Edge CDP session:
 

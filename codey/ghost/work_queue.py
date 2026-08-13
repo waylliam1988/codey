@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 import uuid
 
+from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
@@ -365,6 +366,7 @@ class GhostWorkQueueStore:
         run_id: str,
         user_request: str = "",
         lease_seconds: int = DEFAULT_WORK_CLAIM_LEASE_SECONDS,
+        affinity_hints: Iterable[Any] = (),
     ) -> GhostWorkClaimResult:
         if not clip_signal_text(run_id, 120):
             return GhostWorkClaimResult(False, skipped_reason="run_id_required")
@@ -378,7 +380,12 @@ class GhostWorkQueueStore:
             items, stale = _release_stale_claims(items, now=now)
             if stale and not self._append_events_atomic([_item_event(item, "release_stale") for item in stale]):
                 return GhostWorkClaimResult(False, skipped_reason="event_write_failed", warnings=self.last_warnings)
-            candidate = _next_claimable_item(items, session_id=session_id, project=project)
+            candidate = _next_claimable_item(
+                items,
+                session_id=session_id,
+                project=project,
+                affinity_hints=affinity_hints,
+            )
             if candidate is None:
                 if stale:
                     self._write_projection_best_effort(items)
@@ -1228,6 +1235,7 @@ def _next_claimable_item(
     *,
     session_id: str,
     project: str,
+    affinity_hints: Iterable[Any] = (),
 ) -> GhostWorkItem | None:
     project_ref = _project_ref(project)
     session_ref = _session_ref(session_id)
@@ -1241,7 +1249,7 @@ def _next_claimable_item(
     ]
     if not candidates:
         return None
-    return sorted(candidates, key=_claim_sort_key)[0]
+    return sorted(candidates, key=lambda item: _claim_sort_key(item, affinity_hints))[0]
 
 
 def _replace_item(items: Iterable[GhostWorkItem], updated: GhostWorkItem) -> list[GhostWorkItem]:
@@ -1273,10 +1281,11 @@ def _item_sort_key(item: GhostWorkItem) -> tuple[int, int, float, tuple[int, ...
     )
 
 
-def _claim_sort_key(item: GhostWorkItem) -> tuple[int, float, int, tuple[int, ...], str]:
+def _claim_sort_key(item: GhostWorkItem, affinity_hints: Iterable[Any] = ()) -> tuple[int, float, int, tuple[int, ...], str]:
+    priority = apply_affinity_work_boost(item.priority, affinity_hints, item.id)
     return (
         SCOPE_PRIORITY.get(item.scope, 99),
-        -item.priority,
+        -priority,
         item.retry_count,
         _reverse_text_sort_key(item.updated_at),
         item.id,

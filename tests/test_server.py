@@ -1511,12 +1511,14 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
         from codey.ghost.continuity import build_ghost_continuity
+        from codey.ghost.affinity import GhostAffinityStore
         from codey.ghost.router import (
             GhostRouteDecision,
             GhostRouteRequest,
             finalize_route_decision,
         )
         from codey.ghost.work_queue import GhostWorkQueueStore
+        from codey.knowledge.research_interest import ResearchInterestCandidate
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)
@@ -1580,13 +1582,51 @@ class RunSnapshotTests(unittest.TestCase):
                 continuity_store=state.ghost_continuity,
                 session_id="session-2",
             )
+            assert state.ghost_affinity is not None
+            GhostAffinityStore(td).sync_from_sources(
+                research_interest_candidates=(
+                    ResearchInterestCandidate(
+                        id="ric-session-1",
+                        question="Research whether one concept should continue",
+                        related_concepts=("session-one",),
+                        shared_neighbors=(),
+                        source_refs=("note:one",),
+                        scope="session",
+                        scope_ref="session-1",
+                        priority=0.7,
+                        confidence=0.8,
+                        why_now="Bounded server test.",
+                        source="concept_open_question",
+                        source_ref="concept:one",
+                        strong_support=True,
+                    ),
+                    ResearchInterestCandidate(
+                        id="ric-session-2",
+                        question="Research whether two concept should continue",
+                        related_concepts=("session-two",),
+                        shared_neighbors=(),
+                        source_refs=("note:two",),
+                        scope="session",
+                        scope_ref="session-2",
+                        priority=0.7,
+                        confidence=0.8,
+                        why_now="Bounded server test.",
+                        source="concept_open_question",
+                        source_ref="concept:two",
+                        strong_support=True,
+                    ),
+                ),
+                session_id="session-1",
+            )
 
             state.forget_conversation("session-2")
             router_records = state.ghost_router.export_state()["router"]["records"]
             work_items = state.ghost_work_queue.export_state()["work_queue"]["items"]
+            affinity_nodes = state.ghost_affinity.export_state()["affinity"]["nodes"]
             self.assertIsNotNone(state.last_terminal_event)
             self.assertEqual([row["session_id"] for row in router_records], ["session-1"])
             self.assertEqual(len(work_items), 1)
+            self.assertEqual([row["key"] for row in affinity_nodes], ["session-one"])
             self.assertIn(
                 "Session one scoped focus",
                 build_ghost_continuity(state.ghost_continuity, session_id="session-1").text,
@@ -1607,6 +1647,7 @@ class RunSnapshotTests(unittest.TestCase):
             )
             self.assertEqual(state.ghost_router.export_state()["router"]["records"], [])
             self.assertEqual(state.ghost_work_queue.export_state()["work_queue"]["items"], [])
+            self.assertEqual(state.ghost_affinity.export_state()["affinity"]["nodes"], [])
 
     def test_state_snapshot_keeps_only_the_latest_shell_result(self) -> None:
         state = server.State()

@@ -71,6 +71,33 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 imports = imported_modules(path)
                 self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
+    def test_affinity_boundaries_do_not_expand_execution_or_research_authority(self) -> None:
+        affinity_imports = imported_modules(ROOT / "codey" / "ghost" / "affinity.py")
+        forbidden_affinity = {
+            "torch",
+            "transformers",
+            "codey.browser",
+            "codey.providers",
+            "codey.provider_controls",
+            "codey.tool_runtime",
+            "codey.research.runner",
+            "codey.research.tools",
+        }
+        self.assertTrue(
+            forbidden_affinity.isdisjoint(affinity_imports),
+            sorted(forbidden_affinity & affinity_imports),
+        )
+
+        research_imports = imported_modules(ROOT / "codey" / "research" / "runner.py")
+        permission_imports = imported_modules(ROOT / "codey" / "permission_profiles.py")
+        repair_source = (ROOT / "codey" / "adapter_repair.py").read_text(encoding="utf-8")
+        tool_runtime_imports = imported_modules(ROOT / "codey" / "tool_runtime.py")
+
+        self.assertNotIn("codey.ghost.affinity", research_imports)
+        self.assertNotIn("codey.ghost.affinity", permission_imports)
+        self.assertNotIn("affinity", repair_source.casefold())
+        self.assertNotIn("codey.ghost", tool_runtime_imports)
+
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
         agent_source = (ROOT / "codey" / "agent.py").read_text(encoding="utf-8")
         tool_source = (ROOT / "codey" / "tool_runtime.py").read_text(encoding="utf-8")

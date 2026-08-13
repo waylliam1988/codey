@@ -118,6 +118,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
 
 
 def cmd_ghost(args: argparse.Namespace) -> int:
+    from codey.ghost.affinity import GhostAffinityStore
     from codey.ghost.continuity import GhostContinuityStore, build_ghost_continuity
     from codey.ghost.directive import build_ghost_directive
     from codey.ghost.hebbian import GhostHebbianStore
@@ -136,6 +137,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
     router_store = GhostRouteStore(state_home)
     sleep_store = GhostSleepStore(state_home)
     work_queue_store = GhostWorkQueueStore(state_home)
+    affinity_store = GhostAffinityStore(state_home)
     signal_store = GhostSignalStore(state_home)
     action = str(getattr(args, "ghost_cmd", "") or "").strip()
     if action == "list":
@@ -164,6 +166,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         payload["router"] = router_store.export_state()
         payload["sleep"] = sleep_store.export_state()
         payload["work_queue"] = work_queue_store.export_state()
+        payload["affinity"] = affinity_store.export_state()
         payload["ok"] = True
         _print_json(payload)
         return 0
@@ -293,6 +296,13 @@ def cmd_ghost(args: argparse.Namespace) -> int:
         ok = continuity_store.rebuild_from_events()
         _print_json({"schema_version": 1, "ok": ok})
         return 0 if ok else 1
+    if action == "rebuild-affinity":
+        if not getattr(args, "yes", False):
+            _print_error_json("rebuild-affinity requires --yes")
+            return 2
+        ok = affinity_store.rebuild_from_events()
+        _print_json({"schema_version": 1, "ok": ok})
+        return 0 if ok else 1
     if action == "reset":
         if not getattr(args, "yes", False):
             _print_error_json("reset requires --yes")
@@ -304,11 +314,12 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             router_ok = router_store.reset_all()
             sleep_ok = sleep_store.reset_all()
             work_queue_ok = work_queue_store.reset_all()
+            affinity_ok = affinity_store.reset_all()
             signal_store.delete_all()
         except OSError as exc:
             _print_error_json(exc)
             return 1
-        all_ok = ok and hebbian_ok and continuity_ok and router_ok and sleep_ok and work_queue_ok
+        all_ok = ok and hebbian_ok and continuity_ok and router_ok and sleep_ok and work_queue_ok and affinity_ok
         _print_json({
             "schema_version": 1,
             "ok": all_ok,
@@ -317,6 +328,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             "router_ok": router_ok,
             "sleep_ok": sleep_ok,
             "work_queue_ok": work_queue_ok,
+            "affinity_ok": affinity_ok,
         })
         return 0 if all_ok else 1
     if action == "delete-scope":
@@ -359,6 +371,11 @@ def cmd_ghost(args: argparse.Namespace) -> int:
                 project=getattr(args, "project", "") or "",
                 session_id=getattr(args, "session_id", "") or "",
             )
+            affinity_removed = affinity_store.delete_scope(
+                args.scope_name,
+                project=getattr(args, "project", "") or "",
+                session_id=getattr(args, "session_id", "") or "",
+            )
         except ValueError as exc:
             _print_error_json(exc)
             return 2
@@ -375,6 +392,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             "router_removed_count": router_removed,
             "sleep_removed": sleep_removed,
             "work_queue_removed_count": work_queue_removed,
+            "affinity_removed": affinity_removed,
         })
         return 0
     if action in {"enable", "disable"}:
@@ -469,6 +487,14 @@ def _add_ghost_subcommands(sub) -> None:
     )
     sp_ghost_rebuild_continuity.add_argument("--yes", action="store_true")
     sp_ghost_rebuild_continuity.set_defaults(func=cmd_ghost)
+
+    sp_ghost_rebuild_affinity = sub.add_parser(
+        "rebuild-affinity",
+        parents=[ghost_common],
+        help="rebuild Ghost Affinity projection from events",
+    )
+    sp_ghost_rebuild_affinity.add_argument("--yes", action="store_true")
+    sp_ghost_rebuild_affinity.set_defaults(func=cmd_ghost)
 
     sp_ghost_reset = sub.add_parser("reset", parents=[ghost_common], help="delete all Ghost local state")
     sp_ghost_reset.add_argument("--yes", action="store_true")

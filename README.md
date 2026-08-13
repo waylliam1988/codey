@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.9-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.10-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -12,7 +12,7 @@ Codey connects to AI chat websites you already use, such as DeepSeek, MiMo,
 StepFun, Qwen, and GLM, or to a local OpenAI-compatible model, then gives them
 controlled local work loops: chat, research with evidence, read files, edit
 files, run tests, show diffs, review changes, restore safely, and carry bounded
-local memory/continuity that you can inspect, export, delete, or disable.
+local memory/continuity/affinity state that you can inspect, export, delete, or disable.
 
 It is a local-first, low-cost AI coding, research, and controllable-memory
 workspace for people who want useful help without wiring paid model APIs into
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.9`
+Version: `0.3.10`
 
 [Version history](CHANGELOG.md)
 
@@ -131,6 +131,9 @@ This is not about replacing professional tools. It is about making the first ste
   Writer, or Review, and mark it done only with local proof
 - Turn structured Research `open_questions` and supported concept gaps into saved
   research follow-ups without starting background web searches
+- Maintain a bounded local Affinity Index that links accepted preferences,
+  task types, projects, research concepts, and provider outcome kinds for
+  low-risk ordering only; it is not evidence, permission, or automation
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
 - Recover one bounded web-chat state rule from boolean-only evidence when a
@@ -668,7 +671,7 @@ codey/
   project_map.py            deterministic bounded project orientation
   project_config.py         strict project-local config facts and warnings
   project_task_context.py   project facts, map, checkpoint, and verification context
-  ghost/                    Ghost signal extraction, memory state, continuity, routing, and local work queue
+  ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, and affinity ledger
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
   research/                 Research controller/runner, isolated web/source search tools, evidence ledger, report quality gate
   verification_map.py       bounded review-time verification candidates

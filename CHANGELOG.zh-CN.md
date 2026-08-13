@@ -4,6 +4,33 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.10 - Affinity Index v1
+
+- 新增 `codey/ghost/affinity.py`：本地有界关联账本。`affinity_events.jsonl`
+  是审计真源，`affinity.json` 是可重建 projection；events 不可读或超过 byte
+  上限时会阻断 mutating sync。
+- Affinity 只从已有有界本地事实同步：accepted Hebbian memory、Work Queue
+  row、Research Interest candidate、Router 审计元数据、provider failure kind 和
+  task outcome 摘要。它不保存完整聊天、Research body、网页/source snippet、源码、
+  prompt、provider raw reply 或 raw error message。
+- Affinity 不是 truth、不是权限、不是路由授权，也不是自动执行系统。Research
+  判断仍必须靠 evidence/citation；显式 provider/mode/project 仍然优先；shell /
+  tool / file 权限边界不变。
+- 默认只启用低风险排序消费：Ghost Directive 只重排已经可渲染的 typed memory
+  node；Work Queue 的严格 `continue` claim 顺序可获得小幅 affinity boost；
+  Research Interest priority 可被提升，但 concept 仍不是 evidence。
+- Ghost Directive 的模型可见 header 保留中性的 `Local Context`，但不暴露内部
+  memory system 词。
+- event log 不可读、超限，或 projection 存在但 events 缺失时，hint 消费 fail
+  closed。显示 refs 被 cap 后仍用有界 hash 维持重放幂等；权重强化只按本轮新增
+  refs 计，不重复计算历史 refs。
+- `ghost export`、`ghost reset --yes`、`ghost delete-scope`、server
+  `forget_conversation()` 和 Cognitive Sleep maintenance 都覆盖 Affinity。
+  `ghost disable` 会阻止自动 sync 和 hint 消费，但不影响 export/reset/delete-scope。
+- 新增 `tests/test_ghost_affinity.py`、`tests/test_task_runner_affinity.py`、
+  架构边界测试、`tests/manual/ghost_affinity_ab.py`，以及用于同一指标排序 uplift
+  检查的 `tests/manual/ghost_affinity_quality_ab.py`。
+
 ## 0.3.9 - Research Interest Queue v1
 
 - 新增 `codey/knowledge/research_interest.py`：有界 research-interest

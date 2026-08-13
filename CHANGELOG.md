@@ -4,6 +4,39 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.10 - Affinity Index v1
+
+- Added `codey/ghost/affinity.py`, a bounded local association ledger backed by
+  `affinity_events.jsonl` and rebuildable `affinity.json`. Events are the source
+  of truth; mutating sync is blocked when the event log is unreadable or over
+  the byte cap.
+- Affinity nodes/edges can be synced from existing bounded local facts:
+  accepted Hebbian memory, Work Queue rows, Research Interest candidates, Router
+  audit metadata, provider failure kinds, and task outcome summaries. It does
+  not store full chat text, Research bodies, webpage/source snippets, source
+  code, prompts, raw provider replies, or raw provider error messages.
+- Affinity is not truth, permission, routing authority, or automation. Research
+  claims still require evidence/citations; explicit provider/mode/project
+  choices still win; shell/tool/file permissions are unchanged.
+- Low-risk consumption is enabled only as bounded ordering: Ghost Directive
+  reorders already-renderable typed memory nodes, Work Queue strict `continue`
+  claim order can get a small affinity boost, and Research Interest priority can
+  be boosted without treating concepts as evidence.
+- Ghost Directive's model-visible header now keeps the neutral `Local Context`
+  label but avoids internal memory system terms.
+- Hint consumption fails closed when the event log is unreadable, oversized, or
+  missing while a projection exists. Bounded ref hashes preserve replay
+  idempotency after display refs are capped, and reinforcement weight is based
+  only on newly observed refs.
+- `ghost export`, `ghost reset --yes`, `ghost delete-scope`, server
+  `forget_conversation()`, and Cognitive Sleep maintenance now cover Affinity.
+  `ghost disable` prevents automatic sync and hint consumption, but export,
+  reset, and delete-scope still work.
+- Added `tests/test_ghost_affinity.py`, `tests/test_task_runner_affinity.py`,
+  architecture boundary coverage, `tests/manual/ghost_affinity_ab.py`, and
+  `tests/manual/ghost_affinity_quality_ab.py` for same-metric ordering uplift
+  checks.
+
 ## 0.3.9 - Research Interest Queue v1
 
 - Added `codey/knowledge/research_interest.py`, a bounded research-interest

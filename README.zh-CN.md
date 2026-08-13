@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.3.9-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.10-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -11,14 +11,14 @@
 Codey 可以连接你已经在用的网页版 AI，比如 DeepSeek、MiMo、StepFun、Qwen 和
 GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的本地工作闭环：
 聊天、带证据的 Research、读文件、改文件、跑测试、看 diff、审查改动、必要时
-恢复，以及可检查、可导出、可删除、可禁用的本地有界记忆 / continuity。
+恢复，以及可检查、可导出、可删除、可禁用的本地有界记忆 / continuity / affinity。
 
 它是一个本地优先、低成本、多网页模型兼容的 AI 编程、研究和可控记忆工作台，
 适合不想为每个项目接入付费模型 API 的用户。
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.9`
+版本：`0.3.10`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -116,6 +116,8 @@ Codey 想解决的是一个很朴素的问题：
   continuation 才会认领一条，并且完成时必须写入本地 proof
 - Research 里的结构化 `open_questions` 和有支持的概念缺口可以变成研究待办，但不会后台自动联网
   搜索，也不会把猜测当事实
+- 维护一个有界本地 Affinity Index，把 accepted 偏好、任务类型、项目、研究概念和
+  provider outcome kind 连成低风险排序账本；它不是证据、权限或自动执行系统
 - 网页输入框或发送按钮改版时，先做有边界的本地发现，仍不确定则让健康兄弟模型
   从脱敏候选中选择；真实发送成功后才能保存、晋级或回滚恢复包
 - 控件恢复仍不足时，只根据脱敏布尔事实恢复一条有边界的网页状态规则；不同网页的
@@ -591,7 +593,7 @@ codey/
   project_map.py            确定性的有边界项目地图
   project_config.py         严格项目本地配置事实和 warning
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
-  ghost/                    Ghost 信号抽取、记忆状态、continuity、路由和本地待办队列
+  ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列和 affinity 账本
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
   research/                 Research controller/runner、隔离网页/source search 工具、evidence ledger 和 report quality gate
   verification_map.py       Review 阶段的有边界验证候选

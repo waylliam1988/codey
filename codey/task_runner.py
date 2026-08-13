@@ -48,7 +48,10 @@ from codey.handoff import (
     render_recovered_handoff,
 )
 from codey.knowledge.note import KnowledgeNote
-from codey.knowledge.research_interest import build_research_interest_candidates
+from codey.knowledge.research_interest import (
+    apply_research_affinity_hints,
+    build_research_interest_candidates,
+)
 from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.managed_outputs import (
@@ -431,9 +434,23 @@ class TaskRunner:
                 store,
                 project=project,
                 session_id=session_id,
+                affinity_store=self._ghost_affinity_store(),
             ).text
         except Exception:
             return ""
+
+    def _ghost_affinity_store(self):
+        store = getattr(self.state, "ghost_affinity", None)
+        if store is None:
+            return None
+        inbox_store = getattr(self.state, "ghost_inbox", None)
+        if inbox_store is not None:
+            try:
+                if not inbox_store.learning_enabled():
+                    return None
+            except Exception:
+                return None
+        return store
 
     def _ghost_continuity_text(
         self,
@@ -593,11 +610,28 @@ class TaskRunner:
             except Exception:
                 return None
         try:
+            affinity_hints = ()
+            affinity_store = self._ghost_affinity_store()
+            if affinity_store is not None:
+                try:
+                    queued = store.list_items(
+                        status="queued",
+                        project=request.project or "",
+                        session_id=request.session_id,
+                    )
+                    affinity_hints = affinity_store.query_work_priority_hints(
+                        queued,
+                        project=request.project or "",
+                        session_id=request.session_id,
+                    )
+                except Exception:
+                    affinity_hints = ()
             result = store.claim_next(
                 session_id=request.session_id,
                 project=request.project or "",
                 run_id=run_id,
                 user_request=request.task,
+                affinity_hints=affinity_hints,
             )
         except Exception:
             return None
@@ -611,7 +645,8 @@ class TaskRunner:
         if frame is None:
             return
         store = getattr(self.state, "ghost_work_queue", None)
-        if store is None:
+        affinity_store = self._ghost_affinity_store()
+        if store is None and affinity_store is None:
             return
         inbox_store = getattr(self.state, "ghost_inbox", None)
         if inbox_store is not None:
@@ -631,15 +666,66 @@ class TaskRunner:
                 session_id=frame.request.session_id,
                 project=frame.project_text,
             )
-            store.sync_from_sources(
-                continuity_store=getattr(self.state, "ghost_continuity", None),
-                work_checkpoint_store=self.work_checkpoints,
+            if affinity_store is not None and research_interest_candidates:
+                hints = affinity_store.query_research_priority_hints(
+                    research_interest_candidates,
+                    session_id=frame.request.session_id,
+                    project=frame.project_text,
+                )
+                research_interest_candidates = apply_research_affinity_hints(
+                    research_interest_candidates,
+                    hints,
+                )
+            if store is not None:
+                store.sync_from_sources(
+                    continuity_store=getattr(self.state, "ghost_continuity", None),
+                    work_checkpoint_store=self.work_checkpoints,
+                    run_projection=projection,
+                    terminal_event=event,
+                    research_interest_candidates=research_interest_candidates,
+                    session_id=frame.request.session_id,
+                    run_id=frame.run_id,
+                    project=frame.project_text,
+                )
+            if affinity_store is not None:
+                affinity_store.sync_from_sources(
+                    hebbian_store=getattr(self.state, "ghost_hebbian", None),
+                    work_queue_store=store,
+                    research_interest_candidates=research_interest_candidates,
+                    router_store=getattr(self.state, "ghost_router", None),
+                    run_projection=projection,
+                    terminal_event=event,
+                    session_id=frame.request.session_id,
+                    project=frame.project_text,
+                )
+        except Exception:
+            return
+
+    def _maybe_sync_ghost_affinity_terminal_event(
+        self,
+        request: TaskRequest,
+        *,
+        run_id: str,
+        project_text: str,
+        terminal_event: dict[str, object],
+    ) -> None:
+        affinity_store = self._ghost_affinity_store()
+        if affinity_store is None:
+            return
+        try:
+            projection = (
+                load_run_projection(self.run_ledgers, request.session_id, run_id)
+                if self.run_ledgers is not None
+                else None
+            )
+            affinity_store.sync_from_sources(
+                hebbian_store=getattr(self.state, "ghost_hebbian", None),
+                work_queue_store=getattr(self.state, "ghost_work_queue", None),
+                router_store=getattr(self.state, "ghost_router", None),
                 run_projection=projection,
-                terminal_event=event,
-                research_interest_candidates=research_interest_candidates,
-                session_id=frame.request.session_id,
-                run_id=frame.run_id,
-                project=frame.project_text,
+                terminal_event=terminal_event,
+                session_id=request.session_id,
+                project=project_text,
             )
         except Exception:
             return
@@ -1408,6 +1494,7 @@ class TaskRunner:
                 "turns": 0,
                 "max_turns": max_turns,
                 "provider": current_id,
+                "mode": _ui_mode(task_kind, project),
                 "provider_failure": failure.to_dict() if failure else None,
             }
             append_ledger(lambda ledger: ledger.finish(**error_event))
@@ -1417,6 +1504,15 @@ class TaskRunner:
                 error_event,
                 work.claimed_work_item if "work" in locals() else claimed_work_item,
             )
+            if frame is not None:
+                self._maybe_sync_ghost_work_queue(frame, error_event)
+            else:
+                self._maybe_sync_ghost_affinity_terminal_event(
+                    request,
+                    run_id=run_id,
+                    project_text=str(project or ""),
+                    terminal_event=error_event,
+                )
         finally:
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()

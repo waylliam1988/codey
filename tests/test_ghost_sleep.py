@@ -10,6 +10,7 @@ import codey.ghost.continuity as continuity_module
 import codey.ghost.hebbian as hebbian_module
 import codey.ghost.inbox as inbox_module
 import codey.ghost.sleep as sleep_module
+from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityResult, GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
@@ -47,7 +48,9 @@ class GhostSleepTests(unittest.TestCase):
         self.assertFalse(report.cancelled)
         self.assertEqual([step.name for step in report.steps], [
             "projection_health",
+            "affinity_sync",
             "hebbian_decay",
+            "affinity_decay",
             "continuity_refresh",
             "event_compaction",
             "report",
@@ -168,6 +171,33 @@ class GhostSleepTests(unittest.TestCase):
         self.assertEqual(decay_step.skipped_reason, "min_interval")
         self.assertEqual(after, before)
         self.assertNotIn("ghost_hebbian_state_decayed", after)
+
+    def test_sleep_syncs_affinity_from_hebbian_without_model_call(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            inbox = GhostInboxStore(td)
+            created = inbox.ingest_signals(
+                GhostSignalParseResult(signals=(_accepted_signal(),), ok=True, provider_id="test"),
+                session_id="s1",
+                run_id="r1",
+                user_text="以后回答短一点",
+            )
+            reviewed = inbox.review_candidate(created[0].id, "accept", reviewed_by="test")
+            assert reviewed is not None
+            hebbian = GhostHebbianStore(td)
+            hebbian.reinforce_candidate(reviewed)
+            affinity = GhostAffinityStore(td)
+            sleep = GhostSleepStore(td)
+
+            report = sleep.run_once(
+                hebbian_store=hebbian,
+                affinity_store=affinity,
+            )
+            sync = next(step for step in report.steps if step.name == "affinity_sync")
+            nodes = affinity.list_nodes(kind="user_preference")
+
+        self.assertTrue(sync.ok)
+        self.assertEqual(sync.counts["nodes_changed"], 1)
+        self.assertEqual(len(nodes), 1)
 
     def test_sleep_reconciles_stale_work_queue_claim_without_executing(self) -> None:
         with tempfile.TemporaryDirectory() as td:

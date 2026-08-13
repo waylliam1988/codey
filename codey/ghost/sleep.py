@@ -15,6 +15,7 @@ from time import perf_counter
 from typing import Any, Callable, Iterable, Mapping
 import uuid
 
+from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
@@ -29,10 +30,13 @@ MAX_SLEEP_STATE_BYTES = 512 * 1024
 MAX_SLEEP_EVENTS_BYTES = 512 * 1024
 MAX_SLEEP_WARNINGS = 20
 DEFAULT_HEBBIAN_DECAY_MIN_INTERVAL_SECONDS = 6 * 60 * 60
+DEFAULT_AFFINITY_DECAY_MIN_INTERVAL_SECONDS = 6 * 60 * 60
 _STATE_KIND = "ghost_sleep_state_projection"
 _STEP_NAMES = (
     "projection_health",
+    "affinity_sync",
     "hebbian_decay",
+    "affinity_decay",
     "continuity_refresh",
     "event_compaction",
     "report",
@@ -42,6 +46,7 @@ _STEP_NAMES = (
 @dataclass(frozen=True)
 class GhostSleepBudget:
     hebbian_decay_min_interval_seconds: int = DEFAULT_HEBBIAN_DECAY_MIN_INTERVAL_SECONDS
+    affinity_decay_min_interval_seconds: int = DEFAULT_AFFINITY_DECAY_MIN_INTERVAL_SECONDS
 
 
 @dataclass(frozen=True)
@@ -148,6 +153,8 @@ class GhostSleepStore:
         hebbian_store: GhostHebbianStore | None = None,
         continuity_store: GhostContinuityStore | None = None,
         work_queue_store: GhostWorkQueueStore | None = None,
+        affinity_store: GhostAffinityStore | None = None,
+        router_store: Any = None,
         knowledge_store: Any = None,
         run_projection: Any = None,
         trigger: str = "post_turn",
@@ -176,10 +183,24 @@ class GhostSleepStore:
                 hebbian_store=hebbian_store,
                 continuity_store=continuity_store,
                 work_queue_store=work_queue_store,
+                affinity_store=affinity_store,
+            ),
+            "affinity_sync": lambda: self._affinity_sync_step(
+                affinity_store=affinity_store,
+                hebbian_store=hebbian_store,
+                work_queue_store=work_queue_store,
+                router_store=router_store,
+                run_projection=cursor.run_projection,
+                session_id=cursor.session_id,
+                project=cursor.project,
             ),
             "hebbian_decay": lambda: self._hebbian_decay_step(
                 hebbian_store,
                 min_interval_seconds=budget.hebbian_decay_min_interval_seconds,
+            ),
+            "affinity_decay": lambda: self._affinity_decay_step(
+                affinity_store,
+                min_interval_seconds=budget.affinity_decay_min_interval_seconds,
             ),
             "continuity_refresh": lambda: self._continuity_refresh_step(
                 continuity_store=continuity_store,
@@ -195,6 +216,7 @@ class GhostSleepStore:
                 hebbian_store=hebbian_store,
                 continuity_store=continuity_store,
                 work_queue_store=work_queue_store,
+                affinity_store=affinity_store,
             ),
         }
         for index, name in enumerate(_STEP_NAMES[:-1]):
@@ -339,6 +361,7 @@ class GhostSleepStore:
         hebbian_store: GhostHebbianStore | None,
         continuity_store: GhostContinuityStore | None,
         work_queue_store: GhostWorkQueueStore | None,
+        affinity_store: GhostAffinityStore | None,
     ) -> GhostSleepStepResult:
         specs = [
             ("inbox_projection", getattr(inbox_store, "inbox_path", None), 2 * 1024 * 1024, "json"),
@@ -349,6 +372,8 @@ class GhostSleepStore:
             ("continuity_events", getattr(continuity_store, "events_path", None), 1024 * 1024, "jsonl"),
             ("work_queue_projection", getattr(work_queue_store, "projection_path", None), 1024 * 1024, "json"),
             ("work_queue_events", getattr(work_queue_store, "events_path", None), 1024 * 1024, "jsonl"),
+            ("affinity_projection", getattr(affinity_store, "projection_path", None), 1024 * 1024, "json"),
+            ("affinity_events", getattr(affinity_store, "events_path", None), 1024 * 1024, "jsonl"),
             ("sleep_projection", self.state_path, MAX_SLEEP_STATE_BYTES, "json"),
             ("sleep_events", self.events_path, MAX_SLEEP_EVENTS_BYTES, "jsonl"),
         ]
@@ -367,6 +392,40 @@ class GhostSleepStore:
             ok=counts["unreadable"] == 0 and counts["too_large"] == 0,
             counts=counts,
             warnings=_bounded_warnings(warnings),
+        )
+
+    def _affinity_sync_step(
+        self,
+        *,
+        affinity_store: GhostAffinityStore | None,
+        hebbian_store: GhostHebbianStore | None,
+        work_queue_store: GhostWorkQueueStore | None,
+        router_store: Any,
+        run_projection: Any,
+        session_id: str,
+        project: str,
+    ) -> GhostSleepStepResult:
+        if affinity_store is None:
+            return GhostSleepStepResult("affinity_sync", True, skipped_reason="store_unavailable")
+        result = affinity_store.sync_from_sources(
+            hebbian_store=hebbian_store,
+            work_queue_store=work_queue_store,
+            router_store=router_store,
+            run_projection=run_projection,
+            session_id=session_id,
+            project=project,
+        )
+        return GhostSleepStepResult(
+            "affinity_sync",
+            result.ok,
+            skipped_reason=clip_signal_text(result.skipped_reason, 80),
+            counts={
+                "nodes_changed": int(result.nodes_changed),
+                "edges_changed": int(result.edges_changed),
+                "total_nodes": int(result.total_nodes),
+                "total_edges": int(result.total_edges),
+            },
+            warnings=_bounded_warnings(result.warnings),
         )
 
     def _hebbian_decay_step(
@@ -389,6 +448,28 @@ class GhostSleepStore:
             True,
             skipped_reason=clip_signal_text(result.get("skipped_reason"), 80),
             counts=counts,
+            warnings=_bounded_warnings(result.get("warnings", ())),
+        )
+
+    def _affinity_decay_step(
+        self,
+        affinity_store: GhostAffinityStore | None,
+        *,
+        min_interval_seconds: int,
+    ) -> GhostSleepStepResult:
+        if affinity_store is None:
+            return GhostSleepStepResult("affinity_decay", True, skipped_reason="store_unavailable")
+        result = affinity_store.decay(min_interval_seconds=min_interval_seconds)
+        return GhostSleepStepResult(
+            "affinity_decay",
+            True,
+            skipped_reason=clip_signal_text(result.get("skipped_reason"), 80),
+            counts={
+                "removed_nodes": _int(result.get("removed_nodes")),
+                "removed_edges": _int(result.get("removed_edges")),
+                "decayed_nodes": _int(result.get("decayed_nodes")),
+                "decayed_edges": _int(result.get("decayed_edges")),
+            },
             warnings=_bounded_warnings(result.get("warnings", ())),
         )
 
@@ -433,6 +514,7 @@ class GhostSleepStore:
         hebbian_store: GhostHebbianStore | None,
         continuity_store: GhostContinuityStore | None,
         work_queue_store: GhostWorkQueueStore | None,
+        affinity_store: GhostAffinityStore | None,
     ) -> GhostSleepStepResult:
         warnings: list[str] = []
         counts = {"stores_checked": 0, "stores_compacted": 0, "stores_failed": 0, "stale_work_claims": 0}
@@ -441,6 +523,7 @@ class GhostSleepStore:
             ("hebbian", hebbian_store),
             ("continuity", continuity_store),
             ("work_queue", work_queue_store),
+            ("affinity", affinity_store),
         ):
             compact = getattr(store, "compact_if_needed", None)
             if compact is None:

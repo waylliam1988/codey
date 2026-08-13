@@ -49,6 +49,7 @@ from codey.conversation_store import ConversationStore
 from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run_project_audit
 from codey.handoff import ConversationContext
 from codey.local_store import DEFAULT_STATE_HOME
+from codey.ghost.affinity import GhostAffinityStore
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
@@ -625,6 +626,7 @@ class State:
         self.ghost_router = GhostRouteStore(state_home) if state_home else None
         self.ghost_sleep = GhostSleepStore(state_home) if state_home else None
         self.ghost_work_queue = GhostWorkQueueStore(state_home) if state_home else None
+        self.ghost_affinity = GhostAffinityStore(state_home) if state_home else None
         self.ghost_signals = GhostSignalStore(state_home) if state_home else None
         self.ghost_learning_provider_factory = None
         self.ghost_router_provider_factory = None
@@ -886,6 +888,8 @@ class State:
                         hebbian_store=getattr(self, "ghost_hebbian", None),
                         continuity_store=getattr(self, "ghost_continuity", None),
                         work_queue_store=getattr(self, "ghost_work_queue", None),
+                        affinity_store=getattr(self, "ghost_affinity", None),
+                        router_store=getattr(self, "ghost_router", None),
                         knowledge_store=getattr(self, "knowledge_store", None),
                         run_projection=current_payload.get("run_projection"),
                         trigger=str(current_payload.get("trigger") or "post_turn"),
@@ -1142,6 +1146,12 @@ class State:
         if work_queue is not None:
             try:
                 work_queue.delete_scope("session", session_id=session_id)
+            except Exception:
+                pass
+        affinity = getattr(self, "ghost_affinity", None)
+        if affinity is not None:
+            try:
+                affinity.delete_scope("session", session_id=session_id)
             except Exception:
                 pass
 
