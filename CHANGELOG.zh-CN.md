@@ -4,6 +4,24 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.12 - Research Notes v2
+
+- Research drawer 的 `Notes` tab 从 note id / excerpt 纯文本升级为可读笔记卡片，
+  分组为 `Selected note`、`Synthesis`、`Created notes`、`Updated notes`。空分组不渲染；
+  全空时只显示一条克制的 `No notes recorded`。
+- Notes 现在通过 Codey 现有安全 Markdown renderer 渲染有界预览，支持 heading、
+  paragraph、list、bold、inline code、code fence 和 blockquote。raw HTML 仍会被转义，
+  note body 不会作为可信 HTML 直接插入。
+- 每条 note 下方新增安静的 source chips。chips 只来自本地已保存 provenance：
+  `note.sources`、`citationMap`、`openedSources`、`sourceUrls`，并且只允许
+  `http:` / `https:` URL 用 `noopener,noreferrer` 打开。
+- 长 note body 默认有界截断，并提供本地 `Show more` / `Show less` 切换。展开只影响
+  当前 drawer DOM，不写本地状态。
+- Notes tab 删除单独的 source URL section；来源仍可在 `Sources` tab 和每条 note 的
+  source chips 里追溯。
+- 0.3.12 不需要 live provider A/B，因为它不改 Research prompt、runner、provider 行为、
+  Router、Writer 路径或权限模型。
+
 ## 0.3.11 - Local Context Control Surface v1
 
 - 新增 `codey/ghost/control_surface.py`：给网页 UI 使用的有界 presenter 和

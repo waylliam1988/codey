@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.11-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.12-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.11`
+Version: `0.3.12`
 
 [Version history](CHANGELOG.md)
 
@@ -40,7 +40,7 @@ Version: `0.3.11`
   without adding a persistent sidebar or interrupting the task flow.
 - **Continue saved work naturally**: when Codey has a queued local follow-up,
   saying "continue" can claim one item and run the right path with proof.
-- **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
+- **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save readable note cards with source chips, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
 - **Keep code local**: models access only the project folder you choose.
 - **Stay oriented while coding**: after each local tool result, Codey reminds
   the model which files were read, which files changed, and which verification
@@ -87,7 +87,7 @@ This is not about replacing professional tools. It is about making the first ste
 - Use `Research` from the composer context to search/read HTML and text PDFs, save notes, and produce a grounded synthesis with numbered citations, evidence snippets, counter-evidence, source quality, and search coverage
 - Turn a plain chat into a project task from the same conversation by choosing a folder from the composer context
 - Turn research into implementation by choosing a folder after the synthesis; Codey carries only a bounded Research Brief into the Writer prompt
-- Inspect a Research run through `Evidence`, `Sources`, `Graph`, and `Notes` drawer tabs instead of reading a flat receipt; PDF page locators and search coverage appear inside the existing evidence/source views
+- Inspect a Research run through `Evidence`, `Sources`, `Graph`, and `Notes` drawer tabs instead of reading a flat receipt; Notes render saved Markdown as bounded note cards with source chips, while PDF page locators and search coverage appear inside the existing evidence/source views
 - Save successful implementation and verification facts back into local research memory without copying source code into the vault
 - Discuss, inspect, and edit inside one project conversation; files change only when requested
 - Let the model read and modify files in a selected project folder

@@ -4,6 +4,8 @@
   'use strict';
 
   let deps = null;
+  const NOTE_PREVIEW_CHARS = 1500;
+  const expandedResearchNoteIds = new Set();
 
 function init(nextDeps) {
   deps = nextDeps;
@@ -56,16 +58,7 @@ function renderResearchDrawer(sessionId) {
   } else if (deps.getResearchDrawerTab() === 'graph') {
     renderResearchGraph(panel, run, sessionId);
   } else if (deps.getResearchDrawerTab() === 'notes') {
-    const coreIds = coreNoteIdsForResearchRun(run);
-    const focusId = deps.getResearchNoteFocusId();
-    if (focusId && !coreIds.includes(focusId)) {
-      panel.appendChild(researchSection('Selected note', [focusId]));
-    }
-    panel.appendChild(researchSection('Synthesis', run.synthesisId ? [run.synthesisId] : []));
-    panel.appendChild(researchSection('Notes created', run.notesCreated));
-    panel.appendChild(researchSection('Notes updated', run.notesUpdated));
-    panel.appendChild(researchSection('Sources', run.sourceUrls));
-    loadResearchRunNotes(run, sessionId);
+    renderResearchNotes(panel, run, sessionId);
   } else {
     renderResearchEvidence(panel, run);
   }
@@ -311,36 +304,211 @@ function compactPages(values) {
   return ranges.join(',');
 }
 
-function researchSection(title, values) {
+function renderResearchNotes(panel, run, sessionId) {
+  const coreIds = coreNoteIdsForResearchRun(run);
+  const focusId = deps.getResearchNoteFocusId();
+  const selectedIds = focusId && !coreIds.includes(focusId) ? [focusId] : [];
+  const synthesisIds = run.synthesisId ? [run.synthesisId] : [];
+  const createdIds = uniqueStrings(run.notesCreated).filter(id => id !== run.synthesisId);
+  const updatedIds = uniqueStrings(run.notesUpdated).filter(id => id !== run.synthesisId);
+  const sections = [
+    ['Selected note', selectedIds],
+    ['Synthesis', synthesisIds],
+    ['Created notes', createdIds],
+    ['Updated notes', updatedIds],
+  ];
+  let rendered = false;
+  const sourceIndex = buildResearchSourceIndex(run);
+  for (const [title, ids] of sections) {
+    if (!ids.length) continue;
+    panel.appendChild(researchNoteSection(title, ids, run, sessionId, sourceIndex));
+    rendered = true;
+  }
+  if (!rendered) panel.appendChild(researchEmpty('No notes recorded'));
+  loadResearchRunNotes(run, sessionId);
+}
+
+function researchNoteSection(title, ids, run, sessionId, sourceIndex) {
   const wrap = document.createElement('div');
   wrap.className = 'research-note-section';
   const head = document.createElement('div');
   head.className = 'research-note-section-head';
   const status = document.createElement('span');
   status.className = 'research-note-count';
-  status.textContent = values.length || 0;
+  status.textContent = ids.length || 0;
   const path = document.createElement('span');
   path.className = 'research-note-heading';
   path.textContent = title;
   head.append(status, path);
-  const pre = document.createElement('pre');
-  pre.className = 'research-note-text';
-  pre.hidden = false;
-  pre.textContent = values.length ? values.map(researchValueText).join('\n\n') : '(none)';
-  wrap.append(head, pre);
+  wrap.appendChild(head);
+  for (const id of ids) wrap.appendChild(researchNoteCard(id, run, sessionId, sourceIndex));
   return wrap;
 }
 
-function researchValueText(value) {
-  const text = String(value || '');
-  const note = researchNoteCache[text];
-  if (!note) return text;
-  if (note.__state === 'loading') return `${text}\nLoading note...`;
-  if (note.__state === 'missing') return `${text}\nNote no longer exists`;
-  if (note.__state === 'error') return `${text}\nCould not load note`;
-  const excerpt = note.body ? '\n' + note.body.slice(0, 420) + (note.body.length > 420 ? '\n...' : '') : '';
-  const path = note.path ? `\n${note.path}` : '';
-  return `[${note.type}] ${note.title}\n${note.id}${path}${excerpt}`;
+function researchNoteCard(noteId, run, sessionId, sourceIndex) {
+  const id = String(noteId || '');
+  const note = researchNoteCache[id];
+  if (!note || note.__state) return researchNoteStateCard(id, note);
+  const card = document.createElement('div');
+  card.className = 'research-card research-note-card';
+  const head = document.createElement('div');
+  head.className = 'research-card-head';
+  const title = document.createElement('div');
+  title.className = 'research-card-title';
+  title.textContent = note.title || id || 'Note';
+  head.appendChild(title);
+  card.appendChild(head);
+  const meta = [note.type || 'note', note.updated || '', note.path || ''].filter(Boolean).join(' · ');
+  if (meta) {
+    const metaEl = document.createElement('div');
+    metaEl.className = 'research-card-meta';
+    metaEl.textContent = meta;
+    card.appendChild(metaEl);
+  }
+  const bodyText = String(note.body || '');
+  const expanded = expandedResearchNoteIds.has(id);
+  const clipped = !expanded && bodyText.length > NOTE_PREVIEW_CHARS;
+  const preview = clipped ? bodyText.slice(0, NOTE_PREVIEW_CHARS).trimEnd() + '\n...' : bodyText;
+  const body = document.createElement('div');
+  body.className = 'research-note-body md';
+  if (window.CodeyRender && typeof window.CodeyRender.renderMarkdown === 'function') {
+    window.CodeyRender.renderMarkdown(body, preview || 'No note body');
+  } else {
+    body.textContent = preview || 'No note body';
+  }
+  card.appendChild(body);
+  const chips = researchSourceChips(note, sourceIndex);
+  if (chips) card.appendChild(chips);
+  if (bodyText.length > NOTE_PREVIEW_CHARS) {
+    const actions = document.createElement('div');
+    actions.className = 'research-note-actions';
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'drawer-btn research-note-toggle';
+    toggle.textContent = expanded ? 'Show less' : 'Show more';
+    toggle.onclick = () => {
+      if (expanded) expandedResearchNoteIds.delete(id);
+      else expandedResearchNoteIds.add(id);
+      renderResearchDrawer(sessionId);
+    };
+    actions.appendChild(toggle);
+    card.appendChild(actions);
+  }
+  return card;
+}
+
+function researchNoteStateCard(id, note) {
+  const state = note && note.__state;
+  const text = state === 'missing'
+    ? 'Note no longer exists'
+    : (state === 'error' ? 'Could not load note' : 'Loading note...');
+  return researchCard(id || 'Note', text, '');
+}
+
+function researchSourceChips(note, sourceIndex) {
+  const refs = sourceRefsForNote(note, sourceIndex);
+  if (!refs.length) return null;
+  const wrap = document.createElement('div');
+  wrap.className = 'research-source-chips';
+  const label = document.createElement('span');
+  label.className = 'research-source-label';
+  label.textContent = 'Sources';
+  wrap.appendChild(label);
+  for (const ref of refs) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'research-source-chip';
+    chip.textContent = ref.number ? `[${ref.number}]` : (ref.host || 'source');
+    chip.title = [ref.title, ref.host, ref.url].filter(Boolean).join(' · ');
+    chip.onclick = (event) => {
+      event.stopPropagation();
+      window.open(ref.url, '_blank', 'noopener,noreferrer');
+    };
+    wrap.appendChild(chip);
+  }
+  return wrap;
+}
+
+function sourceRefsForNote(note, sourceIndex) {
+  const refs = [];
+  const seen = new Set();
+  for (const source of Array.isArray(note.sources) ? note.sources : []) {
+    const url = safeResearchUrl(source);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    const indexed = sourceIndex.get(url) || {};
+    refs.push({
+      url,
+      number: indexed.number || 0,
+      title: indexed.title || '',
+      host: indexed.host || hostForUrl(url),
+    });
+  }
+  return refs;
+}
+
+function buildResearchSourceIndex(run) {
+  const byUrl = new Map();
+  let nextNumber = 1;
+  const put = (urlValue, item = {}, aliasOf = null) => {
+    const url = safeResearchUrl(urlValue);
+    if (!url) return null;
+    const existing = byUrl.get(url) || {};
+    const number = Number(item.number || existing.number || (aliasOf && aliasOf.number) || 0);
+    if (number >= nextNumber) nextNumber = number + 1;
+    const meta = {
+      url,
+      number: number || existing.number || nextNumber++,
+      title: String(item.title || existing.title || (aliasOf && aliasOf.title) || ''),
+      host: existing.host || (aliasOf && aliasOf.host) || hostForUrl(url),
+    };
+    byUrl.set(url, meta);
+    return meta;
+  };
+  for (const item of run.citationMap || []) {
+    const meta = put(item.url || item.final_url || item.requested_url, item);
+    if (item.final_url) put(item.final_url, item, meta);
+    if (item.requested_url) put(item.requested_url, item, meta);
+  }
+  for (const item of run.openedSources || []) {
+    const meta = put(item.final_url || item.url || item.requested_url, item);
+    if (item.url) put(item.url, item, meta);
+    if (item.final_url) put(item.final_url, item, meta);
+    if (item.requested_url) put(item.requested_url, item, meta);
+  }
+  for (const url of run.sourceUrls || []) put(url, { title: url });
+  return byUrl;
+}
+
+function safeResearchUrl(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function hostForUrl(value) {
+  try {
+    return new URL(value).host.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+function uniqueStrings(values) {
+  const seen = new Set();
+  const out = [];
+  for (const value of values || []) {
+    const text = String(value || '');
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+  }
+  return out;
 }
 
 const researchNoteCache = {};

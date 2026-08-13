@@ -1,5 +1,53 @@
 # Codey Test Report
 
+## 0.3.12 Research Notes v2
+
+Codey 0.3.12 upgrades the Research drawer Notes tab from a note-id/excerpt log
+into a readable, local-only audit view. It does not change the Research prompt,
+runner, provider behavior, Router, Writer path, or permission model.
+
+Production changes:
+
+- `codey/web/assets/research_drawer.js` now renders Notes as grouped note
+  cards: `Selected note`, `Synthesis`, `Created notes`, and `Updated notes`.
+  Empty sections are skipped; fully empty runs show one quiet `No notes
+  recorded` state.
+- Notes use bounded Markdown previews through `CodeyRender.renderMarkdown`.
+  Long bodies are clipped at a fixed preview budget with local `Show more` /
+  `Show less` controls that do not write state.
+- `codey/web/assets/render.js` now supports Markdown blockquotes in the same
+  escaped, minimal renderer used for assistant text and Research graph details.
+- Per-note source chips are derived only from saved local provenance:
+  `note.sources`, `citationMap`, `openedSources`, and `sourceUrls`. Clickable
+  chips are restricted to `http:` / `https:` URLs and open with
+  `noopener,noreferrer`.
+- The Notes-tab source URL section was removed. Sources remain available in the
+  `Sources` tab and as per-note chips.
+
+Validation during implementation:
+
+```text
+C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe --check codey\web\assets\research_drawer.js
+# passed
+
+C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe --check codey\web\assets\render.js
+# passed
+
+python -m pytest tests\test_ui.py tests\test_server.py -q -p no:cacheprovider
+# 208 passed, 1 skipped
+
+python -m pytest tests\test_ui.py tests\test_server.py tests\test_ui_architecture.py -q -p no:cacheprovider
+# 219 passed, 1 skipped
+
+python -m pytest -q -p no:cacheprovider
+# 1886 passed, 9 skipped, 276 subtests passed
+```
+
+No live provider A/B is required for 0.3.12 because the model-visible Research
+behavior is unchanged. The appropriate coverage is deterministic UI/server
+tests. A local browser smoke for Notes, source chips, and Show more/less is
+recommended before release when interactive browser verification is available.
+
 ## 0.3.11 Local Context Control Surface v1
 
 Codey 0.3.11 adds a quiet Local context audit drawer for local state. It is an

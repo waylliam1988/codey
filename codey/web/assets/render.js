@@ -134,6 +134,7 @@ function renderMarkdown(container, text) {
   };
   const isBreak = (line) => (
     /^\s*```/.test(line) || /^#{1,6}\s+/.test(line)
+    || /^\s*>\s?/.test(line)
     || /^\s*[-*]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line)
   );
   let i = 0;
@@ -157,6 +158,19 @@ function renderMarkdown(container, text) {
       el.innerHTML = renderInlineMd(heading[2]);
       container.appendChild(el);
       i++;
+      continue;
+    }
+    if (/^\s*>\s?/.test(line)) {
+      flushList();
+      const quote = [];
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
+        quote.push(lines[i].replace(/^\s*>\s?/, ''));
+        i++;
+      }
+      const el = document.createElement('blockquote');
+      el.className = 'md-quote';
+      el.innerHTML = renderInlineMd(quote.join('\n'));
+      container.appendChild(el);
       continue;
     }
     if (appendListItem(line)) {

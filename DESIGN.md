@@ -275,8 +275,8 @@ Research is also **session-level**. It lives in the composer context row, never 
 
 - Same fixed right panel language as the changes drawer.
 - Header actions are text buttons, no borders.
-- Notes and sources are plain rows with title, type, short excerpt, and path or URL when useful.
-- Notes text uses a Research note text style, not diff/code block styling.
+- Notes and sources are plain rows with title, type, bounded Markdown preview, source chips, and path or URL when useful.
+- Notes text uses Research note card/body styles, not diff/code block styling. Source chips are derived from saved provenance (`note.sources`, citation map, opened sources), not from arbitrary body text.
 - Restore is shown as a text action only when the backend has a valid restore snapshot for that run.
 - Do not call this drawer `Knowledge` or `Vault` in the UI.
 

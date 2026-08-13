@@ -933,7 +933,10 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertTrue(found_payload["ok"])
         self.assertEqual(found_payload["note"]["id"], note.id)
         self.assertEqual(found_payload["note"]["title"], "Fact")
+        self.assertEqual(found_payload["note"]["body"], "Body")
         self.assertEqual(found_payload["note"]["sources"], ["https://example.com"])
+        self.assertEqual(found_payload["note"]["type"], "fact")
+        self.assertEqual(found_payload["note"]["path"], f"facts/{note.id}.md")
         self.assertEqual(missing_status, 404)
         self.assertEqual(missing_payload, {"ok": False, "error": "note not found"})
 
@@ -1104,7 +1107,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.3.11")
+        self.assertEqual(__version__, "0.3.12")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)

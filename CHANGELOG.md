@@ -4,6 +4,27 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.12 - Research Notes v2
+
+- Upgraded the Research drawer `Notes` tab from plain note id/excerpt text into
+  readable note cards grouped as `Selected note`, `Synthesis`, `Created notes`,
+  and `Updated notes`. Empty note sections are skipped; an empty run shows one
+  quiet `No notes recorded` state.
+- Notes now render a bounded Markdown preview through Codey's existing safe
+  renderer, with headings, paragraphs, lists, bold, inline code, code fences,
+  and blockquotes. Raw HTML remains escaped, and note bodies are never inserted
+  directly as trusted HTML.
+- Added quiet source chips below each note. Chips are derived from saved local
+  provenance (`note.sources`, `citationMap`, `openedSources`, and `sourceUrls`)
+  and only open `http:` / `https:` URLs with `noopener,noreferrer`.
+- Long note bodies are clipped at a bounded preview length with a local
+  `Show more` / `Show less` toggle. Expanding a note only changes the drawer DOM
+  and does not write state.
+- Removed the Notes-tab source URL section; sources stay available through the
+  `Sources` tab and per-note source chips.
+- No live provider A/B is required because 0.3.12 does not change the Research
+  prompt, runner, provider behavior, Router, Writer path, or permission model.
+
 ## 0.3.11 - Local Context Control Surface v1
 
 - Added `codey/ghost/control_surface.py`, a bounded presenter/action dispatcher

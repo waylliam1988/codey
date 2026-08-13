@@ -1319,6 +1319,61 @@ python -m ruff check codey tests
   DeepSeek 执行干净、无内部词泄露，但 baseline 也命中 target marker，所以 uplift 0。
   这证明排序影响能传到模型行为，但不是泛化 Research / Writer / Router 质量证明。
 
+## 0.3.12 - Research Notes v2
+
+状态：已按只读 UI v2 落地。0.3.12 不改 Research prompt、runner、provider
+行为、Router、Writer 路径或权限模型；只把已保存的本地 Research notes 从
+ID / excerpt 日志列表升级为可读审计视图。
+
+### 做什么
+
+Notes tab 保留在 Research drawer 内，不新增入口、不自动打开、不弹窗。
+
+显示：
+
+```text
+Selected note
+Synthesis
+Created notes
+Updated notes
+```
+
+空 section 不渲染；全空时只显示：
+
+```text
+No notes recorded
+```
+
+每条 note 是一行紧凑审计 card：
+
+```text
+title
+type · updated · path
+bounded Markdown preview
+Sources [1] [2]
+Show more
+```
+
+### 边界
+
+- 只读 `/api/research/note` 已有的 `title/body/sources/type/path/updated`。
+- source chips 只来自 `note.sources`、`citationMap`、`openedSources`、`sourceUrls`。
+- 不从 note body 的任意 Markdown link 生成 source chip。
+- 只允许 `http:` / `https:` source URL 被点击打开。
+- raw HTML 继续被转义；note body 不作为可信 HTML 直接插入。
+- 长正文默认有界预览，`Show more` 只改变当前 drawer DOM，不写状态。
+- 不做 note editor、note manager、sidebar、badge、toast 或后台 Research。
+- UI 不显示 Knowledge / Vault / index 这类内部词。
+
+验证：
+
+```text
+tests/test_ui.py
+tests/test_server.py
+```
+
+不需要 live provider A/B，因为这版只改变本地 UI 渲染。
+
 ## 0.3.11 - Local Context Control Surface v1
 
 状态：已按克制 v1 落地。0.3.11 不做第三个常驻侧栏，也不做人格面板；

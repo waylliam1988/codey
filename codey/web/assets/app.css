@@ -305,6 +305,13 @@
   .md-list { margin: 0 0 10px; padding-left: 20px; }
   .md-list .md-list { margin: 4px 0 2px; }
   .md-list li { margin: 2px 0; }
+  .md-quote {
+    margin: 0 0 10px;
+    padding: 0 0 0 10px;
+    border-left: 1px solid var(--border-2);
+    color: var(--text-dim);
+    white-space: pre-wrap;
+  }
   .md-ic {
     font-family: var(--font-mono); font-size: 12px;
     background: var(--panel-2); border: 1px solid var(--border);
@@ -900,14 +907,13 @@
     flex-shrink: 0;
   }
   .research-note-section {
-    border-bottom: 1px solid var(--border-2);
-    padding: 9px 4px 10px;
+    padding: 2px 0 0;
   }
   .research-note-section-head {
     display: flex;
     align-items: baseline;
     gap: 8px;
-    margin-bottom: 6px;
+    padding: 7px 4px 2px;
   }
   .research-note-count {
     width: 24px;
@@ -923,13 +929,47 @@
     font-size: 13px;
     overflow-wrap: anywhere;
   }
-  .research-note-text {
-    margin: 0;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
+  .research-note-card { padding-top: 7px; }
+  .research-note-body {
     color: var(--text-dim);
-    font: inherit;
     font-size: 12.5px;
+    line-height: 1.6;
+    margin-top: 7px;
+    overflow-wrap: anywhere;
+  }
+  .research-note-body.md > :first-child { margin-top: 0; }
+  .research-note-body.md > :last-child { margin-bottom: 0; }
+  .research-source-chips {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 8px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+  .research-source-chip {
+    border: 0;
+    background: transparent;
+    color: var(--text-dim);
+    border-radius: 4px;
+    padding: 0 4px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .research-source-chip:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+  .research-note-actions {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .research-note-toggle {
+    padding: 0;
+    font-size: 11.5px;
   }
   .local-context-group {
     border-bottom: 1px solid var(--border-2);
