@@ -2,6 +2,10 @@ __pycache__/
 *.pyc
 *.log
 .pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
 .e2e-artifacts/
 .repo-map-probe*.json
 .read-before-edit*.json
