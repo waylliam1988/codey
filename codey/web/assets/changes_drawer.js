@@ -17,6 +17,7 @@ function escapeHtml(text) { return deps.escapeHtml(text); }
 
 async function openChangesDrawer(project) {
   if (!project) return;
+  if (deps.closeOtherDrawers) deps.closeOtherDrawers('changes');
   deps.setActiveProject(project);
   $('changes-drawer').classList.add('open');
   $('changes-drawer').setAttribute('aria-hidden', 'false');

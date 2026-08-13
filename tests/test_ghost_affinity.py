@@ -232,16 +232,18 @@ def test_source_ref_replay_is_noop() -> None:
         hebbian = GhostHebbianStore(td)
         hebbian.reinforce_candidate(candidate)
         affinity = GhostAffinityStore(td)
-        first = affinity.sync_from_sources(hebbian_store=hebbian)
-        before = affinity.events_path.read_text(encoding="utf-8")
+        with mock.patch("codey.ghost.affinity._now", return_value=FRESH_TS):
+            first = affinity.sync_from_sources(hebbian_store=hebbian)
+            before = affinity.events_path.read_text(encoding="utf-8")
 
-        second = affinity.sync_from_sources(hebbian_store=hebbian)
-        after = affinity.events_path.read_text(encoding="utf-8")
+            second = affinity.sync_from_sources(hebbian_store=hebbian)
+            after = affinity.events_path.read_text(encoding="utf-8")
 
     assert first.ok
     assert second.ok
     assert second.skipped_reason == "no_change"
     assert after == before
+    assert "<generator object" not in after
 
 
 def test_work_queue_done_and_blocked_generate_bounded_edges() -> None:

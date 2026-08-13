@@ -133,8 +133,10 @@
 </div>
 <div class="ctx-menu" id="top-menu">
   <button data-act="rename">Rename chat</button>
+  <button data-act="local-context">Local context</button>
   <button data-act="clear" class="danger" data-confirm="Confirm clear">Clear messages</button>
 </div>
+<div class="ctx-menu" id="local-context-menu"></div>
 
 <section class="changes-drawer" id="changes-drawer" aria-hidden="true">
   <div class="changes-head">
@@ -167,10 +169,26 @@
   </div>
 </section>
 
+<section class="changes-drawer" id="local-context-drawer" aria-hidden="true">
+  <div class="changes-head">
+    <div class="changes-title">
+      <strong>Local context</strong>
+      <span id="local-context-subtitle">Not loaded</span>
+    </div>
+    <button class="drawer-btn" id="local-context-export">Export</button>
+    <button class="drawer-btn" id="local-context-refresh">Refresh</button>
+    <button class="drawer-btn" id="local-context-close">Close</button>
+  </div>
+  <div class="changes-body" id="local-context-body">
+    <div class="changes-empty">Not loaded</div>
+  </div>
+</section>
+
 <script src="/assets/render.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/research_graph.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/research_drawer.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/changes_drawer.js?v=__CODEY_VERSION__"></script>
+<script src="/assets/local_context_drawer.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/provider_ui.js?v=__CODEY_VERSION__"></script>
 <script>
 // ============================ state & storage ============================
@@ -379,11 +397,7 @@ function currentProviderId() {
   const s = activeSession();
   return s && PROVIDERS.includes(s.provider) ? s.provider : DEFAULT_PROVIDER;
 }
-// Provider picker UI lives in /assets/provider_ui.js; these thin wrappers
-// keep existing call sites and event handlers stable.
-function providerLabel(id) {
-  return window.CodeyProviderUI.label(id);
-}
+// Provider picker UI lives in /assets/provider_ui.js.
 function syncProviderUI(providerId) {
   window.CodeyProviderUI.sync(providerId);
 }
@@ -427,8 +441,6 @@ function updateComposerContext() {
   const s = activeSession();
   const p = activeProject();
   const proj = p ? p.name : 'Choose folder';
-  const providerId = currentProviderId();
-  const prov = providerLabel(currentProviderId());
   const disabled = !!runningSessionId;
   const folderDisabled = disabled || !!p || projectPickerBusy;
   const researchActive = !!(s && s.research);
@@ -436,8 +448,6 @@ function updateComposerContext() {
     `<button class="ctx-token ctx-folder" id="ctx-folder" ${folderDisabled ? 'disabled' : ''} title="${escapeHtml(p ? p.path : 'Choose folder')}">${escapeHtml(proj)}</button>`,
     `<span class="ctx-sep">·</span>`,
     `<button class="ctx-token ctx-research ${researchActive ? 'active' : ''}" id="ctx-research" ${disabled ? 'disabled' : ''} aria-pressed="${researchActive ? 'true' : 'false'}" title="${researchActive ? 'Research is on for this chat' : 'Research'}">Research</button>`,
-    `<span class="ctx-sep">·</span>`,
-    `<button class="ctx-token ctx-provider" id="ctx-provider" ${disabled ? 'disabled' : ''} title="${providerId === 'local' ? 'Configure Local model' : 'Model'}">${escapeHtml(prov)}</button>`,
   ];
   el.innerHTML = pieces.join('');
   el.title = '';
@@ -921,7 +931,7 @@ function scrollChat() {
 
 // ============================ session ops ============================
 function switchSession(id) {
-  activeId = id; persistActiveNow(); renderSidebar(); renderChat();
+  activeId = id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();
 }
 function openProject(projectId) {
   const p = projectById(projectId);
@@ -934,7 +944,7 @@ function openProject(projectId) {
 function newSession(projectId = null) {
   const provider = currentProviderId();
   const s = defaultSession(projectId, provider);
-  sessions.unshift(s); activeId = s.id; persistActiveNow(); renderSidebar(); renderChat();
+  sessions.unshift(s); activeId = s.id; persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();
   fetch('/api/new_chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -962,7 +972,7 @@ async function deleteSession(id) {
     sessions = [s];
   }
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
-  persistActiveNow(); renderSidebar(); renderChat();
+  persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();
 }
 function renameSession(id) {
   const s = sessions.find(x => x.id === id);
@@ -981,7 +991,10 @@ async function clearMessages(id) {
   s.terminalRuns = [];
   s.researchRuns = [];
   persistActiveNow();
-  if (id === activeId) renderChat();
+  if (id === activeId) {
+    closeLocalContextDrawer();
+    renderChat();
+  }
 }
 function renameProject(id) {
   const p = projectById(id);
@@ -1002,7 +1015,7 @@ async function deleteProject(id) {
   sessions = sessions.filter(s => s.projectId !== id);
   if (!sessions.length) sessions = [defaultSession(null, DEFAULT_PROVIDER)];
   if (!sessions.find(s => s.id === activeId)) activeId = sessions[0].id;
-  persistActiveNow(); renderSidebar(); renderChat();
+  persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();
 }
 function ensureProject(path, name) {
   const existing = projects.find(p => pathKey(p.path) === pathKey(path));
@@ -1055,6 +1068,7 @@ function attachSessionToProject(projectId, sessionId = activeId) {
   s.research = false;
   p.expanded = true;
   persistActiveNow();
+  if (sessionId === activeId) handleLocalContextScopeChanged();
   renderSidebar();
   if (sessionId === activeId) renderChat();
   else updateComposerContext();
@@ -1165,6 +1179,7 @@ $('top-menu').addEventListener('click', (e) => {
   if (act === 'clear') { armDanger(btn, () => clearMessages(activeId)); return; }
   closeAllMenus();
   if (act === 'rename') renameSession(activeId);
+  else if (act === 'local-context') openLocalContextDrawer();
 });
 document.addEventListener('click', (e) => {
   if (e.target.closest('.ctx-menu')) return;
@@ -1776,6 +1791,24 @@ function closeChangesDrawer() {
   window.CodeyChangesDrawer.close();
 }
 
+function openLocalContextDrawer() {
+  window.CodeyLocalContextDrawer.open();
+}
+
+function closeLocalContextDrawer() {
+  window.CodeyLocalContextDrawer.close();
+}
+
+function handleLocalContextScopeChanged() {
+  if (window.CodeyLocalContextDrawer) window.CodeyLocalContextDrawer.handleScopeChanged();
+}
+
+function closeOtherDrawers(active) {
+  if (active !== 'changes') closeChangesDrawer();
+  if (active !== 'research') closeResearchDrawer();
+  if (active !== 'local_context') closeLocalContextDrawer();
+}
+
 function showCommandApprovalError(errorEl) {
   if (errorEl) {
     errorEl.textContent = 'Could not send approval';
@@ -1863,8 +1896,6 @@ $('composer-context').onclick = (e) => {
     attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });
   } else if (target.id === 'ctx-research') {
     toggleResearchForActive();
-  } else if (target.id === 'ctx-provider') {
-    if (currentProviderId() === 'local') openLocalProviderConfig();
   }
 };
 $('composer-context').addEventListener('keydown', (e) => {
@@ -2058,6 +2089,7 @@ async function boot() {
     getResearchDrawerTab: () => researchDrawerTab,
     setResearchDrawerTab: value => { researchDrawerTab = value; },
     copyText,
+    closeOtherDrawers,
   });
   window.CodeyChangesDrawer.init({
     $,
@@ -2065,6 +2097,16 @@ async function boot() {
     escapeHtml,
     setActiveProject: value => { activeChangesProject = value; },
     setLastData: value => { lastChangesData = value; },
+    closeOtherDrawers,
+  });
+  window.CodeyLocalContextDrawer.init({
+    $,
+    getActiveId: () => activeId,
+    currentProjectPath: () => currentProjectPath(),
+    openMenuAt,
+    closeAllMenus,
+    closeOtherDrawers,
+    copyText,
   });
   window.CodeyProviderUI.init({
     $,

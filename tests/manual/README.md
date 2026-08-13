@@ -647,6 +647,26 @@ per fresh webpage tab:
 Output JSON files are written under
 `tests/manual/results/ghost_affinity_quality_*.json`.
 
+0.3.11 Local Context Control Surface does not have a live provider A/B harness.
+It changes only local audit API/UI controls: `GET /api/ghost/summary`,
+`POST /api/ghost/action`, `GET /api/ghost/export`, and the topbar
+`Local context` drawer. It does not change model-visible prompts, Router,
+Research/Writer behavior, provider fallback, or permission boundaries.
+
+Validate it with deterministic API/UI/architecture tests and local browser
+smoke instead:
+
+```powershell
+python -m pytest tests\test_ghost_control_surface.py tests\test_server.py `
+  tests\test_ui.py tests\test_ui_architecture.py tests\test_architecture.py `
+  -q -p no:cacheprovider
+```
+
+The smoke path should cover opening `Local context`, opening Changes/Research
+after it to verify drawer mutual exclusion, switching chat/project to verify
+stale-scope closure, reviewing candidates, queueing/rejecting non-running work
+items, delete-scope confirmation, reset confirmation, and copy/export.
+
 2026-08-11 Ghost Router live A/B, original 10-case matrix, run one provider per
 restarted Edge CDP session:
 

@@ -1,5 +1,89 @@
 # Codey Test Report
 
+## 0.3.11 Local Context Control Surface v1
+
+Codey 0.3.11 adds a quiet Local context audit drawer for local state. It is an
+inspection and control surface, not a new workspace, personality panel, routing
+authority, or permission editor.
+
+Production changes:
+
+- New `codey/ghost/control_surface.py` provides a bounded UI presenter and
+  action dispatcher.
+- Server routes `GET /api/ghost/summary`, `POST /api/ghost/action`, and
+  `GET /api/ghost/export` expose local audit controls. The summary response
+  does not include full chat transcripts, Research bodies, webpage/source
+  snippets, source code, prompts, raw provider replies, or raw provider errors.
+- The topbar `...` menu now contains `Local context`; it opens a right drawer
+  that reuses the Changes/Research drawer language and is mutually exclusive
+  with Changes and Research.
+- The drawer shows a single grouped view: `Recent focus`, `Pending review`,
+  `Active preferences`, `Follow-ups`, and `Health`. User-facing UI avoids internal
+  Ghost system terms.
+- Empty Local context renders one quiet empty state, Settings is visually
+  separated from audit content, and Research Notes use plain note text styling
+  instead of diff/code block styling.
+- The composer context row now shows only `Choose folder · Research`; the
+  active provider/model is shown only in the bottom provider picker.
+- v1 actions are accept/reject candidate, queue/reject work item,
+  enable/disable updates, delete current chat/project data, reset all, and
+  export. It does not add demote, prompt/provider/router/tool-permission
+  controls, or direct free-form memory editing.
+- The drawer binds to the loaded session/project scope and closes on chat or
+  project switches. Backend actions validate the candidate/work item scope
+  before mutating state, so stale drawer actions fail closed.
+- Local context loading binds the requested scope before fetching, and stale
+  loading/error callbacks are ignored after chat/project switches.
+- Obsolete `ctx-provider` composer-context compatibility was removed after the
+  provider/model selector moved fully to the bottom provider picker.
+- Affinity Hebbian evidence refs are materialized before bounding, preventing
+  generator-object reprs from entering local association evidence and breaking
+  replay idempotency.
+
+Validation during implementation:
+
+```text
+python -m py_compile codey\ghost\affinity.py codey\ghost\control_surface.py codey\server.py codey\__init__.py
+# passed
+
+C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe --check codey\web\assets\local_context_drawer.js
+# passed
+
+C:\Users\Administrator\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe --check codey\web\assets\research_drawer.js
+# passed
+
+python -m pytest tests\test_ui.py -q -p no:cacheprovider
+# 57 passed
+
+python -m pytest tests\test_ghost_control_surface.py tests\test_ui.py -q -p no:cacheprovider
+# 68 passed
+
+python -m pytest tests\test_ui.py tests\test_ui_architecture.py tests\test_ghost_control_surface.py tests\test_server.py -q -p no:cacheprovider
+# 230 passed, 1 skipped
+
+python -m pytest tests\test_ghost_affinity.py -q -p no:cacheprovider
+# 19 passed
+
+python -m pytest tests\test_ui.py tests\test_ui_architecture.py tests\test_ghost_control_surface.py tests\test_server.py tests\test_ghost_affinity.py -q -p no:cacheprovider
+# 249 passed, 1 skipped
+
+python -m pytest tests\test_ghost_control_surface.py tests\test_server.py tests\test_ui.py tests\test_ui_architecture.py tests\test_architecture.py -q -p no:cacheprovider
+# 235 passed, 1 skipped, 20 subtests passed
+
+python -m pytest -q -p no:cacheprovider
+# 1886 passed, 9 skipped, 276 subtests passed
+
+python -m ruff check .
+# All checks passed!
+```
+
+No live provider A/B is required for 0.3.11. This release does not change the
+model-visible prompt, Router, Research/Writer execution paths, provider
+fallback, or permission boundaries. The appropriate coverage is deterministic
+API/UI/architecture tests plus local browser smoke for opening the drawer,
+refreshing it, drawer mutual exclusion, stale-scope closure, action review
+updates, and bounded summary output.
+
 ## 0.3.10 Affinity Index v1
 
 Codey 0.3.10 adds a bounded local Affinity Index. It is a deterministic
@@ -2780,8 +2864,8 @@ Production changes:
 - Hidden-browser runtime paths were removed; Codey reuses or launches the
   normal visible CDP browser.
 - The web UI adds a lightweight composer context:
-  `Choose folder · Research · Provider`, plus a Research drawer and Local
-  configuration popover.
+  `Choose folder · Research`, plus a Research drawer and bottom provider picker
+  for model selection / Local configuration.
 
 Validation:
 

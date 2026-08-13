@@ -1130,7 +1130,10 @@ def _node_specs_from_hebbian(hebbian_store: Any) -> list[_NodeSpec]:
         ))
         if not key or not label or not source_refs:
             continue
-        evidence_refs = _bounded_refs(f"hebbian:{ref}" for ref in _list(getattr(node, "evidence_refs", ())))
+        evidence_refs = _bounded_refs(tuple(
+            f"hebbian:{ref}"
+            for ref in _list(getattr(node, "evidence_refs", ()))
+        ))
         specs.append(_NodeSpec(
             kind=affinity_kind,
             key=key,

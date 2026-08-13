@@ -1319,41 +1319,91 @@ python -m ruff check codey tests
   DeepSeek 执行干净、无内部词泄露，但 baseline 也命中 target marker，所以 uplift 0。
   这证明排序影响能传到模型行为，但不是泛化 Research / Writer / Router 质量证明。
 
-## 0.3.11 - Ghost Control Surface v1
+## 0.3.11 - Local Context Control Surface v1
+
+状态：已按克制 v1 落地。0.3.11 不做第三个常驻侧栏，也不做人格面板；
+用户侧统一叫 `Local context`。入口藏在 topbar `...` 更多菜单里，打开后复用
+右侧 drawer 语言，并与 Changes / Research 互斥。Composer context row 也已收敛为
+`Choose folder · Research`，provider/model 只保留在输入框下方的 provider picker。
 
 ### 做什么
 
-最后再做 UI。它不是人格面板，而是审计面板。
+它不是新工作区，而是本地状态审计抽屉。默认不显示、不弹窗、不插入聊天消息、
+不新增 SSE 噪音，也不改变任务完成收据。只有用户主动打开时，才读取有界摘要。
 
 显示：
 
 ```text
-Ghost 记住了什么
-候选记忆有哪些
-偏好权重最高的是什么
-纠错规则有哪些
-这次 Ghost Directive 为什么这样写
-哪些 open questions 等待研究
-哪些 work items 正在等待处理
+Local context
+Recent focus
+Pending review
+Active preferences
+Follow-ups
+Health
 ```
 
 操作：
 
 ```text
-accept
-reject
-delete
-demote
+accept candidate
+reject candidate
+queue work item
+reject work item
+enable / disable updates
+delete current chat data
+delete current project data
+reset all
 export
-reset scope
+```
+
+实现：
+
+```text
+codey/ghost/control_surface.py
+GET  /api/ghost/summary
+POST /api/ghost/action
+GET  /api/ghost/export
+codey/web/assets/local_context_drawer.js
+```
+
+同版 UI 清理：
+
+```text
+Research Notes 不再复用 diff/code block 样式
+composer context row 不再重复显示 provider/model
+旧 ctx-provider 兼容入口已移除
 ```
 
 ### 边界
 
 - 不做花哨人格编辑器。
+- 不做 sidebar 常驻 section，不做 badge，不自动打开。
+- 不做 demote；跨 store 降级语义以后再定义。
 - 不让用户在 UI 里放宽工具权限。
-- 不显示内部技术词过多。
-- 所有修改写入 Ghost events。
+- 不允许 UI 修改 provider 选择、Router 模式、prompt 文本、shell/tool 权限。
+- 不允许手写任意记忆直接进入 Hebbian / Affinity。
+- UI 文案不显示 Ghost / Memory / Affinity / Hebbian / Directive。
+- summary 不返回完整聊天、assistant reply、Research body、网页正文、source
+  snippet、源码、prompt 或 provider raw error。
+- drawer 在发起请求前绑定 session/project scope；切换 chat/project 会关闭，
+  stale summary/action/export 回调不会更新旧面板。
+- action 服务端按请求 scope 校验目标 candidate/work item，stale scope 不写状态。
+- mutating action 复用现有 store 的 event-first / 隐私删除语义；reset 和
+  delete-scope 仍按各 store 的删除/重写边界清理目标数据。
+
+验证：
+
+```text
+tests/test_ghost_control_surface.py
+tests/test_server.py
+tests/test_ui.py
+tests/test_ui_architecture.py
+tests/test_architecture.py
+```
+
+不需要 live provider A/B，因为这版不改模型可见 prompt、Router、Research、
+Writer、provider fallback 或 tool permission。需要的是 deterministic tests、
+UI DOM/smoke，以及 drawer 互斥和 scope-stale 行为测试。
 
 ## 验证体系
 

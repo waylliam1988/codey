@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.3.10-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.11-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.10`
+版本：`0.3.11`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -33,6 +33,8 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
   Research、Writer、Hybrid 还是 Review；手动选择和权限边界仍然优先。
 - **记忆可控**：显式偏好和很短的 continuity context 会保存在本地有界文件里，
   可以预览、导出、删除、重置、禁用，并在任务结束后安静维护。
+- **按需审计本地上下文**：从 topbar `...` 菜单打开 `Local context`，可以检查、
+  导出、删除、重置或禁用有界本地状态；它不新增常驻 sidebar，也不打断任务流。
 - **自然继续待办**：Codey 有本地排队的后续任务时，你说“继续”就能认领一条，
   走对应的 Research、Writer 或 Review，并用本地 proof 收尾。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存证据笔记、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
@@ -108,7 +110,8 @@ Codey 想解决的是一个很朴素的问题：
 - Continuity 只从 accepted memory、短任务焦点、run ledger 和 Research 标题 /
   结构化 `open_questions`
   里取有界事实，不保存完整聊天、源码、Research body 或网页正文
-- 可以通过 `python -m codey ghost ...` 预览、导出、删除、重置或禁用本地 Ghost 状态
+- 可以通过 topbar `... -> Local context` 或 `python -m codey ghost ...`
+  预览、导出、删除、重置或禁用本地状态
 - 成功任务结束后，Codey 会无感做本地 Ghost 维护：健康检查、到期衰减、
   continuity refresh 和 event compaction；不调用网页模型、不跑 shell、不改 UI，
   也不暴露额外 sleep 控制入口
@@ -185,12 +188,12 @@ Provider worker 运行；worker 使用同一个已登录 Codey 浏览器 profile
 主界面仍然是一条很轻的上下文：
 
 ```text
-Choose folder · Research · DeepSeek/MiMo/StepFun/Qwen/Local
+Choose folder · Research
 ```
 
 - `Choose folder` 把当前聊天接到项目目录。
 - `Research` 让当前消息进入研究闭环。
-- 模型名仍然选择当前 provider；选 `Local` 时会打开本地 endpoint 配置弹窗。
+- 输入框下方的 provider picker 选择当前 provider；选 `Local` 时会打开本地 endpoint 配置弹窗。
 
 Research 可以使用网页 provider，也可以使用 `Local`。搜索、打开网页、URL policy、
 笔记写入、restore 和 evidence review 都由 Codey 本地工具执行。模型没有隐藏联网权。
@@ -593,7 +596,7 @@ codey/
   project_map.py            确定性的有边界项目地图
   project_config.py         严格项目本地配置事实和 warning
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
-  ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列和 affinity 账本
+  ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列、affinity 账本和本地上下文控制面
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
   research/                 Research controller/runner、隔离网页/source search 工具、evidence ledger 和 report quality gate
   verification_map.py       Review 阶段的有边界验证候选

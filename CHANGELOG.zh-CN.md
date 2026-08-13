@@ -4,6 +4,41 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.11 - Local Context Control Surface v1
+
+- 新增 `codey/ghost/control_surface.py`：给网页 UI 使用的有界 presenter 和
+  action dispatcher。`GET /api/ghost/summary`、`POST /api/ghost/action`、
+  `GET /api/ghost/export` 提供本地审计控制；summary 不返回完整聊天、
+  Research body、网页/source snippet、源码、prompt、provider raw reply 或
+  provider raw error。
+- 新增 topbar `... -> Local context` 审计 drawer。它复用 Changes/Research
+  的右侧 drawer 语言，并且三者互斥；不新增 sidebar 常驻入口、badge、toast 或
+  任务完成收据噪音。
+- Drawer 是单页分组视图：`Recent focus`、`Pending review`、`Active
+  preferences`、`Follow-ups`、`Health`。用户可见文案不暴露 Ghost、Memory、
+  Affinity、Hebbian、Directive 等内部词。
+- Local context 空状态现在只显示一条克制的整体 empty state，不再展示多个空分组；
+  Settings 区域也和审计内容有清晰分隔。
+- Research Notes 不再复用 diff/code block 样式，笔记正文改用普通 Research note
+  文本样式。
+- Composer context row 现在只显示 `Choose folder · Research`；当前
+  provider/model 只保留在输入框下方的 provider picker。
+- v1 支持 accept/reject candidate、queue/reject work item、enable/disable
+  updates、delete current chat/project data、reset all 和 export。不做 demote，
+  不提供 prompt/provider/router/tool permission 控制，也不允许手写任意记忆直接进状态。
+- Drawer 绑定加载时的 session/project scope；用户切换 chat/project 时关闭。
+  后端 action 也会校验目标 candidate/work item 是否属于请求 scope，stale scope
+  不写本地状态。
+- Local context loading 会在 summary 请求发出前绑定请求 scope，stale loading/error
+  回调不会留下或更新旧 drawer。
+- provider/model 选择完全收敛到输入框下方的 provider picker 后，旧的 `ctx-provider`
+  composer-context 兼容路径已移除。
+- 修复 Affinity replay 幂等性：Hebbian evidence refs 会先展开再进入 bounded refs，
+  避免把不稳定的 generator object 字符串写成本地关联 evidence。
+- 新增 `tests/test_ghost_control_surface.py`，并扩展 server/UI/architecture 覆盖。
+  0.3.11 不需要 live provider A/B，因为它不改模型可见 prompt、Router、
+  Research/Writer 路径、provider fallback 或权限边界。
+
 ## 0.3.10 - Affinity Index v1
 
 - 新增 `codey/ghost/affinity.py`：本地有界关联账本。`affinity_events.jsonl`

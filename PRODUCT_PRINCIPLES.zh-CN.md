@@ -92,11 +92,15 @@ Codey 的 UI 应该像一个安静的本地开发工具，而不是一个功能�
 - Research
 - 模型选择
 - 运行状态
+- Local context
 - diff
 - restore
 - retry
 
 用户侧统一叫 `Research`。`Knowledge`、`vault`、`artifact`、`index` 都是内部实现词，不应该出现在主界面入口里。
+
+`Local context` 只作为用户主动打开的本地状态审计入口出现，放在安静的更多菜单里；
+它不是常驻侧栏，不是人格面板，也不在普通任务路径里弹出。
 
 ### Research 必须是受控闭环
 

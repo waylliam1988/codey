@@ -132,8 +132,7 @@ document.addEventListener('click', (e) => {
   if (
     $('local-config-pop').classList.contains('open') &&
     !$('local-config-pop').contains(e.target) &&
-    !e.target.closest('.provider-item') &&
-    e.target.id !== 'ctx-provider'
+    !e.target.closest('.provider-item')
   ) {
     closeLocalProviderConfig();
   }

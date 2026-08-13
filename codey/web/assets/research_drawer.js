@@ -20,6 +20,7 @@ function disposeResearchGraph() {
 }
 
 function openResearchDrawer(sessionId) {
+  if (deps.closeOtherDrawers) deps.closeOtherDrawers('research');
   $('research-drawer').classList.add('open');
   $('research-drawer').setAttribute('aria-hidden', 'false');
   renderResearchDrawer(sessionId);
@@ -312,27 +313,21 @@ function compactPages(values) {
 
 function researchSection(title, values) {
   const wrap = document.createElement('div');
-  wrap.className = 'change-file';
-  const btn = document.createElement('button');
-  btn.type = 'button';
+  wrap.className = 'research-note-section';
+  const head = document.createElement('div');
+  head.className = 'research-note-section-head';
   const status = document.createElement('span');
-  status.className = 'change-status';
+  status.className = 'research-note-count';
   status.textContent = values.length || 0;
   const path = document.createElement('span');
-  path.className = 'change-path';
+  path.className = 'research-note-heading';
   path.textContent = title;
-  const add = document.createElement('span');
-  add.className = 'change-stat';
-  add.textContent = '';
-  const del = document.createElement('span');
-  del.className = 'change-stat';
-  del.textContent = '';
-  btn.append(status, path, add, del);
+  head.append(status, path);
   const pre = document.createElement('pre');
-  pre.className = 'diff-pre';
+  pre.className = 'research-note-text';
   pre.hidden = false;
   pre.textContent = values.length ? values.map(researchValueText).join('\n\n') : '(none)';
-  wrap.append(btn, pre);
+  wrap.append(head, pre);
   return wrap;
 }
 

@@ -10,6 +10,7 @@ HTML = (WEB_DIR / "index.html").read_text(encoding="utf-8")
 GRAPH_JS = (ASSET_DIR / "research_graph.js").read_text(encoding="utf-8")
 RESEARCH_DRAWER_JS = (ASSET_DIR / "research_drawer.js").read_text(encoding="utf-8")
 CHANGES_DRAWER_JS = (ASSET_DIR / "changes_drawer.js").read_text(encoding="utf-8")
+LOCAL_CONTEXT_DRAWER_JS = (ASSET_DIR / "local_context_drawer.js").read_text(encoding="utf-8")
 RENDER_JS = (ASSET_DIR / "render.js").read_text(encoding="utf-8")
 PROVIDER_UI_JS = (ASSET_DIR / "provider_ui.js").read_text(encoding="utf-8")
 TOKENS_CSS = (ASSET_DIR / "tokens.css").read_text(encoding="utf-8")
@@ -95,6 +96,99 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertNotIn("ghost_router", UI_SOURCE)
         self.assertNotIn("Cognitive Sleep", UI_SOURCE)
         self.assertNotIn("Ghost Router", UI_SOURCE)
+
+    def test_local_context_entry_is_quiet_top_menu_item(self) -> None:
+        rename = HTML.index('<button data-act="rename">Rename chat</button>')
+        local = HTML.index('<button data-act="local-context">Local context</button>')
+        clear = HTML.index('<button data-act="clear" class="danger"')
+
+        self.assertLess(rename, local)
+        self.assertLess(local, clear)
+        self.assertIn('id="local-context-drawer"', HTML)
+        self.assertIn('<strong>Local context</strong>', HTML)
+        self.assertIn('<script src="/assets/local_context_drawer.js?v=__CODEY_VERSION__"></script>', HTML)
+        self.assertIn("window.CodeyLocalContextDrawer.init({", HTML)
+        self.assertIn("window.CodeyLocalContextDrawer = {", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertNotIn("sidebar", LOCAL_CONTEXT_DRAWER_JS.casefold())
+        self.assertNotIn("Review context", UI_SOURCE)
+
+    def test_local_context_ui_avoids_internal_terms(self) -> None:
+        visible_source = HTML + "\n" + LOCAL_CONTEXT_DRAWER_JS
+        for term in ("Ghost", "Memory", "Affinity", "Hebbian", "Directive"):
+            self.assertNotIn(term, visible_source)
+        self.assertIn("Local context", visible_source)
+        self.assertIn("Recent focus", visible_source)
+        self.assertIn("Active preferences", visible_source)
+        self.assertIn("Local ordering", visible_source)
+
+    def test_local_context_group_titles_follow_group_label_style(self) -> None:
+        start = APP_CSS.index(".local-context-group-title")
+        end = APP_CSS.index(".local-context-row", start)
+        block = APP_CSS[start:end]
+        self.assertIn("font-size: 10.5px", block)
+        self.assertIn("text-transform: uppercase", block)
+        self.assertIn("letter-spacing: 1px", block)
+        self.assertIn("color: var(--muted)", block)
+
+    def test_local_context_empty_state_is_single_summary(self) -> None:
+        self.assertIn("No local context yet", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("No local context yet · Updates ${state}", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("const hasContent = !!(contextRows.length || reviewRows.length || activeRows.length || taskRows.length);", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("const hasWarning = !!warnings.length;", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("if (!hasContent && !hasWarning)", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("appendGroup(body, 'Recent focus', contextRows, rowNode);", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("appendGroup(body, 'Active preferences', activeRows, rowNode);", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertNotIn("empty.textContent = 'None';", LOCAL_CONTEXT_DRAWER_JS)
+
+    def test_local_context_settings_are_visually_separated(self) -> None:
+        start = APP_CSS.index(".local-context-settings")
+        end = APP_CSS.index(".drawer-btn.arming", start)
+        block = APP_CSS[start:end]
+        self.assertIn("border-top: 1px solid var(--border-2)", block)
+
+    def test_drawer_opening_is_mutually_exclusive(self) -> None:
+        self.assertIn("function closeOtherDrawers(active)", HTML)
+        self.assertIn("if (active !== 'changes') closeChangesDrawer();", HTML)
+        self.assertIn("if (active !== 'research') closeResearchDrawer();", HTML)
+        self.assertIn("if (active !== 'local_context') closeLocalContextDrawer();", HTML)
+        self.assertIn("deps.closeOtherDrawers('changes')", CHANGES_DRAWER_JS)
+        self.assertIn("deps.closeOtherDrawers('research')", RESEARCH_DRAWER_JS)
+        self.assertIn("deps.closeOtherDrawers('local_context')", LOCAL_CONTEXT_DRAWER_JS)
+
+    def test_local_context_drawer_binds_and_closes_on_scope_change(self) -> None:
+        self.assertNotIn("lastSummary", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("let loadedScope = null;", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("const requestScope = currentScope();\n  loadedScope = requestScope;", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("loadedScope = data && data.scope ? cleanScope(data.scope) : requestScope;", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertGreaterEqual(
+            LOCAL_CONTEXT_DRAWER_JS.count("if (!isOpen() || !sameScope(requestScope, currentScope())) return;"),
+            2,
+        )
+        self.assertIn("function handleScopeChanged()", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("handleScopeChanged,", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("function normalizeProjectPath(value)", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn(r"replace(/\\/g, '/')", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("function handleLocalContextScopeChanged()", HTML)
+        self.assertIn("persistActiveNow(); handleLocalContextScopeChanged(); renderSidebar(); renderChat();", HTML)
+        self.assertIn("if (sessionId === activeId) handleLocalContextScopeChanged();", HTML)
+        self.assertIn("if (!loadedScope || !sameScope(loadedScope, currentScope()))", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("session_id: scope.session_id", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertIn("project: scope.project", LOCAL_CONTEXT_DRAWER_JS)
+        export_start = LOCAL_CONTEXT_DRAWER_JS.index("async function exportLocalContext()")
+        export_end = LOCAL_CONTEXT_DRAWER_JS.index("window.CodeyLocalContextDrawer", export_start)
+        export_block = LOCAL_CONTEXT_DRAWER_JS[export_start:export_end]
+        self.assertIn("if (!loadedScope || !sameScope(loadedScope, currentScope()))", export_block)
+
+    def test_local_context_running_items_do_not_show_reject_action(self) -> None:
+        self.assertIn("['candidate', 'queued', 'blocked'].includes(row.status)", LOCAL_CONTEXT_DRAWER_JS)
+        self.assertNotIn("['candidate', 'queued', 'running', 'blocked'].includes(row.status)", LOCAL_CONTEXT_DRAWER_JS)
+
+    def test_clear_messages_closes_local_context_drawer(self) -> None:
+        start = HTML.index("async function clearMessages(id)")
+        end = HTML.index("function renameProject", start)
+        block = HTML[start:end]
+        self.assertIn("if (!await forgetSessionState(id)) return;", block)
+        self.assertIn("closeLocalContextDrawer();", block)
 
     def test_retry_uses_current_session_model_picker(self) -> None:
         retry_start = HTML.index("function retryTask(sessionId)")
@@ -204,7 +298,9 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn('id="ctx-research"', HTML)
         self.assertIn('>Research</button>', HTML)
         self.assertIn('class="ctx-token ctx-folder"', HTML)
-        self.assertIn('class="ctx-token ctx-provider"', HTML)
+        self.assertIn('id="provider-button"', HTML)
+        self.assertIn('id="provider-name"', HTML)
+        self.assertNotIn('id="ctx-provider"', HTML)
         self.assertIn('id="research-drawer"', HTML)
         self.assertIn('<strong>Research</strong>', HTML)
         self.assertIn("function currentIntentForSession(sessionId)", HTML)
@@ -306,6 +402,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("Note no longer exists", RESEARCH_DRAWER_JS)
         self.assertIn("__state: 'missing'", RESEARCH_DRAWER_JS)
         self.assertIn("invalidateResearchNoteCache(noteIdsForResearchRun(run))", HTML)
+        self.assertIn("research-note-section", RESEARCH_DRAWER_JS)
+        self.assertIn("research-note-text", RESEARCH_DRAWER_JS)
+        self.assertIn(".research-note-text", APP_CSS)
+        self.assertNotIn("pre.className = 'diff-pre';", RESEARCH_DRAWER_JS)
         self.assertIn("Use in Project", HTML)
         self.assertNotIn("Use vault", HTML)
         self.assertNotIn("Knowledge mode", HTML)
@@ -696,7 +796,10 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("'Choose folder'", HTML)
         self.assertIn('id="ctx-folder"', HTML)
         self.assertIn('id="ctx-research"', HTML)
-        self.assertIn('id="ctx-provider"', HTML)
+        self.assertNotIn('id="ctx-provider"', HTML)
+        self.assertNotIn("function providerLabel(id)", HTML)
+        self.assertNotIn("ctx-provider", PROVIDER_UI_JS)
+        self.assertIn('id="provider-button"', HTML)
         self.assertIn("$('task').addEventListener('input', () => { resizeTask(); updateSend(); updateComposerContext(); });", HTML)
 
         context_start = HTML.index("$('composer-context').onclick")
@@ -706,7 +809,8 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (target.id === 'ctx-folder')", context_block)
         self.assertIn("attachCurrentChatToPickedProject({ sendDraft: !!$('task').value.trim() });", context_block)
         self.assertIn("toggleResearchForActive();", context_block)
-        self.assertIn("if (currentProviderId() === 'local') openLocalProviderConfig();", context_block)
+        self.assertNotIn("ctx-provider", context_block)
+        self.assertNotIn("openLocalProviderConfig();", context_block)
         self.assertIn("e.key !== 'Enter' && e.key !== ' '", context_block)
         self.assertIn("target.click();", context_block)
 

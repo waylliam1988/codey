@@ -246,7 +246,7 @@ No marketing copy, no emoji.
 ### 5.6 Composer
 
 ```
-Choose folder · Research · DeepSeek          ← composer-context (11.5px, --muted)
+Choose folder · Research                     ← composer-context (11.5px, --muted)
 ┌─────────────────────────────────────────┐
 │ Send a message to Codey…                │
 └─────────────────────────────────────────┘
@@ -254,13 +254,13 @@ Choose folder · Research · DeepSeek          ← composer-context (11.5px, --m
 ```
 
 - Box: `--bg-2`, 1px `--border`, radius 10px; focus border `--text-dim` (not blue).
-- **Context row:** `Choose folder`, `Research`, and the current provider stay in one quiet line above the input.
+- **Context row:** only `Choose folder` and `Research` stay in the quiet line above the input.
 - **Research token:** visible by default as text, not as a framed button. Hover changes text to `--text`; active Research uses brighter text only. No border, background, chip, underline, font-weight change, or accent color.
-- **Provider picker:** borderless; status dot + label + chevron. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.
+- **Provider picker:** borderless; status dot + label + chevron. This is the only visible provider/model selector in the composer. Online state uses `--ok-dot`; offline state is the default solid gray `.dot`.
 - **Send / Stop:** square **icon buttons** (`.icon-btn`), transparent until hover. No filled accent send button.
 - `Enter` hint: visible on composer focus/hover only, `--faint`. `Enter` sends; `Shift+Enter` inserts a newline.
 
-Provider is **session-level** — it lives in the composer, not duplicated as a primary control elsewhere.
+Provider is **session-level** — it lives in the bottom provider picker, not duplicated in the context row or elsewhere.
 
 Research is also **session-level**. It lives in the composer context row, never beside the model picker as a separate primary action. User-facing copy says `Research`; internal words like vault, knowledge, artifact, and index should not appear in the main chrome.
 
@@ -276,10 +276,21 @@ Research is also **session-level**. It lives in the composer context row, never 
 - Same fixed right panel language as the changes drawer.
 - Header actions are text buttons, no borders.
 - Notes and sources are plain rows with title, type, short excerpt, and path or URL when useful.
+- Notes text uses a Research note text style, not diff/code block styling.
 - Restore is shown as a text action only when the backend has a valid restore snapshot for that run.
 - Do not call this drawer `Knowledge` or `Vault` in the UI.
 
-### 5.9 Icons
+### 5.9 Local context drawer
+
+- Entry lives only in the topbar more menu as `Local context`.
+- Same fixed right panel language as Changes and Research.
+- Changes, Research, and Local context are mutually exclusive; opening one closes the others.
+- The drawer is a quiet audit surface, not a workspace, personality panel, or sidebar section.
+- User-facing copy stays neutral: `Local context`, `Recent focus`, `Pending review`, `Active preferences`, `Follow-ups`, `Health`.
+- Do not expose internal terms such as Ghost, Memory, Affinity, Hebbian, Directive, Work Queue, or Router in the UI.
+- The drawer binds to the session/project scope it loaded; switching chat/project closes it.
+
+### 5.10 Icons
 
 - SVG stroke icons, ~1.8px stroke, `currentColor`, no fill (except send/stop glyphs where needed).
 - Monochrome only — icons inherit `--text-dim` → `--text` on hover.
@@ -359,7 +370,7 @@ These existed in earlier iterations and were intentionally removed:
 
 ## 10. Implementation notes
 
-- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `changes_drawer.js`, `provider_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
+- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `changes_drawer.js`, `local_context_drawer.js`, `provider_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
 - **Do not fork the palette:** all color/spacing tokens stay in `tokens.css`; never redefine them per module or per page. `tests/test_ui_architecture.py` ratchets inline `<style>` to zero and only lets the inline `<script>` budget go down.
 - **Dark mode only:** there is no light theme. New surfaces should assume dark gray backgrounds and light text.
 - **Accessibility:** maintain keyboard focus on interactive rows; prefer visible hover states over permanent color coding. When adding color is unavoidable, pair with text labels (never color alone).

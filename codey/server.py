@@ -12,6 +12,10 @@ Endpoints
                           a background thread, returns {ok:true, run_id}
     GET  /api/changes     query {project} → returns git status + diff
     POST /api/changes     body {project} → returns git status + diff
+    GET  /api/ghost/summary query {session_id, project} → returns bounded
+                          local context summary
+    POST /api/ghost/action body {action, ...} → reviews or deletes local
+                          context state without provider/tool execution
     POST /api/shell_approval body {id, approved} → approve/reject shell request
     POST /api/stop        request cooperative stop of the current task
     GET  /api/events      Server-Sent Events stream of log lines
@@ -50,6 +54,7 @@ from codey.consensus import ConsensusAdvice, ConsensusResult, run_consensus, run
 from codey.handoff import ConversationContext
 from codey.local_store import DEFAULT_STATE_HOME
 from codey.ghost.affinity import GhostAffinityStore
+from codey.ghost.control_surface import GhostControlSurface
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
@@ -1558,6 +1563,35 @@ def _research_restore_response(body: dict) -> tuple[int, dict]:
     return 200 if payload.get("ok") else 409, payload
 
 
+def _ghost_control_surface() -> GhostControlSurface:
+    return GhostControlSurface(
+        inbox=STATE.ghost_inbox,
+        hebbian=STATE.ghost_hebbian,
+        continuity=STATE.ghost_continuity,
+        router=STATE.ghost_router,
+        sleep=STATE.ghost_sleep,
+        work_queue=STATE.ghost_work_queue,
+        affinity=STATE.ghost_affinity,
+        signals=STATE.ghost_signals,
+    )
+
+
+def _ghost_summary_response(query: dict[str, list[str]]) -> tuple[int, dict]:
+    payload = _ghost_control_surface().summary(
+        session_id=_query_value(query, "session_id"),
+        project=_query_value(query, "project"),
+    )
+    return 200, payload
+
+
+def _ghost_export_response() -> tuple[int, dict]:
+    return 200, _ghost_control_surface().export_state()
+
+
+def _ghost_action_response(body: dict) -> tuple[int, dict]:
+    return _ghost_control_surface().dispatch_action(body)
+
+
 def _run_submit_response(body: dict) -> tuple[int, dict]:
     session_id = str(body.get("session_id") or "").strip() or "default"
     project = (body.get("project") or "").strip() or None
@@ -1683,6 +1717,14 @@ class Handler(BaseHTTPRequestHandler):
             status, payload = _research_note_response(parse_qs(url.query))
             self._send_json(status, payload)
             return
+        if url.path == "/api/ghost/summary":
+            status, payload = _ghost_summary_response(parse_qs(url.query))
+            self._send_json(status, payload)
+            return
+        if url.path == "/api/ghost/export":
+            status, payload = _ghost_export_response()
+            self._send_json(status, payload)
+            return
         if url.path == "/api/changes":
             query = parse_qs(url.query)
             project = (query.get("project") or [""])[0].strip()
@@ -1754,6 +1796,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/research/restore":
             status, payload = _research_restore_response(body)
+            self._send_json(status, payload)
+            return
+        if url.path == "/api/ghost/action":
+            status, payload = _ghost_action_response(body)
             self._send_json(status, payload)
             return
         if url.path == "/api/pick_folder":

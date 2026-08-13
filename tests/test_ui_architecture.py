@@ -34,6 +34,7 @@ class AssetReferenceTests(unittest.TestCase):
         self.assertIn("/assets/research_graph.js", names)
         self.assertIn("/assets/research_drawer.js", names)
         self.assertIn("/assets/changes_drawer.js", names)
+        self.assertIn("/assets/local_context_drawer.js", names)
         self.assertIn("/assets/provider_ui.js", names)
 
     def test_every_referenced_asset_file_exists(self) -> None:
@@ -69,6 +70,7 @@ class AssetReferenceTests(unittest.TestCase):
                 "/assets/research_graph.js",
                 "/assets/research_drawer.js",
                 "/assets/changes_drawer.js",
+                "/assets/local_context_drawer.js",
                 "/assets/provider_ui.js",
             ],
         )

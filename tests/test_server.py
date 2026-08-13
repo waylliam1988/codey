@@ -14,6 +14,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from codey import (
+    __version__,
     cancellation,
     changes,
     profile_doctor,
@@ -1097,6 +1098,18 @@ class WebAssetTests(unittest.TestCase):
         self.assertNotIn("__CODEY_VERSION__", body)
         self.assertIn(f"?v={server.__version__}", body)
 
+    def test_runtime_version_matches_release_docs(self) -> None:
+        readme = Path("README.md").read_text(encoding="utf-8")
+        readme_zh = Path("README.zh-CN.md").read_text(encoding="utf-8")
+        changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+        changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
+
+        self.assertEqual(__version__, "0.3.11")
+        self.assertIn(f"Version: `{__version__}`", readme)
+        self.assertIn(f"版本：`{__version__}`", readme_zh)
+        self.assertIn(f"## {__version__} -", changelog)
+        self.assertIn(f"## {__version__} -", changelog_zh)
+
 
 class LocalProviderApiTests(unittest.TestCase):
     def test_empty_api_key_preserves_existing_key_for_probe_and_save(self) -> None:
@@ -1508,6 +1521,43 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNotNone(run)
 
         self.assertIsNone(state.run_state_payload()["pending_event"])
+
+    def test_ghost_summary_api_is_unavailable_without_state_home(self) -> None:
+        old_state = server.STATE
+        try:
+            server.STATE = server.State(None)
+            status, payload = server._ghost_summary_response({
+                "session_id": ["s1"],
+                "project": ["E:/project"],
+            })
+            action_status, action_payload = server._ghost_action_response({
+                "action": "disable_updates",
+            })
+        finally:
+            server.STATE = old_state
+
+        self.assertEqual(status, 200)
+        self.assertFalse(payload["ok"])
+        self.assertFalse(payload["available"])
+        self.assertEqual(action_status, 200)
+        self.assertFalse(action_payload["ok"])
+
+    def test_ghost_summary_api_returns_bounded_local_context(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            old_state = server.STATE
+            try:
+                state = server.State(td)
+                seed_ghost_style_memory(state, session_id="s1", project="")
+                server.STATE = state
+                status, payload = server._ghost_summary_response({"session_id": ["s1"]})
+            finally:
+                server.STATE = old_state
+
+        encoded = json.dumps(payload, ensure_ascii=False)
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["counts"]["active"], 1)
+        self.assertNotIn("evidence_quote", encoded)
 
     def test_forgetting_session_clears_only_its_terminal_event(self) -> None:
         from codey.ghost.continuity import build_ghost_continuity

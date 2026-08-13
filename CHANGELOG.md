@@ -4,6 +4,45 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.11 - Local Context Control Surface v1
+
+- Added `codey/ghost/control_surface.py`, a bounded presenter/action dispatcher
+  for the web UI. `GET /api/ghost/summary`, `POST /api/ghost/action`, and
+  `GET /api/ghost/export` expose local audit controls without returning full
+  chat transcripts, Research bodies, webpage/source snippets, source code,
+  prompts, raw provider replies, or raw provider errors in the summary.
+- Added a quiet topbar `... -> Local context` audit drawer. It reuses the
+  existing Changes/Research right drawer language, is mutually exclusive with
+  those drawers, and does not add a persistent sidebar entry, badge, toast, or
+  task receipt prompt.
+- The drawer is a single grouped view: `Recent focus`, `Pending review`,
+  `Active preferences`, `Follow-ups`, and `Health`. User-visible copy does not
+  expose internal terms such as Ghost, Memory, Affinity, Hebbian, or Directive.
+- Empty Local context renders one quiet empty state instead of multiple empty
+  groups, and Settings now has a clear divider from audit content.
+- Research Notes no longer reuse diff/code block styling; note text now uses a
+  plain Research note text style.
+- The composer context row now shows only `Choose folder · Research`; the active
+  provider/model remains visible only in the bottom provider picker.
+- Supported v1 actions are accept/reject candidate, queue/reject work item,
+  enable/disable updates, delete current chat/project data, reset all, and
+  export. v1 does not add demote, prompt/provider/router/tool-permission
+  controls, or direct free-form memory editing.
+- The drawer binds to the loaded session/project scope and closes when the user
+  switches chat/project. Backend actions also verify that the target candidate
+  or work item belongs to the requested scope before mutating local state.
+- Local context loading binds the requested scope before the summary request
+  starts, so stale loading/error callbacks cannot leave or update an old drawer.
+- Removed the obsolete `ctx-provider` composer-context compatibility path after
+  provider/model selection moved fully to the bottom provider picker.
+- Fixed Affinity replay idempotency for Hebbian evidence refs by materializing
+  generated refs before bounding them, preventing unstable generator-object
+  strings from being stored as local association evidence.
+- Added `tests/test_ghost_control_surface.py` and expanded server/UI/architecture
+  coverage. No live provider A/B is required because 0.3.11 does not change the
+  model-visible prompt, Router, Research/Writer paths, provider fallback, or
+  permission boundaries.
+
 ## 0.3.10 - Affinity Index v1
 
 - Added `codey/ghost/affinity.py`, a bounded local association ledger backed by

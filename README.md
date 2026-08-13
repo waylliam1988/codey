@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.10-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.11-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.10`
+Version: `0.3.11`
 
 [Version history](CHANGELOG.md)
 
@@ -35,6 +35,9 @@ Version: `0.3.10`
 - **Keep memory controllable**: explicit preferences and short continuity
   context stay in bounded local files that can be previewed, exported, deleted,
   reset, disabled, and quietly maintained after tasks.
+- **Audit local context on demand**: open `Local context` from the topbar
+  `...` menu to inspect, export, delete, reset, or disable bounded local state
+  without adding a persistent sidebar or interrupting the task flow.
 - **Continue saved work naturally**: when Codey has a queued local follow-up,
   saying "continue" can claim one item and run the right path with proof.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save evidence notes, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
@@ -122,7 +125,7 @@ This is not about replacing professional tools. It is about making the first ste
   and Research note titles/structured `open_questions` without storing full transcripts,
   source files, Research bodies, or webpage text
 - Inspect, export, delete, reset, or disable local Ghost state with
-  `python -m codey ghost ...`
+  topbar `... -> Local context` or `python -m codey ghost ...`
 - Quietly maintain Ghost state after successful tasks with local health checks,
   due decay, continuity refresh, and event compaction; no web model, shell, UI
   change, or user-facing sleep control is involved
@@ -226,12 +229,12 @@ evidence notes.
 The main screen stays the same:
 
 ```text
-Choose folder · Research · DeepSeek/MiMo/StepFun/Qwen/Local
+Choose folder · Research
 ```
 
 - `Choose folder` attaches the current chat to a project.
 - `Research` enables a research run for the current message.
-- The model token still chooses the active provider; choosing `Local` opens the
+- The provider picker below the composer chooses the active provider; choosing `Local` opens the
   local endpoint configuration popover.
 
 Research can use web providers or `Local`. Search, page opening, URL policy,
@@ -671,7 +674,7 @@ codey/
   project_map.py            deterministic bounded project orientation
   project_config.py         strict project-local config facts and warnings
   project_task_context.py   project facts, map, checkpoint, and verification context
-  ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, and affinity ledger
+  ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
   research/                 Research controller/runner, isolated web/source search tools, evidence ledger, report quality gate
   verification_map.py       bounded review-time verification candidates
