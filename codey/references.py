@@ -42,7 +42,7 @@ REFERENCE_EXCLUDED_DIRS = {
     "target",
 }
 SIMPLE_SYMBOL_RE = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
-IDENTIFIER_CHARS = r"A-Za-z0-9_$"
+IDENTIFIER_CHARS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_$")
 
 
 @dataclass(frozen=True)
@@ -124,7 +124,7 @@ def find_reference_hints(
             report.add_unreadable(rel)
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):
-            if not pattern.search(line):
+            if not _has_bounded_symbol(pattern, line):
                 continue
             if len(rows) >= max_results:
                 truncated = True
@@ -153,22 +153,18 @@ def find_reference_hints(
 
 
 def _symbol_pattern(symbol: str) -> re.Pattern[str]:
-    return re.compile(
-        rf"(?<![{IDENTIFIER_CHARS}]){re.escape(symbol)}(?![{IDENTIFIER_CHARS}])"
-    )
+    return re.compile(re.escape(symbol))
 
 
 def _classify_reference(line: str, symbol: str) -> str:
     escaped = re.escape(symbol)
-    boundary_before = rf"(?<![{IDENTIFIER_CHARS}])"
-    boundary_after = rf"(?![{IDENTIFIER_CHARS}])"
-    exact = rf"{boundary_before}{escaped}{boundary_after}"
 
-    if re.search(rf"^\s*(?:from\s+\S+\s+import\b.*|import\b.*){exact}", line):
+    if re.search(r"^\s*(?:from\s+\S+\s+import\b.*|import\b.*)", line) and _has_bounded_symbol(
+        _symbol_pattern(symbol),
+        line,
+    ):
         return "import"
-    if re.search(rf"^\s*import\b.*{exact}", line):
-        return "import"
-    if re.search(rf"^\s*export\b.*{exact}", line):
+    if re.search(r"^\s*export\b", line) and _has_bounded_symbol(_symbol_pattern(symbol), line):
         return "export"
     if re.search(rf"^\s*(?:async\s+)?def\s+{escaped}\s*\(", line):
         return "definition"
@@ -184,9 +180,29 @@ def _classify_reference(line: str, symbol: str) -> str:
         line,
     ):
         return "definition"
-    if re.search(rf"{exact}\s*\(", line):
+    if _has_bounded_symbol_call(_symbol_pattern(symbol), line):
         return "call"
     return "reference"
+
+
+def _has_bounded_symbol(pattern: re.Pattern[str], line: str) -> bool:
+    return any(_match_has_identifier_boundaries(line, match.start(), match.end()) for match in pattern.finditer(line))
+
+
+def _has_bounded_symbol_call(pattern: re.Pattern[str], line: str) -> bool:
+    for match in pattern.finditer(line):
+        if not _match_has_identifier_boundaries(line, match.start(), match.end()):
+            continue
+        rest = line[match.end() :].lstrip()
+        if rest.startswith("("):
+            return True
+    return False
+
+
+def _match_has_identifier_boundaries(line: str, start: int, end: int) -> bool:
+    before_ok = start <= 0 or line[start - 1] not in IDENTIFIER_CHARS
+    after_ok = end >= len(line) or line[end] not in IDENTIFIER_CHARS
+    return before_ok and after_ok
 
 
 def _clean_line(line: str) -> str:
