@@ -98,6 +98,15 @@ def find_reference_hints(
     report = ScanReport("reference scan", size_limit_bytes=REFERENCE_MAX_FILE_BYTES)
 
     for path in candidates:
+        resolve = getattr(path, "resolve", None)
+        if callable(resolve):
+            try:
+                path = resolve()
+            except OSError:
+                rel = _relative(root, path)
+                if rel:
+                    report.add_unreadable(rel)
+                continue
         rel = _relative(root, path)
         if not rel:
             continue

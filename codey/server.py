@@ -144,6 +144,11 @@ REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
 CONTROL_TEACH_TIMEOUT = 300.0
 PROFILE_DOCTOR_TIMEOUT = 90.0
+
+
+def _profile_doctor_timeout(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    return max(0.1, min(PROFILE_DOCTOR_TIMEOUT, remaining))
 MAX_CONVERSATION_STATES = 32
 
 
@@ -1237,7 +1242,7 @@ class State:
             if helper is None:
                 continue
             try:
-                helper.new_chat(timeout=max(0.1, deadline - time.monotonic()))
+                helper.new_chat(timeout=_profile_doctor_timeout(deadline))
             except cancellation.TaskCancelled:
                 helper.close()
                 raise
@@ -1250,7 +1255,7 @@ class State:
                     request,
                     lambda prompt: helper.send(
                         prompt,
-                        timeout=max(0.1, deadline - time.monotonic()),
+                        timeout=_profile_doctor_timeout(deadline),
                     ),
                 )
             except cancellation.TaskCancelled:
@@ -1281,7 +1286,7 @@ class State:
                 continue
             with provider_controls.suppress_assistance():
                 try:
-                    helper.new_chat(timeout=max(0.1, deadline - time.monotonic()))
+                    helper.new_chat(timeout=_profile_doctor_timeout(deadline))
                 except cancellation.TaskCancelled:
                     helper.close()
                     raise
@@ -1294,7 +1299,7 @@ class State:
                         request,
                         lambda prompt: helper.send(
                             prompt,
-                            timeout=max(0.1, deadline - time.monotonic()),
+                            timeout=_profile_doctor_timeout(deadline),
                         ),
                     )
                 except cancellation.TaskCancelled:
