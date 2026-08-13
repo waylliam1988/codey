@@ -152,6 +152,64 @@ Codey/Ghost 应该借：
 这条线和 Nezha-mini 互补：Nezha-mini 给 Ghost 长期连续性，Symphony 给 Ghost
 长期意图如何变成可追踪 work item，Codey 继续提供安全身体。
 
+## deepseek-harness 的借鉴边界
+
+deepseek-harness 值得借的不是“插件商店”，而是能力边界架构：
+
+```text
+每个能力都有明确注册点和替换边界
+进入模型上下文的东西都可追溯
+工具有统一 schema、执行、模型输出、UI 展示和审计元数据
+权限 guard 只能单向收紧，不能被后续逻辑反向放行
+profile / bundle 用来组合能力，但不等于把复杂配置暴露给普通用户
+```
+
+Codey 可以借：
+
+```text
+- Internal Capability Registry：把 provider、Research、Review、Local context、
+  ToolRuntime、Changes、Run Trace 等内置能力注册到明确 seam。
+- Run Trace Manifest：记录每次 run 的有界可解释清单，而不是 raw prompt
+  或完整上下文。
+- Prompt Envelope：所有模型可见 prompt section 都声明 name、purpose、
+  source refs、budget 和 digest。
+- Tool Contract v2：工具结果拆成 canonical value、model-facing text、
+  UI presentation 和 audit metadata。
+- Monotonic Policy Pipeline：shell、文件、URL、Local context、fallback 等
+  风险动作都走统一 allow / ask_user / deny 决策；deny 不可被覆盖。
+- Event / Capability Matrix：显式记录谁生产事件、谁消费事件、是否持久化、
+  是否模型可见、是否 UI 可见。
+- Built-in Profiles：用内置 profile 组合已有能力，例如 Default、
+  Research-heavy、Review-strict、Local-only、Beginner。
+```
+
+Codey 现在不应该借：
+
+```text
+- 开放第三方插件平台。
+- 引入 Cordis runtime。
+- 动态 patch layers / hot reload。
+- 用户可编辑 capability graph。
+- 插件可以修改 prompt / Router / PermissionProfile。
+- 插件可以接管 agent loop。
+- 插件市场或复杂配置 UI。
+```
+
+原因是 Codey 的产品气质是本地、安静、可控。0.3 后半段应该走：
+
+```text
+monolith with seams
+  -> internal capabilities
+  -> trusted built-in plugins
+  -> limited external plugins
+```
+
+而不是现在直接走：
+
+```text
+Everything is a public plugin
+```
+
 ## 规划原则
 
 1. Hebbian 网络是 0.3 的主线，不是后期装饰。
@@ -168,6 +226,10 @@ Codey/Ghost 应该借：
 12. `state_home=None` 时 Ghost 写入默认禁用，避免测试、嵌入和一次性脚本写入真实长期状态。
 13. Ghost 的长期意图必须落成可审计 work item，不能变成隐藏后台冲动。
 14. Work item 可以建议下一步，但不能绕过用户显式入口、PermissionProfile 或 TaskRunner。
+15. 版本号可以出现在 roadmap 标题或 release label 里，例如 `Tool Contract v2`
+    和 `Tool Policy Pipeline v1`；长期 API、类型、模块、字段名不要用
+    `V2`、`Next`、`New` 这类迁移期命名。应该演进稳定名字，例如
+    `ToolOutcome`，或使用有真实语义的名字。
 
 ## 0.3 首版边界常量
 
@@ -1319,61 +1381,6 @@ python -m ruff check codey tests
   DeepSeek 执行干净、无内部词泄露，但 baseline 也命中 target marker，所以 uplift 0。
   这证明排序影响能传到模型行为，但不是泛化 Research / Writer / Router 质量证明。
 
-## 0.3.12 - Research Notes v2
-
-状态：已按只读 UI v2 落地。0.3.12 不改 Research prompt、runner、provider
-行为、Router、Writer 路径或权限模型；只把已保存的本地 Research notes 从
-ID / excerpt 日志列表升级为可读审计视图。
-
-### 做什么
-
-Notes tab 保留在 Research drawer 内，不新增入口、不自动打开、不弹窗。
-
-显示：
-
-```text
-Selected note
-Synthesis
-Created notes
-Updated notes
-```
-
-空 section 不渲染；全空时只显示：
-
-```text
-No notes recorded
-```
-
-每条 note 是一行紧凑审计 card：
-
-```text
-title
-type · updated · path
-bounded Markdown preview
-Sources [1] [2]
-Show more
-```
-
-### 边界
-
-- 只读 `/api/research/note` 已有的 `title/body/sources/type/path/updated`。
-- source chips 只来自 `note.sources`、`citationMap`、`openedSources`、`sourceUrls`。
-- 不从 note body 的任意 Markdown link 生成 source chip。
-- 只允许 `http:` / `https:` source URL 被点击打开。
-- raw HTML 继续被转义；note body 不作为可信 HTML 直接插入。
-- 长正文默认有界预览，`Show more` 只改变当前 drawer DOM，不写状态。
-- 不做 note editor、note manager、sidebar、badge、toast 或后台 Research。
-- UI 不显示 Knowledge / Vault / index 这类内部词。
-
-验证：
-
-```text
-tests/test_ui.py
-tests/test_server.py
-```
-
-不需要 live provider A/B，因为这版只改变本地 UI 渲染。
-
 ## 0.3.11 - Local Context Control Surface v1
 
 状态：已按克制 v1 落地。0.3.11 不做第三个常驻侧栏，也不做人格面板；
@@ -1460,11 +1467,533 @@ tests/test_architecture.py
 Writer、provider fallback 或 tool permission。需要的是 deterministic tests、
 UI DOM/smoke，以及 drawer 互斥和 scope-stale 行为测试。
 
+## 0.3.12 - Research Notes v2
+
+状态：已按只读 UI v2 落地。0.3.12 不改 Research prompt、runner、provider
+行为、Router、Writer 路径或权限模型；只把已保存的本地 Research notes 从
+ID / excerpt 日志列表升级为可读审计视图。
+
+### 做什么
+
+Notes tab 保留在 Research drawer 内，不新增入口、不自动打开、不弹窗。
+
+显示：
+
+```text
+Selected note
+Synthesis
+Created notes
+Updated notes
+```
+
+空 section 不渲染；全空时只显示：
+
+```text
+No notes recorded
+```
+
+每条 note 是一行紧凑审计 card：
+
+```text
+title
+type · updated · path
+bounded Markdown preview
+Sources [1] [2]
+Show more
+```
+
+### 边界
+
+- 只读 `/api/research/note` 已有的 `title/body/sources/type/path/updated`。
+- source chips 只来自 `note.sources`、`citationMap`、`openedSources`、`sourceUrls`。
+- 不从 note body 的任意 Markdown link 生成 source chip。
+- 只允许 `http:` / `https:` source URL 被点击打开。
+- raw HTML 继续被转义；note body 不作为可信 HTML 直接插入。
+- 长正文默认有界预览，`Show more` 只改变当前 drawer DOM，不写状态。
+- 不做 note editor、note manager、sidebar、badge、toast 或后台 Research。
+- UI 不显示 Knowledge / Vault / index 这类内部词。
+
+验证：
+
+```text
+tests/test_ui.py
+tests/test_server.py
+```
+
+不需要 live provider A/B，因为这版只改变本地 UI 渲染。
+
+## 0.3.13 - Run Trace Manifest v1
+
+状态：计划。0.3.13 是 deepseek-harness 借鉴线的第一步，目标不是加用户可见
+功能，而是让每次 run 有一个可解释、有边界、可测试的运行清单。
+Run Trace 是以 `run_id` 关联 RunLedger 的审计 manifest / derived sidecar，
+不替代 RunLedger，也不成为第二个执行事实源。
+
+### 做什么
+
+新增：
+
+```text
+codey/run_trace.py
+tests/test_run_trace.py
+```
+
+每次 run 写一个 bounded manifest：
+
+```json
+{
+  "run_id": "...",
+  "session_id": "...",
+  "mode": "research",
+  "provider": "deepseek",
+  "permission_profile": "research",
+  "router": {
+    "mode": "research",
+    "source": "explicit_user_choice",
+    "reason_code": "research_mode_selected",
+    "overridden_by_user": false
+  },
+  "prompt_sections": [
+    {"name": "local_context", "digest": "...", "length": 420}
+  ],
+  "model_tool_contract_hash": "...",
+  "local_context_item_ids": [],
+  "research_note_ids": [],
+  "source_ids": [],
+  "policy_decisions": [],
+  "fallbacks": []
+}
+```
+
+接入：
+
+```text
+codey/task_runner.py
+codey/agent.py
+codey/research/runner.py
+codey/tool_runtime.py
+codey/ghost/control_surface.py
+provider fallback / supervisor path
+```
+
+### 边界
+
+- 不记录 raw prompt。
+- 不记录完整 chat transcript。
+- 不记录源码正文、网页正文、Research body 或 provider raw error。
+- 不改变模型 prompt、Router、Research、Writer、provider fallback 或工具权限。
+- trace 是审计 manifest，不是用户聊天消息，也不新增 SSE 噪音。
+- Router 记录只保存结构化 mode / source / reason_code / override 状态，不保存
+  模型原始路由解释、hidden reasoning 或长自由文本。
+
+### 验证
+
+```text
+summary 不含 raw chat / raw prompt / source code body / webpage body
+prompt section 只记录 name / digest / length / source refs
+local context 只记录 item id / scope / type，不记录原始 evidence quote
+provider raw error 必须被归类和截断
+trace 写入失败不阻断任务，但会写 bounded warning
+```
+
+不需要 live provider A/B；需要 deterministic tests 和一次本地 smoke。
+
+## 0.3.14 - Prompt Envelope v1
+
+状态：计划。目标是把所有模型可见上下文统一装进 envelope，让 prompt 组成可追溯，
+但第一版尽量保持最终渲染文本不变。
+
+### 做什么
+
+新增：
+
+```text
+codey/prompt_envelope.py
+tests/test_prompt_envelope.py
+```
+
+每个 prompt section 声明：
+
+```text
+name
+purpose
+model_visible
+source_refs
+budget
+rendered_length
+digest
+```
+
+优先迁移：
+
+```text
+chat messages
+project context
+Local context / Ghost Directive / continuity
+Research brief
+Review prompt context
+tool result context
+repair prompt context
+```
+
+### 边界
+
+- v1 不改 prompt 内容和排序，先只改组装和审计结构。
+- section 超预算时走已有 bounded rendering，不偷偷塞 raw body。
+- system / developer / user / tool role 边界不可被 Local context 或 profile 改写。
+- envelope 是内部结构，UI 不显示 Prompt / Directive / Hebbian 等内部词。
+
+### 验证
+
+```text
+rendered prompt snapshot 与迁移前等价，除非测试明确批准
+每个 model_visible section 都有 digest 和 source_refs
+Local context section 不能包含权限、router、provider 强制语义
+repair prompt 不继承 Local context 指令
+```
+
+## 0.3.15 - Internal Capability Registry v1
+
+状态：计划。目标是把 Codey 内置能力注册化，先形成 seam，不开放第三方插件。
+
+### 做什么
+
+新增：
+
+```text
+codey/capabilities.py
+tests/test_capabilities.py
+```
+
+注册内置能力：
+
+```text
+provider_factory
+agent_runner
+tool_runtime
+research_runner
+review_runner
+local_context
+changes_presenter
+run_trace
+prompt_envelope
+policy_guard
+```
+
+能力声明：
+
+```text
+id
+provides
+consumes
+model_visible
+requires_policy
+ui_surface
+durable_state
+```
+
+### 边界
+
+- 不加载用户插件目录。
+- 不执行第三方代码。
+- 不引入插件市场 UI。
+- 不允许 capability 覆盖 PermissionProfile、Router 决策或 provider 用户选择。
+- `TaskRunner` 仍然是 orchestrator，但逐步消费 registry，而不是直接知道所有构造细节。
+
+### 验证
+
+```text
+所有注册能力 id 稳定且唯一
+能力不能声明未知 ui_surface / permission profile
+model_visible capability 必须接入 Prompt Envelope / Run Trace
+Local context / Research / Review 不能直接执行 ToolRuntime 绕过 policy
+```
+
+## 0.3.16 - Tool Contract v2
+
+状态：计划。目标是把工具输出从“一段文本同时给模型、UI、日志”升级为明确契约。
+
+### 做什么
+
+扩展：
+
+```text
+codey/tool_definition.py
+codey/tool_runtime.py
+tests/test_tool_contract.py
+tests/test_tool_runtime.py
+```
+
+目标结构：
+
+```python
+ToolOutcome(
+    canonical={},
+    model_text="bounded text for model",
+    presentation={},
+    audit={},
+    ok=True,
+    error_code=None,
+)
+```
+
+先迁移：
+
+```text
+list_dir
+read_file
+grep
+find_references
+edit
+run / shell
+knowledge_read / knowledge_write / knowledge_link
+```
+
+### 边界
+
+- 模型只吃 `model_text`。
+- UI 只吃 `presentation`，不从 raw tool text 猜结构。
+- Run Trace 只吃 `audit`，不保存长输出正文。
+- `canonical` 必须 JSON-safe、有界、可截断。
+- 旧字段兼容层可以保留一版，但长期类型名保持 `ToolOutcome`，不引入
+  带版本后缀的新类型名。
+
+### 验证
+
+```text
+model tool contract hash 稳定
+presentation 不进入模型 prompt
+model_text 不含本地绝对路径以外的超长 raw dump
+shell stdout/stderr 超限时生成 managed output handle
+UI 渲染不依赖 ANSI / traceback / diff 文本猜测
+```
+
+## 0.3.17 - Tool Policy Pipeline v1
+
+状态：计划。目标是把危险动作统一过单向收紧的 guard。
+虽然 roadmap 名称保留 Tool Policy，但实现范围覆盖 tool 和非 tool 的本地动作，
+因此模块名应该使用更准确的 action-level 命名。
+
+### 做什么
+
+新增：
+
+```text
+codey/action_policy.py
+tests/test_action_policy.py
+```
+
+统一决策：
+
+```text
+allow
+ask_user
+deny
+```
+
+首批 guard：
+
+```text
+workspace path guard
+permission profile guard
+destructive shell guard
+write scope guard
+Research URL guard
+Local context action guard
+provider fallback guard
+managed output size guard
+```
+
+### 边界
+
+- `deny` 不可被后续步骤改成 `allow`。
+- `ask_user` 必须有明确原因和 bounded display。
+- Local context 不能修改工具权限、Router、provider 选择或 prompt 文本。
+- Research URL policy 只允许 Research 控制器批准的联网路径。
+- Shell approval 仍然是用户控制，不因 profile 或 capability 被跳过。
+
+### 验证
+
+```text
+后注册 guard 不能覆盖先前 deny
+越 workspace 写入 deny
+destructive shell 在无批准时 ask_user / deny
+Research 之外不能调用 Research-only network path
+policy decision 写入 Run Trace Manifest
+```
+
+## 0.3.18 - Event / Capability Matrix v1
+
+状态：计划。目标是把事件关系显性化，并用架构测试防止新增隐形通道。
+
+### 做什么
+
+新增：
+
+```text
+docs/codey_event_matrix.md
+tests/test_event_matrix.py
+```
+
+为每类事件标注：
+
+```text
+event kind
+producer
+consumer
+durable?
+model-visible?
+UI-visible?
+privacy boundary
+```
+
+覆盖：
+
+```text
+RunEvent / SSE
+RunLedger
+RunTrace
+ToolOutcome / ToolAudit
+Research events / notes / sources
+Local context actions
+Ghost events / projections
+provider fallback / recovery
+Work Queue
+Changes / diff presenter
+```
+
+### 边界
+
+- 这版主要是文档和架构测试，不改用户工作流。
+- UI 不新增面板。
+- 不把内部事件名暴露给普通用户。
+- 新增 model-visible 通道必须同时声明 Prompt Envelope section 和 Run Trace source。
+
+## 0.3.19 - Built-in Profiles v1
+
+状态：计划。目标是借鉴 profile / bundle 的组合思想，但只做 Codey 内置 profile，
+不做配置平台。
+
+### 做什么
+
+内置：
+
+```text
+Default
+Research-heavy
+Review-strict
+Local-only
+Beginner
+```
+
+每个 profile 只组合已有能力和默认策略：
+
+```text
+默认模式倾向
+Research / Review 可用性
+新项目 / 首次启动的 Local context updates 默认值
+provider fallback 保守程度
+permission profile 默认值
+UI detail level
+```
+
+### 边界
+
+- profile 不能绕过 Tool Policy Pipeline / Action Policy 实现。
+- profile 不能放宽 PermissionProfile。
+- profile 不能注入任意 prompt patch。
+- profile 不能修改用户明确选择的 provider。
+- profile 只能影响新项目 / 首次启动默认值，不能覆盖用户显式设置的
+  Local context updates 开关。
+- v1 可以只有配置文件 / CLI / 内部选择，不急着做 UI。
+
+### 验证
+
+```text
+Beginner 不显示内部术语
+Local-only 不触发联网 Research
+Review-strict 不执行写入工具
+Research-heavy 不覆盖用户 provider 选择
+profile 切换不改变已有 project-local safety policy
+profile 切换不覆盖用户显式 Local context updates 开关
+```
+
+## 0.3.20 - Run Details v1
+
+状态：计划。目标是把 Run Trace 的一部分用安静方式给用户看，回答“这次 Codey
+为什么这么做”，但不暴露 raw prompt 或内部实现 dump。
+
+### 做什么
+
+入口保持安静：
+
+```text
+run receipt -> Run details
+topbar More -> Last run details
+```
+
+显示：
+
+```text
+Provider
+Mode
+Local context used
+Research sources / notes used
+Actions
+Policy decisions
+Fallbacks
+Verification
+```
+
+### 边界
+
+- 不做常驻侧栏。
+- 不自动弹出。
+- 不新增 SSE 噪音。
+- 不显示 raw prompt、raw tool output、源码正文、网页正文或 provider raw error。
+- 用户侧文案保持中性，不显示 Hebbian / Affinity / Directive 等内部词。
+- 这不是 debug console；diagnostics / export 以后再做。
+
+### 验证
+
+```text
+空 trace 显示 quiet unavailable
+Run details 打开时不影响 chat state
+来源行可追到 bounded source refs
+policy deny/ask_user 文案中性
+UI 不暴露内部术语
+```
+
+## 0.4 之后的开放边界
+
+0.3 后半段全部完成后，Codey 才适合考虑有限插件化。顺序应该是：
+
+```text
+trusted built-in plugins
+  -> signed / bundled provider adapters
+  -> read-only exporters
+  -> Research source connectors
+  -> limited external plugin API
+```
+
+仍然不应开放：
+
+```text
+prompt / Router / PermissionProfile 任意覆盖
+agent loop 接管
+shell approval 绕过
+Local context 直接写入 accepted state
+后台自动任务无用户入口执行
+```
+
 ## 验证体系
 
-0.3 需要新增一组 Ghost 专用验证，而不是只靠现有 coding/research tests。
+0.3 前半段需要 Ghost 专用验证，不能只靠现有 coding/research tests。0.3 后半段
+还需要新增能力边界验证：Run Trace、Prompt Envelope、Capability Registry、
+Tool Contract、Tool Policy 和 Event Matrix 都必须有 deterministic tests，不能靠
+live provider A/B 发现架构回退。
 
-### 单元测试
+### Ghost 单元测试
 
 ```text
 tests/test_ghost_signal_extractor.py
@@ -1480,6 +2009,17 @@ tests/test_ghost_affinity.py
 tests/test_task_runner_affinity.py
 ```
 
+### 能力边界单元测试
+
+```text
+tests/test_run_trace.py
+tests/test_prompt_envelope.py
+tests/test_capabilities.py
+tests/test_tool_contract.py
+tests/test_action_policy.py
+tests/test_event_matrix.py
+```
+
 ### 架构测试
 
 必须锁住：
@@ -1493,9 +2033,21 @@ Research evidence 不依赖 Ghost affinity
 GhostWorkItem 不能直接调用工具
 repair prompt 不包含 Ghost Directive
 PermissionProfile 仍然是执行边界
+model-visible section 必须有 Prompt Envelope source refs
+Run Trace 不保存 raw prompt / raw chat / source body / webpage body
+Tool presentation 不能进入 model_text
+Tool policy deny 不能被后续 guard 覆盖
+Capability Registry 不加载第三方代码
+Built-in profile 不能放宽 PermissionProfile
+Run Details 不显示内部术语或 raw prompt
 ```
 
 ### A/B 测试
+
+Ghost 行为改变需要 A/B。0.3.13 到 0.3.20 如果只改 trace、envelope 结构、
+capability seam、tool contract、policy pipeline 或只读 UI，不需要 live provider
+A/B；只有实际改变模型可见 prompt、Router、Research prompt、Writer prompt、
+provider fallback 策略或工具权限时，才需要 provider A/B。
 
 逐步新增：
 
@@ -1571,6 +2123,22 @@ Research quality unaffected when directive disabled
 
 ```text
 一个有长期连续性的 Ghost，使用 Codey 作为安全身体工作和研究
+```
+
+并且 Codey 内部应该从：
+
+```text
+多个强能力在 TaskRunner / Server 周围汇合
+```
+
+变成：
+
+```text
+每个能力有边界
+每次运行可追溯
+每个工具有契约
+每个危险动作有统一 guard
+每个用户可见面板只展示 bounded presentation
 ```
 
 用户体验上不应该变复杂。理想状态是：
