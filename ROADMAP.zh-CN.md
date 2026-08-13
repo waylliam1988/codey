@@ -891,7 +891,7 @@ accepted Hebbian state
 continuity projection
 inbox / Hebbian / continuity event logs
 刚完成 run 的有界 run ledger projection（如果存在）
-最近 Research synthesis / decision note 的标题和 bounded Open questions
+最近 Research synthesis / decision note 的标题和结构化 `open_questions`
 ```
 
 输出：
@@ -1124,11 +1124,42 @@ open_question: promoted research task or rejected reason
 
 ## 0.3.9 - Research Interest Queue v1
 
+状态：已按生产 v1 落地。0.3.9 不新建第二套 Research 队列，而是提升
+0.3.8 Work Queue 的 `research` / `open_question` 来源质量。
+
 ### 做什么
 
 把“战争-氦气、战争-铜，之后发现铜和氦可能有关”变成可审计的研究问题。第一版作为
 `GhostWorkItem(kind="open_question")` 或 `GhostWorkItem(kind="research")` 存在，
 不单独建立第二套队列。
+
+实现：
+
+```text
+codey/knowledge/research_interest.py
+ConceptGraphBuilder.missing_links_for_session()
+KnowledgeNote.open_questions
+GhostWorkQueueStore.sync_from_sources(..., research_interest_candidates=...)
+TaskRunner._maybe_sync_ghost_work_queue()
+```
+
+Concept Graph 的 missing link 现在是结构化对象：
+
+```text
+MissingConceptLink(
+  left,
+  right,
+  shared_neighbors,
+  support_refs,
+  priority,
+  session_focus,
+)
+```
+
+UI 仍然可以渲染 `a ? b` 文本，但 Research Interest Queue 不从 UI 文本反解析。
+Research synthesis / decision note 的开放问题只来自 typed `open_questions`
+frontmatter 字段；不解析 Markdown heading。SQLite index 是可重建 cache，
+0.3.9 schema 变化后可冷启动重建。
 
 数据：
 
@@ -1149,7 +1180,30 @@ work_item_id
 helium ? copper
 reason: shared neighbor: semiconductor supply chain
 status: open_question
-source: concept co-activation
+source: declared concept graph open question
+```
+
+v1 状态规则：
+
+```text
+Research note typed open_questions + high confidence -> research / queued
+Concept missing link + strong support -> research / queued
+Concept missing link + normal support -> open_question / candidate
+```
+
+`strong support` 保持保守：
+
+```text
+至少 2 个 supporting note refs
+或至少 2 个 shared neighbors
+或当前 session focus 命中
+```
+
+完成 proof 沿用 0.3.8：
+
+```text
+research/open_question item 必须有 research:* proof 才能 done。
+concept:* / ledger:* / projection:* 不能证明研究问题已经查清。
 ```
 
 ### 边界
@@ -1159,6 +1213,10 @@ source: concept co-activation
 - 只有用户显式启动 Research，Codey 才查证据。
 - Research Controller 仍然负责工具边界和 citation quality。
 - Research Interest Queue 不自动跑后台 web search。
+- 不改 Router / Directive / Continuity prompt。
+- 不把 Concept Graph 注入 Research prompt。
+- 不新增 UI。
+- `ghost disable` 阻止自动 harvesting。
 
 ## 0.3.10 - Affinity Index v1
 
@@ -1276,7 +1334,7 @@ tests/manual/ghost_directive_ab.py
 tests/manual/ghost_learning_loop_ab.py
 tests/manual/ghost_router_ab.py
 tests/manual/ghost_work_queue_ab.py
-tests/manual/research_interest_queue_ab.py
+tests/manual/ghost_research_interest_queue_production_ab.py
 ```
 
 每个 A/B 都要记录：

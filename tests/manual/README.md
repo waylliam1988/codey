@@ -544,6 +544,36 @@ The baseline miss was the intended Research follow-up: without the queue,
 dispatched Research. Output JSON files were written under
 `tests/manual/results/ghost_work_queue_production_*.json`.
 
+`ghost_research_interest_queue_production_ab.py` covers 0.3.9 Research
+Interest Queue consumption. Candidate generation is deterministic and local:
+Research note structured `open_questions` and structured Concept Graph missing
+links are harvested into existing Work Queue items. The harness uses the production
+`TaskRunner` claim path, while mode bodies are safe stubs so it does not edit
+files or run shell commands.
+
+```powershell
+python -B tests\manual\ghost_research_interest_queue_production_ab.py --self-test
+python -B tests\manual\ghost_research_interest_queue_production_ab.py `
+  --provider deepseek `
+  --port 9222 `
+  --output tests\manual\results\ghost_research_interest_queue_production_deepseek.json
+```
+
+Run one provider per restarted Edge CDP session. The matrix verifies no-queue
+fallback, Research note structured-open-question dispatch, strong concept missing-link
+dispatch, weak concept missing-link non-consumption, contentful continuation
+non-consumption, and missing Research proof blocking the item.
+
+2026-08-12 Research Interest Queue production-spine A/B, six-case matrix, run
+one provider per restarted Edge CDP session:
+
+- DeepSeek: baseline 3/6; queue 6/6.
+- Qwen: baseline 3/6; queue 6/6.
+- MiMo: baseline 3/6; queue 6/6.
+- StepFun: baseline 3/6; queue 6/6.
+- GLM: partial, baseline 2/4; queue 4/4. The remaining cases timed out because
+  the webpage was slow/self-searching.
+
 2026-08-11 Ghost Router live A/B, original 10-case matrix, run one provider per
 restarted Edge CDP session:
 

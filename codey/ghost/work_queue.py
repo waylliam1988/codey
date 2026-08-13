@@ -18,8 +18,8 @@ import uuid
 
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
-from codey.ghost.typed_fields import dangerous_text, safe_rendered_body
 from codey.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
+from codey.prompt_safety import is_prompt_visible_text_safe
 
 
 WORK_QUEUE_SCHEMA_VERSION = 1
@@ -55,7 +55,9 @@ WORK_ITEM_STATUSES = frozenset({
 })
 WORK_ITEM_SOURCES = frozenset({
     "continuity",
+    "concept_open_question",
     "research_note",
+    "research_interest",
     "run_ledger",
     "review",
     "work_checkpoint",
@@ -247,6 +249,7 @@ class GhostWorkQueueStore:
         work_checkpoint_store: Any = None,
         run_projection: Any = None,
         terminal_event: Mapping[str, object] | None = None,
+        research_interest_candidates: Iterable[Any] = (),
         session_id: str = "",
         run_id: str = "",
         project: str = "",
@@ -259,6 +262,12 @@ class GhostWorkQueueStore:
             candidates: list[GhostWorkItem] = []
             candidates.extend(_items_from_continuity(
                 continuity_store,
+                session_id=session_id,
+                project=project,
+                now=now,
+            ))
+            candidates.extend(_items_from_research_interest_candidates(
+                research_interest_candidates,
                 session_id=session_id,
                 project=project,
                 now=now,
@@ -941,6 +950,71 @@ def _items_from_continuity(
     return out
 
 
+def _items_from_research_interest_candidates(
+    candidates: Iterable[Any],
+    *,
+    session_id: str,
+    project: str,
+    now: str,
+) -> list[GhostWorkItem]:
+    out: list[GhostWorkItem] = []
+    for candidate in list(candidates or []):
+        title = _clean_item_text(_field(candidate, "question"), max_chars=MAX_WORK_TITLE_CHARS)
+        if not title:
+            continue
+        source = _clean_source(_field(candidate, "source")) or "research_interest"
+        source_ref = clip_signal_text(_field(candidate, "source_ref") or _field(candidate, "id"), MAX_WORK_REF_CHARS)
+        if not source_ref:
+            continue
+        scope = _clean_scope(_field(candidate, "scope")) or ("session" if session_id else "project" if project else "user")
+        raw_scope_ref = clip_signal_text(_field(candidate, "scope_ref"), 240)
+        if scope == "session":
+            scope_ref = _session_ref(raw_scope_ref or session_id)
+        elif scope == "project":
+            scope_ref = _normalize_project(raw_scope_ref or project)
+        else:
+            scope_ref = ""
+        confidence = _unit_float(_field(candidate, "confidence"))
+        strong = bool(_field(candidate, "strong_support"))
+        if source == "research_note":
+            kind = "research"
+            status = "queued" if confidence >= 0.7 else "candidate"
+            priority = max(0.62, _unit_float(_field(candidate, "priority")))
+        elif source == "concept_open_question" and strong and confidence >= 0.72:
+            kind = "research"
+            status = "queued"
+            priority = max(0.66, _unit_float(_field(candidate, "priority")))
+        else:
+            kind = "open_question"
+            status = "candidate"
+            priority = max(0.42, _unit_float(_field(candidate, "priority")))
+        evidence_refs = _bounded_refs((
+            f"research_interest:{clip_signal_text(_field(candidate, 'id'), MAX_WORK_REF_CHARS)}",
+            *_list(_field(candidate, "source_refs")),
+        ))
+        out.append(_new_item(
+            kind=kind,
+            status=status,
+            scope=scope,
+            scope_ref=scope_ref,
+            title=title,
+            why_now=_field(candidate, "why_now") or "Bounded local research interest.",
+            priority=priority,
+            confidence=confidence,
+            source=source,
+            source_ref=source_ref,
+            evidence_refs=evidence_refs,
+            run_refs=(),
+            now=now,
+            metadata={
+                "related_concepts": list(_field(candidate, "related_concepts") or ())[:6],
+                "shared_neighbors": list(_field(candidate, "shared_neighbors") or ())[:6],
+                "strong_support": strong,
+            },
+        ))
+    return out
+
+
 def _items_from_work_checkpoint(
     store: Any,
     *,
@@ -1312,7 +1386,7 @@ def _clean_item_text(value: object, *, max_chars: int) -> str:
     lower = text.casefold()
     if "ghost" in lower or "work queue" in lower or "workitem" in lower:
         return ""
-    if contains_sensitive_signal_text(text) or dangerous_text(text) or not safe_rendered_body(text):
+    if contains_sensitive_signal_text(text) or not is_prompt_visible_text_safe(text):
         return ""
     return text
 
@@ -1504,6 +1578,12 @@ def _list(value: object) -> list[object]:
     if isinstance(value, tuple):
         return list(value)
     return value if isinstance(value, list) else []
+
+
+def _field(value: Any, key: str) -> object:
+    if isinstance(value, Mapping):
+        return value.get(key)
+    return getattr(value, key, "")
 
 
 def _now() -> str:

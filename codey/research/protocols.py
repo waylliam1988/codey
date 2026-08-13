@@ -51,6 +51,7 @@ class ProtocolCodec(Protocol):
 class JsonToolCodec:
     def __init__(self, include_source_search: bool = True) -> None:
         self.include_source_search = bool(include_source_search)
+        self.last_control_args: dict[str, Any] = {}
 
     def system_prompt(self) -> str:
         return _system_prompt(self.include_source_search)
@@ -74,6 +75,7 @@ class JsonToolCodec:
         )
 
     def parse(self, text: str) -> ToolPlan:
+        self.last_control_args = {}
         objects = extract_json_objects(text or "")
         if not objects:
             kind, message = classify_no_json_reply(text or "")
@@ -126,6 +128,7 @@ class JsonToolCodec:
                 protocol_error_kind=validated.error_kind or PROTOCOL_INVALID_ARGS,
             )
         if runtime == "done":
+            self.last_control_args = dict(validated.args)
             return ToolPlan(calls=[], control=Control("done", str(validated.args.get("answer") or "")))
         calls = [ToolCall(runtime, validated.args)]
         return ToolPlan(calls=calls, control=None)
@@ -210,7 +213,7 @@ Tools:
 - {"tool":"knowledge_read","args":{"id":"<note id>"}}  read one existing note in full
 - {"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...","tags":["..."],"sources":["https://..."],"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],"evidence":[{"claim":"...","source_url":"https://...","excerpt":"exact short text copied from open_url output","stance":"supports"}],"confidence":0.6,"valid_until":"2026-12-31","status":"active"}}  save small source/fact/hypothesis/conclusion/question notes; final reports must use done
 - {"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id or exact title>","kind":"supports"}}
-- {"tool":"done","args":{"answer":"<the full human-readable report>"}}
+- {"tool":"done","args":{"answer":"<the full human-readable report>","open_questions":["<bounded follow-up research question>"]}}
 
 Note types (choose the right one; never mislabel):
 - source: a web page you read (put its url in sources, and retrieved date context in body)
@@ -229,6 +232,7 @@ Discipline:
 - Evidence snippets must be exact short excerpts copied from open_url text. For PDF-specific evidence, include evidence.page when known. Do not paraphrase evidence.excerpt. If uncertain, omit the evidence field and Codey will attach a source excerpt from the opened URL.
 - The final report may cite or name only pages you opened in this run, or grounded source notes you read.
 - The final report must use these sections: 结论, 关键证据, 反证与限制, 来源质量, 搜索覆盖, 来源.
+- If there are concrete unresolved follow-up questions, put them in done.args.open_questions as short strings. If none, use an empty list.
 - Every cited number in the report must appear in 来源, and every 来源 URL must be a page you opened in this run.
 - Cite PDF page evidence as [1 p.4] when a claim depends on a specific page.
 - Every 来源 citation must also have at least one saved knowledge_write evidence snippet from that opened page before done.

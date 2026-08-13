@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.8-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.9-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.8`
+Version: `0.3.9`
 
 [Version history](CHANGELOG.md)
 
@@ -119,7 +119,7 @@ This is not about replacing professional tools. It is about making the first ste
   without typing extractor prompts into the current chat; `ghost disable` stops
   future learning
 - Carry bounded continuity from accepted memory, short task focus, run ledgers,
-  and Research note titles/open questions without storing full transcripts,
+  and Research note titles/structured `open_questions` without storing full transcripts,
   source files, Research bodies, or webpage text
 - Inspect, export, delete, reset, or disable local Ghost state with
   `python -m codey ghost ...`
@@ -129,6 +129,8 @@ This is not about replacing professional tools. It is about making the first ste
 - Keep a bounded local work queue for saved follow-ups; strict continuation
   prompts like "continue" can claim one queued item, run it through Research,
   Writer, or Review, and mark it done only with local proof
+- Turn structured Research `open_questions` and supported concept gaps into saved
+  research follow-ups without starting background web searches
 - Recover changed composer controls through bounded local discovery or a
   healthy sibling model, then verify, promote, and roll back the local bundle
 - Recover one bounded web-chat state rule from boolean-only evidence when a

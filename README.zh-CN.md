@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.3.8-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.9-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.8`
+版本：`0.3.9`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -105,7 +105,8 @@ Codey 想解决的是一个很朴素的问题：
   中性 `Local Context`，用于普通 Chat 和只读 planning
 - 普通 Chat 回合结束后可以 best-effort 学习明确的风格偏好；extractor 使用 fresh
   provider tab，不污染当前聊天，`ghost disable` 会停止后续学习
-- Continuity 只从 accepted memory、短任务焦点、run ledger 和 Research 标题/开放问题
+- Continuity 只从 accepted memory、短任务焦点、run ledger 和 Research 标题 /
+  结构化 `open_questions`
   里取有界事实，不保存完整聊天、源码、Research body 或网页正文
 - 可以通过 `python -m codey ghost ...` 预览、导出、删除、重置或禁用本地 Ghost 状态
 - 成功任务结束后，Codey 会无感做本地 Ghost 维护：健康检查、到期衰减、
@@ -113,6 +114,8 @@ Codey 想解决的是一个很朴素的问题：
   也不暴露额外 sleep 控制入口
 - Codey 会维护一个有界本地待办队列；只有“继续 / 下一个 / 处理待办”这类严格
   continuation 才会认领一条，并且完成时必须写入本地 proof
+- Research 里的结构化 `open_questions` 和有支持的概念缺口可以变成研究待办，但不会后台自动联网
+  搜索，也不会把猜测当事实
 - 网页输入框或发送按钮改版时，先做有边界的本地发现，仍不确定则让健康兄弟模型
   从脱敏候选中选择；真实发送成功后才能保存、晋级或回滚恢复包
 - 控件恢复仍不足时，只根据脱敏布尔事实恢复一条有边界的网页状态规则；不同网页的

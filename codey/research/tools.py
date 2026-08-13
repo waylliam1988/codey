@@ -299,6 +299,7 @@ class ResearchTools:
             sources=sources,
             aliases=_as_str_list(args.get("aliases")),
             relations=relations,
+            open_questions=_as_str_list(args.get("open_questions")),
             confidence=_as_float(args.get("confidence")),
             status=status,
             retrieved_at=_as_opt_str(args.get("retrieved_at")),

@@ -4,6 +4,33 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.9 - Research Interest Queue v1
+
+- Added `codey/knowledge/research_interest.py`, a bounded research-interest
+  candidate builder. It turns Research note structured `open_questions` and
+  structured Concept Graph missing links into candidates for the existing Ghost
+  Work Queue.
+- Research synthesis / decision notes now have a typed `open_questions`
+  frontmatter field cached in the rebuildable SQLite index. Research Interest
+  harvesting reads that field only; it does not parse Markdown section headings.
+- Concept missing links are now available as structured data instead of being
+  parsed from UI excerpt text. The UI still renders text; queue harvesting uses
+  `MissingConceptLink` fields such as related concepts, shared neighbors, and
+  support note refs.
+- 0.3.9 does not create a second Research queue. Candidates map into existing
+  `GhostWorkItem` rows: strong supported concept gaps or structured Research
+  note questions can become queued Research items; weak concept gaps remain
+  candidate open questions.
+- TaskRunner post-turn Work Queue sync now harvests deterministic research
+  candidates from the local knowledge store. It does not change Router,
+  Research prompts, Directive/Continuity prompt text, UI, permissions, or
+  provider behavior.
+- Research-interest items still require `research:*` proof to be marked done.
+  Concept refs explain why a question is worth checking; they do not prove the
+  answer.
+- Added `tests/test_research_interest_queue.py` and
+  `tests/manual/ghost_research_interest_queue_production_ab.py`.
+
 ## 0.3.8 - Ghost Work Queue v1
 
 - Added `codey/ghost/work_queue.py`, a bounded local work-item state machine
@@ -11,9 +38,10 @@ This file records Codey's release history. The newest release appears first.
   `work_events.jsonl` as the audit source of truth and `work_items.json` as a
   rebuildable projection.
 - Work items can be synced from existing bounded facts: continuity open
-  questions, Research note open questions, interrupted work checkpoints, run
-  ledger failure projections, and review follow-ups. It does not read full chat
-  transcripts, source files, webpage bodies, raw Research bodies, or prompts.
+  questions, structured Research note `open_questions`, interrupted work
+  checkpoints, run ledger failure projections, and review follow-ups. It does
+  not read full chat transcripts, source files, webpage bodies, raw Research
+  bodies, or prompts.
 - Automatic consumption is deliberately narrow. Only `intent=auto` plus a
   strict continuation request such as `continue`, `next item`, `继续`, or
   `下一个` can claim one queued item. Non-continuation requests keep going

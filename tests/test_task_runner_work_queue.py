@@ -6,6 +6,8 @@ from unittest import mock
 
 from codey.agent import RunResult
 import codey.ghost.work_queue as work_queue_module
+from codey.knowledge.note import KnowledgeNote
+from codey.knowledge.store import KnowledgeStore
 from codey.research.runner import ResearchRunResult
 from codey.review import ReviewResult
 from codey import server
@@ -40,7 +42,8 @@ class _FakeIndex:
             "id": "note-1",
             "type": "synthesis",
             "title": "Provider recovery synthesis",
-            "body": "## Open questions\n- Should we keep tracking provider recovery?\n",
+            "body": "Research synthesis.",
+            "open_questions": '["Should we keep tracking provider recovery?"]',
             "updated": "2999-01-01T00:00:00Z",
             "session_id": "s1",
             "project": "",
@@ -172,6 +175,45 @@ def test_non_strict_continue_does_not_consume_queue_and_uses_router() -> None:
     router_factory.assert_called_once()
     assert state.last_terminal_event["mode"] == "chat"
     assert item.status == "queued"
+
+
+def test_post_turn_sync_harvests_research_interest_candidates() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        state = server.State(td)
+        state.knowledge_store = KnowledgeStore(Path(td, "knowledge"))
+        assert state.ghost_work_queue is not None
+        try:
+            state.knowledge_store.write_note(KnowledgeNote.create(
+                id="war-helium",
+                type="synthesis",
+                title="War and helium supply",
+                body="Evidence note.",
+                tags=["research"],
+                relations=[{"src": "war", "dst": "helium supply", "kind": "affects"}],
+                session_id="s1",
+            ))
+            state.knowledge_store.write_note(KnowledgeNote.create(
+                id="war-copper",
+                type="synthesis",
+                title="War and copper supply",
+                body="Evidence note.",
+                tags=["research"],
+                relations=[{"src": "war", "dst": "copper supply", "kind": "affects"}],
+                session_id="s1",
+            ))
+            runner = _runner(state, router_provider_factory=None)
+
+            with mock.patch.object(state, "get_provider", return_value=_Provider("plain chat")):
+                runner.run(TaskRequest("s1", None, "hello", 8, False, "deepseek"))
+                state.wait_for_ghost_sleep(timeout=2)
+            items = state.ghost_work_queue.list_items(status="queued", session_id="s1")
+        finally:
+            state.knowledge_store.close()
+
+    assert len(items) == 1
+    assert items[0].kind == "research"
+    assert "copper supply" in items[0].title
+    assert "helium supply" in items[0].title
 
 
 def test_project_followup_item_consumes_into_project_mode() -> None:

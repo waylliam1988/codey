@@ -30,6 +30,17 @@ class SupportRef:
     note_id: str
     title: str
     session_id: str = ""
+    project: str = ""
+
+
+@dataclass(frozen=True)
+class MissingConceptLink:
+    left: str
+    right: str
+    shared_neighbors: tuple[str, ...]
+    support_refs: tuple[SupportRef, ...]
+    priority: float
+    session_focus: bool = False
 
 
 def concept_node_id(concept: str) -> str:
@@ -121,6 +132,38 @@ class ConceptGraphBuilder:
             edges=tuple(edges),
         )
 
+    def missing_links_for_session(
+        self,
+        session_id: str = "",
+        *,
+        project: str = "",
+        strict_scope: bool = False,
+        node_limit: int = DEFAULT_CONCEPT_NODE_LIMIT,
+        limit: int = MAX_MISSING_SUGGESTIONS,
+    ) -> tuple[MissingConceptLink, ...]:
+        session_id = (session_id or "").strip()
+        project = (project or "").strip()
+        node_limit = _bounded_int(node_limit, DEFAULT_CONCEPT_NODE_LIMIT, 8, 200)
+        limit = _bounded_int(limit, MAX_MISSING_SUGGESTIONS, 1, 32)
+        edge_rows = self.store.index.concept_edge_rows(
+            _EDGE_ROW_SCAN, session_id=session_id
+        )
+        tag_rows = self.store.index.tag_concept_rows(
+            _TAG_ROW_SCAN, session_id=session_id
+        )
+        if strict_scope:
+            edge_rows = _filter_scope_rows(edge_rows, session_id=session_id, project=project)
+            tag_rows = _filter_scope_rows(tag_rows, session_id=session_id, project=project)
+        declared = self._aggregate_declared(edge_rows)
+        tag_notes, session_concepts, _syntheses = self._aggregate_tags(tag_rows, session_id)
+        weights = self._concept_weights(declared, tag_notes)
+        if not weights:
+            return ()
+        kept = self._select_concepts(
+            declared, weights, session_concepts, session_id, node_limit
+        )
+        return tuple(_missing_link_rows(declared, kept, session_concepts=session_concepts)[:limit])
+
     def _aggregate_declared(
         self,
         edge_rows: list[dict],
@@ -132,8 +175,9 @@ class ConceptGraphBuilder:
             note_id = str(row["note_id"])
             title = str(row.get("title") or note_id)
             session_id = str(row.get("session_id") or "")
+            project = str(row.get("project") or "")
             if note_id not in {existing.note_id for existing in notes}:
-                notes.append(SupportRef(note_id, title, session_id))
+                notes.append(SupportRef(note_id, title, session_id, project))
         return declared
 
     def _aggregate_tags(
@@ -311,29 +355,88 @@ def _missing_suggestions(
     Pure graph query: two concepts that share a declared neighbor but have no
     declared edge between them. Capped, text-only, phrased as questions.
     """
+    rows = _missing_link_rows(declared, kept, session_concepts=set())
+    suggestions: dict[str, list[str]] = {}
+    for row in rows[:MAX_MISSING_SUGGESTIONS]:
+        via = ", ".join(row.shared_neighbors[:3])
+        line = f"- {row.left} ? {row.right} (shared neighbor: {via})"
+        suggestions.setdefault(row.left, []).append(line)
+        suggestions.setdefault(row.right, []).append(line)
+    return suggestions
+
+
+def _filter_scope_rows(
+    rows: list[dict],
+    *,
+    session_id: str,
+    project: str,
+) -> list[dict]:
+    if session_id and project:
+        return [
+            row
+            for row in rows
+            if str(row.get("session_id") or "") == session_id
+            and str(row.get("project") or "") == project
+        ]
+    if session_id:
+        return [row for row in rows if str(row.get("session_id") or "") == session_id]
+    if project:
+        return [row for row in rows if str(row.get("project") or "") == project]
+    return rows
+
+
+def _missing_link_rows(
+    declared: dict[tuple[str, str, str], list[SupportRef]],
+    kept: list[str],
+    *,
+    session_concepts: set[str],
+) -> list[MissingConceptLink]:
     adjacency: dict[str, set[str]] = {}
+    supports_by_pair: dict[frozenset[str], list[SupportRef]] = {}
     linked: set[frozenset[str]] = set()
     for src, dst, _kind in declared:
         adjacency.setdefault(src, set()).add(dst)
         adjacency.setdefault(dst, set()).add(src)
-        linked.add(frozenset((src, dst)))
+        pair = frozenset((src, dst))
+        linked.add(pair)
+        refs = supports_by_pair.setdefault(pair, [])
+        for ref in declared.get((src, dst, _kind), []):
+            if ref.note_id and ref.note_id not in {existing.note_id for existing in refs}:
+                refs.append(ref)
     kept_declared = [c for c in kept if c in adjacency]
-    candidates: list[tuple[int, str, str, set[str]]] = []
+    candidates: list[MissingConceptLink] = []
     for i, a in enumerate(kept_declared):
         for b in kept_declared[i + 1 :]:
             if frozenset((a, b)) in linked:
                 continue
             shared = adjacency[a] & adjacency[b]
-            if shared:
-                candidates.append((len(shared), a, b, shared))
-    candidates.sort(key=lambda item: (-item[0], item[1], item[2]))
-    suggestions: dict[str, list[str]] = {}
-    for _score, a, b, shared in candidates[:MAX_MISSING_SUGGESTIONS]:
-        via = ", ".join(sorted(shared)[:3])
-        line = f"- {a} ? {b} (shared neighbor: {via})"
-        suggestions.setdefault(a, []).append(line)
-        suggestions.setdefault(b, []).append(line)
-    return suggestions
+            if not shared:
+                continue
+            refs: list[SupportRef] = []
+            for neighbor in sorted(shared):
+                for pair in (frozenset((a, neighbor)), frozenset((b, neighbor))):
+                    for ref in supports_by_pair.get(pair, []):
+                        if ref.note_id and ref.note_id not in {existing.note_id for existing in refs}:
+                            refs.append(ref)
+            shared_neighbors = tuple(sorted(shared)[:6])
+            session_focus = bool(a in session_concepts or b in session_concepts)
+            priority = min(
+                1.0,
+                0.35
+                + 0.16 * min(len(shared_neighbors), 3)
+                + 0.08 * min(len(refs), 4)
+                + (0.12 if session_focus else 0.0),
+            )
+            candidates.append(MissingConceptLink(
+                left=a,
+                right=b,
+                shared_neighbors=shared_neighbors,
+                support_refs=tuple(refs[:8]),
+                priority=round(priority, 4),
+                session_focus=session_focus,
+            ))
+    candidates.sort(key=lambda item: (-item.priority, item.left, item.right))
+    return candidates
 
 
 def _relation_rank(

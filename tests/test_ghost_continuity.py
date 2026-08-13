@@ -175,10 +175,13 @@ class GhostContinuityTests(unittest.TestCase):
                         "## Evidence\n"
                         "- RAW BODY SECRET SHOULD NOT APPEAR\n\n"
                         "## Open questions\n"
-                        "- Should we keep tracking provider recovery?\n"
-                        "- Which provider needs a fresh adapter probe?\n\n"
+                        "- Markdown section should not appear\n\n"
                         "## Sources\n"
                         "- RAW SOURCE SHOULD NOT APPEAR\n"
+                    ),
+                    "open_questions": (
+                        '["Should we keep tracking provider recovery?",'
+                        '"Which provider needs a fresh adapter probe?"]'
                     ),
                     "updated": FRESH_TS,
                     "session_id": "s1",
@@ -204,7 +207,7 @@ class GhostContinuityTests(unittest.TestCase):
             self.assertNotIn("RAW BODY", continuity.text)
             self.assertNotIn("RAW SOURCE", continuity.text)
 
-    def test_empty_research_open_questions_section_does_not_cross_into_sources(self) -> None:
+    def test_markdown_research_open_questions_section_does_not_enter_continuity(self) -> None:
         class FakeIndex:
             def recent(self, *args, **kwargs):
                 return [{
@@ -212,12 +215,14 @@ class GhostContinuityTests(unittest.TestCase):
                     "type": "synthesis",
                     "title": "Provider recovery synthesis",
                     "body": (
-                        "## Open questions\n\n"
+                        "## Open questions\n"
+                        "- Markdown section should not appear\n\n"
                         "## Sources\n"
                         "- RAW SOURCE SHOULD NOT APPEAR\n\n"
                         "## Evidence\n"
                         "- RAW EVIDENCE SHOULD NOT APPEAR\n"
                     ),
+                    "open_questions": "",
                     "updated": FRESH_TS,
                     "session_id": "s1",
                     "project": "",
@@ -239,6 +244,7 @@ class GhostContinuityTests(unittest.TestCase):
 
             self.assertTrue(result.ok)
             self.assertIn("Provider recovery synthesis", continuity.text)
+            self.assertNotIn("Markdown section", continuity.text)
             self.assertNotIn("RAW SOURCE", continuity.text)
             self.assertNotIn("RAW EVIDENCE", continuity.text)
 

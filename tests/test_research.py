@@ -1741,7 +1741,10 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertIn("done required for final synthesis", provider.sent[3])
-        self.assertIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[3])
+        self.assertIn(
+            '{"tool":"done","args":{"answer":"<the full report>","open_questions":["..."]}}',
+            provider.sent[3],
+        )
 
     def test_research_runner_repair_for_native_search_leak_points_to_local_web_search(self) -> None:
         provider = FakeProvider(
@@ -1903,7 +1906,10 @@ class ResearchBoundaryTests(unittest.TestCase):
             }),
             json.dumps({
                 "tool": "done",
-                "args": {"answer": valid_research_report(url)},
+                "args": {
+                    "answer": valid_research_report(url),
+                    "open_questions": ["Should helium routing be tracked next?"],
+                },
             }),
         )
         with tempfile.TemporaryDirectory() as td:
@@ -1938,6 +1944,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIsNotNone(synthesis)
         assert synthesis is not None
         self.assertIn("Evidence Ledger", synthesis.body)
+        self.assertEqual(synthesis.open_questions, ["Should helium routing be tracked next?"])
         self.assertTrue(any(link["kind"] == "derives" for link in links))
         self.assertTrue(any(event.kind == "tool" for event in events))
         self.assertTrue(restore.ok)
@@ -2465,6 +2472,7 @@ class ConceptRelationsTests(unittest.TestCase):
                     "dst": "helium supply",
                     "kind": "affects",
                     "session_id": "",
+                    "project": "",
                     "title": "War constrains helium",
                 }
             ],

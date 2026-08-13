@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import yaml
 
 from codey.knowledge.concept_schema import clean_relations
+from codey.prompt_safety import is_prompt_visible_text_safe
 
 NOTE_TYPES = (
     "source",
@@ -32,6 +33,8 @@ NOTE_TYPES = (
 )
 NOTE_STATUSES = ("active", "stale", "contradicted", "superseded")
 LINK_KINDS = ("relates", "supports", "contradicts", "derives", "implements", "verifies")
+MAX_OPEN_QUESTIONS = 12
+MAX_OPEN_QUESTION_CHARS = 240
 
 _TYPE_FOLDERS = {
     "source": "sources",
@@ -87,6 +90,7 @@ class KnowledgeNote:
     sources: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
     relations: list[dict] = field(default_factory=list)
+    open_questions: list[str] = field(default_factory=list)
     confidence: float | None = None
     status: str = "active"
     session_id: str = ""
@@ -100,6 +104,7 @@ class KnowledgeNote:
         if self.type not in NOTE_TYPES:
             self.type = "note"
         self.relations = clean_relations(self.relations)[0]
+        self.open_questions = clean_open_questions(self.open_questions)
         if self.status not in NOTE_STATUSES:
             self.status = "active"
         if not self.created:
@@ -153,6 +158,8 @@ class KnowledgeNote:
             data["aliases"] = list(self.aliases)
         if self.relations:
             data["relations"] = [dict(r) for r in self.relations]
+        if self.open_questions:
+            data["open_questions"] = list(self.open_questions)
         if self.confidence is not None:
             data["confidence"] = round(float(self.confidence), 2)
         if self.session_id:
@@ -192,6 +199,7 @@ class KnowledgeNote:
             sources=[str(s) for s in (meta.get("sources") or [])],
             aliases=[str(a) for a in (meta.get("aliases") or [])],
             relations=[r for r in (meta.get("relations") or []) if isinstance(r, dict)],
+            open_questions=clean_open_questions(meta.get("open_questions") or []),
             confidence=_as_float(meta.get("confidence")),
             status=str(meta.get("status") or "active"),
             session_id=str(meta.get("session_id") or ""),
@@ -205,6 +213,24 @@ class KnowledgeNote:
 
 def wikilink(target: str) -> str:
     return f"[[{target}]]"
+
+
+def clean_open_questions(values: object) -> list[str]:
+    if not isinstance(values, (list, tuple)):
+        return []
+    out: list[str] = []
+    for value in values:
+        text = " ".join(str(value or "").split())
+        text = text[:MAX_OPEN_QUESTION_CHARS].strip()
+        if _is_safe_open_question(text) and text not in out:
+            out.append(text)
+        if len(out) >= MAX_OPEN_QUESTIONS:
+            break
+    return out
+
+
+def _is_safe_open_question(text: str) -> bool:
+    return is_prompt_visible_text_safe(text)
 
 
 def _as_float(value) -> float | None:

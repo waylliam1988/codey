@@ -111,7 +111,7 @@ class KnowledgeBriefBuilder:
             source_quality_risks=_extract_section_lines(note.body, ("来源质量", "Source quality")),
             evidence_items=_extract_section_lines(note.body, ("关键证据", "Evidence", "Evidence Ledger")),
             risks=_extract_section_lines(note.body, ("风险", "Risks")),
-            open_questions=_extract_section_lines(note.body, ("继续跟踪指标", "Open questions", "Questions")),
+            open_questions=tuple(note.open_questions[:5]),
             source_note_ids=related,
             raw=note.body,
             related_note_ids=related,

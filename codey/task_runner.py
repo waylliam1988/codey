@@ -48,6 +48,7 @@ from codey.handoff import (
     render_recovered_handoff,
 )
 from codey.knowledge.note import KnowledgeNote
+from codey.knowledge.research_interest import build_research_interest_candidates
 from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.managed_outputs import (
@@ -625,11 +626,17 @@ class TaskRunner:
                 if self.run_ledgers is not None
                 else None
             )
+            research_interest_candidates = build_research_interest_candidates(
+                self.knowledge_store,
+                session_id=frame.request.session_id,
+                project=frame.project_text,
+            )
             store.sync_from_sources(
                 continuity_store=getattr(self.state, "ghost_continuity", None),
                 work_checkpoint_store=self.work_checkpoints,
                 run_projection=projection,
                 terminal_event=event,
+                research_interest_candidates=research_interest_candidates,
                 session_id=frame.request.session_id,
                 run_id=frame.run_id,
                 project=frame.project_text,

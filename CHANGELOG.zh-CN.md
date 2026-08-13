@@ -4,6 +4,28 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.9 - Research Interest Queue v1
+
+- 新增 `codey/knowledge/research_interest.py`：有界 research-interest
+  candidate builder。它把 Research note 的结构化 `open_questions` 和结构化
+  Concept Graph missing link 转成已有 Ghost Work Queue 的候选来源。
+- Research synthesis / decision note 新增 typed `open_questions` frontmatter
+  字段，并缓存到可重建 SQLite index。Research Interest harvesting 只读这个字段，
+  不解析 Markdown section heading。
+- Concept missing link 现在有结构化数据，不再从 UI excerpt 文本里反解析。
+  UI 仍然渲染文本；队列 harvesting 使用 `MissingConceptLink` 的 related concepts、
+  shared neighbors 和 support note refs。
+- 0.3.9 不新建第二套 Research 队列。候选映射到已有 `GhostWorkItem`：
+  结构化 Research note 问题和强支持的概念缺口可以成为 queued Research item；
+  弱概念缺口只保留为 candidate open question。
+- TaskRunner 的 post-turn Work Queue sync 现在会从本地 knowledge store
+  deterministic harvesting research candidates。不改 Router、不改 Research prompt、
+  不改 Directive / Continuity prompt、不改 UI、不改权限，也不改变 provider adapter。
+- Research-interest item 完成时仍必须有 `research:*` proof。Concept ref 只能说明
+  “为什么值得查”，不能证明“已经查清”。
+- 新增 `tests/test_research_interest_queue.py` 和
+  `tests/manual/ghost_research_interest_queue_production_ab.py`。
+
 ## 0.3.8 - Ghost Work Queue v1
 
 - 新增 `codey/ghost/work_queue.py`：受 Symphony 启发的本地有界 work item

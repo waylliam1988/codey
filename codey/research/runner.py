@@ -13,7 +13,7 @@ from codey.events import RunEvent
 from codey.permission_profiles import profile_for_name
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import normalize_concept
-from codey.knowledge.note import KnowledgeNote
+from codey.knowledge.note import KnowledgeNote, clean_open_questions
 from codey.knowledge.store import KnowledgeStore
 from codey.models import ToolResult
 from codey.research.advisors import EvidenceNote, EvidencePack
@@ -178,6 +178,7 @@ class ResearchRunner:
         advisor_reviewed = False
         advisor_count = 0
         final_review: ReportQualityReview | None = None
+        final_open_questions: list[str] = []
         for turn in range(1, self.max_turns + 1):
             if self._stop_requested():
                 stop_reason = "stopped"
@@ -268,6 +269,9 @@ class ResearchRunner:
                         continue
                 yield RunEvent.info(review.message, warnings=list(review.warnings))
                 summary = summary_candidate
+                final_open_questions = _bounded_open_questions(
+                    getattr(self.codec, "last_control_args", {}).get("open_questions")
+                )
                 final_review = review
                 stop_reason = "done"
                 break
@@ -282,7 +286,7 @@ class ResearchRunner:
             message = self.codec.format_results(_tool_results(results))
         synthesis_id = ""
         if summary:
-            synthesis_id = self._persist_synthesis(question, summary)
+            synthesis_id = self._persist_synthesis(question, summary, open_questions=final_open_questions)
             if synthesis_id:
                 yield RunEvent.info("saved synthesis", names=synthesis_id)
         self.result = ResearchRunResult(
@@ -414,7 +418,7 @@ class ResearchRunner:
         ]
         return "\n\n".join(part for part in parts if part)
 
-    def _persist_synthesis(self, question: str, summary: str) -> str:
+    def _persist_synthesis(self, question: str, summary: str, *, open_questions: list[str] | None = None) -> str:
         title = _synthesis_title(question)
         tags = ["research"]
         if self.session_id:
@@ -430,6 +434,7 @@ class ResearchRunner:
             sources=sorted(self.tools.sources_read),
             session_id=self.session_id,
             project=self.project,
+            open_questions=open_questions or [],
         )
         try:
             self.store.write_note(note, changes=self.changes)
@@ -727,6 +732,10 @@ def _synthesis_body(summary: str, ledger) -> str:
     if not appendix:
         return body
     return f"{body}\n\n{appendix}".strip()
+
+
+def _bounded_open_questions(value: object) -> list[str]:
+    return clean_open_questions(value)[:4]
 
 
 def _ledger_appendix(ledger) -> str:

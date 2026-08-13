@@ -6,6 +6,7 @@ recent-note lookup, and relations.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from pathlib import Path
@@ -38,7 +39,8 @@ class KnowledgeIndex:
             CREATE TABLE IF NOT EXISTS notes(
                 id TEXT PRIMARY KEY, path TEXT, type TEXT, title TEXT,
                 confidence REAL, status TEXT, session_id TEXT, project TEXT,
-                created TEXT, updated TEXT, content_hash TEXT, body TEXT
+                created TEXT, updated TEXT, content_hash TEXT, body TEXT,
+                open_questions TEXT
             );
             CREATE TABLE IF NOT EXISTS links(
                 src_id TEXT, dst_id TEXT, kind TEXT,
@@ -75,12 +77,13 @@ class KnowledgeIndex:
             c = self._conn
             c.execute(
                 "INSERT INTO notes(id,path,type,title,confidence,status,session_id,project,"
-                "created,updated,content_hash,body) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) "
+                "created,updated,content_hash,body,open_questions) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(id) DO UPDATE SET path=excluded.path,type=excluded.type,"
                 "title=excluded.title,confidence=excluded.confidence,status=excluded.status,"
                 "session_id=excluded.session_id,project=excluded.project,"
                 "created=excluded.created,updated=excluded.updated,"
-                "content_hash=excluded.content_hash,body=excluded.body",
+                "content_hash=excluded.content_hash,body=excluded.body,"
+                "open_questions=excluded.open_questions",
                 (
                     note.id,
                     path,
@@ -94,6 +97,7 @@ class KnowledgeIndex:
                     note.updated,
                     content_hash,
                     note.body,
+                    json.dumps(note.open_questions, ensure_ascii=False, separators=(",", ":")),
                 ),
             )
             c.execute("DELETE FROM tags WHERE note_id=?", (note.id,))
@@ -223,7 +227,7 @@ class KnowledgeIndex:
         args.append(limit)
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id,type,title,status,updated,session_id,project,body FROM notes"
+                "SELECT id,type,title,status,updated,session_id,project,body,open_questions FROM notes"
                 f"{where} ORDER BY updated DESC LIMIT ?",
                 tuple(args),
             ).fetchall()
@@ -248,7 +252,7 @@ class KnowledgeIndex:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT id,path,type,title,confidence,status,session_id,project,"
-                "created,updated,content_hash,body FROM notes"
+                "created,updated,content_hash,body,open_questions FROM notes"
                 f" WHERE id IN ({marks})",
                 ids,
             ).fetchall()
@@ -311,7 +315,7 @@ class KnowledgeIndex:
         if limit <= 0:
             return []
         select_sql = (
-            "SELECT e.note_id,e.src,e.dst,e.kind,n.session_id,n.title FROM concept_edges e"
+            "SELECT e.note_id,e.src,e.dst,e.kind,n.session_id,n.project,n.title FROM concept_edges e"
             " JOIN notes n ON n.id=e.note_id WHERE n.status='active'"
         )
         session_id = str(session_id or "").strip()
@@ -343,7 +347,7 @@ class KnowledgeIndex:
         if limit <= 0:
             return []
         select_sql = (
-            "SELECT t.note_id,t.tag,n.type,n.title,n.session_id,n.updated"
+            "SELECT t.note_id,t.tag,n.type,n.title,n.session_id,n.project,n.updated"
             " FROM tags t JOIN notes n ON n.id=t.note_id"
             " WHERE n.status='active'"
         )

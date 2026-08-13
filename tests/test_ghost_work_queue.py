@@ -28,7 +28,8 @@ class _FakeIndex:
             "id": "note-1",
             "type": "synthesis",
             "title": "Provider recovery synthesis",
-            "body": "## Open questions\n- Should we keep tracking provider recovery?\n",
+            "body": "Research synthesis.",
+            "open_questions": '["Should we keep tracking provider recovery?"]',
             "updated": FRESH_TS,
             "session_id": "s1",
             "project": "",
@@ -461,6 +462,54 @@ def test_sensitive_or_dangerous_titles_are_not_created() -> None:
 
     assert result.ok
     assert result.skipped_reason == "no_sources"
+
+
+def test_normal_engineering_titles_are_created() -> None:
+    continuity = mock.Mock()
+    continuity.list_items.return_value = (
+        mock.Mock(
+            kind="open_question",
+            source="research_note",
+            confidence=0.9,
+            text="Write tests for the shell command parser.",
+            scope="session",
+            scope_ref="s1",
+            source_ref="note-command-parser",
+            id="cont-command-parser",
+            metadata={},
+        ),
+        mock.Mock(
+            kind="open_question",
+            source="research_note",
+            confidence=0.9,
+            text="Should we replace outdated setup instructions in the README?",
+            scope="session",
+            scope_ref="s1",
+            source_ref="note-readme",
+            id="cont-readme",
+            metadata={},
+        ),
+        mock.Mock(
+            kind="open_question",
+            source="research_note",
+            confidence=0.9,
+            text="Research whether context switching before current request parsing improves latency.",
+            scope="session",
+            scope_ref="s1",
+            source_ref="note-context-switching",
+            id="cont-context-switching",
+            metadata={},
+        ),
+    )
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        result = store.sync_from_sources(continuity_store=continuity, session_id="s1")
+        titles = {item.title for item in store.list_items(session_id="s1")}
+
+    assert result.ok
+    assert "Write tests for the shell command parser" in titles
+    assert "Should we replace outdated setup instructions in the README?" in titles
+    assert "Research whether context switching before current request parsing improves latency" in titles
 
 
 @pytest.mark.parametrize(

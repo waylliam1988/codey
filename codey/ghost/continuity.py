@@ -821,7 +821,7 @@ def _items_from_knowledge(
                 updated_at=clip_signal_text(row.get("updated"), 80) or now,
                 metadata={"note_type": clip_signal_text(row.get("type"), 40)},
             ))
-        for question in _extract_open_question_lines(row.get("body")):
+        for question in _structured_open_questions(row.get("open_questions")):
             if not _safe_prompt_text(question, warnings=warnings, kind="open_question"):
                 continue
             out.append(_item(
@@ -837,7 +837,7 @@ def _items_from_knowledge(
                 updated_at=clip_signal_text(row.get("updated"), 80) or now,
                 metadata={
                     "note_type": clip_signal_text(row.get("type"), 40),
-                    "section": "open_questions",
+                    "field": "open_questions",
                 },
             ))
     return out
@@ -1101,31 +1101,19 @@ def _clean_context_text(value: object) -> str:
     return clip_signal_text(text, MAX_CONTINUITY_TEXT_CHARS).rstrip(".")
 
 
-def _extract_open_question_lines(body: object, *, limit: int = 3) -> tuple[str, ...]:
-    lines = [line.rstrip() for line in str(body or "").splitlines()]
-    headings = ("继续跟踪指标", "Open questions", "Questions")
-    heading_lowers = tuple(item.lower() for item in headings)
+def _structured_open_questions(value: object, *, limit: int = 3) -> tuple[str, ...]:
+    raw = value
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except json.JSONDecodeError:
+            return ()
+    if not isinstance(raw, (list, tuple)):
+        return ()
     out: list[str] = []
-    in_section = False
-    for line in lines:
-        stripped = line.strip()
-        lower = stripped.strip("#:： ").lower()
-        if stripped.startswith("#") or stripped.endswith((":", "：")):
-            if any(item in lower for item in heading_lowers):
-                in_section = True
-                continue
-            if in_section:
-                break
-        if not in_section:
-            continue
-        if stripped.startswith(("- ", "* ")):
-            candidate = stripped[2:].strip()
-        elif stripped and len(stripped) < 220:
-            candidate = stripped
-        else:
-            continue
-        cleaned = _clean_context_text(candidate)
-        if cleaned:
+    for item in raw:
+        cleaned = _clean_context_text(item)
+        if cleaned and cleaned not in out:
             out.append(cleaned)
         if len(out) >= limit:
             break

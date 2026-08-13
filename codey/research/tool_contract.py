@@ -79,6 +79,7 @@ TOOL_CONTRACTS = {
             "aliases": ToolArg(list, None),
             "relations": ToolArg(list, None, singleton_dict=True, list_item_type=dict),
             "evidence": ToolArg(list, None, singleton_dict=True, list_item_type=dict),
+            "open_questions": ToolArg(list, None, singleton_dict=True, list_item_type=str),
             "confidence": ToolArg(float, None),
             "retrieved_at": ToolArg(str, None),
             "valid_until": ToolArg(str, None),
@@ -93,6 +94,7 @@ TOOL_CONTRACTS = {
     "done": ToolContract(
         name="done",
         required={"answer": str},
+        optional={"open_questions": ToolArg(list, None, singleton_dict=True, list_item_type=str)},
         aliases={"summary": "answer", "text": "answer"},
     ),
 }
@@ -148,12 +150,13 @@ def tool_example(tool: str) -> str:
         return (
             '{"tool":"knowledge_write","args":{"type":"fact","title":"...","body":"...",'
             '"sources":["https://..."],'
-            '"relations":[{"src":"war","dst":"helium supply","kind":"affects"}]}}'
+            '"relations":[{"src":"war","dst":"helium supply","kind":"affects"}],'
+            '"open_questions":["..."]}}'
         )
     if tool == "knowledge_link":
         return '{"tool":"knowledge_link","args":{"src":"<note id>","dst":"<note id>","kind":"supports"}}'
     if tool == "done":
-        return '{"tool":"done","args":{"answer":"<the full report>"}}'
+        return '{"tool":"done","args":{"answer":"<the full report>","open_questions":["..."]}}'
     return '{"tool":"web_search","args":{"query":"..."}}'
 
 

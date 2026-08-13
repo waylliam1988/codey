@@ -1,5 +1,76 @@
 # Codey Test Report
 
+## 0.3.9 Research Interest Queue v1
+
+Codey 0.3.9 improves the existing Ghost Work Queue research sources. It does
+not create a second Research queue and does not run background web searches.
+Research follow-ups now come from typed `KnowledgeNote.open_questions` metadata
+or structured Concept Graph missing links, then map into the existing
+`GhostWorkItem` claim/running/done/blocked state machine.
+
+Production changes:
+
+- New `codey/knowledge/research_interest.py` builds bounded
+  `ResearchInterestCandidate` rows without importing Ghost state-machine types.
+- Research synthesis / decision notes now support structured
+  `open_questions` frontmatter, cached in the rebuildable SQLite index.
+  Research Interest harvesting and Research Briefs read this typed field only;
+  they do not parse Markdown `Open questions` sections.
+- `ConceptGraphBuilder.missing_links_for_session(..., strict_scope=True)` returns
+  structured `MissingConceptLink` rows from active support refs in the current
+  session/project. The queue never reverse-parses UI excerpt text.
+- Strong supported concept gaps and structured Research note questions can
+  become queued Research items. Weak concept gaps remain candidate
+  `open_question` items.
+- Completion still requires `research:*` proof. Concept refs explain why a
+  question is worth checking; they do not prove it was answered.
+- TaskRunner harvests these candidates during post-turn Work Queue sync only.
+  Router, Directive, Continuity prompt text, Research prompt context, UI,
+  permissions, and provider adapter behavior stay unchanged.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_research_interest_queue.py tests\test_ghost_continuity.py tests\test_ghost_work_queue.py tests\test_task_runner_work_queue.py tests\test_ghost_sleep.py -q
+# 75 passed, 1 pytest cache warning, 6 subtests passed
+
+python -m pytest tests\test_research_interest_queue.py tests\test_knowledge.py tests\test_research.py -k "research_interest or open_questions or synthesis or protocol or done or brief or note_relations" -q
+# 26 passed, 104 deselected, 1 pytest cache warning
+
+python -m pytest tests\test_research_interest_queue.py tests\test_ghost_continuity.py tests\test_ghost_work_queue.py tests\test_task_runner_work_queue.py tests\test_ghost_sleep.py tests\test_cli.py tests\test_server.py tests\test_architecture.py -q
+# 244 passed, 1 skipped, 1 pytest cache warning, 24 subtests passed
+
+python -m pytest -q
+# 1835 passed, 9 skipped, 1 pytest cache warning, 270 subtests passed
+
+python -m ruff check codey tests
+# All checks passed!
+
+python -B tests\manual\ghost_research_interest_queue_production_ab.py --self-test
+# self-test ok
+```
+
+2026-08-12 Research Interest Queue production-spine A/B, six-case matrix, run
+one provider per restarted Edge CDP session:
+
+```text
+DeepSeek: baseline 3/6; queue 6/6
+Qwen:     baseline 3/6; queue 6/6
+MiMo:     baseline 3/6; queue 6/6
+StepFun:  baseline 3/6; queue 6/6
+GLM:      partial, baseline 2/4; queue 4/4. The remaining cases timed out
+          because the webpage was slow/self-searching, not because of a local
+          queue failure.
+```
+
+The intended baseline misses are the saved follow-up cases: without Research
+Interest Queue consumption, plain "continue" remains Chat. With the queue arm,
+Codey claims the saved item, dispatches Research, and marks it done only with
+Research proof. The matrix also verifies no-queue fallback, weak concept
+candidate non-consumption, contentful continuation not consuming the queue,
+missing proof blocking, and no internal Ghost / Work Queue / Concept Graph
+leakage.
+
 ## 0.3.8 Ghost Work Queue v1
 
 Codey 0.3.8 adds a bounded local work-item queue. Existing local facts can
@@ -11,10 +82,10 @@ Production changes:
 
 - New `codey/ghost/work_queue.py` stores `work_events.jsonl` as the audit source
   of truth and `work_items.json` as a rebuildable projection.
-- Work items sync from bounded continuity open questions, Research note open
-  questions, interrupted checkpoints, run ledger failure projections, and review
-  follow-ups. They do not store full user text, prompts, source files, Research
-  bodies, or webpage text.
+- Work items sync from bounded continuity open questions, structured Research
+  note `open_questions`, interrupted checkpoints, run ledger failure
+  projections, and review follow-ups. They do not store full user text, prompts,
+  source files, Research bodies, or webpage text.
 - Claimed items map only to existing modes: Research, Project Writer, or
   review-only. Work Queue cannot grant permissions, approve shell commands,
   choose tool arguments, or execute by itself.
