@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping
 from urllib.parse import urlparse
 
 from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
+from codey.prompt_envelope import is_model_boundary_freshness
 
 
 SCHEMA_VERSION = 1
@@ -83,6 +84,8 @@ class PromptSectionTrace:
     name: str
     digest: str
     chars: int
+    purpose: str = ""
+    model_visible: bool = True
     budget: int = 0
     truncated: bool = False
     freshness: str = ""
@@ -93,8 +96,11 @@ class PromptSectionTrace:
             "name": _identifier(self.name, 80),
             "digest": self.digest,
             "chars": max(0, int(self.chars or 0)),
+            "model_visible": bool(self.model_visible),
             "truncated": bool(self.truncated),
         }
+        if self.purpose:
+            payload["purpose"] = _clip(self.purpose, 160)
         if self.budget:
             payload["budget"] = max(0, int(self.budget or 0))
         if self.freshness:
@@ -250,7 +256,7 @@ class RunTraceRecorder:
         self.manifest = manifest
         self.disabled = False
         self._dirty_updates = 0
-        self._prompt_keys: set[tuple[str, str, str, tuple[str, ...]]] = set()
+        self._prompt_keys: set[tuple[str, str, str, str, tuple[str, ...], bool]] = set()
         self._local_context_keys: set[tuple[str, str, str]] = set()
         self._research_note_keys: set[str] = set()
         self._research_source_keys: set[str] = set()
@@ -312,6 +318,8 @@ class RunTraceRecorder:
         name: str,
         text: object,
         *,
+        purpose: str = "",
+        model_visible: bool = True,
         budget: int = 0,
         truncated: bool = False,
         freshness: str = "",
@@ -321,17 +329,22 @@ class RunTraceRecorder:
         if not rendered:
             return
         refs = _bounded_refs(source_refs)
-        model_boundary = _is_model_boundary_freshness(freshness)
+        if not refs and model_visible:
+            fallback = _identifier(name, 80) or "prompt_section"
+            refs = (f"prompt_section:{fallback}",)
+        model_boundary = is_model_boundary_freshness(freshness)
         item = PromptSectionTrace(
             name=name,
             digest=digest_text(rendered),
             chars=len(rendered),
+            purpose=str(purpose or ""),
+            model_visible=bool(model_visible),
             budget=max(0, int(budget or 0)),
             truncated=bool(truncated),
             freshness=freshness,
             source_refs=refs,
         )
-        key = (item.name, item.digest, item.freshness, refs)
+        key = (item.name, item.digest, item.purpose, item.freshness, refs, item.model_visible)
         if key in self._prompt_keys:
             if model_boundary:
                 self.flush()
@@ -357,12 +370,21 @@ class RunTraceRecorder:
                 name=str(getattr(source, "key", "") or "context_source"),
                 digest=digest_text(text),
                 chars=len(text),
+                purpose=str(getattr(source, "why_included", "") or ""),
+                model_visible=True,
                 budget=max(0, int(getattr(source, "budget", 0) or 0)),
                 truncated=bool(getattr(source, "truncated", False)),
                 freshness=str(getattr(source, "freshness", "") or ""),
                 source_refs=refs,
             )
-            key = (item.name, item.digest, item.freshness, item.source_refs)
+            key = (
+                item.name,
+                item.digest,
+                item.purpose,
+                item.freshness,
+                item.source_refs,
+                item.model_visible,
+            )
             if key in self._prompt_keys:
                 continue
             self._prompt_keys.add(key)
@@ -516,12 +538,6 @@ def _host(url: str) -> str:
         return (urlparse(str(url or "")).hostname or "").lower()
     except ValueError:
         return ""
-
-
-def _is_model_boundary_freshness(value: object) -> bool:
-    return str(value or "") in {"provider_send", "secondary_model_call"}
-
-
 def _clip(value: object, limit: int = MAX_TEXT_CHARS) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not text:

@@ -11,6 +11,11 @@ from typing import Callable
 from codey import cancellation
 from codey.events import RunEvent
 from codey.permission_profiles import profile_for_name
+from codey.prompt_envelope import (
+    FailOpenPromptTrace,
+    PromptEnvelope,
+    PromptEnvelopeSection,
+)
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.note import KnowledgeNote, clean_open_questions
@@ -133,7 +138,7 @@ class ResearchRunner:
         self.session_id = session_id
         self.project = project
         self.permission_profile = profile_for_name(permission_profile).name
-        self.trace_recorder = trace_recorder
+        self.prompt_trace = FailOpenPromptTrace(trace_recorder)
         self.chat_handoff = (chat_handoff or "").strip()
         self.review_advisors = review_advisors
         self.controller_enabled = bool(controller_enabled)
@@ -157,18 +162,26 @@ class ResearchRunner:
 
     def run(self, question: str):
         question = (question or "").strip()
-        self._trace("record_permission_profile", self.permission_profile, phase="research")
+        self.prompt_trace.call(
+            "record_permission_profile",
+            self.permission_profile,
+            phase="research",
+        )
         try:
-            self._trace("record_tool_contract_hash", self.codec.model_tool_contract_hash(), phase="research")
+            self.prompt_trace.call(
+                "record_tool_contract_hash",
+                self.codec.model_tool_contract_hash(),
+                phase="research",
+            )
         except Exception:
             pass
-        self._trace(
-            "record_prompt_section",
-            "research_question",
-            question,
+        self.prompt_trace.record_section(PromptEnvelopeSection(
+            name="research_request",
+            text=question,
+            purpose="current research request",
             freshness="run_start",
-            source_refs=("request:research_question",),
-        )
+            source_refs=("request:research_request",),
+        ))
         if not question:
             self.result = ResearchRunResult(question="", summary="", stop_reason="empty", turns=0)
             yield RunEvent.info("empty question; nothing to research")
@@ -324,7 +337,7 @@ class ResearchRunner:
             synthesis_id=synthesis_id,
             advisor_count=advisor_count,
         )
-        self._trace(
+        self.prompt_trace.call(
             "record_research_notes",
             [
                 *self.result.notes_created,
@@ -332,7 +345,7 @@ class ResearchRunner:
                 self.result.synthesis_id,
             ],
         )
-        self._trace("record_research_sources", self.result.opened_sources)
+        self.prompt_trace.call("record_research_sources", self.result.opened_sources)
         yield self._done_event()
 
     def _dispatch(self, call):
@@ -372,13 +385,13 @@ class ResearchRunner:
     def _send_provider(self, message: str) -> str:
         try:
             cancellation.check()
-            self._trace(
-                "record_prompt_section",
-                "research_outbound_prompt",
-                message,
+            self.prompt_trace.record_section(PromptEnvelopeSection(
+                name="research_outbound_prompt",
+                text=message,
+                purpose="research prompt sent to provider",
                 freshness="provider_send",
                 source_refs=("provider_send:research",),
-            )
+            ))
             if getattr(self.provider, "thread_safe_send", False):
                 reply = self._send_provider_cancellable(message)
             else:
@@ -390,16 +403,6 @@ class ResearchRunner:
         except Exception as exc:
             self._record_model_failure("send", exc)
             raise
-
-    def _trace(self, method: str, *args, **kwargs) -> None:
-        if self.trace_recorder is None:
-            return
-        try:
-            fn = getattr(self.trace_recorder, method, None)
-            if callable(fn):
-                fn(*args, **kwargs)
-        except Exception:
-            return
 
     def _send_provider_cancellable(self, message: str) -> str:
         results: queue.Queue[object] = queue.Queue(maxsize=1)
@@ -446,17 +449,43 @@ class ResearchRunner:
 
     def _intro(self, question: str) -> str:
         include_source_search = bool(getattr(self.codec, "include_source_search", True))
-        parts = [
-            (
-                controller_system_prompt(include_source_search=include_source_search)
-                if self.controller is not None
-                else self.codec.system_prompt()
+        system_prompt = (
+            controller_system_prompt(include_source_search=include_source_search)
+            if self.controller is not None
+            else self.codec.system_prompt()
+        )
+        rendered = PromptEnvelope((
+            PromptEnvelopeSection(
+                name="research_system_prompt",
+                text=system_prompt,
+                purpose="research JSON tool protocol",
+                freshness="run_start",
+                source_refs=("protocol:research_json",),
             ),
-            _recent_context(self.store, self.session_id),
-            _chat_handoff_context(self.chat_handoff),
-            f"Research question:\n{question}",
-        ]
-        return "\n\n".join(part for part in parts if part)
+            PromptEnvelopeSection(
+                name="research_recent_context",
+                text=_recent_context(self.store, self.session_id),
+                purpose="bounded local research notes from this session",
+                freshness="run_start",
+                source_refs=("knowledge:recent_notes",),
+            ),
+            PromptEnvelopeSection(
+                name="research_chat_handoff",
+                text=_chat_handoff_context(self.chat_handoff),
+                purpose="bounded chat handoff for research",
+                freshness="run_start",
+                source_refs=("conversation:research_handoff",),
+            ),
+            PromptEnvelopeSection(
+                name="research_question",
+                text=f"Research question:\n{question}",
+                purpose="current research question",
+                freshness="run_start",
+                source_refs=("request:research_question",),
+            ),
+        )).render()
+        self.prompt_trace.record_envelope(rendered)
+        return rendered.text
 
     def _persist_synthesis(self, question: str, summary: str, *, open_questions: list[str] | None = None) -> str:
         title = _synthesis_title(question)

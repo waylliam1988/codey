@@ -66,6 +66,7 @@ from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.concepts import ConceptGraphBuilder
 from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
+from codey.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
 from codey.research.advisors import EvidencePack, run_research_advisors
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
@@ -233,6 +234,7 @@ def _run_review_attempt(
     reviewer_id: str,
     reviewer,
     self_review: bool,
+    trace_recorder: object | None = None,
 ) -> tuple[str, ReviewResult]:
     try:
         reviewer.new_chat()
@@ -248,11 +250,31 @@ def _run_review_attempt(
             review_impact_map=review_impact_map,
             execution_evidence=execution_evidence,
         )
+        trace = FailOpenPromptTrace(trace_recorder)
+        trace.call("record_permission_profile", "reviewer", phase="review")
+        trace.record_section(PromptEnvelopeSection(
+            name="review_prompt",
+            text=prompt,
+            purpose="review prompt sent to provider",
+            freshness="provider_send",
+            source_refs=("provider_send:review",),
+        ))
         with provider_controls.suppress_assistance():
             reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
+
+            def send_repair_prompt(repair: str) -> str:
+                trace.record_section(PromptEnvelopeSection(
+                    name="review_repair_prompt",
+                    text=repair,
+                    purpose="review repair prompt sent to provider",
+                    freshness="provider_send",
+                    source_refs=("provider_send:review_repair",),
+                ))
+                return reviewer.send(repair, timeout=REVIEW_TIMEOUT)
+
             review = parse_review_with_repair(
                 reply,
-                lambda repair: reviewer.send(repair, timeout=REVIEW_TIMEOUT),
+                send_repair_prompt,
                 changes=changes,
             )
         label = review_label(reviewer_id)
@@ -283,6 +305,7 @@ def _run_review(
     verification_map: str = "",
     review_impact_map: str | None = None,
     execution_evidence: str = "",
+    trace_recorder: object | None = None,
 ) -> tuple[str, ReviewResult] | None:
     cancellation.check()
     last_error: Exception | None = None
@@ -308,6 +331,7 @@ def _run_review(
                 reviewer_id=reviewer_id,
                 reviewer=reviewer,
                 self_review=False,
+                trace_recorder=trace_recorder,
             )
         except cancellation.TaskCancelled:
             raise
@@ -332,6 +356,7 @@ def _run_review(
             reviewer_id=reviewer_id,
             reviewer=reviewer,
             self_review=True,
+            trace_recorder=trace_recorder,
         )
     except cancellation.TaskCancelled:
         raise
@@ -366,6 +391,7 @@ def _run_consensus(
     plan: bool = False,
     draft_first: bool = False,
     owner_prompt: str = "",
+    trace_recorder: object | None = None,
 ) -> ConsensusResult | None:
     return run_consensus(
         selected_provider=selected_provider,
@@ -384,6 +410,7 @@ def _run_consensus(
         plan=plan,
         draft_first=draft_first,
         owner_prompt=owner_prompt,
+        trace_recorder=trace_recorder,
     )
 
 
@@ -394,6 +421,7 @@ def _run_project_audit(
     selected_provider_id: str,
     task: str,
     context: str = "",
+    trace_recorder: object | None = None,
 ) -> tuple[ConsensusAdvice, ...]:
     return run_project_audit(
         project=project,
@@ -408,6 +436,7 @@ def _run_project_audit(
         ),
         clear_provider_session=lambda provider_id: STATE.set_provider_session(provider_id, None),
         context=context,
+        trace_recorder=trace_recorder,
     )
 
 

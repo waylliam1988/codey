@@ -65,6 +65,7 @@ class RunTraceStoreTests(unittest.TestCase):
             recorder.record_prompt_section(
                 "project_map",
                 secret,
+                purpose="bounded project map",
                 budget=120,
                 freshness="run_start",
                 source_refs=("context_source:project_map",),
@@ -87,6 +88,8 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertEqual(payload["status"], "done")
             self.assertEqual(payload["prompt_sections"][0]["name"], "project_map")
             self.assertEqual(payload["prompt_sections"][0]["chars"], len(secret))
+            self.assertEqual(payload["prompt_sections"][0]["purpose"], "bounded project map")
+            self.assertTrue(payload["prompt_sections"][0]["model_visible"])
             self.assertIn("digest", payload["prompt_sections"][0])
             self.assertNotIn(secret, serialized)
             self.assertNotIn("RAW_PROVIDER_ERROR_SHOULD_NOT_BE_SAVED", serialized)
@@ -126,6 +129,31 @@ class RunTraceStoreTests(unittest.TestCase):
             )
 
             self.assertEqual(payload["research_note_ids"], ["note-single"])
+
+    def test_model_visible_prompt_section_gets_source_ref_fallback(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-source-fallback",
+                session_id="session-source-fallback",
+                project=None,
+                mode_initial="chat",
+                provider_initial="deepseek",
+            )
+            recorder.record_prompt_section("Task Section", "hello")
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-source-fallback",
+                    "run-source-fallback",
+                ).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(
+                payload["prompt_sections"][0]["source_refs"],
+                ["prompt_section:Task_Section"],
+            )
 
     def test_source_refs_do_not_store_url_userinfo_or_port_in_host(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -181,7 +209,7 @@ class RunTraceStoreTests(unittest.TestCase):
 
                 self.assertEqual(write.call_count, 2)
 
-    def test_model_visible_prompt_sections_flush_immediately(self) -> None:
+    def test_provider_send_prompt_sections_flush_immediately(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
             with mock.patch("codey.run_trace.write_json_atomic") as write:
@@ -208,9 +236,16 @@ class RunTraceStoreTests(unittest.TestCase):
                 self.assertEqual(write.call_count, 2)
 
                 recorder.record_prompt_section(
+                    "review_task",
+                    "prepared for secondary workflow",
+                    freshness="secondary_input_prepared",
+                )
+                self.assertEqual(write.call_count, 2)
+
+                recorder.record_prompt_section(
                     "review_prompt",
-                    "visible to secondary model",
-                    freshness="secondary_model_call",
+                    "visible to provider",
+                    freshness="provider_send",
                 )
                 self.assertEqual(write.call_count, 3)
 
@@ -254,6 +289,44 @@ class RunTraceStoreTests(unittest.TestCase):
                     source_refs=("same:ref",),
                 )
                 self.assertEqual(write.call_count, 3)
+
+    def test_prompt_section_dedup_keeps_distinct_purpose(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-purpose-key",
+                session_id="session-purpose-key",
+                project=None,
+                mode_initial="chat",
+                provider_initial="deepseek",
+            )
+
+            recorder.record_prompt_section(
+                "same_section",
+                "same text",
+                purpose="first purpose",
+                freshness="provider_send",
+                source_refs=("same:ref",),
+            )
+            recorder.record_prompt_section(
+                "same_section",
+                "same text",
+                purpose="second purpose",
+                freshness="provider_send",
+                source_refs=("same:ref",),
+            )
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for("session-purpose-key", "run-purpose-key").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+            self.assertEqual(
+                [item["purpose"] for item in payload["prompt_sections"]],
+                ["first purpose", "second purpose"],
+            )
 
     def test_delete_session_removes_only_that_session_trace_directory(self) -> None:
         with tempfile.TemporaryDirectory() as td:

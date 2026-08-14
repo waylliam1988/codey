@@ -1606,8 +1606,8 @@ secondary model calls: consensus / project audit / review
 - trace 是审计 manifest，不是用户聊天消息，也不新增 SSE 噪音。
 - 高频 trace metadata 使用 checkpoint batching；run start、Router、fallback、
   provider failure、warning 和 finish 仍即时落盘。
-- `provider_send` / `secondary_model_call` 的 prompt digest 会在模型调用边界前
-  即时落盘。
+- 模型调用边界 freshness 的 prompt digest 会在 provider 调用前即时落盘；非边界
+  prepared metadata 继续 checkpoint batching。
 - Router 记录只保存结构化 mode / source / reason_code / override 状态，不保存
   模型原始路由解释、hidden reasoning 或长自由文本。
 
@@ -1628,8 +1628,9 @@ UI/API/SSE，也不改变 task receipt。
 
 ## 0.3.14 - Prompt Envelope v1
 
-状态：计划。目标是把所有模型可见上下文统一装进 envelope，让 prompt 组成可追溯，
-但第一版尽量保持最终渲染文本不变。
+状态：已按 v1 落地。目标是把模型可见 prompt section 统一装进轻量
+envelope，让 prompt 组成可追溯；第一版保持最终渲染文本不变，不引入
+Capability Registry 或 UI。
 
 ### 做什么
 
@@ -1652,16 +1653,19 @@ rendered_length
 digest
 ```
 
-优先迁移：
+已落地：
 
 ```text
-chat messages
-project context
-Local context / Ghost Directive / continuity
-Research brief
-Review prompt context
-tool result context
-repair prompt context
+codey/prompt_envelope.py
+tests/test_prompt_envelope.py
+FailOpenPromptTrace 统一 TaskRunner / agent.py / Research runner 的 trace 调用
+Research intro 走 PromptEnvelope，渲染文本字节等价
+Coding / chat / review / consensus / project audit 在模型边界记录 envelope metadata
+实际 provider.send 前即时落盘，trace-disabled 时不扫描 local context
+chat consensus 不记录未发送的 chat_outbound_prompt，project-audit advisor refs 可区分
+Run Trace prompt section payload 增加 purpose / model_visible / source-ref fallback
+PromptEnvelope 不 import provider/browser/tool runtime/control 层
+PromptEnvelope v1 不保留未接入生产路径的 mutable builder API
 ```
 
 ### 边界
@@ -1670,6 +1674,11 @@ repair prompt context
 - section 超预算时走已有 bounded rendering，不偷偷塞 raw body。
 - system / developer / user / tool role 边界不可被 Local context 或 profile 改写。
 - envelope 是内部结构，UI 不显示 Prompt / Directive / Hebbian 等内部词。
+- `provider_send` section 仍在真实模型调用边界前即时落盘。
+- TaskRunner 预备给二级流程的 digest-only 片段使用 `secondary_input_prepared`，
+  不是模型调用边界，不暗示 provider 已经看过。
+- trace 写入失败 fail-open，但不能吞掉取消 / deadline 信号。
+- v1 不改 Router、provider fallback、工具权限、Research/Writer/Review 语义。
 
 ### 验证
 
@@ -1678,6 +1687,7 @@ rendered prompt snapshot 与迁移前等价，除非测试明确批准
 每个 model_visible section 都有 digest 和 source_refs
 Local context section 不能包含权限、router、provider 强制语义
 repair prompt 不继承 Local context 指令
+不需要 live provider A/B；需要 deterministic parity tests 和本地 smoke
 ```
 
 ## 0.3.15 - Internal Capability Registry v1

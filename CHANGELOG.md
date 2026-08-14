@@ -4,6 +4,36 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.14 - Prompt Envelope v1
+
+- Added `codey/prompt_envelope.py`, a small internal prompt envelope and
+  fail-open trace sink for model-visible sections.
+- Coding, chat, Research, review, consensus, and project-audit model boundaries
+  now record prompt section metadata through the shared sink immediately before
+  the actual provider send, instead of hand-written `trace_call` helpers.
+- Run Trace prompt-section payloads now include bounded `purpose`,
+  `model_visible`, and source-ref fallback metadata while still storing only
+  digests, character counts, budgets, truncation flags, and refs.
+- Research intro assembly now uses a prompt envelope with byte-equivalent
+  rendering. Coding keeps its existing prompt shape, including the single
+  newline boundary before `User task`.
+- Provider-send prompt sections still flush before the actual model call.
+  TaskRunner secondary snippets use non-boundary `secondary_input_prepared`
+  metadata; non-boundary metadata keeps checkpoint batching.
+- Trace-disabled local-context and secondary-input helpers now return early
+  instead of scanning sections.
+- Chat consensus runs no longer record an unsent `chat_outbound_prompt`, and
+  project-audit advisor prompt refs include the advisor id so duplicate advisor
+  prompts remain auditable.
+- `PromptEnvelope` stays independent of provider control code; cancellation from
+  control teaching is propagated by exception name. Run Trace prompt-section
+  dedup now includes `purpose`.
+- `PromptEnvelope` v1 keeps a minimal API surface: sections are supplied through
+  construction and rendered, without an unused mutable builder convenience.
+- No UI, SSE, Router, provider fallback, permission, Writer, Review, or
+  Research behavior changed. No live provider A/B is required when prompt
+  parity tests pass.
+
 ## 0.3.13 - Run Trace Manifest v1
 
 - Added `codey/run_trace.py`, a bounded run audit sidecar stored under

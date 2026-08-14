@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,7 @@ from unittest import mock
 
 from codey import consensus
 from codey.handoff import ConversationSnapshot
+from codey.run_trace import RunTraceStore
 
 
 class FakeProvider:
@@ -34,6 +36,14 @@ class FakeProvider:
 
     def close(self) -> None:
         self.closed = True
+
+
+class TraceRecorder:
+    def __init__(self) -> None:
+        self.sections: list[dict[str, object]] = []
+
+    def record_prompt_section(self, name, text, **kwargs) -> None:
+        self.sections.append({"name": name, "text": text, **kwargs})
 
 
 class ConsensusTests(unittest.TestCase):
@@ -164,6 +174,107 @@ class ConsensusTests(unittest.TestCase):
         self.assertIn("owner draft", selected.sent[1])
         self.assertIn("qwen critique", selected.sent[1])
         self.assertIn("glm critique", selected.sent[1])
+
+    def test_run_consensus_records_prompt_envelopes_for_real_sends(self) -> None:
+        selected = FakeProvider(["owner draft", "final answer"])
+        qwen = FakeProvider(["qwen advice"])
+        glm = FakeProvider(["glm advice"])
+        trace = TraceRecorder()
+
+        result = consensus.run_consensus(
+            selected_provider=selected,
+            selected_provider_id="deepseek",
+            task="How should I design a breathing app?",
+            provider_ids=("deepseek", "qwen", "glm"),
+            provider_labels={"deepseek": "DeepSeek", "qwen": "Qwen", "glm": "GLM"},
+            availability=lambda: {"qwen": True, "glm": True},
+            connect_existing=lambda provider_id: {"qwen": qwen, "glm": glm}[provider_id],
+            draft_first=True,
+            owner_prompt="Answer the user with a plan.",
+            trace_recorder=trace,
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(
+            [item["name"] for item in trace.sections],
+            [
+                "consensus_owner_draft_prompt",
+                "consensus_advisor_prompt",
+                "consensus_advisor_prompt",
+                "consensus_aggregate_prompt",
+            ],
+        )
+        self.assertTrue(all(item["model_visible"] for item in trace.sections))
+        self.assertTrue(all(str(item["freshness"]) == "provider_send" for item in trace.sections))
+
+    def test_project_audit_advisor_records_prompt_envelope(self) -> None:
+        provider = FakeProvider(['{"tool":"done","args":{"summary":"audit report"}}'])
+        trace = TraceRecorder()
+
+        with tempfile.TemporaryDirectory() as td:
+            Path(td, "app.py").write_text("print('hello')\n", encoding="utf-8")
+            report = consensus.run_project_audit_advisor(
+                provider,
+                td,
+                "Review this project for bugs",
+                trace_recorder=trace,
+            )
+
+        self.assertIn("audit report", report)
+        self.assertEqual([item["name"] for item in trace.sections], ["project_audit_prompt"])
+        self.assertTrue(trace.sections[0]["model_visible"])
+
+    def test_project_audit_records_distinct_advisor_source_refs(self) -> None:
+        qwen = FakeProvider(['{"tool":"done","args":{"summary":"qwen report"}}'])
+        glm = FakeProvider(['{"tool":"done","args":{"summary":"glm report"}}'])
+        providers = {"qwen": qwen, "glm": glm}
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            project = root / "project"
+            project.mkdir()
+            (project / "app.py").write_text("print('hello')\n", encoding="utf-8")
+            trace_store = RunTraceStore(root / "state")
+            trace = trace_store.open(
+                run_id="run-project-audit",
+                session_id="session-project-audit",
+                project=project,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+
+            reports = consensus.run_project_audit(
+                project=project,
+                selected_provider_id="deepseek",
+                task="Review this project for bugs",
+                provider_ids=("deepseek", "qwen", "glm"),
+                provider_labels={"qwen": "Qwen", "glm": "GLM"},
+                availability=lambda: {"qwen": True, "glm": True},
+                connect_existing=lambda provider_id: providers[provider_id],
+                trace_recorder=trace,
+            )
+            trace.finish(status="done")
+            payload = json.loads(
+                trace_store.path_for(
+                    "session-project-audit",
+                    "run-project-audit",
+                ).read_text(encoding="utf-8")
+            )
+
+        self.assertEqual([item.provider_id for item in reports], ["qwen", "glm"])
+        audit_sections = [
+            item
+            for item in payload["prompt_sections"]
+            if item["name"] == "project_audit_prompt"
+        ]
+        self.assertEqual(len(audit_sections), 2)
+        self.assertEqual(
+            {tuple(item["source_refs"]) for item in audit_sections},
+            {
+                ("provider_send:project_audit:qwen",),
+                ("provider_send:project_audit:glm",),
+            },
+        )
 
     def test_owner_draft_prompt_keeps_current_request_after_long_handoff(self) -> None:
         marker = "CURRENT_REQUEST_MARKER"

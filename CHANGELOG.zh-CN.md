@@ -4,6 +4,30 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.14 - Prompt Envelope v1
+
+- 新增 `codey/prompt_envelope.py`：为模型可见 section 提供一个很小的内部
+  prompt envelope 和 fail-open trace sink。
+- Coding、chat、Research、review、consensus、project-audit 的模型边界现在通过
+  统一 sink 在实际 provider.send 前记录 prompt section metadata，不再在各处手写
+  `trace_call`。
+- Run Trace 的 prompt section payload 新增有界 `purpose`、`model_visible` 和
+  source-ref fallback；仍然只保存 digest、字符数、预算、截断标记和 refs。
+- Research intro 组装改用 prompt envelope，渲染文本保持字节级等价。Coding 保留
+  现有 prompt 形状，包括 `User task` 前的单换行边界。
+- provider-send prompt section 仍在真实模型调用前即时落盘；TaskRunner 的二级输入片段
+  改用非边界 `secondary_input_prepared` metadata，非模型边界 metadata 继续 checkpoint batching。
+- trace 关闭时，local-context 和 secondary-input helper 现在会直接早退，不再扫描
+  section。
+- Chat consensus 路径不再记录实际没有发送的 `chat_outbound_prompt`；project-audit
+  advisor prompt refs 带 advisor id，重复 advisor prompt 仍可审计。
+- `PromptEnvelope` 不再依赖 provider control 代码；control teaching 的取消信号按异常名透传。
+  Run Trace prompt-section 去重键现在包含 `purpose`。
+- `PromptEnvelope` v1 保持最小 API 面：section 通过构造传入后渲染，不保留未使用的
+  mutable builder convenience。
+- 本版不改 UI、SSE、Router、provider fallback、权限、Writer、Review 或 Research
+  行为。prompt parity 测试通过时不需要 live provider A/B。
+
 ## 0.3.13 - Run Trace Manifest v1
 
 - 新增 `codey/run_trace.py`：每次 run 生成一个有界审计 sidecar，保存到

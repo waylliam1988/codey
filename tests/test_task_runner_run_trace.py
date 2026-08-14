@@ -9,6 +9,7 @@ from codey import server
 from codey.consensus import ConsensusResult
 from codey.agent import RunResult
 from codey.research.runner import ResearchRunResult
+from codey import task_runner as task_runner_module
 from codey.task_runner import TaskRequest, TaskRunner
 
 
@@ -258,7 +259,20 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
         assert "SECRET_RESEARCH_PROMPT_SHOULD_NOT_BE_SAVED" not in serialized
 
 
-def test_secondary_model_inputs_are_traced_by_digest_only() -> None:
+def test_local_context_trace_skips_scanning_when_trace_is_missing() -> None:
+    class _ExplodingContext:
+        @property
+        def selected_nodes(self):  # pragma: no cover - exercised through early return
+            raise AssertionError("should not inspect local contexts without trace")
+
+        @property
+        def selected_items(self):  # pragma: no cover - exercised through early return
+            raise AssertionError("should not inspect local contexts without trace")
+
+    task_runner_module._record_local_context_trace(None, _ExplodingContext())
+
+
+def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         project = root / "project"
@@ -310,7 +324,15 @@ def test_secondary_model_inputs_are_traced_by_digest_only() -> None:
         impact_map.assert_called_once()
         assert run_review.call_args.kwargs["review_impact_map"] == "SECRET_REVIEW_IMPACT_SHOULD_NOT_BE_SAVED"
         assert {"review_task", "review_writer_summary", "review_diff"}.issubset(names)
-        assert {"phase": "review", "profile": "reviewer"} in payload["permission_profiles"]
+        review_sections = [
+            item
+            for item in payload["prompt_sections"]
+            if item["name"] in {"review_task", "review_writer_summary", "review_diff"}
+        ]
+        assert review_sections
+        assert {item["freshness"] for item in review_sections} == {"secondary_input_prepared"}
+        assert all(ref.startswith("secondary_input:review:") for item in review_sections for ref in item["source_refs"])
+        assert {"phase": "review", "profile": "reviewer"} not in payload["permission_profiles"]
         assert secret_diff not in serialized
         assert "SECRET_WRITER_SUMMARY_SHOULD_NOT_BE_SAVED" not in serialized
         assert "SECRET_REVIEW_IMPACT_SHOULD_NOT_BE_SAVED" not in serialized
@@ -342,6 +364,48 @@ def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
 
         consensus.assert_called_once()
         assert "consensus_task" in names
+        assert "chat_outbound_prompt" not in names
+        consensus_task = next(item for item in payload["prompt_sections"] if item["name"] == "consensus_task")
+        assert consensus_task["freshness"] == "secondary_input_prepared"
+        assert consensus_task["source_refs"] == ["secondary_input:consensus:task"]
+        assert secret_task not in serialized
+
+
+def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        project = root / "project"
+        project.mkdir()
+        (project / "app.py").write_text("print('hello')\n", encoding="utf-8")
+        state = server.State(root / "state")
+        secret_task = "SECRET_PROJECT_AUDIT_TASK_SHOULD_NOT_BE_SAVED"
+        project_audit = mock.Mock(return_value=())
+
+        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+            runner = _runner(state, run_project_audit=project_audit)
+            runner.run(TaskRequest(
+                "session-project-audit-prepared",
+                str(project),
+                secret_task,
+                4,
+                False,
+                "deepseek",
+                intent="project",
+            ))
+            state.wait_for_ghost_sleep(timeout=2)
+
+        run_id = state.last_terminal_event["run_id"]
+        payload = _trace_payload(state, "session-project-audit-prepared", run_id)
+        audit_task = next(
+            item
+            for item in payload["prompt_sections"]
+            if item["name"] == "project_audit_task"
+        )
+        serialized = json.dumps(payload, ensure_ascii=False)
+
+        project_audit.assert_called_once()
+        assert audit_task["freshness"] == "secondary_input_prepared"
+        assert audit_task["source_refs"] == ["secondary_input:project_audit:task"]
         assert secret_task not in serialized
 
 

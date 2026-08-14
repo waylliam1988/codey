@@ -17,6 +17,7 @@ from codey import cancellation, provider_controls
 from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.handoff import ConversationSnapshot
 from codey.models import ToolCall, ToolResult
+from codey.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
 from codey.protocols import JsonToolCodec
 from codey.references import find_reference_hints
 from codey.tool_runtime import (
@@ -194,6 +195,33 @@ def _clip(value: object, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[:limit].rstrip() + "\n[truncated]"
+
+
+def _trace_model_prompt(
+    trace_recorder: object | None,
+    name: str,
+    text: str,
+    *,
+    purpose: str,
+    source_ref: str,
+) -> None:
+    FailOpenPromptTrace(trace_recorder).record_section(PromptEnvelopeSection(
+        name=name,
+        text=text,
+        purpose=purpose,
+        freshness="provider_send",
+        source_refs=(source_ref,),
+    ))
+
+
+def _provider_send_ref(kind: str, provider_id: str = "") -> str:
+    suffix = _safe_ref_part(provider_id)
+    return f"provider_send:{kind}:{suffix}" if suffix else f"provider_send:{kind}"
+
+
+def _safe_ref_part(value: object) -> str:
+    text = str(value or "").strip().lower()
+    return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
 
 
 def advisor_ids(
@@ -667,6 +695,8 @@ def run_project_audit_advisor(
     *,
     context: str = "",
     max_turns: int = PROJECT_AUDIT_MAX_TURNS,
+    trace_recorder: object | None = None,
+    advisor_id: str = "",
 ) -> str:
     project_path = Path(project).expanduser().resolve()
     initial_listing = _audit_visible_entries(project_path, ".").output
@@ -674,6 +704,13 @@ def run_project_audit_advisor(
         task=task,
         context=context,
         initial_listing=initial_listing,
+    )
+    _trace_model_prompt(
+        trace_recorder,
+        "project_audit_prompt",
+        prompt,
+        purpose="project audit prompt sent to provider",
+        source_ref=_provider_send_ref("project_audit", advisor_id),
     )
     deadline = time.monotonic() + PROJECT_AUDIT_ADVISOR_TOTAL_TIMEOUT
     with provider_controls.suppress_assistance():
@@ -690,12 +727,19 @@ def run_project_audit_advisor(
                 if plan.protocol_error_kind == "disallowed_tool"
                 else ""
             )
+            repair = (
+                f"Protocol error: {plan.protocol_error}{readonly_note}\n\n"
+                "Reply with exactly one JSON object using only read-only tools."
+            )
+            _trace_model_prompt(
+                trace_recorder,
+                "project_audit_repair_prompt",
+                repair,
+                purpose="project audit repair prompt sent to provider",
+                source_ref=_provider_send_ref("project_audit_repair", advisor_id),
+            )
             with provider_controls.suppress_assistance():
-                reply = provider.send(
-                    f"Protocol error: {plan.protocol_error}{readonly_note}\n\n"
-                    "Reply with exactly one JSON object using only read-only tools.",
-                    timeout=_advisor_timeout(deadline),
-                )
+                reply = provider.send(repair, timeout=_advisor_timeout(deadline))
             continue
         if plan.calls:
             results: list[ToolResult] = []
@@ -724,14 +768,29 @@ def run_project_audit_advisor(
                     "\n\nYou are in read-only project audit mode. "
                     "Continue with read-only tools or call done(summary)."
                 )
+            _trace_model_prompt(
+                trace_recorder,
+                "project_audit_result_prompt",
+                next_prompt,
+                purpose="project audit follow-up prompt sent to provider",
+                source_ref=_provider_send_ref("project_audit_followup", advisor_id),
+            )
             with provider_controls.suppress_assistance():
                 reply = provider.send(next_prompt, timeout=_advisor_timeout(deadline))
             continue
         if plan.control is not None and plan.control.kind == "done":
             return _clip(plan.control.body, PROJECT_AUDIT_MAX_REPORT_CHARS)
+        repair_prompt = READ_ONLY_CODEC.repair_prompt()
+        _trace_model_prompt(
+            trace_recorder,
+            "project_audit_repair_prompt",
+            repair_prompt,
+            purpose="project audit repair prompt sent to provider",
+            source_ref=_provider_send_ref("project_audit_repair", advisor_id),
+        )
         with provider_controls.suppress_assistance():
             reply = provider.send(
-                READ_ONLY_CODEC.repair_prompt(),
+                repair_prompt,
                 timeout=_advisor_timeout(deadline),
             )
     return ""
@@ -749,6 +808,7 @@ def run_project_audit(
     clear_provider_session: Callable[[str], None] | None = None,
     context: str = "",
     max_advisors: int = MAX_CONSENSUS_ADVISORS,
+    trace_recorder: object | None = None,
 ) -> tuple[ConsensusAdvice, ...]:
     cancellation.check()
     try:
@@ -775,6 +835,8 @@ def run_project_audit(
                 project,
                 task,
                 context=context,
+                trace_recorder=trace_recorder,
+                advisor_id=advisor_id,
             )
             if text.strip():
                 reports.append(ConsensusAdvice(
@@ -811,6 +873,7 @@ def run_consensus(
     draft_first: bool = False,
     owner_prompt: str = "",
     max_advisors: int = MAX_CONSENSUS_ADVISORS,
+    trace_recorder: object | None = None,
 ) -> ConsensusResult | None:
     cancellation.check()
     try:
@@ -834,6 +897,13 @@ def run_consensus(
             plan=plan,
             owner_prompt=owner_prompt,
         )
+        _trace_model_prompt(
+            trace_recorder,
+            "consensus_owner_draft_prompt",
+            prompt,
+            purpose="consensus owner-draft prompt sent to provider",
+            source_ref="provider_send:consensus_owner_draft",
+        )
         with provider_controls.suppress_assistance():
             owner_draft = _clip(
                 selected_provider.send(prompt, timeout=CONSENSUS_AGGREGATE_TIMEOUT),
@@ -856,6 +926,13 @@ def run_consensus(
                 context=context,
                 draft=owner_draft,
                 plan=plan,
+            )
+            _trace_model_prompt(
+                trace_recorder,
+                "consensus_advisor_prompt",
+                prompt,
+                purpose=f"consensus advisor prompt for {advisor_id}",
+                source_ref=f"provider_send:consensus_advisor:{advisor_id}",
             )
             with provider_controls.suppress_assistance():
                 text = advisor.send(prompt, timeout=CONSENSUS_ADVISOR_TIMEOUT)
@@ -888,6 +965,13 @@ def run_consensus(
         context=context,
         draft=owner_draft,
         plan=plan,
+    )
+    _trace_model_prompt(
+        trace_recorder,
+        "consensus_aggregate_prompt",
+        prompt,
+        purpose="consensus aggregate prompt sent to provider",
+        source_ref="provider_send:consensus_aggregate",
     )
     try:
         with provider_controls.suppress_assistance():

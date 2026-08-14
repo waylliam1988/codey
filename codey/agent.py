@@ -44,6 +44,11 @@ from codey.protocols.json_codec import (
     _balanced_json_objects,
 )
 from codey.permission_profiles import allows_context_source, profile_for_name
+from codey.prompt_envelope import (
+    FailOpenPromptTrace,
+    PromptEnvelope,
+    PromptEnvelopeSection,
+)
 from codey.tool_definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,
@@ -643,36 +648,27 @@ def run(
     verification_candidates_epoch: int | None = None
     project_text = str(project)
     active_provider_id = provider_id or getattr(provider, "name", "")
+    trace = FailOpenPromptTrace(trace_recorder)
 
-    def trace_call(method: str, *args, **kwargs) -> None:
-        if trace_recorder is None:
-            return
-        try:
-            fn = getattr(trace_recorder, method, None)
-            if callable(fn):
-                fn(*args, **kwargs)
-        except Exception:
-            return
-
-    trace_call("record_permission_profile", profile.name, phase="writer")
+    trace.call("record_permission_profile", profile.name, phase="writer")
     try:
-        trace_call("record_tool_contract_hash", codec.model_tool_contract_hash(), phase="writer")
+        trace.call("record_tool_contract_hash", codec.model_tool_contract_hash(), phase="writer")
     except Exception:
         pass
-    trace_call(
-        "record_prompt_section",
-        "coding_system_prompt",
-        system_prompt_text,
+    trace.record_section(PromptEnvelopeSection(
+        name="coding_system_prompt",
+        text=system_prompt_text,
+        purpose="coding JSON tool protocol",
         freshness="run_start",
         source_refs=("protocol:json",),
-    )
-    trace_call(
-        "record_prompt_section",
-        "user_task",
-        user_task,
+    ))
+    trace.record_section(PromptEnvelopeSection(
+        name="user_task",
+        text=user_task,
+        purpose="current user request",
         freshness="run_start",
         source_refs=("request:user_task",),
-    )
+    ))
 
     def emit(event: RunEvent) -> None:
         on_event(event)
@@ -727,13 +723,13 @@ def run(
         include_ghost_directive: bool = True,
     ) -> str:
         if factual_handoff:
-            trace_call(
-                "record_prompt_section",
-                "conversation_handoff",
-                factual_handoff,
+            trace.record_section(PromptEnvelopeSection(
+                name="conversation_handoff",
+                text=factual_handoff,
+                purpose="bounded conversation handoff for a fresh provider window",
                 freshness="run_start",
                 source_refs=("conversation:handoff",),
-            )
+            ))
         current = (
             render_continuation_prompt(factual_handoff, request)
             if factual_handoff
@@ -819,15 +815,41 @@ def run(
             for source in sources
             if allows_context_source(profile, source.key)
         )
-        trace_call("record_context_sources", rendered_context.sources)
+        trace.call("record_context_sources", rendered_context.sources)
         context = rendered_context.text
         context_block = f"{context}\n\n" if context else ""
-        return (
-            f"{system_prompt_text}\n\n"
+        request_context = (
             "Project workspace: use paths relative to the project root.\n"
             f"{context_block}"
             f"User task:\n{current}"
         )
+        rendered = PromptEnvelope((
+            PromptEnvelopeSection(
+                name="coding_system_prompt",
+                text=system_prompt_text,
+                purpose="coding JSON tool protocol",
+                freshness="run_start",
+                source_refs=("protocol:json",),
+            ),
+            PromptEnvelopeSection(
+                name="coding_request_context",
+                text=request_context,
+                purpose="project workspace, bounded local context, and current request",
+                freshness="run_start",
+                source_refs=(
+                    "project:workspace",
+                    "request:user_task",
+                    *(
+                        f"context_source:{source.key}"
+                        for source in rendered_context.sources
+                    ),
+                ),
+                budget=sum(source.budget for source in rendered_context.sources),
+                truncated=any(source.truncated for source in rendered_context.sources),
+            ),
+        )).render()
+        trace.record_envelope(rendered)
+        return rendered.text
 
     def send_prompt(
         prompt: str,
@@ -839,26 +861,26 @@ def run(
         if conversation is not None and conversation.needs_rollover(prompt):
             factual_handoff = conversation.prepare_model_handoff(provider.send)
             if open_fresh_chat():
-                trace_call(
-                    "record_prompt_section",
-                    "conversation_handoff",
-                    factual_handoff,
+                trace.record_section(PromptEnvelopeSection(
+                    name="conversation_handoff",
+                    text=factual_handoff,
+                    purpose="bounded conversation handoff for provider rollover",
                     freshness="provider_rollover",
                     source_refs=("conversation:handoff",),
-                )
+                ))
                 prompt = project_intro(
                     restart_request or prompt,
                     factual_handoff,
                     include_ghost_directive=include_ghost_directive,
                 )
                 opened_fresh_chat = True
-        trace_call(
-            "record_prompt_section",
-            "coding_outbound_prompt",
-            prompt,
+        trace.record_section(PromptEnvelopeSection(
+            name="coding_outbound_prompt",
+            text=prompt,
+            purpose="coding prompt sent to provider",
             freshness="provider_send",
             source_refs=("provider_send:coding",),
-        )
+        ))
         reply_text = provider.send(prompt)
         if conversation is not None:
             if opened_fresh_chat:
@@ -929,7 +951,7 @@ def run(
                 ),
             )
         )
-        trace_call("record_context_sources", rendered_context.sources)
+        trace.call("record_context_sources", rendered_context.sources)
         context = rendered_context.text
         if not context:
             return prompt
@@ -938,13 +960,13 @@ def run(
     if fresh_chat:
         opened_fresh_chat = open_fresh_chat()
         intro = project_intro(user_task, handoff)
-        trace_call(
-            "record_prompt_section",
-            "coding_outbound_prompt",
-            intro,
+        trace.record_section(PromptEnvelopeSection(
+            name="coding_outbound_prompt",
+            text=intro,
+            purpose="coding prompt sent to provider",
             freshness="provider_send",
             source_refs=("provider_send:coding",),
-        )
+        ))
         reply = provider.send(intro)
         if conversation is not None:
             if opened_fresh_chat:
@@ -958,13 +980,13 @@ def run(
         reply = send_prompt(followup, restart_request=user_task)
     else:
         intro = project_intro(user_task)
-        trace_call(
-            "record_prompt_section",
-            "coding_outbound_prompt",
-            intro,
+        trace.record_section(PromptEnvelopeSection(
+            name="coding_outbound_prompt",
+            text=intro,
+            purpose="coding prompt sent to provider",
             freshness="provider_send",
             source_refs=("provider_send:coding",),
-        )
+        ))
         reply = provider.send(intro)
     report_reply(1, reply)
 

@@ -689,6 +689,45 @@ class ProviderStatusTests(unittest.TestCase):
         review_event = events.get_nowait()
         self.assertEqual(review_event["text"], "DeepSeek self-review approved")
 
+    def test_run_review_records_prompt_envelope_for_real_sends(self) -> None:
+        state = server.State()
+        reviewer = mock.Mock()
+        reviewer.send.side_effect = [
+            "not json",
+            '{"verdict":"approved","summary":"Looks good","findings":[]}',
+        ]
+        trace = mock.Mock()
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "app.py", "status": "M"}],
+            "diff": "diff --git a/app.py b/app.py\n-old\n+new\n",
+        }
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+        ):
+            reviewed = server._run_review(
+                session_id="session-review-trace",
+                project="E:/demo",
+                task="task",
+                writer_summary="done",
+                changes=changes,
+                recent_log="",
+                writer_id="deepseek",
+                trace_recorder=trace,
+            )
+
+        self.assertIsNotNone(reviewed)
+        self.assertEqual(
+            [call.args[0] for call in trace.record_prompt_section.call_args_list],
+            ["review_prompt", "review_repair_prompt"],
+        )
+        self.assertTrue(all(call.kwargs["model_visible"] for call in trace.record_prompt_section.call_args_list))
+        trace.record_permission_profile.assert_called_once_with("reviewer", phase="review")
+
     def test_run_review_self_review_cancellation_closes_temp_reviewer(self) -> None:
         state = server.State()
         reviewer = mock.Mock()
@@ -1182,7 +1221,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.3.13")
+        self.assertEqual(__version__, "0.3.14")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)

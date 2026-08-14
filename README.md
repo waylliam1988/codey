@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.13-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.14-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.13`
+Version: `0.3.14`
 
 [Version history](CHANGELOG.md)
 
@@ -38,6 +38,9 @@ Version: `0.3.13`
 - **Audit local context on demand**: open `Local context` from the topbar
   `...` menu to inspect, export, delete, reset, or disable bounded local state
   without adding a persistent sidebar or interrupting the task flow.
+- **Trace model input composition quietly**: each run can keep a bounded local
+  prompt envelope manifest, so model-visible sections are auditable by digest
+  and source refs without saving raw prompts.
 - **Continue saved work naturally**: when Codey has a queued local follow-up,
   saying "continue" can claim one item and run the right path with proof.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save readable note cards with source chips, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
@@ -669,6 +672,7 @@ codey/
   tool_definition.py        internal coding tool metadata and render hints
   permission_profiles.py    internal tool/context permission profiles
   context_source.py         named bounded prompt context assembly
+  prompt_envelope.py        prompt section envelopes and fail-open trace sink
   tool_runtime.py           local tools and structured outcomes
   execution_evidence.py     bounded in-memory execution fact ledger
   run_ledger.py             append-only project-task run fact ledger

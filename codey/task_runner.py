@@ -68,6 +68,7 @@ from codey.providers import PROVIDER_LABELS
 from codey.provider_capabilities import rank_providers
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
+from codey.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
 from codey.receipt import build_task_receipt
 from codey.run_ledger import RunLedgerStore, RunLedgerWriter
 from codey.run_ledger_projection import (
@@ -207,45 +208,31 @@ def _record_local_context_trace(trace: Any | None, *contexts: Any) -> None:
             })
     if not refs:
         return
-    try:
-        trace.record_local_context_refs(refs)
-    except Exception:
-        return
+    FailOpenPromptTrace(trace).call("record_local_context_refs", refs)
 
 
-def _trace_call(trace: Any | None, method: str, *args, **kwargs) -> None:
-    if trace is None:
-        return
-    try:
-        fn = getattr(trace, method, None)
-        if callable(fn):
-            fn(*args, **kwargs)
-    except Exception:
-        return
-
-
-def _record_secondary_model_trace(
+def _record_secondary_input_prepared_trace(
     trace: Any | None,
     phase: str,
     **sections: object,
 ) -> None:
     if trace is None:
         return
+    sink = FailOpenPromptTrace(trace)
     phase_text = str(phase or "secondary").strip() or "secondary"
     for name, text in sections.items():
         if not str(text or ""):
             continue
-        _trace_call(
-            trace,
-            "record_prompt_section",
-            f"{phase_text}_{name}",
-            text,
-            freshness="secondary_model_call",
-            source_refs=(f"secondary_model:{phase_text}:{name}",),
-        )
+        sink.record_section(PromptEnvelopeSection(
+            name=f"{phase_text}_{name}",
+            text=str(text or ""),
+            purpose=f"{phase_text} secondary input prepared",
+            freshness="secondary_input_prepared",
+            source_refs=(f"secondary_input:{phase_text}:{name}",),
+        ))
 
 
-def _record_review_model_trace(
+def _record_review_input_prepared_trace(
     trace: Any | None,
     *,
     task: str,
@@ -258,8 +245,9 @@ def _record_review_model_trace(
     review_impact_map: str,
     execution_evidence: str,
 ) -> None:
-    _trace_call(trace, "record_permission_profile", "reviewer", phase="review")
-    _record_secondary_model_trace(
+    if trace is None:
+        return
+    _record_secondary_input_prepared_trace(
         trace,
         "review",
         task=task,
@@ -277,9 +265,9 @@ def _record_review_model_trace(
 def _record_research_result_trace(trace: Any | None, result: Any) -> None:
     if trace is None:
         return
-    _trace_call(trace, "record_permission_profile", "research", phase="research")
-    _trace_call(
-        trace,
+    sink = FailOpenPromptTrace(trace)
+    sink.call("record_permission_profile", "research", phase="research")
+    sink.call(
         "record_research_notes",
         [
             *getattr(result, "notes_created", ()),
@@ -287,7 +275,7 @@ def _record_research_result_trace(trace: Any | None, result: Any) -> None:
             getattr(result, "synthesis_id", ""),
         ],
     )
-    _trace_call(trace, "record_research_sources", getattr(result, "opened_sources", ()))
+    sink.call("record_research_sources", getattr(result, "opened_sources", ()))
 
 
 NEW_PROJECT_IGNORED_DIRS = {
@@ -1065,20 +1053,11 @@ class TaskRunner:
                 )
             except Exception:
                 trace = None
-
-        def trace_call(method: str, *args, **kwargs) -> None:
-            if trace is None:
-                return
-            try:
-                fn = getattr(trace, method, None)
-                if callable(fn):
-                    fn(*args, **kwargs)
-            except Exception:
-                return
+        trace_sink = FailOpenPromptTrace(trace)
 
         def finish_trace(event: dict[str, object]) -> None:
             status = str(event.get("stop_reason") or "done")
-            trace_call(
+            trace_sink.call(
                 "finish",
                 status=status,
                 mode=_trace_mode(task_kind, project),
@@ -1132,7 +1111,7 @@ class TaskRunner:
                 "mode": _ui_mode(baseline_task_kind, project),
                 "provider_failure": None,
             }
-            trace_call(
+            trace_sink.call(
                 "record_router",
                 baseline_mode=_trace_mode(baseline_task_kind, project),
                 selected_mode=_trace_mode(task_kind, project),
@@ -1159,7 +1138,7 @@ class TaskRunner:
                 if route_result.accepted
                 else (route_result.skipped_reason or "baseline_kept")
             )
-        trace_call(
+        trace_sink.call(
             "record_router",
             baseline_mode=_trace_mode(baseline_task_kind, project),
             selected_mode=_trace_mode(route_selected_mode, project),
@@ -1341,7 +1320,7 @@ class TaskRunner:
 
             def record_provider_failure(pid: str, failure: ProviderFailure) -> None:
                 append_ledger_provider_failure(pid, failure)
-                trace_call("record_provider_failure", pid, failure)
+                trace_sink.call("record_provider_failure", pid, failure)
                 if supervisor is None:
                     return
                 health = supervisor.record_failure(pid, failure)
@@ -1424,7 +1403,7 @@ class TaskRunner:
                             reason="unavailable",
                         )
                     )
-                    trace_call(
+                    trace_sink.call(
                         "record_fallback",
                         from_provider=previous_provider_id,
                         to_provider=provider_id,
@@ -1481,7 +1460,7 @@ class TaskRunner:
                             reason="provider_failure",
                         )
                     )
-                    trace_call(
+                    trace_sink.call(
                         "record_fallback",
                         from_provider=previous_provider_id,
                         to_provider=provider_id,
@@ -1521,7 +1500,7 @@ class TaskRunner:
                         reason="provider_failure",
                     )
                 )
-                trace_call(
+                trace_sink.call(
                     "record_fallback",
                     from_provider=previous_provider_id,
                     to_provider=provider_id,
@@ -1896,17 +1875,8 @@ class TaskRunner:
             ghost_continuity.text,
         )
         prompt = _prepend_ghost_directive(prompt, ghost_context)
-        if frame.trace is not None:
-            try:
-                frame.trace.record_permission_profile("chat", phase="chat")
-                frame.trace.record_prompt_section(
-                    "chat_outbound_prompt",
-                    prompt,
-                    freshness="provider_send",
-                    source_refs=("provider_send:chat",),
-                )
-            except Exception:
-                pass
+        trace = FailOpenPromptTrace(frame.trace)
+        trace.call("record_permission_profile", "chat", phase="chat")
         consulted = None
         if self.run_consensus is not None:
             compact_context = (
@@ -1923,7 +1893,7 @@ class TaskRunner:
                     frame.recovered_owner_prompt,
                     ghost_context,
                 )
-                _record_secondary_model_trace(
+                _record_secondary_input_prepared_trace(
                     frame.trace,
                     "consensus",
                     task=request.task,
@@ -1937,13 +1907,24 @@ class TaskRunner:
                     context=compact_context,
                     draft_first=True,
                     owner_prompt=owner_prompt,
+                    trace_recorder=frame.trace,
                 )
             except cancellation.TaskCancelled:
                 raise
             except Exception:
                 state.set_provider_session(frame.provider_id, None)
                 raise
-        reply = consulted.answer if consulted is not None else frame.provider.send(prompt)
+        if consulted is not None:
+            reply = consulted.answer
+        else:
+            trace.record_section(PromptEnvelopeSection(
+                name="chat_outbound_prompt",
+                text=prompt,
+                purpose="chat prompt sent to provider",
+                freshness="provider_send",
+                source_refs=("provider_send:chat",),
+            ))
+            reply = frame.provider.send(prompt)
         if frame.fresh_chat:
             frame.conversation.begin_window(frame.provider_id, "chat")
         state.set_provider_session(
@@ -2067,17 +2048,15 @@ class TaskRunner:
         state = self.state
         request = frame.request
         project = request.project
-        if frame.trace is not None:
-            try:
-                frame.trace.record_permission_profile("reviewer", phase="review")
-                frame.trace.record_prompt_section(
-                    "review_request",
-                    request.task,
-                    freshness="run_start",
-                    source_refs=("request:review",),
-                )
-            except Exception:
-                pass
+        trace = FailOpenPromptTrace(frame.trace)
+        trace.call("record_permission_profile", "reviewer", phase="review")
+        trace.record_section(PromptEnvelopeSection(
+            name="review_request",
+            text=request.task,
+            purpose="review request from the user",
+            freshness="run_start",
+            source_refs=("request:review",),
+        ))
         if project is None:
             summary = "No attached project is available to review."
             state.emit({
@@ -2099,16 +2078,13 @@ class TaskRunner:
                 "changed": False,
             })
         changes = self._collect_review_changes(project)
-        if frame.trace is not None:
-            try:
-                frame.trace.record_prompt_section(
-                    "review_changes",
-                    changes.get("diff", "") if isinstance(changes, dict) else "",
-                    freshness="run_start",
-                    source_refs=("local_diff:review",),
-                )
-            except Exception:
-                pass
+        trace.record_section(PromptEnvelopeSection(
+            name="review_changes",
+            text=changes.get("diff", "") if isinstance(changes, dict) else "",
+            purpose="bounded local diff prepared for review",
+            freshness="run_start",
+            source_refs=("local_diff:review",),
+        ))
         if not isinstance(changes, dict) or changes.get("ok") is not True:
             summary = "Could not collect a local diff to review."
             state.emit({
@@ -2162,7 +2138,7 @@ class TaskRunner:
                 raise
             except Exception:
                 review_impact_map = ""
-            _record_review_model_trace(
+            _record_review_input_prepared_trace(
                 frame.trace,
                 task=request.task,
                 writer_summary="Review-only mode did not run a writer.",
@@ -2187,6 +2163,7 @@ class TaskRunner:
                 verification_map="",
                 review_impact_map=review_impact_map,
                 execution_evidence="",
+                trace_recorder=frame.trace,
             )
         except cancellation.TaskCancelled:
             raise
@@ -2317,7 +2294,7 @@ class TaskRunner:
                 project_map=project_map,
             )
             try:
-                _record_secondary_model_trace(
+                _record_secondary_input_prepared_trace(
                     frame.trace,
                     "consensus",
                     task=request.task,
@@ -2330,6 +2307,7 @@ class TaskRunner:
                     context=context,
                     plan=True,
                     draft_first=True,
+                    trace_recorder=frame.trace,
                 )
             except cancellation.TaskCancelled:
                 raise
@@ -2348,7 +2326,7 @@ class TaskRunner:
                 project_map=project_map,
             )
             try:
-                _record_secondary_model_trace(
+                _record_secondary_input_prepared_trace(
                     frame.trace,
                     "project_audit",
                     task=request.task,
@@ -2360,6 +2338,7 @@ class TaskRunner:
                     selected_provider_id=frame.provider_id,
                     task=request.task,
                     context=context,
+                    trace_recorder=frame.trace,
                 )
             except cancellation.TaskCancelled:
                 raise
@@ -2493,16 +2472,13 @@ class TaskRunner:
                     reason="provider_failure",
                 )
             )
-            if hooks.trace is not None:
-                try:
-                    hooks.trace.record_fallback(
-                        from_provider=previous_provider_id,
-                        to_provider=next_provider_id,
-                        phase="writer_failover",
-                        reason_code="provider_failure",
-                    )
-                except Exception:
-                    pass
+            FailOpenPromptTrace(hooks.trace).call(
+                "record_fallback",
+                from_provider=previous_provider_id,
+                to_provider=next_provider_id,
+                phase="writer_failover",
+                reason_code="provider_failure",
+            )
             frame.conversation.update_snapshot(replace(
                 frame.conversation.snapshot,
                 provider_id=next_provider_id,
@@ -2594,7 +2570,7 @@ class TaskRunner:
                 project_map=project_map,
             )
             try:
-                _record_secondary_model_trace(
+                _record_secondary_input_prepared_trace(
                     frame.trace,
                     "consensus",
                     task=request.task,
@@ -2607,6 +2583,7 @@ class TaskRunner:
                     task=request.task,
                     context=context,
                     draft=result.summary,
+                    trace_recorder=frame.trace,
                 )
             except cancellation.TaskCancelled:
                 raise
@@ -2703,7 +2680,7 @@ class TaskRunner:
                 raise
             except Exception:
                 review_impact_map = ""
-            _record_review_model_trace(
+            _record_review_input_prepared_trace(
                 frame.trace,
                 task=str(kwargs.get("task") or ""),
                 writer_summary=str(kwargs.get("writer_summary") or ""),
@@ -2716,6 +2693,7 @@ class TaskRunner:
                 execution_evidence=str(kwargs.get("execution_evidence") or ""),
             )
             kwargs["review_impact_map"] = review_impact_map
+            kwargs["trace_recorder"] = frame.trace
             return self.run_review(**kwargs)
 
         review_cycle = review_coordinator.run_cycle(

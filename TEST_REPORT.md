@@ -1,5 +1,63 @@
 # Codey Test Report
 
+## 0.3.14 Prompt Envelope v1
+
+Codey 0.3.14 adds a lightweight prompt envelope for model-visible sections and
+a shared fail-open trace sink. It keeps the rendered prompt text unchanged while
+making prompt composition auditable through Run Trace metadata.
+
+Production changes:
+
+- New `codey/prompt_envelope.py` defines `PromptEnvelopeSection`,
+  `PromptEnvelope`, rendered section metadata, and `FailOpenPromptTrace`.
+- `agent.py`, `task_runner.py`, and `research/runner.py` now use the shared
+  trace sink instead of local `trace_call` / `_trace` helpers.
+- Research intro prompt assembly now goes through `PromptEnvelope` while
+  preserving the existing `\n\n` join shape.
+- Coding keeps the existing prompt text shape, including the single newline
+  before `User task`.
+- Run Trace prompt sections now include bounded `purpose`, `model_visible`, and
+  source-ref fallback metadata, while still writing only digests and bounded
+  metadata.
+- Provider-send prompt sections still flush at the model boundary before
+  provider calls. TaskRunner secondary snippets use non-boundary
+  `secondary_input_prepared` metadata; non-boundary metadata remains checkpoint
+  batched.
+- Trace-disabled local-context and secondary-input helpers now return early
+  instead of scanning sections.
+- Chat consensus does not record a `chat_outbound_prompt` when the selected
+  chat provider is not actually sent that prompt.
+- Project-audit advisor source refs include advisor id, and Run Trace
+  prompt-section dedup includes `purpose`.
+- `PromptEnvelope` does not import provider control code; control-teaching
+  cancellation still propagates by exception name.
+- `PromptEnvelope` keeps the v1 API surface minimal: sections are passed at
+  construction time and rendered without an unused mutable builder method.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_task_runner_run_trace.py tests\test_server.py tests\test_consensus.py tests\test_run_trace.py tests\test_prompt_envelope.py -q -p no:cacheprovider
+# 219 passed, 2 skipped
+
+python -m pytest -q -p no:cacheprovider
+# 1929 passed, 9 skipped, 276 subtests passed
+
+python -m ruff check codey tests --no-cache
+# All checks passed!
+
+python -m py_compile codey\prompt_envelope.py codey\task_runner.py codey\consensus.py codey\run_trace.py codey\server.py tests\test_prompt_envelope.py tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_consensus.py tests\test_server.py tests\test_architecture.py
+# passed
+
+git diff --check
+# passed
+```
+
+No live provider A/B is required for 0.3.14 because it does not change prompt
+text, Router behavior, Research/Writer/Review semantics, provider fallback,
+permissions, UI, SSE events, or task receipts. The release is gated by prompt
+parity and deterministic regression tests.
+
 ## 0.3.13 Run Trace Manifest v1
 
 Codey 0.3.13 adds a local run trace manifest sidecar for each task. It records

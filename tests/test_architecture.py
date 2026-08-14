@@ -98,11 +98,33 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("affinity", repair_source.casefold())
         self.assertNotIn("codey.ghost", tool_runtime_imports)
 
+    def test_prompt_envelope_is_not_a_provider_or_tool_runtime_seam(self) -> None:
+        imports = imported_modules(ROOT / "codey" / "prompt_envelope.py")
+        forbidden = {
+            "codey.browser",
+            "codey.deepseek",
+            "codey.qwen",
+            "codey.stepfun",
+            "codey.glm",
+            "codey.providers",
+            "codey.provider_controls",
+            "codey.tool_runtime",
+            "codey.research.runner",
+            "codey.ghost",
+        }
+
+        self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
         agent_source = (ROOT / "codey" / "agent.py").read_text(encoding="utf-8")
+        research_source = (ROOT / "codey" / "research" / "runner.py").read_text(encoding="utf-8")
+        task_runner_source = (ROOT / "codey" / "task_runner.py").read_text(encoding="utf-8")
         tool_source = (ROOT / "codey" / "tool_runtime.py").read_text(encoding="utf-8")
 
         self.assertNotIn("class StepResult", agent_source)
+        self.assertNotIn("def trace_call", agent_source)
+        self.assertNotIn("def _trace(", research_source)
+        self.assertNotIn("def _trace_call", task_runner_source)
         self.assertNotIn("compatibility ``tool_*``", tool_source)
 
 

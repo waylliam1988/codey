@@ -359,6 +359,8 @@ Codey 可以在后台保存六类有严格边界的小型状态：
 - 恢复基线：只服务非 Git 项目的 diff 和 restore，Restore 完成后删除。
 - Provider 控件与 Flow：只保存经过端到端验证的结构指纹、单阶段布尔规则和一代可回滚恢复包。
 - Provider 健康：只保存状态、故障类别、计数、时间戳和熔断截止时间。
+- Run Trace / Prompt Envelope：只记录模型可见 section 的 digest、长度、用途和来源 ref，
+  不保存 raw prompt、完整聊天、源码正文、网页正文或 provider raw error。
 
 这些状态应当共用原子 JSON 写入，但不能混成一个文件，因为生命周期不同。它们不在主界面显示，不保存完整聊天、Cookie、网页 DOM、URL、源码或人类点击教学记录。Project Facts、对话摘要和健康状态写入失败不能打断正在运行的任务；恢复基线首次落盘失败则必须阻止对应文件写入。
 
