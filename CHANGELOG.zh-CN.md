@@ -4,6 +4,28 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.13 - Run Trace Manifest v1
+
+- 新增 `codey/run_trace.py`：每次 run 生成一个有界审计 sidecar，保存到
+  `run_traces/<session>/<run>.json`。它通过 `run_id` 关联 RunLedger，但不替代
+  RunLedger，也不成为第二套执行事实流。
+- Run trace 现在记录 mode、provider、permission profile、结构化 Router 结果、
+  prompt section 的 digest/字符数、模型可见工具契约 hash、Local context item refs、
+  Research note/source refs、provider failure 分类和 provider fallback switch。
+- Hybrid run 会保留 Research / Writer 的分阶段 profile 和工具契约记录；consensus、
+  project audit、review 这类二级模型调用也只按 digest 记录输入摘要。
+- Research source ref 只保存 hostname，不保存 URL userinfo 或端口；review trace 复用
+  实际传给 reviewer prompt 的同一份 impact map。
+- 高频 trace metadata 走 checkpoint batching；终态里程碑仍即时落盘。
+- provider send 和二级模型调用的 prompt digest 会在模型边界即时落盘。
+- Prompt trace 只保存 digest，不保存 raw prompt、聊天全文、源码正文、网页正文、
+  Research note body、evidence excerpt、provider raw error 或完整 diff。
+- 新增 context source metadata helper，以及 coding/Research 工具契约稳定 hash helper；
+  同时用 prompt parity 测试保证发给模型的 prompt 文本不变。
+- 删除/忘记会话时会清理对应 session 的 run trace sidecars。
+- 0.3.13 不需要 live provider A/B，因为它不改 prompt、Router 决策、Research/Writer
+  行为、provider fallback 策略、工具权限、UI、SSE event 或任务完成收据。
+
 ## 0.3.12 - Research Notes v2
 
 - Research drawer 的 `Notes` tab 从 note id / excerpt 纯文本升级为可读笔记卡片，

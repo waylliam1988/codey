@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 
 from codey.models import ToolCall
@@ -232,6 +234,17 @@ def render_tool_contract(definitions: tuple[ToolDefinition, ...] | None = None) 
         examples = "\n".join(f"  {example}" for example in definition.examples)
         chunks.append(f"{examples}\n    {definition.description}")
     return "\n\n".join(chunks)
+
+
+def model_tool_contract_hash(definitions: tuple[ToolDefinition, ...] | None = None) -> str:
+    """Hash the coding tool contract text currently visible to the model."""
+
+    payload = {
+        "kind": "coding_tool_contract",
+        "contract": render_tool_contract(definitions),
+    }
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return "sha256:" + hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
 def public_example(

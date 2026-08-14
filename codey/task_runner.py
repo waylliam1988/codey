@@ -74,10 +74,12 @@ from codey.run_ledger_projection import (
     load_run_projection,
     receipt_from_projection_if_compatible,
 )
+from codey.run_trace import RunTraceStore
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
 from codey.review import has_reviewable_changes
 from codey.review_coordinator import ReviewCoordinator, change_state
+from codey.review_impact_map import safe_review_impact_map
 from codey.shell_risk import classify_shell_risk
 from codey.verification_map import render_verification_map
 from codey.verification_policy import (
@@ -131,6 +133,7 @@ class _RunFrame:
     provider_session_changed: bool
     preflight_tried: set[str]
     preflight_switches: int
+    trace: Any | None = None
 
 
 @dataclass
@@ -139,6 +142,7 @@ class _RunWork:
     evidence: ExecutionEvidence
     work_checkpoint: WorkCheckpoint | None = None
     ledger: RunLedgerWriter | None = None
+    trace: Any | None = None
     record_agent_events_in_ledger: bool = False
     claimed_work_item: GhostWorkItem | None = None
 
@@ -155,6 +159,7 @@ class _RunHooks:
     append_ledger: Callable[[Callable[[RunLedgerWriter], None]], None]
     provider_failover_order: Callable[[], tuple[str, ...]]
     supervisor: Any | None
+    trace: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -179,6 +184,110 @@ def _owner_prompt_with_ghost_directive(owner_prompt: str, directive: str) -> str
 
 def _join_local_contexts(*values: str) -> str:
     return "\n\n".join(str(value or "").strip() for value in values if str(value or "").strip())
+
+
+def _record_local_context_trace(trace: Any | None, *contexts: Any) -> None:
+    if trace is None:
+        return
+    refs: list[dict[str, object]] = []
+    for context in contexts:
+        for node in getattr(context, "selected_nodes", ()) or ():
+            refs.append({
+                "id": getattr(node, "id", ""),
+                "scope": getattr(node, "scope", ""),
+                "kind": getattr(node, "kind", ""),
+                "source": "local_context",
+            })
+        for item in getattr(context, "selected_items", ()) or ():
+            refs.append({
+                "id": getattr(item, "id", ""),
+                "scope": getattr(item, "scope", ""),
+                "kind": getattr(item, "kind", ""),
+                "source": getattr(item, "source", "continuity"),
+            })
+    if not refs:
+        return
+    try:
+        trace.record_local_context_refs(refs)
+    except Exception:
+        return
+
+
+def _trace_call(trace: Any | None, method: str, *args, **kwargs) -> None:
+    if trace is None:
+        return
+    try:
+        fn = getattr(trace, method, None)
+        if callable(fn):
+            fn(*args, **kwargs)
+    except Exception:
+        return
+
+
+def _record_secondary_model_trace(
+    trace: Any | None,
+    phase: str,
+    **sections: object,
+) -> None:
+    if trace is None:
+        return
+    phase_text = str(phase or "secondary").strip() or "secondary"
+    for name, text in sections.items():
+        if not str(text or ""):
+            continue
+        _trace_call(
+            trace,
+            "record_prompt_section",
+            f"{phase_text}_{name}",
+            text,
+            freshness="secondary_model_call",
+            source_refs=(f"secondary_model:{phase_text}:{name}",),
+        )
+
+
+def _record_review_model_trace(
+    trace: Any | None,
+    *,
+    task: str,
+    writer_summary: str,
+    changes: dict,
+    recent_log: str,
+    change_brief: str,
+    project_map: str,
+    verification_map: str,
+    review_impact_map: str,
+    execution_evidence: str,
+) -> None:
+    _trace_call(trace, "record_permission_profile", "reviewer", phase="review")
+    _record_secondary_model_trace(
+        trace,
+        "review",
+        task=task,
+        writer_summary=writer_summary,
+        diff=(changes or {}).get("diff", "") if isinstance(changes, dict) else "",
+        recent_log=recent_log,
+        change_brief=change_brief,
+        project_map=project_map,
+        verification_map=verification_map,
+        review_impact_map=review_impact_map,
+        execution_evidence=execution_evidence,
+    )
+
+
+def _record_research_result_trace(trace: Any | None, result: Any) -> None:
+    if trace is None:
+        return
+    _trace_call(trace, "record_permission_profile", "research", phase="research")
+    _trace_call(
+        trace,
+        "record_research_notes",
+        [
+            *getattr(result, "notes_created", ()),
+            *getattr(result, "notes_updated", ()),
+            getattr(result, "synthesis_id", ""),
+        ],
+    )
+    _trace_call(trace, "record_research_sources", getattr(result, "opened_sources", ()))
 
 
 NEW_PROJECT_IGNORED_DIRS = {
@@ -295,6 +404,16 @@ def _ui_mode(kind: str, project: str | None) -> str:
     return "agent" if project else "chat"
 
 
+def _trace_mode(kind: str, project: str | None) -> str:
+    if kind == "planning_readonly":
+        return "planning"
+    if kind in {"chat", "research", "project", "hybrid", "review"}:
+        if kind in {"project", "hybrid"} and not project:
+            return "chat"
+        return kind
+    return "project" if project else "chat"
+
+
 def _bullet_lines(values: tuple[str, ...]) -> str:
     if not values:
         return "- (none)"
@@ -372,6 +491,7 @@ class TaskRunner:
         project_facts: ProjectFactsStore | None = None,
         work_checkpoints: WorkCheckpointStore | None = None,
         run_ledgers: RunLedgerStore | None = None,
+        run_traces: RunTraceStore | None = None,
         managed_outputs: ManagedOutputStore | None = None,
         knowledge_store: KnowledgeStore | None = None,
         search_factory: Callable[[], object] | None = None,
@@ -393,6 +513,7 @@ class TaskRunner:
         self.project_facts = project_facts
         self.work_checkpoints = work_checkpoints
         self.run_ledgers = run_ledgers
+        self.run_traces = run_traces
         self.managed_outputs = managed_outputs
         self.knowledge_store = knowledge_store
         self.search_factory = search_factory or BrowserSearchProvider
@@ -420,24 +541,32 @@ class TaskRunner:
 
         return AgentToolFns(run_command_with_context=run_command)
 
-    def _ghost_directive_text(
+    def _ghost_directive(
         self,
         *,
         project: str = "",
         session_id: str = "",
-    ) -> str:
+    ):
         store = getattr(self.state, "ghost_hebbian", None)
         if store is None:
-            return ""
+            return build_ghost_directive(None)
         try:
             return build_ghost_directive(
                 store,
                 project=project,
                 session_id=session_id,
                 affinity_store=self._ghost_affinity_store(),
-            ).text
+            )
         except Exception:
-            return ""
+            return build_ghost_directive(None)
+
+    def _ghost_directive_text(
+        self,
+        *,
+        project: str = "",
+        session_id: str = "",
+    ) -> str:
+        return self._ghost_directive(project=project, session_id=session_id).text
 
     def _ghost_affinity_store(self):
         store = getattr(self.state, "ghost_affinity", None)
@@ -452,23 +581,31 @@ class TaskRunner:
                 return None
         return store
 
+    def _ghost_continuity(
+        self,
+        *,
+        project: str = "",
+        session_id: str = "",
+    ):
+        store = getattr(self.state, "ghost_continuity", None)
+        if store is None:
+            return build_ghost_continuity(None)
+        try:
+            return build_ghost_continuity(
+                store,
+                project=project,
+                session_id=session_id,
+            )
+        except Exception:
+            return build_ghost_continuity(None)
+
     def _ghost_continuity_text(
         self,
         *,
         project: str = "",
         session_id: str = "",
     ) -> str:
-        store = getattr(self.state, "ghost_continuity", None)
-        if store is None:
-            return ""
-        try:
-            return build_ghost_continuity(
-                store,
-                project=project,
-                session_id=session_id,
-            ).text
-        except Exception:
-            return ""
+        return self._ghost_continuity(project=project, session_id=session_id).text
 
     def _maybe_run_ghost_learning(
         self,
@@ -916,6 +1053,38 @@ class TaskRunner:
         if not state.start_run(run_id):
             return
 
+        trace = None
+        if self.run_traces is not None:
+            try:
+                trace = self.run_traces.open(
+                    run_id=run_id,
+                    session_id=session_id,
+                    project=project,
+                    mode_initial=_trace_mode(baseline_task_kind, project),
+                    provider_initial=provider_id,
+                )
+            except Exception:
+                trace = None
+
+        def trace_call(method: str, *args, **kwargs) -> None:
+            if trace is None:
+                return
+            try:
+                fn = getattr(trace, method, None)
+                if callable(fn):
+                    fn(*args, **kwargs)
+            except Exception:
+                return
+
+        def finish_trace(event: dict[str, object]) -> None:
+            status = str(event.get("stop_reason") or "done")
+            trace_call(
+                "finish",
+                status=status,
+                mode=_trace_mode(task_kind, project),
+                provider=str(event.get("provider") or current_provider_id()),
+            )
+
         provider_controls.set_teach_handler(state.handle_control_teach)
         provider_controls.set_doctor_handler(getattr(state, "handle_profile_doctor", None))
         provider_flow.set_recovery_handler(
@@ -963,10 +1132,42 @@ class TaskRunner:
                 "mode": _ui_mode(baseline_task_kind, project),
                 "provider_failure": None,
             }
+            trace_call(
+                "record_router",
+                baseline_mode=_trace_mode(baseline_task_kind, project),
+                selected_mode=_trace_mode(task_kind, project),
+                final_mode=_trace_mode(task_kind, project),
+                source="local_work_item" if claimed_work_item else "baseline",
+                reason_code="stopped_before_start",
+            )
+            finish_trace(stopped_event)
             state.finish_run(run_id, stopped_event)
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()
             return
+        route_source = "explicit_user_choice" if str(request.intent or "").strip().lower() != "auto" else "baseline"
+        route_reason = "intent_selected" if route_source == "explicit_user_choice" else "baseline_kept"
+        route_selected_mode = task_kind
+        if claimed_work_item is not None:
+            route_source = "local_work_item"
+            route_reason = "claimed_work_item"
+        elif "route_result" in locals() and route_result is not None:
+            route_source = "auto_router"
+            route_selected_mode = route_result.selected_mode or route_result.final_mode or task_kind
+            route_reason = (
+                "accepted"
+                if route_result.accepted
+                else (route_result.skipped_reason or "baseline_kept")
+            )
+        trace_call(
+            "record_router",
+            baseline_mode=_trace_mode(baseline_task_kind, project),
+            selected_mode=_trace_mode(route_selected_mode, project),
+            final_mode=_trace_mode(task_kind, project),
+            source=route_source,
+            reason_code=route_reason,
+            overridden_by_user=(route_source == "explicit_user_choice"),
+        )
         state.emit({
             "type": "task_start",
             "run_id": run_id,
@@ -984,6 +1185,7 @@ class TaskRunner:
             recent_events=[],
             evidence=ExecutionEvidence(),
             claimed_work_item=claimed_work_item,
+            trace=trace,
         )
         if project and task_kind in {"project", "hybrid", "planning_readonly", "review"} and self.run_ledgers is not None:
             try:
@@ -1139,6 +1341,7 @@ class TaskRunner:
 
             def record_provider_failure(pid: str, failure: ProviderFailure) -> None:
                 append_ledger_provider_failure(pid, failure)
+                trace_call("record_provider_failure", pid, failure)
                 if supervisor is None:
                     return
                 health = supervisor.record_failure(pid, failure)
@@ -1180,6 +1383,7 @@ class TaskRunner:
                     provider_session_changed=False,
                     preflight_tried=set(),
                     preflight_switches=0,
+                    trace=trace,
                 )
                 outcome = self._run_review_mode(frame)
                 append_ledger(lambda ledger: ledger.finish(**outcome.event))
@@ -1188,6 +1392,7 @@ class TaskRunner:
                     session_id=session_id,
                     run_id=run_id,
                 )
+                finish_trace(event)
                 state.finish_run(run_id, event)
                 self._maybe_complete_ghost_work_item(frame, event, work.claimed_work_item)
                 self._maybe_run_ghost_learning(frame, event)
@@ -1218,6 +1423,13 @@ class TaskRunner:
                             phase="preflight",
                             reason="unavailable",
                         )
+                    )
+                    trace_call(
+                        "record_fallback",
+                        from_provider=previous_provider_id,
+                        to_provider=provider_id,
+                        phase="preflight",
+                        reason_code="unavailable",
                     )
                     preflight_switches = 1
                 else:
@@ -1269,6 +1481,13 @@ class TaskRunner:
                             reason="provider_failure",
                         )
                     )
+                    trace_call(
+                        "record_fallback",
+                        from_provider=previous_provider_id,
+                        to_provider=provider_id,
+                        phase="connect",
+                        reason_code="provider_failure",
+                    )
                     continue
                 if (
                     supervisor is None
@@ -1301,6 +1520,13 @@ class TaskRunner:
                         phase="canary",
                         reason="provider_failure",
                     )
+                )
+                trace_call(
+                    "record_fallback",
+                    from_provider=previous_provider_id,
+                    to_provider=provider_id,
+                    phase="canary",
+                    reason_code="provider_failure",
                 )
             if task_kind == "research":
                 mode = "research"
@@ -1387,6 +1613,7 @@ class TaskRunner:
                 provider_session_changed=provider_session_changed,
                 preflight_tried=preflight_tried,
                 preflight_switches=preflight_switches,
+                trace=trace,
             )
             hooks = _RunHooks(
                 on_event=on_event,
@@ -1396,6 +1623,7 @@ class TaskRunner:
                 append_ledger=append_ledger,
                 provider_failover_order=provider_failover_order,
                 supervisor=supervisor,
+                trace=trace,
             )
             if task_kind == "research":
                 outcome = self._run_research_mode(frame, hooks)
@@ -1413,6 +1641,7 @@ class TaskRunner:
                 session_id=session_id,
                 run_id=run_id,
             )
+            finish_trace(event)
             state.finish_run(run_id, event)
             self._maybe_complete_ghost_work_item(frame, event, work.claimed_work_item)
             self._maybe_run_ghost_learning(frame, event)
@@ -1449,6 +1678,7 @@ class TaskRunner:
                 "provider_failure": None,
             }
             append_ledger(lambda ledger: ledger.finish(**stopped_event))
+            finish_trace(stopped_event)
             state.finish_run(run_id, stopped_event)
             self._maybe_release_ghost_work_item(
                 work.claimed_work_item if "work" in locals() else claimed_work_item,
@@ -1498,6 +1728,7 @@ class TaskRunner:
                 "provider_failure": failure.to_dict() if failure else None,
             }
             append_ledger(lambda ledger: ledger.finish(**error_event))
+            finish_trace(error_event)
             state.finish_run(run_id, error_event)
             self._maybe_complete_ghost_work_item(
                 frame,
@@ -1539,7 +1770,9 @@ class TaskRunner:
             provider_id=frame.provider_id,
             run_id=frame.run_id,
             chat_handoff=frame.research_handoff,
+            trace_recorder=frame.trace,
         )
+        _record_research_result_trace(frame.trace, result)
         state.set_provider_session(
             frame.provider_id,
             None if result.stop_reason == "stopped" else request.session_id,
@@ -1604,7 +1837,9 @@ class TaskRunner:
             provider_id=frame.provider_id,
             run_id=frame.run_id,
             chat_handoff=frame.research_handoff,
+            trace_recorder=frame.trace,
         )
+        _record_research_result_trace(frame.trace, research_result)
         if research_result.stop_reason != "done":
             return _ModeOutcome({
                 "type": "task_done",
@@ -1651,14 +1886,27 @@ class TaskRunner:
             if frame.handoff
             else request.task
         )
-        ghost_directive = self._ghost_directive_text(
+        ghost_directive = self._ghost_directive(
             session_id=request.session_id,
         )
+        ghost_continuity = self._ghost_continuity(session_id=request.session_id)
+        _record_local_context_trace(frame.trace, ghost_directive, ghost_continuity)
         ghost_context = _join_local_contexts(
-            ghost_directive,
-            self._ghost_continuity_text(session_id=request.session_id),
+            ghost_directive.text,
+            ghost_continuity.text,
         )
         prompt = _prepend_ghost_directive(prompt, ghost_context)
+        if frame.trace is not None:
+            try:
+                frame.trace.record_permission_profile("chat", phase="chat")
+                frame.trace.record_prompt_section(
+                    "chat_outbound_prompt",
+                    prompt,
+                    freshness="provider_send",
+                    source_refs=("provider_send:chat",),
+                )
+            except Exception:
+                pass
         consulted = None
         if self.run_consensus is not None:
             compact_context = (
@@ -1671,16 +1919,24 @@ class TaskRunner:
                 )
             )
             try:
+                owner_prompt = _owner_prompt_with_ghost_directive(
+                    frame.recovered_owner_prompt,
+                    ghost_context,
+                )
+                _record_secondary_model_trace(
+                    frame.trace,
+                    "consensus",
+                    task=request.task,
+                    context=compact_context,
+                    owner_prompt=owner_prompt,
+                )
                 consulted = self.run_consensus(
                     selected_provider=frame.provider,
                     selected_provider_id=frame.provider_id,
                     task=request.task,
                     context=compact_context,
                     draft_first=True,
-                    owner_prompt=_owner_prompt_with_ghost_directive(
-                        frame.recovered_owner_prompt,
-                        ghost_context,
-                    ),
+                    owner_prompt=owner_prompt,
                 )
             except cancellation.TaskCancelled:
                 raise
@@ -1751,6 +2007,15 @@ class TaskRunner:
             continue_task=False,
             provider_session_changed=frame.provider_session_changed,
         )
+        ghost_directive = self._ghost_directive(
+            project=project,
+            session_id=request.session_id,
+        )
+        ghost_continuity = self._ghost_continuity(
+            project=project,
+            session_id=request.session_id,
+        )
+        _record_local_context_trace(frame.trace, ghost_directive, ghost_continuity)
         result = self.agent_run(
             frame.provider,
             Path(project),
@@ -1769,15 +2034,10 @@ class TaskRunner:
             research_context=project_context.research_context,
             project_map=project_context.project_map,
             project_config_warnings=project_context.project_config_warnings,
-            ghost_directive=self._ghost_directive_text(
-                project=project,
-                session_id=request.session_id,
-            ),
-            ghost_continuity=self._ghost_continuity_text(
-                project=project,
-                session_id=request.session_id,
-            ),
+            ghost_directive=ghost_directive.text,
+            ghost_continuity=ghost_continuity.text,
             permission_profile="planning_readonly",
+            trace_recorder=frame.trace,
         )
         state.set_provider_session(
             frame.provider_id,
@@ -1807,6 +2067,17 @@ class TaskRunner:
         state = self.state
         request = frame.request
         project = request.project
+        if frame.trace is not None:
+            try:
+                frame.trace.record_permission_profile("reviewer", phase="review")
+                frame.trace.record_prompt_section(
+                    "review_request",
+                    request.task,
+                    freshness="run_start",
+                    source_refs=("request:review",),
+                )
+            except Exception:
+                pass
         if project is None:
             summary = "No attached project is available to review."
             state.emit({
@@ -1828,6 +2099,16 @@ class TaskRunner:
                 "changed": False,
             })
         changes = self._collect_review_changes(project)
+        if frame.trace is not None:
+            try:
+                frame.trace.record_prompt_section(
+                    "review_changes",
+                    changes.get("diff", "") if isinstance(changes, dict) else "",
+                    freshness="run_start",
+                    source_refs=("local_diff:review",),
+                )
+            except Exception:
+                pass
         if not isinstance(changes, dict) or changes.get("ok") is not True:
             summary = "Could not collect a local diff to review."
             state.emit({
@@ -1875,6 +2156,24 @@ class TaskRunner:
                 },
             })
         try:
+            try:
+                review_impact_map = safe_review_impact_map(project, changes)
+            except cancellation.TaskCancelled:
+                raise
+            except Exception:
+                review_impact_map = ""
+            _record_review_model_trace(
+                frame.trace,
+                task=request.task,
+                writer_summary="Review-only mode did not run a writer.",
+                changes=changes,
+                recent_log="",
+                change_brief="",
+                project_map="",
+                verification_map="",
+                review_impact_map=review_impact_map,
+                execution_evidence="",
+            )
             reviewed = self.run_review(
                 session_id=request.session_id,
                 project=project,
@@ -1886,6 +2185,7 @@ class TaskRunner:
                 change_brief="",
                 project_map="",
                 verification_map="",
+                review_impact_map=review_impact_map,
                 execution_evidence="",
             )
         except cancellation.TaskCancelled:
@@ -2017,6 +2317,12 @@ class TaskRunner:
                 project_map=project_map,
             )
             try:
+                _record_secondary_model_trace(
+                    frame.trace,
+                    "consensus",
+                    task=request.task,
+                    context=context,
+                )
                 planned = self.run_consensus(
                     selected_provider=frame.provider,
                     selected_provider_id=frame.provider_id,
@@ -2042,6 +2348,12 @@ class TaskRunner:
                 project_map=project_map,
             )
             try:
+                _record_secondary_model_trace(
+                    frame.trace,
+                    "project_audit",
+                    task=request.task,
+                    context=context,
+                )
                 reports = self.run_project_audit(
                     project=project,
                     selected_provider=frame.provider,
@@ -2134,6 +2446,7 @@ class TaskRunner:
                     session_id=request.session_id,
                     run_id=frame.run_id,
                 ),
+                trace_recorder=frame.trace,
             )
 
         def select_next_writer(excluded: set[str]) -> str | None:
@@ -2180,6 +2493,16 @@ class TaskRunner:
                     reason="provider_failure",
                 )
             )
+            if hooks.trace is not None:
+                try:
+                    hooks.trace.record_fallback(
+                        from_provider=previous_provider_id,
+                        to_provider=next_provider_id,
+                        phase="writer_failover",
+                        reason_code="provider_failure",
+                    )
+                except Exception:
+                    pass
             frame.conversation.update_snapshot(replace(
                 frame.conversation.snapshot,
                 provider_id=next_provider_id,
@@ -2271,6 +2594,13 @@ class TaskRunner:
                 project_map=project_map,
             )
             try:
+                _record_secondary_model_trace(
+                    frame.trace,
+                    "consensus",
+                    task=request.task,
+                    context=context,
+                    draft=result.summary,
+                )
                 consulted = self.run_consensus(
                     selected_provider=frame.provider,
                     selected_provider_id=frame.provider_id,
@@ -2363,6 +2693,31 @@ class TaskRunner:
                 "text": "Unavailable. Continued with one model.",
             })
 
+        def run_review_with_trace(**kwargs):
+            try:
+                review_impact_map = safe_review_impact_map(
+                    kwargs.get("project") or project,
+                    kwargs.get("changes") if isinstance(kwargs.get("changes"), dict) else {},
+                )
+            except cancellation.TaskCancelled:
+                raise
+            except Exception:
+                review_impact_map = ""
+            _record_review_model_trace(
+                frame.trace,
+                task=str(kwargs.get("task") or ""),
+                writer_summary=str(kwargs.get("writer_summary") or ""),
+                changes=kwargs.get("changes") if isinstance(kwargs.get("changes"), dict) else {},
+                recent_log=str(kwargs.get("recent_log") or ""),
+                change_brief=str(kwargs.get("change_brief") or ""),
+                project_map=str(kwargs.get("project_map") or ""),
+                verification_map=str(kwargs.get("verification_map") or ""),
+                review_impact_map=review_impact_map,
+                execution_evidence=str(kwargs.get("execution_evidence") or ""),
+            )
+            kwargs["review_impact_map"] = review_impact_map
+            return self.run_review(**kwargs)
+
         review_cycle = review_coordinator.run_cycle(
             project=project,
             tracker=tracker,
@@ -2399,7 +2754,7 @@ class TaskRunner:
                     ),
                 )
             ),
-            run_review=self.run_review,
+            run_review=run_review_with_trace,
             close_writer_for_review=close_writer_for_review,
             repair_writer=repair_writer,
             set_checkpoint_status=set_checkpoint_status,
@@ -2550,6 +2905,7 @@ class TaskRunner:
         provider_id: str = "",
         run_id: str = "",
         chat_handoff: str = "",
+        trace_recorder=None,
     ):
         if self.knowledge_store is None:
             raise RuntimeError("Research is not configured")
@@ -2565,6 +2921,7 @@ class TaskRunner:
                 project=project,
                 chat_handoff=chat_handoff,
                 permission_profile="research",
+                trace_recorder=trace_recorder,
                 review_advisors=(
                     (lambda pack: self.run_research_advisors(
                         selected_provider=provider,

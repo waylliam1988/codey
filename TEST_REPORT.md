@@ -1,5 +1,66 @@
 # Codey Test Report
 
+## 0.3.13 Run Trace Manifest v1
+
+Codey 0.3.13 adds a local run trace manifest sidecar for each task. It records
+bounded audit metadata about mode/provider selection, prompt section digests,
+tool contract hashes, Local context refs, Research refs, and provider fallback
+facts. It does not change prompts, Router behavior, Research/Writer behavior,
+provider fallback policy, permissions, UI, SSE events, or task receipts.
+
+Production changes:
+
+- New `codey/run_trace.py` writes `run_traces/<session>/<run>.json` sidecars
+  keyed by `run_id`.
+- `TaskRunner` opens a run-scoped recorder and records structured router
+  outcome, provider switches, terminal status, provider failure categories, and
+  Research note/source refs.
+- Hybrid runs record both Research and Writer phase profile/contract entries.
+- Secondary model calls for consensus, project audit, and review record
+  digest-only prompt input sections without storing raw diff or summaries.
+- Review trace records the same precomputed review impact map that is passed to
+  the reviewer prompt, avoiding a second bounded project scan.
+- Research source refs store hostname only for visible host metadata; URL
+  userinfo and ports are not written into the trace.
+- High-frequency trace metadata uses checkpoint batching; run start, router,
+  fallback, provider failure, warning, and finish still flush immediately.
+- Model-visible prompt section records at provider or secondary-model send
+  boundaries flush immediately before the model call.
+- `agent.py` and `research/runner.py` record prompt section digests and character
+  counts before provider sends, without writing raw prompt text.
+- `context_source.py` now has a metadata helper that preserves exact rendered
+  context text while exposing section metadata for trace manifests.
+- Coding and Research tool contracts now expose stable model-visible contract
+  hashes.
+- `State.forget_conversation()` deletes the forgotten session's run trace
+  sidecars.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_context_source.py tests\test_protocols.py tests\test_research_protocol_contract.py -q -p no:cacheprovider
+# 89 passed, 33 subtests passed
+
+python -m pytest tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_context_source.py tests\test_protocols.py tests\test_research_protocol_contract.py tests\test_agent.py tests\test_research.py tests\test_server.py -q -p no:cacheprovider
+# 437 passed, 3 skipped, 33 subtests passed
+
+python -m pytest -q -p no:cacheprovider
+# 1908 passed, 9 skipped, 276 subtests passed
+
+python -m ruff check .
+# All checks passed!
+
+python -m py_compile codey\__init__.py codey\agent.py codey\context_source.py codey\headless_runner.py codey\protocols\base.py codey\protocols\json_codec.py codey\research\protocols.py codey\research\runner.py codey\research\tool_contract.py codey\run_trace.py codey\server.py codey\task_runner.py codey\tool_definition.py
+# passed
+
+git diff --check
+# passed
+```
+
+No live provider A/B is required for 0.3.13 because model-visible behavior is
+unchanged. If a live web-provider smoke hits provider-side rate limiting, treat
+that as an environmental check result rather than a 0.3.13 behavior regression.
+
 ## 0.3.12 Research Notes v2
 
 Codey 0.3.12 upgrades the Research drawer Notes tab from a note-id/excerpt log

@@ -34,6 +34,12 @@ class RenderedContextSource:
     why_included: str
 
 
+@dataclass(frozen=True)
+class RenderedContextSources:
+    text: str
+    sources: tuple[RenderedContextSource, ...]
+
+
 def render_context_source(source: ContextSource) -> RenderedContextSource | None:
     """Render one source, omitting empty or failed optional context."""
     if source.failure_policy not in FAILURE_POLICIES:
@@ -72,12 +78,23 @@ def render_context_source(source: ContextSource) -> RenderedContextSource | None
 
 def render_context_sources(sources: Iterable[ContextSource]) -> str:
     """Render sources in order, separated by a single blank line."""
-    rendered = [
-        source.text
+    return render_context_sources_with_metadata(sources).text
+
+
+def render_context_sources_with_metadata(
+    sources: Iterable[ContextSource],
+) -> RenderedContextSources:
+    """Render sources and keep metadata for bounded run trace manifests."""
+
+    rendered = tuple(
+        source
         for source in (render_context_source(item) for item in sources)
         if source is not None and source.text
-    ]
-    return "\n\n".join(rendered)
+    )
+    return RenderedContextSources(
+        text="\n\n".join(source.text for source in rendered),
+        sources=rendered,
+    )
 
 
 def _render_block(heading: str, text: str) -> str:

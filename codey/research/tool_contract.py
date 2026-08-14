@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -158,6 +160,31 @@ def tool_example(tool: str) -> str:
     if tool == "done":
         return '{"tool":"done","args":{"answer":"<the full report>","open_questions":["..."]}}'
     return '{"tool":"web_search","args":{"query":"..."}}'
+
+
+def research_tool_contract_hash(*, include_source_search: bool = True) -> str:
+    """Hash the Research JSON tool contract visible to the model."""
+
+    tools = [
+        name
+        for name in TOOL_CONTRACTS
+        if include_source_search or name != "source_search"
+    ]
+    payload = {
+        "kind": "research_tool_contract",
+        "tools": [
+            {
+                "name": name,
+                "required": sorted(TOOL_CONTRACTS[name].required),
+                "optional": sorted(TOOL_CONTRACTS[name].optional),
+                "aliases": sorted(TOOL_CONTRACTS[name].aliases.items()),
+                "example": tool_example(name),
+            }
+            for name in tools
+        ],
+    }
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return "sha256:" + hashlib.sha256(data.encode("utf-8")).hexdigest()
 
 
 def _apply_aliases(args: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:

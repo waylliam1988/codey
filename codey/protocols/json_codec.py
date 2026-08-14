@@ -323,9 +323,13 @@ class JsonToolCodec:
             self._system_prompt = _system_prompt(tool_contract)
         else:
             self._system_prompt = _profile_system_prompt(tool_contract, set(names))
+        self._model_tool_contract_hash = tool_defs.model_tool_contract_hash(self._definitions)
 
     def system_prompt(self) -> str:
         return self._system_prompt
+
+    def model_tool_contract_hash(self) -> str:
+        return self._model_tool_contract_hash
 
     def parse(self, text: str) -> ToolPlan:
         calls: list[ToolCall] = []

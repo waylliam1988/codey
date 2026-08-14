@@ -4,6 +4,33 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.13 - Run Trace Manifest v1
+
+- Added `codey/run_trace.py`, a bounded run audit sidecar stored under
+  `run_traces/<session>/<run>.json`. It is keyed by `run_id` and complements
+  RunLedger without becoming a second execution fact stream.
+- Run traces now record mode/provider/permission profile, structured Router
+  outcome, prompt-section digests and character counts, model-visible tool
+  contract hash, Local context item refs, Research note/source refs, provider
+  failures, and provider fallback switches.
+- Hybrid runs keep phase-scoped Research and Writer profile/contract entries, and
+  secondary model calls for consensus, project audit, and review are traced by
+  digest-only inputs.
+- Research source refs store hostnames without URL userinfo or ports, and review
+  trace reuses the same precomputed impact map that reaches the reviewer prompt.
+- High-frequency trace metadata is checkpoint-batched while terminal milestones
+  still flush immediately.
+- Provider-send and secondary-model prompt digests flush at the model boundary.
+- Prompt tracing is digest-only. The sidecar does not store raw prompts, chat
+  transcripts, source code bodies, webpage bodies, Research note bodies,
+  evidence excerpts, provider raw errors, or full diffs.
+- Added context-source metadata rendering and stable coding/Research tool
+  contract hash helpers while preserving the exact prompt text sent to models.
+- Forgetting a conversation now removes that session's run trace sidecars.
+- No live provider A/B is required because 0.3.13 does not change prompts,
+  Router decisions, Research/Writer behavior, provider fallback policy, tool
+  permissions, UI, SSE events, or task receipts.
+
 ## 0.3.12 - Research Notes v2
 
 - Upgraded the Research drawer `Notes` tab from plain note id/excerpt text into

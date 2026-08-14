@@ -121,6 +121,7 @@ class ResearchRunner:
         review_advisors: Callable[[EvidencePack], tuple[object, ...]] | None = None,
         controller_enabled: bool = True,
         permission_profile: str = "research",
+        trace_recorder=None,
     ) -> None:
         self.provider = provider
         self.search = search
@@ -132,6 +133,7 @@ class ResearchRunner:
         self.session_id = session_id
         self.project = project
         self.permission_profile = profile_for_name(permission_profile).name
+        self.trace_recorder = trace_recorder
         self.chat_handoff = (chat_handoff or "").strip()
         self.review_advisors = review_advisors
         self.controller_enabled = bool(controller_enabled)
@@ -155,6 +157,18 @@ class ResearchRunner:
 
     def run(self, question: str):
         question = (question or "").strip()
+        self._trace("record_permission_profile", self.permission_profile, phase="research")
+        try:
+            self._trace("record_tool_contract_hash", self.codec.model_tool_contract_hash(), phase="research")
+        except Exception:
+            pass
+        self._trace(
+            "record_prompt_section",
+            "research_question",
+            question,
+            freshness="run_start",
+            source_refs=("request:research_question",),
+        )
         if not question:
             self.result = ResearchRunResult(question="", summary="", stop_reason="empty", turns=0)
             yield RunEvent.info("empty question; nothing to research")
@@ -310,6 +324,15 @@ class ResearchRunner:
             synthesis_id=synthesis_id,
             advisor_count=advisor_count,
         )
+        self._trace(
+            "record_research_notes",
+            [
+                *self.result.notes_created,
+                *self.result.notes_updated,
+                self.result.synthesis_id,
+            ],
+        )
+        self._trace("record_research_sources", self.result.opened_sources)
         yield self._done_event()
 
     def _dispatch(self, call):
@@ -349,6 +372,13 @@ class ResearchRunner:
     def _send_provider(self, message: str) -> str:
         try:
             cancellation.check()
+            self._trace(
+                "record_prompt_section",
+                "research_outbound_prompt",
+                message,
+                freshness="provider_send",
+                source_refs=("provider_send:research",),
+            )
             if getattr(self.provider, "thread_safe_send", False):
                 reply = self._send_provider_cancellable(message)
             else:
@@ -360,6 +390,16 @@ class ResearchRunner:
         except Exception as exc:
             self._record_model_failure("send", exc)
             raise
+
+    def _trace(self, method: str, *args, **kwargs) -> None:
+        if self.trace_recorder is None:
+            return
+        try:
+            fn = getattr(self.trace_recorder, method, None)
+            if callable(fn):
+                fn(*args, **kwargs)
+        except Exception:
+            return
 
     def _send_provider_cancellable(self, message: str) -> str:
         results: queue.Queue[object] = queue.Queue(maxsize=1)

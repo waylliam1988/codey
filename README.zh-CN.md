@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.3.12-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.13-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.12`
+版本：`0.3.13`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -88,6 +88,9 @@ Codey 想解决的是一个很朴素的问题：
 - 运行允许的测试、构建、lint 和类型检查，并把结果继续反馈给模型
 - 显示红绿 diff
 - 每次任务结束后显示一条克制的任务收据，例如 `DONE · 2 files changed · checks passed · restore available`
+- 每次任务写一份有界本地 run trace，记录模式、provider、Router 结果、prompt
+  digest、工具契约 hash 和 fallback 事实；不保存 raw prompt、聊天全文、源码、
+  网页正文或 provider 原始错误
 - 即使没有 Git，也能用 snapshot diff 和 restore 恢复改动
 - 有 Git 时自动增强为 Git diff / commit 工作流
 - 一个模型失败时，可以换另一个模型再试
@@ -307,7 +310,7 @@ Research drawer 有四个轻量 tab：
 - `Evidence`：claim、snippet、PDF 页码定位、counterpoints、质量 warning 和搜索覆盖
 - `Sources`：citation map、source title、final URL、来源质量提示，以及 PDF 已读页/截断元信息
 - `Graph`：一个有边界的统一图，最上层是虚拟概念，中间是当前 synthesis/report 和相关笔记，depth 3 展开到 source URL；Open Questions 只作为 concept 节点文本，标注 "unproven; not facts"
-- `Notes`：synthesis、note id、source URL 和 restore 状态
+- `Notes`：可读笔记卡片、有界 Markdown 预览、source chips 和 restore 状态
 
 Coverage 作为支持性的审计信息放在 `Evidence` 里，不做第一层用户概念。`Graph`
 是展示层 read model，不是新数据库，也不是全 vault 知识图谱：声明的概念关系保持虚拟，
@@ -497,7 +500,7 @@ Codey 已经测试过用 DeepSeek、MiMo、StepFun 和 Qwen 修复被故意弄�
 python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
 ```
 
-当 Edge CDP 已打开并登录四个模型网页时，可以运行真实 Provider 矩阵。每个结果都会在 Agent 结束后再经过独立功能断言和 unittest 验证：
+当 Edge CDP 已打开并登录支持的网页模型页面时，可以运行真实 Provider 矩阵。每个结果都会在 Agent 结束后再经过独立功能断言和 unittest 验证：
 
 ```powershell
 python -B tools/live_smoke.py --provider all --case edit --port 9222 --max-turns 10 --json
@@ -590,6 +593,7 @@ codey/
   execution_evidence.py     有边界的内存执行证据账本
   run_ledger.py             append-only 项目任务运行事实账本
   run_ledger_projection.py  run ledger 的只读摘要和 receipt 投影
+  run_trace.py              每次 run 的有界审计 manifest sidecar
   references.py             有边界的文本引用提示
   change_set.py             结构化 diff 文件、hunk 和 rename/copy 事实
   changed_symbols.py        从可见 diff 提取变化的 symbol

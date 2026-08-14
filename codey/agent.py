@@ -16,7 +16,10 @@ from typing import Callable, Protocol
 
 from codey import cancellation
 from codey.coding_context import CodingContext, render_coding_context
-from codey.context_source import ContextSource, render_context_sources
+from codey.context_source import (
+    ContextSource,
+    render_context_sources_with_metadata,
+)
 from codey.events import RunEvent, print_run_event
 from codey.agent_tools import (
     DEFAULT_TOOL_FNS,
@@ -611,11 +614,13 @@ def run(
     ghost_continuity: str = "",
     permission_profile: str = "coding_writer",
     tool_fns: AgentToolFns | None = None,
+    trace_recorder=None,
 ) -> RunResult:
     project = project.resolve()
     project.mkdir(parents=True, exist_ok=True)
     profile = profile_for_name(permission_profile)
     codec = codec or JsonToolCodec(permission_profile=profile.name)
+    system_prompt_text = codec.system_prompt()
     tool_fns = tool_fns or DEFAULT_TOOL_FNS
     max_turns = max(1, int(max_turns or DEFAULT_MAX_TURNS))
     stagnant_turns = max(1, int(stagnant_turns or DEFAULT_STAGNANT_TURNS))
@@ -638,6 +643,36 @@ def run(
     verification_candidates_epoch: int | None = None
     project_text = str(project)
     active_provider_id = provider_id or getattr(provider, "name", "")
+
+    def trace_call(method: str, *args, **kwargs) -> None:
+        if trace_recorder is None:
+            return
+        try:
+            fn = getattr(trace_recorder, method, None)
+            if callable(fn):
+                fn(*args, **kwargs)
+        except Exception:
+            return
+
+    trace_call("record_permission_profile", profile.name, phase="writer")
+    try:
+        trace_call("record_tool_contract_hash", codec.model_tool_contract_hash(), phase="writer")
+    except Exception:
+        pass
+    trace_call(
+        "record_prompt_section",
+        "coding_system_prompt",
+        system_prompt_text,
+        freshness="run_start",
+        source_refs=("protocol:json",),
+    )
+    trace_call(
+        "record_prompt_section",
+        "user_task",
+        user_task,
+        freshness="run_start",
+        source_refs=("request:user_task",),
+    )
 
     def emit(event: RunEvent) -> None:
         on_event(event)
@@ -691,6 +726,14 @@ def run(
         *,
         include_ghost_directive: bool = True,
     ) -> str:
+        if factual_handoff:
+            trace_call(
+                "record_prompt_section",
+                "conversation_handoff",
+                factual_handoff,
+                freshness="run_start",
+                source_refs=("conversation:handoff",),
+            )
         current = (
             render_continuation_prompt(factual_handoff, request)
             if factual_handoff
@@ -771,14 +814,16 @@ def run(
                 heading="Initial listing:",
             ),
         ))
-        context = render_context_sources(
+        rendered_context = render_context_sources_with_metadata(
             source
             for source in sources
             if allows_context_source(profile, source.key)
         )
+        trace_call("record_context_sources", rendered_context.sources)
+        context = rendered_context.text
         context_block = f"{context}\n\n" if context else ""
         return (
-            f"{codec.system_prompt()}\n\n"
+            f"{system_prompt_text}\n\n"
             "Project workspace: use paths relative to the project root.\n"
             f"{context_block}"
             f"User task:\n{current}"
@@ -794,12 +839,26 @@ def run(
         if conversation is not None and conversation.needs_rollover(prompt):
             factual_handoff = conversation.prepare_model_handoff(provider.send)
             if open_fresh_chat():
+                trace_call(
+                    "record_prompt_section",
+                    "conversation_handoff",
+                    factual_handoff,
+                    freshness="provider_rollover",
+                    source_refs=("conversation:handoff",),
+                )
                 prompt = project_intro(
                     restart_request or prompt,
                     factual_handoff,
                     include_ghost_directive=include_ghost_directive,
                 )
                 opened_fresh_chat = True
+        trace_call(
+            "record_prompt_section",
+            "coding_outbound_prompt",
+            prompt,
+            freshness="provider_send",
+            source_refs=("provider_send:coding",),
+        )
         reply_text = provider.send(prompt)
         if conversation is not None:
             if opened_fresh_chat:
@@ -859,7 +918,7 @@ def run(
     def append_coding_context(prompt: str) -> str:
         if not allows_context_source(profile, "coding_current_context"):
             return prompt
-        context = render_context_sources(
+        rendered_context = render_context_sources_with_metadata(
             (
                 ContextSource(
                     key="coding_current_context",
@@ -870,6 +929,8 @@ def run(
                 ),
             )
         )
+        trace_call("record_context_sources", rendered_context.sources)
+        context = rendered_context.text
         if not context:
             return prompt
         return f"{prompt}\n\n{context}"
@@ -877,6 +938,13 @@ def run(
     if fresh_chat:
         opened_fresh_chat = open_fresh_chat()
         intro = project_intro(user_task, handoff)
+        trace_call(
+            "record_prompt_section",
+            "coding_outbound_prompt",
+            intro,
+            freshness="provider_send",
+            source_refs=("provider_send:coding",),
+        )
         reply = provider.send(intro)
         if conversation is not None:
             if opened_fresh_chat:
@@ -890,6 +958,13 @@ def run(
         reply = send_prompt(followup, restart_request=user_task)
     else:
         intro = project_intro(user_task)
+        trace_call(
+            "record_prompt_section",
+            "coding_outbound_prompt",
+            intro,
+            freshness="provider_send",
+            source_refs=("provider_send:coding",),
+        )
         reply = provider.send(intro)
     report_reply(1, reply)
 

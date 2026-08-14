@@ -22,3 +22,6 @@ class ProtocolCodec(Protocol):
 
     def public_example(self, tool_name: str) -> str:
         """Return a public example for a tool allowed by this codec, if any."""
+
+    def model_tool_contract_hash(self) -> str:
+        """Return a stable hash of the model-visible tool contract."""

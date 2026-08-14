@@ -1524,7 +1524,7 @@ tests/test_server.py
 
 ## 0.3.13 - Run Trace Manifest v1
 
-状态：计划。0.3.13 是 deepseek-harness 借鉴线的第一步，目标不是加用户可见
+状态：已按 sidecar v1 落地。0.3.13 是 deepseek-harness 借鉴线的第一步，目标不是加用户可见
 功能，而是让每次 run 有一个可解释、有边界、可测试的运行清单。
 Run Trace 是以 `run_id` 关联 RunLedger 的审计 manifest / derived sidecar，
 不替代 RunLedger，也不成为第二个执行事实源。
@@ -1536,32 +1536,49 @@ Run Trace 是以 `run_id` 关联 RunLedger 的审计 manifest / derived sidecar�
 ```text
 codey/run_trace.py
 tests/test_run_trace.py
+tests/test_task_runner_run_trace.py
 ```
 
 每次 run 写一个 bounded manifest：
 
 ```json
 {
+  "schema_version": 1,
+  "kind": "run_trace_manifest",
   "run_id": "...",
   "session_id": "...",
-  "mode": "research",
-  "provider": "deepseek",
+  "project_ref": {"basename": "codey", "digest": "sha256:..."},
+  "mode_initial": "chat",
+  "mode_final": "research",
+  "provider_initial": "deepseek",
+  "provider_final": "qwen",
   "permission_profile": "research",
+  "permission_profiles": [
+    {"phase": "research", "profile": "research"},
+    {"phase": "writer", "profile": "coding_writer"}
+  ],
   "router": {
-    "mode": "research",
+    "baseline_mode": "chat",
+    "selected_mode": "research",
+    "final_mode": "research",
     "source": "explicit_user_choice",
     "reason_code": "research_mode_selected",
     "overridden_by_user": false
   },
   "prompt_sections": [
-    {"name": "local_context", "digest": "...", "length": 420}
+    {"name": "local_context", "digest": "sha256:...", "chars": 420}
   ],
   "model_tool_contract_hash": "...",
-  "local_context_item_ids": [],
+  "tool_contracts": [
+    {"phase": "research", "hash": "sha256:..."},
+    {"phase": "writer", "hash": "sha256:..."}
+  ],
+  "local_context_refs": [],
   "research_note_ids": [],
-  "source_ids": [],
-  "policy_decisions": [],
-  "fallbacks": []
+  "research_source_refs": [],
+  "fallbacks": [],
+  "warnings": [],
+  "status": "done"
 }
 ```
 
@@ -1571,9 +1588,12 @@ tests/test_run_trace.py
 codey/task_runner.py
 codey/agent.py
 codey/research/runner.py
-codey/tool_runtime.py
-codey/ghost/control_surface.py
+codey/context_source.py
+codey/tool_definition.py
+codey/research/tool_contract.py
 provider fallback / supervisor path
+hybrid Research + Writer phase trace
+secondary model calls: consensus / project audit / review
 ```
 
 ### 边界
@@ -1581,8 +1601,13 @@ provider fallback / supervisor path
 - 不记录 raw prompt。
 - 不记录完整 chat transcript。
 - 不记录源码正文、网页正文、Research body 或 provider raw error。
+- Research source ref 只保存 URL digest 和 hostname；不保存 URL userinfo、端口或原始 URL。
 - 不改变模型 prompt、Router、Research、Writer、provider fallback 或工具权限。
 - trace 是审计 manifest，不是用户聊天消息，也不新增 SSE 噪音。
+- 高频 trace metadata 使用 checkpoint batching；run start、Router、fallback、
+  provider failure、warning 和 finish 仍即时落盘。
+- `provider_send` / `secondary_model_call` 的 prompt digest 会在模型调用边界前
+  即时落盘。
 - Router 记录只保存结构化 mode / source / reason_code / override 状态，不保存
   模型原始路由解释、hidden reasoning 或长自由文本。
 
@@ -1593,10 +1618,13 @@ summary 不含 raw chat / raw prompt / source code body / webpage body
 prompt section 只记录 name / digest / length / source refs
 local context 只记录 item id / scope / type，不记录原始 evidence quote
 provider raw error 必须被归类和截断
-trace 写入失败不阻断任务，但会写 bounded warning
+trace 写入失败不阻断任务；recorder fail-open disabled
+prompt parity 字节级不变
+forget conversation 删除该 session 的 trace sidecars
 ```
 
-不需要 live provider A/B；需要 deterministic tests 和一次本地 smoke。
+不需要 live provider A/B；需要 deterministic tests 和一次本地 smoke。0.3.13 没有新增
+UI/API/SSE，也不改变 task receipt。
 
 ## 0.3.14 - Prompt Envelope v1
 
@@ -2002,7 +2030,7 @@ tests/test_ghost_hebbian.py
 tests/test_ghost_directive.py
 tests/test_ghost_learning_loop.py
 tests/test_ghost_continuity.py
-tests/test_cognitive_sleep.py
+tests/test_ghost_sleep.py
 tests/test_ghost_work_queue.py
 tests/test_research_interest_queue.py
 tests/test_ghost_affinity.py
@@ -2013,6 +2041,7 @@ tests/test_task_runner_affinity.py
 
 ```text
 tests/test_run_trace.py
+tests/test_task_runner_run_trace.py
 tests/test_prompt_envelope.py
 tests/test_capabilities.py
 tests/test_tool_contract.py

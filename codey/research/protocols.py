@@ -11,6 +11,7 @@ from codey.research.tool_contract import (
     PROTOCOL_INVALID_ARGS,
     PROTOCOL_TOO_MANY_TOOLS,
     PROTOCOL_UNKNOWN_TOOL,
+    research_tool_contract_hash,
     validate_tool_args,
 )
 
@@ -46,6 +47,7 @@ class ProtocolCodec(Protocol):
     def repair_prompt(self) -> str: ...
     def parse(self, text: str) -> ToolPlan: ...
     def format_results(self, results: list[ToolResult]) -> str: ...
+    def model_tool_contract_hash(self) -> str: ...
 
 
 class JsonToolCodec:
@@ -55,6 +57,9 @@ class JsonToolCodec:
 
     def system_prompt(self) -> str:
         return _system_prompt(self.include_source_search)
+
+    def model_tool_contract_hash(self) -> str:
+        return research_tool_contract_hash(include_source_search=self.include_source_search)
 
     def repair_prompt(self) -> str:
         source_search_example = (

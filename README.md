@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.12-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.13-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.12`
+Version: `0.3.13`
 
 [Version history](CHANGELOG.md)
 
@@ -95,6 +95,10 @@ This is not about replacing professional tools. It is about making the first ste
   to the model
 - Show red/green diffs
 - Show a compact task receipt after each run, such as `DONE · 2 files changed · checks passed · restore available`
+- Write a bounded local run trace for each task, recording mode, provider,
+  Router result, prompt digests, tool contract hashes, and fallback facts
+  without storing raw prompts, chat transcripts, source code, webpages, or raw
+  provider errors
 - Restore snapshot changes without requiring Git
 - Use Git when available, but not require it
 - Retry with another model when one model fails
@@ -371,7 +375,8 @@ The Research drawer has four lightweight tabs:
 - `Evidence`: claims, snippets, PDF page locators, counterpoints, quality warnings, and search coverage
 - `Sources`: citation map, source titles, final URLs, quality hints, and PDF pages read/truncation metadata
 - `Graph`: a bounded unified graph with virtual concepts at the top, the current synthesis/report and related notes in the middle, and source URLs at depth 3; open questions stay text on concept nodes, marked "unproven; not facts"
-- `Notes`: synthesis, note ids, source URLs, and restore state
+- `Notes`: readable note cards with bounded Markdown previews, source chips,
+  and restore state
 
 Coverage stays as supporting audit detail inside `Evidence`, rather than a
 first-level concept. `Graph` is a presentation read model, not a new database
@@ -571,8 +576,8 @@ execution, review, task receipts, diff, and snapshot restore:
 python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
 ```
 
-With all four model pages logged in through Edge CDP, run the real-provider
-matrix below. Every result is independently checked with a functional
+With the supported web model pages logged in through Edge CDP, run the
+real-provider matrix below. Every result is independently checked with a functional
 assertion and unittest after the agent finishes:
 
 ```powershell
@@ -668,6 +673,7 @@ codey/
   execution_evidence.py     bounded in-memory execution fact ledger
   run_ledger.py             append-only project-task run fact ledger
   run_ledger_projection.py  read-only run ledger summaries and receipt projection
+  run_trace.py              bounded per-run audit manifest sidecars
   references.py             bounded lexical reference hints
   change_set.py             structured diff files, hunks, and rename/copy facts
   changed_symbols.py        lexical changed-symbol extraction from visible diffs

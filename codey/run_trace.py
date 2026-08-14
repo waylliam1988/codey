@@ -1,0 +1,560 @@
+"""Bounded audit sidecar for one Codey run.
+
+Run Trace is an index over model-visible inputs and local runtime choices.  It
+is deliberately not a transcript and not a second execution ledger: raw prompt
+text, chat text, source bodies, webpage bodies, and provider raw errors do not
+belong here.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import shutil
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+from urllib.parse import urlparse
+
+from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
+
+
+SCHEMA_VERSION = 1
+TRACE_KIND = "run_trace_manifest"
+MAX_TRACE_BYTES = 256 * 1024
+MAX_TEXT_CHARS = 240
+MAX_PROMPT_SECTIONS = 80
+MAX_REFS = 64
+MAX_FALLBACKS = 16
+MAX_FAILURES = 16
+MAX_WARNINGS = 16
+MAX_PERMISSION_PROFILES = 16
+MAX_TOOL_CONTRACTS = 16
+CHECKPOINT_FLUSH_INTERVAL = 8
+TRUNCATED_TEXT_SUFFIX = "..."
+
+
+def digest_text(value: object) -> str:
+    text = str(value or "")
+    return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def project_ref(project: str | Path | None) -> dict[str, str]:
+    text = str(project or "").strip()
+    if not text:
+        return {}
+    try:
+        resolved = Path(text).expanduser().resolve()
+        basename = resolved.name
+        digest_source = os.path.normcase(str(resolved))
+    except (OSError, RuntimeError, ValueError):
+        path = Path(text)
+        basename = path.name or _clip(text, 80)
+        digest_source = text
+    return {
+        "basename": _clip(basename, 80),
+        "digest": digest_text(digest_source),
+    }
+
+
+def source_ref_for_url(url: object, *, final_url: object = "", title: object = "") -> dict[str, str]:
+    requested = str(url or "").strip()
+    final = str(final_url or "").strip()
+    chosen = final or requested
+    if not chosen:
+        return {}
+    host = _host(chosen or requested)
+    payload = {
+        "url_digest": digest_text(chosen),
+    }
+    if host:
+        payload["host"] = _clip(host, 120)
+    if requested and final and requested != final:
+        payload["requested_digest"] = digest_text(requested)
+        payload["final_digest"] = digest_text(final)
+    text_title = _clip(title, 160)
+    if text_title:
+        payload["title_digest"] = digest_text(text_title)
+    return payload
+
+
+@dataclass(frozen=True)
+class PromptSectionTrace:
+    name: str
+    digest: str
+    chars: int
+    budget: int = 0
+    truncated: bool = False
+    freshness: str = ""
+    source_refs: tuple[str, ...] = ()
+
+    def to_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "name": _identifier(self.name, 80),
+            "digest": self.digest,
+            "chars": max(0, int(self.chars or 0)),
+            "truncated": bool(self.truncated),
+        }
+        if self.budget:
+            payload["budget"] = max(0, int(self.budget or 0))
+        if self.freshness:
+            payload["freshness"] = _identifier(self.freshness, 80)
+        refs = _bounded_refs(self.source_refs)
+        if refs:
+            payload["source_refs"] = list(refs)
+        return payload
+
+
+@dataclass(frozen=True)
+class RouterTrace:
+    baseline_mode: str = ""
+    selected_mode: str = ""
+    final_mode: str = ""
+    source: str = ""
+    reason_code: str = ""
+    overridden_by_user: bool = False
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "baseline_mode": _identifier(self.baseline_mode, 40),
+            "selected_mode": _identifier(self.selected_mode, 40),
+            "final_mode": _identifier(self.final_mode, 40),
+            "source": _identifier(self.source, 80),
+            "reason_code": _identifier(self.reason_code, 120),
+            "overridden_by_user": bool(self.overridden_by_user),
+        }
+
+
+@dataclass(frozen=True)
+class FallbackTrace:
+    from_provider: str
+    to_provider: str
+    phase: str
+    reason_code: str
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "from_provider": _identifier(self.from_provider, 80),
+            "to_provider": _identifier(self.to_provider, 80),
+            "phase": _identifier(self.phase, 80),
+            "reason_code": _identifier(self.reason_code, 120),
+        }
+
+
+@dataclass
+class RunTraceManifest:
+    run_id: str
+    session_id: str
+    project_ref: Mapping[str, str] = field(default_factory=dict)
+    mode_initial: str = ""
+    mode_final: str = ""
+    provider_initial: str = ""
+    provider_final: str = ""
+    permission_profile: str = ""
+    permission_profiles: list[dict[str, str]] = field(default_factory=list)
+    router: RouterTrace | None = None
+    prompt_sections: list[PromptSectionTrace] = field(default_factory=list)
+    model_tool_contract_hash: str = ""
+    tool_contracts: list[dict[str, str]] = field(default_factory=list)
+    local_context_refs: list[dict[str, object]] = field(default_factory=list)
+    research_note_ids: list[str] = field(default_factory=list)
+    research_source_refs: list[dict[str, str]] = field(default_factory=list)
+    fallbacks: list[FallbackTrace] = field(default_factory=list)
+    provider_failures: list[dict[str, str]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    status: str = "running"
+
+    def to_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "schema_version": SCHEMA_VERSION,
+            "kind": TRACE_KIND,
+            "run_id": _clip(self.run_id, 120),
+            "session_id": _clip(self.session_id, 120),
+            "project_ref": dict(self.project_ref),
+            "mode_initial": _identifier(self.mode_initial, 40),
+            "mode_final": _identifier(self.mode_final, 40),
+            "provider_initial": _identifier(self.provider_initial, 80),
+            "provider_final": _identifier(self.provider_final, 80),
+            "permission_profile": _identifier(self.permission_profile, 80),
+            "permission_profiles": self.permission_profiles[:MAX_PERMISSION_PROFILES],
+            "router": self.router.to_payload() if self.router else {},
+            "prompt_sections": [
+                item.to_payload() for item in self.prompt_sections[:MAX_PROMPT_SECTIONS]
+            ],
+            "model_tool_contract_hash": _clip(self.model_tool_contract_hash, 80),
+            "tool_contracts": self.tool_contracts[:MAX_TOOL_CONTRACTS],
+            "local_context_refs": self.local_context_refs[:MAX_REFS],
+            "research_note_ids": list(_bounded_refs(self.research_note_ids)),
+            "research_source_refs": self.research_source_refs[:MAX_REFS],
+            "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
+            "provider_failures": self.provider_failures[:MAX_FAILURES],
+            "warnings": list(_bounded_refs(self.warnings, limit=MAX_WARNINGS)),
+            "status": _identifier(self.status, 40),
+        }
+        return payload
+
+
+class RunTraceStore:
+    def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
+        self.state_home = Path(state_home)
+
+    def path_for(self, session_id: str, run_id: str) -> Path:
+        return self.session_dir(session_id) / f"{_safe_file_stem(run_id)}.json"
+
+    def session_dir(self, session_id: str) -> Path:
+        return self.state_home / "run_traces" / session_key(session_id)
+
+    def open(
+        self,
+        *,
+        run_id: str,
+        session_id: str,
+        project: str | Path | None,
+        mode_initial: str,
+        provider_initial: str,
+    ) -> "RunTraceRecorder":
+        manifest = RunTraceManifest(
+            run_id=_clip(run_id, 120),
+            session_id=_clip(session_id, 120),
+            project_ref=project_ref(project),
+            mode_initial=_identifier(mode_initial, 40),
+            mode_final=_identifier(mode_initial, 40),
+            provider_initial=_identifier(provider_initial, 80),
+            provider_final=_identifier(provider_initial, 80),
+        )
+        recorder = RunTraceRecorder(self.path_for(session_id, run_id), manifest)
+        recorder.flush()
+        return recorder
+
+    def delete_session(self, session_id: str) -> None:
+        root = (self.state_home / "run_traces").resolve()
+        directory = self.session_dir(session_id)
+        try:
+            if directory.parent.resolve() != root:
+                return
+            if directory.is_symlink():
+                return
+        except (OSError, RuntimeError, ValueError):
+            return
+        try:
+            shutil.rmtree(directory)
+        except FileNotFoundError:
+            return
+        except OSError:
+            return
+
+
+class RunTraceRecorder:
+    def __init__(self, path: Path, manifest: RunTraceManifest) -> None:
+        self.path = path
+        self.manifest = manifest
+        self.disabled = False
+        self._dirty_updates = 0
+        self._prompt_keys: set[tuple[str, str, str, tuple[str, ...]]] = set()
+        self._local_context_keys: set[tuple[str, str, str]] = set()
+        self._research_note_keys: set[str] = set()
+        self._research_source_keys: set[str] = set()
+
+    def record_router(
+        self,
+        *,
+        baseline_mode: str,
+        selected_mode: str,
+        final_mode: str,
+        source: str,
+        reason_code: str,
+        overridden_by_user: bool = False,
+    ) -> None:
+        self.manifest.router = RouterTrace(
+            baseline_mode=baseline_mode,
+            selected_mode=selected_mode,
+            final_mode=final_mode,
+            source=source,
+            reason_code=reason_code,
+            overridden_by_user=overridden_by_user,
+        )
+        self.manifest.mode_final = _identifier(final_mode, 40)
+        self.flush()
+
+    def record_permission_profile(self, profile: str, *, phase: str = "") -> None:
+        value = _identifier(profile, 80)
+        if not value:
+            return
+        self.manifest.permission_profile = value
+        item = {"profile": value}
+        phase_text = _identifier(phase, 80)
+        if phase_text:
+            item["phase"] = phase_text
+        if item not in self.manifest.permission_profiles:
+            self.manifest.permission_profiles.append(item)
+            if len(self.manifest.permission_profiles) > MAX_PERMISSION_PROFILES:
+                del self.manifest.permission_profiles[:-MAX_PERMISSION_PROFILES]
+                self.manifest.warnings.append("permission_profiles_truncated")
+        self.checkpoint()
+
+    def record_tool_contract_hash(self, value: object, *, phase: str = "") -> None:
+        text = _clip(value, 80)
+        if text:
+            self.manifest.model_tool_contract_hash = text
+            item = {"hash": text}
+            phase_text = _identifier(phase, 80)
+            if phase_text:
+                item["phase"] = phase_text
+            if item not in self.manifest.tool_contracts:
+                self.manifest.tool_contracts.append(item)
+                if len(self.manifest.tool_contracts) > MAX_TOOL_CONTRACTS:
+                    del self.manifest.tool_contracts[:-MAX_TOOL_CONTRACTS]
+                    self.manifest.warnings.append("tool_contracts_truncated")
+            self.checkpoint()
+
+    def record_prompt_section(
+        self,
+        name: str,
+        text: object,
+        *,
+        budget: int = 0,
+        truncated: bool = False,
+        freshness: str = "",
+        source_refs: Iterable[object] = (),
+    ) -> None:
+        rendered = str(text or "")
+        if not rendered:
+            return
+        refs = _bounded_refs(source_refs)
+        model_boundary = _is_model_boundary_freshness(freshness)
+        item = PromptSectionTrace(
+            name=name,
+            digest=digest_text(rendered),
+            chars=len(rendered),
+            budget=max(0, int(budget or 0)),
+            truncated=bool(truncated),
+            freshness=freshness,
+            source_refs=refs,
+        )
+        key = (item.name, item.digest, item.freshness, refs)
+        if key in self._prompt_keys:
+            if model_boundary:
+                self.flush()
+            return
+        self._prompt_keys.add(key)
+        self.manifest.prompt_sections.append(item)
+        if len(self.manifest.prompt_sections) > MAX_PROMPT_SECTIONS:
+            del self.manifest.prompt_sections[:-MAX_PROMPT_SECTIONS]
+            self.manifest.warnings.append("prompt_sections_truncated")
+        if model_boundary:
+            self.flush()
+        else:
+            self.checkpoint()
+
+    def record_context_sources(self, sources: Iterable[Any]) -> None:
+        changed = False
+        for source in sources:
+            text = str(getattr(source, "text", "") or "")
+            if not text:
+                continue
+            refs = (f"context_source:{_identifier(getattr(source, 'key', ''), 80)}",)
+            item = PromptSectionTrace(
+                name=str(getattr(source, "key", "") or "context_source"),
+                digest=digest_text(text),
+                chars=len(text),
+                budget=max(0, int(getattr(source, "budget", 0) or 0)),
+                truncated=bool(getattr(source, "truncated", False)),
+                freshness=str(getattr(source, "freshness", "") or ""),
+                source_refs=refs,
+            )
+            key = (item.name, item.digest, item.freshness, item.source_refs)
+            if key in self._prompt_keys:
+                continue
+            self._prompt_keys.add(key)
+            self.manifest.prompt_sections.append(item)
+            changed = True
+        if changed:
+            if len(self.manifest.prompt_sections) > MAX_PROMPT_SECTIONS:
+                del self.manifest.prompt_sections[:-MAX_PROMPT_SECTIONS]
+                self.manifest.warnings.append("prompt_sections_truncated")
+            self.checkpoint()
+
+    def record_local_context_refs(self, refs: Iterable[Mapping[str, object]]) -> None:
+        changed = False
+        for ref in refs:
+            if not isinstance(ref, Mapping):
+                continue
+            item_id = _clip(ref.get("id"), 120)
+            scope = _identifier(ref.get("scope"), 40)
+            kind = _identifier(ref.get("kind"), 80)
+            if not item_id:
+                continue
+            key = (item_id, scope, kind)
+            if key in self._local_context_keys:
+                continue
+            self._local_context_keys.add(key)
+            payload: dict[str, object] = {"id": item_id}
+            if scope:
+                payload["scope"] = scope
+            if kind:
+                payload["kind"] = kind
+            source = _identifier(ref.get("source"), 80)
+            if source:
+                payload["source"] = source
+            self.manifest.local_context_refs.append(payload)
+            changed = True
+        if changed:
+            if len(self.manifest.local_context_refs) > MAX_REFS:
+                del self.manifest.local_context_refs[:-MAX_REFS]
+                self.manifest.warnings.append("local_context_refs_truncated")
+            self.checkpoint()
+
+    def record_research_notes(self, ids: Iterable[object]) -> None:
+        changed = False
+        for note_id in _bounded_refs(ids):
+            if note_id in self._research_note_keys:
+                continue
+            self._research_note_keys.add(note_id)
+            self.manifest.research_note_ids.append(note_id)
+            changed = True
+        if changed:
+            if len(self.manifest.research_note_ids) > MAX_REFS:
+                del self.manifest.research_note_ids[:-MAX_REFS]
+                self.manifest.warnings.append("research_note_ids_truncated")
+            self.checkpoint()
+
+    def record_research_sources(self, sources: Iterable[Mapping[str, object]]) -> None:
+        changed = False
+        for source in sources:
+            if not isinstance(source, Mapping):
+                continue
+            ref = source_ref_for_url(
+                source.get("requested_url") or source.get("url"),
+                final_url=source.get("final_url"),
+                title=source.get("title"),
+            )
+            key = ref.get("url_digest", "")
+            if not key or key in self._research_source_keys:
+                continue
+            self._research_source_keys.add(key)
+            self.manifest.research_source_refs.append(ref)
+            changed = True
+        if changed:
+            if len(self.manifest.research_source_refs) > MAX_REFS:
+                del self.manifest.research_source_refs[:-MAX_REFS]
+                self.manifest.warnings.append("research_source_refs_truncated")
+            self.checkpoint()
+
+    def record_fallback(
+        self,
+        *,
+        from_provider: str,
+        to_provider: str,
+        phase: str,
+        reason_code: str,
+    ) -> None:
+        self.manifest.fallbacks.append(FallbackTrace(
+            from_provider=from_provider,
+            to_provider=to_provider,
+            phase=phase,
+            reason_code=reason_code,
+        ))
+        if len(self.manifest.fallbacks) > MAX_FALLBACKS:
+            del self.manifest.fallbacks[:-MAX_FALLBACKS]
+            self.manifest.warnings.append("fallbacks_truncated")
+        if to_provider:
+            self.manifest.provider_final = _identifier(to_provider, 80)
+        self.flush()
+
+    def record_provider_failure(self, provider: str, failure: Any) -> None:
+        payload = {
+            "provider": _identifier(provider, 80),
+            "action": _identifier(getattr(failure, "action", ""), 80),
+            "kind": _identifier(getattr(failure, "kind", ""), 120),
+            "stage": _identifier(getattr(failure, "stage", ""), 120),
+        }
+        if not any(payload.values()):
+            return
+        self.manifest.provider_failures.append(payload)
+        if len(self.manifest.provider_failures) > MAX_FAILURES:
+            del self.manifest.provider_failures[:-MAX_FAILURES]
+            self.manifest.warnings.append("provider_failures_truncated")
+        self.flush()
+
+    def finish(self, *, status: str, mode: str = "", provider: str = "") -> None:
+        self.manifest.status = _identifier(status, 40) or "done"
+        if mode:
+            self.manifest.mode_final = _identifier(mode, 40)
+        if provider:
+            self.manifest.provider_final = _identifier(provider, 80)
+        self.flush()
+
+    def warn(self, reason_code: str) -> None:
+        reason = _identifier(reason_code, 120)
+        if reason:
+            self.manifest.warnings.append(reason)
+            self.flush()
+
+    def flush(self) -> None:
+        if self.disabled:
+            return
+        try:
+            write_json_atomic(
+                self.path,
+                self.manifest.to_payload(),
+                max_bytes=MAX_TRACE_BYTES,
+            )
+            self._dirty_updates = 0
+        except (OSError, TypeError, ValueError):
+            self.disabled = True
+
+    def checkpoint(self) -> None:
+        if self.disabled:
+            return
+        self._dirty_updates += 1
+        if self._dirty_updates >= CHECKPOINT_FLUSH_INTERVAL:
+            self.flush()
+
+
+def _host(url: str) -> str:
+    try:
+        return (urlparse(str(url or "")).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _is_model_boundary_freshness(value: object) -> bool:
+    return str(value or "") in {"provider_send", "secondary_model_call"}
+
+
+def _clip(value: object, limit: int = MAX_TEXT_CHARS) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return ""
+    if limit <= len(TRUNCATED_TEXT_SUFFIX):
+        return text[:limit]
+    if len(text) <= limit:
+        return text
+    return text[: limit - len(TRUNCATED_TEXT_SUFFIX)].rstrip() + TRUNCATED_TEXT_SUFFIX
+
+
+def _identifier(value: object, limit: int = MAX_TEXT_CHARS) -> str:
+    text = _clip(value, limit)
+    return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
+
+
+def _bounded_refs(values: Iterable[object], *, limit: int = MAX_REFS) -> tuple[str, ...]:
+    if isinstance(values, str):
+        values = (values,)
+    refs: list[str] = []
+    seen: set[str] = set()
+    for value in values or ():
+        text = _clip(value, 160)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        refs.append(text)
+        if len(refs) >= limit:
+            break
+    return tuple(refs)
+
+
+def _safe_file_stem(value: object) -> str:
+    text = _clip(value, 120)
+    safe = "".join(char if char.isalnum() or char in "._-" else "_" for char in text)
+    return safe.strip("._") or "run"

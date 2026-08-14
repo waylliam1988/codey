@@ -176,6 +176,7 @@ def run_headless(
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         run_ledgers=state.run_ledgers,
+        run_traces=state.run_traces,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=is_git_repository,

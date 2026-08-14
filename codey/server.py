@@ -92,6 +92,7 @@ from codey.self_repair_worker import run_self_repair_worker
 from codey.project_facts import ProjectFactsStore
 from codey.project_task_context import safe_verification_candidates
 from codey.run_ledger import RunLedgerStore
+from codey.run_trace import RunTraceStore
 from codey.shell_followup import ShellFollowupInput, render_shell_followup
 from codey.setup_context import safe_setup_context
 from codey.work_checkpoint import WorkCheckpointStore
@@ -280,11 +281,13 @@ def _run_review(
     change_brief: str = "",
     project_map: str = "",
     verification_map: str = "",
+    review_impact_map: str | None = None,
     execution_evidence: str = "",
 ) -> tuple[str, ReviewResult] | None:
     cancellation.check()
     last_error: Exception | None = None
-    review_impact_map = safe_review_impact_map(project, changes)
+    if review_impact_map is None:
+        review_impact_map = safe_review_impact_map(project, changes)
     for reviewer_id in reviewer_candidates(writer_id):
         cancellation.check()
         try:
@@ -629,6 +632,7 @@ class State:
             WorkCheckpointStore(state_home) if state_home else WorkCheckpointStore()
         )
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
+        self.run_traces = RunTraceStore(state_home) if state_home else None
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
         self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
@@ -1164,6 +1168,12 @@ class State:
                 affinity.delete_scope("session", session_id=session_id)
             except Exception:
                 pass
+        traces = getattr(self, "run_traces", None)
+        if traces is not None:
+            try:
+                traces.delete_session(session_id)
+            except Exception:
+                pass
 
     def provider_session_changed(self, provider_id: str, session_id: str) -> bool:
         with self.lock:
@@ -1406,6 +1416,7 @@ def _run_task(
         project_facts=STATE.project_facts,
         work_checkpoints=STATE.work_checkpoints,
         run_ledgers=STATE.run_ledgers,
+        run_traces=STATE.run_traces,
         managed_outputs=STATE.managed_outputs,
         knowledge_store=STATE.knowledge_store,
         is_git_repository=is_git_repository,

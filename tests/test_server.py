@@ -565,6 +565,81 @@ class ProviderStatusTests(unittest.TestCase):
         self.assertIn("Review Impact Map (bounded hints; not coverage proof)", prompt)
         reviewer.close.assert_called_once_with()
 
+    def test_run_review_reuses_precomputed_review_impact_map(self) -> None:
+        state = server.State()
+        reviewer = mock.Mock()
+        reviewer.send.return_value = (
+            '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        )
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "src/api.ts", "status": "M"}],
+            "diff": "diff --git a/src/api.ts b/src/api.ts\n+export function renamed() {}\n",
+        }
+        impact = (
+            "Review Impact Map (bounded hints; not coverage proof):\n"
+            "- oldName: src/view.ts:2 (call)"
+        )
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(server, "safe_review_impact_map") as impact_map,
+        ):
+            reviewed = server._run_review(
+                session_id="session-1",
+                project="E:/demo",
+                task="task",
+                writer_summary="done",
+                changes=changes,
+                recent_log="",
+                writer_id="deepseek",
+                review_impact_map=impact,
+            )
+
+        self.assertIsNotNone(reviewed)
+        impact_map.assert_not_called()
+        self.assertIn(impact, reviewer.send.call_args.args[0])
+        reviewer.close.assert_called_once_with()
+
+    def test_run_review_treats_empty_precomputed_review_impact_map_as_final(self) -> None:
+        state = server.State()
+        reviewer = mock.Mock()
+        reviewer.send.return_value = (
+            '{"verdict":"approved","summary":"Looks good","findings":[]}'
+        )
+        changes = {
+            "ok": True,
+            "changed_count": 1,
+            "files": [{"path": "src/api.ts", "status": "M"}],
+            "diff": "diff --git a/src/api.ts b/src/api.ts\n+export function renamed() {}\n",
+        }
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "reviewer_candidates", return_value=("stepfun",)),
+            mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
+            mock.patch.object(server, "safe_review_impact_map") as impact_map,
+        ):
+            reviewed = server._run_review(
+                session_id="session-1",
+                project="E:/demo",
+                task="task",
+                writer_summary="done",
+                changes=changes,
+                recent_log="",
+                writer_id="deepseek",
+                review_impact_map="",
+            )
+
+        self.assertIsNotNone(reviewed)
+        impact_map.assert_not_called()
+        prompt = reviewer.send.call_args.args[0]
+        self.assertNotIn("Review Impact Map (bounded hints; not coverage proof)", prompt)
+        reviewer.close.assert_called_once_with()
+
     def test_run_review_uses_self_review_after_external_reviewers_fail(self) -> None:
         state = server.State()
         state.set_provider_session("deepseek", "session-1")
@@ -1107,7 +1182,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.3.12")
+        self.assertEqual(__version__, "0.3.13")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)
