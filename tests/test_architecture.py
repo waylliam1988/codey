@@ -115,6 +115,62 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
+    def test_capability_registry_is_metadata_only(self) -> None:
+        path = ROOT / "codey" / "capabilities.py"
+        imports = imported_modules(path)
+        source = path.read_text(encoding="utf-8")
+        forbidden_imports = {
+            "codey.browser",
+            "codey.deepseek",
+            "codey.qwen",
+            "codey.stepfun",
+            "codey.glm",
+            "codey.providers",
+            "codey.provider_controls",
+            "codey.tool_runtime",
+            "codey.research.runner",
+            "codey.server",
+            "codey.task_runner",
+            "importlib",
+            "pkgutil",
+        }
+        forbidden_source = (
+            "entry_points",
+            "load_plugin",
+            "register_runtime",
+            "dispatch(",
+            "execute(",
+            "eval(",
+            "exec(",
+        )
+
+        self.assertTrue(
+            forbidden_imports.isdisjoint(imports),
+            sorted(forbidden_imports & imports),
+        )
+        for token in forbidden_source:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
+    def test_task_runner_does_not_use_capability_registry_for_decisions(self) -> None:
+        source = (ROOT / "codey" / "task_runner.py").read_text(encoding="utf-8")
+
+        self.assertIn("self.capabilities = capabilities", source)
+        self.assertEqual(source.count("self.capabilities"), 1)
+        self.assertNotIn("if capabilities", source)
+        self.assertNotIn("if self.capabilities", source)
+
+    def test_research_review_and_local_context_do_not_import_tool_runtime(self) -> None:
+        paths = [
+            *(ROOT / "codey" / "research").glob("*.py"),
+            ROOT / "codey" / "review.py",
+            ROOT / "codey" / "review_coordinator.py",
+            *(ROOT / "codey" / "ghost").glob("*.py"),
+        ]
+        for path in paths:
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                self.assertNotIn("codey.tool_runtime", imported_modules(path))
+
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
         agent_source = (ROOT / "codey" / "agent.py").read_text(encoding="utf-8")
         research_source = (ROOT / "codey" / "research" / "runner.py").read_text(encoding="utf-8")

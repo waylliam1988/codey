@@ -1692,7 +1692,8 @@ repair prompt 不继承 Local context 指令
 
 ## 0.3.15 - Internal Capability Registry v1
 
-状态：计划。目标是把 Codey 内置能力注册化，先形成 seam，不开放第三方插件。
+状态：已按 v1 落地。目标是把 Codey 内置能力注册化，先形成 seam，不开放
+第三方插件，不参与真实调度决策。
 
 ### 做什么
 
@@ -1707,12 +1708,14 @@ tests/test_capabilities.py
 
 ```text
 provider_factory
+provider_capability_registry
 agent_runner
 tool_runtime
 research_runner
 review_runner
 local_context
 changes_presenter
+run_ledger
 run_trace
 prompt_envelope
 policy_guard
@@ -1728,7 +1731,14 @@ model_visible
 requires_policy
 ui_surface
 durable_state
+permission_profiles
+owner_module
+third_party
+can_override_user_choice
 ```
+
+`provider_capabilities.py` 仍然只是 provider 静态适配提示和 fallback 排序提示；
+`capabilities.py` 是 Codey 内部模块能力地图，两者不能混用。
 
 ### 边界
 
@@ -1736,15 +1746,24 @@ durable_state
 - 不执行第三方代码。
 - 不引入插件市场 UI。
 - 不允许 capability 覆盖 PermissionProfile、Router 决策或 provider 用户选择。
-- `TaskRunner` 仍然是 orchestrator，但逐步消费 registry，而不是直接知道所有构造细节。
+- `server.State` 持有内置 registry，`TaskRunner` 只携带 metadata；v1 不根据
+  registry 改 provider、mode、permission、prompt、tool dispatch、UI、SSE、receipt
+  或 fallback。
+- `TaskRunner` 仍然是 orchestrator；registry 只是能力地图，不是 plugin host。
 
 ### 验证
 
 ```text
 所有注册能力 id 稳定且唯一
+所有 consumes 必须指向已存在 capability id
+third_party 必须 False
+can_override_user_choice 必须 False
 能力不能声明未知 ui_surface / permission profile
 model_visible capability 必须接入 Prompt Envelope / Run Trace
+requires_policy capability 必须接入 policy_guard
 Local context / Research / Review 不能直接执行 ToolRuntime 绕过 policy
+capabilities.py 不 import server/task_runner/tool_runtime/research.runner/providers/browser
+capabilities.py 不使用 importlib/pkgutil/entry_points/exec/eval
 ```
 
 ## 0.3.16 - Tool Contract v2

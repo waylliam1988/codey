@@ -1,5 +1,55 @@
 # Codey Test Report
 
+## 0.3.15 Internal Capability Registry v1
+
+Codey 0.3.15 adds a read-only internal capability registry. It records built-in
+capability boundaries as metadata, without becoming a plugin system, runtime
+dispatcher, provider/router decision point, permission engine, UI entry point,
+or Run Trace schema change.
+
+Production changes:
+
+- New `codey/capabilities.py` defines `CapabilitySpec`, `CapabilityRegistry`,
+  `builtin_capability_registry()`, stable JSON export, fingerprinting, and
+  validation.
+- The built-in registry covers provider factory, provider capability hints,
+  agent runner, tool runtime, Research runner, Review runner, Local context,
+  changes presenter, RunLedger, Run Trace, Prompt Envelope, and policy guard.
+- Registry validation rejects unknown capability dependencies, permission
+  profiles, UI surfaces, durable states, third-party flags, user-choice override
+  flags, missing Prompt Envelope / Run Trace edges for model-visible
+  capabilities, and missing policy guard edges for policy-bound capabilities.
+- `server.State` owns the built-in registry, and `TaskRunner` carries it as
+  metadata only. It is not used for provider selection, Router decisions,
+  permission profile selection, prompt assembly, tool dispatch, UI, SSE,
+  receipts, or fallback behavior.
+- Architecture tests keep `capabilities.py` metadata-only: it cannot import
+  provider/browser/server/task-runner/tool/research runtime modules or use
+  plugin-loader shaped APIs.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_capabilities.py tests\test_architecture.py tests\test_server.py tests\test_task_runner_run_trace.py tests\test_prompt_envelope.py -q -p no:cacheprovider
+# 201 passed, 1 skipped, 63 subtests passed
+
+python -m pytest -q -p no:cacheprovider
+# 1947 passed, 9 skipped, 319 subtests passed
+
+python -m ruff check . --no-cache
+# All checks passed!
+
+python -m py_compile codey\capabilities.py codey\server.py codey\task_runner.py tests\test_capabilities.py tests\test_architecture.py tests\test_server.py
+# passed
+
+git diff --check
+# passed
+```
+
+No live provider A/B is required because 0.3.15 does not change prompt text,
+Router behavior, provider fallback, permissions, Research/Writer/Review
+semantics, UI, SSE events, task receipts, or runtime dispatch.
+
 ## 0.3.14 Prompt Envelope v1
 
 Codey 0.3.14 adds a lightweight prompt envelope for model-visible sections and

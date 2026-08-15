@@ -4,6 +4,27 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.15 - Internal Capability Registry v1
+
+- Added `codey/capabilities.py`, a read-only registry of Codey's built-in
+  capability boundaries.
+- The registry declares each internal capability's id, provided boundaries,
+  consumed boundaries, model-visible status, policy requirement, UI surface,
+  durable state, permission profiles, owner module, and whether it can load
+  third-party code or override user choices.
+- The first built-in map covers provider factory, provider capability hints,
+  agent runner, tool runtime, Research runner, Review runner, Local context,
+  changes presenter, RunLedger, Run Trace, Prompt Envelope, and policy guard.
+- `server.State` now owns the built-in registry, and `TaskRunner` carries it as
+  metadata only. It does not participate in provider selection, Router
+  decisions, permission profile selection, prompt assembly, tool dispatch, UI,
+  SSE, receipts, or fallback behavior.
+- Added capability and architecture tests that reject unknown dependencies,
+  permission profiles, UI surfaces, durable states, third-party flags,
+  user-choice override flags, and any capability-registry plugin-loader shape.
+- No live provider A/B is required because this release is metadata and
+  architecture constraints only.
+
 ## 0.3.14 - Prompt Envelope v1
 
 - Added `codey/prompt_envelope.py`, a small internal prompt envelope and

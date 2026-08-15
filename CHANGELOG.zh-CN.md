@@ -4,6 +4,23 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.15 - Internal Capability Registry v1
+
+- 新增 `codey/capabilities.py`：Codey 内置能力边界的只读 registry。
+- Registry 声明每个内部能力的 id、提供的边界、消费的边界、是否模型可见、
+  是否需要 policy、UI surface、持久状态、permission profiles、owner module，
+  以及是否允许第三方代码或覆盖用户选择。
+- 第一版内置能力地图覆盖 provider factory、provider capability hints、agent runner、
+  tool runtime、Research runner、Review runner、Local context、changes presenter、
+  RunLedger、Run Trace、Prompt Envelope 和 policy guard。
+- `server.State` 现在持有内置 registry，`TaskRunner` 只携带这份 metadata。它不参与
+  provider 选择、Router 决策、permission profile 选择、prompt 组装、工具调度、
+  UI、SSE、receipt 或 fallback 行为。
+- 新增 capability 和 architecture 测试，拒绝未知依赖、未知 permission profile、
+  未知 UI surface、未知持久状态、第三方标记、覆盖用户选择标记，以及任何 plugin-loader
+  形状。
+- 本版只是 metadata 和架构约束，不需要 live provider A/B。
+
 ## 0.3.14 - Prompt Envelope v1
 
 - 新增 `codey/prompt_envelope.py`：为模型可见 section 提供一个很小的内部
