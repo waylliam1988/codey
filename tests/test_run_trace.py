@@ -14,6 +14,7 @@ from codey.context_source import (
 )
 from codey.research.tool_contract import research_tool_contract_hash
 from codey.run_trace import CHECKPOINT_FLUSH_INTERVAL, RunTraceStore
+from codey.action_policy import ActionSubject, evaluate_action
 from codey.tool_definition import (
     definitions_for_tool_names,
     model_tool_contract_hash,
@@ -184,6 +185,90 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertNotIn("token", serialized)
             self.assertNotIn("8443", serialized)
             self.assertNotIn("Secret Source Title", serialized)
+
+    def test_policy_decision_records_digest_without_raw_display(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-policy",
+                session_id="session-policy",
+                project=None,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+            secret_command = "python -m pip install secret-package"
+            decision = evaluate_action(ActionSubject(
+                "run_command",
+                phase="writer",
+                permission_profile="coding_writer",
+                project=td,
+                path=".",
+                command=secret_command,
+                tool_name="run",
+            ))
+
+            recorder.record_policy_decision(decision)
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for("session-policy", "run-policy").read_text(
+                    encoding="utf-8",
+                )
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(payload["policy_decisions"][0]["kind"], "run_command")
+            self.assertEqual(payload["policy_decisions"][0]["decision"], "deny")
+            self.assertEqual(
+                payload["policy_decisions"][0]["reason_code"],
+                "command_not_allowed",
+            )
+            self.assertIn("subject_ref", payload["policy_decisions"][0])
+            self.assertIn("display_digest", payload["policy_decisions"][0])
+            self.assertNotIn(secret_command, serialized)
+            self.assertNotIn("secret-package", serialized)
+
+    def test_policy_decision_mapping_requires_digest_shaped_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-policy-mapping",
+                session_id="session-policy-mapping",
+                project=None,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+
+            recorder.record_policy_decision({
+                "kind": "run_command",
+                "decision": "deny",
+                "guard_id": "run_command_guard",
+                "reason_code": "command_not_allowed",
+                "phase": "writer",
+                "subject_ref": "rm -rf /",
+                "display_digest": "secret command",
+            })
+            recorder.record_policy_decision({
+                "kind": "run_command",
+                "decision": "deny",
+                "guard_id": "run_command_guard",
+                "reason_code": "command_not_allowed",
+                "phase": "writer",
+                "subject_ref": "action:" + ("a" * 64),
+                "display_digest": "sha256:" + ("b" * 64),
+                "display_chars": 12,
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for("session-policy-mapping", "run-policy-mapping").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+        self.assertEqual(len(payload["policy_decisions"]), 1)
+        self.assertEqual(payload["policy_decisions"][0]["subject_ref"], "action:" + ("a" * 64))
+        self.assertEqual(payload["policy_decisions"][0]["display_digest"], "sha256:" + ("b" * 64))
 
     def test_prompt_section_records_use_checkpoint_flush(self) -> None:
         with tempfile.TemporaryDirectory() as td:

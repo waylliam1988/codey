@@ -15,6 +15,13 @@ from pathlib import Path
 from typing import Callable, Protocol
 
 from codey import cancellation
+from codey.action_policy import (
+    ActionPolicyDecision,
+    ActionSubject,
+    DECISION_ASK_USER,
+    DECISION_DENY,
+    evaluate_action,
+)
 from codey.coding_context import CodingContext, render_coding_context
 from codey.context_source import (
     ContextSource,
@@ -149,6 +156,55 @@ def _call_arg(call: ToolCall, name: str, default: str = "") -> str:
     if value is None:
         return default
     return str(value)
+
+
+def _action_subject_for_call(
+    call: ToolCall,
+    *,
+    project: Path,
+    permission_profile: str,
+    phase: str,
+    approval_available: bool = False,
+) -> ActionSubject | None:
+    path = _call_arg(call, "path", ".")
+    if call.name == "read":
+        kind = "read_file"
+    elif call.name == "ls":
+        kind = "list_dir"
+    elif call.name == "search":
+        kind = "search_files"
+    elif call.name == "references":
+        kind = "find_references"
+    elif call.name == "edit":
+        kind = "write_file" if _edit_has_content(call) else "edit_file"
+    elif call.name == "run":
+        kind = "run_command"
+    elif call.name == "shell":
+        kind = "shell"
+    else:
+        return None
+    return ActionSubject(
+        kind=kind,
+        phase=phase,
+        permission_profile=permission_profile,
+        project=str(project),
+        path=path,
+        command=_call_arg(call, "command"),
+        tool_name=call.name,
+        approval_available=approval_available,
+    )
+
+
+def _policy_error_outcome(decision: ActionPolicyDecision) -> ToolOutcome:
+    message = decision.display or "action denied by policy"
+    text = message if message.startswith("ERROR:") else f"ERROR: {message}"
+    return ToolOutcome(
+        text,
+        False,
+        presentation={"status": "error", "result": text.removeprefix("ERROR: ")[:200]},
+        audit={"error_code": "policy_denied", "policy_decision": decision.to_audit_payload()},
+        error_code="policy_denied",
+    )
 
 
 def _edit_blocks_from_call(call: ToolCall) -> list[EditBlock]:
@@ -1058,6 +1114,30 @@ def run(
                         render_tool_activity(call),
                         index=tool_index,
                     ))
+                policy_subject = _action_subject_for_call(
+                    call,
+                    project=project,
+                    permission_profile=profile.name,
+                    phase="writer",
+                    approval_available=bool(on_shell_request),
+                )
+                policy_decision = (
+                    evaluate_action(policy_subject)
+                    if policy_subject is not None
+                    else None
+                )
+                if policy_decision is not None:
+                    trace.call("record_policy_decision", policy_decision)
+                if (
+                    policy_decision is not None
+                    and policy_decision.decision == DECISION_DENY
+                ):
+                    outcome = _policy_error_outcome(policy_decision)
+                    if call.name == "run":
+                        checks_ran = True
+                        checks_passed = False
+                    record_tool_outcome(call, outcome, tool_index)
+                    continue
                 if call.name == "edit":
                     if _edit_has_content(call):
                         canonical = _canonical_project_path(project, path)
@@ -1120,6 +1200,8 @@ def run(
                         project,
                         path,
                         command,
+                        permission_profile=profile.name,
+                        phase="writer",
                         tool_id=f"{turn}:{tool_index}",
                     )
                     checks_ran = True
@@ -1128,7 +1210,11 @@ def run(
                         successful_verifications.append((command, path, edit_epoch))
                 elif call.name == "shell":
                     command = _call_arg(call, "command").strip()
-                    if on_shell_request:
+                    if (
+                        policy_decision is not None
+                        and policy_decision.decision == DECISION_ASK_USER
+                        and on_shell_request
+                    ):
                         on_shell_request(path, command)
                     emit(RunEvent.status(
                         f"[agent] shell approval requested: {command}"

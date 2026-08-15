@@ -194,7 +194,12 @@ class ToolOutcomeTests(unittest.TestCase):
             root = Path(td)
             (root / "fail.py").write_text("raise SystemExit(3)\n", encoding="utf-8")
 
-            outcome = run_command(root, ".", "python fail.py")
+            outcome = run_command(
+                root,
+                ".",
+                "python fail.py",
+                permission_profile="coding_writer",
+            )
 
         self.assertFalse(outcome.ok)
         self.assertEqual(outcome.exit_code, 3)
@@ -215,7 +220,12 @@ class ToolOutcomeTests(unittest.TestCase):
             try:
                 with cancellation.scope(event):
                     with self.assertRaises(cancellation.TaskCancelled):
-                        run_command(root, ".", "python sleep.py")
+                        run_command(
+                            root,
+                            ".",
+                            "python sleep.py",
+                            permission_profile="coding_writer",
+                        )
             finally:
                 timer.cancel()
 
@@ -233,7 +243,12 @@ class ToolOutcomeTests(unittest.TestCase):
             mock.patch("codey.tool_runtime.RUN_OUTPUT_LIMIT", 80),
             mock.patch("codey.tool_runtime.cancellation.run_process", return_value=completed),
         ):
-            outcome = run_command(Path(td), ".", "python large.py")
+            outcome = run_command(
+                Path(td),
+                ".",
+                "python large.py",
+                permission_profile="coding_writer",
+            )
 
         self.assertTrue(outcome.truncated)
         self.assertIn("HEAD", outcome.model_text)
@@ -273,7 +288,12 @@ class ToolOutcomeTests(unittest.TestCase):
                     return_value=completed,
                 ),
             ):
-                outcome = run_command(root, ".", "python fail.py")
+                outcome = run_command(
+                    root,
+                    ".",
+                    "python fail.py",
+                    permission_profile="coding_writer",
+                )
 
         self.assertFalse(outcome.ok)
         self.assertIn("[... 12 dependency stack frames omitted ...]", outcome.model_text)
@@ -303,7 +323,12 @@ class ToolOutcomeTests(unittest.TestCase):
                 "codey.tool_runtime.cancellation.run_process",
                 return_value=completed,
             ):
-                raw = run_command_raw(root, ".", "python fail.py")
+                raw = run_command_raw(
+                    root,
+                    ".",
+                    "python fail.py",
+                    permission_profile="coding_writer",
+                )
                 outcome = tool_runtime.project_run_command_result(root, raw)
 
         self.assertIsInstance(raw, tool_runtime.RunCommandRawResult)
@@ -406,6 +431,44 @@ class ToolOutcomeTests(unittest.TestCase):
                 f"expected rejected: {command}",
             )
 
+    def test_run_policy_denial_is_structured_without_raw_audit_command(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            outcome = run_command_raw(
+                Path(td),
+                ".",
+                "python -m pip install secret-package",
+                permission_profile="coding_writer",
+            )
+
+        self.assertIsInstance(outcome, tool_runtime.ToolOutcome)
+        assert isinstance(outcome, tool_runtime.ToolOutcome)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.error_code, "policy_denied")
+        self.assertIn("command not allowed", outcome.model_text)
+        policy = outcome.audit["policy_decision"]
+        serialized = json.dumps(policy)
+        self.assertEqual(policy["decision"], "deny")
+        self.assertEqual(policy["reason_code"], "command_not_allowed")
+        self.assertNotIn("secret-package", serialized)
+
+    def test_run_policy_denies_missing_permission_profile_at_sink(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            outcome = run_command_raw(
+                Path(td),
+                ".",
+                "python -m pytest",
+                permission_profile="",
+            )
+
+        self.assertIsInstance(outcome, tool_runtime.ToolOutcome)
+        assert isinstance(outcome, tool_runtime.ToolOutcome)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.error_code, "policy_denied")
+        self.assertEqual(
+            outcome.audit["policy_decision"]["reason_code"],
+            "unknown_permission_profile",
+        )
+
     def test_suite_commands_report_timeout_distinct_from_failure(self) -> None:
         with (
             tempfile.TemporaryDirectory() as td,
@@ -414,7 +477,12 @@ class ToolOutcomeTests(unittest.TestCase):
                 side_effect=subprocess.TimeoutExpired(cmd="pytest", timeout=300),
             ),
         ):
-            outcome = run_command(Path(td), ".", "pytest")
+            outcome = run_command(
+                Path(td),
+                ".",
+                "pytest",
+                permission_profile="coding_writer",
+            )
 
         self.assertFalse(outcome.ok)
         self.assertIn(f"{tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s", outcome.model_text)
@@ -428,7 +496,12 @@ class ToolOutcomeTests(unittest.TestCase):
                 "codey.tool_runtime.cancellation.run_process",
                 side_effect=subprocess.TimeoutExpired(cmd="python app.py", timeout=90),
             ):
-                outcome = run_command(root, ".", "python app.py")
+                outcome = run_command(
+                    root,
+                    ".",
+                    "python app.py",
+                    permission_profile="coding_writer",
+                )
 
         self.assertFalse(outcome.ok)
         self.assertIn(f"{tool_runtime.RUN_TIMEOUT_SECONDS}s", outcome.model_text)

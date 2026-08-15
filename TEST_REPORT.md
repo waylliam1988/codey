@@ -1,5 +1,65 @@
 # Codey Test Report
 
+## 0.3.17 Action Policy Pipeline v1
+
+Codey 0.3.17 adds a monotonic local action policy pipeline. Local runtime
+actions are evaluated as bounded `ActionSubject` metadata before execution and
+resolve to `allow`, `ask_user`, or `deny`, with `deny` unable to be weakened by
+later guards.
+
+Production changes:
+
+- New `codey/action_policy.py` centralizes deterministic guards for permission
+  profiles, workspace paths, write scope, run-command allowlists, shell
+  approval availability, Research URLs, Local context actions, provider
+  fallback metadata, and managed-output retention limits.
+- `tool_runtime.run_command_raw()` now evaluates the shared run-command policy
+  before execution with an explicit permission profile, while preserving the
+  existing allowlist semantics.
+- `agent.py` evaluates tool calls before local execution. Policy denial returns
+  a structured `ToolOutcome` with `error_code="policy_denied"`; shell requests
+  still use the existing approval flow when approval is available.
+- `research/url_policy.py` keeps its public API and denial text while delegating
+  URL safety checks to the shared policy source; invalid URL ports return a
+  policy denial reason instead of raising parser exceptions.
+- Managed output artifact writes now pass through policy metadata; size/count
+  denials and missing/insufficient profiles skip full-artifact retention without
+  changing the bounded model result text.
+- Unknown action kinds are denied by the policy pipeline instead of defaulting
+  to allow.
+- `codey.action_policy.__all__` exposes only the narrow core API; low-level
+  run-command helpers stay outside the star-import public surface.
+- Run Trace manifests now include bounded `policy_decisions` entries with
+  kind, decision, guard id, reason code, phase, subject ref, and display digest
+  metadata only. They do not store raw commands, raw URLs, stdout, source text,
+  or webpage bodies, and mapping fallbacks must provide digest-shaped refs.
+- `policy_guard` capability metadata now declares `action_policy_boundary`;
+  the Capability Registry remains read-only and does not dispatch runtime work.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_action_policy.py tests\test_tool_runtime.py tests\test_research.py::ResearchBoundaryTests::test_url_policy_rejects_private_targets_without_network tests\test_run_trace.py tests\test_managed_outputs.py tests\test_agent_tools.py tests\test_agent.py tests\test_task_runner_run_trace.py tests\test_capabilities.py tests\test_architecture.py tests\test_server.py -q -p no:cacheprovider
+# 428 passed, 6 skipped, 80 subtests passed
+
+python -m pytest -q -p no:cacheprovider
+# 1989 passed, 9 skipped, 342 subtests passed
+
+python -m ruff check . --no-cache
+# All checks passed!
+
+python -m py_compile <changed Python files>
+# passed
+
+git diff --check
+# passed
+```
+
+No live provider A/B is required because 0.3.17 does not change prompt text,
+tool schema prompt, model-visible normal tool-result wording, Router behavior,
+provider fallback ordering, permissions, Research/Writer/Review semantics, UI
+structure, SSE event shape, or task receipts.
+
 ## 0.3.16 Tool Contract v2
 
 Codey 0.3.16 cleanly migrates local tool results from a shared `output`

@@ -479,7 +479,12 @@ class ToolTests(unittest.TestCase):
             root = Path(td)
             (root / "ok.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            output = tool_runtime.run_command(root, ".", "python -m py_compile ok.py").model_text
+            output = tool_runtime.run_command(
+                root,
+                ".",
+                "python -m py_compile ok.py",
+                permission_profile="coding_writer",
+            ).model_text
 
             self.assertIn("exit 0: python -m py_compile ok.py", output)
 
@@ -494,19 +499,34 @@ class ToolTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            output = tool_runtime.run_command(root, ".", "python -B -m unittest").model_text
+            output = tool_runtime.run_command(
+                root,
+                ".",
+                "python -B -m unittest",
+                permission_profile="coding_writer",
+            ).model_text
 
             self.assertIn("exit 0: python -B -m unittest", output)
 
     def test_run_rejects_dangerous_shell_syntax(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            output = tool_runtime.run_command(Path(td), ".", "python -m unittest && rm -rf .").model_text
+            output = tool_runtime.run_command(
+                Path(td),
+                ".",
+                "python -m unittest && rm -rf .",
+                permission_profile="coding_writer",
+            ).model_text
 
             self.assertEqual(output, "ERROR: command not allowed: python -m unittest && rm -rf .")
 
     def test_run_rejects_non_allowlisted_command(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            output = tool_runtime.run_command(Path(td), ".", "git status").model_text
+            output = tool_runtime.run_command(
+                Path(td),
+                ".",
+                "git status",
+                permission_profile="coding_writer",
+            ).model_text
 
             self.assertEqual(output, "ERROR: command not allowed: git status")
 
@@ -521,7 +541,12 @@ class ToolTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            output = tool_runtime.run_command(root, ".", "python -m unittest").model_text
+            output = tool_runtime.run_command(
+                root,
+                ".",
+                "python -m unittest",
+                permission_profile="coding_writer",
+            ).model_text
 
             self.assertIn("exit 0: python -m unittest", output)
             self.assertFalse((root / "__pycache__").exists())
@@ -2201,8 +2226,15 @@ class RunLoopTests(unittest.TestCase):
         done = '{"tool":"done","args":{"summary":"verified"}}'
         seen = []
 
-        def run_probe(_root: Path, rel: str, command: str, tool_id: str):
-            seen.append((rel, command, tool_id))
+        def run_probe(
+            _root: Path,
+            rel: str,
+            command: str,
+            tool_id: str,
+            permission_profile: str,
+            phase: str,
+        ):
+            seen.append((rel, command, tool_id, permission_profile, phase))
             return tool_runtime.ToolOutcome("exit 0: ok", True, exit_code=0)
 
         with tempfile.TemporaryDirectory() as td:
@@ -2216,7 +2248,7 @@ class RunLoopTests(unittest.TestCase):
             )
 
         self.assertEqual(result.stop_reason, "done")
-        self.assertEqual(seen, [(".", "python -m pytest -q", "1:0")])
+        self.assertEqual(seen, [(".", "python -m pytest -q", "1:0", "coding_writer", "writer")])
 
     def test_read_before_edit_uses_canonical_project_paths(self) -> None:
         read = '{"tool":"read_file","args":{"path":"src/app.py"}}'
@@ -2291,6 +2323,26 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "approval")
         self.assertEqual(requests, [(".", "git status --short")])
         self.assertTrue(any("shell approval requested" in render_run_event(event) for event in events))
+
+    def test_shell_action_without_approval_channel_is_policy_denied(self) -> None:
+        shell = '{"tool":"shell","args":{"path":".","command":"git status --short"}}'
+        done = '{"tool":"done","args":{"summary":"not run"}}'
+        events = []
+        with tempfile.TemporaryDirectory() as td:
+            result = agent.run(
+                FakeProvider(shell, done),
+                Path(td),
+                "check git",
+                on_event=events.append,
+                fresh_chat=False,
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(result.summary, "not run")
+        tool_events = [event for event in events if event.kind == "tool"]
+        self.assertEqual(tool_events[0].outcome.error_code, "policy_denied")
+        self.assertIn("approval channel", tool_events[0].outcome.model_text)
+        self.assertFalse(any("shell approval requested" in render_run_event(event) for event in events))
 
     def test_done_after_edit_requires_requested_verification_run(self) -> None:
         read = '{"tool":"read_file","args":{"path":"app.py"}}'

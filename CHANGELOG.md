@@ -4,6 +4,38 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.17 - Action Policy Pipeline v1
+
+- Added `codey/action_policy.py`, a monotonic local action policy pipeline for
+  `allow` / `ask_user` / `deny` decisions. It covers local file actions,
+  run-command checks, shell approval, Research URL checks, provider fallback
+  audit decisions, Local context action boundaries, and managed-output artifact
+  limits.
+- The existing run-command allowlist now has one source of truth in the action
+  policy module. `tool_runtime` still owns execution and result projection, but
+  its sink-level policy check now requires an explicit permission profile and
+  records denial as `ToolOutcome.audit["policy_decision"]`.
+- Research URL checks keep the existing `check_fetch_url()` API and user-facing
+  denial text while reusing the shared action policy URL guard; malformed URL
+  ports are denied as policy reasons instead of escaping as parser exceptions.
+- Managed-output artifact writes now pass through size/count policy guards.
+  They require a writer verification profile; oversized artifacts are not
+  retained as handles, while the bounded model result text remains unchanged.
+- Unknown action kinds are denied by the policy pipeline instead of falling
+  through to default allow.
+- The action policy module keeps a narrow `__all__` surface; low-level
+  run-command helper functions are internal implementation details.
+- Run Trace manifests now include bounded `policy_decisions` entries with
+  kind, decision, guard id, reason code, phase, subject ref, and display digest.
+  They do not save raw commands, URLs, stdout/stderr, source bodies, or prompt
+  text, and mapping fallbacks must use digest-shaped refs.
+- Provider fallback policy decisions are traced without changing provider
+  selection, fallback ordering, Router behavior, prompt text, tool schema,
+  UI/SSE payload shape, or task receipts.
+- `policy_guard` capability metadata now declares the
+  `action_policy_boundary`, while the Capability Registry remains read-only and
+  does not dispatch runtime behavior.
+
 ## 0.3.16 - Tool Contract v2
 
 - `ToolOutcome` and `ToolResult` now use `model_text` as the only

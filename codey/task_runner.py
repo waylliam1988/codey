@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from codey import cancellation, provider_controls, provider_flow
+from codey.action_policy import ActionSubject, evaluate_action
 from codey.capabilities import CapabilityRegistry
 from codey.agent import RunResult
 from codey.agent_tools import AgentToolFns
@@ -279,6 +280,20 @@ def _record_research_result_trace(trace: Any | None, result: Any) -> None:
     sink.call("record_research_sources", getattr(result, "opened_sources", ()))
 
 
+def _provider_fallback_policy_decision(
+    *,
+    from_provider: str,
+    to_provider: str,
+    phase: str,
+):
+    return evaluate_action(ActionSubject(
+        kind="provider_fallback",
+        phase=phase,
+        from_provider=from_provider,
+        to_provider=to_provider,
+    ))
+
+
 NEW_PROJECT_IGNORED_DIRS = {
     ".git",
     ".hg",
@@ -515,15 +530,29 @@ class TaskRunner:
         self.ghost_learning_modes = tuple(str(item or "").strip() for item in ghost_learning_modes)
         self.ghost_router_provider_factory = ghost_router_provider_factory
 
-    def _managed_tool_fns(self, *, session_id: str, run_id: str) -> AgentToolFns | None:
+    def _managed_tool_fns(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+    ) -> AgentToolFns | None:
         if self.managed_outputs is None:
             return None
 
-        def run_command(root: Path, rel: str, command: str, tool_id: str):
+        def run_command(
+            root: Path,
+            rel: str,
+            command: str,
+            tool_id: str,
+            _permission_profile: str,
+            _phase: str,
+        ):
             return run_command_with_managed_output(
                 root,
                 rel,
                 command,
+                permission_profile=_permission_profile,
+                phase=_phase,
                 store=self.managed_outputs,
                 session_id=session_id,
                 run_id=run_id,
@@ -1413,6 +1442,14 @@ class TaskRunner:
                         phase="preflight",
                         reason_code="unavailable",
                     )
+                    trace_sink.call(
+                        "record_policy_decision",
+                        _provider_fallback_policy_decision(
+                            from_provider=previous_provider_id,
+                            to_provider=provider_id,
+                            phase="preflight",
+                        ),
+                    )
                     preflight_switches = 1
                 else:
                     raise RuntimeError("selected provider is unavailable")
@@ -1470,6 +1507,14 @@ class TaskRunner:
                         phase="connect",
                         reason_code="provider_failure",
                     )
+                    trace_sink.call(
+                        "record_policy_decision",
+                        _provider_fallback_policy_decision(
+                            from_provider=previous_provider_id,
+                            to_provider=provider_id,
+                            phase="connect",
+                        ),
+                    )
                     continue
                 if (
                     supervisor is None
@@ -1509,6 +1554,14 @@ class TaskRunner:
                     to_provider=provider_id,
                     phase="canary",
                     reason_code="provider_failure",
+                )
+                trace_sink.call(
+                    "record_policy_decision",
+                    _provider_fallback_policy_decision(
+                        from_provider=previous_provider_id,
+                        to_provider=provider_id,
+                        phase="canary",
+                    ),
                 )
             if task_kind == "research":
                 mode = "research"
@@ -2481,6 +2534,14 @@ class TaskRunner:
                 to_provider=next_provider_id,
                 phase="writer_failover",
                 reason_code="provider_failure",
+            )
+            FailOpenPromptTrace(hooks.trace).call(
+                "record_policy_decision",
+                _provider_fallback_policy_decision(
+                    from_provider=previous_provider_id,
+                    to_provider=next_provider_id,
+                    phase="writer_failover",
+                ),
             )
             frame.conversation.update_snapshot(replace(
                 frame.conversation.snapshot,

@@ -28,7 +28,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "e66909888c456583bb4c89fd09f5178d3145906238b64808adf3f7a793de37f9"
+    "4277987fe6634e9d69a6d71055775dc055c2c3c823bdf9e258252a26b4720a58"
 )
 
 
@@ -62,13 +62,16 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.consumes, ())
 
-    def test_policy_guard_does_not_claim_future_action_pipeline(self) -> None:
+    def test_policy_guard_declares_action_policy_boundary(self) -> None:
         registry = builtin_capability_registry()
 
         spec = registry.get("policy_guard")
 
-        self.assertEqual(spec.provides, ("permission_profile_boundary",))
-        self.assertEqual(spec.owner_module, "codey.permission_profiles")
+        self.assertEqual(
+            spec.provides,
+            ("permission_profile_boundary", "action_policy_boundary"),
+        )
+        self.assertEqual(spec.owner_module, "codey.action_policy")
 
     def test_state_and_task_runner_carry_registry_without_dispatch(self) -> None:
         from codey import server

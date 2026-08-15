@@ -13,6 +13,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codey import cancellation
+from codey.action_policy import (
+    ActionSubject,
+    DECISION_DENY,
+    command_has_forbidden_tokens,
+    evaluate_action,
+    is_allowed_run_command,
+    is_suite_run_command,
+    strip_python_flags,
+)
 from codey.bounded_scan import (
     DEFAULT_MAX_DIR_ENTRIES,
     DEFAULT_MAX_SCAN_DIRS,
@@ -65,31 +74,6 @@ PYTHON_SYNTAX_HINT_MAX_MESSAGE_CHARS = 160
 RUN_TIMEOUT_SECONDS = 90
 RUN_SUITE_TIMEOUT_SECONDS = 300
 RUN_OUTPUT_LIMIT = 24_000
-RUN_FORBIDDEN_TOKENS = {"&&", "||", ";", "|", ">", ">>", "<", "$(", "`"}
-RUN_ALLOWED_PYTHON_FLAGS = {"-B"}
-RUN_ALLOWED_PYTHON_MODULES = {
-    "unittest",
-    "pytest",
-    "py_compile",
-    "mypy",
-    "ruff",
-}
-RUN_ALLOWED_NPM_SCRIPTS = {"test", "build", "lint", "check", "typecheck"}
-RUN_ALLOWED_MAKE_TARGETS = {"test", "build", "lint", "check", "typecheck"}
-RUN_ALLOWED_DENO_TASKS = {"test", "lint", "check"}
-RUN_ALLOWED_RUFF_SUBCOMMANDS = {"check", "format"}
-RUN_NODE_PACKAGE_MANAGERS = {
-    "npm",
-    "npm.cmd",
-    "npm.exe",
-    "pnpm",
-    "pnpm.cmd",
-    "pnpm.exe",
-    "yarn",
-    "yarn.cmd",
-    "yarn.exe",
-}
-RUN_BUN_EXECUTABLES = {"bun", "bun.cmd", "bun.exe"}
 LONG_LINE_MARKER = "\n[... middle of overlong line omitted; not a complete old_string ...]\n"
 EDIT_ANCHOR_RE = re.compile(
     r"(?P<quote>['\"])(?P<literal>[^'\"\r\n]{4,})(?P=quote)"
@@ -173,6 +157,18 @@ class ToolOutcome:
     def managed_output(self) -> Mapping[str, object]:
         value = self.audit.get("managed_output") if isinstance(self.audit, Mapping) else None
         return normalized_managed_output(value)
+
+
+def _policy_error_outcome(decision) -> ToolOutcome:
+    message = str(getattr(decision, "display", "") or "action denied by policy")
+    text = message if message.startswith("ERROR:") else f"ERROR: {message}"
+    return ToolOutcome(
+        text,
+        False,
+        presentation={"status": "error", "result": _first_model_line(text, 200)},
+        audit={"error_code": "policy_denied", "policy_decision": decision.to_audit_payload()},
+        error_code="policy_denied",
+    )
 
 
 @dataclass(frozen=True)
@@ -935,143 +931,43 @@ def _raw_path_symlink_reason(root: Path, rel: str, *, tool: str) -> str:
 
 
 def _command_has_forbidden_tokens(argv: list[str]) -> bool:
-    return any(token in arg for arg in argv for token in RUN_FORBIDDEN_TOKENS)
+    return command_has_forbidden_tokens(argv)
 
 
 def _strip_python_flags(argv: list[str]) -> list[str]:
-    args = argv[1:]
-    while args and args[0] in RUN_ALLOWED_PYTHON_FLAGS:
-        args = args[1:]
-    return args
-
-
-def _node_script_allowed(argv: list[str]) -> bool:
-    return len(argv) >= 2 and (
-        argv[1] in RUN_ALLOWED_NPM_SCRIPTS
-        or (len(argv) >= 3 and argv[1] == "run" and argv[2] in RUN_ALLOWED_NPM_SCRIPTS)
-    )
-
-
-def _bun_args_allowed(argv: list[str]) -> bool:
-    """bun's built-in subcommands (build, install, ...) can write files, so only
-    allow the test runner and explicit `bun run <script>`."""
-    if len(argv) < 2:
-        return False
-    if argv[1] == "test":
-        return True
-    return len(argv) >= 3 and argv[1] == "run" and argv[2] in RUN_ALLOWED_NPM_SCRIPTS
-
-
-def _ruff_arg_mutates(arg: str) -> bool:
-    return (
-        arg.startswith("--fix")
-        or arg.startswith("--unsafe-fixes")
-        or arg.startswith("--add-noqa")
-        or arg.startswith("--output-file")
-    )
-
-
-def _ruff_args_allowed(args: list[str]) -> bool:
-    """ruff must stay read-only: check without fixes, format only with --check."""
-    if not args or args[0] not in RUN_ALLOWED_RUFF_SUBCOMMANDS:
-        return False
-    rest = args[1:]
-    if args[0] == "format":
-        return "--check" in rest
-    return not any(_ruff_arg_mutates(arg) for arg in rest)
-
-
-def _mypy_args_allowed(args: list[str]) -> bool:
-    """Reject flags that can install packages instead of only type-checking."""
-    return not any(arg.startswith("--install-types") for arg in args)
-
-
-def _deno_args_allowed(args: list[str]) -> bool:
-    if not args:
-        return False
-    if args[0] == "fmt":
-        return "--check" in args[1:]
-    return args[0] in RUN_ALLOWED_DENO_TASKS
-
-
-def _python_module_args_allowed(module: str, args: list[str]) -> bool:
-    if module == "ruff":
-        return _ruff_args_allowed(args)
-    if module == "mypy":
-        return _mypy_args_allowed(args)
-    return True
+    return strip_python_flags(argv)
 
 
 def _is_allowed_run_command(argv: list[str]) -> bool:
-    if not argv:
-        return False
-    exe = Path(argv[0]).name.lower()
-    if exe in {"python", "python.exe", "py", "py.exe"}:
-        args = _strip_python_flags(argv)
-        if len(args) >= 2 and args[0] == "-m" and args[1] in RUN_ALLOWED_PYTHON_MODULES:
-            return _python_module_args_allowed(args[1], args[2:])
-        return bool(args and args[0].endswith(".py"))
-    if exe in {"pytest", "pytest.exe"}:
-        return True
-    if exe in {"mypy", "mypy.exe"}:
-        return _mypy_args_allowed(argv[1:])
-    if exe in {"ruff", "ruff.exe"}:
-        return _ruff_args_allowed(argv[1:])
-    if exe in RUN_NODE_PACKAGE_MANAGERS:
-        return _node_script_allowed(argv)
-    if exe in RUN_BUN_EXECUTABLES:
-        return _bun_args_allowed(argv)
-    if exe in {"deno", "deno.exe"}:
-        return _deno_args_allowed(argv[1:])
-    if exe in {"go", "go.exe"}:
-        return len(argv) >= 2 and argv[1] in {"test", "build", "vet"}
-    if exe in {"cargo", "cargo.exe"}:
-        return len(argv) >= 2 and argv[1] in {"test", "build", "check"}
-    if exe in {"dotnet", "dotnet.exe"}:
-        return len(argv) >= 2 and argv[1] in {"test", "build"}
-    if exe in {"make", "make.exe", "gmake", "gmake.exe"}:
-        return len(argv) >= 2 and all(arg in RUN_ALLOWED_MAKE_TARGETS for arg in argv[1:])
-    return False
+    return is_allowed_run_command(argv)
 
 
 def _is_suite_run_command(argv: list[str]) -> bool:
     """Recognize verification suites that legitimately need a longer budget."""
-    if not _is_allowed_run_command(argv):
-        return False
-    exe = Path(argv[0]).name.lower()
-    if exe in {"pytest", "pytest.exe", "mypy", "mypy.exe"}:
-        return True
-    if exe in {"python", "python.exe", "py", "py.exe"}:
-        args = _strip_python_flags(argv)
-        return len(args) >= 2 and args[0] == "-m" and args[1] in {
-            "unittest",
-            "pytest",
-            "mypy",
-        }
-    if exe in {"go", "go.exe", "cargo", "cargo.exe", "dotnet", "dotnet.exe"}:
-        return len(argv) >= 2 and argv[1] in {"test", "build"}
-    if exe in {"make", "make.exe", "gmake", "gmake.exe"}:
-        return True
-    if exe in {"deno", "deno.exe"}:
-        return len(argv) >= 2 and argv[1] == "test"
-    if exe in RUN_NODE_PACKAGE_MANAGERS or exe in RUN_BUN_EXECUTABLES:
-        return len(argv) >= 2 and (
-            argv[1] in {"test", "build"}
-            or (len(argv) >= 3 and argv[1] == "run" and argv[2] in {"test", "build"})
-        )
-    return False
+    return is_suite_run_command(argv)
 
 
-def run_command_raw(root: Path, rel: str, command: str) -> RunCommandRawResult | ToolOutcome:
+def run_command_raw(
+    root: Path,
+    rel: str,
+    command: str,
+    *,
+    permission_profile: str,
+    phase: str = "tool_runtime",
+) -> RunCommandRawResult | ToolOutcome:
     command = command.strip()
-    if not command:
-        return ToolOutcome.error("command required")
-    try:
-        argv = shlex.split(command)
-    except ValueError as exc:
-        return ToolOutcome.error(f"invalid command: {exc}")
-    if _command_has_forbidden_tokens(argv) or not _is_allowed_run_command(argv):
-        return ToolOutcome.error(f"command not allowed: {command}")
+    decision = evaluate_action(ActionSubject(
+        kind="run_command",
+        phase=phase,
+        permission_profile=permission_profile,
+        project=str(root),
+        path=rel or ".",
+        command=command,
+        tool_name="run",
+    ))
+    if decision.decision == DECISION_DENY:
+        return _policy_error_outcome(decision)
+    argv = shlex.split(command)
     cwd = safe_join(root, rel or ".")
     if not cwd.is_dir():
         return ToolOutcome.error(f"not a directory: {rel}")
@@ -1121,8 +1017,21 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
     )
 
 
-def run_command(root: Path, rel: str, command: str) -> ToolOutcome:
-    raw = run_command_raw(root, rel, command)
+def run_command(
+    root: Path,
+    rel: str,
+    command: str,
+    *,
+    permission_profile: str,
+    phase: str = "tool_runtime",
+) -> ToolOutcome:
+    raw = run_command_raw(
+        root,
+        rel,
+        command,
+        permission_profile=permission_profile,
+        phase=phase,
+    )
     if isinstance(raw, ToolOutcome):
         return raw
     return project_run_command_result(root, raw)

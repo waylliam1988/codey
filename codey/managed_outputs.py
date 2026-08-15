@@ -14,13 +14,17 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from codey.action_policy import (
+    ActionSubject,
+    DECISION_DENY,
+    MAX_MANAGED_OUTPUT_BYTES,
+    evaluate_action,
+)
 from codey.local_store import session_key, write_json_atomic
 from codey import tool_runtime
 from codey.tool_runtime import ToolOutcome
 
 
-MAX_MANAGED_OUTPUT_BYTES = 2 * 1024 * 1024
-MAX_MANAGED_OUTPUTS_PER_RUN = 32
 MAX_METADATA_BYTES = 16 * 1024
 MAX_COMMAND_CHARS = 500
 MAX_CWD_CHARS = 240
@@ -50,6 +54,7 @@ class ManagedOutputStore:
         session_id: str,
         run_id: str,
         tool_id: str,
+        permission_profile: str,
         command: str,
         cwd: str,
         text: str,
@@ -57,10 +62,19 @@ class ManagedOutputStore:
         try:
             run_dir = self._run_dir(session_id, run_id)
             existing = tuple(run_dir.glob(f"{HANDLE_PREFIX}*.json")) if run_dir.exists() else ()
-            if len(existing) >= MAX_MANAGED_OUTPUTS_PER_RUN:
+            original_text = str(text or "")
+            original_bytes = len(original_text.encode("utf-8"))
+            policy = evaluate_action(ActionSubject(
+                kind="managed_output",
+                phase="managed_output",
+                permission_profile=permission_profile,
+                byte_count=original_bytes,
+                item_count=len(existing),
+            ))
+            if policy.decision == DECISION_DENY:
                 return None
             stored_text, original_bytes, stored_bytes, stored_truncated = _cap_utf8_text(
-                text,
+                original_text,
                 MAX_MANAGED_OUTPUT_BYTES,
             )
             digest = hashlib.sha256(stored_text.encode("utf-8")).hexdigest()
@@ -127,12 +141,20 @@ def run_command_with_managed_output(
     rel: str,
     command: str,
     *,
+    permission_profile: str,
     store: ManagedOutputStore | None,
     session_id: str,
     run_id: str,
+    phase: str = "tool_runtime",
     tool_id: str = "",
 ) -> ToolOutcome:
-    raw = tool_runtime.run_command_raw(root, rel, command)
+    raw = tool_runtime.run_command_raw(
+        root,
+        rel,
+        command,
+        permission_profile=permission_profile,
+        phase=phase,
+    )
     if isinstance(raw, ToolOutcome):
         return raw
     projected = tool_runtime.project_run_command_result(root, raw)
@@ -142,6 +164,7 @@ def run_command_with_managed_output(
         session_id=session_id,
         run_id=run_id,
         tool_id=tool_id,
+        permission_profile=permission_profile,
         command=raw.command,
         cwd=rel or ".",
         text=raw.output,

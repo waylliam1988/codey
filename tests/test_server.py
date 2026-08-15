@@ -1305,7 +1305,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.3.16")
+        self.assertEqual(__version__, "0.3.17")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)
@@ -2771,6 +2771,7 @@ class SessionThreadingTests(unittest.TestCase):
                     project,
                     ".",
                     "python large.py",
+                    permission_profile=kwargs["permission_profile"],
                     tool_id="1:0",
                 )
                 kwargs["on_event"](RunEvent.tool_finished(

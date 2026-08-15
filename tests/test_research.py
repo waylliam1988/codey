@@ -278,6 +278,8 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_url_policy_rejects_private_targets_without_network(self) -> None:
         self.assertIn("local", check_fetch_url("http://localhost:8000", resolve=False))
         self.assertIn("non-public", check_fetch_url("http://127.0.0.1/", resolve=False))
+        self.assertEqual(check_fetch_url("http://example.com:99999/x", resolve=False), "invalid URL port")
+        self.assertEqual(check_fetch_url("http://[::1", resolve=False), "invalid URL")
         self.assertIsNone(check_fetch_url("https://example.com/page", resolve=False))
 
     def test_pdf_parse_pages_is_bounded_and_one_based(self) -> None:

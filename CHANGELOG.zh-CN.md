@@ -4,6 +4,31 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.17 - Action Policy Pipeline v1
+
+- 新增 `codey/action_policy.py`：本地动作的单调 policy 管线，统一输出
+  `allow` / `ask_user` / `deny`。首批覆盖本地文件动作、run command、shell
+  approval、Research URL、provider fallback 审计、Local context action 边界和
+  managed-output artifact 限额。
+- run command allowlist 现在以 action policy 模块为单一真源。`tool_runtime`
+  仍然负责实际执行和结果投影，但 sink-level policy 检查必须显式接收
+  permission profile，policy 拒绝会结构化写入
+  `ToolOutcome.audit["policy_decision"]`。
+- Research URL 检查保留现有 `check_fetch_url()` API 和用户可见拒绝文案，内部复用
+  共享 action policy URL guard；畸形 URL 端口会作为 policy reason 拒绝，不再作为解析异常冒出。
+- managed-output artifact 写入现在经过 size/count policy guard，并要求 writer
+  verification profile。超限 artifact 不再保留 handle，但模型看到的有界结果文本不变。
+- 未知 action kind 现在由 policy pipeline 直接 deny，不再落到 default allow。
+- action policy 模块的 `__all__` 只保留窄公共面；低层 run-command helper 是内部实现细节。
+- Run Trace manifest 新增有界 `policy_decisions`，只记录 kind、decision、guard id、
+  reason code、phase、subject ref 和 display digest；不保存 raw command、URL、
+  stdout/stderr、源码正文、网页正文或 prompt 文本；mapping fallback 也必须是
+  digest/ref 形状。
+- provider fallback policy decision 只做 trace 审计，不改变 provider 选择、fallback
+  排序、Router 行为、prompt 文本、工具 schema、UI/SSE payload shape 或 task receipt。
+- `policy_guard` capability metadata 现在声明 `action_policy_boundary`；Capability
+  Registry 仍然是只读能力地图，不参与运行时调度。
+
 ## 0.3.16 - Tool Contract v2
 
 - `ToolOutcome` 和 `ToolResult` 现在只用 `model_text` 表示模型可见的工具结果文本。

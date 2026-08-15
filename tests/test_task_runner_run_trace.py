@@ -441,6 +441,16 @@ def test_preflight_provider_switch_is_recorded_as_fallback() -> None:
             "phase": "preflight",
             "reason_code": "unavailable",
         }]
+        assert len(payload["policy_decisions"]) == 1
+        assert payload["policy_decisions"][0]["subject_ref"].startswith("action:")
+        assert payload["policy_decisions"][0] == {
+            "kind": "provider_fallback",
+            "decision": "allow",
+            "guard_id": "default_allow",
+            "reason_code": "allowed",
+            "phase": "preflight",
+            "subject_ref": payload["policy_decisions"][0]["subject_ref"],
+        }
 
 
 def test_forget_conversation_deletes_session_run_traces() -> None:

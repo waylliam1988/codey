@@ -386,6 +386,16 @@ Internal Capability Registry 是代码里的只读边界目录，不是新的持
 运行时调度器或权限引擎。它只能把内置能力和 policy / model-visible / durable-state
 边界写成可测试事实，不能覆盖用户选择、Router 决策或 PermissionProfile。
 
+Action Policy Pipeline 是本地危险动作的单调 guard，不是插件系统、权限矩阵 UI
+或 provider/router 决策器。它只能把文件动作、run、shell、Research URL、
+provider fallback 和 managed-output artifact 的 `allow` / `ask_user` / `deny`
+边界收成可测试、可审计事实；危险动作 sink 必须显式接收 permission profile，
+不能在底层偷偷默认 writer 权限；`deny` 不能被后续 guard 放宽，trace 只能保存有界
+decision metadata，不能保存 raw command、URL、stdout/stderr、源码正文或 prompt；
+mapping fallback 也必须只接受 digest/ref 形状。
+未知 action kind 必须默认 deny；managed-output artifact 虽然是本地审计状态，也必须
+通过 writer verification profile 与 size/count guard，不能成为绕过 profile 的写入通道。
+
 未来的训练 Episode 是另一类长期数据，必须单独设计、明确启用、脱敏和筛选，不能直接把本地连续性文件当训练数据库。
 
 如果未来想知道哪些 action 值得做，可以先做本地统计，但必须克制。

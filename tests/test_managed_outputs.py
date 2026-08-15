@@ -7,8 +7,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.managed_outputs import (
+from codey.action_policy import (
+    MAX_MANAGED_OUTPUT_BYTES,
     MAX_MANAGED_OUTPUTS_PER_RUN,
+)
+from codey.managed_outputs import (
     ManagedOutputStore,
     run_command_with_managed_output,
 )
@@ -23,6 +26,7 @@ class ManagedOutputStoreTests(unittest.TestCase):
                 session_id="session-1",
                 run_id="run-1",
                 tool_id="2:0",
+                permission_profile="coding_writer",
                 command="python -m pytest -q",
                 cwd=".",
                 text="full output\n",
@@ -61,6 +65,7 @@ class ManagedOutputStoreTests(unittest.TestCase):
                 session_id="session",
                 run_id="run",
                 tool_id="",
+                permission_profile="coding_writer",
                 command="python large.py",
                 cwd=".",
                 text="HEAD" + ("x" * 100) + "TAIL",
@@ -85,6 +90,7 @@ class ManagedOutputStoreTests(unittest.TestCase):
                         session_id="session",
                         run_id="run",
                         tool_id=str(index),
+                        permission_profile="coding_writer",
                         command="python test.py",
                         cwd=".",
                         text=f"output {index}",
@@ -96,11 +102,44 @@ class ManagedOutputStoreTests(unittest.TestCase):
                     session_id="session",
                     run_id="run",
                     tool_id="overflow",
+                    permission_profile="coding_writer",
                     command="python test.py",
                     cwd=".",
                     text="overflow",
                 )
             )
+
+    def test_output_over_policy_size_limit_is_not_retained(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = ManagedOutputStore(td)
+
+            ref = store.write_run_output(
+                session_id="session",
+                run_id="run",
+                tool_id="oversized",
+                permission_profile="coding_writer",
+                command="python huge.py",
+                cwd=".",
+                text="x" * (MAX_MANAGED_OUTPUT_BYTES + 1),
+            )
+
+            self.assertIsNone(ref)
+
+    def test_missing_permission_profile_does_not_write_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = ManagedOutputStore(td)
+
+            ref = store.write_run_output(
+                session_id="session",
+                run_id="run",
+                tool_id="missing-profile",
+                permission_profile="",
+                command="python test.py",
+                cwd=".",
+                text="output",
+            )
+
+            self.assertIsNone(ref)
 
     def test_write_failure_is_fail_open(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -113,6 +152,7 @@ class ManagedOutputStoreTests(unittest.TestCase):
                     session_id="session",
                     run_id="run",
                     tool_id="",
+                    permission_profile="coding_writer",
                     command="python test.py",
                     cwd=".",
                     text="output",
@@ -138,6 +178,7 @@ class ManagedRunCommandTests(unittest.TestCase):
                 Path(td),
                 ".",
                 "python large.py",
+                permission_profile="coding_writer",
                 store=store,
                 session_id="session",
                 run_id="run",
@@ -173,6 +214,7 @@ class ManagedRunCommandTests(unittest.TestCase):
                 Path(td),
                 ".",
                 "python ok.py",
+                permission_profile="coding_writer",
                 store=store,
                 session_id="session",
                 run_id="run",

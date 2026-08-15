@@ -27,8 +27,8 @@ class AgentToolFnsTests(unittest.TestCase):
     def test_execute_run_command_uses_context_hook_when_present(self) -> None:
         seen = []
 
-        def run_with_context(_root, rel, command, tool_id):
-            seen.append((rel, command, tool_id))
+        def run_with_context(_root, rel, command, tool_id, permission_profile, phase):
+            seen.append((rel, command, tool_id, permission_profile, phase))
             return tool_runtime.ToolOutcome("ok", True, exit_code=0)
 
         fns = AgentToolFns(run_command_with_context=run_with_context)
@@ -36,11 +36,12 @@ class AgentToolFnsTests(unittest.TestCase):
             None,
             ".",
             "python -m pytest -q",
+            permission_profile="coding_writer",
             tool_id="2:1",
         )
 
         self.assertTrue(outcome.ok)
-        self.assertEqual(seen, [(".", "python -m pytest -q", "2:1")])
+        self.assertEqual(seen, [(".", "python -m pytest -q", "2:1", "coding_writer", "writer")])
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ MAX_FAILURES = 16
 MAX_WARNINGS = 16
 MAX_PERMISSION_PROFILES = 16
 MAX_TOOL_CONTRACTS = 16
+MAX_POLICY_DECISIONS = 80
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 
@@ -167,6 +168,7 @@ class RunTraceManifest:
     research_source_refs: list[dict[str, str]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
+    policy_decisions: list[dict[str, object]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     status: str = "running"
 
@@ -194,6 +196,7 @@ class RunTraceManifest:
             "research_source_refs": self.research_source_refs[:MAX_REFS],
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
+            "policy_decisions": self.policy_decisions[:MAX_POLICY_DECISIONS],
             "warnings": list(_bounded_refs(self.warnings, limit=MAX_WARNINGS)),
             "status": _identifier(self.status, 40),
         }
@@ -260,6 +263,7 @@ class RunTraceRecorder:
         self._local_context_keys: set[tuple[str, str, str]] = set()
         self._research_note_keys: set[str] = set()
         self._research_source_keys: set[str] = set()
+        self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
         self,
@@ -498,6 +502,50 @@ class RunTraceRecorder:
             self.manifest.warnings.append("provider_failures_truncated")
         self.flush()
 
+    def record_policy_decision(self, decision: Any) -> None:
+        if hasattr(decision, "to_audit_payload"):
+            raw = decision.to_audit_payload()
+        elif isinstance(decision, Mapping):
+            raw = decision
+        else:
+            return
+        subject_ref = _action_ref_or_empty(raw.get("subject_ref"))
+        payload = {
+            "kind": _identifier(raw.get("kind"), 80),
+            "decision": _identifier(raw.get("decision"), 40),
+            "guard_id": _identifier(raw.get("guard_id"), 80),
+            "reason_code": _identifier(raw.get("reason_code"), 120),
+            "phase": _identifier(raw.get("phase"), 80),
+            "subject_ref": subject_ref,
+        }
+        display_digest = _digest_ref_or_empty(raw.get("display_digest"))
+        if display_digest:
+            payload["display_digest"] = display_digest
+        display_chars = _int_or_none(raw.get("display_chars"))
+        if display_chars is not None:
+            payload["display_chars"] = display_chars
+        if (
+            not payload["kind"]
+            or payload["decision"] not in {"allow", "ask_user", "deny"}
+            or not payload["subject_ref"]
+        ):
+            return
+        key = (
+            str(payload["kind"]),
+            str(payload["decision"]),
+            str(payload["guard_id"]),
+            str(payload["reason_code"]),
+            str(payload["subject_ref"]),
+        )
+        if key in self._policy_keys:
+            return
+        self._policy_keys.add(key)
+        self.manifest.policy_decisions.append(payload)
+        if len(self.manifest.policy_decisions) > MAX_POLICY_DECISIONS:
+            del self.manifest.policy_decisions[:-MAX_POLICY_DECISIONS]
+            self.manifest.warnings.append("policy_decisions_truncated")
+        self.checkpoint()
+
     def finish(self, *, status: str, mode: str = "", provider: str = "") -> None:
         self.manifest.status = _identifier(status, 40) or "done"
         if mode:
@@ -538,6 +586,35 @@ def _host(url: str) -> str:
         return (urlparse(str(url or "")).hostname or "").lower()
     except ValueError:
         return ""
+
+
+def _int_or_none(value: object) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _action_ref_or_empty(value: object) -> str:
+    text = str(value or "").strip()
+    if text.startswith("action:") and _is_hex_64(text.removeprefix("action:")):
+        return text
+    return ""
+
+
+def _digest_ref_or_empty(value: object) -> str:
+    text = str(value or "").strip()
+    if text.startswith("sha256:") and _is_hex_64(text.removeprefix("sha256:")):
+        return text
+    return ""
+
+
+def _is_hex_64(value: str) -> bool:
+    return len(value) == 64 and all(ch in "0123456789abcdef" for ch in value)
+
+
 def _clip(value: object, limit: int = MAX_TEXT_CHARS) -> str:
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not text:

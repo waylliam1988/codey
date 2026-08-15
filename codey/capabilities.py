@@ -171,8 +171,8 @@ def builtin_capability_registry() -> CapabilityRegistry:
         ),
         CapabilitySpec(
             id="policy_guard",
-            provides=("permission_profile_boundary",),
-            owner_module="codey.permission_profiles",
+            provides=("permission_profile_boundary", "action_policy_boundary"),
+            owner_module="codey.action_policy",
         ),
         CapabilitySpec(
             id="prompt_envelope",

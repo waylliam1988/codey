@@ -1840,9 +1840,9 @@ UI 渲染不依赖 ANSI / traceback / diff 文本猜测
 ToolOutcome / ToolResult dataclass 不含 output 旧字段
 ```
 
-## 0.3.17 - Tool Policy Pipeline v1
+## 0.3.17 - Action Policy Pipeline v1
 
-状态：计划。目标是把危险动作统一过单向收紧的 guard。
+状态：已落地。目标是把危险动作统一过单向收紧的 guard。
 虽然 roadmap 名称保留 Tool Policy，但实现范围覆盖 tool 和非 tool 的本地动作，
 因此模块名应该使用更准确的 action-level 命名。
 
@@ -1868,12 +1868,29 @@ deny
 ```text
 workspace path guard
 permission profile guard
-destructive shell guard
+run command guard
+shell approval guard
 write scope guard
 Research URL guard
 Local context action guard
 provider fallback guard
-managed output size guard
+managed output size/count guard
+```
+
+已落地：
+
+```text
+ActionSubject / ActionPolicyDecision / ActionPolicyPipeline
+allow < ask_user < deny 的单调 merge
+unknown action kind 默认 deny
+run command allowlist 移到 action_policy 单一真源
+tool_runtime sink-level policy 显式接收 permission profile，拒绝写入 ToolOutcome.audit["policy_decision"]
+Research check_fetch_url() 复用 action policy URL guard，文案保持不变
+Run Trace manifest 新增 bounded policy_decisions
+policy_decisions mapping fallback 只接受 action:/sha256: digest 形状，不接受 raw command/URL
+provider fallback 写 trace policy decision，但不改变 fallback 排序或选择
+managed output artifact 写入前经过 writer verification profile + size/count policy guard；size/count 超限只跳过 artifact retention，不改变模型可见 bounded result
+policy_guard capability metadata 声明 action_policy_boundary
 ```
 
 ### 边界
@@ -1883,6 +1900,8 @@ managed output size guard
 - Local context 不能修改工具权限、Router、provider 选择或 prompt 文本。
 - Research URL policy 只允许 Research 控制器批准的联网路径。
 - Shell approval 仍然是用户控制，不因 profile 或 capability 被跳过。
+- v1 不改 prompt、tool schema、Router、provider fallback 排序、UI、SSE 或 receipt。
+- v1 不把 Capability Registry 变成运行时调度器，不把 TaskRunner 改成 plugin host。
 
 ### 验证
 
@@ -1892,6 +1911,8 @@ managed output size guard
 destructive shell 在无批准时 ask_user / deny
 Research 之外不能调用 Research-only network path
 policy decision 写入 Run Trace Manifest
+policy decision 不保存 raw command / URL / stdout / prompt
+action_policy.py 不 import server/task_runner/provider/browser/tool_runtime
 ```
 
 ## 0.3.18 - Event / Capability Matrix v1

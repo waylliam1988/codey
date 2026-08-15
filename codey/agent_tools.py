@@ -26,8 +26,8 @@ class AgentToolFns:
     edit_file: Callable[[Path, str, list[EditBlock]], ToolOutcome] = (
         tool_runtime.edit_file
     )
-    run_command: Callable[[Path, str, str], ToolOutcome] = tool_runtime.run_command
-    run_command_with_context: Callable[[Path, str, str, str], ToolOutcome] | None = None
+    run_command: Callable[..., ToolOutcome] = tool_runtime.run_command
+    run_command_with_context: Callable[..., ToolOutcome] | None = None
 
     def execute_run_command(
         self,
@@ -35,11 +35,26 @@ class AgentToolFns:
         rel: str,
         command: str,
         *,
+        permission_profile: str,
+        phase: str = "writer",
         tool_id: str = "",
     ) -> ToolOutcome:
         if self.run_command_with_context is not None:
-            return self.run_command_with_context(root, rel, command, tool_id)
-        return self.run_command(root, rel, command)
+            return self.run_command_with_context(
+                root,
+                rel,
+                command,
+                tool_id,
+                permission_profile,
+                phase,
+            )
+        return self.run_command(
+            root,
+            rel,
+            command,
+            permission_profile=permission_profile,
+            phase=phase,
+        )
 
 
 DEFAULT_TOOL_FNS = AgentToolFns()
