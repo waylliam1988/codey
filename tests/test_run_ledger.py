@@ -25,6 +25,9 @@ from codey.tool_definition import TOOL_DEFINITION_BY_NAME
 from codey.tool_runtime import ToolOutcome
 
 
+VALID_SHA256 = "a" * 64
+
+
 class RunLedgerStoreTests(unittest.TestCase):
     def test_path_for_keeps_session_and_run_inside_state_home(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -79,11 +82,15 @@ class RunLedgerStoreTests(unittest.TestCase):
                 ToolOutcome(
                     "ok",
                     True,
+                    audit={
+                        "managed_output": {
+                            "handle": "out_0001_abc",
+                            "original_bytes": 1234,
+                            "stored_bytes": 1000,
+                            "sha256": VALID_SHA256,
+                        }
+                    },
                     exit_code=0,
-                    output_handle="out_0001_abc",
-                    output_bytes=1234,
-                    output_stored_bytes=1000,
-                    output_sha256="abc123",
                 ),
                 index=1,
             ))
@@ -106,7 +113,91 @@ class RunLedgerStoreTests(unittest.TestCase):
             self.assertEqual(tool_finished["output_handle"], "out_0001_abc")
             self.assertEqual(tool_finished["output_bytes"], 1234)
             self.assertEqual(tool_finished["output_stored_bytes"], 1000)
-            self.assertEqual(tool_finished["output_sha256"], "abc123")
+            self.assertEqual(tool_finished["output_sha256"], VALID_SHA256)
+
+    def test_run_event_ignores_invalid_managed_output_handle(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunLedgerStore(td)
+            writer = store.open(
+                run_id="run_bad_handle",
+                session_id="session-bad-handle",
+                project="E:/project",
+                task="Run tests",
+                provider="deepseek",
+                mode="agent",
+            )
+            writer.append_run_event(RunEvent.tool_finished(
+                1,
+                ToolCall("run", {"path": ".", "command": "python -m pytest -q"}),
+                ToolOutcome(
+                    "ok",
+                    True,
+                    audit={
+                        "managed_output": {
+                            "handle": "../x",
+                            "original_bytes": 1234,
+                            "stored_bytes": 1000,
+                            "sha256": VALID_SHA256,
+                        }
+                    },
+                    exit_code=0,
+                ),
+                index=0,
+            ))
+
+            rows = [
+                item.payload
+                for item in read_ledger(
+                    store.path_for("session-bad-handle", "run_bad_handle")
+                )
+            ]
+            tool_finished = next(item for item in rows if item["type"] == "tool_finished")
+
+            self.assertNotIn("output_handle", tool_finished)
+            self.assertNotIn("output_bytes", tool_finished)
+            self.assertNotIn("output_stored_bytes", tool_finished)
+            self.assertNotIn("output_sha256", tool_finished)
+
+    def test_run_event_empties_invalid_managed_output_sha256(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunLedgerStore(td)
+            writer = store.open(
+                run_id="run_bad_sha",
+                session_id="session-bad-sha",
+                project="E:/project",
+                task="Run tests",
+                provider="deepseek",
+                mode="agent",
+            )
+            writer.append_run_event(RunEvent.tool_finished(
+                1,
+                ToolCall("run", {"path": ".", "command": "python -m pytest -q"}),
+                ToolOutcome(
+                    "ok",
+                    True,
+                    audit={
+                        "managed_output": {
+                            "handle": "out_0001_valid",
+                            "original_bytes": 1234,
+                            "stored_bytes": 1000,
+                            "sha256": "abc\nINJECTED",
+                        }
+                    },
+                    exit_code=0,
+                ),
+                index=0,
+            ))
+
+            rows = [
+                item.payload
+                for item in read_ledger(store.path_for("session-bad-sha", "run_bad_sha"))
+            ]
+            serialized = json.dumps(rows, ensure_ascii=False)
+            tool_finished = next(item for item in rows if item["type"] == "tool_finished")
+
+            self.assertEqual(tool_finished["output_handle"], "out_0001_valid")
+            self.assertEqual(tool_finished["output_sha256"], "")
+            self.assertNotIn("INJECTED", serialized)
 
     def test_ledger_truncates_once_when_byte_budget_is_exceeded(self) -> None:
         with tempfile.TemporaryDirectory() as td:

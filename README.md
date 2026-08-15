@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.15-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.16-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.15`
+Version: `0.3.16`
 
 [Version history](CHANGELOG.md)
 
@@ -44,6 +44,10 @@ Version: `0.3.15`
 - **Keep internal capability boundaries explicit**: Codey keeps a read-only map
   of built-in capabilities and their policy/model-visible/state boundaries
   without exposing a plugin system or changing task behavior.
+- **Separate tool results by audience**: local tools return bounded
+  model-visible text, UI presentation facts, audit metadata, and small
+  canonical facts through one clean contract instead of one shared output
+  string.
 - **Continue saved work naturally**: when Codey has a queued local follow-up,
   saying "continue" can claim one item and run the right path with proof.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save readable note cards with source chips, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.

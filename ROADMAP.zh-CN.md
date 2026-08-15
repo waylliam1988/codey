@@ -1768,33 +1768,36 @@ capabilities.py 不使用 importlib/pkgutil/entry_points/exec/eval
 
 ## 0.3.16 - Tool Contract v2
 
-状态：计划。目标是把工具输出从“一段文本同时给模型、UI、日志”升级为明确契约。
+状态：已完成。目标是把工具输出从“一段文本同时给模型、UI、日志”升级为明确契约。
 
 ### 做什么
 
 扩展：
 
 ```text
-codey/tool_definition.py
+codey/models.py
 codey/tool_runtime.py
-tests/test_tool_contract.py
+codey/protocols/json_codec.py
+codey/research/protocols.py
 tests/test_tool_runtime.py
+tests/test_protocols.py
+tests/test_research.py
 ```
 
 目标结构：
 
 ```python
 ToolOutcome(
-    canonical={},
     model_text="bounded text for model",
+    canonical={},
     presentation={},
     audit={},
     ok=True,
-    error_code=None,
+    error_code="",
 )
 ```
 
-先迁移：
+已迁移：
 
 ```text
 list_dir
@@ -1802,27 +1805,39 @@ read_file
 grep
 find_references
 edit
-run / shell
-knowledge_read / knowledge_write / knowledge_link
+run
+Research tool results
+managed output handles
 ```
 
 ### 边界
 
 - 模型只吃 `model_text`。
-- UI 只吃 `presentation`，不从 raw tool text 猜结构。
-- Run Trace 只吃 `audit`，不保存长输出正文。
+- UI / SSE / receipt 优先吃 `presentation`，不从 raw tool text 猜旧顶层字段。
+- RunLedger / 本地审计吃 `audit`，不保存长输出正文。
 - `canonical` 必须 JSON-safe、有界、可截断。
-- 旧字段兼容层可以保留一版，但长期类型名保持 `ToolOutcome`，不引入
-  带版本后缀的新类型名。
+- `presentation` / `audit` / `canonical` 在结果类型边界统一 sanitizer；不支持值转短
+  marker 字符串并记录 projection warning，避免后续审计/导出不可序列化。
+- `managed_output` audit metadata 在消费前规范成安全 handle / 非负 bytes / sha256；
+  handle 只接受 `out_[A-Za-z0-9_.-]{1,80}`，sha256 只接受 64 位小写 hex；
+  坏字段不允许打崩 UI/SSE/receipt。
+- 不保留 `output` 兼容字段，不做 `model_text or output` 双真源，不引入带版本后缀的新类型名。
 
 ### 验证
 
 ```text
 model tool contract hash 稳定
 presentation 不进入模型 prompt
+普通 audit 不进入模型 prompt
+canonical 不进入模型 prompt
+projection JSON-safe / depth / key / string / item budget 有测试
+malformed managed_output audit 不打崩 event / UI payload
+invalid managed_output handle 不进入 prompt / SSE / RunLedger
+invalid managed_output sha256 置空且不能注入 prompt / SSE / RunLedger
 model_text 不含本地绝对路径以外的超长 raw dump
 shell stdout/stderr 超限时生成 managed output handle
 UI 渲染不依赖 ANSI / traceback / diff 文本猜测
+ToolOutcome / ToolResult dataclass 不含 output 旧字段
 ```
 
 ## 0.3.17 - Tool Policy Pipeline v1

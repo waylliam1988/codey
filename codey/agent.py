@@ -803,7 +803,7 @@ def run(
             ),
             ContextSource(
                 key="initial_listing",
-                loader=lambda: tool_fns.list_directory(project, ".").output,
+                loader=lambda: tool_fns.list_directory(project, ".").model_text,
                 budget=INITIAL_LISTING_CONTEXT_BUDGET,
                 freshness="run_start",
                 why_included="current top-level project listing",
@@ -1025,17 +1025,16 @@ def run(
         ) -> None:
             nonlocal made_progress
             path = _call_arg(call, "path", ".")
-            out = outcome.output
+            model_text = outcome.model_text
             emit(RunEvent.tool_finished(turn, call, outcome, index=tool_index))
             results.append(
                 ToolResult(
                     call=call,
-                    output=out,
+                    model_text=model_text,
                     truncated=outcome.truncated,
-                    output_handle=outcome.output_handle,
-                    output_bytes=outcome.output_bytes,
-                    output_stored_bytes=outcome.output_stored_bytes,
-                    output_sha256=outcome.output_sha256,
+                    presentation=outcome.presentation,
+                    audit=outcome.audit,
+                    canonical=outcome.canonical,
                 )
             )
             if call.name == "read" and outcome.ok:
@@ -1044,7 +1043,7 @@ def run(
                 known_file_paths.add(canonical)
             produced_information = outcome.ok or outcome.exit_code is not None
             if call.name in INFORMATION_TOOL_NAMES and produced_information:
-                sig = (call.name, path, out)
+                sig = (call.name, path, model_text)
                 if sig not in seen_info:
                     seen_info.add(sig)
                     made_progress = True

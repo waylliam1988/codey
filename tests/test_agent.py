@@ -182,17 +182,17 @@ class ToolTests(unittest.TestCase):
             root = Path(td)
 
             result = tool_runtime.write_file(root, "src/app.py", "print('ok')\n")
-            self.assertIn("wrote src/app.py", result.output)
+            self.assertIn("wrote src/app.py", result.model_text)
 
-            self.assertEqual(tool_runtime.read_file(root, "src/app.py").output, "print('ok')\n")
-            listing = tool_runtime.list_directory(root, ".").output
+            self.assertEqual(tool_runtime.read_file(root, "src/app.py").model_text, "print('ok')\n")
+            listing = tool_runtime.list_directory(root, ".").model_text
             self.assertIn("src/", listing)
             self.assertIn("app.py", listing)
 
     def test_read_missing_file_returns_error(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(
-                tool_runtime.read_file(Path(td), "missing.py").output,
+                tool_runtime.read_file(Path(td), "missing.py").model_text,
                 "ERROR: not a file: missing.py",
             )
 
@@ -205,7 +205,7 @@ class ToolTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            output = tool_runtime.search_files(root, ".", "LOGIN_HANDLER").output
+            output = tool_runtime.search_files(root, ".", "LOGIN_HANDLER").model_text
 
             self.assertIn("src/app.py:1: def login_handler():", output)
 
@@ -218,7 +218,7 @@ class ToolTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertEqual(
-            outcome.output,
+            outcome.model_text,
             "(no literal matches; regex is not supported)",
         )
 
@@ -235,7 +235,7 @@ class ToolTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertFalse(outcome.truncated)
-        self.assertIn("large.py:60001: def target_after_old_limit():", outcome.output)
+        self.assertIn("large.py:60001: def target_after_old_limit():", outcome.model_text)
 
     def test_search_reports_oversized_files_instead_of_clean_no_matches(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -245,9 +245,9 @@ class ToolTests(unittest.TestCase):
                 outcome = tool_runtime.search_files(root, "huge.py", "target")
 
         self.assertTrue(outcome.truncated)
-        self.assertIn("no literal matches", outcome.output)
-        self.assertIn("skipped 1 file(s) larger than 32 bytes", outcome.output)
-        self.assertIn("omitted files may contain more matches", outcome.output)
+        self.assertIn("no literal matches", outcome.model_text)
+        self.assertIn("skipped 1 file(s) larger than 32 bytes", outcome.model_text)
+        self.assertIn("omitted files may contain more matches", outcome.model_text)
 
     def test_search_counts_non_utf8_files_toward_the_total_read_budget(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -258,9 +258,9 @@ class ToolTests(unittest.TestCase):
                 outcome = tool_runtime.search_files(root, ".", "target")
 
         self.assertTrue(outcome.truncated)
-        self.assertIn("no literal matches", outcome.output)
-        self.assertIn("search scan stopped at 8 bytes read budget", outcome.output)
-        self.assertNotIn("b.py", outcome.output)
+        self.assertIn("no literal matches", outcome.model_text)
+        self.assertIn("search scan stopped at 8 bytes read budget", outcome.model_text)
+        self.assertNotIn("b.py", outcome.model_text)
 
     def test_search_skips_excluded_directories(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -269,7 +269,7 @@ class ToolTests(unittest.TestCase):
             (root / "node_modules" / "lib.js").write_text("login_handler\n", encoding="utf-8")
 
             self.assertEqual(
-                tool_runtime.search_files(root, ".", "login_handler").output,
+                tool_runtime.search_files(root, ".", "login_handler").model_text,
                 "(no literal matches; regex is not supported)",
             )
 
@@ -280,7 +280,7 @@ class ToolTests(unittest.TestCase):
             (root / "Build" / "out.py").write_text("login_handler\n", encoding="utf-8")
 
             self.assertEqual(
-                tool_runtime.search_files(root, ".", "login_handler").output,
+                tool_runtime.search_files(root, ".", "login_handler").model_text,
                 "(no literal matches; regex is not supported)",
             )
 
@@ -293,7 +293,7 @@ class ToolTests(unittest.TestCase):
             outcome = tool_runtime.search_files(root, "node_modules", "login_handler")
 
         self.assertTrue(outcome.ok)
-        self.assertEqual(outcome.output, "(no literal matches; regex is not supported)")
+        self.assertEqual(outcome.model_text, "(no literal matches; regex is not supported)")
 
     def test_search_skips_direct_excluded_start_directory_case_insensitively(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -304,7 +304,7 @@ class ToolTests(unittest.TestCase):
             outcome = tool_runtime.search_files(root, "Node_Modules", "login_handler")
 
         self.assertTrue(outcome.ok)
-        self.assertEqual(outcome.output, "(no literal matches; regex is not supported)")
+        self.assertEqual(outcome.model_text, "(no literal matches; regex is not supported)")
 
     def test_search_does_not_skip_project_root_named_like_excluded_dir(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -315,7 +315,7 @@ class ToolTests(unittest.TestCase):
             outcome = tool_runtime.search_files(root, ".", "login_handler")
 
         self.assertTrue(outcome.ok)
-        self.assertIn("app.py:1: login_handler", outcome.output)
+        self.assertIn("app.py:1: login_handler", outcome.model_text)
 
     def test_search_reports_scan_budget(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -328,11 +328,11 @@ class ToolTests(unittest.TestCase):
                 outcome = tool_runtime.search_files(root, ".", "login_handler")
 
         self.assertTrue(outcome.truncated)
-        self.assertIn("(no literal matches; regex is not supported)", outcome.output)
-        self.assertIn("search scan stopped after 2 files", outcome.output)
-        self.assertIn("file budget 2", outcome.output)
-        self.assertIn("omitted files may contain more matches", outcome.output)
-        self.assertNotIn("c.py:1", outcome.output)
+        self.assertIn("(no literal matches; regex is not supported)", outcome.model_text)
+        self.assertIn("search scan stopped after 2 files", outcome.model_text)
+        self.assertIn("file budget 2", outcome.model_text)
+        self.assertIn("omitted files may contain more matches", outcome.model_text)
+        self.assertNotIn("c.py:1", outcome.model_text)
 
     def test_search_rejects_direct_symlink_start_path(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -348,8 +348,8 @@ class ToolTests(unittest.TestCase):
             outcome = tool_runtime.search_files(root, "link.py", "login_handler")
 
         self.assertFalse(outcome.ok)
-        self.assertIn("symlink paths are not supported for grep", outcome.output)
-        self.assertNotIn("target.py:1", outcome.output)
+        self.assertIn("symlink paths are not supported for grep", outcome.model_text)
+        self.assertNotIn("target.py:1", outcome.model_text)
 
     def test_search_rejects_direct_symlink_start_dir(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -366,13 +366,13 @@ class ToolTests(unittest.TestCase):
             outcome = tool_runtime.search_files(root, "linked", "login_handler")
 
         self.assertFalse(outcome.ok)
-        self.assertIn("symlink paths are not supported for grep", outcome.output)
-        self.assertNotIn("target.py:1", outcome.output)
+        self.assertIn("symlink paths are not supported for grep", outcome.model_text)
+        self.assertNotIn("target.py:1", outcome.model_text)
 
     def test_search_requires_query(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(
-                tool_runtime.search_files(Path(td), ".", "   ").output,
+                tool_runtime.search_files(Path(td), ".", "   ").model_text,
                 "ERROR: search query required",
             )
 
@@ -382,7 +382,7 @@ class ToolTests(unittest.TestCase):
             (root / "app.py").write_text("def old():\n    return 1\n", encoding="utf-8")
             blocks = [tool_runtime.EditBlock("def old():", "def new():")]
 
-            result = tool_runtime.edit_file(root, "app.py", blocks).output
+            result = tool_runtime.edit_file(root, "app.py", blocks).model_text
 
             self.assertEqual(result, "edited app.py (1 replacement)")
             self.assertEqual((root / "app.py").read_text(encoding="utf-8"), "def new():\n    return 1\n")
@@ -393,7 +393,7 @@ class ToolTests(unittest.TestCase):
             (root / "app.py").write_text("same\nsame\n", encoding="utf-8")
             blocks = [tool_runtime.EditBlock("same", "other")]
 
-            result = tool_runtime.edit_file(root, "app.py", blocks).output
+            result = tool_runtime.edit_file(root, "app.py", blocks).model_text
 
             self.assertIn("SEARCH text matched 2 times in app.py", result)
             self.assertIn("Exact matches start at lines: 1, 2.", result)
@@ -405,7 +405,7 @@ class ToolTests(unittest.TestCase):
             (root / "app.py").write_text("current\n", encoding="utf-8")
             blocks = [tool_runtime.EditBlock("missing", "replacement")]
 
-            result = tool_runtime.edit_file(root, "app.py", blocks).output
+            result = tool_runtime.edit_file(root, "app.py", blocks).model_text
 
             self.assertIn("SEARCH text not found in app.py", result)
             self.assertIn("Use read_file and copy exact complete lines.", result)
@@ -431,7 +431,7 @@ class ToolTests(unittest.TestCase):
                 )
             ]
 
-            result = tool_runtime.edit_file(root, "app.py", blocks).output
+            result = tool_runtime.edit_file(root, "app.py", blocks).model_text
 
             self.assertEqual(
                 result,
@@ -462,7 +462,7 @@ class ToolTests(unittest.TestCase):
                 )
             ]
 
-            result = tool_runtime.edit_file(root, "app.py", blocks).output
+            result = tool_runtime.edit_file(root, "app.py", blocks).model_text
 
             self.assertIn("SEARCH text matched 2 times in app.py", result)
             self.assertIn("Exact matches start at lines: 2, 5.", result)
@@ -479,7 +479,7 @@ class ToolTests(unittest.TestCase):
             root = Path(td)
             (root / "ok.py").write_text("VALUE = 1\n", encoding="utf-8")
 
-            output = tool_runtime.run_command(root, ".", "python -m py_compile ok.py").output
+            output = tool_runtime.run_command(root, ".", "python -m py_compile ok.py").model_text
 
             self.assertIn("exit 0: python -m py_compile ok.py", output)
 
@@ -494,19 +494,19 @@ class ToolTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            output = tool_runtime.run_command(root, ".", "python -B -m unittest").output
+            output = tool_runtime.run_command(root, ".", "python -B -m unittest").model_text
 
             self.assertIn("exit 0: python -B -m unittest", output)
 
     def test_run_rejects_dangerous_shell_syntax(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            output = tool_runtime.run_command(Path(td), ".", "python -m unittest && rm -rf .").output
+            output = tool_runtime.run_command(Path(td), ".", "python -m unittest && rm -rf .").model_text
 
             self.assertEqual(output, "ERROR: command not allowed: python -m unittest && rm -rf .")
 
     def test_run_rejects_non_allowlisted_command(self) -> None:
         with tempfile.TemporaryDirectory() as td:
-            output = tool_runtime.run_command(Path(td), ".", "git status").output
+            output = tool_runtime.run_command(Path(td), ".", "git status").model_text
 
             self.assertEqual(output, "ERROR: command not allowed: git status")
 
@@ -521,7 +521,7 @@ class ToolTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            output = tool_runtime.run_command(root, ".", "python -m unittest").output
+            output = tool_runtime.run_command(root, ".", "python -m unittest").model_text
 
             self.assertIn("exit 0: python -m unittest", output)
             self.assertFalse((root / "__pycache__").exists())
@@ -932,7 +932,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(run_events[2].call.name, "read")
         self.assertEqual(run_events[2].metadata["tool_index"], 0)
         self.assertTrue(run_events[2].outcome.ok)
-        self.assertEqual(run_events[2].outcome.output, "VALUE = 1\n")
+        self.assertEqual(run_events[2].outcome.model_text, "VALUE = 1\n")
 
     def test_references_tool_returns_navigation_before_done(self) -> None:
         provider = FakeProvider(
@@ -963,7 +963,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertFalse(result.changed)
         tool_events = [event for event in events if event.kind == "tool"]
         self.assertEqual(tool_events[0].call.name, "references")
-        self.assertIn("definition pricing.py:1", tool_events[0].outcome.output)
+        self.assertIn("definition pricing.py:1", tool_events[0].outcome.model_text)
         self.assertIn("[tool_result tool=find_references path=.]", provider.sent[1])
         self.assertIn("lexical scan, not semantic resolution", provider.sent[1])
 
@@ -2194,7 +2194,7 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(len(search_events), 1)
         self.assertFalse(search_events[0].outcome.ok)
-        self.assertIn("ERROR: boom", search_events[0].outcome.output)
+        self.assertIn("ERROR: boom", search_events[0].outcome.model_text)
 
     def test_run_tool_passes_turn_and_index_to_context_tool_fn(self) -> None:
         reply = '{"tool":"run","args":{"path":".","command":"python -m pytest -q"}}'

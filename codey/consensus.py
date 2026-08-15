@@ -699,7 +699,7 @@ def run_project_audit_advisor(
     advisor_id: str = "",
 ) -> str:
     project_path = Path(project).expanduser().resolve()
-    initial_listing = _audit_visible_entries(project_path, ".").output
+    initial_listing = _audit_visible_entries(project_path, ".").model_text
     prompt = render_project_audit_prompt(
         task=task,
         context=context,
@@ -759,8 +759,11 @@ def run_project_audit_advisor(
                         outcome = ToolOutcome.error(str(exc))
                 results.append(ToolResult(
                     call=call,
-                    output=outcome.output,
+                    model_text=outcome.model_text,
                     truncated=outcome.truncated,
+                    presentation=outcome.presentation,
+                    audit=outcome.audit,
+                    canonical=outcome.canonical,
                 ))
             next_prompt = READ_ONLY_CODEC.format_results(results)
             if rejected:

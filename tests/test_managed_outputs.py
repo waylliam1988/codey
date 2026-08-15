@@ -142,15 +142,20 @@ class ManagedRunCommandTests(unittest.TestCase):
                 session_id="session",
                 run_id="run",
             )
-            saved = store.path_for("session", "run", outcome.output_handle).read_text(
+            managed = outcome.audit["managed_output"]
+            saved = store.path_for(
+                "session",
+                "run",
+                str(managed["handle"]),
+            ).read_text(
                 encoding="utf-8"
             )
 
         self.assertTrue(outcome.truncated)
-        self.assertTrue(outcome.output_handle.startswith("out_"))
-        self.assertEqual(outcome.output_bytes, outcome.output_stored_bytes)
+        self.assertTrue(str(managed["handle"]).startswith("out_"))
+        self.assertEqual(managed["original_bytes"], managed["stored_bytes"])
         self.assertIn("MIDDLE_SHOULD_BE_SAVED", saved)
-        self.assertNotIn("MIDDLE_SHOULD_BE_SAVED", outcome.output)
+        self.assertNotIn("MIDDLE_SHOULD_BE_SAVED", outcome.model_text)
 
     def test_wrapper_does_not_save_short_output(self) -> None:
         completed = subprocess.CompletedProcess(
@@ -174,7 +179,7 @@ class ManagedRunCommandTests(unittest.TestCase):
             )
 
         self.assertFalse(outcome.truncated)
-        self.assertEqual(outcome.output_handle, "")
+        self.assertEqual(outcome.managed_output(), {})
 
 
 if __name__ == "__main__":

@@ -639,8 +639,8 @@ def run_self_test() -> None:
             expose_coverage=False,
         )
         assert baseline.ok, baseline
-        assert not baseline.truncated, baseline.output
-        assert "Scan coverage:" not in baseline.output, baseline.output
+        assert not baseline.truncated, baseline.model_text
+        assert "Scan coverage:" not in baseline.model_text, baseline.model_text
         assert report.decode_failed == 1, report
         coverage, _report = _search_scan_outcome(
             root,
@@ -649,15 +649,15 @@ def run_self_test() -> None:
             case=case,
             expose_coverage=True,
         )
-        assert coverage.truncated, coverage.output
-        assert "Scan coverage:" in coverage.output, coverage.output
-        assert "non-UTF-8" in coverage.output, coverage.output
-        assert NON_UTF8_MARKER not in coverage.output, coverage.output
+        assert coverage.truncated, coverage.model_text
+        assert "Scan coverage:" in coverage.model_text, coverage.model_text
+        assert "non-UTF-8" in coverage.model_text, coverage.model_text
+        assert NON_UTF8_MARKER not in coverage.model_text, coverage.model_text
 
         probe = _CoverageSearchProbe(arm="coverage", case=case)
         outcome = probe(root, ".", case.query)
         assert outcome.truncated, outcome
-        assert "Scan coverage:" in outcome.output, outcome.output
+        assert "Scan coverage:" in outcome.model_text, outcome.model_text
 
     safe = _summary_flags(
         "The search is incomplete because one non-UTF-8 file was skipped; "

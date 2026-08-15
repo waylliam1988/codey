@@ -29,6 +29,7 @@ from codey.tool_runtime import MAX_REPLACEMENTS, READ_MAX_LINES
 
 
 CONTRACT_FIXTURE = Path(__file__).parent / "fixtures" / "json_tool_contract.txt"
+VALID_SHA256 = "a" * 64
 
 
 def _canonical_tool_contract() -> str:
@@ -52,6 +53,58 @@ def _canonical_tool_contract() -> str:
 
 
 class JsonToolCodecTests(unittest.TestCase):
+    def test_tool_result_contract_has_no_legacy_output_fields(self) -> None:
+        fields = set(ToolResult.__dataclass_fields__)
+
+        self.assertIn("model_text", fields)
+        self.assertNotIn("output", fields)
+        self.assertNotIn("output_handle", fields)
+        self.assertNotIn("output_bytes", fields)
+        self.assertNotIn("output_stored_bytes", fields)
+        self.assertNotIn("output_sha256", fields)
+
+    def test_tool_result_sanitizes_projection_contracts(self) -> None:
+        result = ToolResult(
+            ToolCall("read", {"path": "app.py"}),
+            "content",
+            presentation={
+                "result": object(),
+                "status": "ok",
+                "_projection_warnings": ["input"],
+            },
+            audit={"bad": object(), "nan": float("nan")},
+            canonical={"path": Path("app.py"), "long": "x" * 3_000},
+        )
+
+        json.dumps(result.presentation, allow_nan=False)
+        json.dumps(result.audit, allow_nan=False)
+        json.dumps(result.canonical, allow_nan=False)
+        self.assertEqual(result.presentation["result"], "<non-json object>")
+        self.assertEqual(result.audit["bad"], "<non-json object>")
+        self.assertEqual(result.audit["nan"], "nan")
+        self.assertEqual(len(str(result.canonical["long"])), 2_000)
+        self.assertEqual(result.presentation["_input_projection_warnings"], ["input"])
+        self.assertIn("_projection_warnings", result.presentation)
+        self.assertIn("_projection_warnings", result.audit)
+        self.assertIn("_projection_warnings", result.canonical)
+        self.assertNotEqual(result.presentation["_projection_warnings"], ["input"])
+
+    def test_tool_result_sanitizes_non_mapping_projections(self) -> None:
+        result = ToolResult(
+            ToolCall("read", {"path": "app.py"}),
+            "content",
+            presentation=object(),
+            audit=object(),
+            canonical=object(),
+        )
+
+        json.dumps(result.presentation, allow_nan=False)
+        json.dumps(result.audit, allow_nan=False)
+        json.dumps(result.canonical, allow_nan=False)
+        self.assertIn("_projection_warnings", result.presentation)
+        self.assertIn("_projection_warnings", result.audit)
+        self.assertIn("_projection_warnings", result.canonical)
+
     def test_canonical_tool_contract_matches_reviewed_fixture(self) -> None:
         expected = CONTRACT_FIXTURE.read_text(encoding="utf-8")
 
@@ -427,6 +480,24 @@ class JsonToolCodecTests(unittest.TestCase):
         self.assertIn("not native website tools", prompt)
         self.assertIn("valid JSON tool call", codec.repair_prompt())
 
+    def test_format_results_uses_only_model_text_projection(self) -> None:
+        codec = JsonToolCodec()
+        call = ToolCall("read", {"path": "app.py"})
+        prompt = codec.format_results([
+            ToolResult(
+                call,
+                "MODEL_TEXT_SENTINEL",
+                presentation={"result": "PRESENTATION_SENTINEL"},
+                audit={"audit_id": "AUDIT_SENTINEL"},
+                canonical={"fact": "CANONICAL_SENTINEL"},
+            )
+        ])
+
+        self.assertIn("MODEL_TEXT_SENTINEL", prompt)
+        self.assertNotIn("PRESENTATION_SENTINEL", prompt)
+        self.assertNotIn("AUDIT_SENTINEL", prompt)
+        self.assertNotIn("CANONICAL_SENTINEL", prompt)
+
     def test_find_references_parses_symbol_and_formats_public_name(self) -> None:
         codec = JsonToolCodec()
         plan = codec.parse(json.dumps({
@@ -482,19 +553,71 @@ class JsonToolCodecTests(unittest.TestCase):
                 call,
                 "HEAD\nTAIL",
                 truncated=True,
-                output_handle="out_0001_abcdef",
-                output_bytes=1234,
-                output_stored_bytes=1000,
-                output_sha256="abc123",
+                audit={
+                    "managed_output": {
+                        "handle": "out_0001_abcdef",
+                        "original_bytes": 1234,
+                        "stored_bytes": 1000,
+                        "sha256": VALID_SHA256,
+                    }
+                },
             )
         ])
 
         self.assertIn("handle=out_0001_abcdef", prompt)
         self.assertIn("original_bytes=1234", prompt)
         self.assertIn("stored_bytes=1000", prompt)
-        self.assertIn("sha256=abc123", prompt)
+        self.assertIn(f"sha256={VALID_SHA256}", prompt)
         self.assertIn("handle is for local audit/export, not a tool", prompt)
         self.assertNotIn("read_output", prompt)
+
+    def test_format_results_empties_invalid_managed_output_sha256(self) -> None:
+        codec = JsonToolCodec()
+        call = ToolCall("run", {"path": ".", "command": "python -m pytest -q"})
+        for sha256 in ("abc\nINJECTED", object(), "z" * 64):
+            with self.subTest(sha256=sha256):
+                prompt = codec.format_results([
+                    ToolResult(
+                        call,
+                        "HEAD\nTAIL",
+                        audit={
+                            "managed_output": {
+                                "handle": "out_0001_abcdef",
+                                "original_bytes": 1234,
+                                "stored_bytes": 1000,
+                                "sha256": sha256,
+                            }
+                        },
+                    )
+                ])
+
+                self.assertIn("full output retained locally", prompt)
+                self.assertIn("sha256=;", prompt)
+                self.assertNotIn("INJECTED", prompt)
+                self.assertNotIn("<non-json object>", prompt)
+
+    def test_format_results_ignores_invalid_managed_output_handles(self) -> None:
+        codec = JsonToolCodec()
+        call = ToolCall("run", {"path": ".", "command": "python -m pytest -q"})
+        for handle in ("../x", "out_", "out_" + ("x" * 81), 123, float("nan")):
+            with self.subTest(handle=handle):
+                prompt = codec.format_results([
+                    ToolResult(
+                        call,
+                        "HEAD\nTAIL",
+                        audit={
+                            "managed_output": {
+                                "handle": handle,
+                                "original_bytes": 1234,
+                                "stored_bytes": 1000,
+                                "sha256": VALID_SHA256,
+                            }
+                        },
+                    )
+                ])
+
+                self.assertNotIn("full output retained locally", prompt)
+                self.assertNotIn("handle=", prompt)
 
     def test_system_prompt_does_not_claim_model_is_codey(self) -> None:
         prompt = JsonToolCodec().system_prompt()

@@ -4,6 +4,27 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.16 - Tool Contract v2
+
+- `ToolOutcome` 和 `ToolResult` 现在只用 `model_text` 表示模型可见的工具结果文本。
+  旧 `output` 字段和顶层 managed-output metadata 字段已直接删除，没有保留兼容层。
+- 工具结果现在拆成 `presentation`、`audit`、`canonical` 三个投影：UI/SSE/receipt、
+  RunLedger/本地审计、程序内部结构化事实不再从模型文本里猜。
+- `presentation`、`audit` 和 `canonical` 会在 `ToolOutcome` / `ToolResult` 边界被
+  转成有界 JSON-safe mapping。不支持的值会变成短 marker 字符串并加入 projection
+  warning，不会让后续审计/导出序列化失败。
+- managed-output audit metadata 在消费时会做 schema 级规范化：只接受
+  `out_[A-Za-z0-9_.-]{1,80}` 格式的 handle，坏 byte count 归零，只保留
+  64 位小写 hex `sha256`，畸形 audit 不会打崩 UI/SSE event 渲染。
+- managed output handle 现在放在 `audit["managed_output"]` 下；模型仍收到同一条有界
+  footer，说明完整输出只保存在本地用于审计/导出，不是新工具。
+- Coding 和 Research codec 只渲染 `model_text`。测试锁住
+  `presentation`、普通 `audit` 和 `canonical` 哨兵不会进入 prompt。
+- Run event、TaskRunner SSE payload 和 RunLedger 投影现在从 `presentation` / `audit`
+  helper 取字段，不再读取旧顶层 output 字段。
+- 本版不新增工具系统、插件系统、运行时调度器、Router 行为、provider fallback 行为、
+  权限行为、UI 入口或工具 schema prompt。
+
 ## 0.3.15 - Internal Capability Registry v1
 
 - 新增 `codey/capabilities.py`：Codey 内置能力边界的只读 registry。

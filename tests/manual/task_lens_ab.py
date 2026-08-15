@@ -557,7 +557,7 @@ def _summary_path_hits(text: str, expected: tuple[str, ...]) -> list[str]:
 
 def _selection_prompt(case: ProbeCase, root: Path, *, arm: str) -> str:
     map_text = _map_for_arm(root, case.task, arm=arm)
-    listing = list_directory(root, ".").output
+    listing = list_directory(root, ".").model_text
     return "\n".join(
         [
             "You are helping evaluate a local coding agent's project navigation.",
@@ -713,7 +713,7 @@ def run_readonly_arm(
                 "args": event.call.args,
                 "ok": event.outcome.ok,
                 "truncated": event.outcome.truncated,
-                "output_chars": len(event.outcome.output),
+                "output_chars": len(event.outcome.model_text),
             }
             for event in tool_events
         ]

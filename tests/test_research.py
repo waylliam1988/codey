@@ -1386,7 +1386,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertEqual(search.queries, ["helium supply"])
-        self.assertIn("Helium article", outcome.output)
+        self.assertIn("Helium article", outcome.model_text)
 
     def test_source_search_dispatch_accepts_queries_alias(self) -> None:
         url = "https://example.com/helium"
@@ -1400,7 +1400,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertTrue(outcome.ok)
-        self.assertIn("natural gas", outcome.output)
+        self.assertIn("natural gas", outcome.model_text)
 
     def test_unsupported_content_type_is_skipped_not_failed(self) -> None:
         class PdfSearch:
@@ -1421,7 +1421,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             payload = run_event_payload(RunEvent.tool_finished(1, call, outcome))
             store.close()
 
-        self.assertTrue(outcome.output.startswith("SKIPPED: unsupported content type: application/pdf"))
+        self.assertTrue(outcome.model_text.startswith("SKIPPED: unsupported content type: application/pdf"))
         self.assertEqual(outcome.status, "needs_action")
         self.assertTrue(outcome.ok)
         self.assertFalse(outcome.changed)
@@ -1573,6 +1573,23 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("反证与限制", prompt)
         self.assertIn("NEEDS_OPEN", followup)
         self.assertIn("call open_url", followup)
+
+    def test_research_protocol_uses_only_model_text_projection(self) -> None:
+        codec = JsonToolCodec()
+        followup = codec.format_results([
+            ToolResult(
+                ToolCall("web_search", {"query": "helium"}),
+                "MODEL_TEXT_SENTINEL",
+                presentation={"result": "PRESENTATION_SENTINEL"},
+                audit={"audit_id": "AUDIT_SENTINEL"},
+                canonical={"fact": "CANONICAL_SENTINEL"},
+            )
+        ])
+
+        self.assertIn("MODEL_TEXT_SENTINEL", followup)
+        self.assertNotIn("PRESENTATION_SENTINEL", followup)
+        self.assertNotIn("AUDIT_SENTINEL", followup)
+        self.assertNotIn("CANONICAL_SENTINEL", followup)
 
     def test_research_protocol_rejects_multiple_tool_calls_per_reply(self) -> None:
         plan = JsonToolCodec().parse(

@@ -244,23 +244,27 @@ class RunLedgerWriter:
             "tool": _clip(event.call.name, 80),
             "path": "" if path == "." else _clip(path, MAX_PATH_CHARS),
             "ok": event.outcome.ok,
-            "status": _clip(getattr(event.outcome, "status", "ok" if event.outcome.ok else "error"), 40),
+            "status": _clip(event.outcome.presentation_status(), 40),
             "changed": event.outcome.changed,
             "truncated": event.outcome.truncated,
-            "result": _clip(event.outcome.first_line(MAX_RESULT_CHARS), MAX_RESULT_CHARS),
+            "result": _clip(
+                event.outcome.presentation_result(MAX_RESULT_CHARS),
+                MAX_RESULT_CHARS,
+            ),
         })
         command = _clip(event.call.args.get("command"), MAX_COMMAND_CHARS)
         if command:
             payload["command"] = command
         if event.outcome.exit_code is not None:
             payload["exit_code"] = event.outcome.exit_code
-        if event.outcome.output_handle:
-            payload["output_handle"] = _clip(event.outcome.output_handle, 120)
-            payload["output_bytes"] = _int_or_none(event.outcome.output_bytes) or 0
+        managed = event.outcome.managed_output()
+        if managed:
+            payload["output_handle"] = _clip(managed.get("handle"), 120)
+            payload["output_bytes"] = _int_or_none(managed.get("original_bytes")) or 0
             payload["output_stored_bytes"] = (
-                _int_or_none(event.outcome.output_stored_bytes) or 0
+                _int_or_none(managed.get("stored_bytes")) or 0
             )
-            payload["output_sha256"] = _clip(event.outcome.output_sha256, 80)
+            payload["output_sha256"] = _clip(managed.get("sha256"), 80)
         return payload
 
     def _append_payload(self, payload: dict[str, object]) -> None:

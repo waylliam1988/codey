@@ -143,7 +143,7 @@ class JsonToolCodec:
         for result in results:
             label = _result_label(result.call)
             suffix = " (truncated)" if result.truncated else ""
-            blocks.append(f"[result: {label}{suffix}]\n{result.output}".rstrip())
+            blocks.append(f"[result: {label}{suffix}]\n{result.model_text}".rstrip())
         joined = "\n\n".join(blocks) if blocks else "[no tool output]"
         return (
             f"{joined}\n\n"

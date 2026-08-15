@@ -3010,9 +3010,9 @@ class TaskRunner:
             return None
         path = str(event.call.args.get("path") or "")
         display_kind, display_path = _display_tool(event.call.name, event.call.args, path)
-        result = event.outcome.first_line(200)
+        result = event.outcome.presentation_result(200)
         tool_index = int(event.metadata.get("tool_index") or 0)
-        status = str(getattr(event.outcome, "status", "") or ("ok" if event.outcome.ok else "error"))
+        status = event.outcome.presentation_status()
         payload = {
             "type": "tool",
             "run_id": run_id,
@@ -3033,14 +3033,10 @@ class TaskRunner:
             payload["command"] = command
         if event.outcome.exit_code is not None:
             payload["exit_code"] = event.outcome.exit_code
-        output_handle = str(getattr(event.outcome, "output_handle", "") or "")
-        if output_handle:
-            payload["output_handle"] = output_handle
-            payload["output_bytes"] = int(getattr(event.outcome, "output_bytes", 0) or 0)
-            payload["output_stored_bytes"] = int(
-                getattr(event.outcome, "output_stored_bytes", 0) or 0
-            )
-            payload["output_sha256"] = str(
-                getattr(event.outcome, "output_sha256", "") or ""
-            )
+        managed = event.outcome.managed_output()
+        if managed:
+            payload["output_handle"] = str(managed.get("handle") or "")
+            payload["output_bytes"] = int(managed.get("original_bytes") or 0)
+            payload["output_stored_bytes"] = int(managed.get("stored_bytes") or 0)
+            payload["output_sha256"] = str(managed.get("sha256") or "")
         return payload

@@ -528,7 +528,7 @@ def _selection_prompt(case: ProbeCase, root: Path, *, arm: str) -> str:
     else:
         raise ValueError(f"unknown arm: {arm}")
 
-    listing = list_directory(root, ".").output
+    listing = list_directory(root, ".").model_text
     return "\n".join(
         [
             "You are helping evaluate a local coding agent's project navigation.",

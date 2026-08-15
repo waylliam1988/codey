@@ -31,14 +31,14 @@ class SearchCoverageABTests(unittest.TestCase):
 
         self.assertTrue(baseline.ok)
         self.assertFalse(baseline.truncated)
-        self.assertIn("no literal matches", baseline.output)
-        self.assertNotIn("Scan coverage:", baseline.output)
+        self.assertIn("no literal matches", baseline.model_text)
+        self.assertNotIn("Scan coverage:", baseline.model_text)
         self.assertEqual(baseline_report.decode_failed, 1)
         self.assertTrue(coverage.truncated)
-        self.assertIn("Scan coverage:", coverage.output)
-        self.assertIn("skipped 1 non-UTF-8 file", coverage.output)
+        self.assertIn("Scan coverage:", coverage.model_text)
+        self.assertIn("skipped 1 non-UTF-8 file", coverage.model_text)
         self.assertEqual(coverage_report.decode_failed, 1)
-        self.assertNotIn(search_coverage_ab.NON_UTF8_MARKER, coverage.output)
+        self.assertNotIn(search_coverage_ab.NON_UTF8_MARKER, coverage.model_text)
 
     def test_unreadable_coverage_reports_omission_without_chmod(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -56,9 +56,9 @@ class SearchCoverageABTests(unittest.TestCase):
 
         self.assertTrue(coverage.ok)
         self.assertTrue(coverage.truncated)
-        self.assertIn("could not read metadata or contents for 1 file", coverage.output)
+        self.assertIn("could not read metadata or contents for 1 file", coverage.model_text)
         self.assertEqual(report.unreadable, 1)
-        self.assertNotIn(search_coverage_ab.UNREADABLE_MARKER, coverage.output)
+        self.assertNotIn(search_coverage_ab.UNREADABLE_MARKER, coverage.model_text)
 
     def test_oversized_control_keeps_existing_message_without_scan_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -76,11 +76,11 @@ class SearchCoverageABTests(unittest.TestCase):
 
         self.assertTrue(coverage.ok)
         self.assertTrue(coverage.truncated)
-        self.assertIn("skipped 1 file(s) larger than 64 bytes", coverage.output)
-        self.assertIn("omitted files may contain more matches", coverage.output)
-        self.assertNotIn("Scan coverage:", coverage.output)
+        self.assertIn("skipped 1 file(s) larger than 64 bytes", coverage.model_text)
+        self.assertIn("omitted files may contain more matches", coverage.model_text)
+        self.assertNotIn("Scan coverage:", coverage.model_text)
         self.assertEqual(report.oversized, 1)
-        self.assertNotIn(search_coverage_ab.OVERSIZED_MARKER, coverage.output)
+        self.assertNotIn(search_coverage_ab.OVERSIZED_MARKER, coverage.model_text)
 
     def test_budget_control_keeps_existing_message_without_scan_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -98,11 +98,11 @@ class SearchCoverageABTests(unittest.TestCase):
 
         self.assertTrue(coverage.ok)
         self.assertTrue(coverage.truncated)
-        self.assertIn("search scan stopped after 2 files", coverage.output)
-        self.assertIn("omitted files may contain more matches", coverage.output)
-        self.assertNotIn("Scan coverage:", coverage.output)
+        self.assertIn("search scan stopped after 2 files", coverage.model_text)
+        self.assertIn("omitted files may contain more matches", coverage.model_text)
+        self.assertNotIn("Scan coverage:", coverage.model_text)
         self.assertFalse(report.incomplete)
-        self.assertNotIn("z_late.py:1", coverage.output)
+        self.assertNotIn("z_late.py:1", coverage.model_text)
 
     def test_coverage_probe_appends_note_and_marks_result_truncated(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -114,7 +114,7 @@ class SearchCoverageABTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)
-        self.assertIn("Scan coverage:", outcome.output)
+        self.assertIn("Scan coverage:", outcome.model_text)
         self.assertEqual(probe.exposed_notes, 1)
 
     def test_summary_flags_distinguish_uncertainty_from_confident_absence(self) -> None:

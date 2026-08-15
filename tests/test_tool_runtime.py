@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
+import subprocess
 import tempfile
 import threading
 import time
-import subprocess
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -28,7 +29,20 @@ from codey.tool_runtime import (
 )
 
 
+VALID_SHA256 = "a" * 64
+
+
 class ToolOutcomeTests(unittest.TestCase):
+    def test_tool_outcome_contract_has_no_legacy_output_fields(self) -> None:
+        fields = set(tool_runtime.ToolOutcome.__dataclass_fields__)
+
+        self.assertIn("model_text", fields)
+        self.assertNotIn("output", fields)
+        self.assertNotIn("output_handle", fields)
+        self.assertNotIn("output_bytes", fields)
+        self.assertNotIn("output_stored_bytes", fields)
+        self.assertNotIn("output_sha256", fields)
+
     def test_file_tools_report_structured_success_and_change(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -40,7 +54,140 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(written.changed)
         self.assertIsNone(written.exit_code)
         self.assertTrue(read.ok)
-        self.assertEqual(read.output, "ok")
+        self.assertEqual(read.model_text, "ok")
+
+    def test_tool_outcome_exposes_separate_projections(self) -> None:
+        outcome = tool_runtime.ToolOutcome(
+            "MODEL_ONLY",
+            True,
+            canonical={"path": "app.py", "matches": [1]},
+            presentation={"status": "shown", "result": "UI_ONLY"},
+            audit={"audit_id": "AUDIT_ONLY"},
+        )
+
+        self.assertEqual(outcome.first_model_line(200), "MODEL_ONLY")
+        self.assertEqual(outcome.presentation_result(200), "UI_ONLY")
+        self.assertEqual(outcome.presentation_status(), "shown")
+        self.assertEqual(
+            json.dumps(outcome.canonical, sort_keys=True),
+            '{"matches": [1], "path": "app.py"}',
+        )
+        self.assertEqual(outcome.audit["audit_id"], "AUDIT_ONLY")
+
+    def test_tool_outcome_sanitizes_projection_contracts(self) -> None:
+        outcome = tool_runtime.ToolOutcome(
+            "ok",
+            True,
+            canonical={
+                "path": Path("app.py"),
+                "bad": object(),
+                "nan": float("nan"),
+                "long": "x" * 3_000,
+            },
+            presentation={
+                "status": "shown",
+                "result": "UI",
+                1: object(),
+            },
+            audit={"bad": object(), "items": [object()]},
+        )
+
+        json.dumps(outcome.presentation, allow_nan=False)
+        json.dumps(outcome.audit, allow_nan=False)
+        json.dumps(outcome.canonical, allow_nan=False)
+        self.assertEqual(outcome.presentation_status(), "shown")
+        self.assertEqual(outcome.presentation_result(20), "UI")
+        self.assertTrue(str(outcome.canonical["path"]).startswith("<non-json "))
+        self.assertTrue(str(outcome.canonical["path"]).endswith("Path>"))
+        self.assertEqual(outcome.canonical["bad"], "<non-json object>")
+        self.assertEqual(outcome.canonical["nan"], "nan")
+        self.assertEqual(len(str(outcome.canonical["long"])), 2_000)
+        self.assertIn("_projection_warnings", outcome.presentation)
+        self.assertIn("_projection_warnings", outcome.audit)
+        self.assertIn("_projection_warnings", outcome.canonical)
+
+    def test_tool_outcome_sanitizes_non_mapping_projections(self) -> None:
+        outcome = tool_runtime.ToolOutcome(
+            "ok",
+            True,
+            canonical=object(),
+            presentation=object(),
+            audit=object(),
+        )
+
+        json.dumps(outcome.presentation, allow_nan=False)
+        json.dumps(outcome.audit, allow_nan=False)
+        json.dumps(outcome.canonical, allow_nan=False)
+        self.assertEqual(outcome.presentation_status(), "ok")
+        self.assertEqual(outcome.presentation_result(20), "ok")
+        self.assertIn("_projection_warnings", outcome.presentation)
+        self.assertIn("_projection_warnings", outcome.audit)
+        self.assertIn("_projection_warnings", outcome.canonical)
+
+    def test_tool_outcome_ignores_invalid_managed_output_handles(self) -> None:
+        for handle in ("../x", "out_", "out_" + ("x" * 81), 123, float("nan")):
+            with self.subTest(handle=handle):
+                outcome = tool_runtime.ToolOutcome(
+                    "ok",
+                    True,
+                    audit={
+                        "managed_output": {
+                            "handle": handle,
+                            "original_bytes": 1234,
+                            "stored_bytes": 1000,
+                            "sha256": VALID_SHA256,
+                        }
+                    },
+                )
+
+                self.assertEqual(outcome.managed_output(), {})
+                self.assertNotIn("full output retained locally", outcome.model_text)
+
+    def test_tool_outcome_empties_invalid_managed_output_sha256(self) -> None:
+        for sha256 in ("abc\nINJECTED", object(), "z" * 64):
+            with self.subTest(sha256=sha256):
+                outcome = tool_runtime.ToolOutcome(
+                    "ok",
+                    True,
+                    audit={
+                        "managed_output": {
+                            "handle": "out_0001_valid",
+                            "original_bytes": 1234,
+                            "stored_bytes": 1000,
+                            "sha256": sha256,
+                        }
+                    },
+                )
+
+                self.assertEqual(outcome.managed_output()["sha256"], "")
+                self.assertIn("sha256=;", outcome.model_text)
+                self.assertNotIn("INJECTED", outcome.model_text)
+                self.assertNotIn("<non-json object>", outcome.model_text)
+
+    def test_tool_outcome_bounds_projection_depth_keys_and_items(self) -> None:
+        deep: dict[str, object] = {"leaf": "value"}
+        for _index in range(10):
+            deep = {"next": deep}
+
+        outcome = tool_runtime.ToolOutcome(
+            "ok",
+            True,
+            canonical={
+                "x" * 120: "value",
+                "deep": deep,
+                "items": list(range(300)),
+            },
+        )
+
+        json.dumps(outcome.canonical, allow_nan=False)
+        clipped_key = next(key for key in outcome.canonical if key.startswith("x"))
+        self.assertEqual(len(clipped_key), 80)
+        self.assertLess(len(outcome.canonical["items"]), 300)
+        value = outcome.canonical["deep"]
+        while isinstance(value, dict):
+            value = next(iter(value.values()))
+        self.assertTrue(str(value).startswith("<max-depth "))
+        self.assertIn("_projection_warnings", outcome.canonical)
 
     def test_failed_check_has_exit_code_without_becoming_runtime_error(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -51,8 +198,8 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertFalse(outcome.ok)
         self.assertEqual(outcome.exit_code, 3)
-        self.assertTrue(outcome.output.startswith("exit 3:"))
-        self.assertFalse(outcome.output.startswith("ERROR:"))
+        self.assertTrue(outcome.model_text.startswith("exit 3:"))
+        self.assertFalse(outcome.model_text.startswith("ERROR:"))
 
     def test_run_command_is_cancelled_without_waiting_for_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -89,9 +236,10 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = run_command(Path(td), ".", "python large.py")
 
         self.assertTrue(outcome.truncated)
-        self.assertIn("HEAD", outcome.output)
-        self.assertTrue(outcome.output.endswith("TAIL"))
-        self.assertIn("middle of output omitted", outcome.output)
+        self.assertIn("HEAD", outcome.model_text)
+        self.assertIn("TAIL", outcome.model_text)
+        self.assertIn("middle of output omitted", outcome.model_text)
+        self.assertIn("omitted content may contain relevant errors", outcome.model_text)
 
     def test_run_command_prunes_dependency_stack_frames_before_budget_clip(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -128,12 +276,12 @@ class ToolOutcomeTests(unittest.TestCase):
                 outcome = run_command(root, ".", "python fail.py")
 
         self.assertFalse(outcome.ok)
-        self.assertIn("[... 12 dependency stack frames omitted ...]", outcome.output)
-        self.assertIn("tests/test_app.py", outcome.output)
-        self.assertIn("assert result == 42", outcome.output)
-        self.assertIn("AssertionError: expected 42", outcome.output)
-        self.assertNotIn("site-packages/pkg", outcome.output)
-        self.assertNotIn("internal_0()", outcome.output)
+        self.assertIn("[... 12 dependency stack frames omitted ...]", outcome.model_text)
+        self.assertIn("tests/test_app.py", outcome.model_text)
+        self.assertIn("assert result == 42", outcome.model_text)
+        self.assertIn("AssertionError: expected 42", outcome.model_text)
+        self.assertNotIn("site-packages/pkg", outcome.model_text)
+        self.assertNotIn("internal_0()", outcome.model_text)
 
     def test_run_command_raw_preserves_output_before_projection_pruning(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -161,8 +309,8 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertIsInstance(raw, tool_runtime.RunCommandRawResult)
         assert isinstance(raw, tool_runtime.RunCommandRawResult)
         self.assertIn("site-packages/pkg", raw.output)
-        self.assertNotIn("site-packages/pkg", outcome.output)
-        self.assertIn("AssertionError: expected 42", outcome.output)
+        self.assertNotIn("site-packages/pkg", outcome.model_text)
+        self.assertIn("AssertionError: expected 42", outcome.model_text)
 
     def test_run_allowlist_accepts_common_verification_tools(self) -> None:
         for command in (
@@ -269,8 +417,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = run_command(Path(td), ".", "pytest")
 
         self.assertFalse(outcome.ok)
-        self.assertIn(f"{tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s", outcome.output)
-        self.assertIn("timeout, not a test failure", outcome.output)
+        self.assertIn(f"{tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s", outcome.model_text)
+        self.assertIn("timeout, not a test failure", outcome.model_text)
 
     def test_quick_commands_keep_the_default_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -283,8 +431,8 @@ class ToolOutcomeTests(unittest.TestCase):
                 outcome = run_command(root, ".", "python app.py")
 
         self.assertFalse(outcome.ok)
-        self.assertIn(f"{tool_runtime.RUN_TIMEOUT_SECONDS}s", outcome.output)
-        self.assertNotIn(f"{tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s", outcome.output)
+        self.assertIn(f"{tool_runtime.RUN_TIMEOUT_SECONDS}s", outcome.model_text)
+        self.assertNotIn(f"{tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s", outcome.model_text)
 
     def test_search_truncation_hint_suggests_narrowing(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -294,8 +442,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = tool_runtime.search_files(root, ".", "target", max_results=2)
 
         self.assertTrue(outcome.truncated)
-        self.assertIn("truncated after 2 matches", outcome.output)
-        self.assertIn("narrow the query", outcome.output)
+        self.assertIn("truncated after 2 matches", outcome.model_text)
+        self.assertIn("narrow the query", outcome.model_text)
 
     def test_search_reports_non_utf8_files_as_incomplete(self) -> None:
         marker = "RARE_NON_UTF8_SEARCH_MARKER"
@@ -311,11 +459,11 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)
-        self.assertIn("no literal matches", outcome.output)
-        self.assertIn("Scan coverage:", outcome.output)
-        self.assertIn("search skipped 1 non-UTF-8 file", outcome.output)
-        self.assertIn("omitted files may contain more matches", outcome.output)
-        self.assertNotIn(marker, outcome.output)
+        self.assertIn("no literal matches", outcome.model_text)
+        self.assertIn("Scan coverage:", outcome.model_text)
+        self.assertIn("search skipped 1 non-UTF-8 file", outcome.model_text)
+        self.assertIn("omitted files may contain more matches", outcome.model_text)
+        self.assertNotIn(marker, outcome.model_text)
 
     def test_search_reports_read_text_errors_as_incomplete(self) -> None:
         original_read_text = Path.read_text
@@ -338,13 +486,13 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)
-        self.assertIn("no literal matches", outcome.output)
-        self.assertIn("Scan coverage:", outcome.output)
+        self.assertIn("no literal matches", outcome.model_text)
+        self.assertIn("Scan coverage:", outcome.model_text)
         self.assertIn(
             "search could not read metadata or contents for 1 file",
-            outcome.output,
+            outcome.model_text,
         )
-        self.assertNotIn("target_marker", outcome.output)
+        self.assertNotIn("target_marker", outcome.model_text)
 
     def test_search_reports_stat_errors_as_incomplete(self) -> None:
         original_stat = Path.stat
@@ -371,13 +519,13 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)
-        self.assertIn("no literal matches", outcome.output)
-        self.assertIn("Scan coverage:", outcome.output)
+        self.assertIn("no literal matches", outcome.model_text)
+        self.assertIn("Scan coverage:", outcome.model_text)
         self.assertIn(
             "search could not read metadata or contents for 1 file",
-            outcome.output,
+            outcome.model_text,
         )
-        self.assertNotIn("target_marker", outcome.output)
+        self.assertNotIn("target_marker", outcome.model_text)
 
     def test_search_does_not_duplicate_coverage_for_existing_oversized_and_budget_notes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -392,10 +540,10 @@ class ToolOutcomeTests(unittest.TestCase):
             with mock.patch("codey.tool_runtime.SEARCH_MAX_SCAN_FILES", 2):
                 budget = tool_runtime.search_files(root, ".", "target")
 
-        self.assertIn("skipped 1 file(s) larger than 32 bytes", oversized.output)
-        self.assertNotIn("Scan coverage:", oversized.output)
-        self.assertIn("search scan stopped after 2 files", budget.output)
-        self.assertNotIn("Scan coverage:", budget.output)
+        self.assertIn("skipped 1 file(s) larger than 32 bytes", oversized.model_text)
+        self.assertNotIn("Scan coverage:", oversized.model_text)
+        self.assertIn("search scan stopped after 2 files", budget.model_text)
+        self.assertNotIn("Scan coverage:", budget.model_text)
 
     def test_writing_identical_content_is_not_a_change(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -407,7 +555,7 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertFalse(outcome.changed)
-        self.assertIn("no changes", outcome.output)
+        self.assertIn("no changes", outcome.model_text)
 
     def test_creating_empty_file_is_still_a_change(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -429,22 +577,22 @@ class ToolOutcomeTests(unittest.TestCase):
             last = read_file(root, "app.txt", offset=5, limit=2)
 
         self.assertTrue(first.truncated)
-        self.assertTrue(first.output.startswith("one\ntwo\n"))
-        self.assertIn("lines 1-2 of 5; next offset=3", first.output)
+        self.assertTrue(first.model_text.startswith("one\ntwo\n"))
+        self.assertIn("lines 1-2 of 5; next offset=3", first.model_text)
         self.assertIn(
             'next call: {"tool":"read_file","args":{"path":"app.txt","offset":3,"limit":2}}',
-            first.output,
+            first.model_text,
         )
-        self.assertTrue(middle.output.startswith("three\nfour\n"))
-        self.assertIn("next offset=5", middle.output)
+        self.assertTrue(middle.model_text.startswith("three\nfour\n"))
+        self.assertIn("next offset=5", middle.model_text)
         self.assertIn(
             'next call: {"tool":"read_file","args":{"path":"app.txt","offset":5,"limit":2}}',
-            middle.output,
+            middle.model_text,
         )
-        self.assertTrue(last.output.startswith("five\n"))
-        self.assertIn("lines 5-5 of 5", last.output)
-        self.assertNotIn("next offset=", last.output)
-        self.assertNotIn("next call:", last.output)
+        self.assertTrue(last.model_text.startswith("five\n"))
+        self.assertIn("lines 5-5 of 5", last.model_text)
+        self.assertNotIn("next offset=", last.model_text)
+        self.assertNotIn("next call:", last.model_text)
 
     def test_read_file_character_budget_never_splits_a_normal_line(self) -> None:
         first_line = "a" * (READ_MAX_CHARS // 2) + "\n"
@@ -455,7 +603,7 @@ class ToolOutcomeTests(unittest.TestCase):
 
             outcome = read_file(root, "large.txt")
 
-        content, metadata = outcome.output.rsplit("\n\n[", 1)
+        content, metadata = outcome.model_text.rsplit("\n\n[", 1)
         self.assertEqual(content, first_line.rstrip("\n"))
         self.assertNotIn("b", content)
         self.assertIn("lines 1-1 of 2; next offset=2", metadata)
@@ -474,14 +622,14 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)
-        self.assertIn("HEAD", outcome.output)
-        self.assertIn("TAIL", outcome.output)
-        self.assertIn(LONG_LINE_MARKER.strip(), outcome.output)
-        self.assertIn("preview only, not a complete old_string", outcome.output)
-        self.assertIn("next offset=2", outcome.output)
+        self.assertIn("HEAD", outcome.model_text)
+        self.assertIn("TAIL", outcome.model_text)
+        self.assertIn(LONG_LINE_MARKER.strip(), outcome.model_text)
+        self.assertIn("preview only, not a complete old_string", outcome.model_text)
+        self.assertIn("next offset=2", outcome.model_text)
         self.assertIn(
             'next call: {"tool":"read_file","args":{"path":"generated.txt","offset":2,"limit":300}}',
-            outcome.output,
+            outcome.model_text,
         )
 
     def test_read_file_next_call_escapes_path_as_json(self) -> None:
@@ -497,7 +645,7 @@ class ToolOutcomeTests(unittest.TestCase):
         self.assertTrue(outcome.truncated)
         self.assertIn(
             'next call: {"tool":"read_file","args":{"path":"nested\\\\page.txt","offset":2,"limit":1}}',
-            outcome.output,
+            outcome.model_text,
         )
 
     def test_read_file_validates_page_bounds_and_empty_files(self) -> None:
@@ -512,12 +660,12 @@ class ToolOutcomeTests(unittest.TestCase):
             fractional = read_file(root, "one.txt", offset=1.5)
             oversized = read_file(root, "one.txt", limit=READ_MAX_LINES + 1)
 
-        self.assertEqual(empty.output, "")
+        self.assertEqual(empty.model_text, "")
         self.assertFalse(past_end.ok)
-        self.assertIn("exceeds one.txt total lines 1", past_end.output)
-        self.assertIn("positive integer", zero.output)
-        self.assertIn("positive integer", fractional.output)
-        self.assertIn(f"at most {READ_MAX_LINES}", oversized.output)
+        self.assertIn("exceeds one.txt total lines 1", past_end.model_text)
+        self.assertIn("positive integer", zero.model_text)
+        self.assertIn("positive integer", fractional.model_text)
+        self.assertIn(f"at most {READ_MAX_LINES}", oversized.model_text)
 
     def test_find_references_returns_python_reference_hints(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -539,12 +687,12 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = find_references(root, ".", "calculate_total")
 
         self.assertTrue(outcome.ok)
-        self.assertIn("References for calculate_total under .", outcome.output)
-        self.assertIn("lexical scan, not semantic resolution", outcome.output)
-        self.assertIn("definition pricing.py:1: def calculate_total", outcome.output)
-        self.assertIn("import checkout.py:1: from pricing import calculate_total", outcome.output)
-        self.assertIn("call checkout.py:4: return calculate_total(100, 0.2)", outcome.output)
-        self.assertNotIn("calculate_totalMock", outcome.output)
+        self.assertIn("References for calculate_total under .", outcome.model_text)
+        self.assertIn("lexical scan, not semantic resolution", outcome.model_text)
+        self.assertIn("definition pricing.py:1: def calculate_total", outcome.model_text)
+        self.assertIn("import checkout.py:1: from pricing import calculate_total", outcome.model_text)
+        self.assertIn("call checkout.py:4: return calculate_total(100, 0.2)", outcome.model_text)
+        self.assertNotIn("calculate_totalMock", outcome.model_text)
 
     def test_find_references_returns_typescript_reference_hints(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -567,10 +715,10 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = find_references(root, "src", "createRouter")
 
         self.assertTrue(outcome.ok)
-        self.assertIn("export src/router.ts:1: export function createRouter()", outcome.output)
-        self.assertIn("import src/server.ts:1: import { createRouter }", outcome.output)
-        self.assertIn("call src/server.ts:2: app.use(createRouter())", outcome.output)
-        self.assertNotIn("createRouterMock", outcome.output)
+        self.assertIn("export src/router.ts:1: export function createRouter()", outcome.model_text)
+        self.assertIn("import src/server.ts:1: import { createRouter }", outcome.model_text)
+        self.assertIn("call src/server.ts:2: app.use(createRouter())", outcome.model_text)
+        self.assertNotIn("createRouterMock", outcome.model_text)
 
     def test_find_references_is_bounded_and_skips_excluded_and_unreadable_files(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -590,12 +738,12 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)
-        self.assertIn("references truncated after 80 matches", outcome.output)
-        self.assertNotIn("node_modules", outcome.output)
-        self.assertIn("Scan coverage:", outcome.output)
-        self.assertIn("skipped 1 non-UTF-8 file", outcome.output)
-        self.assertIn("bad.py", outcome.output)
-        self.assertNotIn("z_over.py", outcome.output)
+        self.assertIn("references truncated after 80 matches", outcome.model_text)
+        self.assertNotIn("node_modules", outcome.model_text)
+        self.assertIn("Scan coverage:", outcome.model_text)
+        self.assertIn("skipped 1 non-UTF-8 file", outcome.model_text)
+        self.assertIn("bad.py", outcome.model_text)
+        self.assertNotIn("z_over.py", outcome.model_text)
 
     def test_writer_find_references_reports_oversized_files_as_incomplete(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -615,11 +763,11 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)
-        self.assertIn("definition payments.py:1", outcome.output)
-        self.assertIn("Scan coverage:", outcome.output)
-        self.assertIn("skipped 1 oversized file over 512 KiB", outcome.output)
-        self.assertIn("oversized path examples: legacy.py", outcome.output)
-        self.assertNotIn("from payments import process_payment", outcome.output)
+        self.assertIn("definition payments.py:1", outcome.model_text)
+        self.assertIn("Scan coverage:", outcome.model_text)
+        self.assertIn("skipped 1 oversized file over 512 KiB", outcome.model_text)
+        self.assertIn("oversized path examples: legacy.py", outcome.model_text)
+        self.assertNotIn("from payments import process_payment", outcome.model_text)
 
     def test_low_level_reference_hints_report_omissions_without_rendering_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -687,8 +835,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = find_references(root, "node_modules", "target_symbol")
 
         self.assertTrue(outcome.ok)
-        self.assertIn("no lexical matches found", outcome.output)
-        self.assertNotIn("pkg.py", outcome.output)
+        self.assertIn("no lexical matches found", outcome.model_text)
+        self.assertNotIn("pkg.py", outcome.model_text)
         self.assertFalse(outcome.truncated)
 
     def test_find_references_skips_excluded_directories_case_insensitively(self) -> None:
@@ -701,8 +849,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = find_references(root, ".", "target_symbol")
 
         self.assertTrue(outcome.ok)
-        self.assertIn("no lexical matches found", outcome.output)
-        self.assertNotIn("out.py", outcome.output)
+        self.assertIn("no lexical matches found", outcome.model_text)
+        self.assertNotIn("out.py", outcome.model_text)
 
     def test_find_references_skips_direct_excluded_start_directory_case_insensitively(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -714,8 +862,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = find_references(root, "Node_Modules", "target_symbol")
 
         self.assertTrue(outcome.ok)
-        self.assertIn("no lexical matches found", outcome.output)
-        self.assertNotIn("pkg.py", outcome.output)
+        self.assertIn("no lexical matches found", outcome.model_text)
+        self.assertNotIn("pkg.py", outcome.model_text)
         self.assertFalse(outcome.truncated)
 
     def test_find_references_does_not_skip_project_root_named_like_excluded_dir(self) -> None:
@@ -727,7 +875,7 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = find_references(root, ".", "target_symbol")
 
         self.assertTrue(outcome.ok)
-        self.assertIn("call app.py:1: target_symbol()", outcome.output)
+        self.assertIn("call app.py:1: target_symbol()", outcome.model_text)
 
     def test_find_references_marks_truncated_only_after_limit_is_exceeded(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -744,10 +892,10 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(exact.ok)
         self.assertFalse(exact.truncated)
-        self.assertNotIn("references truncated", exact.output)
+        self.assertNotIn("references truncated", exact.model_text)
         self.assertTrue(over.ok)
         self.assertTrue(over.truncated)
-        self.assertIn("references truncated after 80 matches", over.output)
+        self.assertIn("references truncated after 80 matches", over.model_text)
 
     def test_find_references_reports_scan_budget_without_collecting_every_file(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -834,8 +982,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = find_references(root, ".", "target_symbol")
 
         self.assertTrue(outcome.ok)
-        self.assertIn("no lexical matches found", outcome.output)
-        self.assertNotIn("leak.py", outcome.output)
+        self.assertIn("no lexical matches found", outcome.model_text)
+        self.assertNotIn("leak.py", outcome.model_text)
 
     def test_find_references_rejects_direct_symlink_file(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -851,8 +999,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = find_references(root, "link.py", "target_symbol")
 
         self.assertFalse(outcome.ok)
-        self.assertIn("symlink paths are not supported", outcome.output)
-        self.assertNotIn("target.py:1", outcome.output)
+        self.assertIn("symlink paths are not supported", outcome.model_text)
+        self.assertNotIn("target.py:1", outcome.model_text)
 
     def test_find_references_rejects_direct_symlink_dir(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -869,15 +1017,15 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = find_references(root, "linked", "target_symbol")
 
         self.assertFalse(outcome.ok)
-        self.assertIn("symlink paths are not supported", outcome.output)
-        self.assertNotIn("target.py:1", outcome.output)
+        self.assertIn("symlink paths are not supported", outcome.model_text)
+        self.assertNotIn("target.py:1", outcome.model_text)
 
     def test_find_references_validates_simple_symbol(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             outcome = find_references(Path(td), ".", "foo.bar")
 
         self.assertFalse(outcome.ok)
-        self.assertIn("requires a simple symbol", outcome.output)
+        self.assertIn("requires a simple symbol", outcome.model_text)
 
     def test_write_and_edit_reject_oversized_result_without_changing_file(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -928,10 +1076,10 @@ class ToolOutcomeTests(unittest.TestCase):
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
         self.assertFalse(outcome.ok)
-        self.assertIn('near literal "request_timeout"', outcome.output)
+        self.assertIn('near literal "request_timeout"', outcome.model_text)
         self.assertIn(
             "2 |     timeout = settings.get('request_timeout', 10)  # seconds",
-            outcome.output,
+            outcome.model_text,
         )
 
     def test_missing_reliable_anchor_returns_plain_error_without_file_start(self) -> None:
@@ -944,10 +1092,10 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = edit_file(root, "app.py", [EditBlock("x = 1", "x = 2")])
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertIn("SEARCH text not found", outcome.output)
-        self.assertIn("Use read_file", outcome.output)
-        self.assertNotIn("SECRET_FILE_START", outcome.output)
-        self.assertNotIn("Current bounded context", outcome.output)
+        self.assertIn("SEARCH text not found", outcome.model_text)
+        self.assertIn("Use read_file", outcome.model_text)
+        self.assertNotIn("SECRET_FILE_START", outcome.model_text)
+        self.assertNotIn("Current bounded context", outcome.model_text)
 
     def test_identifier_anchor_does_not_match_inside_larger_identifier(self) -> None:
         content = "super_user_id = 1\nreturn account_id\n"
@@ -963,8 +1111,8 @@ class ToolOutcomeTests(unittest.TestCase):
             )
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertNotIn("Current bounded context", outcome.output)
-        self.assertNotIn("super_user_id", outcome.output)
+        self.assertNotIn("Current bounded context", outcome.model_text)
+        self.assertNotIn("super_user_id", outcome.model_text)
 
     def test_identifier_anchor_uses_true_identifier_boundary_and_position(self) -> None:
         content = "super_user_id = 1\nuser_id = current_value\nreturn account_id\n"
@@ -980,8 +1128,8 @@ class ToolOutcomeTests(unittest.TestCase):
             )
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertIn('near identifier "user_id"', outcome.output)
-        self.assertIn("2 | user_id = current_value", outcome.output)
+        self.assertIn('near identifier "user_id"', outcome.model_text)
+        self.assertIn("2 | user_id = current_value", outcome.model_text)
 
     def test_quoted_literal_anchor_keeps_substring_semantics(self) -> None:
         content = "super_user_id = lookup('current')\n"
@@ -997,8 +1145,8 @@ class ToolOutcomeTests(unittest.TestCase):
             )
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertIn('near literal "user_id"', outcome.output)
-        self.assertIn("super_user_id", outcome.output)
+        self.assertIn('near literal "user_id"', outcome.model_text)
+        self.assertIn("super_user_id", outcome.model_text)
 
     def test_anchor_candidate_scans_are_bounded(self) -> None:
         search = " ".join(f"identifier_{index:04}" for index in range(100))
@@ -1024,9 +1172,9 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = edit_file(root, "app.py", [EditBlock("target()", "changed()")])
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertIn("matched 3 times", outcome.output)
-        self.assertIn("Exact matches start at lines: 1, 3, 5.", outcome.output)
-        self.assertNotIn("Additional matches omitted", outcome.output)
+        self.assertIn("matched 3 times", outcome.model_text)
+        self.assertIn("Exact matches start at lines: 1, 3, 5.", outcome.model_text)
+        self.assertNotIn("Additional matches omitted", outcome.model_text)
 
     def test_additional_exact_matches_are_marked_omitted(self) -> None:
         content = "target()\n" * 5
@@ -1038,9 +1186,9 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = edit_file(root, "app.py", [EditBlock("target()", "changed()")])
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertIn("Exact matches start at lines: 1, 2, 3.", outcome.output)
-        self.assertIn("Additional matches omitted.", outcome.output)
-        self.assertNotIn("1, 2, 3, 4", outcome.output)
+        self.assertIn("Exact matches start at lines: 1, 2, 3.", outcome.model_text)
+        self.assertIn("Additional matches omitted.", outcome.model_text)
+        self.assertNotIn("1, 2, 3, 4", outcome.model_text)
 
     def test_match_line_collection_stops_at_configured_limit(self) -> None:
         content = "target()\n" * 100_000
@@ -1061,9 +1209,9 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = edit_file(root, "app.py", [EditBlock(search, "changed")])
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertIn("Line 2 omitted", outcome.output)
-        self.assertIn("use read_file offset=2 limit=1", outcome.output)
-        self.assertNotIn("x" * EDIT_FAILURE_MAX_LINE_CHARS, outcome.output)
+        self.assertIn("Line 2 omitted", outcome.model_text)
+        self.assertIn("use read_file offset=2 limit=1", outcome.model_text)
+        self.assertNotIn("x" * EDIT_FAILURE_MAX_LINE_CHARS, outcome.model_text)
 
     def test_edit_failure_output_respects_total_character_budget(self) -> None:
         lines = [f"line_{index} = '{index}-" + ("x" * 370) + "'" for index in range(12)]
@@ -1078,8 +1226,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = edit_file(root, "app.py", [EditBlock(search, "changed")])
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertLessEqual(len(outcome.output), EDIT_FAILURE_MAX_CHARS)
-        for rendered_line in outcome.output.splitlines():
+        self.assertLessEqual(len(outcome.model_text), EDIT_FAILURE_MAX_CHARS)
+        for rendered_line in outcome.model_text.splitlines():
             if " | " in rendered_line:
                 self.assertIn(rendered_line.split(" | ", 1)[1], content)
 
@@ -1097,7 +1245,7 @@ class ToolOutcomeTests(unittest.TestCase):
             )
 
             self.assertEqual(path.read_bytes(), content.encode("utf-8"))
-        self.assertIn("Exact matches start at lines: 2, 4.", outcome.output)
+        self.assertIn("Exact matches start at lines: 2, 4.", outcome.model_text)
 
     def test_late_batch_failure_reports_atomic_rollback_and_original_context(self) -> None:
         content = "alpha_unique\nbeta_unique current\ngamma_unique\n"
@@ -1114,8 +1262,8 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = edit_file(root, "app.py", blocks)
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertIn("Replacement 2 of 3 failed. No replacements were written.", outcome.output)
-        self.assertNotIn("Current bounded context", outcome.output)
+        self.assertIn("Replacement 2 of 3 failed. No replacements were written.", outcome.model_text)
+        self.assertNotIn("Current bounded context", outcome.model_text)
 
     def test_intermediate_multiple_matches_do_not_report_non_disk_line_numbers(self) -> None:
         content = "one\nbase\n"
@@ -1131,9 +1279,9 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = edit_file(root, "app.py", blocks)
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
-        self.assertIn("matched 2 times", outcome.output)
-        self.assertIn("Replacement 2 of 2 failed. No replacements were written.", outcome.output)
-        self.assertNotIn("Exact matches start at lines", outcome.output)
+        self.assertIn("matched 2 times", outcome.model_text)
+        self.assertIn("Replacement 2 of 2 failed. No replacements were written.", outcome.model_text)
+        self.assertNotIn("Exact matches start at lines", outcome.model_text)
 
     def test_successful_edit_output_is_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1143,7 +1291,7 @@ class ToolOutcomeTests(unittest.TestCase):
 
             outcome = edit_file(root, "app.py", [EditBlock("old", "new")])
 
-        self.assertEqual(outcome.output, "edited app.py (1 replacement)")
+        self.assertEqual(outcome.model_text, "edited app.py (1 replacement)")
 
     def test_python_syntax_regression_is_written_and_reported(self) -> None:
         original = "def value():\n    return 1\n"
@@ -1162,8 +1310,8 @@ class ToolOutcomeTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), broken)
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.changed)
-        self.assertIn("Syntax regression detected in app.py at line 1", outcome.output)
-        self.assertIn("The edit was applied", outcome.output)
+        self.assertIn("Syntax regression detected in app.py at line 1", outcome.model_text)
+        self.assertIn("The edit was applied", outcome.model_text)
 
     def test_python_syntax_regression_is_reported_for_new_content_write(self) -> None:
         broken = "def value():\nreturn 1\n"
@@ -1176,8 +1324,8 @@ class ToolOutcomeTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), broken)
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.changed)
-        self.assertIn("wrote app.py", outcome.output)
-        self.assertIn("Syntax regression detected in app.py at line 2", outcome.output)
+        self.assertIn("wrote app.py", outcome.model_text)
+        self.assertIn("Syntax regression detected in app.py at line 2", outcome.model_text)
 
     def test_valid_python_edit_keeps_success_output_unchanged(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1187,8 +1335,8 @@ class ToolOutcomeTests(unittest.TestCase):
 
             outcome = edit_file(root, "app.py", [EditBlock("VALUE = 1", "VALUE = 2")])
 
-        self.assertEqual(outcome.output, "edited app.py (1 replacement)")
-        self.assertNotIn("Syntax regression", outcome.output)
+        self.assertEqual(outcome.model_text, "edited app.py (1 replacement)")
+        self.assertNotIn("Syntax regression", outcome.model_text)
 
     def test_existing_invalid_python_does_not_report_regression(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1199,7 +1347,7 @@ class ToolOutcomeTests(unittest.TestCase):
             outcome = edit_file(root, "app.py", [EditBlock("return 1", "return 2")])
 
         self.assertTrue(outcome.ok)
-        self.assertNotIn("Syntax regression", outcome.output)
+        self.assertNotIn("Syntax regression", outcome.model_text)
 
     def test_non_python_edit_does_not_report_syntax_regression(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1214,7 +1362,7 @@ class ToolOutcomeTests(unittest.TestCase):
             )
 
         self.assertTrue(outcome.ok)
-        self.assertNotIn("Syntax regression", outcome.output)
+        self.assertNotIn("Syntax regression", outcome.model_text)
 
     def test_oversized_python_skips_syntax_parsing(self) -> None:
         content = "x" * (tool_runtime.PYTHON_SYNTAX_HINT_MAX_CHARS + 1)
@@ -1247,7 +1395,7 @@ class ToolOutcomeTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertEqual(final_content, "def changed():\n    return 1\n")
-        self.assertNotIn("Syntax regression", outcome.output)
+        self.assertNotIn("Syntax regression", outcome.model_text)
 
     def test_syntax_hint_does_not_include_source_line(self) -> None:
         source_line = "def private_customer_token():"
@@ -1262,8 +1410,8 @@ class ToolOutcomeTests(unittest.TestCase):
                 [EditBlock(source_line, "def private_customer_token()")],
             )
 
-        self.assertIn("Syntax regression", outcome.output)
-        self.assertNotIn("private_customer_token", outcome.output)
+        self.assertIn("Syntax regression", outcome.model_text)
+        self.assertNotIn("private_customer_token", outcome.model_text)
 
     def test_syntax_hint_message_is_bounded(self) -> None:
         long_message = "x" * 500
@@ -1308,8 +1456,8 @@ class ToolOutcomeTests(unittest.TestCase):
                 self.assertTrue(outcome.ok)
                 self.assertTrue(outcome.changed)
                 self.assertEqual(final_content, "VALUE = 2\n")
-                self.assertEqual(outcome.output, "edited app.py (1 replacement)")
-                self.assertNotIn("Syntax regression", outcome.output)
+                self.assertEqual(outcome.model_text, "edited app.py (1 replacement)")
+                self.assertNotIn("Syntax regression", outcome.model_text)
 
     def test_tool_result_like_source_text_is_only_bounded_context(self) -> None:
         content = "[tool_result] protocol_anchor current\nnext = 1\n"
@@ -1326,7 +1474,7 @@ class ToolOutcomeTests(unittest.TestCase):
 
             self.assertEqual(path.read_text(encoding="utf-8"), content)
         self.assertFalse(outcome.ok)
-        self.assertIn("1 | [tool_result] protocol_anchor current", outcome.output)
+        self.assertIn("1 | [tool_result] protocol_anchor current", outcome.model_text)
 
     def test_runtime_rejects_more_than_maximum_replacements(self) -> None:
         blocks = [
@@ -1343,7 +1491,7 @@ class ToolOutcomeTests(unittest.TestCase):
             remaining = path.read_text(encoding="utf-8")
 
         self.assertFalse(outcome.ok)
-        self.assertIn(f"at most {MAX_REPLACEMENTS}", outcome.output)
+        self.assertIn(f"at most {MAX_REPLACEMENTS}", outcome.model_text)
         self.assertEqual(remaining, original)
 
 

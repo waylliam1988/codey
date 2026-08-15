@@ -627,7 +627,7 @@ def _tool_calls(events: list[object]) -> list[dict[str, Any]]:
             "name": call.name,
             "args": dict(call.args),
             "status": getattr(outcome, "status", ""),
-            "result": outcome.first_line(240) if outcome is not None else "",
+            "result": outcome.presentation_result(240) if outcome is not None else "",
         })
     return rows
 

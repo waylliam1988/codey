@@ -17,4 +17,4 @@ def test_large_project_benchmark_mutations_are_hard_disabled() -> None:
 
     assert not outcome.ok
     assert not outcome.changed
-    assert "read-only" in outcome.output
+    assert "read-only" in outcome.model_text

@@ -1,5 +1,66 @@
 # Codey Test Report
 
+## 0.3.16 Tool Contract v2
+
+Codey 0.3.16 cleanly migrates local tool results from a shared `output`
+string to explicit projections: `model_text`, `presentation`, `audit`, and
+`canonical`. It does not keep an `output` compatibility layer.
+
+Production changes:
+
+- `ToolOutcome` and `ToolResult` now expose `model_text` as the only
+  model-visible result text field. Legacy `output` and top-level
+  managed-output fields are removed.
+- `presentation` feeds UI/SSE/receipt result/status helpers, while `audit`
+  carries ledger/local-audit metadata such as `managed_output`.
+- `presentation`, `audit`, and `canonical` are sanitized into bounded
+  JSON-safe mappings at the result-type boundary. Non-JSON values, non-finite
+  floats, overlong strings, excessive depth, long keys, and excessive items are
+  bounded and reported through projection warnings.
+- Non-mapping projections are accepted and converted to warning-bearing empty
+  mappings before defaults are added. `_projection_warnings` is treated as a
+  reserved sanitizer field, so real sanitizer warnings cannot be shadowed by
+  caller input.
+- Managed-output audit metadata is normalized before model footer, UI/SSE, and
+  RunLedger consumption: only `out_[A-Za-z0-9_.-]{1,80}` handles are accepted,
+  invalid handles are ignored, invalid byte counts become `0`, and invalid
+  `sha256` values are emptied unless they are 64-character lowercase hex.
+- `model_text` is finalized by an idempotent helper so truncated-result and
+  managed-output footer text remain model-visible without making codecs parse
+  audit fields.
+- Coding and Research tool-result codecs render only `model_text`; tests pin
+  that `presentation`, ordinary `audit`, and `canonical` sentinels do not
+  enter prompts.
+- Research runner outcomes now expose the same presentation/status/managed
+  output helper surface used by Coding run events.
+- Manual A/B helpers that construct or inspect `ToolOutcome` were migrated to
+  `model_text` so the clean-cut contract is consistent outside automated
+  tests too.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_protocols.py tests\test_tool_runtime.py tests\test_managed_outputs.py tests\test_run_ledger.py tests\test_server.py::TaskRunnerUiEventTests -q -p no:cacheprovider
+# 148 passed, 3 skipped, 49 subtests passed
+
+python -m pytest -q -p no:cacheprovider
+# 1966 passed, 9 skipped, 335 subtests passed
+
+python -m ruff check . --no-cache
+# All checks passed!
+
+python -m py_compile <changed Python files>
+# passed
+
+git diff --check
+# passed
+```
+
+No live provider A/B is required because 0.3.16 does not change the tool schema
+prompt, Router behavior, provider fallback, permissions, Research/Writer/Review
+semantics, UI structure, SSE event shape, or task receipts. The model-visible
+tool-result wording is preserved through `model_text` parity tests.
+
 ## 0.3.15 Internal Capability Registry v1
 
 Codey 0.3.15 adds a read-only internal capability registry. It records built-in

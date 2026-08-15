@@ -21,11 +21,11 @@ class ScanCoverageABTests(unittest.TestCase):
                 expose_coverage=True,
             )
 
-        self.assertIn("Scan coverage:", outcome.output)
-        self.assertIn("oversized", outcome.output)
+        self.assertIn("Scan coverage:", outcome.model_text)
+        self.assertIn("oversized", outcome.model_text)
         self.assertEqual(oversized, 1)
         self.assertEqual(examples, ("legacy/z_legacy_batch.py",))
-        self.assertNotIn(scan_coverage_ab.OVERSIZED_SOURCE_MARKER, outcome.output)
+        self.assertNotIn(scan_coverage_ab.OVERSIZED_SOURCE_MARKER, outcome.model_text)
 
     def test_reference_baseline_does_not_expose_production_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -43,7 +43,7 @@ class ScanCoverageABTests(unittest.TestCase):
         self.assertFalse(outcome.truncated)
         self.assertEqual(oversized, 1)
         self.assertEqual(examples, ("legacy/z_legacy_batch.py",))
-        self.assertNotIn("Scan coverage:", outcome.output)
+        self.assertNotIn("Scan coverage:", outcome.model_text)
 
     def test_coverage_probe_appends_note_and_marks_result_truncated(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -54,8 +54,8 @@ class ScanCoverageABTests(unittest.TestCase):
 
         self.assertTrue(outcome.ok)
         self.assertTrue(outcome.truncated)
-        self.assertIn("Scan coverage:", outcome.output)
-        self.assertNotIn(scan_coverage_ab.OVERSIZED_SOURCE_MARKER, outcome.output)
+        self.assertIn("Scan coverage:", outcome.model_text)
+        self.assertNotIn(scan_coverage_ab.OVERSIZED_SOURCE_MARKER, outcome.model_text)
 
     def test_summary_flags_distinguish_uncertainty_from_confident_absence(self) -> None:
         safe = scan_coverage_ab._summary_flags(

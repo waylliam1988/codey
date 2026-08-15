@@ -328,7 +328,7 @@ class _ImpactGuardProbe:
             return outcome
         self.exposed_guards += 1
         return ToolOutcome(
-            output=f"{outcome.output}\n{guard}",
+            model_text=f"{outcome.model_text}\n{guard}",
             ok=outcome.ok,
             exit_code=outcome.exit_code,
             changed=outcome.changed,

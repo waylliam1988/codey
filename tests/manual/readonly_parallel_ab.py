@@ -492,7 +492,7 @@ def _tool_trace(events: list[agent.RunEvent]) -> list[dict[str, Any]]:
             "args": event.call.args,
             "ok": event.outcome.ok,
             "truncated": event.outcome.truncated,
-            "first_line": event.outcome.first_line(120),
+            "first_line": event.outcome.presentation_result(120),
         })
     return trace
 

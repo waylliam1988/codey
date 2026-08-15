@@ -179,7 +179,7 @@ class _RefactorHintProbe:
             return outcome
         self.exposed_hints += 1
         return ToolOutcome(
-            output=f"{outcome.output}\n{hint}",
+            model_text=f"{outcome.model_text}\n{hint}",
             ok=outcome.ok,
             exit_code=outcome.exit_code,
             changed=outcome.changed,

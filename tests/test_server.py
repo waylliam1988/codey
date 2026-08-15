@@ -25,7 +25,7 @@ from codey import server
 from codey.agent import RunResult
 from codey.changes import ChangeTracker
 from codey.consensus import ConsensusAdvice, ConsensusResult
-from codey.events import RunEvent
+from codey.events import RunEvent, run_event_payload
 from codey.handoff import ConversationSnapshot
 from codey.knowledge import KnowledgeNote, KnowledgeStore
 from codey.models import ToolCall
@@ -37,6 +37,9 @@ from codey.run_ledger import read_ledger
 from codey.task_runner import TaskRunner, _project_has_user_files
 from codey.tool_runtime import ToolOutcome
 from codey.verification_policy import VerificationCandidate
+
+
+VALID_SHA256 = "a" * 64
 
 
 def valid_research_report(url: str, conclusion: str = "Helium conclusion.") -> str:
@@ -793,19 +796,16 @@ class TaskRunnerUiEventTests(unittest.TestCase):
         self.assertEqual(payload["note"], "(done)")
 
     def test_tool_event_preserves_needs_action_status(self) -> None:
-        class Outcome:
-            output = "NEEDS_OPEN: open_url before saving this note: https://example.com/helium"
-            status = "needs_action"
-            ok = True
-            changed = False
-            truncated = False
-            exit_code = None
-
-            def first_line(self, limit: int) -> str:
-                return self.output[:limit]
-
         call = ToolCall("knowledge_write", {"title": "Helium"})
-        event = RunEvent.tool_finished(2, call, Outcome(), index=3)
+        outcome = ToolOutcome(
+            "NEEDS_OPEN: open_url before saving this note: https://example.com/helium",
+            True,
+            presentation={
+                "status": "needs_action",
+                "result": "NEEDS_OPEN: open_url before saving this note: https://example.com/helium",
+            },
+        )
+        event = RunEvent.tool_finished(2, call, outcome, index=3)
 
         payload = TaskRunner._ui_event("run-1", "session-1", event)
 
@@ -816,19 +816,13 @@ class TaskRunnerUiEventTests(unittest.TestCase):
         self.assertFalse(payload["error"])
 
     def test_tool_event_empty_status_falls_back_to_error(self) -> None:
-        class Outcome:
-            output = "ERROR: failed"
-            status = ""
-            ok = False
-            changed = False
-            truncated = False
-            exit_code = None
-
-            def first_line(self, limit: int) -> str:
-                return self.output[:limit]
-
         call = ToolCall("knowledge_write", {"title": "Helium"})
-        event = RunEvent.tool_finished(2, call, Outcome(), index=3)
+        outcome = ToolOutcome(
+            "ERROR: failed",
+            False,
+            presentation={"status": "", "result": "ERROR: failed"},
+        )
+        event = RunEvent.tool_finished(2, call, outcome, index=3)
 
         payload = TaskRunner._ui_event("run-1", "session-1", event)
 
@@ -836,6 +830,96 @@ class TaskRunnerUiEventTests(unittest.TestCase):
         assert payload is not None
         self.assertEqual(payload["status"], "error")
         self.assertTrue(payload["error"])
+
+    def test_tool_event_tolerates_malformed_managed_output_audit(self) -> None:
+        call = ToolCall("run", {"path": ".", "command": "python test.py"})
+        outcome = ToolOutcome(
+            "exit 0",
+            True,
+            audit={
+                "managed_output": {
+                    "handle": "out_0001_bad",
+                    "original_bytes": "abc",
+                    "stored_bytes": object(),
+                    "sha256": object(),
+                }
+            },
+            exit_code=0,
+        )
+        event = RunEvent.tool_finished(2, call, outcome, index=3)
+
+        event_payload = run_event_payload(event)
+        ui_payload = TaskRunner._ui_event("run-1", "session-1", event)
+
+        self.assertIsNotNone(event_payload)
+        self.assertIsNotNone(ui_payload)
+        assert event_payload is not None
+        assert ui_payload is not None
+        for payload in (event_payload, ui_payload):
+            self.assertEqual(payload["output_handle"], "out_0001_bad")
+            self.assertEqual(payload["output_bytes"], 0)
+            self.assertEqual(payload["output_stored_bytes"], 0)
+            self.assertEqual(payload["output_sha256"], "")
+
+    def test_tool_event_empties_invalid_managed_output_sha256(self) -> None:
+        call = ToolCall("run", {"path": ".", "command": "python test.py"})
+        outcome = ToolOutcome(
+            "exit 0",
+            True,
+            audit={
+                "managed_output": {
+                    "handle": "out_0001_valid",
+                    "original_bytes": 10,
+                    "stored_bytes": 10,
+                    "sha256": "abc\nINJECTED",
+                }
+            },
+            exit_code=0,
+        )
+        event = RunEvent.tool_finished(2, call, outcome, index=3)
+
+        event_payload = run_event_payload(event)
+        ui_payload = TaskRunner._ui_event("run-1", "session-1", event)
+
+        self.assertIsNotNone(event_payload)
+        self.assertIsNotNone(ui_payload)
+        assert event_payload is not None
+        assert ui_payload is not None
+        for payload in (event_payload, ui_payload):
+            serialized = json.dumps(payload, ensure_ascii=False)
+            self.assertEqual(payload["output_handle"], "out_0001_valid")
+            self.assertEqual(payload["output_sha256"], "")
+            self.assertNotIn("INJECTED", serialized)
+
+    def test_tool_event_ignores_invalid_managed_output_handle(self) -> None:
+        call = ToolCall("run", {"path": ".", "command": "python test.py"})
+        outcome = ToolOutcome(
+            "exit 0",
+            True,
+            audit={
+                "managed_output": {
+                    "handle": "../x",
+                    "original_bytes": 10,
+                    "stored_bytes": 10,
+                    "sha256": VALID_SHA256,
+                }
+            },
+            exit_code=0,
+        )
+        event = RunEvent.tool_finished(2, call, outcome, index=3)
+
+        event_payload = run_event_payload(event)
+        ui_payload = TaskRunner._ui_event("run-1", "session-1", event)
+
+        self.assertIsNotNone(event_payload)
+        self.assertIsNotNone(ui_payload)
+        assert event_payload is not None
+        assert ui_payload is not None
+        for payload in (event_payload, ui_payload):
+            self.assertNotIn("output_handle", payload)
+            self.assertNotIn("output_bytes", payload)
+            self.assertNotIn("output_stored_bytes", payload)
+            self.assertNotIn("output_sha256", payload)
 
 
 class ResearchGraphApiTests(unittest.TestCase):
@@ -1221,7 +1305,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.3.15")
+        self.assertEqual(__version__, "0.3.16")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)

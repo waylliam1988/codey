@@ -176,7 +176,7 @@ def run_arm(
                 "args": event.call.args,
                 "ok": event.outcome.ok,
                 "truncated": event.outcome.truncated,
-                "output_chars": len(event.outcome.output),
+                "output_chars": len(event.outcome.model_text),
             }
             for event in tool_events
         ]

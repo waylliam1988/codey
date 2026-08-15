@@ -69,6 +69,24 @@ Codey 已经有一个可用的核心闭环：
 
 任何新功能如果削弱这些基础能力，都应该暂停。
 
+### 工具结果必须按受众分层
+
+本地工具不能再把一段 `output` 字符串同时给模型、UI、receipt 和审计使用。
+
+工具结果应该明确拆成：
+
+- `model_text`：只给模型看的有界文本。
+- `presentation`：只给 UI、SSE 和 receipt 用的展示事实。
+- `audit`：只给 RunLedger、RunTrace 或本地审计用的小 metadata。
+- `canonical`：程序内部可用的 JSON-safe 结构化事实。
+
+模型 prompt 只能渲染 `model_text`。`presentation`、普通 `audit` 和 `canonical`
+不能偷偷进入 prompt。长命令输出只能通过 managed output 本地保存，并用有界 footer
+告诉模型“本地保留了审计副本”，不能变成新的读取工具或全文上下文注入。
+
+这些投影必须在结果类型边界变成 JSON-safe 且有界。不能把 `object()`、Path、非有限
+float、过深对象、超长字符串或无限列表原样塞进后续 ledger、trace、receipt 或 export。
+
 ### 保持 UI 安静
 
 Codey 的 UI 应该像一个安静的本地开发工具，而不是一个功能展示页。

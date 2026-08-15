@@ -80,7 +80,7 @@ def render_run_event(event: RunEvent) -> str:
     if event.kind == "tool" and event.call is not None and event.outcome is not None:
         path = str(event.call.args.get("path") or "")
         label = path if path != "." else ""
-        first_line = event.outcome.first_line(80)
+        first_line = event.outcome.presentation_result(80)
         return f"  · {event.call.name} {label} -> {first_line}"
     if event.kind == "info":
         names = str(event.metadata.get("names") or "")
@@ -142,11 +142,11 @@ def run_event_payload(
         "kind": event.call.name,
         "path": "" if path == "." else clip_event_text(path),
         "ok": event.outcome.ok,
-        "status": clip_event_text(getattr(event.outcome, "status", "ok" if event.outcome.ok else "error"), 32),
+        "status": clip_event_text(event.outcome.presentation_status(), 32),
         "changed": event.outcome.changed,
         "truncated": event.outcome.truncated,
         "result": clip_event_text(
-            event.outcome.first_line(MAX_EVENT_RESULT_CHARS),
+            event.outcome.presentation_result(MAX_EVENT_RESULT_CHARS),
             MAX_EVENT_RESULT_CHARS,
         ),
     }
@@ -155,6 +155,12 @@ def run_event_payload(
         payload["command"] = command
     if event.outcome.exit_code is not None:
         payload["exit_code"] = event.outcome.exit_code
+    managed = event.outcome.managed_output()
+    if managed:
+        payload["output_handle"] = clip_event_text(managed.get("handle"), 120)
+        payload["output_bytes"] = int(managed.get("original_bytes") or 0)
+        payload["output_stored_bytes"] = int(managed.get("stored_bytes") or 0)
+        payload["output_sha256"] = clip_event_text(managed.get("sha256"), 80)
     return payload
 
 

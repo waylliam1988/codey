@@ -8,7 +8,8 @@ import os
 import re
 import shlex
 import subprocess
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from codey import cancellation
@@ -18,6 +19,11 @@ from codey.bounded_scan import (
     DEFAULT_MAX_SCAN_FILES,
     BoundedScanBudget,
     iter_bounded_files,
+)
+from codey.models import (
+    json_safe_projection,
+    model_text_with_audit_markers,
+    normalized_managed_output,
 )
 from codey.references import find_reference_hints
 from codey.scan_report import render_scan_coverage
@@ -103,24 +109,70 @@ EDIT_ANCHOR_STOPWORDS = {
 
 @dataclass(frozen=True)
 class ToolOutcome:
-    output: str
+    model_text: str
     ok: bool
+    canonical: Mapping[str, object] = field(default_factory=dict)
+    presentation: Mapping[str, object] = field(default_factory=dict)
+    audit: Mapping[str, object] = field(default_factory=dict)
+    error_code: str = ""
     exit_code: int | None = None
     changed: bool = False
     truncated: bool = False
-    output_handle: str = ""
-    output_bytes: int = 0
-    output_stored_bytes: int = 0
-    output_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        model_text = str(self.model_text or "")
+        error_code = str(self.error_code or ("error" if not self.ok else ""))
+        presentation = json_safe_projection(self.presentation, label="presentation")
+        presentation.setdefault("status", "ok" if self.ok else "error")
+        presentation.setdefault("result", _first_model_line(model_text, 200))
+        audit = json_safe_projection(self.audit, label="audit")
+        if error_code:
+            audit["error_code"] = error_code
+        if self.exit_code is not None:
+            audit["exit_code"] = self.exit_code
+        if self.changed:
+            audit["changed"] = True
+        if self.truncated:
+            audit["truncated"] = True
+        canonical = json_safe_projection(self.canonical, label="canonical")
+        model_text = model_text_with_audit_markers(
+            model_text,
+            truncated=self.truncated,
+            audit=audit,
+        )
+        object.__setattr__(self, "model_text", model_text)
+        object.__setattr__(self, "error_code", error_code)
+        object.__setattr__(self, "canonical", canonical)
+        object.__setattr__(self, "presentation", presentation)
+        object.__setattr__(self, "audit", audit)
 
     @classmethod
-    def error(cls, message: str) -> ToolOutcome:
+    def error(cls, message: str, *, error_code: str = "error") -> ToolOutcome:
         text = message if message.startswith("ERROR:") else f"ERROR: {message}"
-        return cls(text, False)
+        return cls(
+            text,
+            False,
+            presentation={"status": "error", "result": _first_model_line(text, 200)},
+            audit={"error_code": error_code},
+            error_code=error_code,
+        )
 
-    def first_line(self, limit: int) -> str:
-        """Return a display-safe first line, including for empty output."""
-        return next(iter(self.output.splitlines()), "")[:limit]
+    def first_model_line(self, limit: int) -> str:
+        """Return a display-safe first model-visible line, including empty text."""
+        return _first_model_line(self.model_text, limit)
+
+    def presentation_result(self, limit: int) -> str:
+        value = self.presentation.get("result") if isinstance(self.presentation, Mapping) else ""
+        text = str(value or "") or self.first_model_line(limit)
+        return text[:limit]
+
+    def presentation_status(self) -> str:
+        value = self.presentation.get("status") if isinstance(self.presentation, Mapping) else ""
+        return str(value or "") or ("ok" if self.ok else "error")
+
+    def managed_output(self) -> Mapping[str, object]:
+        value = self.audit.get("managed_output") if isinstance(self.audit, Mapping) else None
+        return normalized_managed_output(value)
 
 
 @dataclass(frozen=True)
@@ -129,6 +181,10 @@ class RunCommandRawResult:
     output: str
     ok: bool
     exit_code: int
+
+
+def _first_model_line(text: object, limit: int) -> str:
+    return next(iter(str(text or "").splitlines()), "")[:limit]
 
 
 def _byte_limit_label(value: int) -> str:

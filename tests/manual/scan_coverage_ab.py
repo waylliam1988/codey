@@ -467,17 +467,17 @@ def run_self_test() -> None:
             "process_payment",
             expose_coverage=True,
         )
-        assert "Scan coverage:" in outcome.output, outcome.output
-        assert "oversized" in outcome.output, outcome.output
+        assert "Scan coverage:" in outcome.model_text, outcome.model_text
+        assert "oversized" in outcome.model_text, outcome.model_text
         assert oversized == 1, oversized
         assert examples == ("legacy/z_legacy_batch.py",), examples
-        assert OVERSIZED_SOURCE_MARKER not in outcome.output, outcome.output
+        assert OVERSIZED_SOURCE_MARKER not in outcome.model_text, outcome.model_text
 
         probe = _CoverageReferencesProbe(arm="coverage")
         outcome = probe(root, ".", "process_payment")
         assert outcome.truncated, outcome
-        assert "Scan coverage:" in outcome.output, outcome.output
-        assert OVERSIZED_SOURCE_MARKER not in outcome.output, outcome.output
+        assert "Scan coverage:" in outcome.model_text, outcome.model_text
+        assert OVERSIZED_SOURCE_MARKER not in outcome.model_text, outcome.model_text
 
     flags = _summary_flags(
         "The scan is incomplete because one oversized file was skipped; "

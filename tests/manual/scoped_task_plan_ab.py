@@ -356,7 +356,7 @@ def _score_terms(text: str, expected_terms: tuple[str, ...]) -> dict[str, Any]:
 def _project_context(root: Path, task: str) -> str:
     return "\n\n".join([
         "Initial listing:",
-        list_directory(root, ".").output,
+        list_directory(root, ".").model_text,
         render_production_project_map(root, task=task),
     ])
 

@@ -83,7 +83,7 @@ def build_project_symbol_map(
 
 
 def _prompt(case: ProbeCase, root: Path, *, arm: str) -> str:
-    listing = list_directory(root, ".").output
+    listing = list_directory(root, ".").model_text
     parts = [
         "You are helping evaluate a local coding agent's project navigation.",
         "Do not solve the code change. Only choose files to inspect first.",

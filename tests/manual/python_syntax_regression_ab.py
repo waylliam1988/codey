@@ -95,7 +95,7 @@ class _EditProbe:
             return outcome
         self.exposed_hints += 1
         return ToolOutcome(
-            output=outcome.output + hint,
+            model_text=outcome.model_text + hint,
             ok=outcome.ok,
             exit_code=outcome.exit_code,
             changed=outcome.changed,

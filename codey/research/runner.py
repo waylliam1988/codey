@@ -20,7 +20,7 @@ from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.note import KnowledgeNote, clean_open_questions
 from codey.knowledge.store import KnowledgeStore
-from codey.models import ToolResult
+from codey.models import ToolResult, normalized_managed_output
 from codey.research.advisors import EvidenceNote, EvidencePack
 from codey.research.controller import (
     ResearchController,
@@ -872,21 +872,37 @@ def _evidence_locator(item: dict) -> str:
 
 
 class _Outcome:
-    def __init__(self, output: str, *, changed: bool = False) -> None:
-        self.output = output
-        self.status = _outcome_status(output)
+    def __init__(self, model_text: str, *, changed: bool = False) -> None:
+        self.model_text = model_text
+        self.status = _outcome_status(model_text)
         self.ok = self.status != "error"
         self.exit_code = None
         self.changed = changed and self.status == "ok"
         self.truncated = False
+        self.presentation = {"status": self.status, "result": self.first_model_line(200)}
+        self.audit = {}
+        self.canonical = {}
 
     @classmethod
     def error(cls, message: str) -> "_Outcome":
         text = message if message.startswith("ERROR:") else f"ERROR: {message}"
         return cls(text)
 
-    def first_line(self, limit: int) -> str:
-        return next(iter(self.output.splitlines()), "")[:limit]
+    def first_model_line(self, limit: int) -> str:
+        return next(iter(self.model_text.splitlines()), "")[:limit]
+
+    def presentation_result(self, limit: int) -> str:
+        value = self.presentation.get("result")
+        text = str(value or "") or self.first_model_line(limit)
+        return text[:limit]
+
+    def presentation_status(self) -> str:
+        value = self.presentation.get("status")
+        return str(value or "") or ("ok" if self.ok else "error")
+
+    def managed_output(self) -> dict[str, object]:
+        value = self.audit.get("managed_output")
+        return normalized_managed_output(value)
 
 
 def _outcome_status(output: str) -> str:
@@ -899,6 +915,13 @@ def _outcome_status(output: str) -> str:
 
 def _tool_results(results: list[tuple[object, _Outcome]]) -> list[ToolResult]:
     return [
-        ToolResult(call=call, output=outcome.output, truncated=outcome.truncated)
+        ToolResult(
+            call=call,
+            model_text=outcome.model_text,
+            truncated=outcome.truncated,
+            presentation=outcome.presentation,
+            audit=outcome.audit,
+            canonical=outcome.canonical,
+        )
         for call, outcome in results
     ]

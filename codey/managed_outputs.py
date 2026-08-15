@@ -148,16 +148,22 @@ def run_command_with_managed_output(
     )
     if ref is None:
         return projected
+    managed_output = {
+        "handle": ref.handle,
+        "original_bytes": ref.original_bytes,
+        "stored_bytes": ref.stored_bytes,
+        "sha256": ref.sha256,
+    }
     return ToolOutcome(
-        projected.output,
+        projected.model_text,
         projected.ok,
+        canonical=projected.canonical,
+        presentation=projected.presentation,
+        audit={**dict(projected.audit), "managed_output": managed_output},
+        error_code=projected.error_code,
         exit_code=projected.exit_code,
         changed=projected.changed,
         truncated=projected.truncated,
-        output_handle=ref.handle,
-        output_bytes=ref.original_bytes,
-        output_stored_bytes=ref.stored_bytes,
-        output_sha256=ref.sha256,
     )
 
 

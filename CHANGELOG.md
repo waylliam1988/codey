@@ -4,6 +4,36 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.16 - Tool Contract v2
+
+- `ToolOutcome` and `ToolResult` now use `model_text` as the only
+  model-visible tool-result text field. The legacy `output` field and
+  top-level managed-output metadata fields were removed instead of kept as a
+  compatibility layer.
+- Tool results now carry separate `presentation`, `audit`, and `canonical`
+  projections so UI/SSE/receipts, RunLedger/local audit, and small internal
+  facts do not have to parse the model-visible text.
+- `presentation`, `audit`, and `canonical` are sanitized into bounded
+  JSON-safe mappings at the `ToolOutcome` / `ToolResult` boundary. Unsupported
+  values become short marker strings and add projection warnings instead of
+  breaking later audit/export serialization.
+- Managed-output audit metadata is schema-normalized when consumed: only
+  `out_[A-Za-z0-9_.-]{1,80}` handles are accepted, invalid byte counts become
+  `0`, only 64-character lowercase hex `sha256` values are retained, and
+  malformed audit values cannot crash UI/SSE event rendering.
+- Managed output handles now live under `audit["managed_output"]`; the model
+  still receives the same bounded footer that says full output was retained
+  locally for audit/export, not as a new tool.
+- Coding and Research codecs render only `model_text`. Tests pin that
+  `presentation`, ordinary `audit`, and `canonical` sentinels do not leak into
+  prompts.
+- Run events, TaskRunner SSE payloads, and RunLedger projection now consume
+  `presentation`/`audit` helpers instead of reading old top-level output
+  fields.
+- This release does not add a new tool system, plugin system, runtime
+  dispatcher, Router behavior, provider fallback behavior, permission behavior,
+  UI surface, or tool-schema prompt.
+
 ## 0.3.15 - Internal Capability Registry v1
 
 - Added `codey/capabilities.py`, a read-only registry of Codey's built-in

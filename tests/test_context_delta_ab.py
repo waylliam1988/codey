@@ -65,7 +65,7 @@ def test_benchmark_mutations_are_hard_disabled() -> None:
 
     assert not outcome.ok
     assert not outcome.changed
-    assert "read-only" in outcome.output
+    assert "read-only" in outcome.model_text
 
 
 def test_default_output_stays_outside_repository() -> None:
