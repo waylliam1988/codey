@@ -5,7 +5,11 @@
 ContextSource、Provider Capability、Managed Outputs、Permission Profiles、
 Headless JSONL Runner 和 Project-local Config。
 
-接下来的主线不再是继续整理工具身体，而是进入新的产品阶段：
+`0.3.0` 到 `0.3.20` 已经完成了 Ghost、长期连续性和能力边界的第一阶段。
+`0.4` 的主线不是继续扩 UI 或插件，而是把 Research 升级成通用 Evidence
+Research Runtime。
+
+`0.3` 当时的主线不是继续整理工具身体，而是进入新的产品阶段：
 
 ```text
 Ghost in Codey
@@ -30,6 +34,22 @@ Ghost 可以决定“我想帮用户聊天、研究、写代码、复盘、记�
 但真正读文件、改文件、跑命令、联网研究、提交 git 的动作，仍然必须经过 Codey 的
 Permission Profile、Research Controller、ToolRuntime、shell approval、Run Ledger、
 verification、restore 和 Project-local Config。
+
+`0.4` 在这个基础上继续收紧 Research：
+
+```text
+Source / Evidence / Claim / Assumption / AnalysisRun / Artifact / Review
+```
+
+也就是说，Codey 不只是“能搜资料”，还要能回答：
+
+```text
+这个问题有没有被真正回答？
+每个关键结论的证据在哪里？
+哪些只是推测或假设？
+本地分析能不能复查？
+同一主题下次能不能接着研究？
+```
 
 ## 0.2 地基已经完成
 
@@ -60,6 +80,52 @@ verification、restore 和 Project-local Config。
 - `research/controller.py` 让 Research 仍然由 Codey 控制证据链和工具顺序边界。
 
 所以 0.3 不是推翻 0.2，而是把 Ghost 接在这些地基上。
+
+## 0.3 Ghost 与能力边界已经完成
+
+`0.3.0` 到 `0.3.20` 的目标是把 Ghost 接到 Codey 的身体上，并把模型可见内容、
+工具结果、权限、事件、profile 和解释面板这些边界全部变成可测试事实。现在这些已经落地：
+
+```text
+0.3.0 Ghost Signal Extractor v1
+0.3.1 Ghost Memory Inbox v1
+0.3.2 Ghost Hebbian State v1
+0.3.3 Ghost Directive ContextSource v1
+0.3.4 Ghost Learning Loop v1
+0.3.5 Ghost Continuity v1
+0.3.6 Cognitive Sleep v1
+0.3.7 Ghost Router v1
+0.3.8 Ghost Work Queue v1
+0.3.9 Research Interest Queue v1
+0.3.10 Affinity Index v1
+0.3.11 Local Context Control Surface v1
+0.3.12 Research Notes v2
+0.3.13 Run Trace Manifest v1
+0.3.14 Prompt Envelope v1
+0.3.15 Internal Capability Registry v1
+0.3.16 Tool Contract v2
+0.3.17 Action Policy Pipeline v1
+0.3.18 Event / Capability Matrix v1
+0.3.19 Built-in Profiles v1
+0.3.20 Run Details v1
+```
+
+这些能力共同提供了 0.4 需要的研究底座：
+
+- `ghost/extractor.py`、`ghost/inbox.py`、`ghost/hebbian.py` 让长期偏好和纠错先进候选区，再被审计接受。
+- `ghost/directive.py` 和 `context_source.py` 让本地连续性以有预算的中性文本进入 prompt，且不能授权工具。
+- `ghost/learning_loop.py`、`ghost/continuity.py`、`ghost/sleep.py` 让 Codey 能记住长期主题、开放问题和用户偏好，但不保存完整聊天正文。
+- `ghost/router.py` 让 Ghost 只提出意图；手动入口、PermissionProfile 和 TaskRunner 仍然优先。
+- `ghost/work_queue.py` 和 `knowledge/research_interest.py` 让开放问题变成可追踪 work item，完成时需要 proof refs。
+- `ghost/affinity.py` 让长期主题能排序和衰减，但关联边不等于事实。
+- `Research Notes v2` 和 `research/controller.py` 让 Research 仍然是用户显式开启的受控闭环。
+- `run_trace.py` 和 `prompt_envelope.py` 让模型可见上下文只保存 metadata、digest 和 source refs，不保存 raw prompt。
+- `capabilities.py`、`tool_definition.py`、`action_policy.py` 和 `events.py` 让能力、工具、危险动作和事件投影都有可测试边界。
+- `builtin_profiles.py` 让默认工作风格先成为只读 metadata，不参与 Router、权限或 prompt 分支。
+- `run_details.py` 让用户主动需要时能看到一次运行的短解释，但不新增面板、不打断工作。
+
+所以 0.4 不是推翻 0.3，而是把 Ghost 的连续性、Research 的证据链、Run Trace 的审计和
+ToolRuntime 的本地执行合成一条更可靠的 Evidence Research Runtime。
 
 ## 总架构
 
@@ -210,6 +276,60 @@ monolith with seams
 Everything is a public plugin
 ```
 
+## OpenScience 的借鉴边界
+
+`synthetic-sciences/openscience` 值得借的不是“大科学平台 UI”，而是研究运行时的
+几个硬边界：
+
+```text
+agent runtime
+  -> tool layer
+  -> science connectors
+  -> provenance graph
+  -> artifact store
+  -> critic / review
+```
+
+Codey 可以借：
+
+```text
+- Source Connector contract：每个来源一个薄 wrapper，统一 search/fetch/read
+  contract，不把 arXiv、PubMed、SEC、RSS、CSV 等细节暴露给模型。
+- Provenance DAG：Source、Evidence、Claim、AnalysisRun、Artifact 之间有
+  supports / refutes / derived_from / produced_by 边。
+- Artifact version：报告、表格、图、分析输出都有 sha256、size、mime、origin run
+  和输入 refs。
+- Critic / Review gate：Research finalize 前后检查 unsupported claim、引用错配、
+  过期数据和过度推断。
+- Workspace-local audit trail：研究事实优先落到本地有界记录，而不是只存在聊天文本里。
+```
+
+Codey 现在不应该借：
+
+```text
+- 大 workspace / dashboard / notebook UI。
+- 用户可管理的 skills、agent graph、connector graph 或 provenance graph。
+- Everything is a plugin 的 runtime。
+- 让 connector 修改 prompt、Router、PermissionProfile 或 agent loop。
+- 后台自动联网研究或无人值守实验。
+- 把科学专用流程硬编码进通用 Research。
+```
+
+Codey 的路线应该更窄：
+
+```text
+ChatGPT/Cursor 式交互
+  + Zotero/Notion 式研究记录
+  + Jupyter 式可复查分析运行
+  + Codey 本地工具闭环
+  + Ghost 长期连续性
+  + Evidence-level Review
+```
+
+这条路线的目标不是“立刻在每个科学专业深度超过 OpenScience”，而是在
+个人通用研究工作台这个方向上形成优势：用户只说“帮我研究”，Codey 在后台完成来源、
+证据、分析、引用、复核和长期追踪；前台仍然安静。
+
 ## 规划原则
 
 1. Hebbian 网络是 0.3 的主线，不是后期装饰。
@@ -227,7 +347,7 @@ Everything is a public plugin
 13. Ghost 的长期意图必须落成可审计 work item，不能变成隐藏后台冲动。
 14. Work item 可以建议下一步，但不能绕过用户显式入口、PermissionProfile 或 TaskRunner。
 15. 版本号可以出现在 roadmap 标题或 release label 里，例如 `Tool Contract v2`
-    和 `Tool Policy Pipeline v1`；长期 API、类型、模块、字段名不要用
+    和 `Action Policy Pipeline v1`；长期 API、类型、模块、字段名不要用
     `V2`、`Next`、`New` 这类迁移期命名。应该演进稳定名字，例如
     `ToolOutcome`，或使用有真实语义的名字。
 
@@ -1843,8 +1963,7 @@ ToolOutcome / ToolResult dataclass 不含 output 旧字段
 ## 0.3.17 - Action Policy Pipeline v1
 
 状态：已落地。目标是把危险动作统一过单向收紧的 guard。
-虽然 roadmap 名称保留 Tool Policy，但实现范围覆盖 tool 和非 tool 的本地动作，
-因此模块名应该使用更准确的 action-level 命名。
+它覆盖 tool 和非 tool 的本地动作，因此模块名使用 action-level 命名。
 
 ### 做什么
 
@@ -2052,7 +2171,7 @@ Capability Registry 增加 `builtin_profiles` capability，但仍然只是 metad
 
 ### 边界
 
-- profile 不能绕过 Tool Policy Pipeline / Action Policy 实现。
+- profile 不能绕过 Action Policy Pipeline。
 - profile 不能放宽 PermissionProfile。
 - profile 不能注入任意 prompt patch。
 - profile 不能修改用户明确选择的 provider。
@@ -2130,9 +2249,1076 @@ UI 不暴露内部术语
 UI 不新增 drawer / topbar 入口
 ```
 
-## 0.4 之后的开放边界
+## 0.4 主线 - General Evidence Research Runtime
 
-0.3 后半段全部完成后，Codey 才适合考虑有限插件化。顺序应该是：
+0.4 的目标是把 Codey 从“会做 Research 的本地助手”升级成：
+
+```text
+低打扰、本地优先、可审计、有长期连续性的个人 Evidence Research Runtime
+```
+
+研究工具的核心价值不是“搜得多”，而是：
+
+```text
+问题被真正回答
+结论能回到证据
+弱证据不会被写成强结论
+分析可以复查
+同一主题可以连续追踪
+用户不用管理复杂系统
+```
+
+### 0.4 泛化研究超越指标
+
+0.4 的“超越 OpenScience”不是拼科学数据库数量、notebook UI、skills 生态或云端计算平台。
+Codey 要赢的是个人通用研究工作流：
+
+```text
+证据合同更硬
+长期研究更可靠
+Research -> Code 落地更顺
+用户更少被打扰
+```
+
+因此 0.4 的验收不能只看模块是否完成，还要看固定评测集上的质量指标：
+
+```text
+answer coverage：final claims 是否覆盖原问题的关键词、实体、关系和约束
+claim grounding precision：关键 claim 是否都有 evidence 或明确 assumption
+citation locator precision：citation 是否能定位到 opened source 的页码、offset、表格或行号
+counterevidence coverage：强结论前是否有反证 / 限制搜索记录
+stale update correctness：旧结论遇到新来源时是否被更新、降级或标 stale
+analysis reproducibility：分析输入、脚本、环境、输出、日志和 hash 是否可复查
+research-to-code handoff quality：研究结论是否变成明确实现约束、文件影响和测试建议
+unsupported claim rate：无证据结论比例不能高于 baseline
+UI interruption count：不新增主 UI、dashboard、profile selector、自动弹窗或常驻面板
+```
+
+0.4 的对标对象分两层：
+
+```text
+baseline web model：验证 Codey 的证据链和本地分析是否明显提高质量
+OpenScience-style fixture：验证 Codey 在通用研究任务上是否达到更低打扰、更硬 proof、
+更强长期连续性的目标
+```
+
+如果要发布“Codey 超越 OpenScience”的结论，必须至少有一次真实 OpenScience
+head-to-head。该记录必须包含：
+
+```text
+OpenScience version / commit
+Codey version / commit
+provider / model
+任务输入
+运行日期
+导出 artifact 或人工评分来源
+评分 rubric
+```
+
+没有真实 OpenScience run 时，只能写：
+
+```text
+Codey passed OpenScience-style regression.
+```
+
+不能写：
+
+```text
+Codey surpassed OpenScience.
+```
+
+Regression Gate v1 用来证明 0.4 没有让研究质量回退：
+
+```text
+Ghost-as-evidence count = 0
+citation locator precision >= 95%
+answer coverage rate >= baseline
+unsupported claim rate <= baseline
+counterevidence coverage >= baseline
+analysis reproducibility >= 90%
+research-to-code handoff quality >= baseline
+UI interruption count <= baseline
+```
+
+Superiority Gate v1 用来证明“超越”：
+
+```text
+必须基于 real OpenScience manual head-to-head 或明确标注的 baseline 对照
+至少 4 个核心指标严格优于对照
+所有 Regression Gate 指标仍然通过
+unsupported claim rate < baseline
+answer coverage rate > baseline
+citation locator precision > baseline 或 >= 98%
+counterevidence coverage > baseline
+analysis reproducibility > baseline 或 >= 95%
+research-to-code handoff quality > baseline
+UI interruption count <= baseline，且不能新增主 UI / dashboard / profile selector
+```
+
+如果只通过 Regression Gate，只能写“没有回退”或“通过 OpenScience-style regression”，
+不能写“surpassed baseline / OpenScience”。
+
+### 0.4 总边界
+
+必须守住：
+
+```text
+Ghost 只能提供连续性，不能当证据
+Search result 不是 Evidence
+只有打开 / 读取过的 Source 才能产生 Evidence
+Claim 必须绑定 Evidence，或者明确标成 Assumption
+AnalysisRun 必须走 ActionPolicy / ToolRuntime / Managed Outputs
+Research 仍然只能由用户显式开启联网
+Research Brief 仍然有上限，不能把整个 vault 注入 Writer
+UI 不新增 dashboard、profile selector、provenance graph 或常驻面板
+```
+
+0.4 不做：
+
+```text
+不做插件系统
+不做大 workspace UI
+不做用户可管理 connector graph
+不让 profile 放宽 PermissionProfile
+不让 Ghost 自动后台联网研究
+不把 raw prompt / raw stdout / 网页正文 / 源码正文写进 trace、ledger 或 UI
+不拆 TaskRunner 主流程
+```
+
+### 0.4 A/B 节奏
+
+默认按隔版本设置实机 A/B 候选，避免打扰网页模型流量：
+
+```text
+实机 A/B 候选：0.4.0 / 0.4.2 / 0.4.4 / 0.4.6 / 0.4.8 / 0.4.10
+不需要 A/B：0.4.1 / 0.4.3 / 0.4.5 / 0.4.7 / 0.4.9
+```
+
+判断标准：
+
+```text
+改 Research prompt -> A/B
+改 critic prompt -> A/B
+改模型可见工具结果 -> A/B
+改 Ghost continuity 注入 -> A/B
+改 AnalysisRun 对模型的 tool/result contract -> A/B
+纯 schema / persistence / projection / deterministic validator / 文档 / 架构测试 -> 不 A/B
+```
+
+如果某个偶数版本最终只做 projection、schema 或 read model，不改变 prompt / tool result /
+model-visible contract，也可以降级为 deterministic parity + local smoke，不强行 A/B。
+
+## 0.4.0 - Evidence Kernel / Research Object Model v1
+
+状态：规划。目标是让每次 Research 产出结构化对象，而不是只有 summary、note
+和临时 ledger payload。
+
+### 做什么
+
+新增稳定对象模型：
+
+```text
+ResearchQuestion
+ResearchSource
+ResearchEvidence
+ResearchClaim
+ResearchAssumption
+ResearchRecord
+```
+
+第一版先做 projection，不重写 ResearchRunner：
+
+```text
+research/ledger.py + ResearchRunResult
+  -> research/object_model.py
+  -> ResearchRecord
+```
+
+字段保持小而可审计：
+
+```text
+question_id
+question_text_digest
+answer_status
+source_id
+requested_url
+final_url
+retrieved_at
+content_hash
+evidence_id
+claim_id
+claim_refs
+evidence_refs
+assumption_refs
+stance
+locator
+confidence
+assumption_reason
+unsupported_claim_count
+run_id
+session_id
+project
+```
+
+### Claim Extraction Contract
+
+`ResearchClaim` 不能只来自 `knowledge_write`。0.4.0 要先定义 claim 抽取合同，
+后续 proof quality 和 critic 都依赖它：
+
+```text
+final report 结论 -> claim candidate
+final report 关键证据 -> claim / evidence relation candidate
+final report 反证与限制 -> refutes / limits relation candidate
+knowledge_write evidence -> grounded evidence relation
+ResearchRecord -> bounded claim graph projection
+```
+
+Claim graph 第一版支持：
+
+```text
+supports
+refutes
+updates
+supersedes
+conflicts_with
+limits
+```
+
+`answer_status` 必须从第一版就存在：
+
+```text
+answered
+partial
+insufficient_evidence
+not_answered
+```
+
+这样 0.4.2 的 Proof Quality Gate 不会退化成“有 research:* 字符串就算完成”。
+
+### 边界
+
+- v1 不新增模型工具。
+- v1 不新增 UI。
+- v1 不改变 Research drawer / Run Details shape。
+- v1 不改变 Writer prompt。
+- v1 不把 Ghost memory 当 source。
+- v1 不保存网页正文；只保存 hash、locator、短 excerpt 和 bounded metadata。
+- requested_url / final_url 必须做 userinfo、token 和 query-secret redaction。
+- 本地项目和文件路径默认保存 `project_ref` / `path_ref`，不保存 raw absolute path。
+
+### 顺手架构优化
+
+```text
+把 ResearchRunResult -> citation/evidence payload 的重复清理成 typed projection
+保留 research.ledger 作为 per-run runtime ledger
+新增 object_model.py，不能 import server/task_runner/provider/browser
+为 proof quality 预留 claim/evidence/assumption 字段和测试
+claim extraction 先做 deterministic projection，不新增模型工具
+```
+
+### 验证
+
+```text
+ResearchRecord id 稳定
+Source / Evidence / Claim id 稳定、可 hash
+SearchResult 不能生成 Evidence
+Ghost continuity 不能生成 Evidence
+Evidence 必须来自 opened source
+Claim 要么有 evidence_refs，要么标成 assumption
+Claim graph relation kind 必须来自固定枚举
+answer_status 必须来自固定枚举
+final report 的结论 / 关键证据 / 反证段能生成 bounded claim candidates
+object_model.py 不 import TaskRunner / providers / browser / server
+```
+
+### A/B
+
+如果 v1 只做 projection、claim extraction contract 和 deterministic tests，不需要实机
+A/B。只有实际改 Research prompt、tool result 或 report repair 路径时，才做小型 A/B。
+
+## 0.4.1 - Evidence Ledger v2
+
+状态：规划。目标是让证据长期可追踪，不只存在单次 ResearchRunner 内存对象里。
+
+### 做什么
+
+新增 durable read model：
+
+```text
+research/evidence_ledger.py
+```
+
+它记录：
+
+```text
+source identity
+evidence identity
+claim identity
+assumption identity
+evidence locator
+run refs
+session / project scope
+schema version
+content-addressed refs
+```
+
+Evidence locator 必须支持不同来源的细粒度定位：
+
+```text
+HTML: char_start / char_end / text_hash
+PDF: page / char_start / char_end / page_text_hash
+table: table_id / row / column / cell_hash
+CSV/TSV: row_id / column / value_hash
+JSON: json_pointer / value_hash
+local file: path_ref / line_start / line_end / file_hash
+```
+
+这些 locator 只保存定位信息、hash 和短 excerpt，不保存 raw source body。
+
+### 边界
+
+- per-run `ResearchLedger` 继续存在，负责工具循环内状态。
+- `EvidenceLedger` 是长期只读投影和 append-only 更新，不接模型调度。
+- 不改变 Research prompt。
+- 不新增 UI。
+
+### 顺手架构优化
+
+```text
+把 requested_url / final_url / retrieved_at / hash / page / offset / quality
+这些字段从 report_quality 临时解析中抽成统一 evidence identity helper
+SourceDocument.page_texts / SourcePage 的 offset 字段要成为 locator 的输入
+```
+
+### 验证
+
+```text
+ledger 文件有大小上限
+schema_version / kind 校验
+source id content-addressed 且稳定
+evidence locator content-addressed 且稳定
+坏 ledger fail-closed 到 unavailable，不影响普通 run
+不会保存 raw source body
+HTML / PDF / CSV / JSON / local file locator 都有 deterministic fixture
+```
+
+### A/B
+
+不需要。纯 persistence / projection / deterministic tests。
+
+## 0.4.2 - Research Proof Quality Gate v1
+
+状态：规划。目标是解决 Research work item 的 proof 太弱的问题。
+
+现在 `research:*` proof 只能证明“有研究产物”。0.4.2 要证明：
+
+```text
+原问题被回答
+答案有 citation
+citation 来自本轮打开过的 source
+citation 能定位到 source locator
+关键 claim 有 evidence
+final claims 覆盖 queued question 的关键词、实体、关系和约束
+弱证据没有被写成强结论
+没有把 assumption 写成事实
+```
+
+### 做什么
+
+新增：
+
+```text
+research/proof_quality.py
+```
+
+核心结果：
+
+```text
+ResearchProofReview(
+    ok
+    answers_question
+    answer_coverage_score
+    citation_present
+    citation_locator_verified
+    claim_supported
+    counterevidence_checked
+    overclaim_warnings
+    stale_warnings
+    missing_evidence
+    proof_ref
+)
+```
+
+新增 Answer Coverage Scorer：
+
+```text
+queued question
+  -> key terms / entities / relations / constraints
+  -> compare with final claim graph
+  -> answered / partial / insufficient_evidence / not_answered
+```
+
+新增 Citation Integrity check：
+
+```text
+citation number
+  -> final URL opened in this run
+  -> source id
+  -> evidence locator
+  -> excerpt hash / page hash / row hash match
+```
+
+接入：
+
+```text
+GhostWorkItem(kind=research/open_question) done
+  -> proof_refs_from_task_event()
+  -> ResearchProofReview
+  -> research_proof:<digest>
+```
+
+### 边界
+
+- 不允许 Ghost 自己生成 proof。
+- 不允许没有 ResearchRecord 的 research/open_question item 直接 done。
+- 不要求每个普通 Research 都被阻塞；先重点约束 queue completion。
+- 错误文案要短、可修复、不中断普通 UI。
+- Coverage scorer 第一版可以 deterministic + conservative，不要求语义完美；宁可 partial，
+  不要把没回答的问题标 done。
+
+### 顺手架构优化
+
+```text
+把 ghost/work_queue.py 里的 kind-specific proof 判断抽成 helper
+Research proof validator 只读 ResearchRecord / EvidenceLedger，不读网页正文
+```
+
+### 验证
+
+```text
+queued question 未被回答 -> cannot complete
+queued question 只部分覆盖 -> partial / blocked
+无 citation -> cannot complete
+citation 不在 opened source -> cannot complete
+citation 没有 locator -> cannot complete
+locator excerpt/hash 不匹配 -> cannot complete
+strong claim 只有弱 evidence -> warning 或 blocked
+assumption 不得计作 evidence
+answer_coverage_score bounded 且可解释
+research_proof ref bounded
+```
+
+### A/B
+
+需要。它会影响 Research 队列完成质量和可能的模型修复路径。
+
+## 0.4.3 - Source Connector Boundary v1
+
+状态：规划。目标是支持更多来源，但不增加模型工具复杂度。
+
+### 做什么
+
+新增内置 connector contract：
+
+```text
+SourceConnector
+SourceHit
+FetchedSource
+ConnectorRegistry
+```
+
+首批只做内置、只读、低风险来源类型：
+
+```text
+web/html
+PDF
+local file
+CSV / TSV
+JSON / RSS
+```
+
+同时新增高杠杆 Connector Parity Pack。它不是为了拼专业数据库数量，而是覆盖通用研究最常见的来源：
+
+```text
+arXiv
+OpenAlex
+Semantic Scholar
+Crossref
+PubMed or EuropePMC
+GitHub releases / issues
+official docs
+SEC EDGAR or FRED
+local PDF folder
+RSS feeds
+```
+
+0.4.3 的最小 shipped set 不能只落 catalog/unavailable，必须至少可用：
+
+```text
+local file
+CSV / TSV
+RSS
+arXiv
+OpenAlex
+```
+
+其余 connector 可以声明 unavailable，或顺延到 0.4.11 Connector Pack v1。
+connector registry 从第一版就要能表达这些来源的 search/fetch 能力、rate limit、
+source quality hint 和 failure mode。
+
+模型工具面仍保持小：
+
+```text
+web_search
+open_url
+source_search
+knowledge_write
+done
+```
+
+connector 细节由本地 runtime 处理，不暴露给模型。
+connector hit 必须通过现有工具面可达：search/fetch 返回稳定 `source_ref` /
+`source_id`，并能被 `open_url` 或 `source_search` 继续打开和定位。实现了 catalog
+但 Research 无法通过现有工具使用的 connector，不能计入 shipped set。
+
+### 边界
+
+- 不做第三方 connector 插件。
+- 不新增 connector UI。
+- 不让 connector 改 prompt / Router / PermissionProfile。
+- 本地文件 connector 必须走 ActionPolicy。
+- URL connector 必须走 Research URL guard。
+- Connector Pack 不能把每个来源变成一个新模型工具。
+- connector failure 必须 bounded，不影响普通 web/html Research。
+- 本地文件、CSV/TSV 和 local PDF connector 只允许来自用户显式选择的项目或文件范围。
+
+### 顺手架构优化
+
+```text
+把 browser_search / pdf_extract / source_document 的 fetch/read 输出收敛到 FetchedSource
+SourceDocument 保留为模型无关的 normalized document
+```
+
+### 验证
+
+```text
+connector id 稳定、snake_case
+所有 connector 只读
+connector registry 不 import server/task_runner/provider
+Connector Pack id 集合稳定，未实现 connector 要明确 unavailable
+shipped connector hit 必须有稳定 source_ref/source_id
+shipped connector hit 必须能被 open_url/source_search 打开或定位
+local file 不能 escape workspace / allowed roots
+private/local URL 仍然 deny
+connector search hit 仍然不是 Evidence，必须 fetch/open 后才可引用
+```
+
+### A/B
+
+不需要 provider A/B，前提是只做 registry / projection，且不改变模型可见工具结果。
+必须做 recorded connector fixtures + live connector smoke。
+
+如果 connector 接入改变 search ranking、fetch 内容、tool result 文案或 source
+selection，就做 connector parity smoke/A-B，因为这已经改变 Research 的模型可见输入。
+
+## 0.4.4 - AnalysisRun v1
+
+状态：规划。目标是让 Research 可以做可复查的本地分析，而不是只总结网页。
+
+### 做什么
+
+新增：
+
+```text
+research/analysis_run.py
+```
+
+记录：
+
+```text
+analysis_run_id
+tool / command
+cwd
+input_refs
+output_refs
+log_handle
+exit_code
+script_hash
+input_hashes
+output_hashes
+dependency_fingerprint
+environment_fingerprint
+git_commit
+git_dirty
+rerun_command_ref
+sanitized_argv
+command_digest
+reproduction_status
+started_at / finished_at
+artifact_refs
+```
+
+Research 报告中的分析结论必须引用：
+
+```text
+analysis_run:<id>
+```
+
+### 边界
+
+- 不新造执行器，复用 ToolRuntime / ActionPolicy / Managed Outputs。
+- 不开放任意 shell；仍走现有 run/shell approval 边界。
+- 不把 raw stdout 塞进模型上下文；长输出走 managed output handle。
+- 不新增 UI；Run Details 可以安静显示 “Analysis checked”。
+
+### 顺手架构优化
+
+```text
+把 run command 的 audit metadata 和 managed output metadata 投影成 AnalysisRun input
+复用 0.3.17 action policy decision refs
+新增 Reproducibility Capsule helper，只处理 metadata，不接管执行
+```
+
+### 验证
+
+```text
+analysis input/output/log 都有 bounded refs
+失败分析不能支撑 claim
+cwd/script_hash/input_hashes/output_hashes/exit_code 可审计
+dependency/env fingerprint 有大小上限
+rerun_command_ref / sanitized_argv / command_digest 经过 bounded display 和 action policy digest
+完整复现命令只在用户显式 export artifact 时包含
+git dirty state 只记录摘要，不保存 diff
+raw stdout 不进入 trace / UI
+workspace escape deny
+```
+
+### A/B
+
+需要。它会改变 Research 能力和模型可见的分析工具结果 contract。
+
+## 0.4.5 - Artifact Lineage v1
+
+状态：规划。目标是让报告、表格、图和分析输出有来源，不只是散落文件。
+
+### 做什么
+
+扩展 managed outputs 的 metadata：
+
+```text
+artifact_id
+version_id
+version
+artifact_kind
+sha256
+size
+mime
+origin_run_id
+produced_by
+capture_quality
+created_at
+input_refs
+derived_from
+```
+
+artifact 可以来自：
+
+```text
+Research synthesis
+AnalysisRun output
+generated chart/table
+bounded report export
+```
+
+### 边界
+
+- 不做 artifact manager UI。
+- 不新增文件浏览器。
+- 不保存 raw prompt / webpage body。
+- artifact 仍然是本地 handle，不塞进模型上下文。
+
+### 顺手架构优化
+
+```text
+managed_outputs.py 继续负责存储和大小边界
+research/artifact_lineage.py 只负责 metadata projection
+```
+
+### 验证
+
+```text
+artifact id 稳定
+artifact version_id 稳定，不能静默覆盖旧版本
+artifact size/count policy 生效
+capture_quality 区分 exact / declared / partial / unknown
+exact 表示 hash-backed precise capture，declared 表示只有声明元数据，partial 表示部分捕获
+artifact derived_from 只能引用 Source/Evidence/AnalysisRun/Run
+坏 artifact metadata fail-open 到 unavailable，不影响模型 bounded result
+```
+
+### A/B
+
+不需要。纯 metadata / projection。
+
+## 0.4.6 - Evidence Critic v1
+
+状态：规划。目标是让 Codey 自动检查研究结论，不只检查格式。
+
+### 做什么
+
+新增：
+
+```text
+research/critic.py
+```
+
+输出：
+
+```text
+ReviewFinding(
+    kind: unsupported_claim / citation_mismatch / stale_source / overreach /
+          missing_counterevidence / contradictory_sources / source_conflict /
+          qualified_support
+    severity
+    status
+    claim_ref
+    evidence_ref
+    addressed_by
+    confirmed_by
+    message
+)
+```
+
+Finding lifecycle：
+
+```text
+open
+  -> addressed
+  -> confirmed
+```
+
+`confirmed` 必须来自后续 verification event，来源可以是 deterministic check 或
+reviewer pass，不能来自模型自称“已修复”。
+
+两层检查：
+
+```text
+deterministic gate
+  -> 必须通过的结构性规则
+model critic
+  -> 可选二级模型审查，输出 finding，不能直接放行
+```
+
+### 边界
+
+- critic 只读 Evidence Runtime。
+- critic 不能调用 web_search/open_url。
+- critic 不能覆盖 ActionPolicy 或 PermissionProfile。
+- critic finding 只显示中性摘要，不显示内部 trace dump。
+- 强结论需要 Research loop 记录 counterevidence search；critic 只能指出缺口，不能替代补证据。
+
+### 顺手架构优化
+
+```text
+report_quality.py 逐步从格式检查变成 Evidence Critic 的 deterministic layer
+Research critic / review_coordinator 消费 finding，不再重复解析 Research summary
+新增 ReviewFinding append-only projection，finding 状态变更只追加事件
+```
+
+### 验证
+
+```text
+unsupported claim 被抓出
+citation number mismatch 被抓出
+过期 source 给 stale warning
+过度推断给 overreach warning
+contradictory_sources / source_conflict 被抓出
+counterevidence search 缺失会产生 finding
+open finding 不能被模型自称修复直接 confirmed
+model critic 输出坏 JSON fail-closed 到 deterministic result
+```
+
+### A/B
+
+需要。critic prompt 和最终 Research 修复行为可能影响模型输出。
+
+## 0.4.7 - Domain Evidence Profiles v1
+
+状态：规划。目标是让不同研究领域有不同证据标准，但不把 profile UI 推给用户。
+
+### 做什么
+
+扩展 0.3.19 built-in profiles 的研究规则模板：
+
+```text
+general
+science
+finance
+legal
+market
+software_research
+```
+
+这些 profile 只声明：
+
+```text
+source_quality_threshold
+freshness_expectation
+counterevidence_required
+primary_source_preference
+analysis_required_when_data_claim
+```
+
+### 边界
+
+- 不新增 profile selector UI。
+- 不覆盖用户选择的 provider / mode。
+- 不放宽 PermissionProfile。
+- 不自动联网 Research。
+- v1 可以由 Research question heuristic 选择建议规则，但 catalog-only 阶段不 enforcement；
+  一旦影响 proof gate、critic 阈值、repair 路径或模型可见结果，就属于行为变化。
+
+### 顺手架构优化
+
+```text
+builtin_profiles.py 保持 metadata-only
+research/domain_profiles.py 只做 quality rule catalog
+capability registry 声明 domain evidence profiles 是 metadata，不是 dispatcher
+```
+
+### 验证
+
+```text
+finance freshness 更严格
+legal primary source preference 更严格
+science citation/source quality 更严格
+profile 不参与 Router/provider fallback/permission
+profile 不能 relax permissions
+```
+
+### A/B
+
+不需要，前提是只做 catalog / metadata / deterministic validation。
+
+如果启用 enforcement，或影响 proof gate、critic 阈值、repair 路径、tool result
+或模型可见 prompt，需要 eval/live smoke；影响模型输出时再做小型 A/B。
+
+## 0.4.8 - Ghost Research Continuity v1
+
+状态：规划。目标是让 Codey 可以连续追踪长期研究主题，但不让记忆污染事实。
+
+### 做什么
+
+Ghost 提供：
+
+```text
+topic refs
+open question refs
+previous claim refs
+user preference hints
+stale evidence reminders
+```
+
+Research prompt 只接收 bounded continuity：
+
+```text
+This is local context, not evidence. Re-check sources before making factual claims.
+```
+
+### 边界
+
+- `GhostHint != Evidence` 必须是类型和测试边界。
+- Ghost 不能生成 citation。
+- Ghost 不能让 Research 自动联网。
+- Ghost 不能把旧结论当本轮事实。
+- UI 不显示 Ghost / Memory / Work Queue 等内部词。
+
+### 顺手架构优化
+
+```text
+把 Research Interest Queue 的 open_question refs 映射到 Evidence Runtime question refs
+Ghost work queue completion 只接受 ResearchProofReview 产出的 proof refs
+```
+
+### 验证
+
+```text
+Ghost hint 不可进入 evidence_refs
+旧 claim 必须重新验证或标 stale
+Research continuity prompt 不出现 Ghost 内部词
+disable Ghost 后 Research 行为回到 baseline
+```
+
+### A/B
+
+需要。它会改变 Research prompt 的模型可见 continuity。
+
+## 0.4.9 - Research Brief v2
+
+状态：规划。目标是让 Research 到 Writer 的交接更可靠。
+
+### 做什么
+
+升级 bounded Research Brief：
+
+```text
+claim_refs
+evidence_refs
+assumption_refs
+analysis_run_refs
+artifact_refs
+open_question_refs
+impact_refs
+```
+
+Writer 看到的是短 handoff，不是 raw vault：
+
+```text
+what was concluded
+why it is supported
+what remains uncertain
+what files / implementation choices this affects
+```
+
+新增 Research-to-Code Impact Contract：
+
+```text
+affected_files
+implementation_constraints
+test_suggestions
+risk_notes
+out_of_scope_items
+decision_refs
+```
+
+这个 contract 是 Codey 的差异化优势：Research 不是停在报告里，而是能安全、清楚地
+变成项目实现约束和验证建议。
+
+### 边界
+
+- 不把整个 KnowledgeStore 注入 Writer。
+- 不把网页正文注入 Writer。
+- 不让 Research Brief 授权工具。
+- 不改变 Writer 的权限。
+
+### 顺手架构优化
+
+```text
+knowledge/brief.py 改成消费 Evidence Runtime projection
+减少从 note body / citation map 反解析的逻辑
+新增 impact projection，不让 Writer 自己从长报告里猜实现约束
+```
+
+### 验证
+
+```text
+brief 有大小上限
+brief 不含 raw webpage/source body
+brief 中 claim/evidence/assumption refs 可解析
+unsupported claim 不进入 confirmed section
+impact refs 必须来自 supported claim / declared assumption with risk_note / analysis_run
+declared assumption 只能进入 uncertainty / risk 区，不能支撑 confirmed implementation constraint
+test_suggestions 不能授权工具，只能作为 Writer context
+```
+
+### A/B
+
+不需要，前提是 v1 只升级 projection，不改变 Writer prompt 文案。若实际改变
+Writer 模型可见 handoff 格式，则顺延做 A/B。
+
+## 0.4.10 - Longitudinal Research Harness + Comparison Benchmark v1
+
+状态：规划。目标是做出能证明 0.4 价值的真实连续研究 harness，并用固定任务集验证
+Codey 在泛化个人研究工作流上超过 baseline 和 OpenScience-style 对照。
+
+### 做什么
+
+新增 deterministic fixture + optional live smoke：
+
+```text
+同一主题多轮 Research
+旧 claim 重新验证
+新 source 更新 freshness
+stale evidence 被标记
+AnalysisRun 可复查
+ResearchProofReview 能解释为什么 done
+```
+
+新增 Comparison Benchmark：
+
+```text
+Codey vs baseline web model
+Codey vs OpenScience-style fixture suite
+Codey vs real OpenScience manual head-to-head
+```
+
+评测维度：
+
+```text
+answer coverage rate
+claim grounding precision
+citation locator precision
+counterevidence coverage
+unsupported claim rate
+stale update correctness
+reproducible analysis rate
+research-to-code handoff quality
+longitudinal topic tracking score
+UI interruption count
+```
+
+适合固定任务集的主题：
+
+```text
+行业 / 公司 / 金融指标连续追踪
+论文主题进展追踪
+开源项目生态变化追踪
+政策 / 法规变化追踪
+本地 CSV / PDF 混合分析
+unsupported claim 注入测试
+stale source 注入测试
+conflicting source 注入测试
+```
+
+### 边界
+
+- harness 不是后台自动任务。
+- 不默认联网。
+- 不新增 UI。
+- live smoke 手动触发，不占日常 provider 流量。
+- 不要求自动运行 OpenScience；但发布“surpassed OpenScience”结论前必须做一次
+  real OpenScience manual head-to-head。
+- 没有真实 OpenScience run 时，只能标记为 OpenScience-style regression。
+- benchmark 输出只保存 bounded metrics、refs 和摘要，不保存 raw prompt 或网页正文。
+
+### 顺手架构优化
+
+```text
+把 Research Object Model / Evidence Ledger / Proof Quality / Critic / Ghost Continuity
+串成一个可回归测试的端到端 read model
+```
+
+### 验证
+
+```text
+同一 topic 的旧 claim 能被重新定位
+stale source 能被标记
+新 evidence 能修订旧 conclusion
+unsupported old claim 不会被带入新 brief
+Codey 在固定 fixture 上通过 Regression Gate
+需要宣称超过 baseline / OpenScience 时，必须满足 Superiority Gate
+real OpenScience head-to-head 记录 version/commit/provider/model/task/date/artifact/rubric
+live smoke 输出不含 raw prompt / raw webpage body
+```
+
+### A/B
+
+需要。它验证 0.4 的纵向研究能力和对照评测结果，而不是只验证单点模块。
+
+## 0.5 之后的开放边界
+
+0.4 先把 Evidence Research Runtime 做扎实。有限插件化应该放在 0.5 之后再考虑。
+顺序应该是：
 
 ```text
 trusted built-in plugins
@@ -2150,14 +3336,19 @@ agent loop 接管
 shell approval 绕过
 Local context 直接写入 accepted state
 后台自动任务无用户入口执行
+connector 任意读写本地文件或联网
 ```
 
 ## 验证体系
 
 0.3 前半段需要 Ghost 专用验证，不能只靠现有 coding/research tests。0.3 后半段
 还需要新增能力边界验证：Run Trace、Prompt Envelope、Capability Registry、
-Tool Contract、Tool Policy 和 Event Matrix 都必须有 deterministic tests，不能靠
-live provider A/B 发现架构回退。
+Tool Contract、Action Policy、Event Matrix、Built-in Profiles 和 Run Details
+都必须有 deterministic tests，不能靠 live provider A/B 发现架构回退。
+
+0.4 需要新增 Evidence Research Runtime 验证。Research 质量不能只看最终 summary
+是否像样，还要验证 source、evidence、claim、assumption、analysis run、artifact、
+critic finding 和 Ghost continuity 的边界。
 
 ### Ghost 单元测试
 
@@ -2185,6 +3376,32 @@ tests/test_capabilities.py
 tests/test_tool_contract.py
 tests/test_action_policy.py
 tests/test_event_matrix.py
+tests/test_builtin_profiles.py
+tests/test_run_details.py
+```
+
+### Evidence Research Runtime 单元测试
+
+0.4 逐步新增：
+
+```text
+tests/test_research_object_model.py
+tests/test_research_evidence_ledger.py
+tests/test_research_proof_quality.py
+tests/test_answer_coverage.py
+tests/test_citation_locator.py
+tests/test_source_connectors.py
+tests/test_connector_parity_pack.py
+tests/test_research_analysis_run.py
+tests/test_artifact_lineage.py
+tests/test_research_critic.py
+tests/test_review_finding_lifecycle.py
+tests/test_domain_evidence_profiles.py
+tests/test_ghost_research_continuity.py
+tests/test_research_brief_v2.py
+tests/test_research_to_code_impact.py
+tests/test_longitudinal_research_harness.py
+tests/test_research_comparison_benchmark.py
 ```
 
 ### 架构测试
@@ -2203,18 +3420,46 @@ PermissionProfile 仍然是执行边界
 model-visible section 必须有 Prompt Envelope source refs
 Run Trace 不保存 raw prompt / raw chat / source body / webpage body
 Tool presentation 不能进入 model_text
-Tool policy deny 不能被后续 guard 覆盖
+Action Policy deny 不能被后续 guard 覆盖
 Capability Registry 不加载第三方代码
 Built-in profile 不能放宽 PermissionProfile
 Run Details 不显示内部术语或 raw prompt
+Research Object Model 不保存 raw webpage body
+SearchResult 不能成为 Evidence
+GhostHint 不能成为 Evidence
+Claim 必须绑定 Evidence 或标成 Assumption
+Claim graph relation kind 必须来自固定枚举
+Citation locator 必须能回到 opened source
+Answer Coverage 不能只看 citation presence
+AnalysisRun 必须走 ActionPolicy / ToolRuntime
+Reproducibility Capsule 不保存 raw stdout/stderr
+Source Connector Registry 不加载第三方代码
+Connector Parity Pack 不新增模型工具面
+Research Proof Quality 不能只认 research:* 字符串
+ReviewFinding confirmed 必须来自后续 verification event
+Research-to-Code impact 不能授权工具
 ```
 
 ### A/B 测试
 
 Ghost 行为改变需要 A/B。0.3.13 到 0.3.20 如果只改 trace、envelope 结构、
-capability seam、tool contract、policy pipeline 或只读 UI，不需要 live provider
+capability seam、tool contract、action policy pipeline 或只读 UI，不需要 live provider
 A/B；只有实际改变模型可见 prompt、Router、Research prompt、Writer prompt、
 provider fallback 策略或工具权限时，才需要 provider A/B。
+
+0.4 默认隔版本设置小型实机 A/B 候选：
+
+```text
+0.4.0 Evidence Kernel / Research Object Model（仅当改 prompt / tool result 时）
+0.4.2 Research Proof Quality Gate
+0.4.4 AnalysisRun
+0.4.6 Evidence Critic
+0.4.8 Ghost Research Continuity
+0.4.10 Longitudinal Research Harness + Comparison Benchmark
+```
+
+0.4.1、0.4.3、0.4.5、0.4.7、0.4.9 如果只做 schema、ledger、projection、
+connector boundary、metadata 或 deterministic validator，不做 live provider A/B。
 
 逐步新增：
 
@@ -2227,6 +3472,13 @@ tests/manual/ghost_work_queue_ab.py
 tests/manual/ghost_research_interest_queue_production_ab.py
 tests/manual/ghost_affinity_ab.py
 tests/manual/ghost_affinity_quality_ab.py
+tests/manual/research_object_model_ab.py
+tests/manual/research_proof_quality_ab.py
+tests/manual/research_analysis_run_ab.py
+tests/manual/research_critic_ab.py
+tests/manual/ghost_research_continuity_ab.py
+tests/manual/longitudinal_research_harness_ab.py
+tests/manual/research_comparison_benchmark_ab.py
 ```
 
 每个 A/B 都要记录：
@@ -2235,10 +3487,13 @@ tests/manual/ghost_affinity_quality_ab.py
 provider
 case_id
 baseline output
-ghost output
+candidate output
 pass/fail metrics
 protocol compliance
 side effects
+UI interruption count
+OpenScience version / commit（仅 real head-to-head）
+artifact / rubric source（仅 real head-to-head）
 ```
 
 首版通过阈值方向：
@@ -2249,6 +3504,14 @@ false memory rate 必须低于明确阈值
 JSON tool compliance 不能低于 baseline
 coding smoke 不能回退
 research citation quality 不能回退
+research proof quality 不能回退
+answer coverage rate 不能低于 baseline
+citation locator precision 不能低于 baseline
+counterevidence coverage 不能低于 baseline
+analysis reproducibility 不能低于 baseline
+research-to-code handoff quality 不能低于 baseline
+unsupported claim rate 不能高于 baseline
+Ghost continuity 不能被当成 evidence
 extractor failure 必须 fail closed / no_signal
 ```
 
@@ -2276,11 +3539,17 @@ planning_readonly with directive
 Project Writer protocol compliance without directive
 Ghost WorkItem creation without automatic execution
 Research quality unaffected when directive disabled
+Research proof quality with queued open question
+Evidence object model projection smoke
+Connector recorded fixture + live connector smoke
+Longitudinal topic tracking smoke
+Comparison benchmark fixture smoke
+Real OpenScience manual head-to-head smoke（发布 surpassed OpenScience 结论前）
 ```
 
 ## 成功定义
 
-0.3 做完后，Codey 应该从：
+0.3 做完后，Codey 已经从：
 
 ```text
 一个可靠的本地 coding/research workbench
@@ -2318,3 +3587,47 @@ Codey 仍然可靠、可恢复、可验证
 ```
 
 这是 0.3 的核心目标。
+
+0.4 做完后，Codey 应该进一步变成：
+
+```text
+一个低打扰、本地优先、可审计、有长期连续性的个人 Evidence Research Runtime
+```
+
+并且不只是“模块都完成”。它必须在固定 comparative fixtures 上通过 Regression Gate；
+发布“超过 baseline / 真实 OpenScience”的结论前，必须在对应对照上满足
+Superiority Gate。发布“超过真实 OpenScience”前，还必须有一次可追溯的
+real OpenScience manual head-to-head：
+
+```text
+比 baseline web model 更少 unsupported claim
+比普通 citation report 有更高 locator precision
+比一次性 Research 更好地处理 stale update 和长期 topic
+比大工作台式研究工具更少打扰用户
+Research 结论更容易安全落到代码和测试里
+```
+
+用户仍然只需要自然地说：
+
+```text
+帮我研究这个问题
+继续追踪这个主题
+用这些资料分析一下
+把研究结论落到项目里
+```
+
+Codey 在后台完成：
+
+```text
+来源识别
+证据摘录
+claim grounding
+assumption 标注
+本地分析运行记录
+artifact lineage
+critic / review
+长期主题连续性
+```
+
+前台仍然安静：Research drawer 和 Run Details 只在用户主动查看时显示 bounded summary，
+不把 provenance graph、connector graph、profile、ledger 或内部 Ghost 术语推给用户。
