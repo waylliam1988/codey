@@ -1,5 +1,57 @@
 # Codey Test Report
 
+## 0.3.19 Built-in Profiles v1
+
+Codey 0.3.19 adds a read-only built-in profile catalog. It records default
+strategy tendencies as metadata and architecture tests, without adding a
+profile UI, configuration platform, plugin system, router, permission engine,
+prompt patch layer, provider selector, or runtime dispatcher.
+
+Production changes:
+
+- New `codey/builtin_profiles.py` defines fixed built-in profile metadata for
+  `default`, `research_heavy`, `review_strict`, `local_only`, and `beginner`.
+- New `docs/codey_builtin_profiles.md` documents the profile boundaries and v1
+  non-goals: no UI, no prompt patches, no provider fallback changes, no Router
+  changes, no permission changes, and no SSE/receipt shape changes.
+- New `tests/test_builtin_profiles.py` locks stable ids, JSON export,
+  fingerprinting, capability references, explicit permission profile names,
+  provider scopes, non-override flags, no permission relaxation, empty prompt
+  patches, local-only Research-network behavior, review-strict write defaults,
+  local-only absence of a Research permission default, and beginner-facing copy
+  that avoids principle/design internal implementation terms.
+- `server.State` owns the built-in profile registry, and `TaskRunner` carries it
+  as metadata only. `TaskRunner` does not branch on profile metadata.
+- The Capability Registry now declares a `builtin_profiles` capability owned by
+  `codey.builtin_profiles`; the registry remains read-only metadata.
+- Architecture tests keep `builtin_profiles.py` from importing provider,
+  browser, server, task-runner, tool-runtime, Research runner, dynamic import,
+  or plugin-host code.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_builtin_profiles.py tests\test_capabilities.py tests\test_architecture.py tests\test_server.py tests\test_task_runner_router.py tests\test_permission_profiles.py tests\test_provider_capabilities.py tests\test_event_matrix.py -q -p no:cacheprovider
+# 234 passed, 1 skipped, 279 subtests passed
+
+python -m pytest -q -p no:cacheprovider
+# 2015 passed, 9 skipped, 535 subtests passed
+
+python -m ruff check . --no-cache
+# All checks passed!
+
+python -m compileall codey tests
+# passed
+
+git diff --check
+# passed
+```
+
+No live provider A/B is required because 0.3.19 does not change prompt text,
+tool schema prompt, model-visible tool-result wording, Router behavior,
+provider fallback ordering, permissions, Research/Writer/Review semantics, UI
+structure, SSE payload shape, or task receipts.
+
 ## 0.3.18 Event / Capability Matrix v1
 
 Codey 0.3.18 adds a tested Event / Capability Matrix and moves the existing

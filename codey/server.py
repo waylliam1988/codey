@@ -42,6 +42,7 @@ from codey import cancellation, profile_doctor, provider_controls, provider_flow
 from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
+from codey.builtin_profiles import builtin_profile_registry
 from codey.capabilities import builtin_capability_registry
 from codey.changes import (
     ChangeTracker,
@@ -664,6 +665,7 @@ class State:
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.run_traces = RunTraceStore(state_home) if state_home else None
         self.capabilities = builtin_capability_registry()
+        self.builtin_profiles = builtin_profile_registry()
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
         self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
@@ -1449,6 +1451,7 @@ def _run_task(
         run_ledgers=STATE.run_ledgers,
         run_traces=STATE.run_traces,
         capabilities=STATE.capabilities,
+        builtin_profiles=STATE.builtin_profiles,
         managed_outputs=STATE.managed_outputs,
         knowledge_store=STATE.knowledge_store,
         is_git_repository=is_git_repository,

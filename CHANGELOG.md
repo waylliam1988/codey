@@ -4,6 +4,27 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.19 - Built-in Profiles v1
+
+- Added `codey/builtin_profiles.py`, a read-only catalog of Codey's built-in
+  default-profile boundaries. It declares fixed internal tendencies for
+  `default`, `research_heavy`, `review_strict`, `local_only`, and `beginner`.
+- Added `docs/codey_builtin_profiles.md` and `tests/test_builtin_profiles.py`
+  to lock stable profile ids, JSON export, fingerprint, capability references,
+  permission defaults, provider scopes, fallback posture, local-context default
+  enums, UI detail levels, and quiet user-facing copy. The `local_only`
+  profile intentionally omits a Research permission default.
+- `server.State` now owns the built-in profile registry, and `TaskRunner`
+  carries it as metadata only. Profiles do not participate in Router decisions,
+  provider fallback, permission selection, prompt assembly, tool dispatch,
+  UI, SSE, receipts, or project configuration.
+- Added a `builtin_profiles` capability declaration. The Capability Registry
+  remains metadata only, and architecture tests reject plugin-loader or runtime
+  host shapes in the built-in profile module.
+- This release does not add a profile picker, configuration platform, plugin
+  system, dynamic imports, prompt patches, provider-choice overrides,
+  mode-choice overrides, permission relaxation, or UI changes.
+
 ## 0.3.18 - Event / Capability Matrix v1
 
 - Added `docs/codey_event_matrix.md`, a tested architecture matrix for event

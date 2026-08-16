@@ -1997,7 +1997,7 @@ UI/SSE payload shape 保持等价
 
 ## 0.3.19 - Built-in Profiles v1
 
-状态：计划。目标是借鉴 profile / bundle 的组合思想，但只做 Codey 内置 profile，
+状态：已落地。目标是借鉴 profile / bundle 的组合思想，但只做 Codey 内置 profile，
 不做配置平台。
 
 ### 做什么
@@ -2005,14 +2005,14 @@ UI/SSE payload shape 保持等价
 内置：
 
 ```text
-Default
-Research-heavy
-Review-strict
-Local-only
-Beginner
+default
+research_heavy
+review_strict
+local_only
+beginner
 ```
 
-每个 profile 只组合已有能力和默认策略：
+每个 profile 只声明已有能力和默认策略边界，v1 不执行这些倾向：
 
 ```text
 默认模式倾向
@@ -2023,25 +2023,61 @@ permission profile 默认值
 UI detail level
 ```
 
+新增：
+
+```text
+codey/builtin_profiles.py
+docs/codey_builtin_profiles.md
+tests/test_builtin_profiles.py
+```
+
+v1 profile registry 是只读 metadata catalog：
+
+```text
+id
+mode_bias
+enabled_capabilities
+permission_defaults
+provider_scope
+fallback_posture
+research_network
+review_enabled
+local_context_updates_default
+ui_detail_level
+display_name / user_description
+```
+
+`server.State` 持有 `builtin_profiles`，`TaskRunner` 只携带引用，不参与任何分支。
+Capability Registry 增加 `builtin_profiles` capability，但仍然只是 metadata。
+
 ### 边界
 
 - profile 不能绕过 Tool Policy Pipeline / Action Policy 实现。
 - profile 不能放宽 PermissionProfile。
 - profile 不能注入任意 prompt patch。
 - profile 不能修改用户明确选择的 provider。
-- profile 只能影响新项目 / 首次启动默认值，不能覆盖用户显式设置的
-  Local context updates 开关。
-- v1 可以只有配置文件 / CLI / 内部选择，不急着做 UI。
+- 未来如果 profile 影响新项目 / 首次启动默认值，也不能覆盖用户显式设置的
+  Local context updates 开关；v1 只记录 metadata。
+- v1 不新增 UI、不新增 API、不新增 SSE、不新增 project config。
+- v1 不接 Router、provider fallback、permission、prompt 或工具调度分支。
+- v1 不加载用户目录、第三方包、插件 entry points 或动态 import。
 
 ### 验证
 
 ```text
 Beginner 不显示内部术语
-Local-only 不触发联网 Research
-Review-strict 不执行写入工具
-Research-heavy 不覆盖用户 provider 选择
-profile 切换不改变已有 project-local safety policy
-profile 切换不覆盖用户显式 Local context updates 开关
+Local-only 声明 research_network=false，且不声明 Research mode bias / permission default
+Review-strict 不声明 writer 写入默认
+Research-heavy 不声明 provider / mode 覆盖能力
+所有 profile metadata 不参与 Router / provider fallback / permission / prompt / UI 分支
+所有 profile metadata 不覆盖用户显式 Local context updates 开关
+profile id 唯一、稳定、snake_case
+enabled_capabilities 必须来自 Capability Registry
+permission_defaults 必须显式来自 PERMISSION_PROFILES
+provider_scope 必须来自 provider capability 白名单或 all/local 明确枚举
+所有 override / relax / prompt patch 标记必须关闭
+builtin_profiles.py 不 import server/task_runner/provider/browser/tool_runtime
+TaskRunner 只携带 builtin_profiles，不根据它做分支
 ```
 
 ## 0.3.20 - Run Details v1

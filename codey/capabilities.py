@@ -153,6 +153,11 @@ def builtin_capability_registry() -> CapabilityRegistry:
             owner_module="codey.agent",
         ),
         CapabilitySpec(
+            id="builtin_profiles",
+            provides=("builtin_profile_catalog",),
+            owner_module="codey.builtin_profiles",
+        ),
+        CapabilitySpec(
             id="changes_presenter",
             provides=("diff_presentation",),
             ui_surface=("changes_drawer",),

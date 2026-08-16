@@ -404,6 +404,13 @@ payload shape；RunLedger 和机器可读 run-event payload 服务不同消费�
 “统一”强行合并。由运行事件渲染给 Review prompt 的 recent log 是单独的模型可见
 投影，必须在矩阵里显式声明 Prompt Envelope / Run Trace 边界，不能被 UI/SSE 行掩盖。
 
+Built-in Profiles 是后台默认策略目录，不是用户 UI、配置平台、插件系统、Router、
+权限引擎或 prompt patch 机制。它只能声明内置倾向和边界，例如 Research-heavy、
+Review-strict、Local-only、Beginner；不能覆盖用户显式 provider / mode，不能放宽
+PermissionProfile，不能自动联网 Research，Local-only 不能声明 Research permission
+default，不能覆盖用户显式 Local context updates 开关。v1 只做 metadata 和测试，
+让 Codey 后台更有秩序，不把新概念推给用户。
+
 未来的训练 Episode 是另一类长期数据，必须单独设计、明确启用、脱敏和筛选，不能直接把本地连续性文件当训练数据库。
 
 如果未来想知道哪些 action 值得做，可以先做本地统计，但必须克制。

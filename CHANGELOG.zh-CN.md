@@ -4,6 +4,22 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.19 - Built-in Profiles v1
+
+- 新增 `codey/builtin_profiles.py`：Codey 内置默认策略边界的只读目录，固定声明
+  `default`、`research_heavy`、`review_strict`、`local_only` 和 `beginner`。
+- 新增 `docs/codey_builtin_profiles.md` 和 `tests/test_builtin_profiles.py`，锁住稳定
+  profile id、JSON 导出、fingerprint、capability 引用、permission 默认值、
+  provider scope、fallback posture、Local context 默认枚举、UI detail level 和安静的
+  用户可见文案；`local_only` profile 明确不声明 Research permission default。
+- `server.State` 现在持有内置 profile registry，`TaskRunner` 只携带这份 metadata。
+  Profile 不参与 Router、provider fallback、permission 选择、prompt 组装、工具调度、
+  UI、SSE、receipt 或 project config。
+- Capability Registry 新增 `builtin_profiles` 能力声明；它仍然只是 metadata。
+  架构测试会拒绝 built-in profile 模块出现 plugin loader 或 runtime host 形状。
+- 本版不新增 profile picker、配置平台、插件系统、动态 import、prompt patch、
+  provider 覆盖、mode 覆盖、权限放宽或 UI 改动。
+
 ## 0.3.18 - Event / Capability Matrix v1
 
 - 新增 `docs/codey_event_matrix.md`：用可测试矩阵记录事件生产者、消费者、

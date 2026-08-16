@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from codey import cancellation, provider_controls, provider_flow
 from codey.action_policy import ActionSubject, evaluate_action
+from codey.builtin_profiles import BuiltinProfileRegistry
 from codey.capabilities import CapabilityRegistry
 from codey.agent import RunResult
 from codey.agent_tools import AgentToolFns
@@ -482,6 +483,7 @@ class TaskRunner:
         run_ledgers: RunLedgerStore | None = None,
         run_traces: RunTraceStore | None = None,
         capabilities: CapabilityRegistry | None = None,
+        builtin_profiles: BuiltinProfileRegistry | None = None,
         managed_outputs: ManagedOutputStore | None = None,
         knowledge_store: KnowledgeStore | None = None,
         search_factory: Callable[[], object] | None = None,
@@ -505,6 +507,7 @@ class TaskRunner:
         self.run_ledgers = run_ledgers
         self.run_traces = run_traces
         self.capabilities = capabilities
+        self.builtin_profiles = builtin_profiles
         self.managed_outputs = managed_outputs
         self.knowledge_store = knowledge_store
         self.search_factory = search_factory or BrowserSearchProvider

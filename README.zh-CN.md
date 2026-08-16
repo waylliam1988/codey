@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.3.18-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.19-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.18`
+版本：`0.3.19`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -49,6 +49,8 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
   ledger、trace、工具投影、Research、Local context、Ghost、provider fallback、
   managed output 和 changes 的生产者、消费者、持久化和隐私边界；它不新增事件总线，
   也不改变 UI/SSE payload。
+- **后台默认策略更明确**：Codey 现在有一份可测试的内置默认策略目录，登记偏
+  Research、严格 Review、本地优先和新手友好等倾向；它不新增 UI，也不改变任务行为。
 - **自然继续待办**：Codey 有本地排队的后续任务时，你说“继续”就能认领一条，
   走对应的 Research、Writer 或 Review，并用本地 proof 收尾。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存带 source chips 的可读笔记卡片、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
@@ -602,6 +604,7 @@ codey/
   scan_report.py            紧凑的扫描遗漏事实和覆盖范围渲染
   tool_definition.py        内部 coding 工具元数据和渲染提示
   capabilities.py           只读内置能力边界 registry
+  builtin_profiles.py       只读内置默认策略目录
   permission_profiles.py    内部工具/上下文 permission profile
   action_policy.py          本地动作 allow/ask/deny 单调 guard
   context_source.py         命名且有边界的 prompt 上下文装配
