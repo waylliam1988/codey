@@ -37,6 +37,9 @@ REQUIRED_TOOL_OUTCOME_EVENTS = {
 REQUIRED_MODEL_VISIBLE_EVENT_PROJECTIONS = {
     "review.recent_log",
 }
+REQUIRED_UI_EVENT_PROJECTIONS = {
+    "run_details.summary",
+}
 BOOLEAN_COLUMNS = (
     "model_visible",
     "policy_required",
@@ -144,6 +147,7 @@ class EventMatrixTests(unittest.TestCase):
         self.assertTrue(REQUIRED_RUN_TRACE_EVENTS.issubset(event_ids))
         self.assertTrue(REQUIRED_TOOL_OUTCOME_EVENTS.issubset(event_ids))
         self.assertTrue(REQUIRED_MODEL_VISIBLE_EVENT_PROJECTIONS.issubset(event_ids))
+        self.assertTrue(REQUIRED_UI_EVENT_PROJECTIONS.issubset(event_ids))
 
 
 def _csv_values(value: str) -> tuple[str, ...]:

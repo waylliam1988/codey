@@ -2082,28 +2082,28 @@ TaskRunner 只携带 builtin_profiles，不根据它做分支
 
 ## 0.3.20 - Run Details v1
 
-状态：计划。目标是把 Run Trace 的一部分用安静方式给用户看，回答“这次 Codey
-为什么这么做”，但不暴露 raw prompt 或内部实现 dump。
+状态：已落地。目标是把 Run Ledger / Run Trace 的有界 metadata 用安静方式给用户看，
+回答“这次 Codey 为什么这么做”，但不暴露 raw prompt、raw output 或内部实现 dump。
 
 ### 做什么
 
 入口保持安静：
 
 ```text
-run receipt -> Run details
-topbar More -> Last run details
+run receipt/status row -> Details
+点击后原地展开
+默认不加载、不展开、不打断用户
 ```
 
 显示：
 
 ```text
-Provider
-Mode
-Local context used
-Research sources / notes used
+Work
+Model
+Context used
 Actions
-Policy decisions
-Fallbacks
+Safety decisions
+Model fallback
 Verification
 ```
 
@@ -2111,9 +2111,12 @@ Verification
 
 - 不做常驻侧栏。
 - 不自动弹出。
+- 不进 topbar More。
 - 不新增 SSE 噪音。
+- 不把 Details 展开状态或内容写入持久 chat state。
 - 不显示 raw prompt、raw tool output、源码正文、网页正文或 provider raw error。
-- 用户侧文案保持中性，不显示 Hebbian / Affinity / Directive 等内部词。
+- 用户侧文案保持中性，不显示 RunTrace / PromptEnvelope / Policy Pipeline / Router /
+  Ghost / Hebbian / Affinity / Directive / Provider 等内部词。
 - 这不是 debug console；diagnostics / export 以后再做。
 
 ### 验证
@@ -2121,9 +2124,10 @@ Verification
 ```text
 空 trace 显示 quiet unavailable
 Run details 打开时不影响 chat state
-来源行可追到 bounded source refs
+只返回 bounded summary rows
 policy deny/ask_user 文案中性
 UI 不暴露内部术语
+UI 不新增 drawer / topbar 入口
 ```
 
 ## 0.4 之后的开放边界

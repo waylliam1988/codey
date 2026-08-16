@@ -442,6 +442,35 @@
   }
   .link-btn:hover:not(:disabled) { color: var(--text); text-decoration: underline; }
   .link-btn:disabled { color: var(--faint); cursor: not-allowed; }
+  .run-details {
+    margin: 7px 0 2px 54px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-2);
+    display: grid;
+    gap: 5px;
+    max-width: 640px;
+  }
+  .run-details[hidden] { display: none; }
+  .run-details-title {
+    color: var(--muted);
+    font-size: 10.5px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .run-details-row {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 10px;
+    align-items: baseline;
+    font-size: 12px;
+  }
+  .run-details-label { color: var(--muted); }
+  .run-details-value {
+    color: var(--text-dim);
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .run-details-row.warning .run-details-value { color: var(--text-dim); }
 
   /* ---------- changes card ---------- */
   .changes-head-row {

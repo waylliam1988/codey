@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.3.19-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.20-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.19`
+版本：`0.3.20`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -51,6 +51,9 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
   也不改变 UI/SSE payload。
 - **后台默认策略更明确**：Codey 现在有一份可测试的内置默认策略目录，登记偏
   Research、严格 Review、本地优先和新手友好等倾向；它不新增 UI，也不改变任务行为。
+- **需要时才解释这次运行**：任务结束行现在可以有一个低调的 `Details` 入口，
+  点开后只显示本次工作的简短说明：工作类型、模型、用到的上下文、动作、安全检查、
+  fallback 和验证结果；不会暴露 raw prompt、raw output 或内部调试术语。
 - **自然继续待办**：Codey 有本地排队的后续任务时，你说“继续”就能认领一条，
   走对应的 Research、Writer 或 Review，并用本地 proof 收尾。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存带 source chips 的可读笔记卡片、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
@@ -614,6 +617,7 @@ codey/
   run_ledger.py             append-only 项目任务运行事实账本
   run_ledger_projection.py  run ledger 的只读摘要和 receipt 投影
   run_trace.py              每次 run 的有界审计 manifest sidecar
+  run_details.py            面向用户的有界 run explanation 投影
   references.py             有边界的文本引用提示
   change_set.py             结构化 diff 文件、hunk 和 rename/copy 事实
   changed_symbols.py        从可见 diff 提取变化的 symbol

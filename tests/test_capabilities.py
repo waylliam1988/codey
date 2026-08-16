@@ -24,12 +24,13 @@ EXPECTED_BUILTIN_IDS = (
     "provider_factory",
     "research_runner",
     "review_runner",
+    "run_details",
     "run_ledger",
     "run_trace",
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "33bae7a4cd1ea07115990f0412e8dd84ba25f34184cf60b7e1bc63b97090aace"
+    "dba6c6320b72ca538fa71f4d081a527e4971bb346e7c1137e943cde5eedddcd6"
 )
 
 
@@ -84,6 +85,19 @@ class CapabilityRegistryTests(unittest.TestCase):
             ("permission_profile_boundary", "action_policy_boundary"),
         )
         self.assertEqual(spec.owner_module, "codey.action_policy")
+
+    def test_run_details_is_read_only_chat_projection(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("run_details")
+
+        self.assertEqual(spec.provides, ("run_details_projection",))
+        self.assertEqual(spec.consumes, ("run_ledger", "run_trace"))
+        self.assertEqual(spec.ui_surface, ("chat_stream",))
+        self.assertEqual(spec.owner_module, "codey.run_details")
+        self.assertFalse(spec.model_visible)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.durable_state, ())
 
     def test_state_and_task_runner_carry_registry_without_dispatch(self) -> None:
         from codey import server

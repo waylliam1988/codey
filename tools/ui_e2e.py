@@ -216,6 +216,44 @@ def _exercise_page(
     if result_file.read_text(encoding="utf-8") != "browser e2e passed":
         raise AssertionError("result.txt has unexpected content")
 
+    details = page.get_by_role("button", name="Details", exact=True).last
+    expect(details).to_be_visible()
+    state_before_details = page.evaluate("JSON.stringify(activeSession().messages)")
+    details.click()
+    panel = page.locator(".run-details").last
+    expect(panel).to_be_visible()
+    expect(panel).to_contain_text("Run details")
+    expect(panel).to_contain_text("Work")
+    expect(panel).to_contain_text("Model")
+    expect(panel).to_contain_text("Actions")
+    expect(panel).to_contain_text("Safety")
+    expect(panel).not_to_contain_text("Provider")
+    expect(page.locator("#changes-drawer")).to_have_attribute("aria-hidden", "true")
+    details_style = panel.evaluate(
+        """el => {
+          const style = getComputedStyle(el);
+          return {
+            backgroundColor: style.backgroundColor,
+            borderRadius: style.borderRadius,
+            boxShadow: style.boxShadow,
+            maxWidth: style.maxWidth,
+          };
+        }"""
+    )
+    if details_style != {
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "borderRadius": "0px",
+        "boxShadow": "none",
+        "maxWidth": "640px",
+    }:
+        raise AssertionError(f"unexpected run details style: {details_style}")
+    details_screenshot = artifacts / "ui-run-details.png"
+    page.screenshot(path=str(details_screenshot), full_page=True)
+    details.click()
+    expect(panel).to_be_hidden()
+    if state_before_details != page.evaluate("JSON.stringify(activeSession().messages)"):
+        raise AssertionError("Run Details changed persistent chat state")
+
     view_diff = page.get_by_role("button", name="View diff", exact=True)
     expect(view_diff).to_be_visible()
     view_diff.click()
@@ -386,6 +424,7 @@ def _exercise_page(
             "agent edit and test",
             "review status",
             "task receipt",
+            "run details inline receipt",
             "diff drawer",
             "snapshot restore",
             "shell approval denial",
@@ -397,7 +436,11 @@ def _exercise_page(
             "stale state cannot override newer SSE completion",
             "responsive stop",
         ],
-        "screenshots": [str(done_screenshot), str(restored_screenshot)],
+        "screenshots": [
+            str(details_screenshot),
+            str(done_screenshot),
+            str(restored_screenshot),
+        ],
     }
 
 

@@ -225,6 +225,13 @@ def builtin_capability_registry() -> CapabilityRegistry:
             owner_module="codey.run_ledger",
         ),
         CapabilitySpec(
+            id="run_details",
+            provides=("run_details_projection",),
+            consumes=("run_ledger", "run_trace"),
+            ui_surface=("chat_stream",),
+            owner_module="codey.run_details",
+        ),
+        CapabilitySpec(
             id="run_trace",
             provides=("bounded_run_manifest", "prompt_section_digest_audit"),
             durable_state=("run_trace",),

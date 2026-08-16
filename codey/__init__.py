@@ -1,3 +1,3 @@
 """Codey: local-first coding, research, and controllable memory with web AI."""
 
-__version__ = "0.3.19"
+__version__ = "0.3.20"

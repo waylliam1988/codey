@@ -23,6 +23,7 @@ the stable capability durable-state names or `none`.
 | run_ledger.tool_finished | codey.task_runner | run_ledger, receipt_projection | run_ledger | run_ledger | false | false | true | false | action_policy-checked presentation and audit metadata; managed output handle only |
 | run_ledger.provider_failure | codey.task_runner | run_ledger, receipt_projection | run_ledger | run_ledger | false | false | false | false | provider id, phase, bounded reason code, and recovery metadata |
 | run_ledger.changes_collected | codey.task_runner | run_ledger, changes_drawer, receipt_projection | changes_presenter | run_ledger | false | changes_drawer | false | false | file paths, counts, and diff summary metadata only |
+| run_details.summary | codey.run_details | server, chat_stream | run_details | none | false | chat_stream | false | false | bounded user-facing run explanation derived from ledger and trace metadata only |
 | run_trace.prompt_sections | codey.prompt_envelope | run_trace, prompt_envelope | prompt_envelope | run_trace | false | false | false | true | section names, source refs, lengths, truncation flags, and hashes only |
 | run_trace.policy_decisions | codey.action_policy | run_trace, policy_guard | policy_guard | run_trace | false | false | true | true | decision, guard id, reason code, phase, subject ref, and display digest |
 | run_trace.fallbacks | codey.task_runner | run_trace, provider_factory | provider_factory | run_trace | false | false | true | true | provider ids, phases, bounded reason codes, and recovery outcome |

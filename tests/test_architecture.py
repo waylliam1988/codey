@@ -241,6 +241,44 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertNotIn(token, source)
 
+    def test_run_details_is_read_only_projection_not_runtime(self) -> None:
+        path = ROOT / "codey" / "run_details.py"
+        imports = imported_modules(path)
+        source = path.read_text(encoding="utf-8")
+        forbidden_imports = {
+            "codey.browser",
+            "codey.deepseek",
+            "codey.qwen",
+            "codey.stepfun",
+            "codey.glm",
+            "codey.providers",
+            "codey.provider_controls",
+            "codey.tool_runtime",
+            "codey.server",
+            "codey.task_runner",
+            "importlib",
+            "pkgutil",
+        }
+        forbidden_source = (
+            "entry_points",
+            "load_plugin",
+            "register_runtime",
+            "dispatch(",
+            "subprocess.",
+            "eval(",
+            "exec(",
+            "write_text(",
+            "write_json",
+        )
+
+        self.assertTrue(
+            forbidden_imports.isdisjoint(imports),
+            sorted(forbidden_imports & imports),
+        )
+        for token in forbidden_source:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
     def test_research_review_and_local_context_do_not_import_tool_runtime(self) -> None:
         paths = [
             *(ROOT / "codey" / "research").glob("*.py"),

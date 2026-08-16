@@ -16,6 +16,8 @@ Endpoints
                           local context summary
     POST /api/ghost/action body {action, ...} → reviews or deletes local
                           context state without provider/tool execution
+    GET  /api/run_details query {session_id, run_id} → returns a bounded,
+                          user-facing run explanation
     POST /api/shell_approval body {id, approved} → approve/reject shell request
     POST /api/stop        request cooperative stop of the current task
     GET  /api/events      Server-Sent Events stream of log lines
@@ -94,6 +96,7 @@ from codey.self_repair import SelfRepairJob, SelfRepairSupervisor
 from codey.self_repair_worker import run_self_repair_worker
 from codey.project_facts import ProjectFactsStore
 from codey.project_task_context import safe_verification_candidates
+from codey.run_details import load_run_details
 from codey.run_ledger import RunLedgerStore
 from codey.run_trace import RunTraceStore
 from codey.shell_followup import ShellFollowupInput, render_shell_followup
@@ -1606,6 +1609,24 @@ def _research_note_response(query: dict[str, list[str]]) -> tuple[int, dict]:
     }
 
 
+def _run_details_response(query: dict[str, list[str]]) -> tuple[int, dict]:
+    session_id = str((query.get("session_id") or [""])[0] or "").strip()
+    run_id = str((query.get("run_id") or [""])[0] or "").strip()
+    if not session_id or not run_id:
+        return 400, {"ok": False, "error": "session_id and run_id required"}
+    summary = load_run_details(
+        run_ledgers=STATE.run_ledgers,
+        run_traces=STATE.run_traces,
+        session_id=session_id,
+        run_id=run_id,
+    )
+    return 200, {
+        "ok": True,
+        "available": summary.available,
+        "details": summary.to_jsonable(),
+    }
+
+
 def _research_restore_response(body: dict) -> tuple[int, dict]:
     run_id = str(body.get("run_id") or "").strip()
     if not run_id:
@@ -1766,6 +1787,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/research/note":
             status, payload = _research_note_response(parse_qs(url.query))
+            self._send_json(status, payload)
+            return
+        if url.path == "/api/run_details":
+            status, payload = _run_details_response(parse_qs(url.query))
             self._send_json(status, payload)
             return
         if url.path == "/api/ghost/summary":

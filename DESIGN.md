@@ -212,6 +212,27 @@ ERROR · Connection refused                      Retry
 
 Structure: uppercase prefix + body + optional **text link** action (`link-btn`). No colored boxes.
 
+**Run Details** (inline receipt expansion):
+
+```
+DONE · 2 files changed · checks passed        Details   View diff
+
+RUN DETAILS
+Work            Project writing
+Model           DeepSeek
+Actions         inspected 4 items, edited 2 files, ran 1 check
+```
+
+Run Details belongs under the task status row, not in a drawer, topbar menu, or
+persistent sidebar. It is loaded only after the user clicks `Details`; expanded
+content is not persisted into chat state. Styling follows the status-row
+language: transparent background, no rounded container, no shadow, no color
+accent, one subtle `--border-2` divider, group-label typography for the title,
+12px sans rows, muted labels, and `--text-dim` values. Even warning rows remain
+gray unless the status row itself is an error. Do not show internal terms such
+as `RunTrace`, `PromptEnvelope`, `Policy Pipeline`, `Router`, `Ghost`,
+`Hebbian`, `Directive`, or `Provider`.
+
 **Changes summary** (inline, not a pill):
 
 ```
@@ -370,7 +391,7 @@ These existed in earlier iterations and were intentionally removed:
 
 ## 10. Implementation notes
 
-- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `changes_drawer.js`, `local_context_drawer.js`, `provider_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
+- **Zero-build asset modules:** the UI ships as `codey/web/index.html` (HTML skeleton + core state/SSE/composer/boot script) plus `codey/web/assets/`: `tokens.css` (`:root` design tokens), `app.css` (all other styles), and plain-script IIFE modules (`render.js`, `research_graph.js`, `research_drawer.js`, `changes_drawer.js`, `local_context_drawer.js`, `run_details.js`, `provider_ui.js`), each owning exactly one `window.Codey*` namespace. No npm, bundler, or ESM; scripts load synchronously in a fixed order and receive index state via `init(deps)`.
 - **Do not fork the palette:** all color/spacing tokens stay in `tokens.css`; never redefine them per module or per page. `tests/test_ui_architecture.py` ratchets inline `<style>` to zero and only lets the inline `<script>` budget go down.
 - **Dark mode only:** there is no light theme. New surfaces should assume dark gray backgrounds and light text.
 - **Accessibility:** maintain keyboard focus on interactive rows; prefer visible hover states over permanent color coding. When adding color is unavoidable, pair with text labels (never color alone).

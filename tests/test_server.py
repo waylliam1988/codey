@@ -1217,6 +1217,53 @@ class ResearchServerHelperTests(unittest.TestCase):
         self.assertEqual(error_status, 500)
         self.assertEqual(error_payload, {"error": "boom"})
 
+    def test_run_details_response_validation_and_payload(self) -> None:
+        self.assertEqual(
+            server._run_details_response({}),
+            (400, {"ok": False, "error": "session_id and run_id required"}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(Path(td) / "state")
+            writer = state.run_ledgers.open(
+                run_id="run-details",
+                session_id="session-details",
+                project="",
+                task="hello",
+                provider="deepseek",
+                mode="chat",
+            )
+            writer.finish(stop_reason="done", turns=1, max_turns=8, provider="deepseek")
+            with mock.patch.object(server, "STATE", state):
+                status, payload = server._run_details_response({
+                    "session_id": ["session-details"],
+                    "run_id": ["run-details"],
+                })
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["available"])
+        self.assertEqual(payload["details"]["title"], "Run details")
+        self.assertIn(
+            {"label": "Work", "value": "Chat", "tone": "neutral"},
+            payload["details"]["rows"],
+        )
+
+    def test_run_details_response_quiet_unavailable_without_stores(self) -> None:
+        state = server.State()
+        with mock.patch.object(server, "STATE", state):
+            status, payload = server._run_details_response({
+                "session_id": ["session-missing"],
+                "run_id": ["run-missing"],
+            })
+
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["available"])
+        self.assertEqual(
+            payload["details"]["rows"][0],
+            {"label": "Status", "value": "Details unavailable", "tone": "warning"},
+        )
+
 
 class WebAssetTests(unittest.TestCase):
     def test_research_graph_asset_is_whitelisted(self) -> None:
@@ -1305,7 +1352,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.3.19")
+        self.assertEqual(__version__, "0.3.20")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)

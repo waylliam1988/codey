@@ -4,6 +4,35 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.20 - Run Details v1
+
+- Added `codey/run_details.py`, a bounded read-only projection that turns
+  RunLedger and RunTrace metadata into short user-facing run explanations. It
+  reports work type, model, context used, local actions, safety decisions,
+  model fallback, and verification without returning raw prompts, raw tool
+  output, source bodies, webpage bodies, or provider error dumps.
+- Added `GET /api/run_details?session_id=...&run_id=...`, a quiet read-only
+  endpoint that returns `available=false` when a run has no local details
+  rather than raising or writing state.
+- Run Details reads trace manifests through the bounded local JSON reader with
+  `MAX_TRACE_BYTES` and validates the Run Trace schema version and kind before
+  using trace metadata.
+- Added `codey/web/assets/run_details.js` and a small inline `Details` action
+  on terminal task rows. Details are lazy-loaded, expanded in place under the
+  existing receipt/status row, cached only in memory, and never persisted into
+  chat state.
+- Added the `run_details` capability and the `run_details.summary` row in the
+  Event / Capability Matrix. Architecture tests keep the projection away from
+  runtime dispatch, provider adapters, TaskRunner orchestration, browser code,
+  plugin loaders, raw trace viewers, and new SSE event shapes.
+- Updated the UI design baseline to define Run Details as an inline receipt
+  expansion: monochrome, no drawer, no background card, no rounded container,
+  no colored warning styling, no topbar entry, and no internal terms such as
+  RunTrace, PromptEnvelope, Policy Pipeline, Router, Ghost, or Provider.
+- This release does not change prompt text, tool schema, model-visible tool
+  output, Router behavior, provider fallback ordering, permissions,
+  Research/Writer/Review semantics, task receipts, or SSE payload shape.
+
 ## 0.3.19 - Built-in Profiles v1
 
 - Added `codey/builtin_profiles.py`, a read-only catalog of Codey's built-in

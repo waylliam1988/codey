@@ -189,6 +189,7 @@
 <script src="/assets/research_drawer.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/changes_drawer.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/local_context_drawer.js?v=__CODEY_VERSION__"></script>
+<script src="/assets/run_details.js?v=__CODEY_VERSION__"></script>
 <script src="/assets/provider_ui.js?v=__CODEY_VERSION__"></script>
 <script>
 // ============================ state & storage ============================
@@ -716,22 +717,14 @@ function statusRow(prefix, text, opts = {}) {
   if (opts.err) body = body.replace(/^ERROR:\s*/i, '');
   txt.textContent = body;
   row.append(pre, txt);
-  if (Array.isArray(opts.actions)) {
-    for (const action of opts.actions) {
-      const btn = document.createElement('button');
-      btn.className = 'link-btn';
-      btn.textContent = action.label;
-      btn.disabled = !!action.disabled;
-      btn.onclick = action.onclick;
-      row.appendChild(btn);
-    }
-  }
-  if (opts.action) {
+  const actions = Array.isArray(opts.actions) ? opts.actions.slice() : [];
+  if (opts.action) actions.push(opts.action);
+  for (const action of actions) {
     const btn = document.createElement('button');
     btn.className = 'link-btn';
-    btn.textContent = opts.action.label;
-    btn.disabled = !!opts.action.disabled;
-    btn.onclick = opts.action.onclick;
+    btn.textContent = action.label;
+    btn.disabled = !!action.disabled;
+    btn.onclick = action.onclick;
     row.appendChild(btn);
   }
   div.appendChild(row);
@@ -800,10 +793,10 @@ function appendMessageNode(chat, m) {
   } else if (m.type === 'tool_pending') {
     chat.appendChild(standaloneToolEl(m));
   } else if (m.type === 'research_done') {
-    const actions = [
+    const actions = window.CodeyRunDetails.actionsForMessage(m, [
       { label: 'Open', onclick: () => openResearchDrawer(m.sessionId || activeId) },
       { label: 'Use in Project', onclick: () => attachCurrentChatToPickedProject({ sendDraft: false }) },
-    ];
+    ]);
     chat.appendChild(statusRow('Research', m.text || 'Research saved', {
       kind: 'done',
       actions,
@@ -815,10 +808,17 @@ function appendMessageNode(chat, m) {
       onclick: () => openChangesDrawer(m.project),
     } : null;
     const text = m.text || 'Task complete';
-    chat.appendChild(statusRow('Done', text, { kind: 'done', action, copyText: text }));
+    chat.appendChild(statusRow('Done', text, {
+      kind: 'done',
+      actions: window.CodeyRunDetails.actionsForMessage(m, [action]),
+      copyText: text,
+    }));
   } else if (m.type === 'review') {
     const text = m.text || 'Complete';
-    chat.appendChild(statusRow('Review', text, { kind: 'review', copyText: text }));
+    chat.appendChild(statusRow('Review', text, {
+      kind: 'review',
+      copyText: text,
+    }));
   } else if (m.type === 'changes') {
     const div = document.createElement('div');
     div.className = 'msg changes';
@@ -901,11 +901,15 @@ function appendMessageNode(chat, m) {
     chat.appendChild(div);
   } else if (m.type === 'limit') {
     chat.appendChild(statusRow('Limit', m.text || 'Turn limit reached', {
-      action: { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
+      actions: window.CodeyRunDetails.actionsForMessage(m, [
+        { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
+      ]),
     }));
   } else if (m.type === 'pause') {
     chat.appendChild(statusRow('Paused', m.text || 'No progress for several turns', {
-      action: { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
+      actions: window.CodeyRunDetails.actionsForMessage(m, [
+        { label: 'Continue', disabled: !!runningSessionId, onclick: () => continueTask(m.sessionId || activeId) },
+      ]),
     }));
   } else if (m.type === 'teach') {
     chat.appendChild(statusRow('Paused', m.text || 'Click the control in the model page', {
@@ -914,7 +918,9 @@ function appendMessageNode(chat, m) {
   } else if (m.type === 'err') {
     chat.appendChild(statusRow('Error', m.text || '', {
       err: true,
-      action: { label: 'Retry', disabled: !!runningSessionId, onclick: () => retryTask(m.sessionId || activeId) },
+      actions: window.CodeyRunDetails.actionsForMessage(m, [
+        { label: 'Retry', disabled: !!runningSessionId, onclick: () => retryTask(m.sessionId || activeId) },
+      ]),
     }));
   } else if (m.type === 'info') {
     const div = document.createElement('div');
@@ -1371,14 +1377,15 @@ function handleServerEvent(data) {
           project: changes.project || project,
           changed: true,
           runId,
+          sessionId: sid,
           eventKey: receiptKey,
         });
         shownReceipt = true;
       } else if (!project && summary && data.mode !== 'research' && data.mode !== 'chat') {
-        addToSession(sid, { type: 'done', text: summary, runId, eventKey: terminalKey });
+        addToSession(sid, { type: 'done', text: summary, sessionId: sid, runId, eventKey: terminalKey });
       }
     } else if (summary) {
-      addToSession(sid, { type: 'done', text: summary, runId, eventKey: terminalKey });
+      addToSession(sid, { type: 'done', text: summary, sessionId: sid, runId, eventKey: terminalKey });
     }
     if (reason !== 'error' && reason !== 'approval' && data.changed && !shownReceipt) maybeAddChangesSummary(sid, terminalKey, runId);
     flushUiState();
@@ -1420,7 +1427,7 @@ function handleServerEvent(data) {
     return;
   }
   if (data.type === 'review') {
-    if (data.text) addToSession(sid, { type: 'review', text: data.text, runId });
+    if (data.text) addToSession(sid, { type: 'review', text: data.text, sessionId: sid, runId });
     return;
   }
 }
@@ -2108,6 +2115,7 @@ async function boot() {
     closeOtherDrawers,
     copyText,
   });
+  window.CodeyRunDetails.init({ getActiveId: () => activeId });
   window.CodeyProviderUI.init({
     $,
     escapeHtml,

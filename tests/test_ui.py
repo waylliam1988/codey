@@ -11,6 +11,7 @@ GRAPH_JS = (ASSET_DIR / "research_graph.js").read_text(encoding="utf-8")
 RESEARCH_DRAWER_JS = (ASSET_DIR / "research_drawer.js").read_text(encoding="utf-8")
 CHANGES_DRAWER_JS = (ASSET_DIR / "changes_drawer.js").read_text(encoding="utf-8")
 LOCAL_CONTEXT_DRAWER_JS = (ASSET_DIR / "local_context_drawer.js").read_text(encoding="utf-8")
+RUN_DETAILS_JS = (ASSET_DIR / "run_details.js").read_text(encoding="utf-8")
 RENDER_JS = (ASSET_DIR / "render.js").read_text(encoding="utf-8")
 PROVIDER_UI_JS = (ASSET_DIR / "provider_ui.js").read_text(encoding="utf-8")
 TOKENS_CSS = (ASSET_DIR / "tokens.css").read_text(encoding="utf-8")
@@ -120,6 +121,49 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("Recent focus", visible_source)
         self.assertIn("Active preferences", visible_source)
         self.assertIn("Local ordering", visible_source)
+
+    def test_run_details_is_quiet_inline_entry_not_new_drawer(self) -> None:
+        self.assertIn('<script src="/assets/run_details.js?v=__CODEY_VERSION__"></script>', HTML)
+        self.assertIn("window.CodeyRunDetails.init({", HTML)
+        self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [action])", HTML)
+        self.assertIn("function actionForMessage(message)", RUN_DETAILS_JS)
+        self.assertIn("fetch('/api/run_details?'", RUN_DETAILS_JS)
+        self.assertIn("panel.className = 'run-details';", RUN_DETAILS_JS)
+        self.assertIn("button.closest('.msg')", RUN_DETAILS_JS)
+        self.assertIn("panel.scrollIntoView({ block: 'nearest' })", RUN_DETAILS_JS)
+        self.assertIn("const cache = {};", RUN_DETAILS_JS)
+        self.assertNotIn("run-details-drawer", UI_SOURCE)
+        self.assertNotIn("data-act=\"run-details\"", HTML)
+        self.assertNotIn("Last run details", HTML)
+        self.assertNotIn("localStorage", RUN_DETAILS_JS)
+        self.assertNotIn("persistActive", RUN_DETAILS_JS)
+        for term in (
+            "RunTrace",
+            "PromptEnvelope",
+            "Policy Pipeline",
+            "Router",
+            "Ghost",
+            "Hebbian",
+            "Directive",
+            "Provider",
+        ):
+            self.assertNotIn(term, RUN_DETAILS_JS)
+
+    def test_run_details_style_uses_existing_design_tokens(self) -> None:
+        start = APP_CSS.index(".run-details {")
+        end = APP_CSS.index("/* ---------- changes card ---------- */", start)
+        block = APP_CSS[start:end]
+
+        self.assertIn("border-top: 1px solid var(--border-2)", block)
+        self.assertIn("color: var(--muted)", block)
+        self.assertIn("color: var(--text-dim)", block)
+        self.assertIn(".run-details-row.warning .run-details-value { color: var(--text-dim); }", block)
+        self.assertIn("font-size: 10.5px", block)
+        self.assertIn("font-size: 12px", block)
+        self.assertIn("letter-spacing: 1px", block)
+        self.assertIn("text-transform: uppercase", block)
+        for forbidden in ("box-shadow", "background:", "border-radius", "#", "rgba(", "var(--err-text)"):
+            self.assertNotIn(forbidden, block)
 
     def test_local_context_group_titles_follow_group_label_style(self) -> None:
         start = APP_CSS.index(".local-context-group-title")
@@ -509,7 +553,7 @@ class ProviderSelectorUiTests(unittest.TestCase):
         self.assertIn("if (r.status === 409) { addSendError(sessionId); return true; }", HTML)
         self.assertIn("if (r.status === 409 || !r.ok) {", HTML)
         self.assertIn("await acceptRunResponse(r, sessionId)", HTML)
-        self.assertIn("action: { label: 'Retry'", HTML)
+        self.assertIn("actions: window.CodeyRunDetails.actionsForMessage(m, [", HTML)
         self.assertNotIn("Switch provider", HTML)
         self.assertNotIn("Switch model", HTML)
         self.assertNotIn('title="Provider"', HTML)
@@ -543,8 +587,12 @@ class ProviderSelectorUiTests(unittest.TestCase):
 
     def test_review_status_is_quiet_and_has_no_switch(self) -> None:
         self.assertIn("data.type === 'review'", HTML)
-        self.assertIn("{ type: 'review', text: data.text, runId }", HTML)
+        self.assertIn("{ type: 'review', text: data.text, sessionId: sid, runId }", HTML)
         self.assertIn("statusRow('Review'", HTML)
+        review_start = HTML.index("} else if (m.type === 'review') {")
+        review_end = HTML.index("} else if (m.type === 'changes') {", review_start)
+        review_block = HTML[review_start:review_end]
+        self.assertNotIn("CodeyRunDetails", review_block)
         self.assertNotIn("Review mode", HTML)
 
     def test_plain_chat_terminal_event_can_restore_assistant_reply(self) -> None:

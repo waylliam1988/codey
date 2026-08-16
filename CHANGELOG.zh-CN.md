@@ -4,6 +4,28 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.20 - Run Details v1
+
+- 新增 `codey/run_details.py`：把 RunLedger 和 RunTrace metadata 投影成短的、
+  只读的用户可理解运行说明。它只报告工作类型、模型、使用的上下文、本地动作、
+  安全决策、模型 fallback 和验证结果，不返回 raw prompt、raw tool output、
+  源码正文、网页正文或 provider 错误 dump。
+- 新增只读接口 `GET /api/run_details?session_id=...&run_id=...`。没有可用本地
+  详情时返回 `available=false`，不会抛出给 UI，也不会写入状态。
+- Run Details 读取 trace manifest 时复用有界本地 JSON reader，带 `MAX_TRACE_BYTES`
+  上限，并校验 Run Trace 的 schema version 和 kind 后才使用 trace metadata。
+- 新增 `codey/web/assets/run_details.js`，在任务终态 status/receipt 行加一个低调的
+  `Details` 文本入口。Details 懒加载、在原地展开、只做内存缓存，不写入持久 chat state。
+- Capability Registry 新增 `run_details` 能力，Event / Capability Matrix 新增
+  `run_details.summary`。架构测试锁住它只是只读投影，不接 runtime dispatch、
+  provider adapter、TaskRunner 编排、浏览器代码、插件加载器、raw trace viewer 或新
+  SSE event shape。
+- UI 设计基线新增 Run Details 规范：它是 inline receipt expansion，不是 drawer；
+  保持单色、无背景卡片、无圆角容器、无彩色 warning 样式、无 topbar 入口，也不暴露
+  RunTrace、PromptEnvelope、Policy Pipeline、Router、Ghost 或 Provider 等内部词。
+- 本版不改变 prompt 文本、工具 schema、模型可见工具输出、Router、provider fallback
+  顺序、权限、Research/Writer/Review 语义、task receipt 或 SSE payload shape。
+
 ## 0.3.19 - Built-in Profiles v1
 
 - 新增 `codey/builtin_profiles.py`：Codey 内置默认策略边界的只读目录，固定声明

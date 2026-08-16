@@ -20,6 +20,7 @@ class UiBrowserE2ETests(unittest.TestCase):
         self.assertIn("shell result before continued task completion", result["checks"])
         self.assertIn("SSE reconnect reconciliation", result["checks"])
         self.assertIn("stale state cannot override newer SSE completion", result["checks"])
+        self.assertIn("run details inline receipt", result["checks"])
         self.assertIn("responsive stop", result["checks"])
 
 

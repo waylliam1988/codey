@@ -1,5 +1,71 @@
 # Codey Test Report
 
+## 0.3.20 Run Details v1
+
+Codey 0.3.20 adds a quiet Run Details projection. Finished task receipts can
+show a low-friction `Details` text action that expands in place and explains
+the run using bounded ledger/trace metadata. It does not add a drawer, topbar
+entry, raw trace viewer, new SSE event type, prompt change, Router change,
+provider-fallback change, permission change, or runtime dispatcher.
+
+Production changes:
+
+- New `codey/run_details.py` builds short UI-ready summaries from
+  `RunLedgerProjection` and Run Trace manifest metadata: work type, model,
+  context, actions, safety, model fallback, and verification. Search tool
+  records are classified with read-like actions as inspected items.
+- New `GET /api/run_details?session_id=...&run_id=...` returns a read-only
+  bounded payload or quiet `available=false` when details are missing.
+- Trace manifest reads are byte-first: Run Details uses the local bounded JSON
+  reader with `MAX_TRACE_BYTES` and accepts only schema-versioned Run Trace
+  manifests with the expected kind.
+- New `codey/web/assets/run_details.js` owns the lazy-loaded inline Details
+  interaction. Details cache only in memory, expand under the existing
+  receipt/status row, scroll into view when opened, and do not persist into
+  chat state.
+- `index.html` only wires terminal status rows to the asset helper. The Review
+  status row intentionally does not add its own Details link, so the same run
+  does not show duplicate explanation entries next to the final receipt.
+- `app.css` keeps Run Details in the existing design language: no background,
+  no rounded card, no shadow, no color accent, subtle `--border-2` divider,
+  group-label title, muted labels, and `--text-dim` values.
+- The Capability Registry and Event / Capability Matrix now declare the
+  `run_details` projection and its `run_details.summary` UI surface. Architecture
+  tests keep it read-only and away from provider/browser/task-runner/runtime
+  dispatch dependencies.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_run_details.py tests\test_server.py::ResearchServerHelperTests::test_run_details_response_validation_and_payload tests\test_server.py::ResearchServerHelperTests::test_run_details_response_quiet_unavailable_without_stores tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs tests\test_ui.py tests\test_ui_architecture.py tests\test_capabilities.py tests\test_event_matrix.py tests\test_architecture.py -q -p no:cacheprovider
+# 117 passed, 261 subtests passed
+
+python -m pytest tests\test_ui_browser_e2e.py -q -p no:cacheprovider
+# 1 passed
+
+python tools\ui_e2e.py --artifacts .run-details-visual --json
+# passed; inspected ui-run-details.png for the inline receipt layout, then removed the temporary artifacts
+
+python -m pytest -q -p no:cacheprovider
+# 2026 passed, 9 skipped, 549 subtests passed
+
+python -m ruff check . --no-cache
+# All checks passed!
+
+python -m compileall codey tests
+# passed
+
+git diff --check
+# passed
+```
+
+No live provider A/B is required because 0.3.20 does not change prompt text,
+tool schema prompt, model-visible tool-result wording, Router behavior,
+provider fallback ordering, permissions, Research/Writer/Review semantics,
+task receipts, or SSE payload shape. The release touches UI, so browser e2e
+and screenshot inspection were used to verify that Details stays quiet,
+inline, and visually aligned with `DESIGN.md`.
+
 ## 0.3.19 Built-in Profiles v1
 
 Codey 0.3.19 adds a read-only built-in profile catalog. It records default
