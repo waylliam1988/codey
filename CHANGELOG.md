@@ -4,6 +4,41 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.0 - Evidence Kernel / Research Object Model v1
+
+- Added `codey/research/object_model.py`, a deterministic projection that turns
+  each Research run's ledger and final report review into a bounded
+  `ResearchRecord` with question, source, evidence, claim, assumption, and
+  relation objects.
+- Research results now carry `research_record` internally, while TaskRunner
+  keeps the UI/SSE `research` payload shape unchanged. Run Trace stores only a
+  bounded record summary: id, answer status, counts, unsupported-claim count,
+  and digest.
+- Claim evidence binding is conservative in v1. A citation to a source does
+  not attach every evidence snippet from that source to every claim; Codey only
+  creates `supports` relations when the final claim matches the evidence claim
+  or exact bounded excerpt and the evidence stance is appropriate for the
+  report section. Claim `status` is limited to `evidence_backed`,
+  `unsupported`, or `assumption`; support/refutation/limits are expressed by
+  relation kind. Contradicting evidence and non-empty unknown stance values
+  cannot support conclusion or key-evidence claims.
+- Search results, Ghost/local memory, and unopened sources are not evidence.
+  Evidence must come from sources Codey opened during the Research run.
+- Research object URL refs redact userinfo and secret query-key variants such
+  as `client_secret`, `refresh_token`, `x-api-key`, `jwt`, and token/api-key
+  suffixes before digesting. The query component is redacted before URL
+  digesting, including query keys, malformed/no-host URL inputs, and malformed
+  userinfo heads. Local paths are stored as basename plus digest refs, not raw
+  absolute paths.
+- Added the `research_object_model` capability and the
+  `research.object_model` row in the Event / Capability Matrix. Architecture
+  tests keep the object model away from server, TaskRunner orchestration,
+  provider adapters, browser code, tool runtime, Ghost runtime, plugin loaders,
+  and file writes.
+- This release does not change Research prompts, tool schemas,
+  model-visible tool output, Router behavior, provider fallback ordering,
+  permissions, UI, task receipts, or SSE payload shape.
+
 ## 0.3.20 - Run Details v1
 
 - Added `codey/run_details.py`, a bounded read-only projection that turns

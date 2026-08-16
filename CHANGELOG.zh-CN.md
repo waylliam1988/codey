@@ -4,6 +4,33 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.0 - Evidence Kernel / Research Object Model v1
+
+- 新增 `codey/research/object_model.py`：把每次 Research run 的 ledger 和最终报告
+  review 确定性投影成有界的 `ResearchRecord`，包含 question、source、evidence、
+  claim、assumption 和 relation 对象。
+- Research result 现在内部携带 `research_record`，但 TaskRunner 保持 UI/SSE 的
+  `research` payload 形状不变。Run Trace 只保存有界 record summary：id、
+  answer status、source/evidence/claim/assumption 计数、unsupported claim 计数和 digest。
+- v1 的 claim evidence binding 保守处理：claim 引用某个来源，不等于该来源下所有
+  evidence 都能连接到它。只有 final claim 与 evidence claim 或精确有界摘录匹配时，
+  才生成 `supports` relation，并且 evidence stance 必须适合对应报告段落。Claim
+  `status` 只允许 `evidence_backed`、`unsupported`、`assumption`；支持、反证和限制
+  方向由 relation kind 表达。反证 evidence 不能支撑 conclusion / key-evidence claim，
+  非空未知 stance 也不能支撑结论。
+- Search result、Ghost/local memory 和未打开来源都不算 evidence；evidence 必须来自
+  本轮 Codey 实际打开过的来源。
+- Research object 的 URL ref 会在 digest 前脱敏 userinfo 和 secret query-key 变体，
+  包括 `client_secret`、`refresh_token`、`x-api-key`、`jwt` 以及 token/api-key
+  后缀。query component 会在 URL digest 前 fail-closed 脱敏，包括 query key；
+  畸形 URL、无 host URL 和畸形 userinfo head 也走同一边界。本地路径只保存
+  basename 和 digest ref，不保存 raw absolute path。
+- Capability Registry 新增 `research_object_model`，Event / Capability Matrix 新增
+  `research.object_model`。架构测试锁住 object model 不接 server、TaskRunner 编排、
+  provider adapter、browser、tool runtime、Ghost runtime、plugin loader 或文件写入。
+- 本版不改变 Research prompt、工具 schema、模型可见工具输出、Router、provider
+  fallback 顺序、权限、UI、task receipt 或 SSE payload shape。
+
 ## 0.3.20 - Run Details v1
 
 - 新增 `codey/run_details.py`：把 RunLedger 和 RunTrace metadata 投影成短的、

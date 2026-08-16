@@ -210,6 +210,13 @@ def builtin_capability_registry() -> CapabilityRegistry:
             owner_module="codey.research.runner",
         ),
         CapabilitySpec(
+            id="research_object_model",
+            provides=("research_object_projection", "claim_evidence_projection"),
+            consumes=("research_runner", "run_trace"),
+            durable_state=("run_trace",),
+            owner_module="codey.research.object_model",
+        ),
+        CapabilitySpec(
             id="review_runner",
             provides=("review_prompt_boundary", "bounded_diff_review"),
             consumes=("policy_guard", "prompt_envelope", "run_trace"),

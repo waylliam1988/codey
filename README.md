@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.3.20-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.3.20`
+Version: `0.4.0`
 
 [Version history](CHANGELOG.md)
 
@@ -64,6 +64,10 @@ Version: `0.3.20`
   `Details` link that opens a short, read-only explanation of the work, model,
   context, actions, safety checks, fallbacks, and verification. It does not
   expose raw prompts, raw output, or internal debug terms.
+- **Keep Research conclusions traceable**: after a Research run, Codey now
+  builds a deterministic Research object record from opened sources, evidence
+  snippets, claims, assumptions, and claim/evidence relations. Search results
+  and local memory are not treated as evidence.
 - **Continue saved work naturally**: when Codey has a queued local follow-up,
   saying "continue" can claim one item and run the right path with proof.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save readable note cards with source chips, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
@@ -111,6 +115,11 @@ This is not about replacing professional tools. It is about making the first ste
 
 - Use New Chat for normal conversation without granting access to a project
 - Use `Research` from the composer context to search/read HTML and text PDFs, save notes, and produce a grounded synthesis with numbered citations, evidence snippets, counter-evidence, source quality, and search coverage
+- Build a local Research object record after each Research run, linking final
+  claims only to matching opened-source evidence with the right stance. Claim
+  `status` only records `evidence_backed`, `unsupported`, or `assumption`;
+  support, refutation, and limits are expressed by relation kind for later
+  proof-quality checks
 - Turn a plain chat into a project task from the same conversation by choosing a folder from the composer context
 - Turn research into implementation by choosing a folder after the synthesis; Codey carries only a bounded Research Brief into the Writer prompt
 - Inspect a Research run through `Evidence`, `Sources`, `Graph`, and `Notes` drawer tabs instead of reading a flat receipt; Notes render saved Markdown as bounded note cards with source chips, while PDF page locators and search coverage appear inside the existing evidence/source views
@@ -273,6 +282,15 @@ do not get hidden network access. A final synthesis can cite only sources that
 Codey actually opened in the run. Research providers are also asked to choose
 exactly one local JSON tool per turn; if a model emits several actions at once,
 Codey treats that as a protocol error and asks it to retry.
+
+In 0.4.0, Codey also builds a deterministic Research object record after the
+run. It projects the existing ledger and report review into question, source,
+evidence, claim, assumption, and relation objects. The record is conservative:
+only matching opened-source evidence can attach to a claim. Claim `status`
+only says `evidence_backed`, `unsupported`, or `assumption`; support,
+refutation, and limits are expressed by relation kind. Search results are not
+evidence, contradicting or unknown-stance evidence cannot support conclusions,
+and the UI/SSE payload stays unchanged.
 
 In 0.2.20, production Research uses a thin controller instead of exposing the
 full tool menu every turn. Codey reads the current Research ledger, shows only
@@ -713,7 +731,7 @@ codey/
   project_task_context.py   project facts, map, checkpoint, and verification context
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
-  research/                 Research controller/runner, isolated web/source search tools, evidence ledger, report quality gate
+  research/                 Research controller/runner, isolated web/source search tools, evidence ledger, object model, report quality gate
   verification_map.py       bounded review-time verification candidates
   review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief

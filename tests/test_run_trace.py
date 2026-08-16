@@ -186,6 +186,69 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertNotIn("8443", serialized)
             self.assertNotIn("Secret Source Title", serialized)
 
+    def test_research_record_summary_is_bounded_and_digest_only(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-research-record",
+                session_id="session-research-record",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_research_record_summary({
+                "record_id": "research_record:" + "a" * 16,
+                "answer_status": "answered",
+                "source_count": 2,
+                "evidence_count": 3,
+                "claim_count": 4,
+                "assumption_count": 1,
+                "unsupported_claim_count": 0,
+                "record_digest": "sha256:" + "a" * 64,
+                "summary": "SECRET_REPORT_TEXT_SHOULD_NOT_BE_SAVED",
+                "final_url": "https://example.com/secret",
+            })
+            recorder.record_research_record_summary({
+                "record_id": "research_record:" + "a" * 16,
+                "answer_status": "answered",
+                "source_count": 99,
+                "record_digest": "sha256:" + "a" * 64,
+            })
+            recorder.record_research_record_summary({
+                "record_id": "research_record:" + "b" * 16,
+                "answer_status": "answered",
+                "record_digest": "not-a-digest",
+            })
+            recorder.record_research_record_summary({
+                "record_id": "SECRET_QUESTION_ABOUT_ACME_TOKEN",
+                "answer_status": "answered",
+                "source_count": 1,
+                "record_digest": "sha256:" + "c" * 64,
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-research-record",
+                    "run-research-record",
+                ).read_text(encoding="utf-8")
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(payload["research_records"], [{
+                "record_id": "research_record:" + "a" * 16,
+                "answer_status": "answered",
+                "source_count": 2,
+                "evidence_count": 3,
+                "claim_count": 4,
+                "assumption_count": 1,
+                "unsupported_claim_count": 0,
+                "record_digest": "sha256:" + "a" * 64,
+            }])
+            self.assertNotIn("SECRET_REPORT_TEXT_SHOULD_NOT_BE_SAVED", serialized)
+            self.assertNotIn("https://example.com/secret", serialized)
+            self.assertNotIn("SECRET_QUESTION_ABOUT_ACME_TOKEN", serialized)
+
     def test_policy_decision_records_digest_without_raw_display(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)

@@ -27,6 +27,7 @@ from codey.research.controller import (
     ResearchControlState,
     controller_system_prompt,
 )
+from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
 from codey.research.source_document import compact_pages
@@ -97,6 +98,7 @@ class ResearchRunResult:
     source_urls: list[str] = field(default_factory=list)
     synthesis_id: str = ""
     advisor_count: int = 0
+    research_record: ResearchRecord | None = None
 
     @property
     def receipt(self) -> str:
@@ -127,6 +129,7 @@ class ResearchRunner:
         controller_enabled: bool = True,
         permission_profile: str = "research",
         trace_recorder=None,
+        run_id: str = "",
     ) -> None:
         self.provider = provider
         self.search = search
@@ -137,6 +140,7 @@ class ResearchRunner:
         self.diagnostics = diagnostics
         self.session_id = session_id
         self.project = project
+        self.run_id = run_id
         self.permission_profile = profile_for_name(permission_profile).name
         self.prompt_trace = FailOpenPromptTrace(trace_recorder)
         self.chat_handoff = (chat_handoff or "").strip()
@@ -263,7 +267,7 @@ class ResearchRunner:
             if plan.control is not None and plan.control.kind == "done":
                 failed = [
                     r for r in results
-                    if getattr(r[1], "output", "").startswith(("ERROR:", "NEEDS_OPEN:"))
+                    if _outcome_model_text(r[1]).startswith(("ERROR:", "NEEDS_OPEN:"))
                 ]
                 if failed:
                     message = self.codec.format_results(_tool_results(results)) + (
@@ -316,6 +320,19 @@ class ResearchRunner:
             synthesis_id = self._persist_synthesis(question, summary, open_questions=final_open_questions)
             if synthesis_id:
                 yield RunEvent.info("saved synthesis", names=synthesis_id)
+        research_record = None
+        if summary or self.tools.ledger.opened_sources or self.tools.ledger.evidence_items:
+            research_record = build_research_record(
+                question=question,
+                summary=summary,
+                ledger=self.tools.ledger,
+                review=final_review,
+                run_id=self.run_id,
+                session_id=self.session_id,
+                project=self.project,
+                synthesis_id=synthesis_id,
+                stop_reason=stop_reason,
+            )
         self.result = ResearchRunResult(
             question=question,
             summary=summary,
@@ -336,6 +353,7 @@ class ResearchRunner:
             source_urls=sorted(self.tools.sources_read),
             synthesis_id=synthesis_id,
             advisor_count=advisor_count,
+            research_record=research_record,
         )
         self.prompt_trace.call(
             "record_research_notes",
@@ -346,6 +364,11 @@ class ResearchRunner:
             ],
         )
         self.prompt_trace.call("record_research_sources", self.result.opened_sources)
+        if self.result.research_record is not None:
+            self.prompt_trace.call(
+                "record_research_record_summary",
+                self.result.research_record.to_summary_payload(),
+            )
         yield self._done_event()
 
     def _dispatch(self, call):
@@ -911,6 +934,10 @@ def _outcome_status(output: str) -> str:
     if output.startswith(("NEEDS_OPEN:", "SKIPPED:")):
         return "needs_action"
     return "ok"
+
+
+def _outcome_model_text(outcome: _Outcome) -> str:
+    return str(outcome.model_text or "")
 
 
 def _tool_results(results: list[tuple[object, _Outcome]]) -> list[ToolResult]:

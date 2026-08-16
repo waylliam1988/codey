@@ -22,6 +22,7 @@ EXPECTED_BUILTIN_IDS = (
     "prompt_envelope",
     "provider_capability_registry",
     "provider_factory",
+    "research_object_model",
     "research_runner",
     "review_runner",
     "run_details",
@@ -30,7 +31,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "dba6c6320b72ca538fa71f4d081a527e4971bb346e7c1137e943cde5eedddcd6"
+    "f44e5cc1de986cb7d5ec47c51faf5b9ab2fedb2df53a1c6c39050fa0737eca3f"
 )
 
 
@@ -98,6 +99,22 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertFalse(spec.model_visible)
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.durable_state, ())
+
+    def test_research_object_model_is_trace_only_projection(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_object_model")
+
+        self.assertEqual(
+            spec.provides,
+            ("research_object_projection", "claim_evidence_projection"),
+        )
+        self.assertEqual(spec.consumes, ("research_runner", "run_trace"))
+        self.assertEqual(spec.durable_state, ("run_trace",))
+        self.assertEqual(spec.owner_module, "codey.research.object_model")
+        self.assertFalse(spec.model_visible)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.ui_surface, ())
 
     def test_state_and_task_runner_carry_registry_without_dispatch(self) -> None:
         from codey import server

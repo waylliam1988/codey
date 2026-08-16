@@ -32,8 +32,15 @@ MAX_WARNINGS = 16
 MAX_PERMISSION_PROFILES = 16
 MAX_TOOL_CONTRACTS = 16
 MAX_POLICY_DECISIONS = 80
+MAX_RESEARCH_RECORDS = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
+RESEARCH_ANSWER_STATUSES = frozenset({
+    "answered",
+    "partial",
+    "insufficient_evidence",
+    "not_answered",
+})
 
 
 def digest_text(value: object) -> str:
@@ -166,6 +173,7 @@ class RunTraceManifest:
     local_context_refs: list[dict[str, object]] = field(default_factory=list)
     research_note_ids: list[str] = field(default_factory=list)
     research_source_refs: list[dict[str, str]] = field(default_factory=list)
+    research_records: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -194,6 +202,7 @@ class RunTraceManifest:
             "local_context_refs": self.local_context_refs[:MAX_REFS],
             "research_note_ids": list(_bounded_refs(self.research_note_ids)),
             "research_source_refs": self.research_source_refs[:MAX_REFS],
+            "research_records": self.research_records[:MAX_RESEARCH_RECORDS],
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
             "policy_decisions": self.policy_decisions[:MAX_POLICY_DECISIONS],
@@ -263,6 +272,7 @@ class RunTraceRecorder:
         self._local_context_keys: set[tuple[str, str, str]] = set()
         self._research_note_keys: set[str] = set()
         self._research_source_keys: set[str] = set()
+        self._research_record_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
@@ -466,6 +476,31 @@ class RunTraceRecorder:
                 self.manifest.warnings.append("research_source_refs_truncated")
             self.checkpoint()
 
+    def record_research_record_summary(self, summary: Mapping[str, object]) -> None:
+        if not isinstance(summary, Mapping):
+            return
+        record_id = _research_record_id_or_empty(summary.get("record_id"))
+        digest = _digest_ref_or_empty(summary.get("record_digest"))
+        if not record_id or not digest or record_id in self._research_record_keys:
+            return
+        answer_status = _research_answer_status(summary.get("answer_status"))
+        payload: dict[str, object] = {
+            "record_id": record_id,
+            "answer_status": answer_status,
+            "source_count": _nonnegative_int(summary.get("source_count")),
+            "evidence_count": _nonnegative_int(summary.get("evidence_count")),
+            "claim_count": _nonnegative_int(summary.get("claim_count")),
+            "assumption_count": _nonnegative_int(summary.get("assumption_count")),
+            "unsupported_claim_count": _nonnegative_int(summary.get("unsupported_claim_count")),
+            "record_digest": digest,
+        }
+        self._research_record_keys.add(record_id)
+        self.manifest.research_records.append(payload)
+        if len(self.manifest.research_records) > MAX_RESEARCH_RECORDS:
+            del self.manifest.research_records[:-MAX_RESEARCH_RECORDS]
+            self.manifest.warnings.append("research_records_truncated")
+        self.checkpoint()
+
     def record_fallback(
         self,
         *,
@@ -609,6 +644,31 @@ def _digest_ref_or_empty(value: object) -> str:
     if text.startswith("sha256:") and _is_hex_64(text.removeprefix("sha256:")):
         return text
     return ""
+
+
+def _research_record_id_or_empty(value: object) -> str:
+    text = str(value or "").strip()
+    prefix = "research_record:"
+    if not text.startswith(prefix):
+        return ""
+    suffix = text.removeprefix(prefix)
+    if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
+        return text
+    return ""
+
+
+def _research_answer_status(value: object) -> str:
+    text = _identifier(value, 40)
+    return text if text in RESEARCH_ANSWER_STATUSES else "not_answered"
+
+
+def _nonnegative_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _is_hex_64(value: str) -> bool:

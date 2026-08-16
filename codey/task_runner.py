@@ -279,6 +279,17 @@ def _record_research_result_trace(trace: Any | None, result: Any) -> None:
         ],
     )
     sink.call("record_research_sources", getattr(result, "opened_sources", ()))
+    record = getattr(result, "research_record", None)
+    if record is None:
+        return
+    summary = None
+    to_summary_payload = getattr(record, "to_summary_payload", None)
+    if callable(to_summary_payload):
+        summary = to_summary_payload()
+    elif isinstance(record, dict):
+        summary = record
+    if summary is not None:
+        sink.call("record_research_record_summary", summary)
 
 
 def _provider_fallback_policy_decision(
@@ -2952,6 +2963,7 @@ class TaskRunner:
                 chat_handoff=chat_handoff,
                 permission_profile="research",
                 trace_recorder=trace_recorder,
+                run_id=run_id,
                 review_advisors=(
                     (lambda pack: self.run_research_advisors(
                         selected_provider=provider,

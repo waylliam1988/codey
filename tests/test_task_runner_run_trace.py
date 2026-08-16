@@ -166,6 +166,17 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
                 "final_url": "https://example.com/final",
                 "title": "Example Source",
             }],
+            research_record={
+                "record_id": "research_record:" + "b" * 16,
+                "answer_status": "partial",
+                "source_count": 1,
+                "evidence_count": 2,
+                "claim_count": 3,
+                "assumption_count": 1,
+                "unsupported_claim_count": 1,
+                "record_digest": "sha256:" + "b" * 64,
+                "summary": "SECRET_RESEARCH_RECORD_SHOULD_NOT_BE_SAVED",
+            },
         )
 
         def router_factory(_provider_id: str):
@@ -188,6 +199,7 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         run_id = state.last_terminal_event["run_id"]
         payload = _trace_payload(state, "session-research-trace", run_id)
         serialized = json.dumps(payload, ensure_ascii=False)
+        research_payload = state.last_terminal_event["research"]
 
         assert payload["mode_initial"] == "chat"
         assert payload["mode_final"] == "research"
@@ -197,9 +209,21 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         assert payload["router"]["selected_mode"] == "research"
         assert set(payload["research_note_ids"]) == {"note-created", "note-updated", "synth-1"}
         assert payload["research_source_refs"][0]["host"] == "example.com"
+        assert payload["research_records"] == [{
+            "record_id": "research_record:" + "b" * 16,
+            "answer_status": "partial",
+            "source_count": 1,
+            "evidence_count": 2,
+            "claim_count": 3,
+            "assumption_count": 1,
+            "unsupported_claim_count": 1,
+            "record_digest": "sha256:" + "b" * 64,
+        }]
         assert "https://example.com/request" not in serialized
         assert "https://example.com/final" not in serialized
         assert "Example Source" not in serialized
+        assert "SECRET_RESEARCH_RECORD_SHOULD_NOT_BE_SAVED" not in serialized
+        assert "research_record" not in research_payload
 
 
 def test_hybrid_trace_records_research_and_writer_phases() -> None:

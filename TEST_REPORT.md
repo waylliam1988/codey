@@ -1,5 +1,86 @@
 # Codey Test Report
 
+## 0.4.0 Evidence Kernel / Research Object Model v1
+
+Codey 0.4.0 adds the first Evidence Kernel piece: every completed Research run
+now gets a deterministic, bounded Research object projection. This turns the
+existing Research ledger and final report review into local question, source,
+evidence, claim, assumption, and relation objects without changing the user
+interface, prompt, tool schema, Router, provider fallback, permission model, or
+SSE payload shape.
+
+Production changes:
+
+- New `codey/research/object_model.py` builds a `ResearchRecord` from opened
+  sources, ledger evidence, citation review metadata, and deterministic report
+  section parsing.
+- `ResearchRunResult` now carries `research_record` internally. `TaskRunner`
+  keeps the existing `research` event payload unchanged and records only a
+  bounded Run Trace summary: record id, answer status, object counts,
+  unsupported-claim count, and record digest.
+- Claim evidence binding is conservative. A citation to one source no longer
+  attaches every evidence snippet from that source to every cited claim;
+  `supports` relations are only created when the final claim matches the
+  evidence claim or bounded excerpt and the evidence stance is valid for that
+  report section. Claim `status` is only `evidence_backed`, `unsupported`, or
+  `assumption`; support/refutation/limits are expressed by relation kind.
+  Conclusion and key evidence sections only accept supporting evidence;
+  counter/limitations can use contradicting/refuting evidence as `refutes`
+  relations or context as `limits` relations. Empty stance keeps the old
+  default-support behavior, but non-empty unknown stance fails closed to
+  `unknown` and cannot support conclusion claims.
+- Claim graph closure now prunes assumption refs and relations after the
+  assumption cap, so records do not contain dangling assumption ids.
+- Research URL refs redact userinfo and sensitive query-key variants before
+  digesting, including `client_secret`, `refresh_token`, `x-api-key`, `jwt`,
+  `session_id`, `authorization`, `bearer`, credential/session variants,
+  token/secret/api-key suffixes, protocol-relative URL cases, and malformed or
+  no-host URL inputs. Query keys and values are redacted fail-closed before URL
+  digesting, and malformed userinfo heads are not digested raw.
+- Run Trace accepts only generated-looking `research_record:<16 hex>` ids, so
+  fallback or malformed summaries cannot persist raw question-like strings.
+- Research runner tool text now reads the v2 `model_text` field directly and
+  does not reintroduce the old `output` compatibility fallback.
+- The Capability Registry and Event / Capability Matrix declare the
+  `research_object_model` projection. Architecture tests keep it away from
+  server, TaskRunner orchestration, provider adapters, browser code, tool
+  runtime, Ghost runtime, plugin loaders, and file writes.
+- `ROADMAP.zh-CN.md` now archives the long 0.3 per-version detail section and
+  keeps the detailed active plan focused on 0.4 Evidence Research Runtime.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_research_object_model.py tests\test_research.py::ResearchBoundaryTests::test_runner_writes_synthesis_and_restore_can_revert_run tests\test_run_trace.py::RunTraceStoreTests::test_research_record_summary_is_bounded_and_digest_only tests\test_task_runner_run_trace.py::test_auto_router_and_research_result_write_structured_trace_refs -q -p no:cacheprovider
+# 16 passed
+
+python -m pytest tests\test_research_object_model.py tests\test_research.py tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_capabilities.py tests\test_event_matrix.py tests\test_architecture.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q -p no:cacheprovider
+# 166 passed, 276 subtests passed
+
+python -m ruff check codey tests --no-cache
+# All checks passed!
+
+python -m compileall codey tests
+# passed
+
+python -m pytest -q -p no:cacheprovider
+# 2042 passed, 9 skipped, 565 subtests passed in 402.76s (0:06:42)
+
+git diff --check
+# passed
+
+git diff --cached --check
+# passed
+```
+
+No live provider A/B is required because 0.4.0, as implemented, is a
+deterministic projection only. It does not change Research prompts, tool schema
+prompts, model-visible tool-result wording, Router behavior, provider fallback
+ordering, permissions, UI, task receipts, or SSE payload shape. A Research A/B
+would become necessary only if a later 0.4.0 patch changed prompt text, tool
+result wording, report repair behavior, or asked the model to produce the claim
+graph directly.
+
 ## 0.3.20 Run Details v1
 
 Codey 0.3.20 adds a quiet Run Details projection. Finished task receipts can

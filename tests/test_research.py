@@ -1938,6 +1938,7 @@ class ResearchBoundaryTests(unittest.TestCase):
                 FakeSearch(),
                 store,
                 session_id="s1",
+                run_id="run-research-object",
                 max_turns=8,
             )
 
@@ -1960,6 +1961,16 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertTrue(result.citation_map)
         self.assertTrue(result.opened_sources)
         self.assertTrue(result.evidence_items)
+        self.assertIsNotNone(result.research_record)
+        assert result.research_record is not None
+        self.assertEqual(result.research_record.run_id, "run-research-object")
+        self.assertEqual(result.research_record.session_id, "s1")
+        self.assertEqual(result.research_record.answer_status, "partial")
+        self.assertEqual(result.research_record.unsupported_claim_count, 1)
+        self.assertTrue(result.research_record.sources)
+        self.assertTrue(result.research_record.evidence)
+        self.assertTrue(result.research_record.claims)
+        self.assertEqual(result.research_record.to_summary_payload()["source_count"], 1)
         self.assertIsNotNone(synthesis)
         assert synthesis is not None
         self.assertIn("Evidence Ledger", synthesis.body)

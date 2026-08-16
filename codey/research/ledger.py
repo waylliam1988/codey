@@ -513,12 +513,44 @@ def _coerce_evidence(value: object) -> list[dict]:
 
 
 def _normalize_stance(value: str) -> str:
-    text = (value or "").strip().lower()
-    if text in {"contradicts", "contradict", "counter", "against"}:
+    return normalize_evidence_stance(value)
+
+
+def normalize_evidence_stance(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "supports"
+    normalized = re.sub(r"[^a-z0-9]+", "_", text.casefold()).strip("_")
+    if normalized in {
+        "contradicts",
+        "contradict",
+        "contradicting",
+        "contradiction",
+        "counter",
+        "against",
+        "opposes",
+        "oppose",
+        "opposed",
+        "refutes",
+        "refute",
+        "refuting",
+        "refutation",
+        "rebuttal",
+    }:
         return "contradicts"
-    if text in {"context", "background", "limits", "limitation"}:
+    if normalized in {
+        "context",
+        "background",
+        "limits",
+        "limitation",
+        "limitations",
+        "qualified",
+        "qualifies",
+    }:
         return "context"
-    return "supports"
+    if normalized in {"supports", "support", "supporting", "for", "confirms", "confirm"}:
+        return "supports"
+    return "unknown"
 
 
 def _as_page(value: object) -> int | None:
