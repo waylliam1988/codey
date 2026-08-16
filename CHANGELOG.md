@@ -4,6 +4,30 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.3.18 - Event / Capability Matrix v1
+
+- Added `docs/codey_event_matrix.md`, a tested architecture matrix for event
+  producers, consumers, durable state, model visibility, UI visibility,
+  policy requirements, trace requirements, privacy boundaries, and linked
+  capabilities.
+- Added `tests/test_event_matrix.py` to reject duplicate event ids, unknown
+  capabilities or durable states, missing Prompt Envelope / Run Trace coverage
+  for model-visible rows, missing policy declarations, and raw-payload privacy
+  boundary regressions.
+- The matrix explicitly declares the Review recent-log projection rendered from
+  `RunEvent` history as model-visible and covered by Prompt Envelope / Run
+  Trace, while keeping the UI/SSE `run_event.*` rows scoped to their UI and
+  ledger projections.
+- Moved the existing Web/SSE `RunEvent` projection into
+  `codey.events.run_event_ui_payload()` and the research display-name mapping
+  into `codey.events.display_tool()`. `TaskRunner` now calls this shared
+  projection instead of owning a local duplicate.
+- Kept `run_event_payload()` and RunLedger projection separate because they
+  serve different consumers. This release does not add an event bus, runtime
+  dispatcher, plugin system, Run Details UI, Router behavior, provider fallback
+  behavior, prompt behavior, permission behavior, or UI/SSE payload shape
+  changes.
+
 ## 0.3.17 - Action Policy Pipeline v1
 
 - Added `codey/action_policy.py`, a monotonic local action policy pipeline for

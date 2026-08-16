@@ -396,6 +396,14 @@ mapping fallback 也必须只接受 digest/ref 形状。
 未知 action kind 必须默认 deny；managed-output artifact 虽然是本地审计状态，也必须
 通过 writer verification profile 与 size/count guard，不能成为绕过 profile 的写入通道。
 
+Event / Capability Matrix 是文档和测试里的事件账本，不是事件总线、运行时配置、
+调度器或 UI 功能入口。它只能登记事件的 producer、consumers、capability、
+durable_state、model-visible、UI-visible、policy、trace 和 privacy boundary，
+并用测试防止新增隐形通道。Web/SSE 事件投影可以抽到共享函数复用，但不能借机改变
+payload shape；RunLedger 和机器可读 run-event payload 服务不同消费者，不应为了
+“统一”强行合并。由运行事件渲染给 Review prompt 的 recent log 是单独的模型可见
+投影，必须在矩阵里显式声明 Prompt Envelope / Run Trace 边界，不能被 UI/SSE 行掩盖。
+
 未来的训练 Episode 是另一类长期数据，必须单独设计、明确启用、脱敏和筛选，不能直接把本地连续性文件当训练数据库。
 
 如果未来想知道哪些 action 值得做，可以先做本地统计，但必须克制。

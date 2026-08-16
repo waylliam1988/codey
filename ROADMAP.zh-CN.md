@@ -1917,7 +1917,7 @@ action_policy.py 不 import server/task_runner/provider/browser/tool_runtime
 
 ## 0.3.18 - Event / Capability Matrix v1
 
-状态：计划。目标是把事件关系显性化，并用架构测试防止新增隐形通道。
+状态：已落地。目标是把事件关系显性化，并用架构测试防止新增隐形通道。
 
 ### 做什么
 
@@ -1931,12 +1931,15 @@ tests/test_event_matrix.py
 为每类事件标注：
 
 ```text
-event kind
+event_id
 producer
-consumer
-durable?
-model-visible?
-UI-visible?
+consumers
+capability
+durable_state
+model_visible
+ui_visible
+policy_required
+trace_required
 privacy boundary
 ```
 
@@ -1955,12 +1958,42 @@ Work Queue
 Changes / diff presenter
 ```
 
+同时把 Web/SSE 的真实 `RunEvent` 投影从 `TaskRunner` 收到 `codey.events`：
+
+```text
+codey.events.display_tool()
+codey.events.run_event_ui_payload()
+```
+
+`TaskRunner` 只调用共享投影，不再维护本地 `_ui_event` / `_display_tool` 重复逻辑。
+`run_event_payload()` 和 RunLedger 投影保持分开，因为它们分别服务机器可读 JSONL
+和持久 ledger，不是同一个受众。
+
 ### 边界
 
 - 这版主要是文档和架构测试，不改用户工作流。
 - UI 不新增面板。
 - 不把内部事件名暴露给普通用户。
 - 新增 model-visible 通道必须同时声明 Prompt Envelope section 和 Run Trace source。
+- 不新增事件总线、运行时调度器、插件系统或 Run Details UI。
+- 不拆 `TaskRunner.run()` / `_run_project_mode()` 主流程。
+- 不改变 prompt、tool schema、Router、provider fallback、权限、UI/SSE payload shape
+  或 receipt。
+
+### 验证
+
+```text
+event id 唯一
+capability / durable_state 来自稳定白名单
+model_visible=true 必须声明 prompt_envelope + run_trace
+policy_required=true 必须声明 policy_guard / action_policy 或绑定 policy-bound capability
+trace_required=true 必须声明 run_trace consumer
+privacy_boundary 不允许 raw_prompt / raw_stdout / webpage_body / source_body / raw_provider_error
+覆盖 RunEvent、RunTrace 和 ToolOutcome 核心事件族
+Review recent_log 作为模型可见事件投影单独声明
+TaskRunner 不再定义 _ui_event / _display_tool
+UI/SSE payload shape 保持等价
+```
 
 ## 0.3.19 - Built-in Profiles v1
 

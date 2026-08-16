@@ -4,6 +4,22 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.3.18 - Event / Capability Matrix v1
+
+- 新增 `docs/codey_event_matrix.md`：用可测试矩阵记录事件生产者、消费者、
+  持久状态、模型可见性、UI 可见性、policy 要求、trace 要求、隐私边界和关联能力。
+- 新增 `tests/test_event_matrix.py`，锁住 event id 唯一、capability / durable state
+  必须来自已知清单、模型可见行必须接 Prompt Envelope / Run Trace、policy 行必须声明
+  policy 边界，并防止 raw payload 边界回流。
+- 矩阵单独声明由 `RunEvent` 历史渲染出来的 Review recent log 是模型可见投影，并接入
+  Prompt Envelope / Run Trace；`run_event.*` 行只描述 UI/SSE 和 ledger 投影。
+- Web/SSE 的 `RunEvent` 投影移到 `codey.events.run_event_ui_payload()`，
+  Research 工具展示名映射移到 `codey.events.display_tool()`；`TaskRunner` 只调用共享投影，
+  不再自己维护重复的 `_ui_event` / `_display_tool`。
+- `run_event_payload()` 和 RunLedger 投影继续分开，因为它们服务不同消费者。本版不新增
+  事件总线、运行时调度器、插件系统、Run Details UI，也不改变 Router、provider fallback、
+  prompt、权限或 UI/SSE payload shape。
+
 ## 0.3.17 - Action Policy Pipeline v1
 
 - 新增 `codey/action_policy.py`：本地动作的单调 policy 管线，统一输出

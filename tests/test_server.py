@@ -25,7 +25,7 @@ from codey import server
 from codey.agent import RunResult
 from codey.changes import ChangeTracker
 from codey.consensus import ConsensusAdvice, ConsensusResult
-from codey.events import RunEvent, run_event_payload
+from codey.events import RunEvent, run_event_payload, run_event_ui_payload
 from codey.handoff import ConversationSnapshot
 from codey.knowledge import KnowledgeNote, KnowledgeStore
 from codey.models import ToolCall
@@ -787,7 +787,7 @@ class TaskRunnerUiEventTests(unittest.TestCase):
     def test_turn_event_preserves_note(self) -> None:
         event = RunEvent.turn_started(17, '{"tool":"done","args":{"answer":"report"}}', note="(done)")
 
-        payload = TaskRunner._ui_event("run-1", "session-1", event)
+        payload = run_event_ui_payload("run-1", "session-1", event)
 
         self.assertIsNotNone(payload)
         assert payload is not None
@@ -807,7 +807,7 @@ class TaskRunnerUiEventTests(unittest.TestCase):
         )
         event = RunEvent.tool_finished(2, call, outcome, index=3)
 
-        payload = TaskRunner._ui_event("run-1", "session-1", event)
+        payload = run_event_ui_payload("run-1", "session-1", event)
 
         self.assertIsNotNone(payload)
         assert payload is not None
@@ -824,7 +824,7 @@ class TaskRunnerUiEventTests(unittest.TestCase):
         )
         event = RunEvent.tool_finished(2, call, outcome, index=3)
 
-        payload = TaskRunner._ui_event("run-1", "session-1", event)
+        payload = run_event_ui_payload("run-1", "session-1", event)
 
         self.assertIsNotNone(payload)
         assert payload is not None
@@ -849,7 +849,7 @@ class TaskRunnerUiEventTests(unittest.TestCase):
         event = RunEvent.tool_finished(2, call, outcome, index=3)
 
         event_payload = run_event_payload(event)
-        ui_payload = TaskRunner._ui_event("run-1", "session-1", event)
+        ui_payload = run_event_ui_payload("run-1", "session-1", event)
 
         self.assertIsNotNone(event_payload)
         self.assertIsNotNone(ui_payload)
@@ -879,7 +879,7 @@ class TaskRunnerUiEventTests(unittest.TestCase):
         event = RunEvent.tool_finished(2, call, outcome, index=3)
 
         event_payload = run_event_payload(event)
-        ui_payload = TaskRunner._ui_event("run-1", "session-1", event)
+        ui_payload = run_event_ui_payload("run-1", "session-1", event)
 
         self.assertIsNotNone(event_payload)
         self.assertIsNotNone(ui_payload)
@@ -909,7 +909,7 @@ class TaskRunnerUiEventTests(unittest.TestCase):
         event = RunEvent.tool_finished(2, call, outcome, index=3)
 
         event_payload = run_event_payload(event)
-        ui_payload = TaskRunner._ui_event("run-1", "session-1", event)
+        ui_payload = run_event_ui_payload("run-1", "session-1", event)
 
         self.assertIsNotNone(event_payload)
         self.assertIsNotNone(ui_payload)
@@ -1305,7 +1305,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.3.17")
+        self.assertEqual(__version__, "0.3.18")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)

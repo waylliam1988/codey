@@ -1,5 +1,56 @@
 # Codey Test Report
 
+## 0.3.18 Event / Capability Matrix v1
+
+Codey 0.3.18 adds a tested Event / Capability Matrix and moves the existing
+Web/SSE `RunEvent` UI projection into `codey.events`. It keeps the release as
+architecture metadata plus a small event-projection refactor, not an event bus
+or runtime dispatcher.
+
+Production changes:
+
+- New `docs/codey_event_matrix.md` records event ids, producers, consumers,
+  linked capabilities, durable state, model visibility, UI visibility, policy
+  requirements, trace requirements, and privacy boundaries.
+- New `tests/test_event_matrix.py` parses that markdown matrix and rejects
+  duplicate event ids, unknown capability or durable-state names, missing
+  Prompt Envelope / Run Trace coverage for model-visible rows, missing policy
+  declarations, missing trace consumers, unknown UI surfaces, and raw-payload
+  privacy regressions.
+- The matrix now declares `review.recent_log` as the model-visible projection
+  rendered from `RunEvent` history for Review prompts. UI/SSE `run_event.*`
+  rows remain scoped to UI and ledger projections.
+- `codey.events.display_tool()` now owns the existing Research tool display
+  mapping, and `codey.events.run_event_ui_payload()` owns the existing Web/SSE
+  payload projection for `RunEvent`.
+- `TaskRunner` now calls the shared UI/SSE projection and no longer defines
+  local `_ui_event` or `_display_tool` helpers. `run_event_payload()` and
+  RunLedger projection remain separate because they serve different consumers.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_event_matrix.py tests\test_events.py tests\test_server.py tests\test_ui.py tests\test_run_ledger.py tests\test_run_trace.py tests\test_capabilities.py tests\test_architecture.py -q -p no:cacheprovider
+# 279 passed, 1 skipped, 246 subtests passed
+
+python -m pytest -q -p no:cacheprovider
+# 1999 passed, 9 skipped, 518 subtests passed
+
+python -m ruff check . --no-cache
+# All checks passed!
+
+python -m compileall codey tests
+# passed
+
+git diff --check
+# passed
+```
+
+No live provider A/B is required because 0.3.18 does not change prompt text,
+tool schema prompt, model-visible tool-result wording, Router behavior,
+provider fallback ordering, permissions, Research/Writer/Review semantics, UI
+structure, SSE payload shape, or task receipts.
+
 ## 0.3.17 Action Policy Pipeline v1
 
 Codey 0.3.17 adds a monotonic local action policy pipeline. Local runtime

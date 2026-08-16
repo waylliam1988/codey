@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.3.17-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.3.18-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.3.17`
+版本：`0.3.18`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -45,6 +45,10 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 - **本地动作统一过 guard**：文件、run、shell、Research URL、provider fallback
   和 managed-output artifact 的允许/询问/拒绝现在走同一条单调 action policy
   管线，并可审计，但不暴露 raw command 或 URL。
+- **事件边界可测试**：Codey 现在有 Event / Capability Matrix，记录 run event、
+  ledger、trace、工具投影、Research、Local context、Ghost、provider fallback、
+  managed output 和 changes 的生产者、消费者、持久化和隐私边界；它不新增事件总线，
+  也不改变 UI/SSE payload。
 - **自然继续待办**：Codey 有本地排队的后续任务时，你说“继续”就能认领一条，
   走对应的 Research、Writer 或 Review，并用本地 proof 收尾。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存带 source chips 的可读笔记卡片、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。

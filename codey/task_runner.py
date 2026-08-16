@@ -20,7 +20,7 @@ from codey.change_brief import (
 from codey.consensus import (
     render_project_context,
 )
-from codey.events import RunEvent, render_run_event
+from codey.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.execution_evidence import ExecutionEvidence
 from codey.ghost.continuity import build_ghost_continuity
 from codey.ghost.directive import build_ghost_directive
@@ -422,21 +422,6 @@ def _bullet_lines(values: tuple[str, ...]) -> str:
     if not values:
         return "- (none)"
     return "\n".join(f"- {item}" for item in values)
-
-
-def _display_tool(name: str, args: dict, path: str = "") -> tuple[str, str]:
-    research_names = {
-        "web_search": ("search", str(args.get("query") or "")),
-        "open_url": ("read", str(args.get("url") or "")),
-        "knowledge_search": ("recall", str(args.get("query") or "")),
-        "knowledge_read": ("note", str(args.get("id") or args.get("note_id") or "")),
-        "knowledge_write": ("note", str(args.get("title") or args.get("type") or "")),
-        "knowledge_link": ("link", str(args.get("src") or "")),
-    }
-    if name in research_names:
-        kind, label = research_names[name]
-        return kind, label[:160]
-    return name, "" if path == "." else path
 
 
 def _render_review_only_summary(review: object) -> str:
@@ -1259,7 +1244,7 @@ class TaskRunner:
         def on_event(event: RunEvent) -> None:
             if work.record_agent_events_in_ledger:
                 append_ledger(lambda ledger: ledger.append_run_event(event))
-            payload = self._ui_event(run_id, session_id, event)
+            payload = run_event_ui_payload(run_id, session_id, event)
             if payload is not None:
                 state.emit(payload)
             if event.kind == "tool_start":
@@ -2280,7 +2265,7 @@ class TaskRunner:
                 work.ledger.append_run_event(event)
             except Exception:
                 work.ledger = None
-        payload = self._ui_event(frame.run_id, frame.request.session_id, event)
+        payload = run_event_ui_payload(frame.run_id, frame.request.session_id, event)
         if payload is not None:
             self.state.emit(payload)
         if event.kind == "tool_start":
@@ -3035,69 +3020,3 @@ class TaskRunner:
                 self.knowledge_store.link(brief.synthesis_id, impl.id, "implements")
         except (OSError, ValueError):
             return
-
-    @staticmethod
-    def _ui_event(run_id: str, session_id: str, event: RunEvent) -> dict | None:
-        if event.kind == "turn":
-            payload = {"type": "turn", "run_id": run_id, "session_id": session_id, "turn": event.turn}
-            if event.note:
-                payload["note"] = event.note
-            return payload
-        if event.kind == "info":
-            text = event.message
-            names = str(event.metadata.get("names") or "")
-            if names:
-                text = f"{text}: {names}"
-            return {"type": "info", "run_id": run_id, "session_id": session_id, "text": text}
-        if event.kind == "tool_start" and event.call is not None:
-            path = str(event.call.args.get("path") or "")
-            display_kind, display_path = _display_tool(event.call.name, event.call.args, path)
-            tool_index = int(event.metadata.get("tool_index") or 0)
-            payload = {
-                "type": "tool_started",
-                "run_id": run_id,
-                "session_id": session_id,
-                "turn": event.turn,
-                "tool_id": f"{event.turn}:{tool_index}",
-                "kind": display_kind,
-                "path": display_path,
-                "activity": event.message,
-            }
-            command = str(event.call.args.get("command") or "")
-            if command:
-                payload["command"] = command
-            return payload
-        if event.kind != "tool" or event.call is None or event.outcome is None:
-            return None
-        path = str(event.call.args.get("path") or "")
-        display_kind, display_path = _display_tool(event.call.name, event.call.args, path)
-        result = event.outcome.presentation_result(200)
-        tool_index = int(event.metadata.get("tool_index") or 0)
-        status = event.outcome.presentation_status()
-        payload = {
-            "type": "tool",
-            "run_id": run_id,
-            "session_id": session_id,
-            "turn": event.turn,
-            "tool_id": f"{event.turn}:{tool_index}",
-            "kind": display_kind,
-            "path": display_path,
-            "result": result,
-            "status": status,
-            "error": status == "error",
-            "ok": event.outcome.ok,
-            "changed": event.outcome.changed,
-            "truncated": event.outcome.truncated,
-        }
-        command = str(event.call.args.get("command") or "")
-        if command:
-            payload["command"] = command
-        if event.outcome.exit_code is not None:
-            payload["exit_code"] = event.outcome.exit_code
-        managed = event.outcome.managed_output()
-        if managed:
-            payload["output_handle"] = str(managed.get("handle") or "")
-            payload["output_bytes"] = int(managed.get("original_bytes") or 0)
-            payload["output_stored_bytes"] = int(managed.get("stored_bytes") or 0)
-            payload["output_sha256"] = str(managed.get("sha256") or "")
-        return payload
