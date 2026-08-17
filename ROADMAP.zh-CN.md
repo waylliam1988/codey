@@ -497,15 +497,60 @@ UI 不新增 dashboard、profile selector、provenance graph 或常驻面板
 不让 profile 放宽 PermissionProfile
 不让 Ghost 自动后台联网研究
 不把 raw prompt / raw stdout / 网页正文 / 源码正文写进 trace、ledger 或 UI
-不拆 TaskRunner 主流程
+不做 TaskRunner big-bang rewrite；只在 proof、source、planner、analysis、review
+等真实生命周期边界成熟后逐步抽离
 ```
+
+### 0.4 横向主线：Research Planner + TaskRunner Decomposition
+
+0.4 不能只继续做证据治理。0.4.0 / 0.4.1 已经有 Research Object Model
+和 Evidence Ledger，后续要把它们变成真正提升研究能力的 planner loop：
+
+```text
+proof gap
+  -> follow-up question / query rewrite candidates
+  -> bounded research plan
+  -> limited follow-up search / fetch
+  -> proof review
+  -> critic feedback
+  -> longitudinal topic tracking
+```
+
+Codey 不追求复杂可见 UI 的 Deep Research，而是在后台用 proof gate 驱动
+bounded planner，让研究自己补洞、验证、收敛，同时保持用户界面安静。
+
+同时要逐步偿还 TaskRunner 架构债，但不能为了减少行数硬拆：
+
+```text
+0.4.2 抽 ResearchCompletionGate / proof_quality.py
+0.4.3 抽 source_connectors.py / query_planner.py dry-run 边界
+0.4.4 抽 ResearchPipeline v1，承接 bounded planner execution
+0.4.5 抽 AnalysisRunStore / Reproducibility Capsule / Artifact metadata 边界
+0.4.6 抽 ReviewFinding / Critic coordinator
+0.4.7 抽 DomainProfileResolver / SourceTrust rules
+0.4.8 抽 TopicContinuityService
+0.4.9 抽 ResearchBrief projection / impact contract
+0.4.10 把 Research runtime 串成可回归 harness
+```
+
+`_RunFrame` 的拆分要等真实所有权稳定后再做：
+
+```text
+SessionContext：request/session/conversation/snapshot
+ProviderContext：provider/provider_id/preflight/fallback/supervisor state
+TraceContext：run trace / prompt trace / ledger trace refs
+ResearchContext：record/ledger/proof/plan/critic refs
+```
+
+判断规则：如果一个字段只被 ResearchPipeline 使用，就迁到 ResearchContext；
+如果还被 chat/review/writer 共用，就先留在 frame 里。
 
 ### 0.4 A/B 节奏
 
 默认按隔版本设置实机 A/B 候选，避免打扰网页模型流量：
 
 ```text
-实机 A/B 候选：0.4.0 / 0.4.2 / 0.4.4 / 0.4.6 / 0.4.8 / 0.4.10
+实机 A/B 候选：0.4.2 / 0.4.4 / 0.4.6 / 0.4.8 / 0.4.10
 不需要 A/B：0.4.1 / 0.4.3 / 0.4.5 / 0.4.7 / 0.4.9
 ```
 
@@ -517,11 +562,16 @@ UI 不新增 dashboard、profile selector、provenance graph 或常驻面板
 改模型可见工具结果 -> A/B
 改 Ghost continuity 注入 -> A/B
 改 AnalysisRun 对模型的 tool/result contract -> A/B
+启用自动 bounded follow-up search -> A/B
 纯 schema / persistence / projection / deterministic validator / 文档 / 架构测试 -> 不 A/B
 ```
 
 如果某个偶数版本最终只做 projection、schema 或 read model，不改变 prompt / tool result /
 model-visible contract，也可以降级为 deterministic parity + local smoke，不强行 A/B。
+
+0.4.2 如果只做 deterministic metadata / local gate，可以不做生产 A/B；如果改变
+queue done 语义、repair path 或用户可见结果，要做小型 Research A/B。0.4.4
+只要启用自动 bounded follow-up search，就必须做 Research A/B。
 
 ## 0.4.0 - Evidence Kernel / Research Object Model v1
 
@@ -750,7 +800,7 @@ evidence.locator.source_id 非空时必须等于 evidence.source_id
 ```
 
 0.4.1 先持久化 0.4.0 已有 locator。更细来源的完整 locator fixture 随
-0.4.3 connector 和 0.4.4 AnalysisRun 继续补齐：
+0.4.3 connector 和 0.4.5 AnalysisRun / Reproducibility Capsule 继续补齐：
 
 ```text
 HTML: char_start / char_end / locator_hash
@@ -822,9 +872,10 @@ HTML / PDF / CSV / JSON / local file locator 的完整 fixture 随后续 connect
 没有改 Research prompt、模型可见 tool result、Router、provider fallback、权限、
 UI 或 SSE。
 
-## 0.4.2 - Research Proof Quality Gate v1
+## 0.4.2 - Research Proof Quality Gate + Planner Signals v0
 
-状态：规划。目标是解决 Research work item 的 proof 太弱的问题。
+状态：规划。目标是解决 Research work item 的 proof 太弱的问题，并为后续
+bounded Research Planner 产出第一版 deterministic gap signals。
 
 现在 `research:*` proof 只能证明“有研究产物”。0.4.2 要证明：
 
@@ -953,11 +1004,15 @@ research_proof ref bounded
 
 ### A/B
 
-需要。它会影响 Research 队列完成质量和可能的模型修复路径。
+条件式。若 0.4.2 只生成 read-only proof report / deterministic metadata，不改变
+queue done、repair path、prompt、tool result 或用户可见结果，可以不做生产 A/B。
+若启用 `queued question 未被回答 -> cannot complete` 这类 completion gate，
+就会改变 Ghost work queue completion 语义，必须做小型 Research/Ghost queue A/B。
 
-## 0.4.3 - Source Connector Boundary v1
+## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 
-状态：规划。目标是支持更多来源，但不增加模型工具复杂度。
+状态：规划。目标是支持更多来源，并让 planner 可以生成 ResearchPlan dry-run，
+但不自动执行搜索或改变模型可见结果。
 
 ### 做什么
 
@@ -968,6 +1023,9 @@ SourceConnector
 SourceHit
 FetchedSource
 ConnectorRegistry
+ResearchPlan
+QueryCandidate
+SourcePreference
 ```
 
 首批只做内置、只读、低风险来源类型：
@@ -995,7 +1053,8 @@ local PDF folder
 RSS feeds
 ```
 
-0.4.3 的最小 shipped set 不能只落 catalog/unavailable，必须至少可用：
+0.4.3 的最小 connector fixture set 不能只落 catalog/unavailable，必须至少有
+recorded fixtures 可用：
 
 ```text
 local file
@@ -1009,6 +1068,35 @@ OpenAlex
 connector registry 从第一版就要能表达这些来源的 search/fetch 能力、rate limit、
 source quality hint 和 failure mode。
 
+0.4.3 分两档：
+
+```text
+0.4.3a: registry + dry-run + recorded fixtures，不进模型工具面
+0.4.3b: connector hit 进入 source_search/open_url 真实工具结果
+```
+
+只有 0.4.3a 可以保持无 A/B。只要进入 0.4.3b，就属于改变模型可见工具结果
+或 source selection，必须做 connector smoke/A-B。
+
+新增 Query Planner dry-run：
+
+```text
+ResearchPlan(
+    question
+    gaps
+    query_candidates
+    source_preferences
+    max_depth
+    max_queries
+    max_sources
+    reason_codes
+)
+```
+
+Planner v0 只消费 0.4.2 的 `coverage_gaps / followup_questions /
+query_rewrite_candidates` 和 connector registry metadata，输出 bounded plan；
+不调用 web_search/open_url，不改变 ResearchRunner 流程。
+
 模型工具面仍保持小：
 
 ```text
@@ -1020,9 +1108,9 @@ done
 ```
 
 connector 细节由本地 runtime 处理，不暴露给模型。
-connector hit 必须通过现有工具面可达：search/fetch 返回稳定 `source_ref` /
-`source_id`，并能被 `open_url` 或 `source_search` 继续打开和定位。实现了 catalog
-但 Research 无法通过现有工具使用的 connector，不能计入 shipped set。
+connector hit 若进入真实工具面，必须通过现有工具面可达：search/fetch 返回稳定
+`source_ref` / `source_id`，并能被 `open_url` 或 `source_search` 继续打开和定位。
+只实现 catalog 但没有 fixture 或真实工具路径的 connector，不能计入 shipped set。
 
 ### 边界
 
@@ -1034,12 +1122,16 @@ connector hit 必须通过现有工具面可达：search/fetch 返回稳定 `sou
 - Connector Pack 不能把每个来源变成一个新模型工具。
 - connector failure 必须 bounded，不影响普通 web/html Research。
 - 本地文件、CSV/TSV 和 local PDF connector 只允许来自用户显式选择的项目或文件范围。
+- Query Planner dry-run 不能自动执行 query，不能把 plan 注入模型 prompt。
+- Source trust 只能作为 plan metadata / warning，不在 0.4.3 改 search ranking。
 
 ### 顺手架构优化
 
 ```text
 把 browser_search / pdf_extract / source_document 的 fetch/read 输出收敛到 FetchedSource
 SourceDocument 保留为模型无关的 normalized document
+新增 research/query_planner.py，只产出 ResearchPlan，不执行 plan
+TaskRunner 不接 planner 分支；后续 0.4.4 再由 ResearchPipeline 消费 plan
 ```
 
 ### 验证
@@ -1049,24 +1141,114 @@ connector id 稳定、snake_case
 所有 connector 只读
 connector registry 不 import server/task_runner/provider
 Connector Pack id 集合稳定，未实现 connector 要明确 unavailable
-shipped connector hit 必须有稳定 source_ref/source_id
-shipped connector hit 必须能被 open_url/source_search 打开或定位
+fixture connector hit 必须有稳定 source_ref/source_id
+进入真实工具面的 connector hit 必须能被 open_url/source_search 打开或定位
 local file 不能 escape workspace / allowed roots
 private/local URL 仍然 deny
 connector search hit 仍然不是 Evidence，必须 fetch/open 后才可引用
+ResearchPlan id / query ids 稳定、bounded、可解释
+ResearchPlan 不含 raw prompt / raw webpage body / raw absolute path
+planner dry-run 不改变 UI/SSE/prompt/tool result
 ```
 
 ### A/B
 
-不需要 provider A/B，前提是只做 registry / projection，且不改变模型可见工具结果。
-必须做 recorded connector fixtures + live connector smoke。
+不需要 provider A/B，前提是只做 registry / projection / planner dry-run /
+recorded fixtures，且不改变模型可见工具结果。
+必须做 recorded connector fixtures。live connector smoke 只针对进入真实工具面的 connector。
 
 如果 connector 接入改变 search ranking、fetch 内容、tool result 文案或 source
 selection，就做 connector parity smoke/A-B，因为这已经改变 Research 的模型可见输入。
 
-## 0.4.4 - AnalysisRun v1
+## 0.4.4 - Bounded Research Planner v1
 
-状态：规划。目标是让 Research 可以做可复查的本地分析，而不是只总结网页。
+状态：规划。目标是让 Codey 在 proof gap 明确时，能在后台做有限补搜、
+验证和再综合，而不是停留在一次流水线。
+
+### 做什么
+
+新增：
+
+```text
+research/pipeline.py
+research/plan_executor.py
+```
+
+Planner execution v1：
+
+```text
+ResearchProofReview
+  -> ResearchPlan
+  -> bounded follow-up search/fetch
+  -> append into per-run ResearchLedger / EvidenceLedger candidate
+  -> re-run synthesis and report_quality
+  -> rebuild consolidated final ResearchRecord
+  -> proof review again
+  -> final ResearchRunResult
+```
+
+硬限制：
+
+```text
+max_followup_rounds
+max_queries_per_round
+max_sources_per_query
+max_total_sources
+max_total_tokens_for_synthesis
+max_wall_time
+reason_codes
+stop_reason
+```
+
+### 边界
+
+- 只有用户已经显式开启 Research 时，planner 才能补搜。
+- Planner 不能绕过 PermissionProfile / ActionPolicy / URL guard。
+- Planner 不能调用没有 connector contract 的来源。
+- Planner 不能把 Ghost hint 当 evidence。
+- Planner 不能把新 evidence 原地 merge 进旧 ResearchRecord 支撑旧 final claims。
+  每轮补搜只能产生 iteration record / ledger candidate，最终必须重新 synthesis，
+  再生成 consolidated final ResearchRecord。
+- Planner 不能无限递归；达到预算必须停止并解释 gap。
+- UI 不新增 planner 面板，不自动弹窗；Run Details 只显示 bounded summary。
+- Run Trace 只记录 plan_ref、counts、stop_reason、gap refs，不保存 raw query transcript。
+
+### 顺手架构优化
+
+```text
+抽 ResearchPipeline v1：负责 ResearchRunner + proof gate + planner retry 的编排
+research/query_planner.py 保持 plan 生成；research/plan_executor.py 只执行 plan
+TaskRunner 只调用 ResearchPipeline，不再拼 proof/planner 分支
+_RunFrame 暂不拆；只把 research-only 状态迁入 ResearchContext
+Provider/session/trace lifecycle 仍由 TaskRunner 管
+```
+
+### 验证
+
+```text
+coverage gap 足够明确 -> 生成 bounded plan
+coverage 达标 -> 不补搜
+max rounds / queries / sources 生效
+follow-up search 仍走 Research URL guard
+follow-up evidence 必须来自打开/读取过的 source
+follow-up 产生 iteration record / ledger candidate，不能直接 mutate final ResearchRecord
+最终 ResearchRecord 必须从最终报告重新 projection
+planner stop reason 可解释
+RunTrace 不含 raw prompt / raw webpage body / raw query transcript
+UI/SSE shape 不变
+ResearchPipeline deterministic fixture 可回归
+```
+
+### A/B
+
+需要。只要启用自动 bounded follow-up search，就改变 Research 行为，
+必须做小型 Research A/B，并记录 citation quality、answer coverage、
+unsupported claim rate、UI interruption count 和 provider 流量。
+
+## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
+
+状态：规划。目标是让 Research 可以做可复查的本地分析，而不是只总结网页；
+同时让报告、表格、图和分析输出有最小 lineage。
 
 ### 做什么
 
@@ -1074,6 +1256,8 @@ selection，就做 connector parity smoke/A-B，因为这已经改变 Research �
 
 ```text
 research/analysis_run.py
+research/reproducibility.py
+research/artifact_lineage.py
 ```
 
 记录：
@@ -1081,7 +1265,7 @@ research/analysis_run.py
 ```text
 analysis_run_id
 tool / command
-cwd
+cwd_ref
 input_refs
 output_refs
 log_handle
@@ -1101,52 +1285,20 @@ started_at / finished_at
 artifact_refs
 ```
 
-Research 报告中的分析结论必须引用：
+Reproducibility Capsule：
 
 ```text
-analysis_run:<id>
+capsule_id
+analysis_run_refs
+input_refs
+output_refs
+artifact_refs
+environment_ref
+reproduction_status
+warnings
 ```
 
-### 边界
-
-- 不新造执行器，复用 ToolRuntime / ActionPolicy / Managed Outputs。
-- 不开放任意 shell；仍走现有 run/shell approval 边界。
-- 不把 raw stdout 塞进模型上下文；长输出走 managed output handle。
-- 不新增 UI；Run Details 可以安静显示 “Analysis checked”。
-
-### 顺手架构优化
-
-```text
-把 run command 的 audit metadata 和 managed output metadata 投影成 AnalysisRun input
-复用 0.3.17 action policy decision refs
-新增 Reproducibility Capsule helper，只处理 metadata，不接管执行
-```
-
-### 验证
-
-```text
-analysis input/output/log 都有 bounded refs
-失败分析不能支撑 claim
-cwd/script_hash/input_hashes/output_hashes/exit_code 可审计
-dependency/env fingerprint 有大小上限
-rerun_command_ref / sanitized_argv / command_digest 经过 bounded display 和 action policy digest
-完整复现命令只在用户显式 export artifact 时包含
-git dirty state 只记录摘要，不保存 diff
-raw stdout 不进入 trace / UI
-workspace escape deny
-```
-
-### A/B
-
-需要。它会改变 Research 能力和模型可见的分析工具结果 contract。
-
-## 0.4.5 - Artifact Lineage v1
-
-状态：规划。目标是让报告、表格、图和分析输出有来源，不只是散落文件。
-
-### 做什么
-
-扩展 managed outputs 的 metadata：
+最小 Artifact Lineage：
 
 ```text
 artifact_id
@@ -1164,25 +1316,30 @@ input_refs
 derived_from
 ```
 
-artifact 可以来自：
+Research 报告中的分析结论必须引用：
 
 ```text
-Research synthesis
-AnalysisRun output
-generated chart/table
-bounded report export
+analysis_run:<id>
 ```
 
 ### 边界
 
-- 不做 artifact manager UI。
-- 不新增文件浏览器。
-- 不保存 raw prompt / webpage body。
+- 0.4.5 v1 只记录已有执行 / Managed Outputs 的 metadata。
+- 如果新增模型可调用 analysis tool、自动分析，或改变模型可见 AnalysisRun
+  tool/result contract，必须做小型 A/B。
+- 不新造执行器，复用 ToolRuntime / ActionPolicy / Managed Outputs。
+- 不开放任意 shell；仍走现有 run/shell approval 边界。
+- 不把 raw stdout 塞进模型上下文；长输出走 managed output handle。
+- 不做 artifact manager UI 或文件浏览器。
 - artifact 仍然是本地 handle，不塞进模型上下文。
+- Planner 可以建议本地分析，但不能绕过权限或自动执行危险动作。
 
 ### 顺手架构优化
 
 ```text
+把 run command 的 audit metadata 和 managed output metadata 投影成 AnalysisRun input
+复用 0.3.17 action policy decision refs
+新增 Reproducibility Capsule helper，只处理 metadata，不接管执行
 managed_outputs.py 继续负责存储和大小边界
 research/artifact_lineage.py 只负责 metadata projection
 ```
@@ -1190,22 +1347,30 @@ research/artifact_lineage.py 只负责 metadata projection
 ### 验证
 
 ```text
-artifact id 稳定
-artifact version_id 稳定，不能静默覆盖旧版本
-artifact size/count policy 生效
-capture_quality 区分 exact / declared / partial / unknown
-exact 表示 hash-backed precise capture，declared 表示只有声明元数据，partial 表示部分捕获
+analysis input/output/log 都有 bounded refs
+失败分析不能支撑 claim
+cwd/script_hash/input_hashes/output_hashes/exit_code 可审计
+dependency/env fingerprint 有大小上限
+rerun_command_ref / sanitized_argv / command_digest 经过 bounded display 和 action policy digest
+完整复现命令只在用户显式 export artifact 时包含
+git dirty state 只记录摘要，不保存 diff
+raw stdout 不进入 trace / UI
+workspace escape deny
+artifact id / version_id 稳定，不能静默覆盖旧版本
 artifact derived_from 只能引用 Source/Evidence/AnalysisRun/Run
 坏 artifact metadata fail-open 到 unavailable，不影响模型 bounded result
 ```
 
 ### A/B
 
-不需要。纯 metadata / projection。
+不需要，前提是只做 metadata / projection / local capsule，不改变模型可见
+AnalysisRun tool/result contract。若让模型看到新的分析工具结果或自动执行分析，
+顺延做小型 A/B。
 
-## 0.4.6 - Evidence Critic v1
+## 0.4.6 - Evidence Critic + Planner Feedback v1
 
-状态：规划。目标是让 Codey 自动检查研究结论，不只检查格式。
+状态：规划。目标是让 Codey 自动检查研究结论，不只检查格式，并把 critic
+finding 转成 planner 可以处理的 gap。
 
 ### 做什么
 
@@ -1230,6 +1395,16 @@ ReviewFinding(
     confirmed_by
     message
 )
+```
+
+Planner feedback projection：
+
+```text
+unsupported claim -> follow-up question
+stale source -> refresh query
+weak source -> stronger source request
+missing counterevidence -> counterevidence search gap
+citation mismatch -> locator verification gap
 ```
 
 Finding lifecycle：
@@ -1259,6 +1434,8 @@ model critic
 - critic 不能覆盖 ActionPolicy 或 PermissionProfile。
 - critic finding 只显示中性摘要，不显示内部 trace dump。
 - 强结论需要 Research loop 记录 counterevidence search；critic 只能指出缺口，不能替代补证据。
+- critic 可以产出 planner gap，但不能自己执行 search/fetch。
+- finding -> planner gap 必须 bounded、可解释、可关闭。
 
 ### 顺手架构优化
 
@@ -1266,6 +1443,7 @@ model critic
 report_quality.py 逐步从格式检查变成 Evidence Critic 的 deterministic layer
 Research critic / review_coordinator 消费 finding，不再重复解析 Research summary
 新增 ReviewFinding append-only projection，finding 状态变更只追加事件
+抽 CriticCoordinator，ResearchPipeline 只消费 finding refs 和 planner gap refs
 ```
 
 ### 验证
@@ -1277,6 +1455,8 @@ citation number mismatch 被抓出
 过度推断给 overreach warning
 contradictory_sources / source_conflict 被抓出
 counterevidence search 缺失会产生 finding
+critic finding 能生成 planner gap refs
+planner gap refs 不含 raw prompt / raw webpage body
 open finding 不能被模型自称修复直接 confirmed
 model critic 输出坏 JSON fail-closed 到 deterministic result
 ```
@@ -1285,9 +1465,10 @@ model critic 输出坏 JSON fail-closed 到 deterministic result
 
 需要。critic prompt 和最终 Research 修复行为可能影响模型输出。
 
-## 0.4.7 - Domain Evidence Profiles v1
+## 0.4.7 - Domain Profiles + Source Trust Rules v1
 
-状态：规划。目标是让不同研究领域有不同证据标准，但不把 profile UI 推给用户。
+状态：规划。目标是让不同研究领域有不同证据标准和来源可信度规则，但不把
+profile UI 推给用户。
 
 ### 做什么
 
@@ -1310,6 +1491,21 @@ freshness_expectation
 counterevidence_required
 primary_source_preference
 analysis_required_when_data_claim
+source_trust_rules
+preferred_connector_kinds
+disfavored_source_patterns
+```
+
+Source trust v1：
+
+```text
+official / primary source
+peer-reviewed / preprint
+dataset / filing / standard
+repository / issue / release
+news / secondary source
+forum / social / aggregator
+unknown
 ```
 
 ### 边界
@@ -1320,13 +1516,17 @@ analysis_required_when_data_claim
 - 不自动联网 Research。
 - v1 可以由 Research question heuristic 选择建议规则，但 catalog-only 阶段不 enforcement；
   一旦影响 proof gate、critic 阈值、repair 路径或模型可见结果，就属于行为变化。
+- Source trust 不能直接删除 evidence，只能影响 warning、planner preference 或 proof 阈值。
+- 任何 domain rule 都不能绕过用户显式 Research 入口。
 
 ### 顺手架构优化
 
 ```text
 builtin_profiles.py 保持 metadata-only
 research/domain_profiles.py 只做 quality rule catalog
+research/source_trust.py 只做 deterministic source trust projection
 capability registry 声明 domain evidence profiles 是 metadata，不是 dispatcher
+抽 DomainProfileResolver，但不接 Router/provider fallback
 ```
 
 ### 验证
@@ -1335,6 +1535,7 @@ capability registry 声明 domain evidence profiles 是 metadata，不是 dispat
 finance freshness 更严格
 legal primary source preference 更严格
 science citation/source quality 更严格
+planner source_preferences 随 domain rule 变化但 bounded 可解释
 profile 不参与 Router/provider fallback/permission
 profile 不能 relax permissions
 ```
@@ -1346,9 +1547,10 @@ profile 不能 relax permissions
 如果启用 enforcement，或影响 proof gate、critic 阈值、repair 路径、tool result
 或模型可见 prompt，需要 eval/live smoke；影响模型输出时再做小型 A/B。
 
-## 0.4.8 - Ghost Research Continuity v1
+## 0.4.8 - Ghost Research Continuity + Topic Planner v1
 
-状态：规划。目标是让 Codey 可以连续追踪长期研究主题，但不让记忆污染事实。
+状态：规划。目标是让 Codey 可以连续追踪长期研究主题，并把开放问题转成
+topic-level plan，但不让记忆污染事实。
 
 ### 做什么
 
@@ -1360,6 +1562,7 @@ open question refs
 previous claim refs
 user preference hints
 stale evidence reminders
+topic plan candidates
 ```
 
 Research prompt 只接收 bounded continuity：
@@ -1375,12 +1578,16 @@ This is local context, not evidence. Re-check sources before making factual clai
 - Ghost 不能让 Research 自动联网。
 - Ghost 不能把旧结论当本轮事实。
 - UI 不显示 Ghost / Memory / Work Queue 等内部词。
+- Topic Planner 只能建议“下次该继续研究什么”，不能后台自动联网执行。
+- 旧 claim 进入 planner 时必须带 stale/risk 标记，不能进入 evidence_refs。
 
 ### 顺手架构优化
 
 ```text
 把 Research Interest Queue 的 open_question refs 映射到 Evidence Runtime question refs
 Ghost work queue completion 只接受 ResearchProofReview 产出的 proof refs
+抽 TopicContinuityService：只产出 topic/open_question/stale refs，不读 raw note body
+ResearchPipeline 消费 bounded continuity refs，不直接读 Ghost store
 ```
 
 ### 验证
@@ -1388,6 +1595,7 @@ Ghost work queue completion 只接受 ResearchProofReview 产出的 proof refs
 ```text
 Ghost hint 不可进入 evidence_refs
 旧 claim 必须重新验证或标 stale
+topic plan candidate 不会自动触发 Research
 Research continuity prompt 不出现 Ghost 内部词
 disable Ghost 后 Research 行为回到 baseline
 ```
@@ -1398,7 +1606,8 @@ disable Ghost 后 Research 行为回到 baseline
 
 ## 0.4.9 - Research Brief v2
 
-状态：规划。目标是让 Research 到 Writer 的交接更可靠。
+状态：规划。目标是把 proof / planner / critic / evidence 的结果压成更可靠的
+Research 到 Writer 交接。
 
 ### 做什么
 
@@ -1412,6 +1621,9 @@ analysis_run_refs
 artifact_refs
 open_question_refs
 impact_refs
+proof_review_refs
+planner_gap_refs
+critic_finding_refs
 ```
 
 Writer 看到的是短 handoff，不是 raw vault：
@@ -1420,6 +1632,7 @@ Writer 看到的是短 handoff，不是 raw vault：
 what was concluded
 why it is supported
 what remains uncertain
+which gaps were checked or deferred
 what files / implementation choices this affects
 ```
 
@@ -1450,6 +1663,7 @@ decision_refs
 knowledge/brief.py 改成消费 Evidence Runtime projection
 减少从 note body / citation map 反解析的逻辑
 新增 impact projection，不让 Writer 自己从长报告里猜实现约束
+ResearchBrief projection 只消费 refs，不直接读 raw ledger/source body
 ```
 
 ### 验证
@@ -1458,6 +1672,7 @@ knowledge/brief.py 改成消费 Evidence Runtime projection
 brief 有大小上限
 brief 不含 raw webpage/source body
 brief 中 claim/evidence/assumption refs 可解析
+proof_review_refs / planner_gap_refs / critic_finding_refs 可解析
 unsupported claim 不进入 confirmed section
 impact refs 必须来自已验证 supports relation 的 claim / declared assumption with risk_note / analysis_run
 declared assumption 只能进入 uncertainty / risk 区，不能支撑 confirmed implementation constraint
@@ -1485,6 +1700,8 @@ Codey 在泛化个人研究工作流上超过 baseline 和 OpenScience-style 对
 stale evidence 被标记
 AnalysisRun 可复查
 ResearchProofReview 能解释为什么 done
+ResearchPlan 能解释为什么补搜或停止
+Planner follow-up 不造成 UI interruption
 ```
 
 新增 Comparison Benchmark：
@@ -1507,6 +1724,8 @@ stale update correctness
 reproducible analysis rate
 research-to-code handoff quality
 longitudinal topic tracking score
+planner gap closure rate
+planner unnecessary follow-up rate
 UI interruption count
 ```
 
@@ -1549,6 +1768,8 @@ stale source 能被标记
 新 evidence 能修订旧 conclusion
 unsupported old claim 不会被带入新 brief
 Codey 在固定 fixture 上通过 Regression Gate
+Planner 能提升 answer coverage / counterevidence coverage，且 unsupported claim 不上升
+Planner unnecessary follow-up rate 低于阈值
 需要宣称超过 baseline / OpenScience 时，必须满足 Superiority Gate
 real OpenScience head-to-head 记录 version/commit/provider/model/task/date/artifact/rubric
 live smoke 输出不含 raw prompt / raw webpage body
@@ -1632,6 +1853,8 @@ tests/test_research_evidence_ledger.py
 tests/test_research_proof_quality.py
 tests/test_answer_coverage.py
 tests/test_citation_locator.py
+tests/test_research_query_planner.py
+tests/test_research_pipeline.py
 tests/test_source_connectors.py
 tests/test_connector_parity_pack.py
 tests/test_research_analysis_run.py
@@ -1673,6 +1896,8 @@ Claim 必须绑定 Evidence 或标成 Assumption
 Claim graph relation kind 必须来自固定枚举
 Citation locator 必须能回到 opened source
 Answer Coverage 不能只看 citation presence
+ResearchPlan dry-run 不能执行 search/fetch
+Bounded Research Planner 必须受 max rounds / queries / sources 限制
 AnalysisRun 必须走 ActionPolicy / ToolRuntime
 Reproducibility Capsule 不保存 raw stdout/stderr
 Source Connector Registry 不加载第三方代码
@@ -1692,16 +1917,16 @@ Writer prompt、provider fallback 策略或工具权限时，才需要 provider 
 0.4 默认隔版本设置小型实机 A/B 候选：
 
 ```text
-0.4.0 Evidence Kernel / Research Object Model（仅当改 prompt / tool result 时）
+0.4.0 Evidence Kernel / Research Object Model（已完成；projection-only，不需要 A/B）
 0.4.2 Research Proof Quality Gate
-0.4.4 AnalysisRun
-0.4.6 Evidence Critic
-0.4.8 Ghost Research Continuity
+0.4.4 Bounded Research Planner
+0.4.6 Evidence Critic + Planner Feedback
+0.4.8 Ghost Research Continuity + Topic Planner
 0.4.10 Longitudinal Research Harness + Comparison Benchmark
 ```
 
 0.4.1、0.4.3、0.4.5、0.4.7、0.4.9 如果只做 schema、ledger、projection、
-connector boundary、metadata 或 deterministic validator，不做 live provider A/B。
+connector boundary、planner dry-run、metadata 或 deterministic validator，不做 live provider A/B。
 
 逐步新增：
 
@@ -1715,6 +1940,7 @@ tests/manual/ghost_research_interest_queue_production_ab.py
 tests/manual/ghost_affinity_ab.py
 tests/manual/ghost_affinity_quality_ab.py
 tests/manual/research_proof_quality_ab.py
+tests/manual/bounded_research_planner_ab.py
 tests/manual/research_analysis_run_ab.py
 tests/manual/research_critic_ab.py
 tests/manual/ghost_research_continuity_ab.py
