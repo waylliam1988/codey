@@ -8,6 +8,9 @@ from unittest import mock
 from codey import server
 from codey.consensus import ConsensusResult
 from codey.agent import RunResult
+from codey.research.ledger import ResearchLedger
+from codey.research.object_model import ResearchRecord, build_research_record
+from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey import task_runner as task_runner_module
 from codey.task_runner import TaskRequest, TaskRunner
@@ -79,6 +82,7 @@ def _runner(
         work_checkpoints=state.work_checkpoints,
         run_ledgers=state.run_ledgers,
         run_traces=state.run_traces,
+        evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
@@ -90,6 +94,70 @@ def _trace_payload(state: server.State, session_id: str, run_id: str) -> dict:
     assert state.run_traces is not None
     path = state.run_traces.path_for(session_id, run_id)
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _research_record(project: Path | None = None) -> ResearchRecord:
+    url = "https://example.com/helium?token=SECRET_TOKEN"
+    summary = (
+        "## 结论\n"
+        "- Helium supply depends on gas processing. [1]\n\n"
+        "## 关键证据\n"
+        "- [1] The opened source says helium is separated from natural gas streams.\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证；需要持续追踪新供应数据。\n\n"
+        "## 来源质量\n"
+        "- [1] secondary · web · fresh · example.com\n\n"
+        "## 搜索覆盖\n"
+        "- query: helium\n"
+        "- opened: Helium article\n"
+        "- skipped: none representative\n\n"
+        "## 来源\n"
+        f"[1] Helium article - {url}"
+    )
+    ledger = ResearchLedger()
+    ledger.record_search("helium", [{
+        "title": "Helium article",
+        "url": url,
+        "snippet": "Helium supply.",
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="Helium article",
+        text="Helium is separated from natural gas streams.",
+    )
+    prepared = ledger.prepare_evidence_items(
+        [{
+            "claim": "Helium supply depends on gas processing.",
+            "source_url": url,
+            "excerpt": "Helium is separated from natural gas streams.",
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim="Helium supply depends on gas processing.",
+        fallback_body="Helium is separated from natural gas streams.",
+        note_type="fact",
+    )
+    assert not prepared.error
+    ledger.add_evidence_items(list(prepared.items), note_id="note-1")
+    review = review_report_quality(
+        summary,
+        ledger=ledger,
+        opened_sources=ledger.final_url_set(),
+        search_result_urls={url},
+    )
+    assert review.ok
+    return build_research_record(
+        question="Research helium",
+        summary=summary,
+        ledger=ledger,
+        review=review,
+        run_id="run-record",
+        session_id="session-evidence-ledger",
+        project=project,
+        synthesis_id="synth-1",
+        stop_reason="done",
+    )
 
 
 def test_project_run_writes_bounded_trace_without_raw_prompt_or_provider_error() -> None:
@@ -224,6 +292,74 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         assert "Example Source" not in serialized
         assert "SECRET_RESEARCH_RECORD_SHOULD_NOT_BE_SAVED" not in serialized
         assert "research_record" not in research_payload
+
+
+def test_research_result_appends_evidence_ledger_without_terminal_payload_change() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        project = root / "project"
+        project.mkdir()
+        state = server.State(root / "state")
+        record = _research_record(project)
+        result = ResearchRunResult(
+            question="Research helium",
+            summary="done",
+            stop_reason="done",
+            turns=1,
+            synthesis_id="synth-1",
+            opened_sources=[{
+                "requested_url": "https://example.com/helium?token=SECRET_TOKEN",
+                "final_url": "https://example.com/helium?token=SECRET_TOKEN",
+                "title": "Helium article",
+            }],
+            research_record=record,
+        )
+
+        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+            runner = _runner(state)
+            runner._run_research_task = mock.Mock(return_value=result)
+            runner.run(TaskRequest(
+                "session-evidence-ledger",
+                str(project),
+                "Research helium",
+                4,
+                False,
+                "deepseek",
+                intent="research",
+            ))
+            state.wait_for_ghost_sleep(timeout=2)
+
+        assert state.evidence_ledgers is not None
+        snapshot = state.evidence_ledgers.load(
+            session_id="session-evidence-ledger",
+            project=project,
+        )
+        run_id = state.last_terminal_event["run_id"]
+        trace_payload = _trace_payload(state, "session-evidence-ledger", run_id)
+        terminal_research_payload = state.last_terminal_event["research"]
+        serialized_trace = json.dumps(trace_payload, ensure_ascii=False)
+
+        assert snapshot.available is True
+        assert len(snapshot.payload["records"]) == 1
+        assert trace_payload["research_evidence_ledgers"] == [{
+            "ok": True,
+            "skipped": False,
+            "reason_code": "",
+            "ledger_ref": snapshot.payload["ledger_ref"],
+            "record_id": record.record_id,
+            "counts": {
+                "records": 1,
+                "sources": 1,
+                "evidence": 1,
+                "claims": 3,
+                "assumptions": 1,
+                "relations": 3,
+            },
+        }]
+        assert trace_payload["research_records"][0]["record_id"] == record.record_id
+        assert "SECRET_TOKEN" not in serialized_trace
+        assert "research_record" not in terminal_research_payload
+        assert "evidence_ledger" not in terminal_research_payload
 
 
 def test_hybrid_trace_records_research_and_writer_phases() -> None:

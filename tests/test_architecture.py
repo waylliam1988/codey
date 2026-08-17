@@ -318,6 +318,34 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertNotIn(token, source)
 
+    def test_research_identity_and_evidence_ledger_do_not_import_runtime_layers(self) -> None:
+        forbidden_imports = {
+            "codey.browser",
+            "codey.deepseek",
+            "codey.qwen",
+            "codey.stepfun",
+            "codey.glm",
+            "codey.providers",
+            "codey.provider_controls",
+            "codey.tool_runtime",
+            "codey.server",
+            "codey.task_runner",
+            "codey.ghost",
+            "importlib",
+            "pkgutil",
+            "subprocess",
+        }
+        for path in (
+            ROOT / "codey" / "research" / "identity.py",
+            ROOT / "codey" / "research" / "evidence_ledger.py",
+        ):
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                imports = imported_modules(path)
+                self.assertTrue(
+                    forbidden_imports.isdisjoint(imports),
+                    sorted(forbidden_imports & imports),
+                )
+
     def test_research_review_and_local_context_do_not_import_tool_runtime(self) -> None:
         paths = [
             *(ROOT / "codey" / "research").glob("*.py"),

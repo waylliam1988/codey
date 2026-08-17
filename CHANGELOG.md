@@ -4,6 +4,59 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.1 - Evidence Ledger v2
+
+- Added `codey/research/identity.py`, a shared bounded identity helper for
+  Research projections. URL refs now reuse one redaction/digest path across
+  Research object and ledger code, including malformed/no-host URL inputs and
+  query keys/values. Project and path refs continue to store basename plus
+  digest rather than raw absolute paths.
+- Added `codey/research/evidence_ledger.py`, a durable local read model that
+  appends completed `ResearchRecord` objects into a bounded
+  `research/evidence_ledgers/<session>/<project>.json` ledger. It records
+  source/evidence/claim/assumption/relation ids, locator refs, counts, schema
+  version, and content-addressed refs for later proof checks.
+- Evidence ledger writes are fail-open: missing/invalid records, bad ledger
+  JSON, oversized ledger files, and write failures do not break the Research
+  run. Run Trace records only a bounded evidence-ledger write summary.
+- Ledger trimming now preserves graph closure. When source/evidence/claim/
+  assumption/relation maps reach their caps, Codey keeps the newest complete
+  records and prunes older records instead of retaining records with dangling
+  refs. Loaded ledgers are graph-validated before becoming available. Closure
+  includes nested claim evidence/assumption refs, assumption claim refs,
+  evidence source refs, evidence locator source refs, and relation endpoints.
+  Load-time allow-list validation rejects unknown raw fields, orphan map
+  entries, map key / entry id mismatches, non-canonical scalar values, and
+  locator source ids that disagree with their evidence source ids. Loaded
+  record counts must match retained refs, and source `content_hash` values are
+  kept only when they are canonical hashes; fake `sha256:` content-hash values
+  are cleared rather than rehashed.
+- `EvidenceLedgerStore.append_record()` accepts typed `ResearchRecord` objects
+  only; mapping fallbacks are rejected before nested refs can persist raw URLs,
+  paths, or source-body-like fields. Digest refs only preserve real
+  `sha256:<64 hex>` strings; pseudo-digest strings are rehashed.
+- If a malformed typed record is pruned for ledger closure, `append_record()`
+  now returns `skipped=True` with `record_pruned_for_ledger_closure` instead of
+  reporting a successful write. Candidate writes are isolated until the new
+  record survives trimming and the candidate payload passes full canonical
+  validation, so a malformed replacement cannot delete an existing good record
+  or poison the next load. When no new payload is written, the result preserves
+  previously loaded ledger counts. Typed records whose `to_jsonable()` fails,
+  including malformed nested objects, return `invalid_record` without raising
+  from the store.
+- `TaskRunner`, server state, and the headless JSONL runner now carry the
+  optional `EvidenceLedgerStore`. The user-facing Research payload, task
+  receipt shape, UI, and SSE events remain unchanged.
+- Added the `research_evidence_ledger` capability and the
+  `research.evidence_ledger` Event / Capability Matrix row. Architecture tests
+  keep the identity and ledger modules away from provider adapters, browser
+  code, tool runtime, TaskRunner/server orchestration, Ghost runtime, and
+  plugin loaders.
+- This release does not change Research prompts, tool schemas,
+  model-visible tool output, Router behavior, provider fallback ordering,
+  permissions, UI, task receipts, or SSE payload shape. No production live
+  provider A/B is required for this persistence-only release.
+
 ## 0.4.0 - Evidence Kernel / Research Object Model v1
 
 - Added `codey/research/object_model.py`, a deterministic projection that turns

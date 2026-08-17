@@ -33,6 +33,7 @@ MAX_PERMISSION_PROFILES = 16
 MAX_TOOL_CONTRACTS = 16
 MAX_POLICY_DECISIONS = 80
 MAX_RESEARCH_RECORDS = 8
+MAX_EVIDENCE_LEDGER_WRITES = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 RESEARCH_ANSWER_STATUSES = frozenset({
@@ -174,6 +175,7 @@ class RunTraceManifest:
     research_note_ids: list[str] = field(default_factory=list)
     research_source_refs: list[dict[str, str]] = field(default_factory=list)
     research_records: list[dict[str, object]] = field(default_factory=list)
+    research_evidence_ledgers: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -203,6 +205,9 @@ class RunTraceManifest:
             "research_note_ids": list(_bounded_refs(self.research_note_ids)),
             "research_source_refs": self.research_source_refs[:MAX_REFS],
             "research_records": self.research_records[:MAX_RESEARCH_RECORDS],
+            "research_evidence_ledgers": (
+                self.research_evidence_ledgers[:MAX_EVIDENCE_LEDGER_WRITES]
+            ),
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
             "policy_decisions": self.policy_decisions[:MAX_POLICY_DECISIONS],
@@ -501,6 +506,35 @@ class RunTraceRecorder:
             self.manifest.warnings.append("research_records_truncated")
         self.checkpoint()
 
+    def record_evidence_ledger_write(self, result: Mapping[str, object]) -> None:
+        if not isinstance(result, Mapping):
+            return
+        record_id = _research_record_id_or_empty(result.get("record_id"))
+        ledger_ref = _evidence_ledger_ref_or_empty(result.get("ledger_ref"))
+        if not record_id:
+            return
+        counts = result.get("counts")
+        payload: dict[str, object] = {
+            "ok": bool(result.get("ok")),
+            "skipped": bool(result.get("skipped")),
+            "reason_code": _identifier(result.get("reason_code"), 80),
+            "ledger_ref": ledger_ref,
+            "record_id": record_id,
+            "counts": _bounded_count_mapping(counts if isinstance(counts, Mapping) else {}),
+        }
+        warnings = [
+            _identifier(item, 120)
+            for item in result.get("warnings", ())
+            if _identifier(item, 120)
+        ][:MAX_WARNINGS]
+        if warnings:
+            payload["warnings"] = warnings
+        self.manifest.research_evidence_ledgers.append(payload)
+        if len(self.manifest.research_evidence_ledgers) > MAX_EVIDENCE_LEDGER_WRITES:
+            del self.manifest.research_evidence_ledgers[:-MAX_EVIDENCE_LEDGER_WRITES]
+            self.manifest.warnings.append("research_evidence_ledgers_truncated")
+        self.checkpoint()
+
     def record_fallback(
         self,
         *,
@@ -655,6 +689,33 @@ def _research_record_id_or_empty(value: object) -> str:
     if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
         return text
     return ""
+
+
+def _evidence_ledger_ref_or_empty(value: object) -> str:
+    text = str(value or "").strip()
+    prefix = "evidence_ledger:"
+    if not text.startswith(prefix):
+        return ""
+    suffix = text.removeprefix(prefix)
+    if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
+        return text
+    return ""
+
+
+def _bounded_count_mapping(value: Mapping[str, object]) -> dict[str, int]:
+    allowed = {
+        "records",
+        "sources",
+        "evidence",
+        "claims",
+        "assumptions",
+        "relations",
+    }
+    return {
+        key: _nonnegative_int(raw)
+        for key, raw in value.items()
+        if isinstance(key, str) and key in allowed
+    }
 
 
 def _research_answer_status(value: object) -> str:

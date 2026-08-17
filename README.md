@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.1-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.0`
+Version: `0.4.1`
 
 [Version history](CHANGELOG.md)
 
@@ -291,6 +291,17 @@ only says `evidence_backed`, `unsupported`, or `assumption`; support,
 refutation, and limits are expressed by relation kind. Search results are not
 evidence, contradicting or unknown-stance evidence cannot support conclusions,
 and the UI/SSE payload stays unchanged.
+
+In 0.4.1, Codey quietly persists each Research object record into a bounded
+local evidence ledger. The ledger keeps durable source, evidence, claim,
+assumption, relation, locator, and count refs for later proof checks, without
+saving raw prompts, raw model responses, full source text, raw URLs, or raw
+absolute paths. It validates that kept records still point to existing ledger
+entries on write and load, and load-time schema validation rejects unknown raw
+fields, orphan entries, non-canonical scalar values, and locator/source
+mismatches. Candidate writes must pass the same canonical checks before they
+touch disk, so malformed records cannot poison future proof material. This does
+not add UI or change Research prompts/tool results.
 
 In 0.2.20, production Research uses a thin controller instead of exposing the
 full tool menu every turn. Codey reads the current Research ledger, shows only

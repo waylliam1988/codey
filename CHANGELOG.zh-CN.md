@@ -4,6 +4,48 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.1 - Evidence Ledger v2
+
+- 新增 `codey/research/identity.py`：把 Research projection 共用的有界 identity
+  helper 抽出来复用。Research object 和 evidence ledger 现在共享同一套 URL
+  redaction / digest 路径，包括畸形 URL、无 host URL、query key 和 query value。
+  项目和文件路径继续只保存 basename + digest，不保存 raw absolute path。
+- 新增 `codey/research/evidence_ledger.py`：把完成后的 `ResearchRecord` append 到
+  本地有界 `research/evidence_ledgers/<session>/<project>.json` read model。它记录
+  source/evidence/claim/assumption/relation id、locator ref、计数、schema version
+  和 content-addressed refs，为后续 proof quality gate 提供长期证据索引。
+- Evidence ledger 写入 fail-open：缺 record、坏 record、坏 JSON、超大 ledger 文件或
+  写入失败都不会打断 Research run。Run Trace 只记录有界 evidence-ledger write summary。
+- Ledger 裁剪现在保持 graph closure：source/evidence/claim/assumption/relation
+  map 达到上限时，Codey 优先保留最新的完整 record，丢弃更旧 record，而不是保留带
+  悬空 refs 的 record。已落盘 ledger 在 load 时也会先做 graph validation。
+  闭合性包括 claim 内部 evidence/assumption refs、assumption.claim_ref、
+  evidence.source_id、evidence.locator.source_id 和 relation endpoints。
+  Load-time allow-list validation 会拒绝未知 raw 字段、孤儿 map entry，以及 map key
+  和 entry 内部 id 不一致的数据；非 canonical 的标量字段、以及
+  evidence.source_id 和 evidence.locator.source_id 不一致的数据也会 fail-closed。
+  已落盘 record counts 必须和 retained refs 一致，source `content_hash` 也只保留
+  canonical hash；伪 `sha256:` content hash 会被清空，不会被重新 hash 后保存。
+- `EvidenceLedgerStore.append_record()` 只接受 typed `ResearchRecord`；mapping fallback
+  会被拒绝，避免 nested refs 把 raw URL、raw path 或疑似 source body 字段落盘。Digest
+  ref 只保留真正的 `sha256:<64 hex>` 字符串；伪 digest 字符串会被重新 hash。
+- 如果 malformed typed record 因 ledger closure 被裁掉，`append_record()` 现在返回
+  `skipped=True / record_pruned_for_ledger_closure`，不会再报告成功写入。Candidate
+  write 会先和已加载 ledger 隔离，只有新 record 通过裁剪且 candidate payload 通过完整
+  canonical validation 才落盘，所以 malformed replacement 不会删除已有好 record，也不会
+  污染下一次 load；没有写入新 payload 时返回已加载 ledger 的既有计数。typed record 的
+  `to_jsonable()` 失败，包括 malformed nested object，会返回 `invalid_record`，不会从
+  store 抛出。
+- `TaskRunner`、server state 和 headless JSONL runner 现在携带可选
+  `EvidenceLedgerStore`。用户可见 Research payload、task receipt 形状、UI 和 SSE
+  event 都保持不变。
+- Capability Registry 新增 `research_evidence_ledger`，Event / Capability Matrix 新增
+  `research.evidence_ledger`。架构测试锁住 identity / ledger 模块不接 provider
+  adapter、browser、tool runtime、TaskRunner/server 编排、Ghost runtime 或 plugin loader。
+- 本版不改变 Research prompt、工具 schema、模型可见工具输出、Router、provider
+  fallback 顺序、权限、UI、task receipt 或 SSE payload shape。这个 persistence-only
+  版本不需要生产 live provider A/B。
+
 ## 0.4.0 - Evidence Kernel / Research Object Model v1
 
 - 新增 `codey/research/object_model.py`：把每次 Research run 的 ledger 和最终报告

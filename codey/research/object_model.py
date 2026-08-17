@@ -7,20 +7,30 @@ or UI surface.
 
 from __future__ import annotations
 
-import hashlib
-import json
-import os
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterable, Mapping
-from urllib.parse import urlparse, urlunparse
 
 from codey.research.ledger import (
     EvidenceItem,
     OpenedSource,
     ResearchLedger,
     normalize_evidence_stance,
+)
+from codey.research.identity import (
+    bounded_refs as _bounded_refs,
+    clip as _clip,
+    digest_json as _digest_json,
+    digest_ref as _digest_ref,
+    digest_text as _digest_text,
+    identifier as _identifier,
+    nonnegative_int as _nonnegative_int,
+    normalize_text as _normalize_text,
+    path_ref,
+    project_ref,
+    sanitize_research_url_ref,
+    stable_ref as _stable_ref,
 )
 from codey.research.report_quality import ReportQualityReview, citation_ref_items, parse_sections
 
@@ -456,86 +466,6 @@ def research_record_summary(record: ResearchRecord | Mapping[str, object]) -> di
     }
 
 
-def sanitize_research_url_ref(url: object) -> dict[str, object]:
-    text = str(url or "").strip()
-    if not text:
-        return {}
-    try:
-        parsed = urlparse(text)
-        host = (parsed.hostname or "").lower().removeprefix("www.")
-    except ValueError:
-        redacted, changed = _redacted_unparseable_url_for_digest(text)
-        payload = {"url_digest": _digest_text(redacted)}
-        if changed:
-            payload["redacted"] = True
-        return payload
-    if not host:
-        redacted, changed = _redacted_unparseable_url_for_digest(text)
-        payload = {"url_digest": _digest_text(redacted)}
-        if changed:
-            payload["redacted"] = True
-        return payload
-    redacted_query = _redacted_query(parsed.query)
-    query_redacted = bool(parsed.query)
-    redacted = urlunparse((
-        (parsed.scheme or "https").lower(),
-        host,
-        parsed.path or "",
-        "",
-        redacted_query,
-        "",
-    ))
-    payload: dict[str, object] = {
-        "url_digest": _digest_text(redacted),
-        "host": _clip(host, 120),
-    }
-    if parsed.scheme:
-        payload["scheme"] = _identifier(parsed.scheme, 20)
-    if parsed.username or parsed.password or query_redacted:
-        payload["redacted"] = True
-    if parsed.path:
-        payload["path_digest"] = _digest_text(parsed.path)
-    return payload
-
-
-def project_ref(project: str | Path | None) -> dict[str, object]:
-    text = str(project or "").strip()
-    if not text:
-        return {}
-    try:
-        resolved = Path(text).expanduser().resolve()
-        basename = resolved.name
-        digest_source = os.path.normcase(str(resolved))
-    except (OSError, RuntimeError, ValueError):
-        path = Path(text)
-        basename = path.name or _clip(text, 80)
-        digest_source = text
-    return {
-        "basename": _clip(basename, 80),
-        "digest": _digest_text(digest_source),
-    }
-
-
-def path_ref(path: str | Path, *, project: str | Path | None = None) -> dict[str, object]:
-    text = str(path or "").strip()
-    if not text:
-        return {}
-    path_obj = Path(text)
-    basename = path_obj.name or _clip(text, 80)
-    digest_source = text
-    if project:
-        try:
-            root = Path(project).expanduser().resolve()
-            resolved = (root / path_obj).resolve() if not path_obj.is_absolute() else path_obj.resolve()
-            digest_source = os.path.relpath(resolved, root)
-        except (OSError, RuntimeError, ValueError):
-            digest_source = text
-    return {
-        "basename": _clip(basename, 80),
-        "digest": _digest_text(os.path.normcase(digest_source)),
-    }
-
-
 def _build_sources(ledger: ResearchLedger) -> tuple[ResearchSource, ...]:
     rows: list[ResearchSource] = []
     for opened in list(getattr(ledger, "opened_sources", ()))[:MAX_RECORD_SOURCES]:
@@ -846,89 +776,8 @@ def _claim_status(value: object) -> str:
     return text if text in CLAIM_STATUSES else "unsupported"
 
 
-def _stable_ref(prefix: str, *parts: object) -> str:
-    digest = _digest_json([prefix, *parts]).removeprefix("sha256:")
-    return f"{_identifier(prefix, 40)}:{digest[:16]}"
-
-
-def _digest_json(value: object) -> str:
-    payload = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-    return _digest_text(payload)
-
-
-def _digest_text(value: object) -> str:
-    return "sha256:" + hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
-
-
-def _digest_ref(value: object) -> str:
-    text = str(value or "").strip()
-    if text.startswith("sha256:") and len(text.removeprefix("sha256:")) == 64:
-        return text
-    return _digest_text(text)
-
-
-def _identifier(value: object, limit: int = 120) -> str:
-    text = _clip(value, limit)
-    return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
-
-
-def _bounded_refs(values: Iterable[object], *, limit: int = MAX_REF_VALUES) -> tuple[str, ...]:
-    refs: list[str] = []
-    seen: set[str] = set()
-    for value in values or ():
-        text = _identifier(value, 80)
-        if not text or text in seen:
-            continue
-        refs.append(text)
-        seen.add(text)
-        if len(refs) >= limit:
-            break
-    return tuple(refs)
-
-
-def _nonnegative_int(value: object) -> int:
-    try:
-        return max(0, int(value))
-    except (TypeError, ValueError):
-        return 0
-
-
-def _normalize_text(value: object) -> str:
-    return " ".join(str(value or "").split())
-
-
 def _normalize_for_match(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "").casefold()).strip()
-
-
-def _redacted_query(query: str) -> str:
-    if str(query or ""):
-        return "query=redacted"
-    return ""
-
-
-def _redacted_unparseable_url_for_digest(text: str) -> tuple[str, bool]:
-    raw = str(text or "").strip()
-    prefix = "<redacted-url>"
-    match = re.match(r"^([A-Za-z][A-Za-z0-9+.-]*):", raw)
-    if match:
-        prefix = f"{match.group(1).casefold()}:<redacted-url>"
-    elif raw.startswith("//"):
-        prefix = "//<redacted-url>"
-    if "?" not in raw:
-        return prefix, True
-    query = raw.split("?", 1)[1].split("#", 1)[0]
-    redacted_query = _redacted_query(query) or "query=redacted"
-    return f"{prefix}?{redacted_query}", True
-
-
-def _clip(value: object, limit: int = 240) -> str:
-    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
-    if limit <= 0:
-        return ""
-    if len(text) <= limit:
-        return text
-    return text[: max(0, limit - 3)].rstrip() + "..."
 
 
 __all__ = [

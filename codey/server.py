@@ -72,6 +72,7 @@ from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
 from codey.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
 from codey.research.advisors import EvidencePack, run_research_advisors
+from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.providers import (
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
@@ -667,6 +668,7 @@ class State:
         )
         self.run_ledgers = RunLedgerStore(state_home) if state_home else None
         self.run_traces = RunTraceStore(state_home) if state_home else None
+        self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.capabilities = builtin_capability_registry()
         self.builtin_profiles = builtin_profile_registry()
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
@@ -1453,6 +1455,7 @@ def _run_task(
         work_checkpoints=STATE.work_checkpoints,
         run_ledgers=STATE.run_ledgers,
         run_traces=STATE.run_traces,
+        evidence_ledgers=STATE.evidence_ledgers,
         capabilities=STATE.capabilities,
         builtin_profiles=STATE.builtin_profiles,
         managed_outputs=STATE.managed_outputs,

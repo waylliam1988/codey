@@ -703,13 +703,14 @@ object_model.py 不 import TaskRunner / providers / browser / server
 
 ## 0.4.1 - Evidence Ledger v2
 
-状态：规划。目标是让证据长期可追踪，不只存在单次 ResearchRunner 内存对象里。
+状态：已落地。目标是让证据长期可追踪，不只存在单次 ResearchRunner 内存对象里。
 
 ### 做什么
 
-新增 durable read model：
+已新增 durable read model：
 
 ```text
+research/identity.py
 research/evidence_ledger.py
 ```
 
@@ -727,10 +728,32 @@ schema version
 content-addressed refs
 ```
 
-Evidence locator 必须支持不同来源的细粒度定位：
+0.4.1 v1 的落地边界：
 
 ```text
-HTML: char_start / char_end / text_hash
+ResearchRecord append-only 持久化到本地 evidence ledger
+session / project scoped ledger path
+schema_version / kind 校验
+source/evidence/claim/assumption/relation map
+locator_id / locator_hash / page / char_start / char_end / locator
+counts / ledger_ref / record_id 的 Run Trace 摘要
+坏 ledger / 写入失败 fail-open，不影响 Research 完成
+map cap 裁剪时优先保留最新闭合 record，丢弃更旧断链风险 record
+append_record 只接受 typed ResearchRecord，不接受裸 mapping fallback
+malformed typed record 被裁掉时返回 skipped，不报告成功写入
+append_record 必须先在 candidate payload 上试写；新 record 未保留时不能覆盖或删除已落盘好 record
+candidate payload 写盘前必须通过完整 canonical validation
+load 已落盘 ledger 时也必须 graph-validate；schema 正确但断链的 ledger fail-closed 为 unavailable
+load-time schema 必须是 allow-list；未知 raw 字段、孤儿 map entry、map key / entry id 不一致都 fail-closed
+load-time 已知标量字段必须保持 canonical / bounded 形状
+evidence.locator.source_id 非空时必须等于 evidence.source_id
+```
+
+0.4.1 先持久化 0.4.0 已有 locator。更细来源的完整 locator fixture 随
+0.4.3 connector 和 0.4.4 AnalysisRun 继续补齐：
+
+```text
+HTML: char_start / char_end / locator_hash
 PDF: page / char_start / char_end / page_text_hash
 table: table_id / row / column / cell_hash
 CSV/TSV: row_id / column / value_hash
@@ -746,13 +769,17 @@ local file: path_ref / line_start / line_end / file_hash
 - `EvidenceLedger` 是长期只读投影和 append-only 更新，不接模型调度。
 - 不改变 Research prompt。
 - 不新增 UI。
+- 不改变 SSE / task receipt / Router / provider fallback / PermissionProfile。
+- 不保存 raw prompt、raw model response、raw URL、raw absolute path、完整来源正文或
+  provider raw error。
 
 ### 顺手架构优化
 
 ```text
-把 requested_url / final_url / retrieved_at / hash / page / offset / quality
-这些字段从 report_quality 临时解析中抽成统一 evidence identity helper
-SourceDocument.page_texts / SourcePage 的 offset 字段要成为 locator 的输入
+把 sanitize_research_url_ref / project_ref / path_ref / digest / stable_ref
+抽成 research/identity.py，避免 object_model 和 evidence_ledger 复制 identity 规则
+TaskRunner 只做薄接线：Research 完成后 append_record，再写 bounded trace summary
+EvidenceLedgerStore 只消费 ResearchRecord，不读取网页正文或 Research prompt
 ```
 
 ### 验证
@@ -760,16 +787,40 @@ SourceDocument.page_texts / SourcePage 的 offset 字段要成为 locator 的输
 ```text
 ledger 文件有大小上限
 schema_version / kind 校验
-source id content-addressed 且稳定
+source/evidence/claim/assumption/relation id content-addressed 且稳定
 evidence locator content-addressed 且稳定
-坏 ledger fail-closed 到 unavailable，不影响普通 run
-不会保存 raw source body
-HTML / PDF / CSV / JSON / local file locator 都有 deterministic fixture
+retained records 的 source/evidence/claim/assumption/relation refs 必须全部可解析
+claim.evidence_refs / claim.assumption_refs / assumption.claim_ref / evidence.source_id / evidence.locator.source_id 必须闭合
+evidence.source_id 和 evidence.locator.source_id 不能指向不同 source
+relation endpoints 必须落到 retained claim/evidence/assumption
+超过 map cap 后最新 record 仍然 graph closed
+Mapping 输入必须 invalid_record，不能让 nested raw URL / body-like 字段落盘
+typed record to_jsonable 失败，包括 malformed nested object，必须 invalid_record，不能从 store 抛出
+被 closure 裁掉的新 record 必须返回 record_pruned_for_ledger_closure
+被 closure 裁掉且未写入新 payload 时，返回已加载 ledger 的既有 counts，不能暴露临时 payload counts
+malformed replacement 不能删除已有同 record_id 的好 record 或其他好 record
+malformed typed record 不能写出下一次 load 会判 unavailable 的 poisoned ledger
+已落盘 ledger 不能携带 raw_url / raw_body / provider_raw_error / raw_prompt 这类未知字段
+records 未引用的 orphan source/evidence/claim/assumption/relation map entry 必须 fail-closed
+map key 必须和 entry 内部 id 一致
+ledger_ref / session_ref / warnings / stance / status / host / bounded_excerpt 等合法字段值也必须 canonical
+record.counts 必须等于当前 record refs 计数，unsupported_claims 不能超过 claims
+source.content_hash 只能为空、16 位 lowercase hex 或 sha256:<64 hex>；malformed typed value 和伪 sha256 前缀不能原样落盘，也不能被重新 hash 后保存
+digest ref 只接受 sha256:<64 hex>，伪 digest 必须重新 hash
+坏 JSON、超大 ledger、schema 不符或 graph closure 不通过的 ledger fail-closed 到 unavailable，不影响普通 run
+写入失败 fail-open，不影响 Research 完成
+不会保存 raw prompt / raw model response / raw URL / raw path / raw source body
+Run Trace 只保存 ledger_ref、record_id、counts、reason_code
+TaskRunner 的用户可见 Research payload 不变
+capability / event matrix 声明它是 quiet durable read model，不是模型工具或 UI
+HTML / PDF / CSV / JSON / local file locator 的完整 fixture 随后续 connector/analysis 版本补齐
 ```
 
 ### A/B
 
-不需要。纯 persistence / projection / deterministic tests。
+不需要。实际落地是纯 identity / persistence / projection / deterministic tests，
+没有改 Research prompt、模型可见 tool result、Router、provider fallback、权限、
+UI 或 SSE。
 
 ## 0.4.2 - Research Proof Quality Gate v1
 
@@ -803,10 +854,14 @@ ResearchProofReview(
     ok
     answers_question
     answer_coverage_score
+    coverage_gaps
+    followup_questions
+    query_rewrite_candidates
     citation_present
     citation_locator_verified
     support_relation_verified
     counterevidence_checked
+    source_trust_warnings
     overclaim_warnings
     stale_warnings
     missing_evidence
@@ -847,15 +902,38 @@ GhostWorkItem(kind=research/open_question) done
 - 不允许 Ghost 自己生成 proof。
 - 不允许没有 ResearchRecord 的 research/open_question item 直接 done。
 - 不要求每个普通 Research 都被阻塞；先重点约束 queue completion。
+- 可以给出 deterministic follow-up questions / query rewrite candidates，但 0.4.2
+  不自动执行递归搜索；自动递归研究要等 Planner 边界和 A/B 单独落地。
+- source trust 第一版只做保守 warning，不做激进排序改写：官方/论文/一手资料优先、
+  论坛/聚合/二手来源降权这类规则必须可解释、可测试。
 - 错误文案要短、可修复、不中断普通 UI。
 - Coverage scorer 第一版可以 deterministic + conservative，不要求语义完美；宁可 partial，
   不要把没回答的问题标 done。
+
+### Deep Research 差距边界
+
+Codey 当前 ResearchRunner 更接近 deterministic research pipeline：它有工具循环、
+coverage、counterpoints、quality warnings 和 evidence ledger，但还不是
+Open Deep Research 风格的 supervisor/researcher/think-tool 递归 planner。
+
+0.4.2 不应该直接补完整 agent graph。正确顺序是：
+
+```text
+proof gate 先判断哪里没答好
+输出 coverage_gaps / followup_questions / query_rewrite_candidates
+Run Trace 只记录 bounded refs/counts/reason
+后续 Research Planner v1 再决定是否后台补搜、并行探索或递归验证
+```
+
+这样 0.4.2 的收益会直接落在可靠性上，也为后续 Deep Research 式能力留下真实 seam：
+`coverage gap -> follow-up research plan -> bounded research iteration -> proof review`。
 
 ### 顺手架构优化
 
 ```text
 把 ghost/work_queue.py 里的 kind-specific proof 判断抽成 helper
 Research proof validator 只读 ResearchRecord / EvidenceLedger，不读网页正文
+不要在 0.4.2 大拆 TaskRunner.run；最多抽 Research proof/persistence 的薄边界
 ```
 
 ### 验证
@@ -1708,6 +1786,41 @@ Connector recorded fixture + live connector smoke
 Longitudinal topic tracking smoke
 Comparison benchmark fixture smoke
 Real OpenScience manual head-to-head smoke（发布 surpassed OpenScience 结论前）
+```
+
+## 架构债边界
+
+0.4 会继续让 Research、Evidence、Review、Ghost、Provider fallback 和本地持久化在
+TaskRunner / Server 周围汇合。这个压力是真实的，但不能为了“看起来架构更好”做
+big-bang rewrite。
+
+需要承认并逐步收敛的债务：
+
+```text
+TaskRunner.run 承担 provider setup、routing、research、review、writer、ledger、trace
+_RunFrame 已经包含 provider / conversation / trace / handoff / preflight / snapshot 等生命周期状态
+后续 planner、multi-browser、recursive research 会继续放大这个 runtime context
+```
+
+正确拆分顺序：
+
+```text
+ResearchPipeline：只在 proof quality / evidence ledger / follow-up research 边界成熟后抽
+ProviderPipeline：只在 provider setup / preflight / fallback / canary 边界稳定后抽
+ReviewPipeline：只在 review input / fix loop / finding lifecycle 边界稳定后抽
+SessionContext：request/session/conversation/snapshot
+ProviderContext：provider/provider_id/preflight/fallback/supervisor state
+TraceContext：run trace / prompt trace / ledger trace refs
+```
+
+每次拆分都必须满足：
+
+```text
+不改 prompt / tool schema / model-visible tool result
+不改 UI/SSE/receipt shape
+不放宽 permission/profile/policy
+先有 deterministic tests 锁住旧行为
+只沿真实生命周期边界抽，不按“减少行数”硬拆
 ```
 
 ## 成功定义

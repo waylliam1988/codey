@@ -34,6 +34,7 @@ KNOWN_DURABLE_STATES = frozenset({
     "provider_controls",
     "managed_outputs",
     "change_snapshots",
+    "research_evidence_ledger",
 })
 MODEL_VISIBLE_REQUIRED_CONSUMES = frozenset(("prompt_envelope", "run_trace"))
 POLICY_REQUIRED_CONSUMES = frozenset(("policy_guard",))
@@ -215,6 +216,13 @@ def builtin_capability_registry() -> CapabilityRegistry:
             consumes=("research_runner", "run_trace"),
             durable_state=("run_trace",),
             owner_module="codey.research.object_model",
+        ),
+        CapabilitySpec(
+            id="research_evidence_ledger",
+            provides=("durable_evidence_read_model", "evidence_locator_index"),
+            consumes=("research_object_model", "run_trace"),
+            durable_state=("research_evidence_ledger", "run_trace"),
+            owner_module="codey.research.evidence_ledger",
         ),
         CapabilitySpec(
             id="review_runner",

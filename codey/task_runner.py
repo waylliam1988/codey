@@ -79,6 +79,7 @@ from codey.run_ledger_projection import (
     receipt_from_projection_if_compatible,
 )
 from codey.run_trace import RunTraceStore
+from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
 from codey.review import has_reviewable_changes
@@ -292,6 +293,15 @@ def _record_research_result_trace(trace: Any | None, result: Any) -> None:
         sink.call("record_research_record_summary", summary)
 
 
+def _record_evidence_ledger_write_trace(trace: Any | None, result: Any) -> None:
+    if trace is None or result is None:
+        return
+    to_trace_payload = getattr(result, "to_trace_payload", None)
+    if not callable(to_trace_payload):
+        return
+    FailOpenPromptTrace(trace).call("record_evidence_ledger_write", to_trace_payload())
+
+
 def _provider_fallback_policy_decision(
     *,
     from_provider: str,
@@ -493,6 +503,7 @@ class TaskRunner:
         work_checkpoints: WorkCheckpointStore | None = None,
         run_ledgers: RunLedgerStore | None = None,
         run_traces: RunTraceStore | None = None,
+        evidence_ledgers: EvidenceLedgerStore | None = None,
         capabilities: CapabilityRegistry | None = None,
         builtin_profiles: BuiltinProfileRegistry | None = None,
         managed_outputs: ManagedOutputStore | None = None,
@@ -517,6 +528,7 @@ class TaskRunner:
         self.work_checkpoints = work_checkpoints
         self.run_ledgers = run_ledgers
         self.run_traces = run_traces
+        self.evidence_ledgers = evidence_ledgers
         self.capabilities = capabilities
         self.builtin_profiles = builtin_profiles
         self.managed_outputs = managed_outputs
@@ -1806,6 +1818,8 @@ class TaskRunner:
             chat_handoff=frame.research_handoff,
             trace_recorder=frame.trace,
         )
+        ledger_result = self._append_evidence_ledger(frame, hooks, result)
+        _record_evidence_ledger_write_trace(frame.trace, ledger_result)
         _record_research_result_trace(frame.trace, result)
         state.set_provider_session(
             frame.provider_id,
@@ -1873,6 +1887,8 @@ class TaskRunner:
             chat_handoff=frame.research_handoff,
             trace_recorder=frame.trace,
         )
+        ledger_result = self._append_evidence_ledger(frame, hooks, research_result)
+        _record_evidence_ledger_write_trace(frame.trace, ledger_result)
         _record_research_result_trace(frame.trace, research_result)
         if research_result.stop_reason != "done":
             return _ModeOutcome({
@@ -2987,6 +3003,44 @@ class TaskRunner:
                 search.close()
             except Exception:
                 pass
+
+    def _append_evidence_ledger(
+        self,
+        frame: _RunFrame,
+        hooks: _RunHooks,
+        result: Any,
+    ) -> Any | None:
+        if self.evidence_ledgers is None:
+            return None
+        record = getattr(result, "research_record", None)
+        if record is None:
+            return None
+        try:
+            ledger_result = self.evidence_ledgers.append_record(
+                record,
+                run_id=frame.run_id,
+                session_id=frame.request.session_id,
+                project=frame.project_text,
+            )
+        except Exception:
+            ledger_result = EvidenceLedgerWriteResult(
+                skipped=True,
+                reason_code="write_failed",
+                record_id=getattr(record, "record_id", ""),
+            )
+        payload = ledger_result.to_trace_payload()
+        hooks.append_ledger(
+            lambda ledger: ledger.append(
+                "evidence_ledger_write",
+                ok=payload.get("ok"),
+                skipped=payload.get("skipped"),
+                reason_code=payload.get("reason_code"),
+                ledger_ref=payload.get("ledger_ref"),
+                record_id=payload.get("record_id"),
+                counts=payload.get("counts"),
+            )
+        )
+        return ledger_result
 
     def _record_project_memory(
         self,

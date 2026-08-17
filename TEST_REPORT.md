@@ -1,5 +1,97 @@
 # Codey Test Report
 
+## 0.4.1 Evidence Ledger v2
+
+Codey 0.4.1 adds the durable Evidence Ledger v2 read model. Every completed
+Research run can now append its bounded `ResearchRecord` into a local
+session/project-scoped evidence ledger, giving later proof-quality checks a
+stable source/evidence/claim/assumption/relation index without changing the
+user interface, prompt, tool schema, Router, provider fallback, permission
+model, task receipt shape, or SSE payload shape.
+
+Production changes:
+
+- New `codey/research/identity.py` centralizes Research identity helpers:
+  URL redaction/digest refs, project refs, path refs, stable refs, digest
+  helpers, bounded refs, identifier cleanup, and text clipping.
+- New `codey/research/evidence_ledger.py` persists bounded Research object
+  records under `research/evidence_ledgers/<session>/<project>.json`. It stores
+  schema/kind metadata, source/evidence/claim/assumption/relation maps,
+  locator ids/hashes, counts, `ledger_ref`, and `record_id`.
+- Evidence ledger writes fail open. Missing or invalid records, bad JSON,
+  oversized local ledger files, and write failures return skipped/unavailable
+  results instead of breaking the Research run.
+- Ledger trimming preserves graph closure. When map caps are hit, Codey keeps
+  the newest complete records and prunes older records rather than retaining
+  records whose source/evidence/claim/assumption/relation refs no longer exist
+  in the corresponding maps. Loaded ledgers are also graph-validated before
+  becoming available. Load-time validation uses an allow-list schema: unknown
+  raw fields, orphan map entries, and map key / entry id mismatches fail closed
+  to unavailable. Known scalar fields must also keep Codey's generated,
+  bounded shape, so poisoned `ledger_ref`, `session_ref`, warning, stance,
+  status, host, count, or oversized excerpt values are rejected. Source
+  `content_hash` is stored only when it is canonical short hex or a sha256 ref;
+  malformed typed values, including fake `sha256:` prefixes, are cleared
+  instead of persisted or rehashed. Closure checks cover nested claim
+  evidence/assumption refs, assumption claim refs, evidence source refs,
+  evidence locator source refs, locator/evidence source consistency, and
+  relation endpoints.
+- If a malformed typed record is pruned for closure, `append_record()` returns
+  `skipped=True` with `record_pruned_for_ledger_closure` instead of reporting a
+  successful write. Candidate writes are isolated from the loaded ledger until
+  the new `record_id` + digest survives trimming and the candidate payload
+  passes full canonical validation, so a malformed replacement cannot delete an
+  existing good record or poison the next load. If the pruned record is not
+  written, the result keeps the previously loaded ledger counts rather than
+  reporting temporary counts. Typed records whose `to_jsonable()` fails,
+  including malformed nested objects, return `invalid_record` without raising
+  from the store.
+- `EvidenceLedgerStore.append_record()` now accepts typed `ResearchRecord`
+  objects only. Mapping fallbacks are rejected before nested refs can persist
+  raw URLs, paths, or source-body-like fields.
+- Shared digest refs only preserve real `sha256:<64 hex>` strings. Pseudo
+  digest strings are rehashed, so a secret-looking fake digest cannot be stored
+  as if it were already safe.
+- `TaskRunner`, server state, and the headless JSONL runner now carry an
+  optional `EvidenceLedgerStore`. Research completion appends the record and
+  Run Trace stores only a bounded evidence-ledger write summary.
+- The user-facing Research payload remains unchanged and does not expose
+  `research_record` or `evidence_ledger` internals.
+- The Capability Registry and Event / Capability Matrix declare
+  `research_evidence_ledger` as a quiet durable read model. Architecture tests
+  keep Research identity and evidence ledger modules away from provider
+  adapters, browser code, tool runtime, TaskRunner/server orchestration, Ghost
+  runtime, and plugin loaders.
+- Ledger and trace storage exclude raw prompts, raw model responses, raw
+  provider errors, raw URLs, raw absolute paths, full source text, and webpage
+  bodies. Bounded evidence excerpts remain allowed because they are the
+  evidence unit introduced in 0.4.0.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_research_identity.py tests\test_research_evidence_ledger.py -q -p no:cacheprovider
+# 24 passed
+
+python -m pytest tests\test_research_identity.py tests\test_research_evidence_ledger.py tests\test_research_object_model.py tests\test_research.py tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_capabilities.py tests\test_event_matrix.py tests\test_architecture.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q -p no:cacheprovider
+# 194 passed, 285 subtests passed
+
+python -m ruff check codey tests --no-cache
+# All checks passed!
+
+python -m compileall codey tests
+# passed
+
+python -m pytest -q -p no:cacheprovider
+# 2070 passed, 9 skipped, 576 subtests passed in 428.27s (0:07:08)
+```
+
+No live provider A/B is required because 0.4.1, as implemented, is identity,
+persistence, projection, and deterministic validation only. It does not change
+Research prompts, tool schema prompts, model-visible tool-result wording,
+Router behavior, provider fallback ordering, permissions, UI, task receipts, or
+SSE payload shape.
+
 ## 0.4.0 Evidence Kernel / Research Object Model v1
 
 Codey 0.4.0 adds the first Evidence Kernel piece: every completed Research run

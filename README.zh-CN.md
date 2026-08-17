@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.0-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.1-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.0`
+版本：`0.4.1`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -235,6 +235,15 @@ assumption 和 relation 对象。这个记录很保守：只有匹配的已打�
 claim；claim status 只表示 `evidence_backed` / `unsupported` / `assumption`，
 支持、反证和限制方向由 relation kind 表达。反证或未知 stance evidence 不能支撑结论，
 search result 不算 evidence，UI/SSE payload 也保持不变。
+
+从 0.4.1 开始，Codey 会把每次 Research object record 安静写入本地有界 evidence
+ledger。这个 ledger 保存长期可追踪的 source、evidence、claim、assumption、
+relation、locator 和计数 refs，给后续 proof quality 使用；它不保存 raw prompt、
+raw model response、完整来源正文、raw URL 或 raw absolute path。写入和读取时都会
+校验保留下来的 record 是否还能指向真实 ledger 条目，读取时还会拒绝未知 raw 字段或
+孤儿 entry、非 canonical 标量值、以及 locator/source 不一致的数据，所以断链或畸形
+ledger 会 fail-closed；candidate write 也必须先通过同一套 canonical 检查，不能污染后续
+proof 材料。它也不新增 UI，不改变 Research prompt 或工具结果。
 
 从 0.2.20 开始，生产 Research 使用一个很薄的 controller，而不是每轮都把完整工具菜单
 交给模型。Codey 会读取当前 Research ledger，只展示这一轮合理的 allowed tools，并给

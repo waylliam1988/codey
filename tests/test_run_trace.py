@@ -249,6 +249,74 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertNotIn("https://example.com/secret", serialized)
             self.assertNotIn("SECRET_QUESTION_ABOUT_ACME_TOKEN", serialized)
 
+    def test_evidence_ledger_write_trace_is_bounded_and_ref_shaped(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-evidence-ledger",
+                session_id="session-evidence-ledger",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_evidence_ledger_write({
+                "ok": True,
+                "skipped": False,
+                "reason_code": "written",
+                "ledger_ref": "evidence_ledger:" + "a" * 16,
+                "record_id": "research_record:" + "b" * 16,
+                "counts": {
+                    "records": 1,
+                    "sources": 2,
+                    "evidence": 3,
+                    "claims": 4,
+                    "assumptions": 5,
+                    "relations": 6,
+                    "raw_secret_count": 999,
+                },
+                "warnings": [
+                    "bounded-warning",
+                    "warning with spaces",
+                ],
+                "raw_url": "https://example.com/SECRET_URL",
+            })
+            recorder.record_evidence_ledger_write({
+                "ok": True,
+                "ledger_ref": "not-a-ledger-ref",
+                "record_id": "SECRET_QUESTION_ABOUT_ACME_TOKEN",
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-evidence-ledger",
+                    "run-evidence-ledger",
+                ).read_text(encoding="utf-8")
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(payload["research_evidence_ledgers"], [{
+                "ok": True,
+                "skipped": False,
+                "reason_code": "written",
+                "ledger_ref": "evidence_ledger:" + "a" * 16,
+                "record_id": "research_record:" + "b" * 16,
+                "counts": {
+                    "records": 1,
+                    "sources": 2,
+                    "evidence": 3,
+                    "claims": 4,
+                    "assumptions": 5,
+                    "relations": 6,
+                },
+                "warnings": [
+                    "bounded-warning",
+                    "warning_with_spaces",
+                ],
+            }])
+            self.assertNotIn("https://example.com/SECRET_URL", serialized)
+            self.assertNotIn("SECRET_QUESTION_ABOUT_ACME_TOKEN", serialized)
+
     def test_policy_decision_records_digest_without_raw_display(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)

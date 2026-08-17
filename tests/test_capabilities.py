@@ -22,6 +22,7 @@ EXPECTED_BUILTIN_IDS = (
     "prompt_envelope",
     "provider_capability_registry",
     "provider_factory",
+    "research_evidence_ledger",
     "research_object_model",
     "research_runner",
     "review_runner",
@@ -31,7 +32,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "f44e5cc1de986cb7d5ec47c51faf5b9ab2fedb2df53a1c6c39050fa0737eca3f"
+    "51706e345b5b204e04ee1993de3e6332380db36fa7a3c90aac1f3690bd9faa26"
 )
 
 
@@ -112,6 +113,22 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(spec.consumes, ("research_runner", "run_trace"))
         self.assertEqual(spec.durable_state, ("run_trace",))
         self.assertEqual(spec.owner_module, "codey.research.object_model")
+        self.assertFalse(spec.model_visible)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.ui_surface, ())
+
+    def test_research_evidence_ledger_is_quiet_durable_read_model(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_evidence_ledger")
+
+        self.assertEqual(
+            spec.provides,
+            ("durable_evidence_read_model", "evidence_locator_index"),
+        )
+        self.assertEqual(spec.consumes, ("research_object_model", "run_trace"))
+        self.assertEqual(spec.durable_state, ("research_evidence_ledger", "run_trace"))
+        self.assertEqual(spec.owner_module, "codey.research.evidence_ledger")
         self.assertFalse(spec.model_visible)
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.ui_surface, ())
