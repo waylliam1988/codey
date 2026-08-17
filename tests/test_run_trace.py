@@ -317,6 +317,118 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertNotIn("https://example.com/SECRET_URL", serialized)
             self.assertNotIn("SECRET_QUESTION_ABOUT_ACME_TOKEN", serialized)
 
+    def test_research_proof_review_trace_is_bounded_and_ref_shaped(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-research-proof",
+                session_id="session-research-proof",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_research_proof_review({
+                "proof_ref": "research_proof:" + "a" * 16,
+                "record_id": "research_record:" + "b" * 16,
+                "record_digest": "sha256:" + "c" * 64,
+                "question_digest": "sha256:" + "e" * 64,
+                "ok": False,
+                "answers_question": False,
+                "answer_status": "partial",
+                "answer_coverage_score": 1.5,
+                "gap_count": 3,
+                "warning_count": 4,
+                "planner_signal_count": 5,
+                "reason_codes": ["claim_missing_support_relation", "bad reason with spaces"],
+                "followup_questions": ["SECRET_FOLLOWUP_SHOULD_NOT_BE_SAVED"],
+                "raw_url": "https://example.com/SECRET_URL",
+            })
+            recorder.record_research_proof_review({
+                "proof_ref": "research_proof:" + "a" * 16,
+                "record_id": "research_record:" + "b" * 16,
+                "record_digest": "sha256:" + "c" * 64,
+                "question_digest": "sha256:" + "e" * 64,
+                "ok": False,
+                "answers_question": False,
+                "answer_status": "partial",
+                "answer_coverage_score": 1.0,
+                "reason_codes": ["claim_missing_support_relation", "bad reason with spaces"],
+            })
+            recorder.record_research_proof_review({
+                "proof_ref": "research_proof:abc123",
+                "record_id": "SECRET_QUESTION_ABOUT_ACME_TOKEN",
+                "record_digest": "sha256:" + "d" * 64,
+            })
+            recorder.record_research_proof_review({
+                "proof_ref": "research_proof:" + "f" * 16,
+                "question_digest": "sha256:" + "1" * 64,
+                "ok": False,
+                "answers_question": False,
+                "answer_status": "not_answered",
+                "answer_coverage_score": 0,
+                "reason_codes": ["missing_research_record"],
+                "record_id": "SECRET_MISSING_RECORD_ID",
+                "record_digest": "not-a-digest",
+            })
+            recorder.record_research_proof_review({
+                "proof_ref": "research_proof:" + "2" * 16,
+                "question_digest": "sha256:" + "3" * 64,
+                "ok": True,
+                "answers_question": True,
+                "answer_status": "answered",
+                "record_id": "SECRET_OK_MISSING_RECORD_ID",
+                "record_digest": "not-a-digest",
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-research-proof",
+                    "run-research-proof",
+                ).read_text(encoding="utf-8")
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(
+                payload["research_proof_reviews"],
+                [
+                    {
+                        "proof_ref": "research_proof:" + "a" * 16,
+                        "ok": False,
+                        "answers_question": False,
+                        "answer_status": "partial",
+                        "answer_coverage_score": 1.0,
+                        "gap_count": 3,
+                        "warning_count": 4,
+                        "planner_signal_count": 5,
+                        "reason_codes": [
+                            "claim_missing_support_relation",
+                            "bad_reason_with_spaces",
+                        ],
+                        "record_id": "research_record:" + "b" * 16,
+                        "record_digest": "sha256:" + "c" * 64,
+                        "question_digest": "sha256:" + "e" * 64,
+                    },
+                    {
+                        "proof_ref": "research_proof:" + "f" * 16,
+                        "ok": False,
+                        "answers_question": False,
+                        "answer_status": "not_answered",
+                        "answer_coverage_score": 0.0,
+                        "gap_count": 0,
+                        "warning_count": 0,
+                        "planner_signal_count": 0,
+                        "reason_codes": ["missing_research_record"],
+                        "question_digest": "sha256:" + "1" * 64,
+                    },
+                ],
+            )
+            self.assertNotIn("SECRET_FOLLOWUP_SHOULD_NOT_BE_SAVED", serialized)
+            self.assertNotIn("https://example.com/SECRET_URL", serialized)
+            self.assertNotIn("SECRET_QUESTION_ABOUT_ACME_TOKEN", serialized)
+            self.assertNotIn("SECRET_MISSING_RECORD_ID", serialized)
+            self.assertNotIn("SECRET_OK_MISSING_RECORD_ID", serialized)
+
     def test_policy_decision_records_digest_without_raw_display(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)

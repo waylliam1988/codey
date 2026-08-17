@@ -1449,12 +1449,23 @@ def _receipt_proves_project_work(receipt: Mapping[str, object]) -> bool:
 def _primary_proof_matches_item_kind(item: GhostWorkItem, refs: Iterable[str]) -> bool:
     prefixes = {str(ref).split(":", 1)[0] for ref in refs}
     if item.kind in {"research", "open_question"}:
-        return "research" in prefixes
+        return any(_research_proof_ref(ref) for ref in refs)
     if item.kind == "review":
         return "review" in prefixes
     if item.kind in {"coding", "project_followup"}:
         return bool(prefixes.intersection({"diff", "receipt"}))
     return False
+
+
+def _research_proof_ref(value: object) -> str:
+    text = str(value or "").strip()
+    prefix = "research_proof:"
+    if not text.startswith(prefix):
+        return ""
+    suffix = text.removeprefix(prefix)
+    if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
+        return text
+    return ""
 
 
 def _clean_metadata(value: object) -> dict[str, object]:

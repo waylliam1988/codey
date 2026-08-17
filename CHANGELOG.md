@@ -4,6 +4,52 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.2 - Research Proof Quality Gate + Planner Signals v0
+
+- Added `codey/research/proof_quality.py`, a deterministic proof reviewer for
+  `ResearchRecord` plus the durable Evidence Ledger read model. It checks
+  answer coverage, citation presence, opened-source evidence, locator/source
+  consistency, support relations, assumptions, counter/limitation handling, and
+  source-trust warnings without model calls or raw source reads.
+- Added `codey/research/completion_gate.py`, a narrow Research queue completion
+  boundary. Queued `research` and `open_question` work items now complete only
+  when the proof review passes and emits a generated
+  `research_proof:<16 hex>` ref. Ordinary manual Research still finishes and
+  records proof metadata without being blocked by this queue gate.
+- `ghost/work_queue.py` remains Research-runtime-free. It only validates that
+  research/open-question completion includes a generated-looking
+  `research_proof:<16 hex>` primary proof; TaskRunner calls the Research
+  completion gate for the actual proof decision.
+- Run Trace now stores a bounded `research_proof_reviews` summary: proof ref,
+  queued-question digest, booleans, answer coverage score, counts, reason
+  codes, and record id/digest when a record exists. Missing-record gate blocks
+  still leave an auditable proof review without storing the queued question
+  text. Passing proof reviews must include valid record id/digest, and duplicate
+  proof summaries are de-duplicated by proof/question/reason identity. The trace
+  does not store planner signal text, raw prompts, raw model responses, raw
+  URLs, raw paths, source text, or fetched pages.
+- Queued Research proof review is recomputed against the queued item title, so
+  strict-continuation wrapper text cannot dilute answer coverage. The gate also
+  ignores stale precomputed reviews by recomputing against the current
+  `ResearchRecord` and durable ledger state.
+- `research_proof:<16 hex>` refs now bind the question digest as well as the
+  record id/digest and proof result, so later audit/planner code can distinguish
+  which queued question a proof reviewed without storing the question text.
+- Proof semantics are fail-closed: a required conclusion/key-evidence claim
+  only counts as supported when it is `evidence_backed`, has its own
+  `evidence_refs`, and a `supports` relation targets one of those refs.
+  Counterevidence or limitations handling is now required for `ok=True`.
+- The Capability Registry and Event / Capability Matrix now declare
+  `research_proof_quality` as a deterministic completion gate and planner
+  signal producer. Architecture tests keep proof modules away from provider
+  adapters, browser code, tool runtime, server/TaskRunner runtime layers,
+  Ghost runtime, and plugin loaders.
+- This release does not change Research prompts, tool schemas, model-visible
+  tool results, Router behavior, provider fallback ordering, permissions, UI,
+  task receipts, or SSE payload shape. Small Research/Ghost queue A/B passed on
+  DeepSeek, Qwen, MiMo, StepFun, and GLM, one provider at a time against Edge
+  CDP 9222; this was not a broad provider/prompt A/B.
+
 ## 0.4.1 - Evidence Ledger v2
 
 - Added `codey/research/identity.py`, a shared bounded identity helper for

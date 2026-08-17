@@ -23,6 +23,9 @@ if __package__ in (None, ""):
 from codey.agent import RunResult
 import codey.ghost.work_queue as work_queue_module
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
+from codey.research.ledger import ResearchLedger
+from codey.research.object_model import build_research_record
+from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.review import ReviewResult
 from codey import server
@@ -192,6 +195,8 @@ def _run_case(
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _project: True,
@@ -201,13 +206,16 @@ def _run_case(
         def research_task(**_kwargs):
             nonlocal research_calls
             research_calls += 1
+            question = _research_question_from_task(str(_kwargs.get("task") or ""))
+            record = _proof_record(question, run_id=str(_kwargs.get("run_id") or ""))
             return ResearchRunResult(
-                "q",
+                question,
                 "stub research done",
                 "done",
                 1,
                 synthesis_id="note-result",
                 citation_map=[{"claim": "x"}],
+                research_record=record,
             )
 
         runner._run_research_task = research_task
@@ -262,6 +270,81 @@ def _run_case(
         "review_calls": review_calls,
         "elapsed": round(time.time() - started, 3),
     }
+
+
+def _research_question_from_task(task: str) -> str:
+    for line in str(task or "").splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("task:"):
+            return stripped.split(":", 1)[1].strip().rstrip(".") or "Research provider recovery"
+    return "Research provider recovery"
+
+
+def _proof_record(question: str, *, run_id: str):
+    url = "https://example.com/work-queue-proof"
+    claim = "The saved provider recovery question should be researched again with opened evidence."
+    source_text = f"{claim} 2026 source note."
+    summary = (
+        "## 结论\n"
+        f"- {claim} [1]\n\n"
+        "## 关键证据\n"
+        f"- [1] The opened source says {claim}\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证；需要持续追踪新的 provider recovery evidence。\n\n"
+        "## 来源质量\n"
+        "- [1] secondary · web · fresh · example.com\n\n"
+        "## 搜索覆盖\n"
+        f"- query: {question}\n"
+        "- opened: Work queue proof article\n"
+        "- skipped: none representative\n\n"
+        "## 来源\n"
+        f"[1] Work queue proof article - {url}"
+    )
+    ledger = ResearchLedger()
+    ledger.record_search(question, [{
+        "title": "Work queue proof article",
+        "url": url,
+        "snippet": claim,
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="Work queue proof article",
+        text=source_text,
+    )
+    prepared = ledger.prepare_evidence_items(
+        [{
+            "claim": claim,
+            "source_url": url,
+            "excerpt": claim,
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim=claim,
+        fallback_body=source_text,
+        note_type="fact",
+    )
+    if prepared.error:
+        raise AssertionError(prepared.error)
+    ledger.add_evidence_items(list(prepared.items), note_id="manual-proof")
+    quality = review_report_quality(
+        summary,
+        ledger=ledger,
+        opened_sources=ledger.final_url_set(),
+        search_result_urls={url},
+    )
+    if not quality.ok:
+        raise AssertionError(quality.message)
+    return build_research_record(
+        question=question,
+        summary=summary,
+        ledger=ledger,
+        review=quality,
+        run_id=run_id or "manual-proof-run",
+        session_id="manual-proof-session",
+        synthesis_id="manual-proof-synthesis",
+        stop_reason="done",
+    )
 
 
 def _seed_case_item(

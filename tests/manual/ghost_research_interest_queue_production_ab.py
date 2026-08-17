@@ -24,6 +24,9 @@ from codey.agent import RunResult
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import build_research_interest_candidates
 from codey.knowledge.store import KnowledgeStore
+from codey.research.ledger import ResearchLedger
+from codey.research.object_model import build_research_record
+from codey.research.report_quality import review_report_quality
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.runner import ResearchRunResult
 from codey.review import ReviewResult
@@ -181,6 +184,8 @@ def _run_case(
             project_facts=state.project_facts,
             work_checkpoints=state.work_checkpoints,
             run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
             managed_outputs=state.managed_outputs,
             knowledge_store=state.knowledge_store,
             is_git_repository=lambda _project: True,
@@ -191,13 +196,16 @@ def _run_case(
             nonlocal research_calls
             research_calls += 1
             if case.research_proof:
+                question = _research_question_from_task(str(_kwargs.get("task") or ""))
+                record = _proof_record(question, run_id=str(_kwargs.get("run_id") or ""))
                 return ResearchRunResult(
-                    "q",
+                    question,
                     "stub research done",
                     "done",
                     1,
                     synthesis_id=f"note-{case.name}",
                     citation_map=[{"claim": "x"}],
+                    research_record=record,
                 )
             return ResearchRunResult("q", "stub research without proof", "done", 1)
 
@@ -261,6 +269,94 @@ def _run_case(
         "review_calls": review_calls,
         "elapsed": round(time.time() - started, 3),
     }
+
+
+def _research_question_from_task(task: str) -> str:
+    for line in str(task or "").splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("task:"):
+            return stripped.split(":", 1)[1].strip().rstrip(".") or "Research provider recovery"
+    return "Research provider recovery"
+
+
+def _claim_for_question(question: str) -> str:
+    lower = question.casefold()
+    if "copper" in lower and "helium" in lower:
+        return (
+            "Copper supply and helium supply are connected through war-related "
+            "supply-chain risk."
+        )
+    return (
+        "Provider recovery should be checked again because browser sessions can "
+        "change."
+    )
+
+
+def _proof_record(question: str, *, run_id: str):
+    url = "https://example.com/research-proof"
+    claim = _claim_for_question(question)
+    source_text = f"{claim} 2026 source note."
+    summary = (
+        "## 结论\n"
+        f"- {claim} [1]\n\n"
+        "## 关键证据\n"
+        f"- [1] The opened source says {claim}\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证；需要持续追踪新的 primary source。\n\n"
+        "## 来源质量\n"
+        "- [1] secondary · web · fresh · example.com\n\n"
+        "## 搜索覆盖\n"
+        f"- query: {question}\n"
+        "- opened: Research proof article\n"
+        "- skipped: none representative\n\n"
+        "## 来源\n"
+        f"[1] Research proof article - {url}"
+    )
+    ledger = ResearchLedger()
+    ledger.record_search(question, [{
+        "title": "Research proof article",
+        "url": url,
+        "snippet": claim,
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="Research proof article",
+        text=source_text,
+    )
+    prepared = ledger.prepare_evidence_items(
+        [{
+            "claim": claim,
+            "source_url": url,
+            "excerpt": claim,
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim=claim,
+        fallback_body=source_text,
+        note_type="fact",
+    )
+    if prepared.error:
+        raise AssertionError(prepared.error)
+    ledger.add_evidence_items(list(prepared.items), note_id="manual-proof")
+    quality = review_report_quality(
+        summary,
+        ledger=ledger,
+        opened_sources=ledger.final_url_set(),
+        search_result_urls={url},
+    )
+    if not quality.ok:
+        raise AssertionError(quality.message)
+    return build_research_record(
+        question=question,
+        summary=summary,
+        ledger=ledger,
+        review=quality,
+        run_id=run_id or "manual-proof-run",
+        session_id="manual-proof-session",
+        synthesis_id="manual-proof-synthesis",
+        stop_reason="done",
+    )
 
 
 def _seed_case_interest(

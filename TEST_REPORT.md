@@ -1,5 +1,101 @@
 # Codey Test Report
 
+## 0.4.2 Research Proof Quality Gate + Planner Signals v0
+
+Codey 0.4.2 adds a deterministic Research proof-quality gate for queued
+Research/open-question work items. It upgrades completion from "a research
+artifact exists" to "the queued question is covered by cited, opened-source,
+locator-backed, support-relation evidence." The gate also emits planner signals
+for later bounded follow-up search, but it does not execute those plans.
+
+Production changes:
+
+- New `codey/research/proof_quality.py` reviews `ResearchRecord` objects and
+  the durable Evidence Ledger read model without model calls or source fetches.
+  It checks answer coverage, citations, evidence refs, locator/source
+  consistency, support relation direction, assumptions, counter/limitations,
+  source-trust warnings, overclaim warnings, and missing-evidence reason codes.
+- New `codey/research/completion_gate.py` gives TaskRunner a narrow Research
+  queue completion boundary. Queued `research` / `open_question` items complete
+  only when the proof review passes and yields `research_proof:<16 hex>`.
+  Ordinary manual Research is not blocked by the queue gate.
+- `ghost/work_queue.py` stays independent of Research runtime modules. It only
+  validates the generated-looking `research_proof:<16 hex>` primary proof shape
+  for research/open-question completion. Legacy `research:*` refs may remain as
+  auxiliary refs but cannot complete new queued Research by themselves.
+- Run Trace now stores only bounded `research_proof_reviews` summaries:
+  proof ref, queued-question digest, booleans, answer coverage score, counts,
+  reason codes, and record id/digest when a record exists. Missing-record gate
+  blocks still leave an auditable proof review without storing the queued
+  question text. Passing proof reviews must include valid record id/digest, and
+  duplicate proof summaries are de-duplicated by proof/question/reason identity.
+  The trace does not store planner signal text, raw prompts, raw model
+  responses, raw URLs, raw paths, source text, or fetched pages.
+- The Capability Registry and Event / Capability Matrix declare
+  `research_proof_quality` as a deterministic completion gate and planner
+  signal producer. Architecture tests keep proof modules away from provider
+  adapters, browser code, tool runtime, server/TaskRunner runtime layers,
+  Ghost runtime, and plugin loaders.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_run_trace.py tests\test_task_runner_work_queue.py tests\test_research_completion_gate.py tests\test_research_proof_quality.py -q -p no:cacheprovider
+# 43 passed
+
+python -m pytest tests\test_research_proof_quality.py tests\test_research_completion_gate.py tests\test_ghost_work_queue.py tests\test_task_runner_work_queue.py tests\test_run_trace.py tests\test_capabilities.py -q -p no:cacheprovider
+# 92 passed
+
+python -m pytest tests\test_task_runner_affinity.py tests\test_task_runner_router.py tests\test_task_runner_work_queue.py tests\test_ghost_work_queue.py tests\test_research_interest_queue.py tests\test_ghost_work_queue_ab.py -q -p no:cacheprovider
+# 72 passed
+
+python -B tests\manual\ghost_research_interest_queue_production_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\ghost_work_queue_production_ab.py --self-test
+# self-test ok
+
+python -m pytest tests\test_research_proof_quality.py tests\test_research_completion_gate.py tests\test_research_identity.py tests\test_research_evidence_ledger.py tests\test_research_object_model.py tests\test_research.py tests\test_ghost_work_queue.py tests\test_research_interest_queue.py tests\test_task_runner_work_queue.py tests\test_task_runner_affinity.py tests\test_task_runner_router.py tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_capabilities.py tests\test_event_matrix.py tests\test_architecture.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q -p no:cacheprovider
+# 279 passed, 294 subtests passed
+
+python -m pytest -q -p no:cacheprovider
+# 2088 passed, 9 skipped, 587 subtests passed in 368.50s (0:06:08)
+
+python -m pytest tests\test_event_matrix.py tests\test_capabilities.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q -p no:cacheprovider
+# 28 passed, 190 subtests passed
+
+python -m ruff check codey tests --no-cache
+# All checks passed!
+
+python -m compileall codey tests
+# passed
+
+git diff --check
+# passed
+```
+
+Small Research/Ghost queue A/B:
+
+```text
+python -B tests\manual\ghost_work_queue_production_ab.py --provider <provider> --case research-item --output tests\manual\results\ghost_work_queue_production_0_4_2_<provider>_research_item.json
+python -B tests\manual\ghost_research_interest_queue_production_ab.py --provider <provider> --case research-note-open-question --case research-without-proof-blocks --output tests\manual\results\ghost_research_interest_queue_production_0_4_2_<provider>_gate.json
+```
+
+2026-08-17 one-provider-at-a-time live result against Edge CDP 9222:
+
+- DeepSeek: work queue `research-item` ok; research-interest proof/no-proof gate ok.
+- Qwen: work queue `research-item` ok; research-interest proof/no-proof gate ok.
+- MiMo: work queue `research-item` ok; research-interest proof/no-proof gate ok.
+- StepFun: work queue `research-item` ok; research-interest proof/no-proof gate ok.
+- GLM: work queue `research-item` ok; research-interest proof/no-proof gate ok.
+
+The first DeepSeek attempt failed before TaskRunner because CDP port 9222 was
+not open. After the browser CDP session came up, DeepSeek was rerun as a single
+provider and passed. This release does not need a broad provider/prompt A/B:
+Research prompts, tool schemas, model-visible tool-result wording, Router
+behavior, provider fallback ordering, permissions, UI, task receipts, and SSE
+payload shape are unchanged.
+
 ## 0.4.1 Evidence Ledger v2
 
 Codey 0.4.1 adds the durable Evidence Ledger v2 read model. Every completed

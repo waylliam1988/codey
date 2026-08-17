@@ -6,6 +6,9 @@ from unittest import mock
 from codey.agent import RunResult
 import codey.ghost.work_queue as work_queue_module
 from codey.knowledge.research_interest import ResearchInterestCandidate
+from codey.research.ledger import ResearchLedger
+from codey.research.object_model import build_research_record
+from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey import server
 from codey.task_runner import TaskRequest, TaskRunner
@@ -41,6 +44,8 @@ def _runner(state: server.State, *, agent_run=None, router_provider_factory=None
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         run_ledgers=state.run_ledgers,
+        run_traces=state.run_traces,
+        evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
@@ -85,6 +90,71 @@ def _queued_research_item(*, title: str, concept: str, priority: float):
     )
 
 
+def _research_record(concept: str):
+    url = f"https://example.com/{concept}-provider-recovery"
+    claim = f"{concept} provider recovery should be tracked with opened evidence."
+    source_text = f"{claim} 2026 source note."
+    summary = (
+        "## 结论\n"
+        f"- {claim} [1]\n\n"
+        "## 关键证据\n"
+        f"- [1] The opened source says {claim}\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证；需要持续追踪新的 provider recovery evidence。\n\n"
+        "## 来源质量\n"
+        "- [1] secondary · web · fresh · example.com\n\n"
+        "## 搜索覆盖\n"
+        f"- query: Research {concept} provider recovery\n"
+        f"- opened: {concept} provider recovery article\n"
+        "- skipped: none representative\n\n"
+        "## 来源\n"
+        f"[1] {concept} provider recovery article - {url}"
+    )
+    ledger = ResearchLedger()
+    ledger.record_search(f"{concept} provider recovery", [{
+        "title": f"{concept} provider recovery article",
+        "url": url,
+        "snippet": claim,
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title=f"{concept} provider recovery article",
+        text=source_text,
+    )
+    prepared = ledger.prepare_evidence_items(
+        [{
+            "claim": claim,
+            "source_url": url,
+            "excerpt": claim,
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim=claim,
+        fallback_body=source_text,
+        note_type="fact",
+    )
+    assert not prepared.error
+    ledger.add_evidence_items(list(prepared.items), note_id=f"{concept}-result")
+    quality = review_report_quality(
+        summary,
+        ledger=ledger,
+        opened_sources=ledger.final_url_set(),
+        search_result_urls={url},
+    )
+    assert quality.ok
+    return build_research_record(
+        question=f"Research {concept} provider recovery",
+        summary=summary,
+        ledger=ledger,
+        review=quality,
+        run_id=f"run-{concept}",
+        session_id="s1",
+        synthesis_id=f"{concept}-result",
+        stop_reason="done",
+    )
+
+
 def test_task_runner_uses_affinity_to_order_strict_continue_work_items() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.State(td)
@@ -102,12 +172,13 @@ def test_task_runner_uses_affinity_to_order_strict_continue_work_items() -> None
             router_provider_factory=mock.Mock(side_effect=AssertionError("router should be bypassed")),
         )
         runner._run_research_task = mock.Mock(return_value=ResearchRunResult(
-            "q",
+            "Research alpha provider recovery",
             "researched",
             "done",
             1,
             synthesis_id="alpha-result",
             citation_map=[{"claim": "x"}],
+            research_record=_research_record("alpha"),
         ))
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):

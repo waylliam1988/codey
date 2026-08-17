@@ -513,6 +513,9 @@ uses the production `TaskRunner` entry point and real queue claim/complete/block
 transitions, while mode bodies are safe stubs so the probe does not edit the
 repository or run shell commands. The live provider is only used as the normal
 main provider for paths that need it; Work Queue itself does not call a model.
+Since 0.4.2, the research safe stub also writes a real `ResearchRecord` into
+the Evidence Ledger so queued Research completion is tested through the
+`research_proof:<digest>` gate rather than a legacy `research:*` ref.
 
 ```powershell
 python -B tests\manual\ghost_work_queue_production_ab.py --self-test
@@ -544,12 +547,28 @@ The baseline miss was the intended Research follow-up: without the queue,
 dispatched Research. Output JSON files were written under
 `tests/manual/results/ghost_work_queue_production_*.json`.
 
+2026-08-17 0.4.2 Research Proof Quality Gate smoke, one provider at a time
+against Edge CDP 9222, scoped to the Research queue row:
+
+- DeepSeek: `ghost_work_queue_production_0_4_2_deepseek_research_item.json` ok.
+- Qwen: `ghost_work_queue_production_0_4_2_qwen_research_item.json` ok.
+- MiMo: `ghost_work_queue_production_0_4_2_mimo_research_item.json` ok.
+- StepFun: `ghost_work_queue_production_0_4_2_stepfun_research_item.json` ok.
+- GLM: `ghost_work_queue_production_0_4_2_glm_research_item.json` ok.
+
+The first DeepSeek attempt failed before TaskRunner because CDP port 9222 was
+not open. After the Edge CDP session came up, DeepSeek was rerun atomically and
+passed.
+
 `ghost_research_interest_queue_production_ab.py` covers 0.3.9 Research
 Interest Queue consumption. Candidate generation is deterministic and local:
 Research note structured `open_questions` and structured Concept Graph missing
 links are harvested into existing Work Queue items. The harness uses the production
 `TaskRunner` claim path, while mode bodies are safe stubs so it does not edit
-files or run shell commands.
+files or run shell commands. Since 0.4.2, the `research_proof=true` rows build
+a bounded `ResearchRecord`, append it to the Evidence Ledger, and verify queue
+completion through the Research Proof Quality Gate; `research_proof=false`
+still verifies blocking.
 
 ```powershell
 python -B tests\manual\ghost_research_interest_queue_production_ab.py --self-test
@@ -573,6 +592,19 @@ one provider per restarted Edge CDP session:
 - StepFun: baseline 3/6; queue 6/6.
 - GLM: partial, baseline 2/4; queue 4/4. The remaining cases timed out because
   the webpage was slow/self-searching.
+
+2026-08-17 0.4.2 Research Proof Quality Gate smoke, one provider at a time
+against Edge CDP 9222, scoped to proof/no-proof queued Research completion:
+
+- DeepSeek: `ghost_research_interest_queue_production_0_4_2_deepseek_gate.json` ok.
+- Qwen: `ghost_research_interest_queue_production_0_4_2_qwen_gate.json` ok.
+- MiMo: `ghost_research_interest_queue_production_0_4_2_mimo_gate.json` ok.
+- StepFun: `ghost_research_interest_queue_production_0_4_2_stepfun_gate.json` ok.
+- GLM: `ghost_research_interest_queue_production_0_4_2_glm_gate.json` ok.
+
+Each provider ran `research-note-open-question` and `research-without-proof-blocks`
+only, so the smoke validates proof success and proof failure without spending a
+full six-case matrix.
 
 `ghost_affinity_ab.py` covers 0.3.10 Affinity Index ordering consumption.
 The harness uses production `TaskRunner` paths with safe Research stubs. It

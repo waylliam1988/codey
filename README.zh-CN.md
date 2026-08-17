@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.1-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.2-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.1`
+版本：`0.4.2`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -57,6 +57,9 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 - **Research 结论更可追踪**：Research 跑完后，Codey 会在后台从已打开来源、
   evidence snippet、claim、assumption 和 claim/evidence 关系生成确定性的研究对象记录。
   搜索结果和本地记忆不会被当成证据。
+- **知道排队 Research 什么时候真的做完**：queued research follow-up 现在只有通过
+  deterministic proof review，确认 answer coverage、citation、opened-source evidence、
+  locator 和 supports relation 后才会完成；同时会生成安静的 planner signals，供后续补搜使用。
 - **自然继续待办**：Codey 有本地排队的后续任务时，你说“继续”就能认领一条，
   走对应的 Research、Writer 或 Review，并用本地 proof 收尾。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存带 source chips 的可读笔记卡片、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
@@ -244,6 +247,15 @@ raw model response、完整来源正文、raw URL 或 raw absolute path。写入
 孤儿 entry、非 canonical 标量值、以及 locator/source 不一致的数据，所以断链或畸形
 ledger 会 fail-closed；candidate write 也必须先通过同一套 canonical 检查，不能污染后续
 proof 材料。它也不新增 UI，不改变 Research prompt 或工具结果。
+
+从 0.4.2 开始，queued Research / open-question 待办只有通过 deterministic proof
+review 后才会标记完成。这个 review 会检查 queued question 的 answer coverage、
+citation、已打开来源 evidence、locator/source 一致性、supports relation、assumption
+和反证/限制处理。queued proof 会绑定 saved work-item title；结论/关键证据 claim
+只有在自身 evidence refs 是 `evidence_backed` 且被 `supports` relation 匹配时才算
+被支持。Run Trace 只记录有界的 `research_proof:<digest>` summary、queued-question
+digest 和 planner-signal 计数；普通手动 Research 不会被这个 gate 阻塞，UI/SSE
+payload、Research prompt、tool schema 和模型可见 tool result 都保持不变。
 
 从 0.2.20 开始，生产 Research 使用一个很薄的 controller，而不是每轮都把完整工具菜单
 交给模型。Codey 会读取当前 Research ledger，只展示这一轮合理的 allowed tools，并给
@@ -648,7 +660,7 @@ codey/
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
   ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列、affinity 账本和本地上下文控制面
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
-  research/                 Research controller/runner、隔离网页/source search 工具、evidence ledger、object model 和 report quality gate
+  research/                 Research controller/runner、隔离网页/source search 工具、evidence ledger、object model、report/proof quality gate
   verification_map.py       Review 阶段的有边界验证候选
   review_impact_map.py      只给 Review 使用的 caller/test 影响提示
   change_brief.py           隐藏任务意图 brief

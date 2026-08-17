@@ -34,6 +34,7 @@ MAX_TOOL_CONTRACTS = 16
 MAX_POLICY_DECISIONS = 80
 MAX_RESEARCH_RECORDS = 8
 MAX_EVIDENCE_LEDGER_WRITES = 8
+MAX_RESEARCH_PROOF_REVIEWS = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 RESEARCH_ANSWER_STATUSES = frozenset({
@@ -176,6 +177,7 @@ class RunTraceManifest:
     research_source_refs: list[dict[str, str]] = field(default_factory=list)
     research_records: list[dict[str, object]] = field(default_factory=list)
     research_evidence_ledgers: list[dict[str, object]] = field(default_factory=list)
+    research_proof_reviews: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -207,6 +209,9 @@ class RunTraceManifest:
             "research_records": self.research_records[:MAX_RESEARCH_RECORDS],
             "research_evidence_ledgers": (
                 self.research_evidence_ledgers[:MAX_EVIDENCE_LEDGER_WRITES]
+            ),
+            "research_proof_reviews": (
+                self.research_proof_reviews[:MAX_RESEARCH_PROOF_REVIEWS]
             ),
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
@@ -535,6 +540,57 @@ class RunTraceRecorder:
             self.manifest.warnings.append("research_evidence_ledgers_truncated")
         self.checkpoint()
 
+    def record_research_proof_review(self, review: Mapping[str, object]) -> None:
+        if not isinstance(review, Mapping):
+            return
+        proof_ref = _research_proof_ref_or_empty(review.get("proof_ref"))
+        if not proof_ref:
+            return
+        question_digest = _digest_ref_or_empty(review.get("question_digest"))
+        payload: dict[str, object] = {
+            "proof_ref": proof_ref,
+            "ok": bool(review.get("ok")),
+            "answers_question": bool(review.get("answers_question")),
+            "answer_status": _research_answer_status(review.get("answer_status")),
+            "answer_coverage_score": _unit_float(review.get("answer_coverage_score")),
+            "gap_count": _nonnegative_int(review.get("gap_count")),
+            "warning_count": _nonnegative_int(review.get("warning_count")),
+            "planner_signal_count": _nonnegative_int(review.get("planner_signal_count")),
+            "reason_codes": [
+                _identifier(item, 80)
+                for item in review.get("reason_codes", ())
+                if _identifier(item, 80)
+            ][:MAX_WARNINGS],
+        }
+        record_id = _research_record_id_or_empty(review.get("record_id"))
+        if record_id:
+            payload["record_id"] = record_id
+        digest = _digest_ref_or_empty(review.get("record_digest"))
+        if digest:
+            payload["record_digest"] = digest
+        if payload["ok"] and (not record_id or not digest):
+            return
+        if question_digest:
+            payload["question_digest"] = question_digest
+        review_key = (
+            str(payload["proof_ref"]),
+            str(payload.get("question_digest") or ""),
+            tuple(payload["reason_codes"]),
+        )
+        for existing in self.manifest.research_proof_reviews:
+            existing_key = (
+                str(existing.get("proof_ref") or ""),
+                str(existing.get("question_digest") or ""),
+                tuple(existing.get("reason_codes", ()) or ()),
+            )
+            if existing_key == review_key:
+                return
+        self.manifest.research_proof_reviews.append(payload)
+        if len(self.manifest.research_proof_reviews) > MAX_RESEARCH_PROOF_REVIEWS:
+            del self.manifest.research_proof_reviews[:-MAX_RESEARCH_PROOF_REVIEWS]
+            self.manifest.warnings.append("research_proof_reviews_truncated")
+        self.checkpoint()
+
     def record_fallback(
         self,
         *,
@@ -702,6 +758,17 @@ def _evidence_ledger_ref_or_empty(value: object) -> str:
     return ""
 
 
+def _research_proof_ref_or_empty(value: object) -> str:
+    text = str(value or "").strip()
+    prefix = "research_proof:"
+    if not text.startswith(prefix):
+        return ""
+    suffix = text.removeprefix(prefix)
+    if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
+        return text
+    return ""
+
+
 def _bounded_count_mapping(value: Mapping[str, object]) -> dict[str, int]:
     allowed = {
         "records",
@@ -730,6 +797,20 @@ def _nonnegative_int(value: object) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _unit_float(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    if number < 0:
+        return 0.0
+    if number > 1:
+        return 1.0
+    return round(number, 3)
 
 
 def _is_hex_64(value: str) -> bool:

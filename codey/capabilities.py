@@ -225,6 +225,13 @@ def builtin_capability_registry() -> CapabilityRegistry:
             owner_module="codey.research.evidence_ledger",
         ),
         CapabilitySpec(
+            id="research_proof_quality",
+            provides=("research_completion_gate", "planner_signals_v0"),
+            consumes=("research_object_model", "research_evidence_ledger", "run_trace"),
+            durable_state=("run_trace",),
+            owner_module="codey.research.proof_quality",
+        ),
+        CapabilitySpec(
             id="review_runner",
             provides=("review_prompt_boundary", "bounded_diff_review"),
             consumes=("policy_guard", "prompt_envelope", "run_trace"),

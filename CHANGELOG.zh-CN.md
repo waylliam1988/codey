@@ -4,6 +4,43 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.2 - Research Proof Quality Gate + Planner Signals v0
+
+- 新增 `codey/research/proof_quality.py`：对 `ResearchRecord` 和 durable
+  Evidence Ledger read model 做 deterministic proof review。它检查 answer
+  coverage、citation、已打开来源 evidence、locator/source 一致性、supports
+  relation、assumption、反证/限制处理和 source-trust warning，不调用模型，也不读取
+  raw source body。
+- 新增 `codey/research/completion_gate.py`：把 Research queue completion 规则抽成很薄的
+  边界。queued `research` / `open_question` work item 现在只有在 proof review 通过并
+  生成 `research_proof:<16 hex>` 后才会完成；普通手动 Research 仍然会正常结束，只记录
+  proof metadata，不被这个 queue gate 阻塞。
+- `ghost/work_queue.py` 仍然不 import Research runtime。它只校验 research/open-question
+  completion 必须带生成形状的 `research_proof:<16 hex>` primary proof；真正的 proof
+  判断由 TaskRunner 调用 Research completion gate 完成。
+- Run Trace 新增有界 `research_proof_reviews` summary，只保存 proof ref、
+  queued-question digest、布尔结果、answer coverage score、计数、reason code，以及有
+  record 时的 record id/digest；missing-record gate block 也会留下可审计 proof
+  review。通过的 proof review 必须带合法 record id/digest，重复 proof summary 会按
+  proof/question/reason identity 去重；trace 不保存 queued question 原文、planner signal
+  文本、raw prompt、raw model response、raw URL、raw path、source text 或已抓取页面。
+- queued Research proof review 会按 queued item title 重新计算，所以 strict continuation
+  的包装文本不会稀释 answer coverage。gate 也不会信任 stale precomputed review，而是按当前
+  `ResearchRecord` 和 durable ledger 状态重新判定。
+- `research_proof:<16 hex>` ref 现在绑定 question digest、record id/digest 和 proof
+  result，后续 audit/planner 能区分这份 proof 审的是哪个 queued question，但不会保存问题原文。
+- proof 语义改成 fail-closed：结论/关键证据 claim 只有在 `status=evidence_backed`、
+  自身有 `evidence_refs`、并且 `supports` relation 指向其中一个 ref 时，才算被支持。
+  `ok=True` 还必须包含反证或限制处理。
+- Capability Registry 和 Event / Capability Matrix 新增 `research_proof_quality`，声明它是
+  deterministic completion gate 和 planner signal producer。架构测试锁住 proof 模块不接
+  provider adapter、browser、tool runtime、server/TaskRunner runtime layer、Ghost runtime
+  或 plugin loader。
+- 本版不改变 Research prompt、工具 schema、模型可见 tool result、Router、provider
+  fallback 顺序、权限、UI、task receipt 或 SSE payload shape。小型 Research/Ghost queue
+  A/B 已按 provider 串行通过 DeepSeek、Qwen、MiMo、StepFun 和 GLM；这不是大规模
+  provider/prompt A/B。
+
 ## 0.4.1 - Evidence Ledger v2
 
 - 新增 `codey/research/identity.py`：把 Research projection 共用的有界 identity

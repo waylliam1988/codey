@@ -357,8 +357,23 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
             },
         }]
         assert trace_payload["research_records"][0]["record_id"] == record.record_id
+        proof_reviews = trace_payload["research_proof_reviews"]
+        assert len(proof_reviews) == 1
+        proof_review = proof_reviews[0]
+        assert proof_review["proof_ref"].startswith("research_proof:")
+        assert proof_review["record_id"] == record.record_id
+        assert proof_review["record_digest"] == record.record_digest
+        assert proof_review["question_digest"].startswith("sha256:")
+        assert proof_review["ok"] is True
+        assert proof_review["answers_question"] is True
+        assert proof_review["answer_status"] == "answered"
+        assert proof_review["answer_coverage_score"] == 1.0
+        assert proof_review["gap_count"] == 0
+        assert proof_review["planner_signal_count"] >= 1
+        assert proof_review["reason_codes"] == []
         assert "SECRET_TOKEN" not in serialized_trace
         assert "research_record" not in terminal_research_payload
+        assert "research_proof" not in terminal_research_payload
         assert "evidence_ledger" not in terminal_research_payload
 
 

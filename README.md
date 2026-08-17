@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.1-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.2-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.1`
+Version: `0.4.2`
 
 [Version history](CHANGELOG.md)
 
@@ -68,6 +68,10 @@ Version: `0.4.1`
   builds a deterministic Research object record from opened sources, evidence
   snippets, claims, assumptions, and claim/evidence relations. Search results
   and local memory are not treated as evidence.
+- **Know when queued Research is actually done**: queued research follow-ups now
+  complete only after a deterministic proof review verifies answer coverage,
+  citations, opened-source evidence, locators, and support relations. The review
+  also produces quiet planner signals for future follow-up search.
 - **Continue saved work naturally**: when Codey has a queued local follow-up,
   saying "continue" can claim one item and run the right path with proof.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save readable note cards with source chips, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
@@ -302,6 +306,18 @@ fields, orphan entries, non-canonical scalar values, and locator/source
 mismatches. Candidate writes must pass the same canonical checks before they
 touch disk, so malformed records cannot poison future proof material. This does
 not add UI or change Research prompts/tool results.
+
+In 0.4.2, queued Research and open-question work items complete only after a
+deterministic proof review passes. The review checks answer coverage against
+the queued question, citation presence, opened-source evidence, locator/source
+consistency, support relations, assumptions, and counter/limitation handling.
+Queued proof checks bind coverage to the saved work-item title, and required
+claims only count as supported when their own evidence refs are
+`evidence_backed` and matched by a `supports` relation.
+It writes only a bounded `research_proof:<digest>` summary, queued-question
+digest, and planner-signal counts into Run Trace. Ordinary manual Research is
+not blocked by this gate, and the UI/SSE payload, Research prompt, tool schema,
+and model-visible tool results remain unchanged.
 
 In 0.2.20, production Research uses a thin controller instead of exposing the
 full tool menu every turn. Codey reads the current Research ledger, shows only
@@ -742,7 +758,7 @@ codey/
   project_task_context.py   project facts, map, checkpoint, and verification context
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
-  research/                 Research controller/runner, isolated web/source search tools, evidence ledger, object model, report quality gate
+  research/                 Research controller/runner, isolated web/source search tools, evidence ledger, object model, report/proof quality gates
   verification_map.py       bounded review-time verification candidates
   review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief

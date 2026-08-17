@@ -81,7 +81,11 @@ def test_repeated_sync_is_idempotent_and_done_is_not_resurrected() -> None:
         )
         claim = store.claim_next(session_id="s1", run_id="run-1", user_request="继续")
         assert claim.ok
-        done = store.complete_item(item_id, run_id="run-1", proof_refs=("research:note-1",))
+        done = store.complete_item(
+            item_id,
+            run_id="run-1",
+            proof_refs=("research_proof:" + "a" * 16,),
+        )
         assert done is not None
 
         third = store.sync_from_sources(
@@ -148,7 +152,11 @@ def test_release_item_does_not_reopen_done_item_or_keep_stale_completion() -> No
     with tempfile.TemporaryDirectory() as td:
         store, item_id = _seed_research_work_item(td)
         assert store.claim_next(session_id="s1", run_id="run-1", user_request="continue").ok
-        done = store.complete_item(item_id, run_id="run-1", proof_refs=("research:note-1",))
+        done = store.complete_item(
+            item_id,
+            run_id="run-1",
+            proof_refs=("research_proof:" + "a" * 16,),
+        )
         assert done is not None
 
         released = store.release_item(item_id, run_id="run-1", reason="stopped")
@@ -157,7 +165,7 @@ def test_release_item_does_not_reopen_done_item_or_keep_stale_completion() -> No
     assert released is None
     assert row.status == "done"
     assert row.completed_run_id == "run-1"
-    assert row.proof_refs == ("research:note-1",)
+    assert row.proof_refs == ("research_proof:" + "a" * 16,)
 
 
 def test_complete_item_enforces_kind_specific_proof_at_store_layer() -> None:
@@ -196,6 +204,23 @@ def test_complete_item_enforces_kind_specific_proof_at_store_layer() -> None:
     assert row.id == claim.item.id
     assert row.status == "blocked"
     assert row.proof_refs == ()
+
+
+def test_research_item_requires_generated_research_proof_ref_shape() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store, item_id = _seed_research_work_item(td)
+        assert store.claim_next(session_id="s1", run_id="run-1", user_request="continue").ok
+
+        blocked = store.complete_item(
+            item_id,
+            run_id="run-1",
+            proof_refs=("research_proof:SECRET_TOKEN",),
+        )
+
+    assert blocked is not None
+    assert blocked.status == "blocked"
+    assert blocked.blocked_reason == "missing_proof"
+    assert blocked.proof_refs == ()
 
 
 def test_work_checkpoint_creates_project_followup() -> None:
@@ -411,7 +436,11 @@ def test_queue_item_does_not_reopen_done_or_running_and_clears_old_completion_fi
         running = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
         assert running.ok
         assert store.queue_item(item_id) is None
-        done = store.complete_item(item_id, run_id="run-1", proof_refs=("research:note-1",))
+        done = store.complete_item(
+            item_id,
+            run_id="run-1",
+            proof_refs=("research_proof:" + "a" * 16,),
+        )
         assert done is not None
         assert store.queue_item(item_id) is None
 
@@ -528,7 +557,7 @@ def test_strict_continuation_detector_is_narrow(text: str, expected: bool) -> No
     assert is_strict_work_continuation(text) is expected
 
 
-def test_proof_refs_are_bounded_from_task_event() -> None:
+def test_legacy_research_event_ref_does_not_complete_queue_proof() -> None:
     item = mock.Mock(kind="research")
     refs = proof_refs_from_task_event(
         item,
@@ -540,9 +569,7 @@ def test_proof_refs_are_bounded_from_task_event() -> None:
         },
     )
 
-    assert "ledger:run-1" in refs
-    assert "receipt:run-1" in refs
-    assert "research:note-1" in refs
+    assert refs == ()
 
 
 def test_proof_refs_require_kind_specific_primary_proof() -> None:

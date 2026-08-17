@@ -79,7 +79,9 @@ from codey.run_ledger_projection import (
     receipt_from_projection_if_compatible,
 )
 from codey.run_trace import RunTraceStore
+from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
+from codey.research.proof_quality import proof_review_trace_payload, review_research_proof
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
 from codey.review import has_reviewable_changes
@@ -170,6 +172,7 @@ class _RunHooks:
 @dataclass(frozen=True)
 class _ModeOutcome:
     event: dict
+    research_result: Any | None = None
 
 
 def _prepend_ghost_directive(prompt: str, directive: str) -> str:
@@ -300,6 +303,25 @@ def _record_evidence_ledger_write_trace(trace: Any | None, result: Any) -> None:
     if not callable(to_trace_payload):
         return
     FailOpenPromptTrace(trace).call("record_evidence_ledger_write", to_trace_payload())
+
+
+def _record_research_proof_review_trace(trace: Any | None, review: Any) -> None:
+    if trace is None or review is None:
+        return
+    sink = FailOpenPromptTrace(trace)
+    sink.call(
+        "record_research_proof_review",
+        proof_review_trace_payload(review),
+    )
+    sink.call("flush")
+
+
+def _research_queue_item_title(item: GhostWorkItem | None) -> str:
+    if item is None:
+        return ""
+    if str(getattr(item, "kind", "") or "") not in RESEARCH_QUEUE_KINDS:
+        return ""
+    return str(getattr(item, "title", "") or "").strip()
 
 
 def _provider_fallback_policy_decision(
@@ -903,6 +925,8 @@ class TaskRunner:
         frame: _RunFrame | None,
         event: dict[str, object],
         item: GhostWorkItem | None,
+        *,
+        research_result: Any = None,
     ) -> None:
         if item is None:
             return
@@ -925,15 +949,37 @@ class TaskRunner:
                 else None
             )
             if str(event.get("stop_reason") or "") == "done":
-                store.complete_item(
-                    item.id,
-                    run_id=frame.run_id,
-                    proof_refs=proof_refs_from_task_event(
-                        item,
-                        event,
-                        run_projection=projection,
-                    ),
-                )
+                if str(getattr(item, "kind", "") or "") in RESEARCH_QUEUE_KINDS:
+                    decision = ResearchCompletionGate(self.evidence_ledgers).evaluate(
+                        item=item,
+                        event=event,
+                        research_result=research_result,
+                        session_id=frame.request.session_id,
+                        project=frame.project_text,
+                    )
+                    if decision.complete:
+                        store.complete_item(
+                            item.id,
+                            run_id=frame.run_id,
+                            proof_refs=decision.proof_refs,
+                        )
+                    else:
+                        _record_research_proof_review_trace(frame.trace, decision.review)
+                        store.block_item(
+                            item.id,
+                            run_id=frame.run_id,
+                            blocked_reason=decision.blocked_reason or "research_proof_failed",
+                        )
+                else:
+                    store.complete_item(
+                        item.id,
+                        run_id=frame.run_id,
+                        proof_refs=proof_refs_from_task_event(
+                            item,
+                            event,
+                            run_projection=projection,
+                        ),
+                    )
             else:
                 store.block_item(
                     item.id,
@@ -1416,7 +1462,12 @@ class TaskRunner:
                 )
                 finish_trace(event)
                 state.finish_run(run_id, event)
-                self._maybe_complete_ghost_work_item(frame, event, work.claimed_work_item)
+                self._maybe_complete_ghost_work_item(
+                    frame,
+                    event,
+                    work.claimed_work_item,
+                    research_result=outcome.research_result,
+                )
                 self._maybe_run_ghost_learning(frame, event)
                 self._maybe_sync_ghost_continuity(frame, event)
                 self._maybe_sync_ghost_work_queue(frame, event)
@@ -1672,7 +1723,11 @@ class TaskRunner:
                 trace=trace,
             )
             if task_kind == "research":
-                outcome = self._run_research_mode(frame, hooks)
+                outcome = self._run_research_mode(
+                    frame,
+                    hooks,
+                    proof_question=_research_queue_item_title(work.claimed_work_item),
+                )
             elif task_kind == "hybrid":
                 outcome = self._run_hybrid_mode(frame, work, hooks)
             elif task_kind == "planning_readonly":
@@ -1689,7 +1744,12 @@ class TaskRunner:
             )
             finish_trace(event)
             state.finish_run(run_id, event)
-            self._maybe_complete_ghost_work_item(frame, event, work.claimed_work_item)
+            self._maybe_complete_ghost_work_item(
+                frame,
+                event,
+                work.claimed_work_item,
+                research_result=outcome.research_result,
+            )
             self._maybe_run_ghost_learning(frame, event)
             self._maybe_sync_ghost_continuity(frame, event)
             self._maybe_sync_ghost_work_queue(frame, event)
@@ -1800,7 +1860,13 @@ class TaskRunner:
             except Exception:
                 pass
 
-    def _run_research_mode(self, frame: _RunFrame, hooks: _RunHooks) -> _ModeOutcome:
+    def _run_research_mode(
+        self,
+        frame: _RunFrame,
+        hooks: _RunHooks,
+        *,
+        proof_question: str = "",
+    ) -> _ModeOutcome:
         state = self.state
         request = frame.request
         if frame.provider is None:
@@ -1821,6 +1887,12 @@ class TaskRunner:
         ledger_result = self._append_evidence_ledger(frame, hooks, result)
         _record_evidence_ledger_write_trace(frame.trace, ledger_result)
         _record_research_result_trace(frame.trace, result)
+        proof_review = self._review_research_result_proof(
+            frame,
+            result,
+            question=proof_question,
+        )
+        _record_research_proof_review_trace(frame.trace, proof_review)
         state.set_provider_session(
             frame.provider_id,
             None if result.stop_reason == "stopped" else request.session_id,
@@ -1863,7 +1935,7 @@ class TaskRunner:
             "mode": "research",
             "receipt": receipt,
             "research": _research_payload(result),
-        })
+        }, research_result=result)
 
     def _run_hybrid_mode(
         self,
@@ -1890,6 +1962,8 @@ class TaskRunner:
         ledger_result = self._append_evidence_ledger(frame, hooks, research_result)
         _record_evidence_ledger_write_trace(frame.trace, ledger_result)
         _record_research_result_trace(frame.trace, research_result)
+        proof_review = self._review_research_result_proof(frame, research_result)
+        _record_research_proof_review_trace(frame.trace, proof_review)
         if research_result.stop_reason != "done":
             return _ModeOutcome({
                 "type": "task_done",
@@ -1903,7 +1977,7 @@ class TaskRunner:
                 "mode": "research",
                 "receipt": {"text": research_result.receipt},
                 "research": _research_payload(research_result),
-            })
+            }, research_result=research_result)
         frame.fresh_chat = True
         frame.handoff = ""
         frame.conversation.update_snapshot(replace(
@@ -2947,7 +3021,7 @@ class TaskRunner:
             }
         if research_result is not None:
             event["research"] = _research_payload(research_result)
-        return _ModeOutcome(event)
+        return _ModeOutcome(event, research_result=research_result)
 
     def _run_research_task(
         self,
@@ -3041,6 +3115,42 @@ class TaskRunner:
             )
         )
         return ledger_result
+
+    def _review_research_result_proof(
+        self,
+        frame: _RunFrame,
+        result: Any,
+        *,
+        question: str = "",
+    ) -> Any | None:
+        record = getattr(result, "research_record", None)
+        if record is None:
+            return None
+        ledger_payload = None
+        if self.evidence_ledgers is not None:
+            try:
+                snapshot = self.evidence_ledgers.load(
+                    session_id=frame.request.session_id,
+                    project=frame.project_text,
+                )
+                if getattr(snapshot, "available", False):
+                    ledger_payload = snapshot.payload
+            except Exception:
+                ledger_payload = None
+        try:
+            proof_question = (
+                str(question or "").strip()
+                or str(getattr(result, "question", "") or "").strip()
+                or frame.request.task
+            )
+            return review_research_proof(
+                record,
+                question=proof_question,
+                evidence_ledger=ledger_payload,
+                require_ledger_record=self.evidence_ledgers is not None,
+            )
+        except Exception:
+            return None
 
     def _record_project_memory(
         self,

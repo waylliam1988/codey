@@ -569,9 +569,9 @@ ResearchContext：record/ledger/proof/plan/critic refs
 如果某个偶数版本最终只做 projection、schema 或 read model，不改变 prompt / tool result /
 model-visible contract，也可以降级为 deterministic parity + local smoke，不强行 A/B。
 
-0.4.2 如果只做 deterministic metadata / local gate，可以不做生产 A/B；如果改变
-queue done 语义、repair path 或用户可见结果，要做小型 Research A/B。0.4.4
-只要启用自动 bounded follow-up search，就必须做 Research A/B。
+0.4.2 已启用 queued research/open_question completion gate，改变 queue done 语义，
+所以需要小型 Research/Ghost queue A/B。0.4.4 只要启用自动 bounded follow-up
+search，就必须做 Research A/B。
 
 ## 0.4.0 - Evidence Kernel / Research Object Model v1
 
@@ -874,7 +874,7 @@ UI 或 SSE。
 
 ## 0.4.2 - Research Proof Quality Gate + Planner Signals v0
 
-状态：规划。目标是解决 Research work item 的 proof 太弱的问题，并为后续
+状态：已落地。目标是解决 Research work item 的 proof 太弱的问题，并为后续
 bounded Research Planner 产出第一版 deterministic gap signals。
 
 现在 `research:*` proof 只能证明“有研究产物”。0.4.2 要证明：
@@ -896,6 +896,7 @@ final claims 覆盖 queued question 的关键词、实体、关系和约束
 
 ```text
 research/proof_quality.py
+research/completion_gate.py
 ```
 
 核心结果：
@@ -917,6 +918,9 @@ ResearchProofReview(
     stale_warnings
     missing_evidence
     proof_ref
+    question_digest
+    record_id
+    record_digest
 )
 ```
 
@@ -932,26 +936,29 @@ queued question
 新增 Citation Integrity check：
 
 ```text
-citation number
-  -> final URL opened in this run
+claim citation
+  -> evidence ref
+  -> supports/refutes/limits relation
   -> source id
   -> evidence locator
-  -> excerpt hash / page hash / row hash match
+  -> locator source == evidence source
+  -> durable EvidenceLedger record
 ```
 
 接入：
 
 ```text
 GhostWorkItem(kind=research/open_question) done
-  -> proof_refs_from_task_event()
+  -> ResearchCompletionGate
   -> ResearchProofReview
-  -> research_proof:<digest>
+  -> complete only with research_proof:<16hex>
 ```
 
 ### 边界
 
 - 不允许 Ghost 自己生成 proof。
-- 不允许没有 ResearchRecord 的 research/open_question item 直接 done。
+- 不允许没有 ResearchRecord / durable EvidenceLedger record 的 research/open_question
+  item 直接 done。
 - 不要求每个普通 Research 都被阻塞；先重点约束 queue completion。
 - 可以给出 deterministic follow-up questions / query rewrite candidates，但 0.4.2
   不自动执行递归搜索；自动递归研究要等 Planner 边界和 A/B 单独落地。
@@ -984,6 +991,7 @@ Run Trace 只记录 bounded refs/counts/reason
 ```text
 把 ghost/work_queue.py 里的 kind-specific proof 判断抽成 helper
 Research proof validator 只读 ResearchRecord / EvidenceLedger，不读网页正文
+TaskRunner 只调用 ResearchCompletionGate，不再自己判断 research proof 是否足够
 不要在 0.4.2 大拆 TaskRunner.run；最多抽 Research proof/persistence 的薄边界
 ```
 
@@ -998,16 +1006,25 @@ citation 没有 locator -> cannot complete
 locator excerpt/hash 不匹配 -> cannot complete
 strong claim 只有弱 evidence -> warning 或 blocked
 assumption 不得计作 evidence
+conclusion/key-evidence claim 必须 status=evidence_backed 且 supports relation 指向自己的 evidence_refs
+counterevidence / limitations 缺失不得 ok=True
 answer_coverage_score bounded 且可解释
+question_digest 进入 research_proof ref / RunTrace，但不保存 queued question 原文
 research_proof ref bounded
+legacy research:* 不能单独完成 queued research/open_question
+RunTrace 只保存 proof summary / counts / reason codes，不保存 planner signal 原文
+missing ResearchRecord 这类 blocked gate 也必须写入 proof_ref / question_digest / reason_codes，即使没有 record_id / record_digest
+ok=True 的 proof review 必须带合法 record_id / record_digest；只有失败 review 可以省略
+queued Research 已先记录过同一 proof review 时，completion gate block 不能留下重复 trace entry
 ```
 
 ### A/B
 
-条件式。若 0.4.2 只生成 read-only proof report / deterministic metadata，不改变
-queue done、repair path、prompt、tool result 或用户可见结果，可以不做生产 A/B。
-若启用 `queued question 未被回答 -> cannot complete` 这类 completion gate，
-就会改变 Ghost work queue completion 语义，必须做小型 Research/Ghost queue A/B。
+已启用 queue completion gate，所以 0.4.2 做小型 Research/Ghost queue A/B。2026-08-17
+已按单 provider 原子落盘方式跑过 DeepSeek、Qwen、MiMo、StepFun、GLM：work queue
+`research-item` 和 research-interest proof/no-proof gate 均通过。它仍然不需要大规模
+provider/prompt A/B，因为没有改变 Research prompt、tool result、Router、provider
+fallback、权限、UI 或 SSE。
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 
@@ -1035,17 +1052,18 @@ web/html
 PDF
 local file
 CSV / TSV
-JSON / RSS
+JSON
 ```
 
 同时新增高杠杆 Connector Parity Pack。它不是为了拼专业数据库数量，而是覆盖通用研究最常见的来源：
 
 ```text
 arXiv
-OpenAlex
+PubMed
 Semantic Scholar
 Crossref
-PubMed or EuropePMC
+OpenAlex
+EuropePMC
 GitHub releases / issues
 official docs
 SEC EDGAR or FRED
@@ -1059,10 +1077,17 @@ recorded fixtures 可用：
 ```text
 local file
 CSV / TSV
-RSS
 arXiv
-OpenAlex
+PubMed
 ```
+
+RSS 不作为 0.4.3 shipped 最小集 blocker。它对 changelog、blog、release feed 和
+政策/安全公告仍然有价值，但现在不是用户最常直接点名的 Research 来源；可以先在
+registry 里声明 optional/unavailable，或顺延到 0.4.11 Connector Pack v1。
+
+OpenAlex 不放进 0.4.3 最小 fixture set。它更适合后续做 citation graph、
+机构/作者/主题 discovery 和 source metadata enrichment；0.4.3 第一批先用
+PubMed + arXiv 覆盖医学/生命科学和预印本/论文入口。
 
 其余 connector 可以声明 unavailable，或顺延到 0.4.11 Connector Pack v1。
 connector registry 从第一版就要能表达这些来源的 search/fetch 能力、rate limit、
@@ -1159,6 +1184,12 @@ recorded fixtures，且不改变模型可见工具结果。
 
 如果 connector 接入改变 search ranking、fetch 内容、tool result 文案或 source
 selection，就做 connector parity smoke/A-B，因为这已经改变 Research 的模型可见输入。
+
+0.4.3a 只做 registry / dry-run / recorded fixtures 时，不测试“模型会不会使用
+PubMed/arXiv”，因为模型还看不到这些 connector hit；测试重点是 planner 是否能在
+合适场景产出 PubMed/arXiv source preference 和 bounded query candidate。只有进入
+0.4.3b，让 PubMed/arXiv hit 进入 `source_search/open_url` 真实工具结果后，才做
+小型网页模型 connector smoke/A-B，验证模型能否正确打开、引用和 synthesis。
 
 ## 0.4.4 - Bounded Research Planner v1
 

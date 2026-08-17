@@ -24,6 +24,7 @@ EXPECTED_BUILTIN_IDS = (
     "provider_factory",
     "research_evidence_ledger",
     "research_object_model",
+    "research_proof_quality",
     "research_runner",
     "review_runner",
     "run_details",
@@ -32,7 +33,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "51706e345b5b204e04ee1993de3e6332380db36fa7a3c90aac1f3690bd9faa26"
+    "769c424047f02dcf799923d27ae8263d404d739d9e064a1b71a18b87ac16d074"
 )
 
 
@@ -129,6 +130,25 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(spec.consumes, ("research_object_model", "run_trace"))
         self.assertEqual(spec.durable_state, ("research_evidence_ledger", "run_trace"))
         self.assertEqual(spec.owner_module, "codey.research.evidence_ledger")
+        self.assertFalse(spec.model_visible)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.ui_surface, ())
+
+    def test_research_proof_quality_is_deterministic_completion_gate(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_proof_quality")
+
+        self.assertEqual(
+            spec.provides,
+            ("research_completion_gate", "planner_signals_v0"),
+        )
+        self.assertEqual(
+            spec.consumes,
+            ("research_object_model", "research_evidence_ledger", "run_trace"),
+        )
+        self.assertEqual(spec.durable_state, ("run_trace",))
+        self.assertEqual(spec.owner_module, "codey.research.proof_quality")
         self.assertFalse(spec.model_visible)
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.ui_surface, ())

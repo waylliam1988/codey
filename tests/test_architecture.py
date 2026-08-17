@@ -318,7 +318,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertNotIn(token, source)
 
-    def test_research_identity_and_evidence_ledger_do_not_import_runtime_layers(self) -> None:
+    def test_research_identity_ledger_and_proof_do_not_import_runtime_layers(self) -> None:
         forbidden_imports = {
             "codey.browser",
             "codey.deepseek",
@@ -338,6 +338,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         for path in (
             ROOT / "codey" / "research" / "identity.py",
             ROOT / "codey" / "research" / "evidence_ledger.py",
+            ROOT / "codey" / "research" / "proof_quality.py",
+            ROOT / "codey" / "research" / "completion_gate.py",
         ):
             with self.subTest(path=path.relative_to(ROOT).as_posix()):
                 imports = imported_modules(path)

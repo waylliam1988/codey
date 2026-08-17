@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+import json
 from pathlib import Path
 import tempfile
 from unittest import mock
@@ -8,6 +10,9 @@ from codey.agent import RunResult
 import codey.ghost.work_queue as work_queue_module
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
+from codey.research.ledger import ResearchLedger
+from codey.research.object_model import build_research_record
+from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.review import ReviewResult
 from codey import server
@@ -85,6 +90,8 @@ def _runner(
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         run_ledgers=state.run_ledgers,
+        run_traces=state.run_traces,
+        evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=is_git_repository or (lambda _project: True),
@@ -107,6 +114,82 @@ def _seed_research_item(state: server.State) -> str:
     )
     item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
     return item.id
+
+
+def _research_record():
+    url = "https://example.com/provider-recovery"
+    source_text = (
+        "Teams should keep tracking provider recovery because it depends on reliable "
+        "browser session checks."
+    )
+    summary = (
+        "## 结论\n"
+        "- Teams should keep tracking provider recovery because it depends on reliable browser session checks. [1]\n\n"
+        "## 关键证据\n"
+        "- [1] The opened source says teams should keep tracking provider recovery because it depends on reliable browser session checks.\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证；需要持续追踪 provider UI 变化。\n\n"
+        "## 来源质量\n"
+        "- [1] secondary · web · fresh · example.com\n\n"
+        "## 搜索覆盖\n"
+        "- query: provider recovery\n"
+        "- opened: Provider recovery article\n"
+        "- skipped: none representative\n\n"
+        "## 来源\n"
+        f"[1] Provider recovery article - {url}"
+    )
+    ledger = ResearchLedger()
+    ledger.record_search("provider recovery", [{
+        "title": "Provider recovery article",
+        "url": url,
+        "snippet": "Provider recovery.",
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="Provider recovery article",
+        text=source_text,
+    )
+    prepared = ledger.prepare_evidence_items(
+        [{
+            "claim": (
+                "Teams should keep tracking provider recovery because it depends on reliable "
+                "browser session checks."
+            ),
+            "source_url": url,
+            "excerpt": (
+                "Teams should keep tracking provider recovery because it depends on reliable "
+                "browser session checks."
+            ),
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim=(
+            "Teams should keep tracking provider recovery because it depends on reliable "
+            "browser session checks."
+        ),
+        fallback_body=source_text,
+        note_type="fact",
+    )
+    assert not prepared.error
+    ledger.add_evidence_items(list(prepared.items), note_id="note-result")
+    quality = review_report_quality(
+        summary,
+        ledger=ledger,
+        opened_sources=ledger.final_url_set(),
+        search_result_urls={url},
+    )
+    assert quality.ok
+    return build_research_record(
+        question="Should we keep tracking provider recovery?",
+        summary=summary,
+        ledger=ledger,
+        review=quality,
+        run_id="run-task-runner-research",
+        session_id="s1",
+        synthesis_id="note-result",
+        stop_reason="done",
+    )
 
 
 def _seed_review_item(state: server.State, project: Path) -> str:
@@ -134,15 +217,22 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.State(td)
         item_id = _seed_research_item(state)
+        queued_item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
+        wrapped_question = work_queue_module.render_work_item_task(
+            queued_item,
+            user_request="继续",
+        )
         router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
         runner = _runner(state, router_provider_factory=router_factory)
+        record = _research_record()
         runner._run_research_task = mock.Mock(return_value=ResearchRunResult(
-            "q",
+            wrapped_question,
             "researched",
             "done",
             1,
             synthesis_id="note-result",
             citation_map=[{"claim": "x"}],
+            research_record=record,
         ))
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
@@ -155,7 +245,102 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
     assert state.last_terminal_event["mode"] == "research"
     assert item.id == item_id
     assert item.status == "done"
+    assert any(ref.startswith("research_proof:") for ref in item.proof_refs)
     assert "research:note-result" in item.proof_refs
+
+
+def test_strict_continue_blocks_research_item_without_research_record() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        state = server.State(td)
+        item_id = _seed_research_item(state)
+        router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
+        runner = _runner(state, router_provider_factory=router_factory)
+        runner._run_research_task = mock.Mock(return_value=ResearchRunResult(
+            "Should we keep tracking provider recovery?",
+            "researched",
+            "done",
+            1,
+            synthesis_id="note-result",
+            citation_map=[{"claim": "x"}],
+        ))
+
+        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+            runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
+            state.wait_for_ghost_sleep(timeout=2)
+        item = state.ghost_work_queue.list_items()[0]
+        assert state.run_traces is not None
+        trace_payload = json.loads(
+            state.run_traces.path_for(
+                "s1",
+                str(state.last_terminal_event["run_id"]),
+            ).read_text(encoding="utf-8")
+        )
+
+    router_factory.assert_not_called()
+    assert runner._run_research_task.call_count == 1
+    assert state.last_terminal_event["mode"] == "research"
+    assert item.id == item_id
+    assert item.status == "blocked"
+    assert item.blocked_reason == "research_proof_missing_research_record"
+    assert item.proof_refs == ()
+    proof_reviews = trace_payload["research_proof_reviews"]
+    assert len(proof_reviews) == 1
+    assert proof_reviews[0]["proof_ref"].startswith("research_proof:")
+    assert proof_reviews[0]["ok"] is False
+    assert proof_reviews[0]["answers_question"] is False
+    assert proof_reviews[0]["answer_status"] == "not_answered"
+    assert proof_reviews[0]["question_digest"].startswith("sha256:")
+    assert "record_id" not in proof_reviews[0]
+    assert "record_digest" not in proof_reviews[0]
+    assert "missing_research_record" in proof_reviews[0]["reason_codes"]
+
+
+def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_trace() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        state = server.State(td)
+        item_id = _seed_research_item(state)
+        queued_item = state.ghost_work_queue.list_items(status="queued", session_id="s1")[0]
+        wrapped_question = work_queue_module.render_work_item_task(
+            queued_item,
+            user_request="继续",
+        )
+        router_factory = mock.Mock(return_value=_Provider('{"mode":"chat","confidence":0.99}'))
+        runner = _runner(state, router_provider_factory=router_factory)
+        record = replace(_research_record(), answer_status="partial")
+        runner._run_research_task = mock.Mock(return_value=ResearchRunResult(
+            wrapped_question,
+            "researched",
+            "done",
+            1,
+            synthesis_id="note-result",
+            citation_map=[{"claim": "x"}],
+            research_record=record,
+        ))
+
+        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+            runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
+            state.wait_for_ghost_sleep(timeout=2)
+        item = state.ghost_work_queue.list_items()[0]
+        assert state.run_traces is not None
+        trace_payload = json.loads(
+            state.run_traces.path_for(
+                "s1",
+                str(state.last_terminal_event["run_id"]),
+            ).read_text(encoding="utf-8")
+        )
+
+    router_factory.assert_not_called()
+    assert runner._run_research_task.call_count == 1
+    assert state.last_terminal_event["mode"] == "research"
+    assert item.id == item_id
+    assert item.status == "blocked"
+    proof_reviews = trace_payload["research_proof_reviews"]
+    assert len(proof_reviews) == 1
+    assert proof_reviews[0]["proof_ref"].startswith("research_proof:")
+    assert proof_reviews[0]["answer_status"] == "partial"
+    assert "record_id" in proof_reviews[0]
+    assert "record_digest" in proof_reviews[0]
+    assert "partial_answer" in proof_reviews[0]["reason_codes"]
 
 
 def test_non_strict_continue_does_not_consume_queue_and_uses_router() -> None:
