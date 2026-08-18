@@ -758,12 +758,11 @@ class ProbeJsonToolCodec(JsonToolCodec):
     def _rewrite_id_args(self, obj: dict[str, Any]) -> dict[str, Any]:
         rewritten = dict(obj)
         args = rewritten.get("args")
-        if isinstance(args, dict):
-            args = dict(args)
-        else:
-            args = {key: value for key, value in rewritten.items() if key not in ("tool", "name")}
-        raw_tool = str(rewritten.get("tool") or rewritten.get("name") or "").strip().lower()
-        if raw_tool in {"open_url", "open", "fetch", "read_url"}:
+        if not isinstance(args, dict):
+            return rewritten
+        args = dict(args)
+        raw_tool = str(rewritten.get("tool") or "").strip().lower()
+        if raw_tool == "open_url":
             url = ""
             result_id = _normalized_id(args.get("result_id"))
             source_id = _normalized_id(args.get("source_id"))
@@ -777,7 +776,7 @@ class ProbeJsonToolCodec(JsonToolCodec):
                     self.id_rewrites.append({"tool": "open_url", "kind": "source_id", "id": source_id, "url": url})
             if url and not str(args.get("url") or "").strip():
                 args["url"] = url
-        elif raw_tool in {"source_search", "search_source", "find_in_source"}:
+        elif raw_tool == "source_search":
             source_id = _normalized_id(args.get("source_id"))
             url = self.source_urls.get(source_id, "") if source_id else ""
             if url and not str(args.get("url") or "").strip():
@@ -1579,13 +1578,13 @@ def _last_done_quality_review(runner: ProbeResearchRunner) -> dict[str, Any]:
 def _last_done_answer(replies: list[str]) -> str:
     for reply in reversed(replies):
         for obj in reversed(_extract_json_objects(reply or "")):
-            name = str(obj.get("tool") or obj.get("name") or "").strip().lower()
-            if name not in {"done", "answer", "finish"}:
+            tool = str(obj.get("tool") or "").strip().lower()
+            if tool != "done":
                 continue
             args = obj.get("args")
             if not isinstance(args, dict):
-                args = obj
-            answer = str(args.get("answer") or args.get("summary") or args.get("text") or "")
+                continue
+            answer = str(args.get("answer") or "")
             if answer.strip():
                 return answer
         answer = _extract_malformed_done_answer(reply or "")
@@ -1600,11 +1599,11 @@ def _done_attempt_count(replies: list[str]) -> int:
         objects = _extract_json_objects(reply or "")
         done_objects = [
             obj for obj in objects
-            if str(obj.get("tool") or obj.get("name") or "").strip().lower() in {"done", "answer", "finish"}
+            if str(obj.get("tool") or "").strip().lower() == "done"
         ]
         if done_objects:
             count += len(done_objects)
-        elif re.search(r'"(?:tool|name)"\s*:\s*"(?:done|answer|finish)"', reply or "", flags=re.I):
+        elif re.search(r'"tool"\s*:\s*"done"', reply or "", flags=re.I):
             count += 1
     return count
 

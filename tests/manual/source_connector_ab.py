@@ -481,10 +481,10 @@ def _safe_args(args: dict[str, Any]) -> dict[str, Any]:
 def _safe_model_actions(turn: int, reply: str) -> list[dict[str, Any]]:
     actions: list[dict[str, Any]] = []
     for obj in extract_json_objects(reply or ""):
-        tool = str(obj.get("tool") or obj.get("name") or "").strip().lower()
+        tool = str(obj.get("tool") or "").strip().lower()
         args = obj.get("args")
         if not isinstance(args, dict):
-            args = {key: value for key, value in obj.items() if key not in ("tool", "name")}
+            args = {}
         actions.append({
             "turn": int(turn or 0),
             "tool": _clip(tool, 80),

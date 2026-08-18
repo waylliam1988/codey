@@ -62,6 +62,27 @@ def test_web_search_rejects_queries_alias() -> None:
     assert "web_search missing required arg 'query'" in plan.protocol_error
 
 
+def test_protocol_rejects_name_field_as_hidden_tool_alias() -> None:
+    plan = parse({"name": "web_search", "args": {"query": "alpha"}})
+
+    assert not plan.calls
+    assert plan.control is None
+    assert plan.protocol_error_kind == PROTOCOL_UNKNOWN_TOOL
+    assert "no known tool in reply" in plan.protocol_error
+
+
+def test_protocol_rejects_top_level_args_shape() -> None:
+    search = parse({"tool": "web_search", "query": "alpha"})
+    done = parse({"tool": "done", "answer": "report"})
+
+    assert not search.calls
+    assert search.protocol_error_kind == PROTOCOL_INVALID_ARGS
+    assert "web_search args must be an object" in search.protocol_error
+    assert done.control is None
+    assert done.protocol_error_kind == PROTOCOL_INVALID_ARGS
+    assert "done args must be an object" in done.protocol_error
+
+
 def test_typographic_json_quotes_are_not_accepted_by_generic_protocol_codec() -> None:
     plan = JsonToolCodec().parse(
         "{“tool”:“web_search”,“args”:{“query”:“arXiv retrieval augmented generation evaluation”}}"

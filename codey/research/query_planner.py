@@ -19,7 +19,7 @@ from codey.research.identity import (
     stable_ref,
 )
 from codey.research.proof_quality import ResearchProofReview
-from codey.research.redaction import looks_sensitive_signal
+from codey.research.redaction import looks_sensitive_code, looks_sensitive_signal
 from codey.research.shape import (
     connector_id as _connector_id,
     digest_ref as _digest_ref,
@@ -417,10 +417,10 @@ def _safe_trace_code(value: object, limit: int) -> str:
     raw = clip(value, limit)
     if not raw:
         return ""
-    if looks_sensitive_signal(raw):
+    if looks_sensitive_code(raw):
         return ""
     text = identifier(raw, limit)
-    if looks_sensitive_signal(text):
+    if looks_sensitive_code(text):
         return ""
     return text
 

@@ -80,6 +80,7 @@ def controller_system_prompt(*, include_source_search: bool = True) -> str:
 - Choose exactly one tool. If you need another action, wait for the next local tool result first.
 - Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.
 - Use only these local JSON actions for web and knowledge access: {tool_names}.
+- The JSON object must use exactly top-level "tool" and "args" fields; do not use "name" or top-level arguments.
 - Tool outputs are the only evidence.
 
 You are a local research agent. You investigate a question using only local
@@ -199,7 +200,9 @@ class ResearchController:
     ) -> ToolPlan:
         actions: list[tuple[str, str, dict[str, Any]]] = []
         for obj in objects:
-            raw_tool = str(obj.get("tool") or obj.get("name") or "").strip().lower()
+            raw_tool = str(obj.get("tool") or "").strip().lower()
+            if not raw_tool:
+                continue
             tool = controller_tool_name(
                 raw_tool,
                 include_source_search=self.include_source_search,
@@ -328,9 +331,9 @@ def compile_controller_action(
 ) -> tuple[dict[str, Any], str]:
     rewritten = dict(obj)
     args = rewritten.get("args")
-    args = dict(args) if isinstance(args, dict) else {
-        key: value for key, value in rewritten.items() if key not in ("tool", "name")
-    }
+    if not isinstance(args, dict):
+        return rewritten, f"{tool} args must be an object"
+    args = dict(args)
     if tool == "open_result":
         output_args, error = _compile_open_result_args(args, state)
         if error:
@@ -366,6 +369,7 @@ def render_control_block(state: ResearchControlState) -> str:
         "Research controller current allowed actions:",
         f"- Allowed tools this turn: {', '.join(state.allowed_tools)}",
         "- Reply with exactly one JSON object using only the allowed tools below.",
+        '- Use top-level "tool" and "args" fields exactly; do not use "name" or top-level arguments.',
         "- Tools not listed here are forbidden this turn, even if they appeared earlier.",
         "- Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.",
         "- Use open_result for search results and reopen_source for already-opened source pages/offsets.",

@@ -172,11 +172,14 @@ def test_research_plan_trace_payload_filters_secret_like_direct_inputs() -> None
         ],
         "reason_codes": [
             "answer_status_insufficient_evidence",
+            "token_budget_exceeded",
+            "authorization_required",
             "SECRET_CLIENT_NAME",
             "sk-" + "a" * 24,
         ],
         "warnings": [
             "record_pruned_for_ledger_closure",
+            "authorization_required",
             "SECRET_CLIENT_NAME",
             "ghp_" + "b" * 24,
         ],
@@ -184,8 +187,12 @@ def test_research_plan_trace_payload_filters_secret_like_direct_inputs() -> None
 
     serialized = json.dumps(trace, ensure_ascii=False)
     assert trace["source_preferences"] == ["pubmed"]
-    assert trace["reason_codes"] == ["answer_status_insufficient_evidence"]
-    assert trace["warnings"] == ["record_pruned_for_ledger_closure"]
+    assert trace["reason_codes"] == [
+        "answer_status_insufficient_evidence",
+        "token_budget_exceeded",
+        "authorization_required",
+    ]
+    assert trace["warnings"] == ["record_pruned_for_ledger_closure", "authorization_required"]
     assert "SECRET_CLIENT_NAME" not in serialized
     assert "sk-" not in serialized
     assert "ghp_" not in serialized

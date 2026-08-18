@@ -40,9 +40,10 @@
   arXiv fixture URL 统一 canonicalize 到 `https://arxiv.org/...`；fixture parser
   和 recorded fetch 都会拒绝 malformed PubMed/arXiv ID；`SourceHit` 审计
   metadata refs 会过滤 secret-looking 值，`SourceHit` 和 `FetchedSource` 的
-  scalar 审计字段都改成 allow-list；connector catalog hint 以及 connector result 的
-  warning/error code 会过滤 secret-looking 值；malformed limit 会回落到有界默认值；
-  CSV/TSV 读取会多读一行再判断是否真的 truncated，避免刚好等于上限时误标。
+  scalar 审计字段都改成 allow-list；connector catalog id/kind 会拒绝
+  secret-looking code，catalog hint 以及 connector result 的 warning/error code 会过滤
+  secret-looking 值；malformed limit 会回落到有界默认值；CSV/TSV 读取会多读一行再判断
+  是否真的 truncated，避免刚好等于上限时误标。
 - 收紧 `RunTrace.record_research_plan()` 和 planner trace payload：source preference
   只接受 connector-id 形状，list 字段只接受 list/tuple/set，字符串不会再被逐字符
   迭代，`None` 也不会抛出；reason/warning 会过滤 secret-looking 字符串。相邻的
@@ -63,7 +64,8 @@
   PubMed/arXiv API query，不会把 raw secret、`api key ...`、`password ...`、
   `api key is ...`、`password is equal to ...`、`password is set to ...`、
   `api key called ...`、`api key named ...`、`client secret known as ...`、
-  `password is configured as ...`、`密码 是 ...`、`密钥等于 ...`、
+  `password is configured as ...`、`password is configured as known as called ...`
+  这类过度填充 connector phrase、`密码 是 ...`、`密钥等于 ...`、
   `private key is ...`、`client_secret=...`、`Authorization: Bearer ...` 这类
   marker/value 窗口、URL 或本地路径发给 source API。浏览器 search 会先于 connector
   lookup 启动，connector 请求有更短的全局预算，普通 browser 结果会保留 query string
@@ -71,9 +73,9 @@
   connector result digest 也只基于 sanitized query，live connector 的 tool name 和
   User-Agent 使用不含产品名的中性标识。Research JSON codec 不再接受
   `open`/`fetch`、`queries`、`done.summary` 这类旧工具或参数 alias；fallback
-  contract 本身也不再携带 alias 层。仍输出旧名字的 provider 可能多走一轮 repair，
-  但 provider 怪癖应留在 provider adapter 或 repair prompt，而不是放回通用 parser
-  做隐式兼容。
+  contract 本身也不再携带 alias 层，并且只接受顶层 `tool` + `args` 的 exact shape，
+  不再接受 `name` 或顶层参数字段。仍输出旧名字的 provider 可能多走一轮 repair，但
+  provider 怪癖应留在 provider adapter 或 repair prompt，而不是放回通用 parser 做隐式兼容。
 - dry-run planner 和 live connector search 现在共用同一套领域路由词表，包含
   genetic/genomic 以及 RAG/NLP/retrieval/benchmark 等常见论文检索词。registry 的
   status、shipped 和 capability flag 现在是 live search/fetch 的权威边界；

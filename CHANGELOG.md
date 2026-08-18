@@ -46,10 +46,10 @@ This file records Codey's release history. The newest release appears first.
   fixture parsers and recorded fetches reject malformed PubMed/arXiv IDs,
   `SourceHit` audit metadata refs filter secret-looking values, `SourceHit`
   and `FetchedSource` scalar audit fields are allow-listed, connector catalog
-  hints plus connector result warning/error codes filter secret-looking values,
-  malformed fixture limits fall back to bounded defaults, and CSV/TSV
-  truncation now reads one row past the display limit before marking a file
-  truncated.
+  ids/kinds reject secret-looking codes, catalog hints plus connector result
+  warning/error codes filter secret-looking values, malformed fixture limits
+  fall back to bounded defaults, and CSV/TSV truncation now reads one row past
+  the display limit before marking a file truncated.
 - Hardened `RunTrace.record_research_plan()` and planner trace payloads so
   trace sinks accept only connector-id-shaped source preferences, ignore
   non-collection list fields instead of iterating strings or raising on `None`,
@@ -74,8 +74,9 @@ This file records Codey's release history. The newest release appears first.
   marker/value windows such as `api key ...`, `password ...`,
   `api key is ...`, `password is equal to ...`, `password is set to ...`,
   `api key called ...`, `api key named ...`, `client secret known as ...`,
-  `password is configured as ...`, Chinese windows such as `密码 是 ...` and
-  `密钥等于 ...`, `private key is ...`, `client_secret=...`, and
+  `password is configured as ...`, over-padded connector phrases such as
+  `password is configured as known as called ...`, Chinese windows such as
+  `密码 是 ...` and `密钥等于 ...`, `private key is ...`, `client_secret=...`, and
   `Authorization: Bearer ...`, URLs, and local paths are not sent to source
   APIs. Browser search starts before connector lookup, connector requests use a
   short bounded budget, ordinary browser results keep query-string-distinct
@@ -84,7 +85,9 @@ This file records Codey's release history. The newest release appears first.
   live connector transport metadata uses a neutral tool name and User-Agent
   without the product name, and the Research JSON codec no longer accepts
   legacy tool or argument aliases such as `open`/`fetch`, `queries`, or
-  `done.summary`; the fallback contract no longer carries an alias layer.
+  `done.summary`; the fallback contract no longer carries an alias layer and
+  requires exact top-level `tool` plus `args` rather than `name` or top-level
+  argument fields.
   Providers that still emit legacy names may take one repair turn, but provider
   quirks stay in provider adapters or repair prompts instead of becoming shared
   parser compatibility.

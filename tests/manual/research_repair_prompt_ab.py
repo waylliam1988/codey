@@ -107,7 +107,7 @@ def _analyze_reply(reply: str) -> dict[str, Any]:
     state = _first_turn_state()
     objects = extract_json_objects(reply)
     tools = [
-        str(obj.get("tool") or obj.get("name") or "").strip().lower()
+        str(obj.get("tool") or "").strip().lower()
         for obj in objects
     ]
     controller = ResearchController()

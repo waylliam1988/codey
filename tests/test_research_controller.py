@@ -200,6 +200,34 @@ class ResearchControllerTests(unittest.TestCase):
         self.assertEqual(plan.protocol_error_kind, "unknown_tool")
         self.assertIn("unknown tool: open_url", plan.protocol_error)
 
+    def test_controller_rejects_name_field_as_hidden_tool_alias(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ResearchLedger()), turn=1, max_turns=8)
+
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            '{"name":"web_search","args":{"query":"alpha"}}',
+            state,
+        )
+
+        self.assertEqual(plan.protocol_error_kind, "unknown_tool")
+        self.assertIn("no known tool in reply", plan.protocol_error)
+        self.assertFalse(plan.calls)
+
+    def test_controller_rejects_top_level_args_shape(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ResearchLedger()), turn=1, max_turns=8)
+
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            '{"tool":"web_search","query":"alpha"}',
+            state,
+        )
+
+        self.assertEqual(plan.protocol_error_kind, "invalid_args")
+        self.assertIn("web_search args must be an object", plan.protocol_error)
+        self.assertFalse(plan.calls)
+
     def test_controller_does_not_repair_provider_specific_typographic_quotes(self) -> None:
         ledger = ResearchLedger()
         ledger.record_search("alpha", [{"title": "Alpha", "url": "https://example.com/a"}])

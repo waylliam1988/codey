@@ -16,6 +16,7 @@ from codey.research.redaction import (
 from codey.research.source_connectors import (
     FetchedSource,
     SourceHit,
+    SourceConnectorRegistry,
     SourceConnectorSpec,
     built_in_connector_registry,
     fetch_csv_tsv_file,
@@ -108,6 +109,7 @@ def test_safe_connector_query_terms_drop_secret_marker_value_windows() -> None:
         "password is equal to hunter2 clinical cancer",
         "password is set to hunter2 clinical cancer",
         "password is configured as hunter2 clinical cancer",
+        "password is configured as known as called livekey clinical cancer",
         "client_secret = abcdef clinical cancer",
         "client_secret is mysecretvalue clinical cancer",
         "client secret known as abcdef clinical cancer",
@@ -456,6 +458,17 @@ def test_source_connector_spec_payload_filters_sensitive_catalog_codes() -> None
     assert "apiKey" not in serialized
     assert "密码" not in serialized
     assert "sk-" not in serialized
+
+
+def test_source_connector_registry_rejects_sensitive_custom_id_or_kind() -> None:
+    with pytest.raises(ValueError, match="connector id must be non-sensitive snake_case"):
+        SourceConnectorRegistry((
+            SourceConnectorSpec(id="client_secret", kind="biomedical_literature"),
+        ))
+    with pytest.raises(ValueError, match=r"pubmed\.kind must be non-sensitive snake_case"):
+        SourceConnectorRegistry((
+            SourceConnectorSpec(id="pubmed", kind="client_secret"),
+        ))
 
 
 def test_source_connector_result_payload_filters_sensitive_warnings_and_errors() -> None:

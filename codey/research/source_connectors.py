@@ -91,7 +91,6 @@ _SECRET_VALUE_CONNECTORS = frozenset({
     "等于",
     "设置为",
 })
-_SECRET_VALUE_CONNECTOR_LIMIT = 4
 _ALLOWED_HIT_CONTENT_KINDS = frozenset({"abstract", "html", "json", "pdf", "table", "text"})
 _ALLOWED_FETCHED_CONTENT_KINDS = _ALLOWED_HIT_CONTENT_KINDS
 _ALLOWED_FETCHED_MIME_TYPES = frozenset({
@@ -178,8 +177,8 @@ class SourceConnectorSpec:
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
-            "id": _connector_id(self.id),
-            "kind": identifier(self.kind, 80),
+            "id": _safe_connector_code(self.id),
+            "kind": _safe_connector_code(self.kind),
             "status": _connector_status(self.status),
             "search_supported": bool(self.search_supported),
             "fetch_supported": bool(self.fetch_supported),
@@ -346,15 +345,15 @@ class SourceConnectorRegistry:
         if len(set(ids)) != len(ids):
             raise ValueError("source connector ids must be unique")
         for spec in self.specs:
-            _connector_id_or_raise(spec.id, "connector id")
-            _connector_id_or_raise(spec.kind, f"{spec.id}.kind")
+            _connector_code_or_raise(spec.id, "connector id")
+            _connector_code_or_raise(spec.kind, f"{spec.id}.kind")
             _connector_status(spec.status)
             if spec.shipped and spec.status not in CONNECTOR_AVAILABLE_STATUSES:
                 raise ValueError(f"shipped connector {spec.id} must be available")
             for item in spec.failure_modes:
-                _connector_id_or_raise(item, f"{spec.id}.failure_modes")
+                _connector_code_or_raise(item, f"{spec.id}.failure_modes")
             for key in spec.source_quality_hint:
-                _connector_id_or_raise(key, f"{spec.id}.source_quality_hint")
+                _connector_code_or_raise(key, f"{spec.id}.source_quality_hint")
 
 
 def built_in_connector_registry() -> SourceConnectorRegistry:
@@ -587,14 +586,12 @@ def _marker_has_inline_value(tail: str) -> bool:
 
 def _extend_secret_marker_value_window(text: str, index: int) -> int:
     cursor = index
-    skipped_connectors = 0
     while True:
         start, end = _next_query_token_span(text, cursor)
         if start >= len(text):
             return cursor
         token = _clean_secret_connector_token(text[start:end])
-        if token in _SECRET_VALUE_CONNECTORS and skipped_connectors < _SECRET_VALUE_CONNECTOR_LIMIT:
-            skipped_connectors += 1
+        if token in _SECRET_VALUE_CONNECTORS:
             cursor = end
             continue
         return end
@@ -1046,6 +1043,13 @@ def _bounded_mapping(value: Mapping[str, object]) -> dict[str, str]:
     return out
 
 
+def _safe_connector_code(value: object) -> str:
+    text = _connector_id(value)
+    if not text or looks_sensitive_code(text):
+        return ""
+    return text
+
+
 def _safe_payload_refs(values: Iterable[object], *, limit: int) -> tuple[str, ...]:
     if isinstance(values, (str, bytes)):
         values = (values,)
@@ -1072,9 +1076,9 @@ def _safe_payload_code(value: object, limit: int) -> str:
     return text
 
 
-def _connector_id_or_raise(value: object, label: str) -> None:
-    if not _connector_id(value):
-        raise ValueError(f"{label} must be snake_case")
+def _connector_code_or_raise(value: object, label: str) -> None:
+    if not _safe_connector_code(value):
+        raise ValueError(f"{label} must be non-sensitive snake_case")
 
 
 def _connector_status(value: object) -> str:

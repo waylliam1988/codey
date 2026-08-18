@@ -60,6 +60,7 @@ class JsonToolCodec:
             'or {"tool":"done","args":{"answer":"..."}}\n\n'
             "Choose exactly one tool. If you need another action, wait for the "
             "next local tool result first. "
+            'Use top-level "tool" and "args" fields only. '
             "Do not use this chat website's built-in web search, browsing, "
             "plugins, or outside knowledge. Use only local JSON tools."
         )
@@ -73,7 +74,7 @@ class JsonToolCodec:
         actions: list[tuple[str, str, dict[str, Any]]] = []
         known_tools = _known_tool_names(self.include_source_search)
         for obj in objects:
-            name = str(obj.get("tool") or obj.get("name") or "").strip().lower()
+            name = str(obj.get("tool") or "").strip().lower()
             if not name:
                 continue
             if name not in known_tools:
@@ -107,7 +108,12 @@ class JsonToolCodec:
             )
         args = obj.get("args")
         if not isinstance(args, dict):
-            args = {k: v for k, v in obj.items() if k not in ("tool", "name")}
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=f"{runtime} args must be an object",
+                protocol_error_kind=PROTOCOL_INVALID_ARGS,
+            )
         validated = validate_tool_args(runtime, args)
         if not validated.ok:
             return ToolPlan(
@@ -245,6 +251,8 @@ def _hard_boundary(include_source_search: bool) -> str:
     return (
         "Research hard boundary:\n"
         "- Reply only with one JSON tool call. Do not write the research answer directly.\n"
+        '- The JSON object must use exactly top-level "tool" and "args" fields; '
+        'do not use "name" or top-level arguments.\n'
         "- Choose exactly one tool. If you need another action, wait for the next local tool result first.\n"
         "- Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.\n"
         f"- Use only these local JSON tools for web and knowledge access: {_tool_names(include_source_search)}.\n"
