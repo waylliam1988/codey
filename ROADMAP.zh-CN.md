@@ -551,7 +551,8 @@ ResearchContext：record/ledger/proof/plan/critic refs
 
 ```text
 实机 A/B 候选：0.4.2 / 0.4.4 / 0.4.6 / 0.4.8 / 0.4.10
-不需要 A/B：0.4.1 / 0.4.3 / 0.4.5 / 0.4.7 / 0.4.9
+不需要 A/B：0.4.1 / 0.4.3a / 0.4.5 / 0.4.7 / 0.4.9
+需要 connector smoke/A-B：0.4.3b
 ```
 
 判断标准：
@@ -1028,34 +1029,38 @@ fallback、权限、UI 或 SSE。
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 
-状态：规划。目标是支持更多来源，并让 planner 可以生成 ResearchPlan dry-run，
-但不自动执行搜索或改变模型可见结果。
+状态：已完成（0.4.3）。本版落地 source connector 边界、ResearchPlan dry-run，
+并默认启用 PubMed/arXiv connector-aware search/fetch。planner 仍然只产出 dry-run
+计划，不自动执行 bounded follow-up；connector-aware search 只通过现有 Research
+工具面暴露结果，不新增模型工具名。
 
 ### 做什么
 
-新增内置 connector contract：
+已新增内置 connector contract：
 
 ```text
-SourceConnector
+SourceConnectorSpec
 SourceHit
 FetchedSource
-ConnectorRegistry
+SourceConnectorResult
+SourceConnectorRegistry
 ResearchPlan
 QueryCandidate
 SourcePreference
 ```
 
-首批只做内置、只读、低风险来源类型：
+0.4.3 shipped fixture/local set：
 
 ```text
-web/html
-PDF
-local file
+local_file
 CSV / TSV
 JSON
+arXiv
+PubMed
 ```
 
-同时新增高杠杆 Connector Parity Pack。它不是为了拼专业数据库数量，而是覆盖通用研究最常见的来源：
+高杠杆 Connector Parity Pack 顺延为后续方向。它不是为了拼专业数据库数量，而是覆盖
+通用研究最常见的来源：
 
 ```text
 arXiv
@@ -1071,7 +1076,7 @@ local PDF folder
 RSS feeds
 ```
 
-0.4.3 的最小 connector fixture set 不能只落 catalog/unavailable，必须至少有
+0.4.3 的最小 connector fixture set 已经不是只落 catalog/unavailable，而是有
 recorded fixtures 可用：
 
 ```text
@@ -1093,15 +1098,16 @@ PubMed + arXiv 覆盖医学/生命科学和预印本/论文入口。
 connector registry 从第一版就要能表达这些来源的 search/fetch 能力、rate limit、
 source quality hint 和 failure mode。
 
-0.4.3 分两档：
+0.4.3 按两层 release gate 落地：
 
 ```text
-0.4.3a: registry + dry-run + recorded fixtures，不进模型工具面
-0.4.3b: connector hit 进入 source_search/open_url 真实工具结果
+0.4.3a: registry + dry-run + recorded fixtures
+0.4.3b: PubMed/arXiv connector hit 进入 Research search/open runtime 路径
 ```
 
-只有 0.4.3a 可以保持无 A/B。只要进入 0.4.3b，就属于改变模型可见工具结果
-或 source selection，必须做 connector smoke/A-B。
+0.4.3a 的 deterministic fixture/planner 测试已完成。0.4.3b 改变模型可见的
+source selection，所以已做 connector smoke/A/B；默认启用只覆盖 PubMed/arXiv，
+并且可以通过现有 browser/search fallback bounded 失败。
 
 新增 Query Planner dry-run：
 
@@ -1120,21 +1126,32 @@ ResearchPlan(
 
 Planner v0 只消费 0.4.2 的 `coverage_gaps / followup_questions /
 query_rewrite_candidates` 和 connector registry metadata，输出 bounded plan；
-不调用 web_search/open_url，不改变 ResearchRunner 流程。
+不调用 web_search/open，不改变 ResearchRunner 主循环。proof 已通过且没有 gap 时，
+planner 产出 no-op 的 `proof_ok_no_required_followup` plan，不再生成 follow-up query。
 
-模型工具面仍保持小：
+模型可见 controller action 面仍保持小，并避免重载同一个 open 动词：
 
 ```text
 web_search
-open_url
+open_result
+reopen_source
+open_hit
 source_search
 knowledge_write
 done
 ```
 
 connector 细节由本地 runtime 处理，不暴露给模型。
-connector hit 若进入真实工具面，必须通过现有工具面可达：search/fetch 返回稳定
-`source_ref` / `source_id`，并能被 `open_url` 或 `source_search` 继续打开和定位。
+PubMed/arXiv connector hit 已经通过现有工具面可达：`web_search` 返回稳定 locator，
+`open_result` / `reopen_source` / `open_hit` 编译到 runtime open/fetch 后进入
+opened-source ledger；connector hit 本身仍不是 evidence。
+PubMed/arXiv live API query 必须从 shared safe terms 构造，raw secret、
+`api key ...` / `password ...` / `client_secret=...` / `Authorization: Bearer ...`
+这类 marker/value 窗口、URL 和本地路径不能出站；safe query 为空时跳过 connector，
+只走 browser fallback。
+Recorded PubMed/arXiv fixture parser 和 recorded fetch 还必须校验 connector-specific
+host 和合法 source ID 形状；`SourceHit` audit metadata refs 必须过滤 secret-looking
+值；`SourceConnectorResult.query_digest` 只能来自 sanitized query，safe query 为空时保持为空。
 只实现 catalog 但没有 fixture 或真实工具路径的 connector，不能计入 shipped set。
 
 ### 边界
@@ -1148,7 +1165,10 @@ connector hit 若进入真实工具面，必须通过现有工具面可达：sea
 - connector failure 必须 bounded，不影响普通 web/html Research。
 - 本地文件、CSV/TSV 和 local PDF connector 只允许来自用户显式选择的项目或文件范围。
 - Query Planner dry-run 不能自动执行 query，不能把 plan 注入模型 prompt。
-- Source trust 只能作为 plan metadata / warning，不在 0.4.3 改 search ranking。
+- Source trust 只能作为 plan metadata / warning；0.4.3b 只追加 PubMed/arXiv
+  connector 结果，不引入复杂 ranking。
+- browser/base search 先启动，connector lookup 只在短全局 budget 内补充结果；connector
+  lookup 或 direct PubMed/arXiv URL fetch 失败时，必须 bounded fallback 到 browser 路径。
 
 ### 顺手架构优化
 
@@ -1167,29 +1187,52 @@ connector id 稳定、snake_case
 connector registry 不 import server/task_runner/provider
 Connector Pack id 集合稳定，未实现 connector 要明确 unavailable
 fixture connector hit 必须有稳定 source_ref/source_id
-进入真实工具面的 connector hit 必须能被 open_url/source_search 打开或定位
+进入真实工具面的 connector hit 必须能被 open_result/reopen_source/open_hit/source_search 打开或定位
 local file 不能 escape workspace / allowed roots
 private/local URL 仍然 deny
 connector search hit 仍然不是 Evidence，必须 fetch/open 后才可引用
 ResearchPlan id / query ids 稳定、bounded、可解释
 ResearchPlan 不含 raw prompt / raw webpage body / raw absolute path
+proof-ok/no-gap plan 只产出 no-op reason，不带无关 connector availability warning
 planner dry-run 不改变 UI/SSE/prompt/tool result
+PubMed/arXiv fetch 只接受 connector-specific public host
+PubMed/arXiv fixture parser 拒绝 malformed source IDs
+RunTrace 记录有界 connector fallback error summary，不保存 raw URL/query/error
+普通 Research search 显式复用专用 Research profile/port；直接构造 BrowserSearchProvider 默认隔离
+浏览器 CDP attach / port wait 上限保持 20 秒
+TaskCancelled 不能被 isolated CDP 启动重试或 search page 导航重试吞掉
+manual source connector A/B harness 必须走和生产 Research 一样的 non-isolated browser reuse
+RunTrace 分开记录 controller_action_contract_hash 和 runtime_tool_contract_hash
+planner 和 live connector 共用领域路由规则；unavailable/shipped/capability flag
+必须约束真实 live path；connector budget 不得因 timeout rounding 超过 deadline；
+safe scientific slash terms、path-like slash token 负例、PubMed ID、redaction marker/shape
+和 neutral transport metadata 由测试锁住；常见 RAG/NLP/retrieval/benchmark 论文检索词
+必须能路由到 arXiv connector。
+Qwen provider 必须在 composer 可交互且未生成中才填入消息，点击后不得因为响应信号慢而
+重复整轮发送，发送前不依赖固定 settle 窗口。
 ```
 
 ### A/B
 
-不需要 provider A/B，前提是只做 registry / projection / planner dry-run /
-recorded fixtures，且不改变模型可见工具结果。
-必须做 recorded connector fixtures。live connector smoke 只针对进入真实工具面的 connector。
+0.4.3a 不需要 provider A/B，因为它只做 registry / projection / planner dry-run /
+recorded fixtures。0.4.3b 默认启用 PubMed/arXiv
+connector-aware search/fetch，所以必须做 live connector smoke。
 
 如果 connector 接入改变 search ranking、fetch 内容、tool result 文案或 source
 selection，就做 connector parity smoke/A-B，因为这已经改变 Research 的模型可见输入。
 
-0.4.3a 只做 registry / dry-run / recorded fixtures 时，不测试“模型会不会使用
-PubMed/arXiv”，因为模型还看不到这些 connector hit；测试重点是 planner 是否能在
-合适场景产出 PubMed/arXiv source preference 和 bounded query candidate。只有进入
-0.4.3b，让 PubMed/arXiv hit 进入 `source_search/open_url` 真实工具结果后，才做
-小型网页模型 connector smoke/A-B，验证模型能否正确打开、引用和 synthesis。
+0.4.3a 的测试重点是 planner 是否能在合适场景产出 PubMed/arXiv source preference
+和 bounded query candidate。0.4.3b 的 live smoke/A-B 按行原子落盘：
+DeepSeek、Qwen、MiMo、StepFun 和 GLM 逐个 provider 跑 PubMed、arXiv 和
+opened-source guard；失败行只补跑缺失样本，不重跑已有成功行，避免同时打开多个
+provider 浏览器页面。实机结果支持把 connector-aware PubMed/arXiv search 作为默认
+路径启用：DeepSeek 的 PubMed 目标来源选择明显改善，MiMo/StepFun connector arm 能打开
+PubMed 目标 host，Qwen 在 provenance 修复后改善 arXiv，arXiv 目标 host 在多个 provider
+样本中可达。限制也记录在案：多条 run 仍停在 `max_turns` 或 protocol repair，GLM
+PubMed 重测因 provider 限流暂停，所以这版 A/B 只作为 source-selection smoke，不宣称
+proof-quality 全模型提升。新 controller action `open_result` / `reopen_source` /
+`open_hit` 也通过这些实机样本验证，旧的 `open_url(result_id/source_id/hit_id)` 不再
+作为模型可见协议。
 
 ## 0.4.4 - Bounded Research Planner v1
 

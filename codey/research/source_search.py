@@ -83,15 +83,13 @@ def render_results(final_url: str, hits: list[SourceSearchHit]) -> str:
         return "no source_search matches"
     lines = [
         "source_search results from an already-opened source.",
-        "Locator preview only. Open the returned offset/pages before citing.",
+        "Locator preview only. Use open_hit from the next allowed-actions block before citing.",
     ]
     for index, hit in enumerate(hits, 1):
         if hit.page is not None:
             lines.append(f'{index}. p.{hit.page}: {hit.snippet}')
-            lines.append(f'   open_url url="{final_url}" pages="{hit.page}"')
         else:
             lines.append(f"{index}. offset {hit.offset}: {hit.snippet}")
-            lines.append(f'   open_url url="{final_url}" offset={hit.offset} limit=6000')
     return "\n".join(lines)
 
 

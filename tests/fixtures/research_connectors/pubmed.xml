@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM">
+      <PMID Version="1">12345678</PMID>
+      <Article PubModel="Print">
+        <Journal>
+          <Title>Journal of Example Medicine</Title>
+          <JournalIssue>
+            <PubDate>
+              <Year>2024</Year>
+            </PubDate>
+          </JournalIssue>
+        </Journal>
+        <ArticleTitle>Immune checkpoint inhibitor hepatotoxicity in clinical practice</ArticleTitle>
+        <Abstract>
+          <AbstractText>
+            Immune checkpoint inhibitors can cause immune-mediated hepatotoxicity.
+            Management depends on severity and response to corticosteroids.
+          </AbstractText>
+        </Abstract>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">12345678</ArticleId>
+        <ArticleId IdType="doi">10.1000/example-doi</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>

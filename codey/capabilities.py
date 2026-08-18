@@ -202,13 +202,27 @@ def builtin_capability_registry() -> CapabilityRegistry:
         CapabilitySpec(
             id="research_runner",
             provides=("research_controller_loop", "research_prompt_boundary"),
-            consumes=("policy_guard", "prompt_envelope", "run_trace"),
+            consumes=("policy_guard", "prompt_envelope", "research_connector_search", "run_trace"),
             model_visible=True,
             requires_policy=True,
             ui_surface=("research_drawer",),
             durable_state=("research_notes", "research_provenance"),
             permission_profiles=("research",),
             owner_module="codey.research.runner",
+        ),
+        CapabilitySpec(
+            id="research_source_connectors",
+            provides=("source_connector_registry", "source_hit_contract"),
+            consumes=("policy_guard",),
+            requires_policy=True,
+            owner_module="codey.research.source_connectors",
+        ),
+        CapabilitySpec(
+            id="research_connector_search",
+            provides=("connector_aware_search_provider",),
+            consumes=("policy_guard", "research_source_connectors"),
+            requires_policy=True,
+            owner_module="codey.research.connector_search",
         ),
         CapabilitySpec(
             id="research_object_model",
@@ -230,6 +244,13 @@ def builtin_capability_registry() -> CapabilityRegistry:
             consumes=("research_object_model", "research_evidence_ledger", "run_trace"),
             durable_state=("run_trace",),
             owner_module="codey.research.proof_quality",
+        ),
+        CapabilitySpec(
+            id="research_query_planner",
+            provides=("research_plan_dry_run",),
+            consumes=("research_proof_quality", "research_source_connectors", "run_trace"),
+            durable_state=("run_trace",),
+            owner_module="codey.research.query_planner",
         ),
         CapabilitySpec(
             id="review_runner",

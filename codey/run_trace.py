@@ -18,6 +18,10 @@ from urllib.parse import urlparse
 
 from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.prompt_envelope import is_model_boundary_freshness
+from codey.research.redaction import looks_sensitive_signal
+from codey.research.shape import digest_ref as _digest_ref
+from codey.research.shape import generated_ref as _generated_ref
+from codey.research.shape import safe_connector_id as _safe_connector_id
 
 
 SCHEMA_VERSION = 1
@@ -35,6 +39,8 @@ MAX_POLICY_DECISIONS = 80
 MAX_RESEARCH_RECORDS = 8
 MAX_EVIDENCE_LEDGER_WRITES = 8
 MAX_RESEARCH_PROOF_REVIEWS = 8
+MAX_RESEARCH_PLANS = 8
+MAX_RESEARCH_CONNECTOR_ERRORS = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 RESEARCH_ANSWER_STATUSES = frozenset({
@@ -171,6 +177,7 @@ class RunTraceManifest:
     router: RouterTrace | None = None
     prompt_sections: list[PromptSectionTrace] = field(default_factory=list)
     model_tool_contract_hash: str = ""
+    runtime_tool_contract_hash: str = ""
     tool_contracts: list[dict[str, str]] = field(default_factory=list)
     local_context_refs: list[dict[str, object]] = field(default_factory=list)
     research_note_ids: list[str] = field(default_factory=list)
@@ -178,6 +185,8 @@ class RunTraceManifest:
     research_records: list[dict[str, object]] = field(default_factory=list)
     research_evidence_ledgers: list[dict[str, object]] = field(default_factory=list)
     research_proof_reviews: list[dict[str, object]] = field(default_factory=list)
+    research_plans: list[dict[str, object]] = field(default_factory=list)
+    research_connector_errors: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -202,6 +211,7 @@ class RunTraceManifest:
                 item.to_payload() for item in self.prompt_sections[:MAX_PROMPT_SECTIONS]
             ],
             "model_tool_contract_hash": _clip(self.model_tool_contract_hash, 80),
+            "runtime_tool_contract_hash": _clip(self.runtime_tool_contract_hash, 80),
             "tool_contracts": self.tool_contracts[:MAX_TOOL_CONTRACTS],
             "local_context_refs": self.local_context_refs[:MAX_REFS],
             "research_note_ids": list(_bounded_refs(self.research_note_ids)),
@@ -213,6 +223,11 @@ class RunTraceManifest:
             "research_proof_reviews": (
                 self.research_proof_reviews[:MAX_RESEARCH_PROOF_REVIEWS]
             ),
+            "research_plans": self.research_plans[:MAX_RESEARCH_PLANS],
+            "research_connector_errors": [
+                _research_connector_error_payload(item)
+                for item in self.research_connector_errors[:MAX_RESEARCH_CONNECTOR_ERRORS]
+            ],
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
             "policy_decisions": self.policy_decisions[:MAX_POLICY_DECISIONS],
@@ -283,6 +298,7 @@ class RunTraceRecorder:
         self._research_note_keys: set[str] = set()
         self._research_source_keys: set[str] = set()
         self._research_record_keys: set[str] = set()
+        self._research_plan_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
@@ -327,6 +343,21 @@ class RunTraceRecorder:
         if text:
             self.manifest.model_tool_contract_hash = text
             item = {"hash": text}
+            phase_text = _identifier(phase, 80)
+            if phase_text:
+                item["phase"] = phase_text
+            if item not in self.manifest.tool_contracts:
+                self.manifest.tool_contracts.append(item)
+                if len(self.manifest.tool_contracts) > MAX_TOOL_CONTRACTS:
+                    del self.manifest.tool_contracts[:-MAX_TOOL_CONTRACTS]
+                    self.manifest.warnings.append("tool_contracts_truncated")
+            self.checkpoint()
+
+    def record_runtime_tool_contract_hash(self, value: object, *, phase: str = "") -> None:
+        text = _clip(value, 80)
+        if text:
+            self.manifest.runtime_tool_contract_hash = text
+            item = {"hash": text, "surface": "runtime"}
             phase_text = _identifier(phase, 80)
             if phase_text:
                 item["phase"] = phase_text
@@ -489,8 +520,8 @@ class RunTraceRecorder:
     def record_research_record_summary(self, summary: Mapping[str, object]) -> None:
         if not isinstance(summary, Mapping):
             return
-        record_id = _research_record_id_or_empty(summary.get("record_id"))
-        digest = _digest_ref_or_empty(summary.get("record_digest"))
+        record_id = _generated_ref(summary.get("record_id"), "research_record")
+        digest = _digest_ref(summary.get("record_digest"))
         if not record_id or not digest or record_id in self._research_record_keys:
             return
         answer_status = _research_answer_status(summary.get("answer_status"))
@@ -514,23 +545,23 @@ class RunTraceRecorder:
     def record_evidence_ledger_write(self, result: Mapping[str, object]) -> None:
         if not isinstance(result, Mapping):
             return
-        record_id = _research_record_id_or_empty(result.get("record_id"))
-        ledger_ref = _evidence_ledger_ref_or_empty(result.get("ledger_ref"))
+        record_id = _generated_ref(result.get("record_id"), "research_record")
+        ledger_ref = _generated_ref(result.get("ledger_ref"), "evidence_ledger")
         if not record_id:
             return
         counts = result.get("counts")
         payload: dict[str, object] = {
             "ok": bool(result.get("ok")),
             "skipped": bool(result.get("skipped")),
-            "reason_code": _identifier(result.get("reason_code"), 80),
+            "reason_code": _safe_trace_code(result.get("reason_code"), 80),
             "ledger_ref": ledger_ref,
             "record_id": record_id,
             "counts": _bounded_count_mapping(counts if isinstance(counts, Mapping) else {}),
         }
         warnings = [
-            _identifier(item, 120)
-            for item in result.get("warnings", ())
-            if _identifier(item, 120)
+            _safe_trace_code(item, 120)
+            for item in _trace_list_items(result.get("warnings"))
+            if _safe_trace_code(item, 120)
         ][:MAX_WARNINGS]
         if warnings:
             payload["warnings"] = warnings
@@ -543,10 +574,10 @@ class RunTraceRecorder:
     def record_research_proof_review(self, review: Mapping[str, object]) -> None:
         if not isinstance(review, Mapping):
             return
-        proof_ref = _research_proof_ref_or_empty(review.get("proof_ref"))
+        proof_ref = _generated_ref(review.get("proof_ref"), "research_proof")
         if not proof_ref:
             return
-        question_digest = _digest_ref_or_empty(review.get("question_digest"))
+        question_digest = _digest_ref(review.get("question_digest"))
         payload: dict[str, object] = {
             "proof_ref": proof_ref,
             "ok": bool(review.get("ok")),
@@ -557,15 +588,15 @@ class RunTraceRecorder:
             "warning_count": _nonnegative_int(review.get("warning_count")),
             "planner_signal_count": _nonnegative_int(review.get("planner_signal_count")),
             "reason_codes": [
-                _identifier(item, 80)
-                for item in review.get("reason_codes", ())
-                if _identifier(item, 80)
+                _safe_trace_code(item, 80)
+                for item in _trace_list_items(review.get("reason_codes"))
+                if _safe_trace_code(item, 80)
             ][:MAX_WARNINGS],
         }
-        record_id = _research_record_id_or_empty(review.get("record_id"))
+        record_id = _generated_ref(review.get("record_id"), "research_record")
         if record_id:
             payload["record_id"] = record_id
-        digest = _digest_ref_or_empty(review.get("record_digest"))
+        digest = _digest_ref(review.get("record_digest"))
         if digest:
             payload["record_digest"] = digest
         if payload["ok"] and (not record_id or not digest):
@@ -590,6 +621,94 @@ class RunTraceRecorder:
             del self.manifest.research_proof_reviews[:-MAX_RESEARCH_PROOF_REVIEWS]
             self.manifest.warnings.append("research_proof_reviews_truncated")
         self.checkpoint()
+
+    def record_research_plan(self, plan: Mapping[str, object]) -> None:
+        if not isinstance(plan, Mapping):
+            return
+        plan_ref = _generated_ref(plan.get("plan_ref"), "research_plan")
+        if not plan_ref or plan_ref in self._research_plan_keys:
+            return
+        question_digest = _digest_ref(plan.get("question_digest"))
+        proof_ref = _generated_ref(plan.get("proof_ref"), "research_proof")
+        preferences: list[str] = []
+        for item in _trace_list_items(plan.get("source_preferences")):
+            connector_id = _safe_connector_id(item)
+            if connector_id:
+                preferences.append(connector_id)
+            if len(preferences) >= MAX_REFS:
+                break
+        payload: dict[str, object] = {
+            "plan_ref": plan_ref,
+            "dry_run": True,
+            "max_depth": _bounded_int(plan.get("max_depth"), 1, 1),
+            "max_queries": _bounded_int(plan.get("max_queries"), 1, 8),
+            "max_sources": _bounded_int(plan.get("max_sources"), 1, 12),
+            "query_count": _bounded_int(plan.get("query_count"), 0, 8),
+            "source_preferences": preferences,
+            "reason_codes": [
+                _safe_trace_code(item, 80)
+                for item in _trace_list_items(plan.get("reason_codes"))
+                if _safe_trace_code(item, 80)
+            ][:MAX_WARNINGS],
+            "warnings": [
+                _safe_trace_code(item, 120)
+                for item in _trace_list_items(plan.get("warnings"))
+                if _safe_trace_code(item, 120)
+            ][:MAX_WARNINGS],
+        }
+        if question_digest:
+            payload["question_digest"] = question_digest
+        if proof_ref:
+            payload["proof_ref"] = proof_ref
+        self._research_plan_keys.add(plan_ref)
+        self.manifest.research_plans.append(payload)
+        if len(self.manifest.research_plans) > MAX_RESEARCH_PLANS:
+            del self.manifest.research_plans[:-MAX_RESEARCH_PLANS]
+            self.manifest.warnings.append("research_plans_truncated")
+        self.checkpoint()
+
+    def record_research_connector_errors(self, errors: Iterable[object]) -> None:
+        if not isinstance(errors, Iterable):
+            return
+        counts: dict[tuple[str, str, str], int] = {}
+        for item in errors:
+            if not isinstance(item, Mapping):
+                continue
+            connector_id = _safe_connector_id(item.get("connector_id"))
+            action = _safe_trace_code(item.get("action"), 80)
+            error = _safe_trace_code(item.get("error"), 120)
+            count = _nonnegative_int(item.get("count")) or 1
+            if not connector_id or not action or not error:
+                continue
+            key = (connector_id, action, error)
+            counts[key] = min(999, counts.get(key, 0) + count)
+        if not counts:
+            return
+        existing = {
+            (
+                str(item.get("connector_id") or ""),
+                str(item.get("action") or ""),
+                str(item.get("error") or ""),
+            ): item
+            for item in self.manifest.research_connector_errors
+            if isinstance(item, Mapping)
+        }
+        for key, count in counts.items():
+            payload = {
+                "connector_id": key[0],
+                "action": key[1],
+                "error": key[2],
+                "count": count,
+            }
+            if key in existing:
+                existing_item = existing[key]
+                existing_item["count"] = min(999, _nonnegative_int(existing_item.get("count")) + count)
+                continue
+            self.manifest.research_connector_errors.append(payload)
+        if len(self.manifest.research_connector_errors) > MAX_RESEARCH_CONNECTOR_ERRORS:
+            del self.manifest.research_connector_errors[:-MAX_RESEARCH_CONNECTOR_ERRORS]
+            self.manifest.warnings.append("research_connector_errors_truncated")
+        self.flush()
 
     def record_fallback(
         self,
@@ -643,7 +762,7 @@ class RunTraceRecorder:
             "phase": _identifier(raw.get("phase"), 80),
             "subject_ref": subject_ref,
         }
-        display_digest = _digest_ref_or_empty(raw.get("display_digest"))
+        display_digest = _digest_ref(raw.get("display_digest"))
         if display_digest:
             payload["display_digest"] = display_digest
         display_chars = _int_or_none(raw.get("display_chars"))
@@ -729,44 +848,41 @@ def _action_ref_or_empty(value: object) -> str:
     return ""
 
 
-def _digest_ref_or_empty(value: object) -> str:
-    text = str(value or "").strip()
-    if text.startswith("sha256:") and _is_hex_64(text.removeprefix("sha256:")):
-        return text
-    return ""
+def _research_connector_error_payload(value: object) -> dict[str, object]:
+    if not isinstance(value, Mapping):
+        return {}
+    connector_id = _safe_connector_id(value.get("connector_id"))
+    action = _safe_trace_code(value.get("action"), 80)
+    error = _safe_trace_code(value.get("error"), 120)
+    count = _nonnegative_int(value.get("count")) or 1
+    if not connector_id or not action or not error:
+        return {}
+    return {
+        "connector_id": connector_id,
+        "action": action,
+        "error": error,
+        "count": min(999, count),
+    }
 
 
-def _research_record_id_or_empty(value: object) -> str:
-    text = str(value or "").strip()
-    prefix = "research_record:"
-    if not text.startswith(prefix):
+def _safe_trace_code(value: object, limit: int) -> str:
+    raw = _clip(value, limit)
+    if not raw:
         return ""
-    suffix = text.removeprefix(prefix)
-    if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
-        return text
-    return ""
-
-
-def _evidence_ledger_ref_or_empty(value: object) -> str:
-    text = str(value or "").strip()
-    prefix = "evidence_ledger:"
-    if not text.startswith(prefix):
+    if looks_sensitive_signal(raw):
         return ""
-    suffix = text.removeprefix(prefix)
-    if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
-        return text
-    return ""
-
-
-def _research_proof_ref_or_empty(value: object) -> str:
-    text = str(value or "").strip()
-    prefix = "research_proof:"
-    if not text.startswith(prefix):
+    text = _identifier(raw, limit)
+    if looks_sensitive_signal(text):
         return ""
-    suffix = text.removeprefix(prefix)
-    if len(suffix) == 16 and all(ch in "0123456789abcdef" for ch in suffix):
-        return text
-    return ""
+    return text
+
+
+def _trace_list_items(value: object) -> tuple[object, ...]:
+    if isinstance(value, (list, tuple)):
+        return tuple(value)
+    if isinstance(value, (set, frozenset)):
+        return tuple(sorted(value, key=str))
+    return ()
 
 
 def _bounded_count_mapping(value: Mapping[str, object]) -> dict[str, int]:
@@ -797,6 +913,16 @@ def _nonnegative_int(value: object) -> int:
         return max(0, int(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _bounded_int(value: object, lower: int, upper: int) -> int:
+    if isinstance(value, bool):
+        return lower
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = lower
+    return max(lower, min(upper, parsed))
 
 
 def _unit_float(value: object) -> float:

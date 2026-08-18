@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import json
+from dataclasses import fields
 
 from codey.research.protocols import JsonToolCodec
 from codey.research.tool_contract import (
     PROTOCOL_DIRECT_ANSWER,
     PROTOCOL_INVALID_ARGS,
     PROTOCOL_NATIVE_SEARCH_LEAK,
+    PROTOCOL_NO_JSON,
     PROTOCOL_TOO_MANY_TOOLS,
     PROTOCOL_UNKNOWN_TOOL,
+    ToolContract,
     validate_tool_args,
 )
 
@@ -26,18 +29,15 @@ def test_source_search_requires_query() -> None:
     assert "source_search missing required arg 'query'" in plan.protocol_error
 
 
-def test_source_search_queries_alias_normalizes_to_query() -> None:
+def test_source_search_rejects_queries_alias() -> None:
     plan = parse({
         "tool": "source_search",
         "args": {"url": "https://example.com/a", "queries": ["bootstrap validation", "other"]},
     })
 
-    assert plan.protocol_error == ""
-    assert plan.calls
-    assert plan.calls[0].name == "source_search"
-    assert plan.calls[0].args["query"] == "bootstrap validation"
-    assert plan.calls[0].args["limit"] == 6
-    assert "queries" not in plan.calls[0].args
+    assert not plan.calls
+    assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
+    assert "source_search missing required arg 'query'" in plan.protocol_error
 
 
 def test_unknown_args_do_not_pass_through_contract() -> None:
@@ -54,11 +54,22 @@ def test_unknown_args_do_not_pass_through_contract() -> None:
     assert "invented" not in plan.calls[0].args
 
 
-def test_web_search_queries_alias_normalizes_to_query() -> None:
+def test_web_search_rejects_queries_alias() -> None:
     plan = parse({"tool": "web_search", "args": {"queries": ["alpha safety", "backup"]}})
 
-    assert plan.protocol_error == ""
-    assert plan.calls[0].args["query"] == "alpha safety"
+    assert not plan.calls
+    assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
+    assert "web_search missing required arg 'query'" in plan.protocol_error
+
+
+def test_typographic_json_quotes_are_not_accepted_by_generic_protocol_codec() -> None:
+    plan = JsonToolCodec().parse(
+        "{“tool”:“web_search”,“args”:{“query”:“arXiv retrieval augmented generation evaluation”}}"
+    )
+
+    assert not plan.calls
+    assert plan.protocol_error_kind == PROTOCOL_NO_JSON
+    assert "no JSON tool call found" in plan.protocol_error
 
 
 def test_open_url_numeric_strings_are_coerced_and_missing_optionals_default() -> None:
@@ -85,6 +96,33 @@ def test_unknown_tool_is_typed_error() -> None:
     assert plan.control is None
     assert plan.protocol_error_kind == PROTOCOL_UNKNOWN_TOOL
     assert "unknown tool: browse_web" in plan.protocol_error
+
+
+def test_legacy_tool_aliases_are_unknown() -> None:
+    for tool in (
+        "search",
+        "open",
+        "fetch",
+        "read_url",
+        "search_source",
+        "find_in_source",
+        "recall",
+        "memory_search",
+        "save_note",
+        "write_note",
+        "answer",
+        "finish",
+    ):
+        plan = parse({"tool": tool, "args": {"query": "alpha", "answer": "done"}})
+
+        assert not plan.calls
+        assert plan.control is None
+        assert plan.protocol_error_kind == PROTOCOL_UNKNOWN_TOOL
+        assert f"unknown tool: {tool}" in plan.protocol_error
+
+
+def test_research_tool_contract_has_no_alias_layer() -> None:
+    assert "aliases" not in {field.name for field in fields(ToolContract)}
 
 
 def test_multiple_known_tool_calls_are_typed_error() -> None:
@@ -220,15 +258,16 @@ def test_knowledge_write_synthesis_is_reserved_for_done() -> None:
     assert "done required for final synthesis" in plan.protocol_error
 
 
-def test_done_aliases_are_normalized_to_answer() -> None:
+def test_done_rejects_answer_arg_aliases() -> None:
     summary = JsonToolCodec().parse(json.dumps({"tool": "done", "args": {"summary": "report"}}))
     text = JsonToolCodec().parse(json.dumps({"tool": "done", "args": {"text": "report 2"}}))
 
-    assert summary.control is not None
-    assert summary.control.kind == "done"
-    assert summary.control.body == "report"
-    assert text.control is not None
-    assert text.control.body == "report 2"
+    assert summary.control is None
+    assert summary.protocol_error_kind == PROTOCOL_INVALID_ARGS
+    assert "done missing required arg 'answer'" in summary.protocol_error
+    assert text.control is None
+    assert text.protocol_error_kind == PROTOCOL_INVALID_ARGS
+    assert "done missing required arg 'answer'" in text.protocol_error
 
 
 def test_source_search_disabled_is_unknown_tool() -> None:

@@ -340,6 +340,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             ROOT / "codey" / "research" / "evidence_ledger.py",
             ROOT / "codey" / "research" / "proof_quality.py",
             ROOT / "codey" / "research" / "completion_gate.py",
+            ROOT / "codey" / "research" / "source_connectors.py",
+            ROOT / "codey" / "research" / "connector_domains.py",
+            ROOT / "codey" / "research" / "query_planner.py",
+            ROOT / "codey" / "research" / "connector_search.py",
+            ROOT / "codey" / "research" / "redaction.py",
         ):
             with self.subTest(path=path.relative_to(ROOT).as_posix()):
                 imports = imported_modules(path)

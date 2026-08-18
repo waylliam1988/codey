@@ -1,0 +1,3 @@
+compound,effect,note
+"alpha, beta",supports,"quoted comma survives csv parsing"
+gamma,limits,follow-up needed

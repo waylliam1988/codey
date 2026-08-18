@@ -7,29 +7,71 @@ ordinary JSON tool arguments that the existing codec already validates.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from codey.models import ToolPlan
-from codey.research.protocols import ProtocolCodec, canonical_tool_name, extract_json_objects
+from codey.models import ToolPlan, ToolResult
+from codey.research.protocols import ProtocolCodec, extract_json_objects
 from codey.research.source_document import compact_pages
 from codey.research.tool_contract import (
     PROTOCOL_DISALLOWED_TOOL,
     PROTOCOL_INVALID_ARGS,
+    PROTOCOL_TOO_MANY_TOOLS,
+    PROTOCOL_UNKNOWN_TOOL,
     tool_example,
 )
 
 CONTROLLER_DISPLAY_LIMIT = 8
 
 
-def controller_system_prompt(*, include_source_search: bool = True) -> str:
-    tool_names = "web_search/open_url/knowledge_search/knowledge_read/knowledge_write/knowledge_link"
+def controller_action_contract_hash(*, include_source_search: bool = True) -> str:
+    """Hash the Research controller action contract visible to the model."""
+
+    actions: list[dict[str, object]] = [
+        {"name": "knowledge_search", "required": ["query"], "optional": []},
+        {"name": "knowledge_read", "required": ["id"], "optional": []},
+        {"name": "web_search", "required": ["query"], "optional": []},
+        {"name": "open_result", "required": ["result_id"], "optional": []},
+        {"name": "reopen_source", "required": ["source_id"], "optional": ["offset", "limit", "pages"]},
+        {"name": "open_hit", "required": ["hit_id"], "optional": []},
+        {"name": "knowledge_write", "required": ["type", "title", "body"], "optional": [
+            "id",
+            "sources",
+            "tags",
+            "aliases",
+            "relations",
+            "evidence",
+            "open_questions",
+            "confidence",
+            "retrieved_at",
+            "valid_until",
+            "status",
+        ]},
+        {"name": "knowledge_link", "required": ["src", "dst"], "optional": ["kind"]},
+        {"name": "done", "required": ["answer"], "optional": ["open_questions"]},
+    ]
     if include_source_search:
-        tool_names += "/source_search"
+        actions.insert(6, {"name": "source_search", "required": ["source_id", "query"], "optional": ["limit"]})
+    payload = {
+        "kind": "research_controller_action_contract",
+        "actions": actions,
+    }
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return "sha256:" + hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+
+def controller_system_prompt(*, include_source_search: bool = True) -> str:
+    tool_names = (
+        "knowledge_search/knowledge_read/web_search/open_result/reopen_source/open_hit/"
+        "knowledge_write/knowledge_link/done"
+    )
+    if include_source_search:
+        tool_names = tool_names.replace("knowledge_write", "source_search/knowledge_write")
     source_search_line = (
         "\n- source_search is a locator inside an already-opened source, not evidence. "
-        "Open the returned hit_id/offset/pages before citing."
+        "Use open_hit on a returned hit_id before citing."
         if include_source_search
         else ""
     )
@@ -37,20 +79,21 @@ def controller_system_prompt(*, include_source_search: bool = True) -> str:
 - Reply only with one JSON tool call. Do not write the research answer directly.
 - Choose exactly one tool. If you need another action, wait for the next local tool result first.
 - Do not use this chat website's built-in web search, browsing, plugins, or outside knowledge.
-- Use only these local JSON tools for web and knowledge access: {tool_names}.
+- Use only these local JSON actions for web and knowledge access: {tool_names}.
 - Tool outputs are the only evidence.
 
-You are a local research agent. You investigate a question using only Codey's
-local JSON tools, then save what you learn into a local Markdown knowledge
+You are a local research agent. You investigate a question using only local
+JSON tools, then save what you learn into a local Markdown knowledge
 library so it can be reused and audited later. You never invent facts.
 
-Codey will append a "Research controller current allowed actions" block every
+A local controller will append a "Research controller current allowed actions" block every
 turn. Use only the tools and exact JSON shapes shown in that block.
 
 Research discipline:
-- A web_search result is not evidence. Open useful results before knowledge_write.
+- A web_search result is not evidence. Use open_result on useful results before knowledge_write.
+- Use reopen_source for another offset/page of an already-opened source.
 - Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.{source_search_line}
-- Evidence snippets must be exact short excerpts copied from open_url text.
+- Evidence snippets must be exact short excerpts copied from opened source text.
 - Note tags should be 2-5 short lowercase concept nouns (e.g. "helium supply", "war"), not sentences.
 - knowledge_write relations declare concept-to-concept links the note's evidence supports, as {{"src":...,"dst":...,"kind":affects/uses/causes/part_of/enables/relates}}. Only declare relations the cited sources actually state; never declare a guessed relation.
 - Final reports must use done, with these sections: 结论, 关键证据, 反证与限制, 来源质量, 搜索覆盖, 来源.
@@ -103,8 +146,12 @@ class ResearchController:
         done_escape = evidence_count == 0 and activity and int(turn or 0) >= max(1, int(max_turns or 1) - 1)
 
         allowed = ["knowledge_search", "knowledge_read", "web_search"]
-        if result_rows or source_rows or hit_rows:
-            allowed.append("open_url")
+        if result_rows:
+            allowed.append("open_result")
+        if source_rows:
+            allowed.append("reopen_source")
+        if hit_rows:
+            allowed.append("open_hit")
         if source_rows and self.include_source_search:
             allowed.append("source_search")
         if source_rows:
@@ -133,35 +180,59 @@ class ResearchController:
 
     def parse_plan(self, codec: ProtocolCodec, reply: str, state: ResearchControlState) -> ToolPlan:
         objects = extract_json_objects(reply or "")
-        if len(objects) == 1:
-            tool = canonical_tool_name(
-                objects[0].get("tool") or objects[0].get("name"),
-                include_source_search=self.include_source_search,
-            )
-            if tool and state.allowed_tools and tool not in state.allowed_tools:
-                return ToolPlan(
-                    calls=[],
-                    control=None,
-                    protocol_error=(
-                        f"{tool} is not allowed by the current Research controller state; "
-                        f"allowed tools: {', '.join(state.allowed_tools)}"
-                    ),
-                    protocol_error_kind=PROTOCOL_DISALLOWED_TOOL,
-                )
-            rewritten, error = rewrite_id_args(objects[0], state)
-            if error:
-                return ToolPlan(
-                    calls=[],
-                    control=None,
-                    protocol_error=error,
-                    protocol_error_kind=PROTOCOL_INVALID_ARGS,
-                )
-            plan = codec.parse(json.dumps(rewritten, ensure_ascii=False))
-        else:
+        if not objects:
             plan = codec.parse(reply)
+        else:
+            plan = self._parse_controller_objects(codec, objects, state)
         if plan.protocol_error or (not plan.calls and plan.control is None):
             return plan
-        tool = plan.control.kind if plan.control is not None else plan.calls[0].name
+        return plan
+
+    def append_block(self, message: str, state: ResearchControlState) -> str:
+        return str(message or "").rstrip() + "\n\n" + render_control_block(state)
+
+    def _parse_controller_objects(
+        self,
+        codec: ProtocolCodec,
+        objects: list[dict[str, Any]],
+        state: ResearchControlState,
+    ) -> ToolPlan:
+        actions: list[tuple[str, str, dict[str, Any]]] = []
+        for obj in objects:
+            raw_tool = str(obj.get("tool") or obj.get("name") or "").strip().lower()
+            tool = controller_tool_name(
+                raw_tool,
+                include_source_search=self.include_source_search,
+            )
+            if not tool:
+                actions.append(("unknown", raw_tool, obj))
+            else:
+                actions.append(("known", tool, obj))
+        if not actions:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error="no known tool in reply",
+                protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
+            )
+        if len(actions) > 1:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=(
+                    f"too many JSON tool calls in one reply ({len(actions)}); "
+                    "reply with exactly one JSON object"
+                ),
+                protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
+            )
+        action_kind, tool, obj = actions[0]
+        if action_kind == "unknown":
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=f"unknown tool: {tool}",
+                protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
+            )
         if state.allowed_tools and tool not in state.allowed_tools:
             return ToolPlan(
                 calls=[],
@@ -172,10 +243,15 @@ class ResearchController:
                 ),
                 protocol_error_kind=PROTOCOL_DISALLOWED_TOOL,
             )
-        return plan
-
-    def append_block(self, message: str, state: ResearchControlState) -> str:
-        return str(message or "").rstrip() + "\n\n" + render_control_block(state)
+        rewritten, error = compile_controller_action(obj, state, tool=tool)
+        if error:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=error,
+                protocol_error_kind=PROTOCOL_INVALID_ARGS,
+            )
+        return codec.parse(json.dumps(rewritten, ensure_ascii=False))
 
     def _result_rows(self, ledger: object) -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []
@@ -244,25 +320,43 @@ class ResearchController:
         return _recent_unique_rows(rows)
 
 
-def rewrite_id_args(obj: dict[str, Any], state: ResearchControlState) -> tuple[dict[str, Any], str]:
+def compile_controller_action(
+    obj: dict[str, Any],
+    state: ResearchControlState,
+    *,
+    tool: str,
+) -> tuple[dict[str, Any], str]:
     rewritten = dict(obj)
     args = rewritten.get("args")
     args = dict(args) if isinstance(args, dict) else {
         key: value for key, value in rewritten.items() if key not in ("tool", "name")
     }
-    tool = str(rewritten.get("tool") or rewritten.get("name") or "").strip().lower()
-    if tool in {"open_url", "open", "fetch", "read_url"}:
-        error = _rewrite_open_url_args(args, state)
+    if tool == "open_result":
+        output_args, error = _compile_open_result_args(args, state)
         if error:
             return rewritten, error
-    elif tool in {"source_search", "search_source", "find_in_source"}:
-        error = _rewrite_source_search_args(args, state)
+        return {"tool": "open_url", "args": output_args}, ""
+    if tool == "reopen_source":
+        output_args, error = _compile_reopen_source_args(args, state)
         if error:
             return rewritten, error
-    elif tool in {"knowledge_write", "note_write", "save_note", "write_note"}:
+        return {"tool": "open_url", "args": output_args}, ""
+    if tool == "open_hit":
+        output_args, error = _compile_open_hit_args(args, state)
+        if error:
+            return rewritten, error
+        return {"tool": "open_url", "args": output_args}, ""
+    if tool == "source_search":
+        error = _compile_source_search_args(args, state)
+        if error:
+            return rewritten, error
+    elif tool == "knowledge_write":
         error = _rewrite_knowledge_write_args(args, state)
         if error:
             return rewritten, error
+    elif not tool:
+        return rewritten, "unknown controller action"
+    rewritten["tool"] = tool
     rewritten["args"] = args
     return rewritten, ""
 
@@ -274,9 +368,15 @@ def render_control_block(state: ResearchControlState) -> str:
         "- Reply with exactly one JSON object using only the allowed tools below.",
         "- Tools not listed here are forbidden this turn, even if they appeared earlier.",
         "- Prefer result_id/source_id/hit_id over hand-copying URLs when an ID is available.",
+        "- Use open_result for search results and reopen_source for already-opened source pages/offsets.",
         f"- Saved evidence items: {state.evidence_count}; saved/updated notes: {state.note_count}.",
         "- In done.answer, cite and list only evidence-backed source URLs. Opened-only sources are not citable yet.",
     ]
+    if "source_search" in state.allowed_tools or "open_hit" in state.allowed_tools:
+        lines.append(
+            "- Use source_search with source_id to search inside an opened source; "
+            "source_search hits are not evidence until opened with open_hit."
+        )
     if state.done_escape and state.evidence_count == 0:
         lines.append(
             "- done is allowed only to report insufficient/no citable evidence and what was searched."
@@ -304,35 +404,68 @@ def render_control_block(state: ResearchControlState) -> str:
     return "\n".join(lines)
 
 
-def _rewrite_open_url_args(args: dict[str, Any], state: ResearchControlState) -> str:
-    hit_id = _normalized_id(args.get("hit_id"))
+def format_controller_results(results: list[ToolResult]) -> str:
+    blocks: list[str] = []
+    for result in results:
+        label = _controller_result_label(result.call)
+        suffix = " (truncated)" if result.truncated else ""
+        blocks.append(f"[result: {label}{suffix}]\n{result.model_text}".rstrip())
+    joined = "\n\n".join(blocks) if blocks else "[no tool output]"
+    return (
+        f"{joined}\n\n"
+        "Continue. Reply with the next JSON tool call from the current allowed-actions block. "
+        "When you have enough evidence, save what matters with knowledge_write/knowledge_link, "
+        "then call done with the full report as the answer. If a result says NEEDS_OPEN, "
+        "open the relevant source through the current open_result/reopen_source/open_hit action "
+        "before trying knowledge_write again. Choose exactly one tool; if you need another action, "
+        "wait for the next local tool result first. Do not use this chat website's built-in web "
+        "search, browsing, plugins, or outside knowledge."
+    )
+
+
+def _compile_open_result_args(args: dict[str, Any], state: ResearchControlState) -> tuple[dict[str, Any], str]:
     result_id = _normalized_id(args.get("result_id"))
-    source_id = _normalized_id(args.get("source_id"))
-    if hit_id:
-        target = state.hit_targets.get(hit_id)
-        if target is None:
-            return f"unknown hit_id: {hit_id}"
-        args["url"] = target.url
-        args["offset"] = target.offset
-        args["limit"] = target.limit
-        args["pages"] = target.pages
-    elif result_id:
-        url = state.result_urls.get(result_id, "")
-        if not url:
-            return f"unknown result_id: {result_id}"
-        args["url"] = url
-    elif source_id:
-        url = state.source_urls.get(source_id, "")
-        if not url:
-            return f"unknown source_id: {source_id}"
-        args["url"] = url
-    return ""
+    if not result_id:
+        return {}, "open_result missing required arg 'result_id'"
+    url = state.result_urls.get(result_id, "")
+    if not url:
+        return {}, f"unknown result_id: {result_id}"
+    return {"url": url}, ""
 
 
-def _rewrite_source_search_args(args: dict[str, Any], state: ResearchControlState) -> str:
+def _compile_reopen_source_args(args: dict[str, Any], state: ResearchControlState) -> tuple[dict[str, Any], str]:
     source_id = _normalized_id(args.get("source_id"))
     if not source_id:
-        return ""
+        return {}, "reopen_source missing required arg 'source_id'"
+    url = state.source_urls.get(source_id, "")
+    if not url:
+        return {}, f"unknown source_id: {source_id}"
+    output: dict[str, Any] = {"url": url}
+    for key in ("offset", "limit", "pages"):
+        if key in args:
+            output[key] = args[key]
+    return output, ""
+
+
+def _compile_open_hit_args(args: dict[str, Any], state: ResearchControlState) -> tuple[dict[str, Any], str]:
+    hit_id = _normalized_id(args.get("hit_id"))
+    if not hit_id:
+        return {}, "open_hit missing required arg 'hit_id'"
+    target = state.hit_targets.get(hit_id)
+    if target is None:
+        return {}, f"unknown hit_id: {hit_id}"
+    return {
+        "url": target.url,
+        "offset": target.offset,
+        "limit": target.limit,
+        "pages": target.pages,
+    }, ""
+
+
+def _compile_source_search_args(args: dict[str, Any], state: ResearchControlState) -> str:
+    source_id = _normalized_id(args.get("source_id"))
+    if not source_id:
+        return "source_search missing required arg 'source_id'"
     url = state.source_urls.get(source_id, "")
     if not url:
         return f"unknown source_id: {source_id}"
@@ -400,20 +533,23 @@ def _rewrite_evidence_item(value: dict[str, Any], state: ResearchControlState) -
 
 
 def _tool_examples(tool: str, state: ResearchControlState) -> tuple[str, ...]:
-    if tool == "open_url":
-        examples: list[str] = []
-        if state.hit_targets:
-            hid = next(iter(state.hit_targets))
-            examples.append(f'{{"tool":"open_url","args":{{"hit_id":"{hid}"}}}}')
+    if tool == "open_result":
         if state.result_urls:
             rid = next(iter(state.result_urls))
-            examples.append(f'{{"tool":"open_url","args":{{"result_id":"{rid}"}}}}')
+            return (f'{{"tool":"open_result","args":{{"result_id":"{rid}"}}}}',)
+        return ('{"tool":"open_result","args":{"result_id":"r1"}}',)
+    if tool == "reopen_source":
         if state.source_urls:
             sid = next(iter(state.source_urls))
-            examples.append(
-                f'{{"tool":"open_url","args":{{"source_id":"{sid}","offset":0,"limit":6000,"pages":""}}}}'
+            return (
+                f'{{"tool":"reopen_source","args":{{"source_id":"{sid}","offset":0,"limit":6000,"pages":""}}}}',
             )
-        return tuple(examples) or (tool_example("open_url"),)
+        return ('{"tool":"reopen_source","args":{"source_id":"s1","offset":0,"limit":6000,"pages":""}}',)
+    if tool == "open_hit":
+        if state.hit_targets:
+            hid = next(iter(state.hit_targets))
+            return (f'{{"tool":"open_hit","args":{{"hit_id":"{hid}"}}}}',)
+        return ('{"tool":"open_hit","args":{"hit_id":"h1"}}',)
     if tool == "source_search":
         if state.source_urls:
             sid = next(iter(state.source_urls))
@@ -427,9 +563,47 @@ def _tool_examples(tool: str, state: ResearchControlState) -> tuple[str, ...]:
             f'"sources":["{sid}"],'
             '"relations":[{"src":"...","dst":"...","kind":"affects"}],'
             f'"evidence":{{"claim":"...","source_url":"{sid}",'
-            '"excerpt":"exact short text from open_url","stance":"supports"}}}',
+            '"excerpt":"exact short text from opened source","stance":"supports"}}}',
         )
     return (tool_example(tool),)
+
+
+def controller_tool_example(tool: str, state: ResearchControlState) -> str:
+    examples = _tool_examples(tool, state)
+    return examples[0] if examples else tool_example("web_search")
+
+
+def controller_tool_name(name: object, *, include_source_search: bool = True) -> str:
+    raw = str(name or "").strip().lower()
+    tools = {
+        "knowledge_search",
+        "knowledge_read",
+        "web_search",
+        "open_result",
+        "reopen_source",
+        "open_hit",
+        "knowledge_write",
+        "knowledge_link",
+        "done",
+    }
+    if include_source_search:
+        tools.add("source_search")
+    return raw if raw in tools else ""
+
+
+def _controller_result_label(call: object) -> str:
+    name = str(getattr(call, "name", "") or "")
+    args = getattr(call, "args", {}) if call is not None else {}
+    if not isinstance(args, dict):
+        args = {}
+    if name == "open_url":
+        value = args.get("url")
+        return f'opened_source "{value}"' if value else "opened_source"
+    for key in ("query", "id", "title", "src"):
+        value = args.get(key)
+        if value:
+            return f'{name} "{value}"'
+    return name
 
 
 def _result_line(result_id: str, title: str, url: str, snippet: str) -> str:

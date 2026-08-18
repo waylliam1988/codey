@@ -105,17 +105,32 @@ def _domains_in_text(text: str) -> list[str]:
 
 def _unopened_search_source_mentions(text: str, search_result_urls: set[str], opened_hosts: set[str]) -> list[str]:
     lower = text.lower()
+    opened_labels: set[str] = set()
+    for opened_host in opened_hosts:
+        opened_labels.update(_host_labels(opened_host))
     found: list[str] = []
     seen: set[str] = set()
     for url in search_result_urls:
         host = _source_host(url)
         if not host or _site_domain_was_opened(host, opened_hosts):
             continue
-        if any(label in lower for label in _host_labels(host)):
+        if host in lower or any(
+            label not in opened_labels and _mentions_host_label(lower, label)
+            for label in _host_labels(host)
+            if label != host
+        ):
             if host not in seen:
                 seen.add(host)
                 found.append(host)
     return found
+
+
+def _mentions_host_label(lower_text: str, label: str) -> bool:
+    if not label:
+        return False
+    if "." in label:
+        return label in lower_text
+    return re.search(rf"(?<![a-z0-9-]){re.escape(label)}(?![a-z0-9-])", lower_text) is not None
 
 
 def _host_labels(host: str) -> set[str]:

@@ -4,6 +4,90 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
+
+- 新增 `codey/research/source_connectors.py`：提供纯 source connector 边界，
+  包含 `SourceConnectorSpec`、`SourceConnectorRegistry`、`SourceHit`、
+  `FetchedSource` 和 `SourceConnectorResult`。内置 registry 现在 ship
+  `local_file`、`csv_tsv`、`json_file`、`arxiv`、`pubmed` 的 fixture/local
+  覆盖；`openalex` 明确后移，`rss` 只是 optional，所以两者不算 shipped connector。
+- 新增 `tests/fixtures/research_connectors/` recorded fixtures，覆盖本地文本、
+  CSV、TSV、JSON、arXiv Atom 和 PubMed XML。fixture 解析会生成稳定的
+  `source_ref`、`connector_source` 和 `source_hit` refs。本地文件读取限制在显式
+  allowed roots 内，CSV/TSV 使用 Python `csv` 标准库解析，URL-backed recorded hit
+  在 fixture fetch 前仍会经过 Research URL guard。
+- 新增 `codey/research/query_planner.py`：确定性生成 ResearchPlan dry-run。
+  它只消费 proof-review gap 和 connector registry metadata，输出有界
+  query candidate、source preference、max bounds、reason code、warning 和稳定
+  `research_plan:<16 hex>` ref。医学/生命科学问题偏 PubMed；论文/预印本/ML
+  问题偏 arXiv；本地表格、文件、JSON 问题偏 local connectors。
+- Run Trace 新增有界 `research_plans` summary，在 proof review 后记录 plan ref、
+  question digest、proof ref、query count、source preference ids、max bounds、
+  warning 和 reason code。它不保存 query 文本、raw prompt、source body、抓取页面、
+  raw URL 或 raw absolute path。
+- Capability Registry 和 Event / Capability Matrix 新增 `research_source_connectors`
+ 、`research_connector_search` 与 `research_query_planner`。架构测试锁住
+  connector/planner 模块不接 provider adapter、browser、tool runtime、
+  server/TaskRunner runtime layer、Ghost runtime、subprocess 或 plugin loader。
+- 默认启用 0.4.3b 的 PubMed/arXiv connector-aware search/fetch 路径，但仍复用
+  现有 Research runtime open/fetch 执行层。controller 现在对模型暴露语义明确的
+  `open_result`、`reopen_source`、`open_hit`，不再暴露重载的
+  `open_url(result_id/source_id/hit_id)` 形状；这些动作会编译到 runtime 打开路径。
+  connector hit 会作为普通搜索结果出现，只有经过 connector boundary fetch 并进入
+  opened-source ledger 后才可能成为可引用 evidence。
+- 在启用前收紧 connector 边界：PubMed recorded fetch 只接受
+  `pubmed.ncbi.nlm.nih.gov`，arXiv recorded fetch 只接受 `arxiv.org`；
+  arXiv fixture URL 统一 canonicalize 到 `https://arxiv.org/...`；fixture parser
+  和 recorded fetch 都会拒绝 malformed PubMed/arXiv ID；`SourceHit` 审计
+  metadata refs 会过滤 secret-looking 值，`SourceHit` 和 `FetchedSource` 的
+  scalar 审计字段都改成 allow-list；malformed limit 会回落到有界默认值；CSV/TSV
+  读取会多读一行再判断是否真的 truncated，避免刚好等于上限时误标。
+- 收紧 `RunTrace.record_research_plan()` 和 planner trace payload：source preference
+  只接受 connector-id 形状，list 字段只接受 list/tuple/set，字符串不会再被逐字符
+  迭代，`None` 也不会抛出；reason/warning 会过滤 secret-looking 字符串。相邻的
+  evidence-ledger 和 proof-review trace sink 也改用同一套 trace-safe
+  reason/warning 规则。proof 已通过且没有 gap 时，planner 现在产出 no-op 的
+  `proof_ok_no_required_followup` plan，不再生成 follow-up query candidates；no-op
+  plan 不再带无关 warning。Run Trace 也把模型可见 controller action contract hash
+  和编译后的 runtime tool contract hash 分开记录，并记录有界的 connector fallback
+  error summary，不保存 raw request data。
+- 浏览器 Research search 在普通 Research 运行中显式复用一个专用 Research
+  profile/port；自定义 CDP port family 不再回落到默认网页模型 provider 端口池。
+  直接构造 `BrowserSearchProvider()` 仍保持默认 isolated，浏览器 attach/端口等待也
+  收回到 20 秒，让卡死失败路径更快返回。取消现在不会被 isolated CDP 启动重试或
+  search page 导航重试吞掉；manual connector A/B harness 也改为和生产 Research
+  一样复用 non-isolated Research browser。
+- connector-aware live search 现在用和 dry-run planner 相同的 safe term 边界构造
+  PubMed/arXiv API query，不会把 raw secret、`api key ...`、`password ...`、
+  `api key is ...`、`password is equal to ...`、`password is set to ...`、
+  `api key named ...`、`private key is ...`、`client_secret=...`、
+  `Authorization: Bearer ...` 这类 marker/value 窗口、URL 或本地路径发给 source
+  API。浏览器 search 会先于 connector lookup 启动，connector 请求有更短的全局预算，
+  普通 browser 结果会保留 query string 区分；direct PubMed/arXiv URL 在 connector
+  lookup 失败时会回退到 browser fetch。connector result digest 也只基于 sanitized
+  query，live connector 的 tool name 和 User-Agent 使用不含产品名的中性标识。
+  Research JSON codec 不再接受 `open`/`fetch`、`queries`、`done.summary` 这类旧工具
+  或参数 alias；fallback contract 本身也不再携带 alias 层。
+- dry-run planner 和 live connector search 现在共用同一套领域路由词表，包含
+  genetic/genomic 以及 RAG/NLP/retrieval/benchmark 等常见论文检索词。registry 的
+  status、shipped 和 capability flag 现在是 live search/fetch 的权威边界；
+  connector 剩余预算不会向上取整超过真实 deadline，`JAK/STAT` 这类安全科研斜杠
+  术语会保留，`docs/ADR2026/research`、`Docs/ADR/Plan`、`ProjectX/ConfigV2`
+  这类 path-like slash token 会在出站前丢弃。secret redaction helper 现在区分
+  独立敏感词 marker 和密钥形状，`secreted`、`secretion` 不再被当成 `secret`。
+  共用 Research shape helper 现在覆盖 connector id、generated ref、digest ref 和
+  connector limit。
+- Qwen 现在只等待 composer 可交互且页面不在生成中，再填入消息；随后确认受控输入框
+  仍保留完整文本且发送按钮可用。如果 hydration 已经清空草稿，就在点击前停止，不会
+  发送空消息。这个路径去掉了发送前固定 composer settle 窗口，同时保留点击后不重复
+  整轮发送的边界。浏览器 PDF 请求也改用中性 User-Agent。
+- 已按 provider 串行跑 connector smoke/A-B，结果按行原子落盘。DeepSeek 显示
+  PubMed connector 明显改善目标来源选择；MiMo 和 StepFun 的 connector arm 能打开
+  PubMed 目标 host；Qwen 在 provenance 修复后改善 arXiv；DeepSeek/Qwen/MiMo/
+  StepFun/GLM 至少有一个 recorded arm 能打开 arXiv 目标 host。部分 run 仍停在
+  `max_turns` 或 protocol repair，GLM PubMed 多次尝试后因 provider 限流暂停，所以
+  这里证明的是 source selection smoke，不声称 proof-quality 全模型提升。
+
 ## 0.4.2 - Research Proof Quality Gate + Planner Signals v0
 
 - 新增 `codey/research/proof_quality.py`：对 `ResearchRecord` 和 durable

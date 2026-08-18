@@ -236,13 +236,13 @@ class ResearchLedger:
                     if not replacement:
                         return EvidencePreparation(
                             error=(
-                                "evidence excerpt is not present in opened source and Codey could not "
+                                "evidence excerpt is not present in opened source and could not "
                                 f"attach a replacement excerpt: {final_url}"
                             )
                         )
                     warnings.append(
                         "supplied evidence excerpt did not match opened source; "
-                        "Codey attached an exact opened-page excerpt instead"
+                        "attached an exact opened-page excerpt instead"
                     )
                     excerpt = replacement
                     inferred_page = replacement_page

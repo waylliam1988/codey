@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.identity import bounded_refs, digest_text, identifier
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
+from codey.research.redaction import looks_sensitive_signal
 
 
 RESEARCH_QUEUE_KINDS = frozenset({"research", "open_question"})
@@ -132,28 +133,9 @@ def _safe_run_ref(value: object) -> str:
     text = identifier(value, 120)
     if not text:
         return ""
-    if _looks_sensitive(text):
+    if looks_sensitive_signal(text):
         return digest_text(text).removeprefix("sha256:")[:16]
     return text
-
-
-def _looks_sensitive(value: str) -> bool:
-    text = str(value or "").casefold()
-    return any(
-        marker in text
-        for marker in (
-            "secret",
-            "token",
-            "password",
-            "passwd",
-            "api_key",
-            "apikey",
-            "authorization",
-            "credential",
-            "sessionid",
-            "session_id",
-        )
-    )
 
 
 __all__ = [

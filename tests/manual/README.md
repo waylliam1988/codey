@@ -301,6 +301,50 @@ provider pages. Use this probe before changing source_search behavior further,
 or before promoting ResearchPlan / Coverage Review into the production Research
 path.
 
+`source_connector_ab.py` is the live Research probe for the PubMed/arXiv
+connector-aware search path. The baseline arm uses the same non-isolated
+Research browser search provider reuse path as production Research; the
+connector arm wraps that provider with
+`ConnectorAwareSearchProvider`. The model-visible controller actions are
+`web_search/open_result/reopen_source/open_hit/source_search/knowledge_write/done`;
+the runner records both those raw model actions and the compiled runtime tool
+calls so protocol regressions are visible without rerunning completed rows. In
+addition, each prompt/reply pair is written atomically to a sibling
+`*.trace.json` file (defaulting to the output stem) so repeated `done` attempts
+can be replayed later against the exact prompt text.
+
+```powershell
+python -B tests\manual\source_connector_ab.py --self-test
+python -B tests\manual\source_connector_ab.py `
+  --provider deepseek `
+  --case pubmed `
+  --case arxiv `
+  --case open_guard `
+  --output tests\manual\results\source_connector_ab-deepseek-0.4.3.json
+```
+
+Run one provider per process. By default the probe only attaches to already-open
+provider tabs; add `--open-if-missing` only when intentionally allowing Codey to
+open or foreground that provider page. Rows are written atomically after each
+case/arm, and reruns skip completed rows unless `--rerun-failed` is set. The
+trace file is written next to the output file by default, or to
+`--trace-output` when set.
+production connector path builds PubMed/arXiv API queries from bounded safe
+terms, strips direct and natural-language secret marker/value windows such as
+`api key ...`, `api key is ...`, `password is equal to ...`,
+`password is set to ...`, and `api key named ...` before source API requests,
+starts browser search before connector lookup, and falls back to browser fetch
+when direct PubMed/arXiv connector lookup fails.
+For 0.4.3, the live connector smoke was run one provider at a time and used the
+atomic rows to resume only missing samples. DeepSeek showed PubMed connector
+search improving target source selection; MiMo and StepFun connector arms opened
+PubMed target hosts; Qwen improved on arXiv after the provenance fix; and
+DeepSeek/Qwen/MiMo/StepFun/GLM reached arXiv target hosts in at least one
+recorded arm. Several runs still stopped at `max_turns` or protocol repair, and
+GLM PubMed remained inconclusive after repeated attempts hit provider rate
+limits. The browser search provider now reuses one dedicated Research
+profile/port for ordinary runs instead of opening isolated search browsers.
+
 `research_repair_prompt_ab.py` is a tiny live probe for Research protocol repair
 wording. It sends the old and current repair prompts to a provider, scores the
 reply with the production Research parser/controller, and atomically writes a

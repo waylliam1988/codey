@@ -4,6 +4,108 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
+
+- Added `codey/research/source_connectors.py`, a pure source connector boundary
+  with `SourceConnectorSpec`, `SourceConnectorRegistry`, `SourceHit`,
+  `FetchedSource`, and `SourceConnectorResult`. The built-in registry ships
+  fixture/local coverage for `local_file`, `csv_tsv`, `json_file`, `arxiv`, and
+  `pubmed`; `openalex` is explicitly deferred and `rss` is optional, so neither
+  counts as a shipped connector.
+- Added recorded connector fixtures under `tests/fixtures/research_connectors/`
+  for local text, CSV, TSV, JSON, arXiv Atom, and PubMed XML. Fixture parsing
+  produces stable `source_ref`, `connector_source`, and `source_hit` refs.
+  Local file reads are confined to explicit allowed roots, CSV/TSV parsing uses
+  Python's `csv` module, and URL-backed recorded hits still pass the Research
+  URL guard before fixture fetch.
+- Added `codey/research/query_planner.py`, a deterministic ResearchPlan
+  dry-run. It consumes proof-review gaps plus connector registry metadata and
+  returns bounded query candidates, source preferences, max bounds, reason
+  codes, warnings, and a stable `research_plan:<16 hex>` ref. Medical and
+  life-science questions prefer PubMed; paper/preprint/ML-style questions
+  prefer arXiv; local table/file/JSON questions prefer local connectors.
+- Run Trace now records bounded `research_plans` summaries after proof review:
+  plan ref, question digest, proof ref, query count, source preference ids,
+  max bounds, warnings, and reason codes. It does not store query text, raw
+  prompts, source bodies, fetched pages, raw URLs, or raw absolute paths.
+- The Capability Registry and Event / Capability Matrix now declare
+  `research_source_connectors`, `research_connector_search`, and
+  `research_query_planner`. Architecture tests keep connector/planner modules
+  away from provider adapters, browser code, tool runtime, server/TaskRunner
+  runtime layers, Ghost runtime, subprocess, and plugin loaders.
+- Enabled the 0.4.3b connector-aware search/fetch path for PubMed and arXiv
+  through the existing Research runtime tools. The controller now exposes
+  distinct model-visible open actions, `open_result`, `reopen_source`, and
+  `open_hit`, instead of overloaded `open_url(result_id/source_id/hit_id)`
+  shapes. Those actions compile to the runtime open/fetch path; connector hits
+  are appended as ordinary search results and only become citable after the
+  connector boundary fetches them into the opened-source ledger.
+- Hardened the connector boundary before enabling it: PubMed recorded fetches
+  only accept `pubmed.ncbi.nlm.nih.gov`, arXiv recorded fetches only accept
+  `arxiv.org`, arXiv fixture URLs are canonicalized to `https://arxiv.org/...`,
+  fixture parsers and recorded fetches reject malformed PubMed/arXiv IDs,
+  `SourceHit` audit metadata refs filter secret-looking values, `SourceHit`
+  and `FetchedSource` scalar audit fields are allow-listed, malformed fixture
+  limits fall back to bounded defaults, and CSV/TSV truncation now reads one row
+  past the display limit before marking a file truncated.
+- Hardened `RunTrace.record_research_plan()` and planner trace payloads so
+  trace sinks accept only connector-id-shaped source preferences, ignore
+  non-collection list fields instead of iterating strings or raising on `None`,
+  and filter secret-looking reason or warning codes. Adjacent evidence-ledger
+  and proof-review trace sinks now use the same trace-safe reason/warning
+  rules. Proof-ok/no-gap reviews now produce a no-op
+  `proof_ok_no_required_followup` plan with no query candidates. Run Trace now
+  also separates the model-visible controller action contract hash from the
+  compiled runtime tool contract hash, keeps proof-ok no-op warnings empty, and
+  records bounded connector fallback error summaries without raw request data.
+- Browser-backed Research search now explicitly reuses a dedicated Research
+  browser profile/port for ordinary Research runs, with custom CDP port
+  families scoped away from the default model-provider port pool.
+  `BrowserSearchProvider()` itself keeps an isolated default for direct
+  construction, and browser attach/port waits remain bounded at 20 seconds for
+  faster failure feedback. Cancellation now bypasses isolated CDP launch and
+  search-page navigation retries, and the manual connector A/B harness uses the
+  same non-isolated Research browser reuse path as production Research.
+- Connector-aware live search now builds PubMed/arXiv API queries from the same
+  safe term boundary used by the dry-run planner, so raw secrets, secret
+  marker/value windows such as `api key ...`, `password ...`,
+  `api key is ...`, `password is equal to ...`, `password is set to ...`,
+  `api key named ...`, `private key is ...`, `client_secret=...`, and
+  `Authorization: Bearer ...`, URLs, and local paths are not sent to source
+  APIs. Browser search starts before connector lookup, connector requests use a
+  short bounded budget, ordinary browser results keep query-string-distinct
+  URLs, and direct PubMed/arXiv URL fetches fall back to browser fetch when
+  connector lookup fails. Connector result digests also use the sanitized query,
+  live connector transport metadata uses a neutral tool name and User-Agent
+  without the product name, and the Research JSON codec no longer accepts
+  legacy tool or argument aliases such as `open`/`fetch`, `queries`, or
+  `done.summary`; the fallback contract no longer carries an alias layer.
+- Shared domain routing now drives both the dry-run planner and live connector
+  search, including genetic/genomic and common RAG/NLP/retrieval/benchmark
+  terms. The registry's availability, shipped, and capability flags are
+  authoritative for live search/fetch; remaining connector budget is never
+  rounded above the actual deadline, safe scientific slash terms such as
+  `JAK/STAT` remain searchable, and path-like slash tokens such as
+  `docs/ADR2026/research`, `Docs/ADR/Plan`, and `ProjectX/ConfigV2` are dropped
+  before source API requests. Secret redaction predicates now split independent
+  marker words from key-shaped values, so `secreted` and `secretion` stay valid
+  Research terms. Shared Research shape helpers now cover connector IDs,
+  generated refs, digest refs, and bounded connector limits.
+- Qwen now waits for an interactive, non-generating composer before filling it,
+  confirms that the controlled input keeps the complete message and enables
+  send, and refuses to click if hydration has already cleared the draft. This
+  removes the fixed pre-send composer settle window while preserving the
+  one-shot submission boundary. Browser PDF requests also use a neutral
+  User-Agent.
+- Live connector smoke/A-B was run one provider at a time with atomic per-row
+  result files. DeepSeek showed a clear PubMed source-targeting improvement,
+  MiMo and StepFun connector arms reached PubMed target hosts, Qwen improved on
+  arXiv after the provenance fix, and DeepSeek/Qwen/MiMo/StepFun/GLM all reached
+  arXiv target hosts in at least one recorded arm. Several runs still stopped at
+  `max_turns` or protocol repair, and GLM PubMed was left inconclusive after
+  repeated attempts hit provider rate limits, so this is source-selection smoke
+  evidence rather than a proof-quality win claim.
+
 ## 0.4.2 - Research Proof Quality Gate + Planner Signals v0
 
 - Added `codey/research/proof_quality.py`, a deterministic proof reviewer for

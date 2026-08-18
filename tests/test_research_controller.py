@@ -4,17 +4,20 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from codey.models import ToolCall
+from codey.models import ToolCall, ToolResult
 from codey.research.controller import (
     CONTROLLER_DISPLAY_LIMIT,
+    OpenTarget,
     ResearchControlState,
     ResearchController,
     controller_system_prompt,
+    format_controller_results,
     render_control_block,
 )
 from codey.research.ledger import ResearchLedger
 from codey.research.protocols import JsonToolCodec
 from codey.research.source_document import SourceDocument, SourcePage
+from codey.research.tool_contract import PROTOCOL_NO_JSON
 
 
 def tools_for(ledger: ResearchLedger) -> SimpleNamespace:
@@ -44,6 +47,7 @@ class ResearchControllerTests(unittest.TestCase):
             '{"src":...,"dst":...,"kind":affects/uses/causes/part_of/enables/relates}', prompt
         )
         self.assertIn("never declare a guessed relation", prompt)
+        self.assertNotIn("Codey", prompt)
 
     def test_knowledge_write_shape_includes_tags_and_relations(self) -> None:
         state = ResearchControlState(
@@ -62,6 +66,43 @@ class ResearchControllerTests(unittest.TestCase):
             payload["args"]["relations"], [{"src": "...", "dst": "...", "kind": "affects"}]
         )
         self.assertIn("tags", payload["args"])
+
+    def test_control_block_exposes_distinct_open_actions(self) -> None:
+        state = ResearchControlState(
+            allowed_tools=("open_result", "reopen_source", "open_hit", "source_search"),
+            result_urls={"r1": "https://example.com/search-result"},
+            source_urls={"s1": "https://example.com/opened"},
+            hit_targets={"h1": OpenTarget("https://example.com/opened", offset=1200)},
+        )
+        block = render_control_block(state)
+
+        self.assertIn('{"tool":"open_result","args":{"result_id":"r1"}}', block)
+        self.assertIn('{"tool":"reopen_source","args":{"source_id":"s1"', block)
+        self.assertIn('{"tool":"open_hit","args":{"hit_id":"h1"}}', block)
+        self.assertNotIn('{"tool":"open_url","args":{"result_id"', block)
+        self.assertNotIn('{"tool":"open_url","args":{"source_id"', block)
+        self.assertNotIn('{"tool":"open_url","args":{"hit_id"', block)
+
+    def test_control_block_omits_source_search_guidance_when_disabled(self) -> None:
+        state = ResearchControlState(
+            allowed_tools=("knowledge_search", "knowledge_read", "web_search"),
+        )
+        block = render_control_block(state)
+
+        self.assertNotIn("source_search with source_id", block)
+        self.assertNotIn("open_hit", block)
+        self.assertNotIn("Codey", block)
+
+    def test_controller_result_followup_hides_runtime_open_url_action(self) -> None:
+        prompt = format_controller_results([
+            ToolResult(ToolCall("open_url", {"url": "https://example.com/a"}), "opened text")
+        ])
+
+        self.assertIn('[result: opened_source "https://example.com/a"]', prompt)
+        self.assertIn("open_result/reopen_source/open_hit", prompt)
+        self.assertNotIn("[result: open_url", prompt)
+        self.assertNotIn("call open_url", prompt)
+        self.assertNotIn("Codey", prompt)
 
     def test_search_result_ids_are_run_global_stable(self) -> None:
         ledger = ResearchLedger()
@@ -124,7 +165,7 @@ class ResearchControllerTests(unittest.TestCase):
         self.assertTrue(state.hit_lines[0].startswith("h3:"))
         self.assertTrue(state.hit_lines[-1].startswith("h10:"))
 
-    def test_open_url_result_id_rewrites_before_codec_contract(self) -> None:
+    def test_open_result_compiles_to_runtime_open_url_before_codec_contract(self) -> None:
         ledger = ResearchLedger()
         ledger.record_search("alpha", [{"title": "Alpha", "url": "https://example.com/a"}])
         controller = ResearchController()
@@ -132,7 +173,7 @@ class ResearchControllerTests(unittest.TestCase):
 
         plan = controller.parse_plan(
             JsonToolCodec(),
-            '{"tool":"open_url","args":{"result_id":"r1"}}',
+            '{"tool":"open_result","args":{"result_id":"r1"}}',
             state,
         )
 
@@ -144,6 +185,36 @@ class ResearchControllerTests(unittest.TestCase):
             "pages": "",
         })])
 
+    def test_old_open_url_id_protocol_is_not_controller_visible(self) -> None:
+        ledger = ResearchLedger()
+        ledger.record_search("alpha", [{"title": "Alpha", "url": "https://example.com/a"}])
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ledger), turn=2, max_turns=8)
+
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            '{"tool":"open_url","args":{"result_id":"r1"}}',
+            state,
+        )
+
+        self.assertEqual(plan.protocol_error_kind, "unknown_tool")
+        self.assertIn("unknown tool: open_url", plan.protocol_error)
+
+    def test_controller_does_not_repair_provider_specific_typographic_quotes(self) -> None:
+        ledger = ResearchLedger()
+        ledger.record_search("alpha", [{"title": "Alpha", "url": "https://example.com/a"}])
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ledger), turn=2, max_turns=8)
+
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            "{“tool”:“open_result”,“args”:{“result_id”:“r1”}}",
+            state,
+        )
+
+        self.assertEqual(plan.protocol_error_kind, PROTOCOL_NO_JSON)
+        self.assertFalse(plan.calls)
+
     def test_stable_ids_override_conflicting_handwritten_urls(self) -> None:
         ledger = ResearchLedger()
         ledger.record_search("alpha", [{"title": "Alpha", "url": "https://example.com/a"}])
@@ -153,12 +224,12 @@ class ResearchControllerTests(unittest.TestCase):
 
         result_plan = controller.parse_plan(
             JsonToolCodec(),
-            '{"tool":"open_url","args":{"result_id":"r1","url":"https://wrong.example/b"}}',
+            '{"tool":"open_result","args":{"result_id":"r1","url":"https://wrong.example/b"}}',
             state,
         )
         source_plan = controller.parse_plan(
             JsonToolCodec(),
-            '{"tool":"open_url","args":{"source_id":"s1","url":"https://wrong.example/b"}}',
+            '{"tool":"reopen_source","args":{"source_id":"s1","url":"https://wrong.example/b"}}',
             state,
         )
         source_search_plan = controller.parse_plan(
@@ -228,7 +299,7 @@ class ResearchControllerTests(unittest.TestCase):
 
         plan = controller.parse_plan(
             JsonToolCodec(),
-            '{"tool":"open_url","args":{"hit_id":"h1"}}',
+            '{"tool":"open_hit","args":{"hit_id":"h1"}}',
             state,
         )
 
@@ -249,7 +320,7 @@ class ResearchControllerTests(unittest.TestCase):
 
         plan = controller.parse_plan(
             JsonToolCodec(),
-            '{"tool":"open_url","args":{"hit_id":"h1"}}',
+            '{"tool":"open_hit","args":{"hit_id":"h1"}}',
             state,
         )
 
@@ -266,9 +337,9 @@ class ResearchControllerTests(unittest.TestCase):
         controller = ResearchController()
         state = controller.build_state(tools_for(ledger), turn=4, max_turns=8)
 
-        result_plan = controller.parse_plan(JsonToolCodec(), '{"tool":"open_url","args":{"result_id":"r9"}}', state)
-        source_plan = controller.parse_plan(JsonToolCodec(), '{"tool":"open_url","args":{"source_id":"s9"}}', state)
-        hit_plan = controller.parse_plan(JsonToolCodec(), '{"tool":"open_url","args":{"hit_id":"h9"}}', state)
+        result_plan = controller.parse_plan(JsonToolCodec(), '{"tool":"open_result","args":{"result_id":"r9"}}', state)
+        source_plan = controller.parse_plan(JsonToolCodec(), '{"tool":"reopen_source","args":{"source_id":"s9"}}', state)
+        hit_plan = controller.parse_plan(JsonToolCodec(), '{"tool":"open_hit","args":{"hit_id":"h9"}}', state)
 
         self.assertEqual(result_plan.protocol_error_kind, "invalid_args")
         self.assertIn("unknown result_id: r9", result_plan.protocol_error)

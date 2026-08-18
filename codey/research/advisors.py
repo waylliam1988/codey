@@ -119,7 +119,7 @@ class EvidencePack:
 
 def render_research_advisor_prompt(pack: EvidencePack) -> str:
     return "\n".join((
-        "You are a private read-only evidence advisor for Codey Research.",
+        "You are a private read-only evidence advisor for a research run.",
         "You are not the acting researcher.",
         "You cannot call tools, browse, open URLs, edit files, or write notes.",
         "Use only the EvidencePack below.",

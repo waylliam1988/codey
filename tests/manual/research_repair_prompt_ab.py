@@ -25,7 +25,7 @@ from codey.research.controller import (
     ResearchController,
     render_control_block,
 )
-from codey.research.protocols import JsonToolCodec, canonical_tool_name, extract_json_objects
+from codey.research.protocols import JsonToolCodec, extract_json_objects
 from codey.research.runner import _protocol_repair_prompt
 from codey.research.tool_contract import PROTOCOL_TOO_MANY_TOOLS
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
@@ -107,8 +107,7 @@ def _analyze_reply(reply: str) -> dict[str, Any]:
     state = _first_turn_state()
     objects = extract_json_objects(reply)
     tools = [
-        canonical_tool_name(obj.get("tool") or obj.get("name"))
-        or str(obj.get("tool") or obj.get("name") or "")
+        str(obj.get("tool") or obj.get("name") or "").strip().lower()
         for obj in objects
     ]
     controller = ResearchController()

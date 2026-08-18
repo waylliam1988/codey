@@ -152,7 +152,7 @@ class ResearchTools:
             return "ERROR: source_search needs a query"
         final_url = self.ledger.canonical_opened_url(url)
         if not final_url:
-            return "NEEDS_OPEN: open_url before source_search: " + url
+            return "NEEDS_OPEN: open the source before source_search: " + url
         source = self.ledger.source_record_for_url(final_url)
         if source is None:
             return "ERROR: source_search source is not in the opened-source ledger"
@@ -344,7 +344,7 @@ class ResearchTools:
         unopened = [u for u in urls if u not in self.sources_read]
         if unopened:
             if all(u in self.search_result_urls for u in unopened):
-                return "NEEDS_OPEN: open_url before saving this source note: " + ", ".join(unopened[:3])
+                return "NEEDS_OPEN: open the source before saving this source note: " + ", ".join(unopened[:3])
             return "cite only pages you actually opened; you did not open: " + ", ".join(unopened[:3])
         return None
 
@@ -364,7 +364,7 @@ class ResearchTools:
         unread_urls = [s for s in sources if _looks_like_url(s) and s not in self.sources_read]
         if unread_urls:
             if all(u in self.search_result_urls for u in unread_urls):
-                return "NEEDS_OPEN: open_url before saving this note: " + ", ".join(unread_urls[:3])
+                return "NEEDS_OPEN: open the source before saving this note: " + ", ".join(unread_urls[:3])
             return "cite only pages you actually opened; you did not open: " + ", ".join(unread_urls[:3])
         ungrounded = [s for s in sources if not _looks_like_url(s) and s not in self.grounded_ids]
         if ungrounded:

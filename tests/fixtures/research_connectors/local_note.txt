@@ -1,0 +1,2 @@
+Local research note.
+This fixture represents a project-scoped local source.

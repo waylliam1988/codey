@@ -11,35 +11,20 @@ from codey.research.tool_contract import (
     PROTOCOL_INVALID_ARGS,
     PROTOCOL_TOO_MANY_TOOLS,
     PROTOCOL_UNKNOWN_TOOL,
+    TOOL_CONTRACTS,
     research_tool_contract_hash,
     validate_tool_args,
 )
 
 MAX_CALLS_PER_TURN = 1
-_TOOL_ALIASES = {
-    "web_search": ("web_search", "search"),
-    "open_url": ("open_url", "open", "fetch", "read_url"),
-    "source_search": ("source_search", "search_source", "find_in_source"),
-    "knowledge_search": ("knowledge_search", "recall", "memory_search", "vault_search"),
-    "knowledge_read": ("knowledge_read", "knowledge_note", "vault_read", "note_read"),
-    "knowledge_write": ("knowledge_write", "note_write", "save_note", "write_note"),
-    "knowledge_link": ("knowledge_link", "note_link", "link"),
-    "done": ("done", "answer", "finish"),
-}
 
 
-def _alias_to_tool(include_source_search: bool = True) -> dict[str, str]:
-    aliases = dict(_TOOL_ALIASES)
-    if not include_source_search:
-        aliases.pop("source_search", None)
-    return {alias: name for name, names in aliases.items() for alias in names}
-
-
-def canonical_tool_name(name: object, *, include_source_search: bool = True) -> str:
-    raw = str(name or "").strip().lower()
-    if not raw:
-        return ""
-    return _alias_to_tool(include_source_search).get(raw, "")
+def _known_tool_names(include_source_search: bool = True) -> set[str]:
+    return {
+        name
+        for name in TOOL_CONTRACTS
+        if include_source_search or name != "source_search"
+    }
 
 
 class ProtocolCodec(Protocol):
@@ -86,16 +71,15 @@ class JsonToolCodec:
             kind, message = classify_no_json_reply(text or "")
             return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind)
         actions: list[tuple[str, str, dict[str, Any]]] = []
-        alias_map = _alias_to_tool(self.include_source_search)
+        known_tools = _known_tool_names(self.include_source_search)
         for obj in objects:
             name = str(obj.get("tool") or obj.get("name") or "").strip().lower()
             if not name:
                 continue
-            runtime = alias_map.get(name)
-            if runtime is None:
+            if name not in known_tools:
                 actions.append(("unknown", name, obj))
                 continue
-            actions.append(("known", runtime, obj))
+            actions.append(("known", name, obj))
         if not actions:
             return ToolPlan(
                 calls=[],
@@ -226,7 +210,7 @@ Note types (choose the right one; never mislabel):
 - hypothesis: your inference or expectation. It is NOT a fact. Label it as a hypothesis.
 - conclusion: an actionable takeaway derived from facts + hypotheses.
 - question: something still open that needs more research.
-- synthesis: created by Codey after done passes quality review. Do not write synthesis with knowledge_write.
+- synthesis: created after done passes quality review. Do not write synthesis with knowledge_write.
 
 Discipline:
 - Start by calling knowledge_search to see what you already know.
@@ -234,7 +218,7 @@ Discipline:
 - open_url can read text PDFs. For PDFs, pass pages like "1-5" or "4"; default is the first pages.
 - Prefer 2+ independent sources before writing a fact.
 - Every fact/conclusion note must cite sources.
-- Evidence snippets must be exact short excerpts copied from open_url text. For PDF-specific evidence, include evidence.page when known. Do not paraphrase evidence.excerpt. If uncertain, omit the evidence field and Codey will attach a source excerpt from the opened URL.
+- Evidence snippets must be exact short excerpts copied from open_url text. For PDF-specific evidence, include evidence.page when known. Do not paraphrase evidence.excerpt. If uncertain, omit the evidence field and a source excerpt from the opened URL will be attached.
 - The final report may cite or name only pages you opened in this run, or grounded source notes you read.
 - The final report must use these sections: 结论, 关键证据, 反证与限制, 来源质量, 搜索覆盖, 来源.
 - If there are concrete unresolved follow-up questions, put them in done.args.open_questions as short strings. If none, use an empty list.

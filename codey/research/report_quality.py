@@ -134,7 +134,7 @@ def review_report_quality(
         return ReportQualityReview(
             False,
             "Report quality failed: no opened source is available for citation. "
-            "Use web_search/open_url before calling done.",
+            "Search and open a source before calling done.",
         )
 
     body_ref_items = citation_ref_items(_without_sources(sections))

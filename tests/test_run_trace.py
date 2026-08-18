@@ -12,6 +12,7 @@ from codey.context_source import (
     render_context_sources,
     render_context_sources_with_metadata,
 )
+from codey.research.controller import controller_action_contract_hash
 from codey.research.tool_contract import research_tool_contract_hash
 from codey.run_trace import CHECKPOINT_FLUSH_INTERVAL, RunTraceStore
 from codey.action_policy import ActionSubject, evaluate_action
@@ -317,6 +318,47 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertNotIn("https://example.com/SECRET_URL", serialized)
             self.assertNotIn("SECRET_QUESTION_ABOUT_ACME_TOKEN", serialized)
 
+    def test_evidence_ledger_write_trace_filters_sensitive_codes_and_malformed_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-evidence-ledger-sensitive",
+                session_id="session-evidence-ledger-sensitive",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_evidence_ledger_write({
+                "ok": True,
+                "ledger_ref": "evidence_ledger:" + "a" * 16,
+                "record_id": "research_record:" + "b" * 16,
+                "reason_code": "SECRET_CLIENT_NAME",
+                "warnings": "SECRET_LEDGER_WARNING",
+            })
+            recorder.record_evidence_ledger_write({
+                "ok": True,
+                "ledger_ref": "evidence_ledger:" + "c" * 16,
+                "record_id": "research_record:" + "d" * 16,
+                "reason_code": "written",
+                "warnings": ["kept-warning", "SECRET_LEDGER_WARNING"],
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-evidence-ledger-sensitive",
+                    "run-evidence-ledger-sensitive",
+                ).read_text(encoding="utf-8")
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(payload["research_evidence_ledgers"][0]["reason_code"], "")
+            self.assertNotIn("warnings", payload["research_evidence_ledgers"][0])
+            self.assertEqual(payload["research_evidence_ledgers"][1]["reason_code"], "written")
+            self.assertEqual(payload["research_evidence_ledgers"][1]["warnings"], ["kept-warning"])
+            self.assertNotIn("SECRET_CLIENT_NAME", serialized)
+            self.assertNotIn("SECRET_LEDGER_WARNING", serialized)
+
     def test_research_proof_review_trace_is_bounded_and_ref_shaped(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
@@ -428,6 +470,209 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertNotIn("SECRET_QUESTION_ABOUT_ACME_TOKEN", serialized)
             self.assertNotIn("SECRET_MISSING_RECORD_ID", serialized)
             self.assertNotIn("SECRET_OK_MISSING_RECORD_ID", serialized)
+
+    def test_research_proof_review_trace_filters_sensitive_and_malformed_reason_codes(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-research-proof-sensitive",
+                session_id="session-research-proof-sensitive",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_research_proof_review({
+                "proof_ref": "research_proof:" + "a" * 16,
+                "ok": False,
+                "reason_codes": "SECRET_REASON",
+            })
+            recorder.record_research_proof_review({
+                "proof_ref": "research_proof:" + "b" * 16,
+                "ok": False,
+                "reason_codes": ["valid_code", "SECRET_CLIENT_NAME"],
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-research-proof-sensitive",
+                    "run-research-proof-sensitive",
+                ).read_text(encoding="utf-8")
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(payload["research_proof_reviews"][0]["reason_codes"], [])
+            self.assertEqual(payload["research_proof_reviews"][1]["reason_codes"], ["valid_code"])
+            self.assertNotIn("SECRET_REASON", serialized)
+            self.assertNotIn("SECRET_CLIENT_NAME", serialized)
+
+    def test_research_plan_trace_is_bounded_dry_run_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-research-plan",
+                session_id="session-research-plan",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_research_plan({
+                "plan_ref": "research_plan:" + "a" * 16,
+                "question_digest": "sha256:" + "b" * 64,
+                "proof_ref": "research_proof:" + "c" * 16,
+                "dry_run": True,
+                "max_depth": 99,
+                "max_queries": 99,
+                "max_sources": 99,
+                "query_count": 99,
+                "source_preferences": [
+                    "pubmed",
+                    "bad preference with spaces",
+                    "SECRET_CLIENT_NAME",
+                ],
+                "reason_codes": [
+                    "coverage_gap",
+                    "bad reason with spaces",
+                    "answer_status_insufficient_evidence",
+                    "SECRET_CLIENT_NAME",
+                    "sk-" + "a" * 24,
+                ],
+                "warnings": [
+                    "rss_optional",
+                    "warning with spaces",
+                    "record_pruned_for_ledger_closure",
+                    "SECRET_CLIENT_NAME",
+                    "ghp_" + "b" * 24,
+                ],
+                "query_preview": "SECRET_QUERY_SHOULD_NOT_BE_SAVED",
+                "raw_url": "https://example.com/SECRET_URL",
+            })
+            recorder.record_research_plan({
+                "plan_ref": "research_plan:" + "a" * 16,
+                "question_digest": "sha256:" + "b" * 64,
+            })
+            recorder.record_research_plan({
+                "plan_ref": "SECRET_PLAN_REF",
+                "question_digest": "sha256:" + "d" * 64,
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-research-plan",
+                    "run-research-plan",
+                ).read_text(encoding="utf-8")
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(payload["research_plans"], [{
+                "plan_ref": "research_plan:" + "a" * 16,
+                "dry_run": True,
+                "max_depth": 1,
+                "max_queries": 8,
+                "max_sources": 12,
+                "query_count": 8,
+                "source_preferences": ["pubmed"],
+                "reason_codes": [
+                    "coverage_gap",
+                    "bad_reason_with_spaces",
+                    "answer_status_insufficient_evidence",
+                ],
+                "warnings": [
+                    "rss_optional",
+                    "warning_with_spaces",
+                    "record_pruned_for_ledger_closure",
+                ],
+                "question_digest": "sha256:" + "b" * 64,
+                "proof_ref": "research_proof:" + "c" * 16,
+            }])
+            self.assertNotIn("SECRET_QUERY_SHOULD_NOT_BE_SAVED", serialized)
+            self.assertNotIn("SECRET_CLIENT_NAME", serialized)
+            self.assertNotIn("sk-", serialized)
+            self.assertNotIn("ghp_", serialized)
+            self.assertNotIn("https://example.com/SECRET_URL", serialized)
+            self.assertNotIn("SECRET_PLAN_REF", serialized)
+
+    def test_research_plan_trace_list_fields_ignore_non_collections(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-research-plan-shape",
+                session_id="session-research-plan-shape",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_research_plan({
+                "plan_ref": "research_plan:" + "a" * 16,
+                "source_preferences": "pubmed",
+                "reason_codes": None,
+                "warnings": "rss_optional",
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-research-plan-shape",
+                    "run-research-plan-shape",
+                ).read_text(encoding="utf-8")
+            )
+
+            self.assertEqual(payload["research_plans"][0]["source_preferences"], [])
+            self.assertEqual(payload["research_plans"][0]["reason_codes"], [])
+            self.assertEqual(payload["research_plans"][0]["warnings"], [])
+
+    def test_research_connector_errors_are_bounded_trace_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-research-connector-errors",
+                session_id="session-research-connector-errors",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_research_connector_errors([
+                {
+                    "connector_id": "pubmed",
+                    "action": "fetch_lookup",
+                    "error": "ValueError",
+                },
+                {
+                    "connector_id": "pubmed",
+                    "action": "fetch_lookup",
+                    "error": "ValueError",
+                },
+                {
+                    "connector_id": "SECRET_CLIENT_NAME",
+                    "action": "search",
+                    "error": "ValueError",
+                },
+                {
+                    "connector_id": "arxiv",
+                    "action": "https://example.com/SECRET_URL",
+                    "error": "sk-" + "a" * 24,
+                },
+            ])
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-research-connector-errors",
+                    "run-research-connector-errors",
+                ).read_text(encoding="utf-8")
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(payload["research_connector_errors"], [{
+                "connector_id": "pubmed",
+                "action": "fetch_lookup",
+                "error": "ValueError",
+                "count": 2,
+            }])
+            self.assertNotIn("SECRET_CLIENT_NAME", serialized)
+            self.assertNotIn("https://example.com/SECRET_URL", serialized)
+            self.assertNotIn("sk-", serialized)
 
     def test_policy_decision_records_digest_without_raw_display(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -738,12 +983,45 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
         )
         research_full = research_tool_contract_hash(include_source_search=True)
         research_thin = research_tool_contract_hash(include_source_search=False)
+        controller_full = controller_action_contract_hash(include_source_search=True)
+        controller_thin = controller_action_contract_hash(include_source_search=False)
 
         self.assertEqual(coding_full, model_tool_contract_hash())
         self.assertNotEqual(coding_full, coding_readonly)
         self.assertNotEqual(research_full, research_thin)
+        self.assertNotEqual(controller_full, research_full)
+        self.assertNotEqual(controller_full, controller_thin)
         self.assertTrue(coding_full.startswith("sha256:"))
         self.assertTrue(research_full.startswith("sha256:"))
+        self.assertTrue(controller_full.startswith("sha256:"))
+
+    def test_run_trace_records_model_and_runtime_tool_contract_hashes_separately(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-contract-surfaces",
+                session_id="session-contract-surfaces",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            model_hash = controller_action_contract_hash(include_source_search=True)
+            runtime_hash = research_tool_contract_hash(include_source_search=True)
+
+            recorder.record_tool_contract_hash(model_hash, phase="research")
+            recorder.record_runtime_tool_contract_hash(runtime_hash, phase="research")
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-contract-surfaces",
+                    "run-contract-surfaces",
+                ).read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(payload["model_tool_contract_hash"], model_hash)
+        self.assertEqual(payload["runtime_tool_contract_hash"], runtime_hash)
+        self.assertIn({"hash": runtime_hash, "surface": "runtime", "phase": "research"}, payload["tool_contracts"])
 
     def test_agent_trace_recorder_preserves_prompt_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as td:

@@ -1,0 +1,7 @@
+{
+  "dataset": "fixture",
+  "rows": [
+    {"id": 1, "value": "alpha"},
+    {"id": 2, "value": "beta"}
+  ]
+}

@@ -7,6 +7,7 @@ from unittest import mock
 
 from codey import cancellation, glm
 from codey.provider_submission import SendAttempt
+from codey.research.protocols import JsonToolCodec
 
 
 class GlmDriverTests(unittest.TestCase):
@@ -52,6 +53,15 @@ class GlmDriverTests(unittest.TestCase):
         )
         prose = "普通回答：他说“tool”这个词。"
         self.assertEqual(glm.normalize_tool_json_reply(prose), prose)
+
+    def test_normalize_tool_json_reply_repairs_research_tool_call_before_codec(self) -> None:
+        reply = '{“tool”:“web_search”,“args”:{“query”:“arXiv RAG evaluation”}}'
+
+        plan = JsonToolCodec().parse(glm.normalize_tool_json_reply(reply))
+
+        self.assertFalse(plan.protocol_error)
+        self.assertEqual(plan.calls[0].name, "web_search")
+        self.assertEqual(plan.calls[0].args["query"], "arXiv RAG evaluation")
 
     def test_normalize_tool_json_reply_preserves_smart_quotes_inside_summary(self) -> None:
         reply = '{“tool”:“done”,“args”:{“summary”:“构建“入场”掩码，并返回“安全”结果。”}}'

@@ -22,10 +22,13 @@ EXPECTED_BUILTIN_IDS = (
     "prompt_envelope",
     "provider_capability_registry",
     "provider_factory",
+    "research_connector_search",
     "research_evidence_ledger",
     "research_object_model",
     "research_proof_quality",
+    "research_query_planner",
     "research_runner",
+    "research_source_connectors",
     "review_runner",
     "run_details",
     "run_ledger",
@@ -33,7 +36,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "769c424047f02dcf799923d27ae8263d404d739d9e064a1b71a18b87ac16d074"
+    "65727720e9fe5956c90a8ab2897eaf21280671dafaae811d34111821dc238dd0"
 )
 
 
@@ -149,6 +152,51 @@ class CapabilityRegistryTests(unittest.TestCase):
         )
         self.assertEqual(spec.durable_state, ("run_trace",))
         self.assertEqual(spec.owner_module, "codey.research.proof_quality")
+        self.assertFalse(spec.model_visible)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.ui_surface, ())
+
+    def test_research_source_connectors_are_policy_bound_metadata(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_source_connectors")
+
+        self.assertEqual(
+            spec.provides,
+            ("source_connector_registry", "source_hit_contract"),
+        )
+        self.assertEqual(spec.consumes, ("policy_guard",))
+        self.assertEqual(spec.owner_module, "codey.research.source_connectors")
+        self.assertFalse(spec.model_visible)
+        self.assertTrue(spec.requires_policy)
+        self.assertEqual(spec.ui_surface, ())
+        self.assertEqual(spec.durable_state, ())
+
+    def test_research_connector_search_is_policy_bound_provider_wrapper(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_connector_search")
+
+        self.assertEqual(spec.provides, ("connector_aware_search_provider",))
+        self.assertEqual(spec.consumes, ("policy_guard", "research_source_connectors"))
+        self.assertEqual(spec.owner_module, "codey.research.connector_search")
+        self.assertFalse(spec.model_visible)
+        self.assertTrue(spec.requires_policy)
+        self.assertEqual(spec.ui_surface, ())
+        self.assertEqual(spec.durable_state, ())
+
+    def test_research_query_planner_is_trace_only_dry_run(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_query_planner")
+
+        self.assertEqual(spec.provides, ("research_plan_dry_run",))
+        self.assertEqual(
+            spec.consumes,
+            ("research_proof_quality", "research_source_connectors", "run_trace"),
+        )
+        self.assertEqual(spec.durable_state, ("run_trace",))
+        self.assertEqual(spec.owner_module, "codey.research.query_planner")
         self.assertFalse(spec.model_visible)
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.ui_surface, ())

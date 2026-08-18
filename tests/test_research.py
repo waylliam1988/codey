@@ -16,9 +16,17 @@ from codey.consensus import ConsensusAdvice
 from codey.events import RunEvent, run_event_payload
 from codey.knowledge import KnowledgeChanges, KnowledgeStore
 from codey.models import ToolCall, ToolResult
-from codey.research.advisors import EvidencePack, run_research_advisors
+from codey.research.advisors import EvidencePack, render_research_advisor_prompt, run_research_advisors
 from codey.research import browser_search
 from codey.research.browser_search import BrowserSearchProvider, RESEARCH_CDP_PORT, RESEARCH_PROFILE
+from codey.research.controller import (
+    OpenTarget,
+    ResearchControlState,
+    controller_action_contract_hash,
+    controller_system_prompt,
+    format_controller_results,
+    render_control_block,
+)
 from codey.research.ledger import ResearchLedger
 from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
 from codey.research.provenance import provenance_problem
@@ -27,6 +35,7 @@ from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunner
 from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tools import ResearchTools
+from codey.research.tool_contract import research_tool_contract_hash
 from codey.research.url_policy import check_fetch_url
 
 
@@ -95,6 +104,26 @@ class TrackingSearch(FakeSearch):
     def fetch(self, url: str) -> dict:
         self.fetch_urls.append(url)
         return super().fetch(url)
+
+
+class RecordingTrace:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, tuple, dict]] = []
+
+    def record_tool_contract_hash(self, *args, **kwargs) -> None:
+        self.calls.append(("record_tool_contract_hash", args, kwargs))
+
+    def record_runtime_tool_contract_hash(self, *args, **kwargs) -> None:
+        self.calls.append(("record_runtime_tool_contract_hash", args, kwargs))
+
+    def record_permission_profile(self, *args, **kwargs) -> None:
+        self.calls.append(("record_permission_profile", args, kwargs))
+
+    def record_prompt_section(self, *args, **kwargs) -> None:
+        self.calls.append(("record_prompt_section", args, kwargs))
+
+    def record_research_connector_errors(self, *args, **kwargs) -> None:
+        self.calls.append(("record_research_connector_errors", args, kwargs))
 
 
 class FakePdfPage:
@@ -436,7 +465,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("[more text available", opened)
         self.assertIn("Locator preview only", found)
         self.assertIn("offset ", found)
-        self.assertIn('open_url url="https://example.com/long" offset=', found)
+        self.assertIn("Use open_hit from the next allowed-actions block", found)
         self.assertEqual(evidence_before_write, 0)
         self.assertIn("saved fact note", saved)
         self.assertEqual(evidence_count, 1)
@@ -465,7 +494,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("Locator preview only", found)
         self.assertIn("稳定端点", found)
-        self.assertIn('open_url url="https://example.com/zh-long" offset=', found)
+        self.assertIn("Use open_hit from the next allowed-actions block", found)
 
     def test_source_search_pdf_locator_does_not_satisfy_page_evidence_until_page_opened(self) -> None:
         url = "https://example.com/method.pdf"
@@ -539,7 +568,7 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("pages 1-5 / 10", opened)
         self.assertIn("p.9", located)
-        self.assertIn('open_url url="https://example.com/method.pdf" pages="9"', located)
+        self.assertIn("Use open_hit from the next allowed-actions block", located)
         self.assertEqual(pages_after_search, [1, 2, 3, 4, 5])
         self.assertEqual(evidence_after_search, 0)
         self.assertTrue(rejected.startswith("ERROR: evidence cites unread PDF page p.9"))
@@ -619,7 +648,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(result, sentinel)
         search_call.assert_called_once_with(provider._search_on_browser_thread, "alpha", 3)
 
-    def test_browser_search_defaults_to_isolated_research_browser(self) -> None:
+    def test_browser_search_defaults_to_isolated_browser(self) -> None:
         session = SimpleNamespace(page=mock.Mock(), browser=mock.Mock())
         provider = BrowserSearchProvider()
 
@@ -661,6 +690,146 @@ class ResearchBoundaryTests(unittest.TestCase):
             fresh_tab=False,
             browser_path=None,
         )
+
+    def test_task_runner_research_default_explicitly_reuses_research_browser(self) -> None:
+        from codey import task_runner
+
+        base_provider = mock.Mock()
+        with mock.patch("codey.task_runner.BrowserSearchProvider", return_value=base_provider) as browser_cls:
+            provider = task_runner._default_research_search_provider()
+
+        browser_cls.assert_called_once_with(isolated=False)
+        self.assertIs(provider.base_provider, base_provider)
+
+    def test_browser_search_replaces_stuck_search_page_after_navigation_timeout(self) -> None:
+        class FakeElement:
+            def __init__(self, *, text: str = "", href: str = "") -> None:
+                self.text = text
+                self.href = href
+
+            def inner_text(self) -> str:
+                return self.text
+
+            def get_attribute(self, name: str) -> str:
+                return self.href if name == "href" else ""
+
+        class FakeBlock:
+            def query_selector(self, selector: str):
+                if selector in {"h2 a", ".result__a"}:
+                    return FakeElement(text="Recovered result", href="https://example.com/recovered")
+                if selector == ".b_caption p":
+                    return FakeElement(text="Recovered snippet")
+                return None
+
+            def inner_text(self) -> str:
+                return "Recovered result\nRecovered snippet"
+
+        class FakePage:
+            def __init__(self, context, *, fail: bool = False) -> None:
+                self.context = context
+                self.fail = fail
+                self.closed = False
+                self.routes = []
+
+            def is_closed(self) -> bool:
+                return self.closed
+
+            def set_default_navigation_timeout(self, _timeout) -> None:
+                return None
+
+            def route(self, pattern, handler) -> None:
+                self.routes.append((pattern, handler))
+
+            def unroute(self, _pattern, _handler) -> None:
+                return None
+
+            def goto(self, _url, wait_until="domcontentloaded") -> None:
+                del wait_until
+                if self.fail:
+                    raise TimeoutError("navigation timed out")
+
+            def query_selector_all(self, _selector):
+                return [FakeBlock()]
+
+            def close(self) -> None:
+                self.closed = True
+
+        class FakeContext:
+            def __init__(self) -> None:
+                self.created = []
+
+            def new_page(self):
+                page = FakePage(self)
+                self.created.append(page)
+                return page
+
+        context = FakeContext()
+        first_page = FakePage(context, fail=True)
+        session = SimpleNamespace(
+            page=first_page,
+            browser=SimpleNamespace(contexts=[context]),
+        )
+        provider = BrowserSearchProvider()
+        provider._session = session
+        provider._search_page = first_page
+
+        results = provider._search_on_browser_thread("alpha", 3)
+
+        self.assertTrue(first_page.closed)
+        self.assertEqual(len(context.created), 1)
+        self.assertEqual(results[0]["url"], "https://example.com/recovered")
+        self.assertEqual(results[0]["title"], "Recovered result")
+
+    def test_browser_search_cancellation_does_not_retry_or_discard_page(self) -> None:
+        class FakePage:
+            def __init__(self) -> None:
+                self.closed = False
+                self.routes = []
+
+            def is_closed(self) -> bool:
+                return self.closed
+
+            def set_default_navigation_timeout(self, _timeout) -> None:
+                return None
+
+            def route(self, pattern, handler) -> None:
+                self.routes.append((pattern, handler))
+
+            def unroute(self, _pattern, _handler) -> None:
+                return None
+
+            def goto(self, _url, wait_until="domcontentloaded") -> None:
+                del wait_until
+                raise cancellation.TaskCancelled("stop")
+
+            def close(self) -> None:
+                self.closed = True
+
+        class FakeContext:
+            def __init__(self) -> None:
+                self.created = []
+
+            def new_page(self):
+                page = FakePage()
+                self.created.append(page)
+                return page
+
+        context = FakeContext()
+        page = FakePage()
+        session = SimpleNamespace(
+            page=page,
+            browser=SimpleNamespace(contexts=[context]),
+        )
+        provider = BrowserSearchProvider()
+        provider._session = session
+        provider._search_page = page
+
+        with self.assertRaises(cancellation.TaskCancelled):
+            provider._search_on_browser_thread("alpha", 3)
+
+        self.assertFalse(page.closed)
+        self.assertEqual(context.created, [])
+        self.assertIs(provider._search_page, page)
 
     def test_browser_worker_call_observes_task_cancellation_while_waiting(self) -> None:
         event = threading.Event()
@@ -720,6 +889,24 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
         self.assertIsNone(problem)
+
+    def test_provenance_does_not_treat_shared_opened_host_label_as_unopened_search_source(self) -> None:
+        problem = provenance_problem(
+            "结论: arXiv preprint evidence supports the claim [1].",
+            opened_sources={"https://arxiv.org/abs/2405.07437v2"},
+            search_result_urls={"https://arxiv.gg/abs/2405.07437"},
+        )
+
+        self.assertIsNone(problem)
+
+    def test_provenance_still_rejects_exact_unopened_search_domain(self) -> None:
+        problem = provenance_problem(
+            "搜索覆盖: arxiv.gg mirror was considered as a source.",
+            opened_sources={"https://arxiv.org/abs/2405.07437v2"},
+            search_result_urls={"https://arxiv.gg/abs/2405.07437"},
+        )
+
+        self.assertIn("did not open", problem)
 
     def test_provenance_treats_fullwidth_parenthesis_as_url_boundary(self) -> None:
         url = "https://example.com/report.pdf"
@@ -1320,7 +1507,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertTrue(result.startswith("NEEDS_OPEN:"))
-        self.assertIn("open_url", result)
+        self.assertIn("open the source", result)
         self.assertEqual(count, 0)
 
     def test_needs_open_outcome_is_not_changed_or_error(self) -> None:
@@ -1376,7 +1563,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(payload["status"], "ok")
         self.assertTrue(payload["changed"])
 
-    def test_web_search_accepts_single_query_from_queries_alias(self) -> None:
+    def test_web_search_requires_canonical_query_arg(self) -> None:
         search = RecordingSearch()
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -1386,11 +1573,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             outcome = runner._dispatch(call)
             store.close()
 
-        self.assertTrue(outcome.ok)
-        self.assertEqual(search.queries, ["helium supply"])
-        self.assertIn("Helium article", outcome.model_text)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(search.queries, [])
+        self.assertEqual(outcome.model_text, "ERROR: web_search needs a non-empty query")
 
-    def test_source_search_dispatch_accepts_queries_alias(self) -> None:
+    def test_source_search_requires_canonical_query_arg(self) -> None:
         url = "https://example.com/helium"
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
@@ -1401,8 +1588,8 @@ class ResearchBoundaryTests(unittest.TestCase):
             outcome = runner._dispatch(call)
             store.close()
 
-        self.assertTrue(outcome.ok)
-        self.assertIn("natural gas", outcome.model_text)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.model_text, "ERROR: source_search needs a query")
 
     def test_unsupported_content_type_is_skipped_not_failed(self) -> None:
         class PdfSearch:
@@ -1473,6 +1660,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("saved fact note", saved)
         self.assertIn("WARNING:", saved)
         self.assertIn("attached an exact opened-page excerpt", saved)
+        self.assertNotIn("Codey attached", saved)
         self.assertIn("saved fact note", accepted)
         self.assertEqual(len(tools.ledger.evidence_items), 2)
         self.assertEqual(
@@ -1544,7 +1732,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         followup = codec.format_results([
             ToolResult(
                 ToolCall("knowledge_write", {"title": "Helium"}),
-                "NEEDS_OPEN: open_url before saving this note: https://example.com/helium",
+                "NEEDS_OPEN: open the source before saving this note: https://example.com/helium",
             )
         ])
 
@@ -1571,7 +1759,10 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Do not paraphrase evidence.excerpt", prompt)
         self.assertIn("omit the evidence field", prompt)
         self.assertIn("You are a local research agent", prompt)
-        self.assertNotIn("CodeyResearch", prompt)
+        self.assertNotIn("Codey", prompt)
+        self.assertNotIn("Codey", baseline_prompt)
+        self.assertNotIn("Codey", repair)
+        self.assertNotIn("Codey", followup)
         self.assertIn("反证与限制", prompt)
         self.assertIn("NEEDS_OPEN", followup)
         self.assertIn("call open_url", followup)
@@ -1592,6 +1783,49 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertNotIn("PRESENTATION_SENTINEL", followup)
         self.assertNotIn("AUDIT_SENTINEL", followup)
         self.assertNotIn("CANONICAL_SENTINEL", followup)
+
+    def test_research_model_facing_text_does_not_expose_product_name(self) -> None:
+        codec = JsonToolCodec()
+        state = ResearchControlState(
+            allowed_tools=(
+                "knowledge_search",
+                "knowledge_read",
+                "web_search",
+                "open_result",
+                "reopen_source",
+                "open_hit",
+                "source_search",
+                "knowledge_write",
+                "done",
+            ),
+            result_urls={"r1": "https://example.com/result"},
+            source_urls={"s1": "https://example.com/source"},
+            hit_targets={"h1": OpenTarget("https://example.com/source", offset=1200)},
+            evidence_count=1,
+            note_count=1,
+        )
+        pack = EvidencePack(
+            question="Research alpha",
+            draft="Draft",
+            opened_urls=("https://example.com/source",),
+        )
+        surfaces = {
+            "controller_system_prompt": controller_system_prompt(),
+            "control_block": render_control_block(state),
+            "controller_followup": format_controller_results([
+                ToolResult(ToolCall("open_url", {"url": "https://example.com/source"}), "opened text")
+            ]),
+            "fallback_system_prompt": codec.system_prompt(),
+            "fallback_repair_prompt": codec.repair_prompt(),
+            "fallback_followup": codec.format_results([
+                ToolResult(ToolCall("knowledge_write", {"title": "Alpha"}), "NEEDS_OPEN: open the source")
+            ]),
+            "advisor_prompt": render_research_advisor_prompt(pack),
+        }
+
+        for name, text in surfaces.items():
+            with self.subTest(name=name):
+                self.assertNotIn("Codey", text)
 
     def test_research_protocol_rejects_multiple_tool_calls_per_reply(self) -> None:
         plan = JsonToolCodec().parse(
@@ -1620,8 +1854,8 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_research_runner_repair_for_invalid_args_names_missing_field(self) -> None:
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
-            json.dumps({"tool": "source_search", "args": {"url": "https://example.com/helium"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "source_search", "args": {"source_id": "s1"}}),
             json.dumps({"tool": "knowledge_search", "args": {"query": "helium"}}),
         )
         with tempfile.TemporaryDirectory() as td:
@@ -1634,7 +1868,8 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertGreaterEqual(len(provider.sent), 2)
         self.assertIn("Research tool contract", provider.sent[3])
         self.assertIn("source_search missing required arg 'query'", provider.sent[3])
-        self.assertIn('{"tool":"source_search","args":{"url":"https://...","query":"...","limit":6}}', provider.sent[3])
+        self.assertIn('{"tool":"source_search","args":{"source_id":"s1","query":"...","limit":6}}', provider.sent[3])
+        self.assertNotIn("Codey", provider.sent[3])
 
     def test_research_runner_controller_prompt_limits_initial_tools(self) -> None:
         provider = FakeProvider(
@@ -1649,12 +1884,99 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertIn("Research controller current allowed actions", provider.sent[0])
+        self.assertNotIn("Codey", provider.sent[0])
         self.assertIn(
             "Allowed tools this turn: knowledge_search, knowledge_read, web_search",
             provider.sent[0],
         )
         self.assertNotIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[0])
         self.assertIn("not allowed by the current Research controller state", provider.sent[1])
+        self.assertNotIn("Codey", provider.sent[1])
+
+    def test_research_runner_records_controller_and_runtime_contract_hashes(self) -> None:
+        provider = FakeProvider(json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}))
+        trace = RecordingTrace()
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(
+                provider,
+                FakeSearch(),
+                store,
+                max_turns=1,
+                trace_recorder=trace,
+            )
+
+            list(runner.run("Research alpha"))
+            store.close()
+
+        contract_calls = [
+            item for item in trace.calls if item[0] in {
+                "record_tool_contract_hash",
+                "record_runtime_tool_contract_hash",
+            }
+        ]
+        self.assertEqual(
+            contract_calls[0],
+            (
+                "record_tool_contract_hash",
+                (controller_action_contract_hash(include_source_search=True),),
+                {"phase": "research"},
+            ),
+        )
+        self.assertEqual(
+            contract_calls[1],
+            (
+                "record_runtime_tool_contract_hash",
+                (research_tool_contract_hash(include_source_search=True),),
+                {"phase": "research"},
+            ),
+        )
+
+    def test_research_runner_records_connector_errors_in_trace(self) -> None:
+        provider = FakeProvider(json.dumps({"tool": "knowledge_search", "args": {"query": "alpha"}}))
+        trace = RecordingTrace()
+        search = FakeSearch()
+        search.last_connector_errors = [
+            {
+                "connector_id": "pubmed",
+                "action": "fetch_lookup",
+                "error": "ValueError",
+                "count": 2,
+            },
+            {
+                "connector_id": "SECRET_CLIENT_NAME",
+                "action": "fetch_lookup",
+                "error": "ValueError",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(
+                provider,
+                search,
+                store,
+                max_turns=1,
+                trace_recorder=trace,
+            )
+
+            list(runner.run("Research alpha"))
+            store.close()
+
+        error_calls = [item for item in trace.calls if item[0] == "record_research_connector_errors"]
+        self.assertEqual(error_calls, [(
+            "record_research_connector_errors",
+            ([{
+                "connector_id": "pubmed",
+                "action": "fetch_lookup",
+                "error": "ValueError",
+                "count": 2,
+            }, {
+                "connector_id": "SECRET_CLIENT_NAME",
+                "action": "fetch_lookup",
+                "error": "ValueError",
+            }],),
+            {},
+        )])
 
     def test_research_runner_repair_for_disallowed_write_does_not_teach_write_shape(self) -> None:
         provider = FakeProvider(
@@ -1674,11 +1996,12 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("knowledge_write is not allowed by the current Research controller state", provider.sent[1])
         self.assertIn("Do not call knowledge_write again", provider.sent[1])
         self.assertNotIn('{"tool":"knowledge_write"', provider.sent[1])
+        self.assertNotIn("Codey", provider.sent[1])
 
     def test_research_runner_controller_rewrites_result_id_before_dispatch(self) -> None:
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
         )
         search = TrackingSearch()
         with tempfile.TemporaryDirectory() as td:
@@ -1691,7 +2014,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(search.queries, ["helium"])
         self.assertEqual(search.fetch_urls, ["https://example.com/helium"])
         self.assertIn("Search results you may open", provider.sent[1])
-        self.assertIn('{"tool":"open_url","args":{"result_id":"r1"}}', provider.sent[1])
+        self.assertIn('{"tool":"open_result","args":{"result_id":"r1"}}', provider.sent[1])
 
     def test_research_runner_can_disable_controller_for_manual_baselines(self) -> None:
         provider = FakeProvider(json.dumps({"tool": "done", "args": {"answer": "done"}}))
@@ -1724,8 +2047,9 @@ class ResearchBoundaryTests(unittest.TestCase):
             store.close()
 
         self.assertIn("Do not write the research answer directly", provider.sent[1])
-        self.assertIn("done is not allowed yet", provider.sent[1])
+        self.assertIn("done is not allowed yet because this run has no saved evidence", provider.sent[1])
         self.assertNotIn('{"tool":"done","args":{"answer":"<the full report>"}}', provider.sent[1])
+        self.assertNotIn("Codey", provider.sent[1])
 
     def test_research_runner_turn_note_names_protocol_error_kind(self) -> None:
         provider = FakeProvider(
@@ -1745,7 +2069,7 @@ class ResearchBoundaryTests(unittest.TestCase):
     def test_research_runner_repair_for_synthesis_write_uses_done_shape(self) -> None:
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "alpha"}}),
-            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
             json.dumps({
                 "tool": "knowledge_write",
                 "args": {"type": "synthesis", "title": "Alpha report", "body": "final report"},
@@ -1803,10 +2127,10 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertIn("unknown tool: source_search", provider.sent[1])
         self.assertIn(
-            "Use only Codey's Research tools: web_search, open_url, knowledge_search",
+            "Use only the current Research controller actions: knowledge_search, knowledge_read, web_search",
             provider.sent[1],
         )
-        self.assertNotIn("open_url, source_search", provider.sent[1])
+        self.assertNotIn("source_search with source_id", provider.sent[1])
 
     def test_quality_review_followup_is_specific_when_done_answer_needs_revision(self) -> None:
         url = "https://example.com/helium"
@@ -1816,7 +2140,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
             json.dumps({
                 "tool": "knowledge_write",
                 "args": {
@@ -1843,6 +2167,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Your last done.answer did not pass", provider.sent[4])
         self.assertIn("Supported conclusions need [n]", provider.sent[4])
         self.assertNotIn("[no tool output]", provider.sent[4])
+        self.assertNotIn("Codey", provider.sent[4])
         self.assertTrue(
             any(
                 event.kind == "info"
@@ -1876,6 +2201,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("Research EvidencePack", advisor.sent[0])
         self.assertIn("https://example.com/helium", advisor.sent[0])
         self.assertIn("https://example.com/search", advisor.sent[0])
+        self.assertNotIn("Codey", advisor.sent[0])
 
     def test_research_tools_default_written_notes_to_current_session(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1913,14 +2239,14 @@ class ResearchBoundaryTests(unittest.TestCase):
         url = "https://example.com/helium"
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_url", "args": {"url": url}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
             json.dumps({
                 "tool": "knowledge_write",
                 "args": {
                     "type": "fact",
                     "title": "Helium source",
                     "body": "Helium comes from gas processing.",
-                    "sources": [url],
+                    "sources": ["s1"],
                 },
             }),
             json.dumps({
@@ -2067,14 +2393,14 @@ class ResearchBoundaryTests(unittest.TestCase):
         url = "https://example.com/helium"
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_url", "args": {"url": url}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
             json.dumps({
                 "tool": "knowledge_write",
                 "args": {
                     "type": "fact",
                     "title": "Helium source",
                     "body": "Helium comes from gas processing.",
-                    "sources": [url],
+                    "sources": ["s1"],
                 },
             }),
             json.dumps({
@@ -2116,12 +2442,50 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertTrue(seen[0].coverage)
         self.assertEqual(len(seen[0].notes), 1)
         self.assertIn("Need a direct evidence citation.", provider.sent[-1])
+        self.assertNotIn("Codey", provider.sent[-1])
+
+    def test_runner_extends_completion_turns_when_done_quality_needs_repair(self) -> None:
+        url = "https://example.com/helium"
+        provider = FakeProvider(
+            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({
+                "tool": "knowledge_write",
+                "args": {
+                    "type": "fact",
+                    "title": "Helium source",
+                    "body": "Helium is separated from natural gas streams.",
+                    "sources": ["s1"],
+                    "evidence": {
+                        "claim": "Helium supply depends on gas processing.",
+                        "source_url": url,
+                        "excerpt": "Helium is separated from natural gas streams.",
+                        "stance": "supports",
+                    },
+                },
+            }),
+            json.dumps({"tool": "done", "args": {"answer": "done"}}),
+            json.dumps({"tool": "done", "args": {"answer": valid_research_report(url)}}),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, FakeSearch(), store, session_id="s1", max_turns=4)
+
+            list(runner.run("Research helium"))
+            result = runner.result
+            store.close()
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(result.turns, 5)
+        self.assertGreater(result.max_turns_used, 4)
 
     def test_runner_synthesis_records_opened_sources_for_project_brief(self) -> None:
         url = "https://example.com/helium"
         provider = FakeProvider(
             json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-            json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
             json.dumps({
                 "tool": "knowledge_write",
                 "args": {

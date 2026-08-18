@@ -798,11 +798,11 @@ class TaskRunnerUiEventTests(unittest.TestCase):
     def test_tool_event_preserves_needs_action_status(self) -> None:
         call = ToolCall("knowledge_write", {"title": "Helium"})
         outcome = ToolOutcome(
-            "NEEDS_OPEN: open_url before saving this note: https://example.com/helium",
+            "NEEDS_OPEN: open the source before saving this note: https://example.com/helium",
             True,
             presentation={
                 "status": "needs_action",
-                "result": "NEEDS_OPEN: open_url before saving this note: https://example.com/helium",
+                "result": "NEEDS_OPEN: open the source before saving this note: https://example.com/helium",
             },
         )
         event = RunEvent.tool_finished(2, call, outcome, index=3)
@@ -1352,7 +1352,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.4.2")
+        self.assertEqual(__version__, "0.4.3")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)
@@ -3225,7 +3225,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
                 json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
-                json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
+                json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
                 json.dumps({
                     "tool": "knowledge_write",
                     "args": {
@@ -3342,17 +3342,17 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "http://localhost:1234"
             provider.send.side_effect = [
                 json.dumps({"tool": "web_search", "args": {"query": "2026 US Iran war predictions"}}),
-                json.dumps({"tool": "open_url", "args": {"url": pdf_url, "pages": "1"}}),
+                json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
                 json.dumps({
                     "tool": "knowledge_write",
                     "args": {
                         "type": "fact",
                         "title": "PDF report is readable",
                         "body": "The PDF report describes four possible paths after talks stumble.",
-                        "sources": [pdf_url],
+                        "sources": ["s1"],
                         "evidence": [{
                             "claim": "The PDF report describes four possible paths after talks stumble.",
-                            "source_url": pdf_url,
+                            "source_url": "s1",
                             "excerpt": "This sentence is not present in the opened page.",
                             "stance": "supports",
                             "page": 1,
@@ -3440,7 +3440,7 @@ class SessionThreadingTests(unittest.TestCase):
             provider.location = "https://chat.deepseek.com/"
             provider.send.side_effect = [
                 json.dumps({"tool": "web_search", "args": {"query": "storage plan"}}),
-                json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
+                json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
                 json.dumps({
                     "tool": "knowledge_write",
                     "args": {
@@ -3455,7 +3455,7 @@ class SessionThreadingTests(unittest.TestCase):
                     "args": {"answer": valid_research_report("https://example.com/storage", "First research summary: prefer the SQLite-backed plan.")},
                 }),
                 json.dumps({"tool": "web_search", "args": {"query": "storage plan followup"}}),
-                json.dumps({"tool": "open_url", "args": {"result_id": "r1"}}),
+                json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
                 json.dumps({
                     "tool": "knowledge_write",
                     "args": {

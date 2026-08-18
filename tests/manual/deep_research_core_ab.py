@@ -558,7 +558,7 @@ class ProbeResearchRunner(ResearchRunner):
         if call.name == "source_search":
             return _Outcome(self.tools.source_search(
                 str(call.args.get("url") or ""),
-                first_text_arg(call.args, "query", "queries"),
+                first_text_arg(call.args, "query"),
                 _as_int(call.args.get("limit"), 6),
             ))
         return super()._dispatch(call)

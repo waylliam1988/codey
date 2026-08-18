@@ -19,6 +19,8 @@ from codey.research.identity import (
     stable_ref,
 )
 from codey.research.object_model import ResearchRecord
+from codey.research.shape import digest_ref as _digest_ref
+from codey.research.redaction import looks_sensitive_signal
 
 
 MAX_GAPS = 12
@@ -92,7 +94,7 @@ class ResearchProofReview:
             "support_relation_verified": bool(self.support_relation_verified),
             "counterevidence_checked": bool(self.counterevidence_checked),
             "ledger_record_verified": bool(self.ledger_record_verified),
-            "question_digest": _digest_ref_or_empty(self.question_digest),
+            "question_digest": _digest_ref(self.question_digest),
             "coverage_gaps": [item.to_payload() for item in self.coverage_gaps[:MAX_GAPS]],
             "followup_questions": [
                 item.to_payload() for item in self.followup_questions[:MAX_SIGNALS]
@@ -106,7 +108,7 @@ class ResearchProofReview:
             "missing_evidence": list(bounded_refs(self.missing_evidence, limit=MAX_WARNINGS)),
             "proof_ref": _proof_ref_or_empty(self.proof_ref),
             "record_id": _record_id_or_empty(self.record_id),
-            "record_digest": _digest_ref_or_empty(self.record_digest),
+            "record_digest": _digest_ref(self.record_digest),
         }
 
     def to_trace_payload(self) -> dict[str, object]:
@@ -139,7 +141,7 @@ def review_research_proof(
         )
 
     record_id = _record_id_or_empty(payload.get("record_id"))
-    record_digest = _digest_ref_or_empty(payload.get("record_digest"))
+    record_digest = _digest_ref(payload.get("record_digest"))
     answer_status = _answer_status(payload.get("answer_status"))
     sources = _source_map(payload.get("sources"))
     evidence = _evidence_map(payload.get("evidence"))
@@ -237,8 +239,8 @@ def proof_review_trace_payload(review: ResearchProofReview | Mapping[str, object
     return {
         "proof_ref": proof_ref,
         "record_id": _record_id_or_empty(payload.get("record_id")),
-        "record_digest": _digest_ref_or_empty(payload.get("record_digest")),
-        "question_digest": _digest_ref_or_empty(payload.get("question_digest")),
+        "record_digest": _digest_ref(payload.get("record_digest")),
+        "question_digest": _digest_ref(payload.get("question_digest")),
         "ok": bool(payload.get("ok")),
         "answers_question": bool(payload.get("answers_question")),
         "answer_status": _answer_status(payload.get("answer_status")),
@@ -276,8 +278,8 @@ def _proof_ref_from_payload(payload: Mapping[str, object]) -> str:
     return stable_ref(
         "research_proof",
         _record_id_or_empty(payload.get("record_id")),
-        _digest_ref_or_empty(payload.get("record_digest")),
-        _digest_ref_or_empty(payload.get("question_digest")),
+        _digest_ref(payload.get("record_digest")),
+        _digest_ref(payload.get("question_digest")),
         bool(payload.get("ok")),
         bool(payload.get("answers_question")),
         _bounded_score(payload.get("answer_coverage_score")),
@@ -647,7 +649,7 @@ def _is_safe_signal_text(value: str) -> bool:
         return False
     if "://" in lower or "\\" in text or "/" in text:
         return False
-    if _SENSITIVE_RE.search(text) or _SECRET_SHAPE_RE.search(text):
+    if looks_sensitive_signal(text):
         return False
     if re.fullmatch(r"[A-Za-z0-9_./+=-]{24,}", text):
         return False
@@ -717,14 +719,6 @@ def _proof_ref_or_empty(value: object) -> str:
     return ""
 
 
-def _digest_ref_or_empty(value: object) -> str:
-    text = str(value or "").strip()
-    suffix = text.removeprefix("sha256:")
-    if len(suffix) == 64 and all(ch in "0123456789abcdef" for ch in suffix):
-        return text
-    return ""
-
-
 def _question_digest(value: object) -> str:
     text = str(value or "").strip()
     if not text:
@@ -765,17 +759,6 @@ _STOP_TERMS = frozenset({
     "如何",
     "是否",
 })
-_SENSITIVE_RE = re.compile(
-    r"(?i)\b(?:api[_ -]?key|access[_ -]?key|secret|client[_ -]?secret|"
-    r"password|passwd|pwd|token|refresh[_ -]?token|bearer|authorization|"
-    r"cookie|credential|credentials|session[_ -]?id|private[_ -]?key|ssh[_ -]?key|jwt)\b|"
-    r"(?:密钥|密码|令牌|私钥|访问令牌)"
-)
-_SECRET_SHAPE_RE = re.compile(
-    r"(?i)(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|"
-    r"xox[baprs]-[A-Za-z0-9-]{16,}|AIza[0-9A-Za-z_-]{20,}|"
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----)"
-)
 _STRONG_CLAIM_RE = re.compile(
     r"(?i)\b(?:always|never|must|guaranteed|certain|proven|will|cannot fail|"
     r"definitely|必然|一定|保证|证明|绝对)\b"

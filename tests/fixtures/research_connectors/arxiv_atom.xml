@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>ArXiv Query: search_query=all:retrieval augmented generation</title>
+  <entry>
+    <id>https://arxiv.org/abs/2401.01234v1</id>
+    <updated>2024-01-15T12:00:00Z</updated>
+    <published>2024-01-15T12:00:00Z</published>
+    <title>Retrieval Augmented Generation for Verifiable Answers</title>
+    <summary>
+      We study retrieval augmented generation systems that ground answers in
+      opened documents and cite evidence spans.
+    </summary>
+    <author>
+      <name>Ada Example</name>
+    </author>
+    <link href="https://arxiv.org/abs/2401.01234v1" rel="alternate" type="text/html"/>
+    <link title="pdf" href="https://arxiv.org/pdf/2401.01234v1" rel="related" type="application/pdf"/>
+  </entry>
+</feed>

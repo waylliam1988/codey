@@ -14,7 +14,7 @@ from codey import (
     provider_send_loop as send_loop,
 )
 from codey.provider_profiles import get_profile
-from codey.provider_diagnostics import ControlMissing, ResponseMissing
+from codey.provider_diagnostics import ControlMissing
 from codey.json_tool_reply import (
     is_json_tool_reply as _is_json_tool_reply,
     normalize_final_json_tool_reply as _normalize_final_json_tool_reply,
@@ -40,15 +40,15 @@ READY_TIMEOUT = 90.0
 TIMEOUT_GRACE = 60.0
 SEND_TIMEOUT = 30.0
 MODEL_SELECTOR_STABLE_READS = 2
-COMPOSER_SETTLE_TIME = 1.5
-COMPOSER_SETTLE_TICK = 0.25
 COMPOSER_REFILL_ATTEMPTS = 3
 COMPOSER_REFILL_DELAY = 0.4
+COMPOSER_READY_TIMEOUT = 10.0
+COMPOSER_READY_TICK = 0.1
+COMPOSER_ACCEPT_TIMEOUT = 3.0
 SUBMIT_CONFIRM_TIMEOUT = 15.0
 COPY_READY_TIMEOUT = 10.0
 PREFERENCE_TIMEOUT = 15.0
 REGENERATE_START_TIMEOUT = 15.0
-MAX_STALLED_RESPONSE_RETRIES = 1
 JSON_TOOL_STABLE_TICKS = 2
 
 _MODEL_SELECTOR_TEXT_JS = r"""
@@ -112,27 +112,75 @@ def _fill_message(page: Page, textarea: Locator, text: str) -> str:
     return f"{text} "
 
 
+def _composer_value(textarea: Locator) -> str:
+    try:
+        return str(textarea.input_value() or "")
+    except Exception:
+        try:
+            return str(textarea.inner_text() or "")
+        except Exception:
+            return ""
+
+
+def _composer_is_interactive(textarea: Locator) -> bool:
+    try:
+        return bool(textarea.is_visible() and textarea.is_enabled())
+    except Exception:
+        return False
+
+
+def _wait_composer_ready(
+    page: Page,
+    timeout: float = COMPOSER_READY_TIMEOUT,
+    *,
+    teach: bool = False,
+) -> Locator:
+    """Return Qwen's composer once the page can accept a new message."""
+    deadline = time.time() + max(0.0, timeout)
+    while True:
+        cancellation.check()
+        textarea = _message_box(page, teach=teach)
+        if (
+            textarea is not None
+            and _composer_is_interactive(textarea)
+            and _visible_locator(page, STOP_ACTIVE) is None
+        ):
+            return textarea
+        remaining_time = deadline - time.time()
+        if remaining_time <= 0:
+            break
+        cancellation.wait(min(COMPOSER_READY_TICK, remaining_time))
+    raise TimeoutError("Qwen Studio chat input is not ready")
+
+
 def _composer_accepts_submission(
     page: Page,
     textarea: Locator,
     submitted_text: str,
     *,
-    settle_time: float = COMPOSER_SETTLE_TIME,
+    timeout: float = COMPOSER_ACCEPT_TIMEOUT,
 ) -> bool:
-    """Return true only after Qwen keeps text and enables submission."""
-    ticks = max(1, int(max(0.0, settle_time) / COMPOSER_SETTLE_TICK))
-    send_ready = False
-    for _ in range(ticks):
-        if not controls.control_has_text(textarea, submitted_text):
+    """Return true when Qwen keeps text and enables submission."""
+    deadline = time.time() + max(0.0, timeout)
+    while True:
+        if not _composer_has_submitted_text(textarea, submitted_text):
             return False
         if _send_button(page, timeout=0.0, require_enabled=True, teach=False) is not None:
-            send_ready = True
-        cancellation.wait(COMPOSER_SETTLE_TICK)
-    return (
-        send_ready
-        and controls.control_has_text(textarea, submitted_text)
-        and _send_button(page, timeout=0.0, require_enabled=True, teach=False) is not None
-    )
+            return _composer_has_submitted_text(textarea, submitted_text)
+        remaining_time = deadline - time.time()
+        if remaining_time <= 0:
+            return False
+        cancellation.wait(min(COMPOSER_READY_TICK, remaining_time))
+
+
+def _composer_has_submitted_text(textarea: Locator, submitted_text: str) -> bool:
+    actual = _composer_value(textarea)
+    expected = str(submitted_text or "")
+    if not expected:
+        return False
+    if actual == expected:
+        return True
+    return bool(actual.rstrip()) and actual.rstrip() == expected.rstrip()
 
 
 def _fill_message_until_stable(page: Page, textarea: Locator, text: str) -> str:
@@ -271,8 +319,10 @@ def new_chat(page: Page, timeout: float | None = None) -> None:
             raise
     if deadline is None:
         wait_ready(page)
+        _wait_composer_ready(page)
     else:
         wait_ready(page, timeout=remaining(deadline, READY_TIMEOUT))
+        _wait_composer_ready(page, timeout=remaining(deadline, COMPOSER_READY_TIMEOUT))
 
 
 def _response_count(page: Page) -> int:
@@ -417,6 +467,15 @@ def _submit(page: Page, baseline: int, submitted_text: str = "") -> SendAttempt:
             stage=provider_flow.STAGE_SUBMISSION,
         )
 
+    if submitted_text:
+        textarea = _message_box(page)
+        if textarea is None or not _composer_has_submitted_text(textarea, submitted_text):
+            controls.reject_control(PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page)
+            raise ControlMissing(
+                "Qwen Studio chat input lost the message before submission",
+                stage=provider_flow.STAGE_SUBMISSION,
+            )
+
     attempt = SendAttempt()
     attempt.submit("click", send.click)
     confirm_deadline = time.time() + SUBMIT_CONFIRM_TIMEOUT
@@ -462,17 +521,12 @@ def _chat(
     """Send one message and return the final answer text from Qwen Studio."""
     cancellation.check()
     wait_ready(page)
+    textarea = _wait_composer_ready(page, teach=True)
 
     baseline = _response_count(page)
     baseline_text = _last_text(page) if baseline else ""
 
     with send_loop.response_watch(page, PROVIDER_ID):
-        textarea = _message_box(page, teach=True)
-        if textarea is None:
-            controls.reject_control(
-                PROVIDER_ID, controls.CONTROL_MESSAGE_BOX, page=page
-            )
-            raise ControlMissing("Qwen Studio chat input is not visible")
         try:
             submitted_text = _fill_message_until_stable(page, textarea, text)
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
@@ -569,13 +623,4 @@ def chat(
     tick: float = 0.8,
     min_wait: float = 1.5,
 ) -> str:
-    for attempt in range(MAX_STALLED_RESPONSE_RETRIES + 1):
-        try:
-            return _chat(page, text, response_timeout, stable_ticks, tick, min_wait)
-        except TimeoutError as exc:
-            if (
-                attempt >= MAX_STALLED_RESPONSE_RETRIES
-                or "response timed out" not in str(exc)
-            ):
-                raise
-    raise ResponseMissing(f"Qwen Studio response timed out after {response_timeout:.0f}s")
+    return _chat(page, text, response_timeout, stable_ticks, tick, min_wait)

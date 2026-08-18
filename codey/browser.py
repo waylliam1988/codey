@@ -29,7 +29,8 @@ MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 STEPFUN_URL = "https://chat.stepfun.com/chats/"
 GLM_URL = "https://chatglm.cn/main/alltoolsdetail?lang=zh"
 DEFAULT_PORT = 9222
-CDP_CONNECT_TIMEOUT_MS = 60_000
+CDP_CONNECT_TIMEOUT_MS = 20_000
+CDP_PORT_WAIT_TIMEOUT = 20.0
 WARMUP_CDP_CONNECT_TIMEOUT_MS = 8_000
 WARMUP_NAVIGATION_TIMEOUT_MS = 10_000
 WARMUP_PORT_TIMEOUT = 10.0
@@ -38,6 +39,7 @@ CHROME_PROFILE = DEFAULT_STATE_HOME / "chrome-profile"
 DEFAULT_PROFILE = EDGE_PROFILE
 CDP_PORT_CANDIDATES = tuple(range(DEFAULT_PORT, DEFAULT_PORT + 17))
 CDP_STATE_FILE = DEFAULT_STATE_HOME / "cdp-port.json"
+ISOLATED_CDP_LAUNCH_ATTEMPTS = 3
 PROVIDER_URL_CONTAINS = {
     "deepseek": "chat.deepseek.com",
     "qwen": "chat.qwen.ai",
@@ -186,10 +188,22 @@ def _save_cdp_port(port: int) -> None:
         pass
 
 
+def _cdp_port_family(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
+    preferred = int(preferred)
+    if preferred == DEFAULT_PORT:
+        return CDP_PORT_CANDIDATES
+    return tuple(range(preferred, min(preferred + 9, 65536)))
+
+
 def _candidate_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
+    preferred = int(preferred)
     ports: list[int] = []
-    near_preferred = range(preferred, min(preferred + 9, 65536))
-    for item in (preferred, _active_cdp_port, _load_saved_cdp_port(), *near_preferred, *CDP_PORT_CANDIDATES):
+    port_family = _cdp_port_family(preferred)
+    remembered = (_active_cdp_port, _load_saved_cdp_port())
+    if preferred != DEFAULT_PORT:
+        allowed = set(port_family)
+        remembered = tuple(item for item in remembered if item in allowed)
+    for item in (preferred, *remembered, *port_family):
         if item is None or item in ports:
             continue
         ports.append(int(item))
@@ -260,10 +274,7 @@ def _find_existing_cdp_port(preferred: int = DEFAULT_PORT) -> int | None:
 
 def _remembered_cdp_ports(preferred: int = DEFAULT_PORT) -> tuple[int, ...]:
     ports: list[int] = []
-    if preferred == DEFAULT_PORT:
-        allowed_ports = set(CDP_PORT_CANDIDATES)
-    else:
-        allowed_ports = set(range(preferred, min(preferred + 9, 65536)))
+    allowed_ports = set(_cdp_port_family(preferred))
     for item in (_active_cdp_port, _load_saved_cdp_port()):
         if item is None or item in ports:
             continue
@@ -287,13 +298,17 @@ def _find_free_cdp_port(preferred: int = DEFAULT_PORT) -> int:
     raise RuntimeError("no free CDP port available")
 
 
-def _find_free_isolated_cdp_port(preferred: int = DEFAULT_PORT) -> int:
-    near_preferred = range(preferred, min(preferred + 9, 65536))
-    ports = tuple(dict.fromkeys((preferred, *near_preferred, *CDP_PORT_CANDIDATES)))
+def _find_free_isolated_cdp_port(preferred: int = DEFAULT_PORT, *, exclude: set[int] | None = None) -> int:
+    excluded = set(exclude or ())
+    ports = tuple(dict.fromkeys((int(preferred), *_cdp_port_family(preferred))))
     for cdp_port in ports:
-        if not _port_open(cdp_port):
+        if cdp_port not in excluded and not _port_open(cdp_port):
             return cdp_port
     raise RuntimeError("no free isolated CDP port available")
+
+
+def _isolated_profile_dir(profile: Path, port: int) -> Path:
+    return Path(profile) / f"isolated-{int(port)}"
 
 
 def _ensure_cdp_port(
@@ -311,6 +326,7 @@ def _ensure_cdp_endpoint(
     open_if_missing: bool,
     isolated: bool = False,
     browser_path: str | Path | None = None,
+    wait_timeout: float = 20.0,
 ) -> CdpEndpoint:
     launch_kwargs = {}
     if browser_path is not None:
@@ -318,14 +334,32 @@ def _ensure_cdp_endpoint(
     if isolated:
         if not open_if_missing:
             raise RuntimeError("isolated provider sessions require open_if_missing=True")
-        cdp_port = _find_free_isolated_cdp_port(preferred)
-        process = _launch_browser(cdp_port, profile, start_url, **launch_kwargs)
-        try:
-            _wait_port(cdp_port)
-        except Exception:
-            _terminate_browser_process(process)
-            raise
-        return CdpEndpoint(cdp_port, process)
+        tried_ports: set[int] = set()
+        last_error: Exception | None = None
+        for _attempt in range(ISOLATED_CDP_LAUNCH_ATTEMPTS):
+            cdp_port = _find_free_isolated_cdp_port(preferred, exclude=set(tried_ports))
+            if cdp_port in tried_ports:
+                break
+            tried_ports.add(cdp_port)
+            process = _launch_browser(
+                cdp_port,
+                _isolated_profile_dir(profile, cdp_port),
+                start_url,
+                **launch_kwargs,
+            )
+            try:
+                _wait_port(cdp_port)
+            except cancellation.TaskCancelled:
+                _terminate_browser_process(process)
+                raise
+            except Exception as exc:
+                last_error = exc
+                _terminate_browser_process(process)
+                continue
+            return CdpEndpoint(cdp_port, process)
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("no free isolated CDP port available")
 
     existing = _find_cdp_port_with_target(url_contains, preferred)
     if existing is not None:
@@ -341,7 +375,7 @@ def _ensure_cdp_endpoint(
     cdp_port = _find_free_cdp_port(preferred)
     process = _launch_browser(cdp_port, profile, start_url, **launch_kwargs)
     try:
-        _wait_port(cdp_port)
+        _wait_port(cdp_port, timeout=wait_timeout)
     except Exception:
         _terminate_browser_process(process)
         raise
@@ -553,6 +587,7 @@ def open_chat_page(
         open_if_missing=open_if_missing,
         isolated=isolated,
         browser_path=browser_path,
+        wait_timeout=CDP_PORT_WAIT_TIMEOUT,
     )
 
     pw: Playwright | None = None

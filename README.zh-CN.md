@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.2-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.3-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.2`
+版本：`0.4.3`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -60,6 +60,9 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 - **知道排队 Research 什么时候真的做完**：queued research follow-up 现在只有通过
   deterministic proof review，确认 answer coverage、citation、opened-source evidence、
   locator 和 supports relation 后才会完成；同时会生成安静的 planner signals，供后续补搜使用。
+- **安静规划下一步该查哪类可靠来源**：Research proof gap 现在会进入 deterministic
+  dry-run planner，能偏向 PubMed、arXiv 或本地项目范围内来源，但不会执行搜索，也不改变
+  模型可见工具结果。
 - **自然继续待办**：Codey 有本地排队的后续任务时，你说“继续”就能认领一条，
   走对应的 Research、Writer 或 Review，并用本地 proof 收尾。
 - **先研究再动手**：点击 `Research`，Codey 可以搜索网页、打开 HTML/PDF 来源、保存带 source chips 的可读笔记卡片、可视化局部 note/source 关系图，并生成带引用、反证/限制、来源质量和搜索覆盖的 synthesis。
@@ -256,6 +259,40 @@ citation、已打开来源 evidence、locator/source 一致性、supports relati
 被支持。Run Trace 只记录有界的 `research_proof:<digest>` summary、queued-question
 digest 和 planner-signal 计数；普通手动 Research 不会被这个 gate 阻塞，UI/SSE
 payload、Research prompt、tool schema 和模型可见 tool result 都保持不变。
+
+从 0.4.3 开始，Codey 新增 source connector boundary、deterministic
+ResearchPlan dry-run，以及默认启用的 PubMed/arXiv connector-aware Research
+search。内置 registry 现在有 `local_file`、`csv_tsv`、`json_file`、`arxiv`、
+`pubmed` 的 recorded/local fixtures；`openalex` 后移，`rss` 只是 optional，
+不计入 shipped connector。connector hit 只是来源候选，不是 evidence；只有 fetch/open
+后进入现有 ledger 的来源，后面才可能成为 evidence。planner 只消费 proof-review gap
+和 connector metadata，给出有界 source preference，例如医学/生命科学问题偏 PubMed，
+论文/预印本问题偏 arXiv。生产 Research 对模型暴露 controller-level action：
+`web_search` / `open_result` / `reopen_source` / `open_hit` / `source_search`。
+这些动作会编译到同一条 runtime open/fetch 路径；PubMed/arXiv 细节由本地
+runtime 处理，模型不再看到重载的 `open_url(result_id/source_id/hit_id)` 形状。
+Run Trace 只记录有界 dry-run summary，不保存 raw prompt、source
+body、raw URL 或 raw absolute path，并把模型可见 controller action hash 和编译后的
+runtime tool hash 分开记录。PubMed/arXiv API query 会从 safe terms 构造，raw
+secret、`api key ...` / `api key is ...`，以及 `password is equal to ...`、
+`password is set to ...`、`api key named ...` 这类更长但有界的 marker/value
+窗口、URL、本地路径和 path-like slash token 会在 live connector request 前丢弃。
+浏览器 Research 搜索在普通运行中显式
+复用一个专用 Research profile/port；直接构造 `BrowserSearchProvider()` 仍默认
+isolated，CDP attach/端口等待保持 20 秒上限，取消不会被当成启动/导航失败重试。
+PubMed/arXiv recorded fixture 和 recorded fetch 同时校验 connector host 和 source
+ID 形状，connector result digest 只基于 safe query；`SourceHit` 审计 metadata 会过滤
+secret-looking refs，`SourceHit` 和 `FetchedSource` 的 scalar 审计字段都会走
+allow-list；proof 已完整时的 no-op plan 不再带无关 warning。connector fallback
+错误以及相邻 evidence/proof reason 或 warning code 会以不含 raw request data 的
+有界 summary 写入 Run Trace，
+live transport 的 tool name 和 User-Agent 使用不含产品名的中性标识。
+planner 和 live connector wrapper 共用同一套领域路由词表，包含 RAG/NLP/retrieval/
+benchmark 等论文检索词；registry 的可用状态和能力标记会真正约束 live search/fetch，
+`JAK/STAT` 这类安全科研术语不会被误删，`Docs/ADR/Plan` 这类 CamelCase 路径样式
+slash token 会被丢弃，`secreted`、`secretion` 也不会被当成 secret marker；connector
+遵守严格的总 deadline。Qwen 只等待 composer 可交互且页面不在生成中，再填入消息；点击后即使响应
+确认较慢，也不会重复整轮发送。浏览器 PDF 请求同样使用中性 transport metadata。
 
 从 0.2.20 开始，生产 Research 使用一个很薄的 controller，而不是每轮都把完整工具菜单
 交给模型。Codey 会读取当前 Research ledger，只展示这一轮合理的 allowed tools，并给

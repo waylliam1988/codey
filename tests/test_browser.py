@@ -209,6 +209,15 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             fresh_tab=False,
         )
 
+    def test_research_pdf_request_user_agent_does_not_name_product(self) -> None:
+        from codey.research import browser_search
+
+        request = browser_search._pdf_request("https://example.com/paper.pdf")
+
+        user_agent = request.headers["User-agent"]
+        self.assertEqual(user_agent, "Research PDF Reader")
+        self.assertNotIn("Codey", user_agent)
+
     def test_open_chat_page_can_attach_without_opening_missing_tab(self) -> None:
         pw = mock.Mock()
         browser_obj = mock.Mock()
@@ -228,6 +237,31 @@ class BrowserProviderWrapperTests(unittest.TestCase):
 
         browser_obj.contexts[0].new_page.assert_not_called()
         pw.stop.assert_called_once_with()
+
+    def test_open_chat_page_uses_bounded_cdp_wait_for_cold_launch(self) -> None:
+        ctx = mock.Mock(pages=[mock.Mock(url="https://chatglm.cn/main")])
+        browser_obj = mock.Mock(contexts=[ctx])
+        pw = mock.Mock()
+        pw.chromium.connect_over_cdp.return_value = browser_obj
+
+        with (
+            mock.patch.object(
+                browser,
+                "_ensure_cdp_endpoint",
+                return_value=browser.CdpEndpoint(9222),
+            ) as ensure,
+            mock.patch.object(browser, "_start_playwright_with_retry", return_value=pw),
+        ):
+            session = browser.open_chat_page(
+                "https://chatglm.cn/",
+                "chatglm.cn",
+                port=9222,
+                open_if_missing=True,
+            )
+
+        self.assertIs(session.page, ctx.pages[0])
+        self.assertEqual(ensure.call_args.kwargs["wait_timeout"], browser.CDP_PORT_WAIT_TIMEOUT)
+        self.assertEqual(browser.CDP_PORT_WAIT_TIMEOUT, 20.0)
 
     def test_detect_open_provider_tabs_uses_cdp_target_urls(self) -> None:
         targets = [
@@ -272,6 +306,25 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             ports = browser._candidate_ports(9222)
 
         self.assertEqual(ports[:2], (9222, 9333))
+
+    def test_candidate_ports_scopes_custom_preferred_to_its_port_family(self) -> None:
+        with (
+            mock.patch.object(browser, "_active_cdp_port", 9222),
+            mock.patch.object(browser, "_load_saved_cdp_port", return_value=9223),
+        ):
+            ports = browser._candidate_ports(9262)
+
+        self.assertEqual(ports, tuple(range(9262, 9271)))
+
+    def test_candidate_ports_keeps_remembered_custom_family_port(self) -> None:
+        with (
+            mock.patch.object(browser, "_active_cdp_port", 9265),
+            mock.patch.object(browser, "_load_saved_cdp_port", return_value=9222),
+        ):
+            ports = browser._candidate_ports(9262)
+
+        self.assertEqual(ports[:2], (9262, 9265))
+        self.assertNotIn(9222, ports)
 
     def test_remember_cdp_port_persists_for_next_process(self) -> None:
         with (
@@ -455,7 +508,7 @@ class BrowserProviderWrapperTests(unittest.TestCase):
 
         self.assertEqual(port, 9223)
         launch.assert_called_once_with(9223, Path("profile"), "https://chat.deepseek.com/")
-        wait_port.assert_called_once_with(9223)
+        wait_port.assert_called_once_with(9223, timeout=20.0)
 
     def test_ensure_cdp_port_reuses_existing_browser_before_launching(self) -> None:
         with (
@@ -495,7 +548,11 @@ class BrowserProviderWrapperTests(unittest.TestCase):
         self.assertEqual(port, 9444)
         find_target.assert_not_called()
         find_existing.assert_not_called()
-        launch.assert_called_once_with(9444, Path("worker-profile"), "https://chat.qwen.ai/")
+        launch.assert_called_once_with(
+            9444,
+            Path("worker-profile") / "isolated-9444",
+            "https://chat.qwen.ai/",
+        )
         wait_port.assert_called_once_with(9444)
         save.assert_not_called()
 
@@ -511,6 +568,19 @@ class BrowserProviderWrapperTests(unittest.TestCase):
             port = browser._find_free_isolated_cdp_port(9444)
 
         self.assertEqual(port, 9445)
+
+    def test_isolated_free_port_for_custom_preferred_does_not_scan_default_family(self) -> None:
+        checked_ports: list[int] = []
+
+        def port_open(port: int) -> bool:
+            checked_ports.append(port)
+            return True
+
+        with mock.patch.object(browser, "_port_open", side_effect=port_open):
+            with self.assertRaisesRegex(RuntimeError, "no free isolated CDP port"):
+                browser._find_free_isolated_cdp_port(9444)
+
+        self.assertEqual(checked_ports, list(range(9444, 9453)))
 
     def test_isolated_open_chat_page_closes_launched_browser_process(self) -> None:
         pw = mock.Mock()
@@ -566,6 +636,79 @@ class BrowserProviderWrapperTests(unittest.TestCase):
                     isolated=True,
                 )
 
+        process.terminate.assert_called_once()
+        process.wait.assert_called_once_with(timeout=2)
+
+    def test_isolated_launch_retries_next_free_port_after_timeout(self) -> None:
+        failed_process = mock.Mock()
+        failed_process.poll.return_value = None
+        ok_process = mock.Mock()
+        with (
+            mock.patch.object(
+                browser,
+                "_find_free_isolated_cdp_port",
+                side_effect=[9444, 9445],
+            ) as find_port,
+            mock.patch.object(
+                browser,
+                "_launch_browser",
+                side_effect=[failed_process, ok_process],
+            ) as launch,
+            mock.patch.object(
+                browser,
+                "_wait_port",
+                side_effect=[TimeoutError("no port"), None],
+            ) as wait_port,
+        ):
+            endpoint = browser._ensure_cdp_endpoint(
+                preferred=9444,
+                profile=Path("worker-profile"),
+                start_url="https://chat.qwen.ai/",
+                url_contains="chat.qwen.ai",
+                open_if_missing=True,
+                isolated=True,
+            )
+
+        self.assertEqual(endpoint, browser.CdpEndpoint(9445, ok_process))
+        self.assertEqual(find_port.call_args_list[0].kwargs["exclude"], set())
+        self.assertEqual(find_port.call_args_list[1].kwargs["exclude"], {9444})
+        self.assertEqual(launch.call_count, 2)
+        self.assertEqual(
+            launch.call_args_list[0].args,
+            (9444, Path("worker-profile") / "isolated-9444", "https://chat.qwen.ai/"),
+        )
+        self.assertEqual(
+            launch.call_args_list[1].args,
+            (9445, Path("worker-profile") / "isolated-9445", "https://chat.qwen.ai/"),
+        )
+        self.assertEqual(wait_port.call_args_list[0].args, (9444,))
+        self.assertEqual(wait_port.call_args_list[1].args, (9445,))
+        failed_process.terminate.assert_called_once()
+
+    def test_isolated_launch_cancellation_terminates_process_without_retry(self) -> None:
+        process = mock.Mock()
+        process.poll.return_value = None
+        with (
+            mock.patch.object(browser, "_find_free_isolated_cdp_port", side_effect=[9444, 9445]) as find_port,
+            mock.patch.object(browser, "_launch_browser", return_value=process) as launch,
+            mock.patch.object(
+                browser,
+                "_wait_port",
+                side_effect=browser.cancellation.TaskCancelled("stop"),
+            ),
+        ):
+            with self.assertRaises(browser.cancellation.TaskCancelled):
+                browser._ensure_cdp_endpoint(
+                    preferred=9444,
+                    profile=Path("worker-profile"),
+                    start_url="https://chat.qwen.ai/",
+                    url_contains="chat.qwen.ai",
+                    open_if_missing=True,
+                    isolated=True,
+                )
+
+        find_port.assert_called_once()
+        launch.assert_called_once()
         process.terminate.assert_called_once()
         process.wait.assert_called_once_with(timeout=2)
 

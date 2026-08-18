@@ -1,5 +1,157 @@
 # Codey Test Report
 
+## 0.4.3 Source Connector Boundary + Query Planner Dry Run v1
+
+Codey 0.4.3 adds the Research source boundary, deterministic planner dry-run,
+and the connector-aware PubMed/arXiv Research search path. It lets Codey
+describe which source types should be checked next and can surface PubMed/arXiv
+hits through the normal Research search flow without automatic recursive
+follow-up planning.
+
+Production changes:
+
+- New `codey/research/source_connectors.py` defines `SourceConnectorSpec`,
+  `SourceConnectorRegistry`, `SourceHit`, `FetchedSource`, and
+  `SourceConnectorResult`. The built-in registry ships fixture/local coverage
+  for `local_file`, `csv_tsv`, `json_file`, `arxiv`, and `pubmed`; `openalex`
+  is deferred and `rss` is optional, so neither counts as shipped.
+- Recorded fixtures now cover local text, CSV, TSV, JSON, arXiv Atom, and
+  PubMed XML under `tests/fixtures/research_connectors/`. Fixture hits produce
+  stable source/hit refs. Local reads are confined to explicit allowed roots,
+  CSV/TSV parsing uses Python's `csv` module, and recorded URL hits still pass
+  the Research URL guard before fixture fetch.
+- New `codey/research/query_planner.py` builds a bounded `ResearchPlan`
+  dry-run from proof-review gaps and connector metadata. It prefers PubMed for
+  medical/life-science questions, arXiv for paper/preprint/ML-style questions,
+  and local connectors for file/table/JSON questions.
+- Run Trace now stores bounded `research_plans` summaries: plan ref, question
+  digest, proof ref, query count, source preference ids, max bounds, warnings,
+  and reason codes. It does not store query text, raw prompts, source text,
+  fetched pages, raw URLs, or raw absolute paths. The trace also records
+  model-visible controller action and compiled runtime tool contract hashes as
+  separate audit fields. Non-collection list fields are ignored instead of
+  iterating strings or raising on `None`.
+- The Capability Registry and Event / Capability Matrix declare
+  `research_source_connectors`, `research_connector_search`, and
+  `research_query_planner`. Architecture tests keep connector/planner modules
+  away from provider adapters, browser code, tool runtime, server/TaskRunner
+  runtime layers, Ghost runtime, subprocess, and plugin loaders.
+- PubMed/arXiv connector hits now enter Research search by default through
+  `ConnectorAwareSearchProvider`. They remain locator candidates until opened;
+  only fetched/opened sources can become evidence in the ledger.
+- Live PubMed/arXiv connector queries are built from the shared safe term
+  boundary used by the dry-run planner; raw secrets, secret marker/value windows
+  such as `api key ...`, `api key is ...`, `password is ...`,
+  `password is equal to ...`, `password is set to ...`, `api key named ...`,
+  `private key is ...`, `client_secret=...`, and `Authorization: Bearer ...`,
+  URLs, and local paths are dropped before any source API request. Browser
+  fallback search starts before connector lookup, connector lookup has a short
+  global request budget, direct PubMed/arXiv URL fetch failures fall back to
+  browser fetch, and normal browser result de-duplication keeps
+  query-string-distinct URLs.
+- Recorded PubMed/arXiv fixture parsers and recorded fetches validate both
+  connector-specific host and source-ID shape. `SourceHit` metadata refs and
+  scalar audit fields filter secret-looking values, `FetchedSource` scalar audit
+  fields are allow-listed, connector result query digests use sanitized terms,
+  and proof-complete no-op plans carry no availability-warning noise.
+- Run Trace records bounded connector fallback error summaries as connector,
+  action, error kind, and count only; raw URLs, queries, exception messages, and
+  secret-looking values are excluded. Research plan, evidence-ledger, and
+  proof-review trace sinks share the same bounded list handling and
+  secret-looking reason/warning filtering. Live connector API transport uses a
+  neutral tool name and User-Agent without the product name.
+- The Research controller no longer exposes overloaded
+  `open_url(result_id/source_id/hit_id)` shapes to models. It exposes distinct
+  `open_result`, `reopen_source`, and `open_hit` actions, then compiles those
+  actions to the runtime `open_url` execution path.
+- Browser-backed Research search explicitly reuses one dedicated Research
+  profile/port for ordinary runs. Direct `BrowserSearchProvider()` construction
+  remains isolated by default, and browser attach/port waits are bounded at 20
+  seconds for faster failure feedback. Task cancellation bypasses isolated CDP
+  launch retries and browser search page navigation retries.
+- Model-visible Research prompt, repair, controller, and tool-result surfaces no
+  longer name the product when giving protocol instructions or evidence
+  fallback warnings; provider-specific transport quirks, such as GLM's
+  typographic JSON quotes, stay in the provider adapter instead of the generic
+  Research protocol parser. The Research fallback contract no longer carries a
+  tool or argument alias layer; legacy names such as `open`, `fetch`,
+  `queries`, and `done.summary` fail through the typed protocol path.
+- Planner and live connector routing share one domain vocabulary, including
+  genetic/genomic and RAG/NLP/retrieval/benchmark terms. Registry
+  availability/capability flags are enforced by the live wrapper; connector
+  deadlines are strict, safe scientific slash terms are preserved, path-like
+  slash tokens including CamelCase path shapes are rejected, and shared
+  redaction helpers split marker words from key-shaped values so ordinary words
+  such as `secreted` and `secretion` remain searchable.
+- Qwen waits only for an interactive, non-generating composer before filling,
+  retries only the input-fill phase when hydration clears the draft, rejects a
+  lost message before clicking, and never repeats a whole send because
+  post-click response confirmation is slow. Browser PDF transport also uses a
+  neutral User-Agent.
+
+Validation during implementation:
+
+```text
+python -m py_compile codey\research\source_connectors.py codey\research\connector_search.py codey\research\protocols.py codey\research\tool_contract.py codey\research\runner.py codey\run_trace.py tests\manual\research_repair_prompt_ab.py tests\manual\deep_research_core_ab.py
+# passed
+
+python -m pytest tests\test_source_connectors.py tests\test_connector_search.py tests\test_run_trace.py tests\test_research_protocol_contract.py -q
+# 86 passed in 1.30s
+
+python -m pytest tests\test_source_connectors.py tests\test_connector_search.py tests\test_query_planner.py tests\test_browser.py tests\test_research.py tests\test_run_trace.py tests\test_architecture.py -q
+# 228 passed, 122 subtests passed in 14.46s
+
+ruff check codey tests
+# All checks passed!
+
+python -m compileall -q codey tests
+# passed
+
+python -m pytest -q
+# 2175 passed, 9 skipped, 621 subtests passed in 410.84s (0:06:50)
+
+python -m pytest tests\test_source_connectors.py tests\test_query_planner.py tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_capabilities.py tests\test_event_matrix.py tests\test_architecture.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q -p no:cacheprovider
+# 91 passed, 308 subtests passed
+
+python -m pytest tests\test_glm.py tests\test_research_protocol_contract.py tests\test_research_controller.py -q
+# 73 passed
+
+python -m pytest tests\test_browser.py -q -p no:cacheprovider
+# 49 passed
+
+python -B tests\manual\source_connector_ab.py --self-test
+# self-test ok
+
+python -m pytest tests\test_source_connectors.py tests\test_query_planner.py tests\test_connector_search.py tests\test_research_controller.py tests\test_research.py tests\test_server.py tests\test_run_trace.py tests\test_capabilities.py tests\test_architecture.py tests\test_browser.py tests\test_qwen.py tests\test_glm.py -q -p no:cacheprovider
+# 505 passed, 1 skipped, 121 subtests passed in 169.07s (0:02:49)
+
+ruff check codey tests
+# All checks passed!
+
+python -m compileall codey tests
+# passed
+
+python -m pytest -q -p no:cacheprovider
+# 2154 passed, 9 skipped, 619 subtests passed in 368.31s (0:06:08)
+
+python -m pytest tests\test_source_connectors.py tests\test_research_proof_quality.py tests\test_research.py tests\test_browser.py tests\test_qwen.py -q
+# 222 passed, 7 subtests passed in 13.88s
+
+python -m pytest -q
+# 2160 passed, 9 skipped, 619 subtests passed in 449.47s (0:07:29)
+```
+
+Live provider A/B is recorded under `tests/manual/results/` with atomic row
+writes so failed or missing rows can be resumed without rerunning completed
+provider traffic. The connector path is promoted as normal 0.4.3 behavior
+because the smoke showed source-selection value without breaking the controller
+contract: DeepSeek improved PubMed targeting, MiMo and StepFun connector arms
+opened PubMed target hosts, Qwen improved on arXiv after the provenance fix, and
+DeepSeek/Qwen/MiMo/StepFun/GLM all reached arXiv target hosts in at least one
+recorded arm. The live evidence is connector smoke, not a proof-quality win
+claim: several providers still stopped at `max_turns` or protocol repair, and
+GLM PubMed rerun was paused after repeated attempts hit provider rate limits.
+
 ## 0.4.2 Research Proof Quality Gate + Planner Signals v0
 
 Codey 0.4.2 adds a deterministic Research proof-quality gate for queued
@@ -2644,8 +2796,8 @@ git diff --check
 Codey 0.2.20 moves the manual thin-gate direction into production Research as a
 thin, state-aware controller. The controller does not plan the research path and
 does not replace the existing tool contract or report quality gate. It reads the
-current ledger, appends a small allowed-actions block, and rewrites stable IDs
-into ordinary tool arguments before execution.
+current ledger, appends a small allowed-actions block, and compiles stable-ID
+actions into ordinary runtime tool arguments before execution.
 
 Production changes:
 
@@ -2656,8 +2808,9 @@ Production changes:
   Instead, Codey appends the current allowed-actions block every turn.
 - Search results, opened sources, and source_search hits get run-global stable
   IDs: `result_id`, `source_id`, and `hit_id`.
-- `open_url(result_id/source_id/hit_id)` and `source_search(source_id)` are
-  rewritten before `JsonToolCodec` validates the final ordinary arguments.
+- Current controller protocol exposes distinct `open_result(result_id)`,
+  `reopen_source(source_id, offset/pages)`, and `open_hit(hit_id)` actions
+  before `JsonToolCodec` validates the final ordinary runtime arguments.
 - `knowledge_write` may use `source_id` in `sources` and
   `evidence.source_url`; the controller rewrites those IDs to final opened URLs.
 - `done` is allowed after saved evidence exists, with a narrow near-limit escape
@@ -2670,15 +2823,16 @@ Validation focus:
   and `web_search`.
 - `r1/r2/...` stay stable across multiple web searches even when later searches
   reorder or repeat URLs.
-- `open_url` with `result_id` dispatches to the correct URL.
+- `open_result` with `result_id` dispatches to the correct runtime open URL.
 - `source_search` and `knowledge_write` can use `source_id`.
-- `open_url` with `hit_id` opens the correct PDF page or HTML offset target.
+- `open_hit` opens the correct PDF page or HTML offset target.
 - Controller blocks display the most recent result/source/hit IDs while keeping
   older ID mappings valid for parsing.
 - Unknown `result_id`, `source_id`, and `hit_id` return typed `invalid_args`
   repairs instead of falling through to handwritten arguments.
-- Stable IDs override conflicting handwritten URLs, so a model cannot combine
-  `result_id/source_id/hit_id` with an unrelated `url` to bypass the controller.
+- Stable-ID actions override conflicting handwritten URLs, so a model cannot
+  combine `result_id/source_id/hit_id` with an unrelated `url` to bypass the
+  controller.
 - Early `done` is rejected as `disallowed_tool`; `done` becomes allowed after
   saved evidence or near the turn limit for insufficient-evidence reporting.
 - `controller_enabled=False` preserves the full old Research prompt for manual
@@ -2831,8 +2985,8 @@ Validation focus:
 
 - `source_search` missing `query` returns `invalid_args` with a source_search
   example.
-- `queries` aliases normalize to `query`; `summary` / `text` normalize to
-  `done.answer`.
+- Legacy tool and argument aliases such as `open`/`fetch`, `queries`, and
+  `done.summary` are rejected instead of normalized.
 - `open_url offset="12"` is accepted, while `offset="abc"` is rejected.
 - `knowledge_write.evidence` accepts a single object by normalizing it to a
   one-item list, but rejects non-object evidence entries such as `["bad"]`.
@@ -2958,9 +3112,10 @@ Production changes:
 - Qwen now fills the composer until the text remains stable for a short settle
   window. If the page finishes hydration and clears the draft, Codey refills a
   bounded number of times before submitting.
-- Research dispatch accepts a single search query from either `query` or the
-  model-emitted `queries` alias for `web_search` and `knowledge_search`.
-- The manual `source_search` A/B arm uses the same query normalization.
+- Research dispatch now requires canonical `query` args; model-emitted
+  `queries` aliases fail through the normal protocol/argument error path.
+- The manual `source_search` A/B arm keeps its own historical diagnostics, but
+  production Research no longer treats `queries` as a success path.
 - Manual A/B harness `fresh_tab` and `keep_open_on_error` controls now default
   to `False`, preserving older scripted calls.
 - Report quality accepts URL-first numbered source entries such as
@@ -3133,8 +3288,9 @@ Production changes:
 - Research provenance parsing treats Chinese brackets, backticks, and quotes as
   URL boundaries, avoiding false unopened-source failures for ordinary Markdown
   or Chinese prose.
-- CDP attach timeout was increased from 30s to 60s for loaded browser sessions;
-  warmup timeouts are unchanged.
+- CDP attach timeout was temporarily raised for loaded browser sessions in this
+  historical release; the current 0.4.3 path has since restored the default
+  browser attach/port waits to 20s for faster failure feedback.
 
 Manual Research A/B changes:
 

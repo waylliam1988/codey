@@ -333,6 +333,21 @@ def test_planner_signals_do_not_echo_raw_url_path_or_secret_terms() -> None:
     assert "E:/secret/project" not in serialized
 
 
+def test_planner_signals_keep_secreted_science_terms() -> None:
+    record = _record(question="secreted insulin secretion pathway")
+    ledger = _ledger_payload(record)
+
+    review = review_research_proof(
+        record,
+        question="secreted insulin secretion pathway",
+        evidence_ledger=ledger,
+        require_ledger_record=True,
+    )
+    serialized = json.dumps(review.to_payload(), ensure_ascii=False)
+
+    assert "secreted insulin secretion pathway" in serialized
+
+
 def test_assumption_claim_does_not_count_as_supported_answer() -> None:
     record = _record()
     conclusion = next(claim for claim in record.claims if claim.claim_section == "conclusion")

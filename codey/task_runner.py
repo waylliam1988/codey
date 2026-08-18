@@ -80,8 +80,10 @@ from codey.run_ledger_projection import (
 )
 from codey.run_trace import RunTraceStore
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
+from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.proof_quality import proof_review_trace_payload, review_research_proof
+from codey.research.query_planner import build_research_plan, research_plan_trace_payload
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
 from codey.review import has_reviewable_changes
@@ -316,6 +318,28 @@ def _record_research_proof_review_trace(trace: Any | None, review: Any) -> None:
     sink.call("flush")
 
 
+def _record_research_plan_trace(
+    trace: Any | None,
+    review: Any,
+    *,
+    question: str = "",
+) -> None:
+    if trace is None or review is None:
+        return
+    try:
+        plan = build_research_plan(review, question=question)
+        payload = research_plan_trace_payload(plan)
+    except Exception:
+        return
+    sink = FailOpenPromptTrace(trace)
+    sink.call("record_research_plan", payload)
+    sink.call("flush")
+
+
+def _default_research_search_provider() -> ConnectorAwareSearchProvider:
+    return ConnectorAwareSearchProvider(BrowserSearchProvider(isolated=False))
+
+
 def _research_queue_item_title(item: GhostWorkItem | None) -> str:
     if item is None:
         return ""
@@ -491,6 +515,7 @@ def _render_review_only_summary(review: object) -> str:
 
 def _research_payload(result) -> dict:
     return {
+        "max_turns_used": int(getattr(result, "max_turns_used", 0) or 0),
         "synthesis_id": result.synthesis_id,
         "notes_created": result.notes_created,
         "notes_updated": result.notes_updated,
@@ -555,7 +580,7 @@ class TaskRunner:
         self.builtin_profiles = builtin_profiles
         self.managed_outputs = managed_outputs
         self.knowledge_store = knowledge_store
-        self.search_factory = search_factory or BrowserSearchProvider
+        self.search_factory = search_factory or _default_research_search_provider
         self.is_git_repository = is_git_repository or (lambda _project: False)
         self.review_fix_turns = review_fix_turns
         self.review_log_lines = review_log_lines
@@ -965,6 +990,11 @@ class TaskRunner:
                         )
                     else:
                         _record_research_proof_review_trace(frame.trace, decision.review)
+                        _record_research_plan_trace(
+                            frame.trace,
+                            decision.review,
+                            question=_research_queue_item_title(item) or frame.request.task,
+                        )
                         store.block_item(
                             item.id,
                             run_id=frame.run_id,
@@ -1893,6 +1923,11 @@ class TaskRunner:
             question=proof_question,
         )
         _record_research_proof_review_trace(frame.trace, proof_review)
+        _record_research_plan_trace(
+            frame.trace,
+            proof_review,
+            question=proof_question or getattr(result, "question", "") or request.task,
+        )
         state.set_provider_session(
             frame.provider_id,
             None if result.stop_reason == "stopped" else request.session_id,
@@ -1930,7 +1965,7 @@ class TaskRunner:
             "summary": result.summary,
             "stop_reason": result.stop_reason,
             "turns": result.turns,
-            "max_turns": request.max_turns,
+            "max_turns": int(getattr(result, "max_turns_used", 0) or request.max_turns),
             "provider": frame.provider_id,
             "mode": "research",
             "receipt": receipt,
@@ -1964,6 +1999,11 @@ class TaskRunner:
         _record_research_result_trace(frame.trace, research_result)
         proof_review = self._review_research_result_proof(frame, research_result)
         _record_research_proof_review_trace(frame.trace, proof_review)
+        _record_research_plan_trace(
+            frame.trace,
+            proof_review,
+            question=getattr(research_result, "question", "") or request.task,
+        )
         if research_result.stop_reason != "done":
             return _ModeOutcome({
                 "type": "task_done",
@@ -1972,7 +2012,7 @@ class TaskRunner:
                 "summary": research_result.summary,
                 "stop_reason": research_result.stop_reason,
                 "turns": research_result.turns,
-                "max_turns": request.max_turns,
+                "max_turns": int(getattr(research_result, "max_turns_used", 0) or request.max_turns),
                 "provider": frame.provider_id,
                 "mode": "research",
                 "receipt": {"text": research_result.receipt},

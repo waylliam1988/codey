@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.2-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.3-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.2`
+Version: `0.4.3`
 
 [Version history](CHANGELOG.md)
 
@@ -72,6 +72,10 @@ Version: `0.4.2`
   complete only after a deterministic proof review verifies answer coverage,
   citations, opened-source evidence, locators, and support relations. The review
   also produces quiet planner signals for future follow-up search.
+- **Plan the next reliable source type quietly**: Research proof gaps now feed a
+  deterministic dry-run planner that can prefer PubMed, arXiv, or local
+  project-scoped sources without executing searches or changing model-visible
+  tool results.
 - **Continue saved work naturally**: when Codey has a queued local follow-up,
   saying "continue" can claim one item and run the right path with proof.
 - **Research before building**: click `Research` to let Codey search the web, open HTML/PDF sources, save readable note cards with source chips, visualize the local note/source graph, and produce a cited synthesis with counter-evidence, source quality, and search coverage.
@@ -318,6 +322,50 @@ It writes only a bounded `research_proof:<digest>` summary, queued-question
 digest, and planner-signal counts into Run Trace. Ordinary manual Research is
 not blocked by this gate, and the UI/SSE payload, Research prompt, tool schema,
 and model-visible tool results remain unchanged.
+
+In 0.4.3, Codey adds a source connector boundary, a deterministic ResearchPlan
+dry-run, and connector-aware Research search for PubMed/arXiv. The built-in
+registry ships recorded/local fixtures for `local_file`, `csv_tsv`,
+`json_file`, `arxiv`, and `pubmed`; `openalex` is deferred and `rss` is
+optional, so they do not count as shipped connectors. Connector hits are
+locator candidates, not evidence: only a fetched/opened source can later become
+evidence through the existing ledger. The planner uses proof-review gaps and
+connector metadata to choose bounded source preferences, for example PubMed for
+medical or life-science questions and arXiv for papers or preprints. Production
+Research exposes a controller-level action surface:
+`web_search`/`open_result`/`reopen_source`/`open_hit`/`source_search`.
+Those actions compile to the same runtime open/fetch path, so PubMed/arXiv
+details stay inside Codey while the model sees unambiguous IDs instead of
+overloaded `open_url` shapes. Run Trace stores only bounded dry-run summaries
+without raw prompt text, source bodies, raw URLs, or raw absolute paths, and it
+records the model-visible controller action hash separately from the compiled
+runtime tool hash. PubMed/arXiv API queries are built from safe terms, so raw
+secrets, secret marker/value windows such as `api key ...` or
+`api key is ...`, plus longer connector phrases such as
+`password is equal to ...`, `password is set to ...`, and
+`api key named ...`, URLs, local paths, and path-like slash tokens are dropped
+before live connector requests.
+Browser-backed Research search explicitly reuses one dedicated Research
+profile/port for ordinary runs, while direct `BrowserSearchProvider()`
+construction stays isolated by default, CDP attach/port waits stay bounded at
+20 seconds, and cancellation is not retried as a launch/navigation failure.
+Recorded PubMed/arXiv fixtures and recorded fetches validate both connector
+host and source-ID shape, connector result digests derive from safe query
+terms, `SourceHit` audit payloads filter secret-looking refs and allow-list
+scalar fields, `FetchedSource` audit payloads allow-list fetched scalar fields,
+and proof-complete no-op plans stay warning-free.
+Bounded connector fallback errors and adjacent evidence/proof reason or warning
+codes are recorded in Run Trace without raw request data, while live transport
+metadata uses a neutral tool name and User-Agent.
+The planner and live connector wrapper share one domain-routing table with
+RAG/NLP/retrieval/benchmark terms, enforce registry availability/capability
+flags, keep safe scientific terms such as `JAK/STAT`, drop CamelCase
+path-like slash tokens such as `Docs/ADR/Plan`, avoid treating `secreted` or
+`secretion` as secret markers, and use a strict connector deadline. Qwen waits
+for an interactive, non-generating
+composer before filling it and never repeats a whole send after a slow
+post-click response confirmation; browser PDF requests also use neutral
+transport metadata.
 
 In 0.2.20, production Research uses a thin controller instead of exposing the
 full tool menu every turn. Codey reads the current Research ledger, shows only

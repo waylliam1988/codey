@@ -29,7 +29,6 @@ class ToolContract:
     name: str
     required: dict[str, type] = field(default_factory=dict)
     optional: dict[str, ToolArg] = field(default_factory=dict)
-    aliases: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -44,7 +43,6 @@ TOOL_CONTRACTS = {
     "web_search": ToolContract(
         name="web_search",
         required={"query": str},
-        aliases={"queries": "query"},
     ),
     "open_url": ToolContract(
         name="open_url",
@@ -59,17 +57,14 @@ TOOL_CONTRACTS = {
         name="source_search",
         required={"url": str, "query": str},
         optional={"limit": ToolArg(int, 6)},
-        aliases={"queries": "query"},
     ),
     "knowledge_search": ToolContract(
         name="knowledge_search",
         required={"query": str},
-        aliases={"queries": "query"},
     ),
     "knowledge_read": ToolContract(
         name="knowledge_read",
         required={"id": str},
-        aliases={"note_id": "id"},
     ),
     "knowledge_write": ToolContract(
         name="knowledge_write",
@@ -97,7 +92,6 @@ TOOL_CONTRACTS = {
         name="done",
         required={"answer": str},
         optional={"open_questions": ToolArg(list, None, singleton_dict=True, list_item_type=str)},
-        aliases={"summary": "answer", "text": "answer"},
     ),
 }
 
@@ -106,7 +100,7 @@ def validate_tool_args(tool: str, args: dict[str, Any]) -> ContractResult:
     contract = TOOL_CONTRACTS.get(tool)
     if contract is None:
         return ContractResult(False, error=f"unknown tool: {tool}", error_kind=PROTOCOL_UNKNOWN_TOOL)
-    normalized = _apply_aliases(args, contract.aliases)
+    normalized = dict(args)
     output: dict[str, Any] = {}
     for name, expected in contract.required.items():
         if name not in normalized:
@@ -177,7 +171,6 @@ def research_tool_contract_hash(*, include_source_search: bool = True) -> str:
                 "name": name,
                 "required": sorted(TOOL_CONTRACTS[name].required),
                 "optional": sorted(TOOL_CONTRACTS[name].optional),
-                "aliases": sorted(TOOL_CONTRACTS[name].aliases.items()),
                 "example": tool_example(name),
             }
             for name in tools
@@ -185,17 +178,6 @@ def research_tool_contract_hash(*, include_source_search: bool = True) -> str:
     }
     data = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     return "sha256:" + hashlib.sha256(data.encode("utf-8")).hexdigest()
-
-
-def _apply_aliases(args: dict[str, Any], aliases: dict[str, str]) -> dict[str, Any]:
-    normalized = dict(args)
-    for alias, target in aliases.items():
-        if target in normalized:
-            continue
-        if alias in normalized:
-            normalized[target] = normalized[alias]
-    return normalized
-
 
 def _coerce(
     tool: str,

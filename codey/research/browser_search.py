@@ -24,6 +24,7 @@ _PROFILES_PATH = Path(__file__).with_name("search_profiles.json")
 RESEARCH_PROFILE = DEFAULT_STATE_HOME / "research-edge-profile"
 RESEARCH_CDP_PORT = DEFAULT_PORT + 40
 _NAV_TIMEOUT_MS = 20_000
+_SEARCH_NAV_ATTEMPTS = 2
 _CONTENT_RETRY_TIMEOUT = 3.0
 _CONTENT_RETRY_TICK = 0.2
 _MAX_PAGE_CHARS = 200_000
@@ -121,6 +122,15 @@ class BrowserSearchProvider:
                 self._bring_to_front_on_browser_thread(self._search_page)
         return self._prepare_page_on_browser_thread(self._search_page)
 
+    def _replace_search_page_on_browser_thread(self):
+        session = self._ensure_session_on_browser_thread(reuse_url_contains=self._reuse_url_contains)
+        context = self._page_context_on_browser_thread(self._search_page or session.page)
+        page = context.new_page()
+        self._search_page = page
+        if self.bring_to_front:
+            self._bring_to_front_on_browser_thread(page)
+        return self._prepare_page_on_browser_thread(page)
+
     def _ensure_fetch_page_on_browser_thread(self, url: str):
         session = self._ensure_session_on_browser_thread()
         if self._page_closed_on_browser_thread(self._fetch_page):
@@ -168,7 +178,27 @@ class BrowserSearchProvider:
         return results
 
     def _search_on_browser_thread(self, query: str, limit: int) -> list[dict]:
-        page = self._ensure_search_page_on_browser_thread()
+        last_error: Exception | None = None
+        for attempt in range(_SEARCH_NAV_ATTEMPTS):
+            page = (
+                self._ensure_search_page_on_browser_thread()
+                if attempt == 0
+                else self._replace_search_page_on_browser_thread()
+            )
+            try:
+                return self._search_page_results_on_browser_thread(page, query, limit)
+            except cancellation.TaskCancelled:
+                raise
+            except Exception as exc:
+                last_error = exc
+                self._discard_page_on_browser_thread(page)
+                if page is self._search_page:
+                    self._search_page = None
+        if last_error is not None:
+            raise last_error
+        return []
+
+    def _search_page_results_on_browser_thread(self, page, query: str, limit: int) -> list[dict]:
         url = self._profile["search_url"].format(query=quote_plus(query))
         page.goto(url, wait_until="domcontentloaded")
         results: list[dict] = []
@@ -234,6 +264,9 @@ class BrowserSearchProvider:
         try:
             response = page.goto(url, wait_until="domcontentloaded")
         except Exception as exc:
+            self._discard_page_on_browser_thread(page)
+            if page is self._fetch_page:
+                self._fetch_page = None
             return {"url": url, "title": "", "text": f"ERROR: could not load page: {exc}", "truncated": False}
         final_url = page.url or url
         if final_url != url:
@@ -277,6 +310,15 @@ class BrowserSearchProvider:
         try:
             page.unroute("**/*", self._guard_request)
             setattr(page, "_codey_research_guarded", False)
+        except Exception:
+            pass
+
+    def _discard_page_on_browser_thread(self, page) -> None:
+        if page is None:
+            return
+        self._release_page_guard_on_browser_thread(page)
+        try:
+            page.close()
         except Exception:
             pass
 
@@ -494,7 +536,7 @@ def _pdf_request(url: str) -> urllib.request.Request:
         url,
         headers={
             "Accept": "application/pdf,*/*;q=0.8",
-            "User-Agent": "Codey Research",
+            "User-Agent": "Research PDF Reader",
         },
     )
 

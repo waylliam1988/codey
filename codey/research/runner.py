@@ -25,7 +25,10 @@ from codey.research.advisors import EvidenceNote, EvidencePack
 from codey.research.controller import (
     ResearchController,
     ResearchControlState,
+    controller_action_contract_hash,
     controller_system_prompt,
+    controller_tool_example,
+    format_controller_results,
 )
 from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.report_quality import ReportQualityReview, review_report_quality
@@ -45,6 +48,8 @@ from codey.research.tool_contract import (
 from codey.research.tools import ResearchTools
 
 DEFAULT_MAX_TURNS = 14
+COMPLETION_EXTENSION_TURNS = 4
+MAX_EFFECTIVE_TURNS = 18
 MAX_PROTOCOL_ERRORS = 2
 MAX_IDLE_TURNS = 2
 RECENT_CONTEXT_LIMIT = 8
@@ -60,20 +65,19 @@ _ACTIVITY = {
 }
 
 
-def first_text_arg(args: dict, key: str, *aliases: str) -> str:
-    for name in (key, *aliases):
-        value = args.get(name)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-        if isinstance(value, (list, tuple)):
-            for item in value:
-                text = str(item or "").strip()
-                if text:
-                    return text
-        if value not in (None, "") and not isinstance(value, (dict, list, tuple)):
-            text = str(value).strip()
+def first_text_arg(args: dict, key: str) -> str:
+    value = args.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            text = str(item or "").strip()
             if text:
                 return text
+    if value not in (None, "") and not isinstance(value, (dict, list, tuple)):
+        text = str(value).strip()
+        if text:
+            return text
     return ""
 
 
@@ -99,6 +103,7 @@ class ResearchRunResult:
     synthesis_id: str = ""
     advisor_count: int = 0
     research_record: ResearchRecord | None = None
+    max_turns_used: int = DEFAULT_MAX_TURNS
 
     @property
     def receipt(self) -> str:
@@ -172,11 +177,23 @@ class ResearchRunner:
             phase="research",
         )
         try:
+            include_source_search = bool(getattr(self.codec, "include_source_search", True))
+            model_contract_hash = (
+                controller_action_contract_hash(include_source_search=include_source_search)
+                if self.controller is not None
+                else self.codec.model_tool_contract_hash()
+            )
             self.prompt_trace.call(
                 "record_tool_contract_hash",
-                self.codec.model_tool_contract_hash(),
+                model_contract_hash,
                 phase="research",
             )
+            if self.controller is not None:
+                self.prompt_trace.call(
+                    "record_runtime_tool_contract_hash",
+                    self.codec.model_tool_contract_hash(),
+                    phase="research",
+                )
         except Exception:
             pass
         self.prompt_trace.record_section(PromptEnvelopeSection(
@@ -187,7 +204,13 @@ class ResearchRunner:
             source_refs=("request:research_request",),
         ))
         if not question:
-            self.result = ResearchRunResult(question="", summary="", stop_reason="empty", turns=0)
+            self.result = ResearchRunResult(
+                question="",
+                summary="",
+                stop_reason="empty",
+                turns=0,
+                max_turns_used=self.max_turns,
+            )
             yield RunEvent.info("empty question; nothing to research")
             yield self._done_event()
             return
@@ -195,7 +218,13 @@ class ResearchRunner:
             cancellation.check()
             self.provider.new_chat()
         except cancellation.TaskCancelled:
-            self.result = ResearchRunResult(question=question, summary="", stop_reason="stopped", turns=0)
+            self.result = ResearchRunResult(
+                question=question,
+                summary="",
+                stop_reason="stopped",
+                turns=0,
+                max_turns_used=self.max_turns,
+            )
             yield RunEvent.info("stop requested")
             yield self._done_event()
             return
@@ -210,7 +239,14 @@ class ResearchRunner:
         advisor_count = 0
         final_review: ReportQualityReview | None = None
         final_open_questions: list[str] = []
-        for turn in range(1, self.max_turns + 1):
+        turn_limit = self.max_turns
+        extension_limit = max(
+            turn_limit,
+            min(MAX_EFFECTIVE_TURNS, turn_limit + COMPLETION_EXTENSION_TURNS),
+        )
+        for turn in range(1, extension_limit + 1):
+            if turn > turn_limit:
+                break
             if self._stop_requested():
                 stop_reason = "stopped"
                 stop_announced = True
@@ -270,9 +306,15 @@ class ResearchRunner:
                     if _outcome_model_text(r[1]).startswith(("ERROR:", "NEEDS_OPEN:"))
                 ]
                 if failed:
-                    message = self.codec.format_results(_tool_results(results)) + (
+                    turn_limit = _maybe_extend_completion_turns(
+                        turn_limit,
+                        extension_limit=extension_limit,
+                        turn=turn,
+                        tools=self.tools,
+                    )
+                    message = self._format_results(_tool_results(results)) + (
                         "\n\nResolve the ERROR or NEEDS_OPEN results before calling done. "
-                        "Open cited pages with open_url before saving facts, and link only notes that exist."
+                        "Open cited source pages before saving facts, and link only notes that exist."
                     )
                     continue
                 summary_candidate = plan.control.body.strip()
@@ -284,10 +326,17 @@ class ResearchRunner:
                 )
                 if not review.ok:
                     yield RunEvent.info(review.message)
+                    turn_limit = _maybe_extend_completion_turns(
+                        turn_limit,
+                        extension_limit=extension_limit,
+                        turn=turn,
+                        tools=self.tools,
+                    )
                     message = _quality_review_followup(
                         self.codec,
                         _tool_results(results),
                         review.message,
+                        controller_enabled=self.controller is not None,
                     )
                     continue
                 if self.review_advisors is not None and not advisor_reviewed:
@@ -296,6 +345,12 @@ class ResearchRunner:
                     advisor_count = len(advices)
                     if advices:
                         yield RunEvent.info("research evidence review completed", names=f"{advisor_count} advisor(s)")
+                        turn_limit = _maybe_extend_completion_turns(
+                            turn_limit,
+                            extension_limit=extension_limit,
+                            turn=turn,
+                            tools=self.tools,
+                        )
                         message = _advisor_followup_prompt(summary_candidate, advices)
                         continue
                 yield RunEvent.info(review.message, warnings=list(review.warnings))
@@ -314,7 +369,7 @@ class ResearchRunner:
                 message = self.codec.repair_prompt()
                 continue
             idle_turns = 0
-            message = self.codec.format_results(_tool_results(results))
+            message = self._format_results(_tool_results(results))
         synthesis_id = ""
         if summary:
             synthesis_id = self._persist_synthesis(question, summary, open_questions=final_open_questions)
@@ -354,6 +409,7 @@ class ResearchRunner:
             synthesis_id=synthesis_id,
             advisor_count=advisor_count,
             research_record=research_record,
+            max_turns_used=turn_limit,
         )
         self.prompt_trace.call(
             "record_research_notes",
@@ -364,6 +420,10 @@ class ResearchRunner:
             ],
         )
         self.prompt_trace.call("record_research_sources", self.result.opened_sources)
+        self.prompt_trace.call(
+            "record_research_connector_errors",
+            list(getattr(self.search, "last_connector_errors", [])),
+        )
         if self.result.research_record is not None:
             self.prompt_trace.call(
                 "record_research_record_summary",
@@ -375,7 +435,7 @@ class ResearchRunner:
         cancellation.check()
         args = call.args
         if call.name == "web_search":
-            return _Outcome(self.tools.web_search(first_text_arg(args, "query", "queries")))
+            return _Outcome(self.tools.web_search(first_text_arg(args, "query")))
         if call.name == "open_url":
             return _Outcome(self.tools.open_url(
                 str(args.get("url") or ""),
@@ -386,13 +446,13 @@ class ResearchRunner:
         if call.name == "source_search":
             return _Outcome(self.tools.source_search(
                 str(args.get("url") or ""),
-                first_text_arg(args, "query", "queries"),
+                first_text_arg(args, "query"),
                 args.get("limit", 6),
             ))
         if call.name == "knowledge_search":
-            return _Outcome(self.tools.knowledge_search(first_text_arg(args, "query", "queries")))
+            return _Outcome(self.tools.knowledge_search(first_text_arg(args, "query")))
         if call.name == "knowledge_read":
-            return _Outcome(self.tools.knowledge_read(str(args.get("id") or args.get("note_id") or "")))
+            return _Outcome(self.tools.knowledge_read(str(args.get("id") or "")))
         if call.name == "knowledge_write":
             output = self.tools.knowledge_write(args)
             return _Outcome(output, changed=output.startswith("saved "))
@@ -598,6 +658,11 @@ class ResearchRunner:
             f"research done: {result.receipt}",
         )
 
+    def _format_results(self, results: list[ToolResult]) -> str:
+        if self.controller is not None:
+            return format_controller_results(results)
+        return self.codec.format_results(results)
+
 
 def _plan_note(plan) -> str:
     if plan.control is not None and plan.control.kind == "done":
@@ -608,6 +673,34 @@ def _plan_note(plan) -> str:
         kind = str(getattr(plan, "protocol_error_kind", "") or "").strip()
         return f"({kind or 'no tool call'})"
     return ""
+
+
+def _maybe_extend_completion_turns(
+    current_limit: int,
+    *,
+    extension_limit: int,
+    turn: int,
+    tools: ResearchTools,
+) -> int:
+    if current_limit >= extension_limit or int(turn or 0) < max(1, current_limit - 1):
+        return current_limit
+    if not _has_completion_material(tools):
+        return current_limit
+    return extension_limit
+
+
+def _has_completion_material(tools: ResearchTools) -> bool:
+    ledger = getattr(tools, "ledger", None)
+    if ledger is not None and (
+        getattr(ledger, "opened_sources", None)
+        or getattr(ledger, "evidence_items", None)
+    ):
+        return True
+    return bool(
+        getattr(tools, "sources_read", None)
+        or getattr(tools, "created_ids", None)
+        or getattr(tools, "updated_ids", None)
+    )
 
 
 def _recent_context(store: KnowledgeStore, session_id: str, limit: int = RECENT_CONTEXT_LIMIT) -> str:
@@ -639,7 +732,14 @@ def _quality_review_followup(
     codec: ProtocolCodec,
     results: list[ToolResult],
     message: str,
+    *,
+    controller_enabled: bool = False,
 ) -> str:
+    action_hint = (
+        "web_search/open_result/reopen_source/open_hit/knowledge_write"
+        if controller_enabled
+        else "web_search/open_url/knowledge_write"
+    )
     prompt = (
         "Your last done.answer did not pass the research quality review.\n"
         f"{message}\n\n"
@@ -650,12 +750,13 @@ def _quality_review_followup(
         "- If no citable source exists, do not use [n] citations or list URLs in 来源; "
         "say no citable opened source was found and explain what was searched.\n\n"
         "Reply with exactly one JSON tool call. If more evidence is needed, call "
-        "web_search/open_url/knowledge_write first. If the issue is only in the "
+        f"{action_hint} first. If the issue is only in the "
         "final report wording, call done with a revised full report."
     )
     if not results:
         return prompt
-    return codec.format_results(results) + "\n\n" + prompt
+    rendered = format_controller_results(results) if controller_enabled else codec.format_results(results)
+    return rendered + "\n\n" + prompt
 
 
 def _protocol_repair_prompt(
@@ -666,32 +767,39 @@ def _protocol_repair_prompt(
     kind = str(getattr(plan, "protocol_error_kind", "") or "")
     error = str(getattr(plan, "protocol_error", "") or "invalid Research tool call")
     lines = [
-        "Your last reply did not satisfy Codey's Research tool contract.",
+        "Your last reply did not satisfy the Research tool contract.",
         f"Error: {error}",
         "",
     ]
     if kind == PROTOCOL_TOO_MANY_TOOLS:
         lines.extend([
-            "Codey Research executes exactly one action per turn.",
+            "Research executes exactly one action per turn.",
             "Choose one next action from the current allowed-actions block and reply with only that JSON object.",
             "Do not wrap JSON in a markdown code fence. Do not repeat the same JSON object twice.",
         ])
         if state is None:
             lines.extend(["", "Example:", tool_example("knowledge_search")])
     elif kind == PROTOCOL_INVALID_ARGS:
-        tool = _tool_from_protocol_error(error)
+        tool = _tool_from_protocol_error(error, state)
         lines.extend([
             "The tool name was recognized, but its arguments did not match the required schema.",
             "Fix the missing or invalid argument and reply with exactly one JSON object.",
-            "",
-            "Expected shape:",
-            tool_example(tool) if tool else tool_example("web_search"),
         ])
+        if state is not None:
+            lines.append("Use one exact JSON shape from the current allowed-actions block.")
+            if tool in state.allowed_tools:
+                lines.extend(["", "Expected shape:", controller_tool_example(tool, state)])
+        else:
+            lines.extend([
+                "",
+                "Expected shape:",
+                tool_example(tool) if tool else tool_example("web_search"),
+            ])
     elif kind == PROTOCOL_DIRECT_ANSWER:
         lines.append("Do not write the research answer directly in prose.")
         if state is None or "done" in state.allowed_tools:
             lines.extend([
-                "If the report is final and grounded in Codey-opened sources, return it through done.",
+                "If the report is final and grounded in opened sources, return it through done.",
                 "If more evidence is needed, call a local Research tool first.",
                 "",
                 "Final answer shape:",
@@ -699,24 +807,32 @@ def _protocol_repair_prompt(
             ])
         else:
             lines.extend([
-                "done is not allowed yet because Codey has no saved evidence for this run.",
+                "done is not allowed yet because this run has no saved evidence.",
                 "Choose one next action from the current allowed-actions block below.",
             ])
     elif kind == PROTOCOL_NATIVE_SEARCH_LEAK:
         lines.extend([
             "Do not use the chat website's own search, browsing, plugins, or outside knowledge.",
-            "All web access in Research must go through Codey's local JSON tools.",
+            "All web access in Research must go through local JSON tools.",
             "",
             "Use this shape:",
             tool_example("web_search"),
         ])
     elif kind == PROTOCOL_UNKNOWN_TOOL:
-        lines.extend([
-            f"Use only Codey's Research tools: {_allowed_research_tools(codec)}.",
-            "",
-            "Example:",
-            tool_example("web_search"),
-        ])
+        if state is not None:
+            lines.extend([
+                f"Use only the current Research controller actions: {', '.join(state.allowed_tools)}.",
+                "",
+                "Example:",
+                controller_tool_example(state.allowed_tools[0], state) if state.allowed_tools else tool_example("web_search"),
+            ])
+        else:
+            lines.extend([
+                f"Use only these Research tools: {_allowed_research_tools(codec)}.",
+                "",
+                "Example:",
+                tool_example("web_search"),
+            ])
     elif kind == PROTOCOL_DISALLOWED_TOOL:
         disallowed = _disallowed_tool_from_error(error)
         lines.extend([
@@ -734,7 +850,11 @@ def _protocol_repair_prompt(
             "Reply with a JSON tool call, not prose.",
             "",
             "Example:",
-            tool_example("knowledge_search"),
+            (
+                controller_tool_example(state.allowed_tools[0], state)
+                if state is not None and state.allowed_tools
+                else tool_example("knowledge_search")
+            ),
         ])
     else:
         lines.append(codec.repair_prompt())
@@ -746,8 +866,12 @@ def _protocol_repair_prompt(
     return "\n".join(lines)
 
 
-def _tool_from_protocol_error(error: str) -> str:
+def _tool_from_protocol_error(error: str, state: ResearchControlState | None = None) -> str:
     text = str(error or "")
+    if state is not None:
+        for tool in state.allowed_tools:
+            if text.startswith(f"{tool}.") or text.startswith(f"{tool} "):
+                return tool
     for tool in TOOL_CONTRACTS:
         if text.startswith(f"{tool}.") or text.startswith(f"{tool} "):
             return tool
@@ -760,7 +884,7 @@ def _disallowed_tool_from_error(error: str) -> str:
     if marker not in text:
         return ""
     tool = text.split(marker, 1)[0].strip()
-    return tool if tool in TOOL_CONTRACTS else ""
+    return tool if tool.replace("_", "").isalnum() else ""
 
 
 def _allowed_research_tools(codec: ProtocolCodec) -> str:
@@ -803,7 +927,7 @@ def _advisor_followup_prompt(summary: str, advices: tuple[object, ...]) -> str:
     lines = [
         "Private research evidence review found issues or gaps in your draft.",
         "Do not mention hidden advisors, voting, MoA, consensus, or this private review to the user.",
-        "Use these notes silently. If more evidence is needed, call web_search/open_url and update notes. Otherwise call done with a revised final report.",
+        "Use these notes silently. If more evidence is needed, search or open sources through the current Research controller actions and update notes. Otherwise call done with a revised final report.",
         "",
         "Your draft:",
         summary.strip(),

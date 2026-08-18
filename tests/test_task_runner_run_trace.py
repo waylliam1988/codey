@@ -360,6 +360,9 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
         proof_reviews = trace_payload["research_proof_reviews"]
         assert len(proof_reviews) == 1
         proof_review = proof_reviews[0]
+        research_plans = trace_payload["research_plans"]
+        assert len(research_plans) == 1
+        research_plan = research_plans[0]
         assert proof_review["proof_ref"].startswith("research_proof:")
         assert proof_review["record_id"] == record.record_id
         assert proof_review["record_digest"] == record.record_digest
@@ -371,9 +374,15 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
         assert proof_review["gap_count"] == 0
         assert proof_review["planner_signal_count"] >= 1
         assert proof_review["reason_codes"] == []
+        assert research_plan["plan_ref"].startswith("research_plan:")
+        assert research_plan["proof_ref"] == proof_review["proof_ref"]
+        assert research_plan["question_digest"] == proof_review["question_digest"]
+        assert research_plan["dry_run"] is True
+        assert "query_preview" not in research_plan
         assert "SECRET_TOKEN" not in serialized_trace
         assert "research_record" not in terminal_research_payload
         assert "research_proof" not in terminal_research_payload
+        assert "research_plan" not in terminal_research_payload
         assert "evidence_ledger" not in terminal_research_payload
 
 
