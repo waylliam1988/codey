@@ -256,6 +256,22 @@ class ResearchControllerTests(unittest.TestCase):
         self.assertIn("too many JSON tool calls", plan.protocol_error)
         self.assertFalse(plan.calls)
 
+    def test_controller_rejects_non_plain_json_object_wrappers(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ResearchLedger()), turn=1, max_turns=8)
+        payload = '{"tool":"web_search","args":{"query":"alpha"}}'
+
+        for reply in (
+            f"[{payload}]",
+            f"```json\n{payload}\n```",
+            f"Here is the call: {payload}",
+        ):
+            plan = controller.parse_plan(JsonToolCodec(), reply, state)
+
+            self.assertEqual(plan.protocol_error_kind, "invalid_args")
+            self.assertIn("exactly one JSON object and nothing else", plan.protocol_error)
+            self.assertFalse(plan.calls)
+
     def test_controller_does_not_repair_provider_specific_typographic_quotes(self) -> None:
         ledger = ResearchLedger()
         ledger.record_search("alpha", [{"title": "Alpha", "url": "https://example.com/a"}])

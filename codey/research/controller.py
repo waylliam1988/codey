@@ -13,12 +13,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from codey.models import ToolPlan, ToolResult
-from codey.research.protocols import ProtocolCodec, exact_tool_object_error, extract_json_objects
+from codey.research.protocols import ProtocolCodec, exact_json_object, exact_tool_object_error
 from codey.research.source_document import compact_pages
 from codey.research.tool_contract import (
     PROTOCOL_DISALLOWED_TOOL,
     PROTOCOL_INVALID_ARGS,
-    PROTOCOL_TOO_MANY_TOOLS,
     PROTOCOL_UNKNOWN_TOOL,
     tool_example,
 )
@@ -180,11 +179,10 @@ class ResearchController:
         )
 
     def parse_plan(self, codec: ProtocolCodec, reply: str, state: ResearchControlState) -> ToolPlan:
-        objects = extract_json_objects(reply or "")
-        if not objects:
-            plan = codec.parse(reply)
-        else:
-            plan = self._parse_controller_objects(codec, objects, state)
+        obj, error_kind, error = exact_json_object(reply or "")
+        if error:
+            return ToolPlan(calls=[], control=None, protocol_error=error, protocol_error_kind=error_kind)
+        plan = self._parse_controller_object(codec, obj, state)
         if plan.protocol_error or (not plan.calls and plan.control is None):
             return plan
         return plan
@@ -192,23 +190,12 @@ class ResearchController:
     def append_block(self, message: str, state: ResearchControlState) -> str:
         return str(message or "").rstrip() + "\n\n" + render_control_block(state)
 
-    def _parse_controller_objects(
+    def _parse_controller_object(
         self,
         codec: ProtocolCodec,
-        objects: list[dict[str, Any]],
+        obj: dict[str, Any],
         state: ResearchControlState,
     ) -> ToolPlan:
-        if len(objects) > 1:
-            return ToolPlan(
-                calls=[],
-                control=None,
-                protocol_error=(
-                    f"too many JSON tool calls in one reply ({len(objects)}); "
-                    "reply with exactly one JSON object"
-                ),
-                protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
-            )
-        obj = objects[0]
         shape_error = exact_tool_object_error(obj)
         if shape_error:
             return ToolPlan(

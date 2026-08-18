@@ -95,28 +95,25 @@ def test_connector_live_search_uses_shared_medical_routing_terms() -> None:
     assert any("eutils.ncbi.nlm.nih.gov" in item for item in requested)
 
 
-def test_connector_live_query_strips_secret_url_and_path_before_api_request() -> None:
+def test_connector_live_query_strips_secret_shape_url_and_path_before_api_request() -> None:
     base = FakeBaseSearchProvider()
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
     requested: list[str] = []
+    query = (
+        "clinical hepatotoxicity SECRET_TOKEN_ABCDEFGHIJKLMNOPQRSTUVWX "
+        "https://example.com/items?token=SECRET E:/secret/project"
+    )
 
     def response(url: str, *, timeout: float) -> str:
         del timeout
-        assert base.searches == [(
-            "clinical hepatotoxicity SECRET_TOKEN_ABCDEFGHIJKLMNOPQRSTUVWX "
-            "https://example.com/items?token=SECRET E:/secret/project",
-            3,
-        )]
         requested.append(url)
         return _fixture_response(url, timeout=1)
 
     with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
-        provider.search(
-            "clinical hepatotoxicity SECRET_TOKEN_ABCDEFGHIJKLMNOPQRSTUVWX "
-            "https://example.com/items?token=SECRET E:/secret/project",
-            limit=3,
-        )
+        results = provider.search(query, limit=3)
 
+    assert results[0]["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
+    assert base.searches == [(query, 3)]
     joined = "\n".join(requested)
     assert "clinical" in joined
     assert "hepatotoxicity" in joined
@@ -125,10 +122,60 @@ def test_connector_live_query_strips_secret_url_and_path_before_api_request() ->
     assert "E%3A" not in joined
     assert "/secret/project" not in joined
     assert "tool=research_connector" in joined
-    assert "tool=codey" not in joined
 
 
-def test_connector_live_query_strips_natural_language_secret_values_before_api_request() -> None:
+def test_connector_live_query_masks_separator_split_secret_markers_before_api_request() -> None:
+    base = FakeBaseSearchProvider()
+    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
+    requested: list[str] = []
+    queries = (
+        "api - key - abcdef clinical cancer",
+        "api:key abcdef clinical cancer",
+        "private - key topsecret clinical cancer",
+        "access + key abcdef clinical cancer",
+        "password . is . called . livekey clinical cancer",
+        "client · secret abcdef clinical cancer",
+        "password hunter2 clinical cancer",
+        "密 - 钥 abcdef 临床 癌症",
+        "密钥 abcdef 临床 癌症",
+        "密码 hunter2 临床 癌症",
+    )
+
+    def response(url: str, *, timeout: float) -> str:
+        del timeout
+        requested.append(url)
+        return _fixture_response(url, timeout=1)
+
+    with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
+        for query in queries:
+            results = provider.search(query, limit=3)
+            assert results[0]["url"] == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
+
+    assert base.searches == [(query, 3) for query in queries]
+    search_urls = [item for item in requested if "esearch.fcgi" in item]
+    assert len(search_urls) == len(queries)
+    joined = "\n".join(search_urls).casefold()
+    assert "clinical" in joined
+    assert "cancer" in joined
+    for forbidden in (
+        "abcdef",
+        "topsecret",
+        "livekey",
+        "hunter2",
+        "password",
+        "client",
+        "secret",
+        "private",
+        "access",
+        "bearer",
+        "configured",
+        "known",
+        "called",
+    ):
+        assert forbidden not in joined
+
+
+def test_connector_live_query_still_searches_non_sensitive_url_and_path_terms() -> None:
     base = FakeBaseSearchProvider()
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
     requested: list[str] = []
@@ -139,30 +186,15 @@ def test_connector_live_query_strips_natural_language_secret_values_before_api_r
         return _fixture_response(url, timeout=1)
 
     with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
-        provider.search("password is equal to hunter2 clinical cancer", limit=3)
-        provider.search("api key named abcdef clinical cancer", limit=3)
-        provider.search("api key called livekey clinical cancer", limit=3)
-        provider.search("client secret known as abcdef clinical cancer", limit=3)
-        provider.search("password is configured as hunter2 clinical cancer", limit=3)
-        provider.search("password is configured as known as called livekey clinical cancer", limit=3)
-        provider.search("password - is - configured - as - known - as - called - livekey clinical cancer", limit=3)
-        provider.search("密码 是 hunter2 临床 癌症", limit=3)
-        provider.search("密钥等于 abcdef clinical cancer", limit=3)
+        provider.search("clinical hepatotoxicity https://example.com/items?id=123 E:/docs/project", limit=3)
 
     joined = "\n".join(requested)
     assert "clinical" in joined
-    assert "cancer" in joined
-    assert "livekey" not in joined
-    assert "configured" not in joined
-    assert "known" not in joined
-    assert "called" not in joined
-    assert "hunter2" not in joined
-    assert "abcdef" not in joined
-    assert "password" not in joined
-    assert "api" not in joined
-    assert "key" not in joined
-    assert "client" not in joined
-    assert "secret" not in joined
+    assert "hepatotoxicity" in joined
+    assert "example.com" not in joined
+    assert "E%3A" not in joined
+    assert "/docs/project" not in joined
+    assert "tool=research_connector" in joined
 
 
 def test_connector_live_search_honors_registry_unavailable_status() -> None:
@@ -236,11 +268,7 @@ def test_connector_search_skips_api_when_safe_query_is_empty() -> None:
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
 
     with mock.patch("codey.research.connector_search._read_url_text") as read:
-        results = provider.search(
-            "pubmed SECRET_TOKEN_ABCDEFGHIJKLMNOPQRSTUVWX "
-            "https://example.com/items?token=SECRET E:/secret/project",
-            limit=2,
-        )
+        results = provider.search("password . is . called . livekey", limit=2)
 
     assert results == [{
         "title": "Generic web result",
@@ -248,6 +276,11 @@ def test_connector_search_skips_api_when_safe_query_is_empty() -> None:
         "snippet": "generic snippet",
     }]
     read.assert_not_called()
+    assert provider.last_connector_errors[-1] == {
+        "connector_id": "connector",
+        "action": "search",
+        "error": "connector_query_empty_after_redaction",
+    }
 
 
 def test_connector_aware_search_adds_arxiv_result_and_deduplicates_base_result() -> None:

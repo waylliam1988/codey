@@ -68,22 +68,10 @@ class JsonToolCodec:
 
     def parse(self, text: str) -> ToolPlan:
         self.last_control_args = {}
-        objects = extract_json_objects(text or "")
-        if not objects:
-            kind, message = classify_no_json_reply(text or "")
-            return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind)
-        if len(objects) > MAX_CALLS_PER_TURN:
-            return ToolPlan(
-                calls=[],
-                control=None,
-                protocol_error=(
-                    f"too many JSON tool calls in one reply ({len(objects)}); "
-                    "reply with exactly one JSON object"
-                ),
-                protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
-            )
+        obj, error_kind, error = exact_json_object(text or "")
+        if error:
+            return ToolPlan(calls=[], control=None, protocol_error=error, protocol_error_kind=error_kind)
         known_tools = _known_tool_names(self.include_source_search)
-        obj = objects[0]
         shape_error = exact_tool_object_error(obj)
         if shape_error:
             return ToolPlan(
@@ -194,6 +182,38 @@ def extract_json_objects(text: str) -> list[dict[str, Any]]:
 
 
 _extract_json_objects = extract_json_objects
+
+
+def exact_json_object(text: str) -> tuple[dict[str, Any], str, str]:
+    stripped = str(text or "").strip()
+    if not stripped:
+        kind, message = classify_no_json_reply(stripped)
+        return {}, kind, message
+    objects = extract_json_objects(stripped)
+    if len(objects) > MAX_CALLS_PER_TURN:
+        return (
+            {},
+            PROTOCOL_TOO_MANY_TOOLS,
+            f"too many JSON tool calls in one reply ({len(objects)}); reply with exactly one JSON object",
+        )
+    try:
+        value = json.loads(stripped, strict=False)
+    except json.JSONDecodeError:
+        if objects:
+            return (
+                {},
+                PROTOCOL_INVALID_ARGS,
+                "reply must be exactly one JSON object and nothing else",
+            )
+        kind, message = classify_no_json_reply(stripped)
+        return {}, kind, message
+    if not isinstance(value, dict):
+        return (
+            {},
+            PROTOCOL_INVALID_ARGS,
+            "reply must be exactly one JSON object and nothing else",
+        )
+    return value, "", ""
 
 
 def exact_tool_object_error(obj: Mapping[str, Any]) -> str:

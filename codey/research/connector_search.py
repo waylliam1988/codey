@@ -30,6 +30,7 @@ from codey.research.source_connectors import (
     is_valid_pubmed_id,
     parse_arxiv_atom_fixture,
     parse_pubmed_fixture,
+    safe_connector_query,
     safe_connector_query_terms,
 )
 from codey.research.shape import bounded_limit as _bounded_limit, connector_id as _connector_id
@@ -129,6 +130,10 @@ class ConnectorAwareSearchProvider:
 
     def _connector_search_results(self, query: str, *, limit: int) -> list[dict]:
         results: list[dict] = []
+        safe_query = safe_connector_query(query, limit=12)
+        if not safe_query.terms:
+            self._record_skip("connector", "search", safe_query.skip_reason or "connector_query_empty")
+            return results
         previous_deadline = self._search_deadline
         self._search_deadline = (
             time.monotonic() + self.connector_budget_seconds
@@ -281,6 +286,14 @@ class ConnectorAwareSearchProvider:
             "connector_id": _connector_id(connector_id),
             "action": _connector_id(action),
             "error": clip(type(exc).__name__ or str(exc), 80),
+        })
+        del self.last_connector_errors[:-8]
+
+    def _record_skip(self, connector_id: str, action: str, reason: str) -> None:
+        self.last_connector_errors.append({
+            "connector_id": _connector_id(connector_id),
+            "action": _connector_id(action),
+            "error": _connector_id(reason),
         })
         del self.last_connector_errors[:-8]
 

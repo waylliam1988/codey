@@ -161,6 +161,29 @@ def test_planner_dry_run_payload_and_trace_do_not_store_raw_secret_prompt_url_or
     assert trace["dry_run"] is True
 
 
+def test_planner_masks_sensitive_connector_query_preview() -> None:
+    plan = build_research_plan(
+        _review(
+            followup_questions=[],
+            query_rewrite_candidates=[],
+            coverage_gaps=[],
+            missing_evidence=[],
+        ),
+        question="password . is . called . livekey clinical cancer",
+    )
+    payload = plan.to_payload()
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert plan.query_candidates
+    assert any("clinical" in item.query_preview for item in plan.query_candidates)
+    assert any("cancer" in item.query_preview for item in plan.query_candidates)
+    assert "livekey" not in serialized
+    assert "password" not in serialized
+    assert "called" not in serialized
+    assert "query_preview" in serialized
+    assert "query_digest" in serialized
+
+
 def test_research_plan_trace_payload_filters_secret_like_direct_inputs() -> None:
     trace = research_plan_trace_payload({
         "plan_ref": "research_plan:" + "a" * 16,

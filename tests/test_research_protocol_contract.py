@@ -110,6 +110,23 @@ def test_protocol_rejects_extra_json_object_before_valid_tool_call() -> None:
     assert "too many JSON tool calls" in plan.protocol_error
 
 
+def test_protocol_rejects_non_plain_json_object_wrappers() -> None:
+    payload = json.dumps({"tool": "web_search", "args": {"query": "alpha"}})
+    cases = (
+        f"[{payload}]",
+        f"```json\n{payload}\n```",
+        f"Here is the call: {payload}",
+    )
+
+    for reply in cases:
+        plan = JsonToolCodec().parse(reply)
+
+        assert not plan.calls
+        assert plan.control is None
+        assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
+        assert "exactly one JSON object and nothing else" in plan.protocol_error
+
+
 def test_typographic_json_quotes_are_not_accepted_by_generic_protocol_codec() -> None:
     plan = JsonToolCodec().parse(
         "{“tool”:“web_search”,“args”:{“query”:“arXiv retrieval augmented generation evaluation”}}"

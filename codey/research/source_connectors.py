@@ -91,7 +91,43 @@ _SECRET_VALUE_CONNECTORS = frozenset({
     "等于",
     "设置为",
 })
-_SECRET_VALUE_SEPARATORS = frozenset(":=,;-–—−/\\|，。；：、")
+_SECRET_VALUE_SEPARATORS = frozenset(":=,;-–—−/\\|，。；：、._+·•")
+_SECRET_VALUE_CONNECTOR_LIMIT = 12
+_SECRET_QUERY_TOKEN_RE = re.compile(r"[A-Za-z0-9]+|[\u4e00-\u9fff]+")
+_SECRET_QUERY_MARKER_PHRASES = frozenset({
+    ("access", "key"),
+    ("api", "key"),
+    ("client", "secret"),
+    ("private", "key"),
+    ("refresh", "token"),
+    ("session", "id"),
+    ("ssh", "key"),
+    ("密", "钥"),
+    ("密", "码"),
+    ("令", "牌"),
+    ("私", "钥"),
+    ("访问", "令牌"),
+})
+_SECRET_QUERY_MARKER_COMPOUNDS = frozenset({
+    "accesskey",
+    "apikey",
+    "clientsecret",
+    "privatekey",
+    "refreshtoken",
+    "sessionid",
+    "sshkey",
+})
+_PLAIN_VALUE_SECRET_MARKERS = frozenset({
+    "passwd",
+    "password",
+    "pwd",
+    "令牌",
+    "密码",
+    "密钥",
+    "私钥",
+    "访问令牌",
+})
+_VALUE_SCHEME_SECRET_MARKERS = frozenset({"bearer"})
 _ALLOWED_HIT_CONTENT_KINDS = frozenset({"abstract", "html", "json", "pdf", "table", "text"})
 _ALLOWED_FETCHED_CONTENT_KINDS = _ALLOWED_HIT_CONTENT_KINDS
 _ALLOWED_FETCHED_MIME_TYPES = frozenset({
@@ -191,6 +227,13 @@ class SourceConnectorSpec:
             "failure_modes": list(_safe_payload_refs(self.failure_modes, limit=8)),
         }
         return payload
+
+
+@dataclass(frozen=True)
+class SafeConnectorQuery:
+    terms: tuple[str, ...] = ()
+    redacted: bool = False
+    skip_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -461,9 +504,15 @@ def source_result_from_hits(
 def safe_connector_query_terms(text: object, *, limit: int = 16) -> tuple[str, ...]:
     """Return bounded non-secret terms that are safe to send to source APIs."""
 
+    return safe_connector_query(text, limit=limit).terms
+
+
+def safe_connector_query(text: object, *, limit: int = 16) -> SafeConnectorQuery:
+    """Return the only terms allowed to leave the connector query boundary."""
+
     terms: list[str] = []
     seen: set[str] = set()
-    cleaned = _drop_unsafe_query_spans(text)
+    cleaned, redacted = _drop_unsafe_query_spans(text)
     for raw in _SAFE_QUERY_TOKEN_RE.findall(cleaned):
         term = safe_connector_signal_text(raw)
         if not term:
@@ -475,7 +524,10 @@ def safe_connector_query_terms(text: object, *, limit: int = 16) -> tuple[str, .
         terms.append(term)
         if len(terms) >= _bounded_limit(limit, default=1, upper=MAX_CONNECTOR_HITS):
             break
-    return tuple(terms)
+    if not terms:
+        reason = "connector_query_empty_after_redaction" if redacted else "connector_query_empty"
+        return SafeConnectorQuery(terms=(), redacted=redacted, skip_reason=reason)
+    return SafeConnectorQuery(terms=tuple(terms), redacted=redacted)
 
 
 def _safe_hit_content_kind(value: object) -> str:
@@ -524,6 +576,45 @@ def safe_connector_signal_text(value: object, *, limit: int = 180) -> str:
     return text
 
 
+def connector_query_has_secret_signal(value: object) -> bool:
+    """Return whether a raw connector query has a high-confidence secret window."""
+
+    return bool(_secret_query_spans(str(value or "")))
+
+
+def _secret_query_spans(text: str) -> tuple[tuple[int, int], ...]:
+    if not text:
+        return ()
+    spans: list[tuple[int, int]] = []
+    for match in SECRET_SHAPE_RE.finditer(text):
+        spans.append(_query_token_bounds(text, match.start(), match.end()))
+    for match in SECRET_MARKER_RE.finditer(text):
+        marker_tokens = tuple(token for token, _start, _end in _secret_query_tokens(match.group(0)))
+        compact = "".join(marker_tokens)
+        allow_plain_value = (
+            marker_tokens in _SECRET_QUERY_MARKER_PHRASES
+            or compact in _SECRET_QUERY_MARKER_COMPOUNDS
+            or compact in _PLAIN_VALUE_SECRET_MARKERS
+            or compact in _VALUE_SCHEME_SECRET_MARKERS
+        )
+        span_end = _secret_value_window_end(text, match.end(), allow_plain_value=allow_plain_value)
+        if span_end > match.end():
+            spans.append((_span_start_for_marker(text, match.start()), span_end))
+    tokens = _secret_query_tokens(text)
+    for index, (token, _start, end) in enumerate(tokens):
+        if token in _VALUE_SCHEME_SECRET_MARKERS:
+            span_end = _secret_value_window_end(text, end, allow_plain_value=True)
+            if span_end > end:
+                spans.append((_span_start_for_marker(text, tokens[index][1]), span_end))
+        if index + 1 < len(tokens):
+            pair = (token, tokens[index + 1][0])
+            if pair in _SECRET_QUERY_MARKER_PHRASES:
+                span_end = _secret_value_window_end(text, tokens[index + 1][2], allow_plain_value=True)
+                if span_end > tokens[index + 1][2]:
+                    spans.append((_span_start_for_marker(text, tokens[index][1]), span_end))
+    return tuple(spans)
+
+
 def is_valid_pubmed_id(value: object) -> bool:
     text = str(value or "").strip()
     return bool(text) and text.isdigit() and len(text) <= 12
@@ -538,38 +629,76 @@ def _safe_query_digest(query: object) -> str:
     return digest_text(safe_query) if safe_query else ""
 
 
-def _drop_unsafe_query_spans(value: object) -> str:
+def _secret_query_tokens(text: str) -> tuple[tuple[str, int, int], ...]:
+    return tuple(
+        (match.group(0).casefold(), match.start(), match.end())
+        for match in _SECRET_QUERY_TOKEN_RE.finditer(text)
+    )
+
+
+def _secret_value_window_end(text: str, index: int, *, allow_plain_value: bool) -> int:
+    cursor = index
+    saw_connector = False
+    connector_count = 0
+    while True:
+        token, _start, end, had_separator = _query_token_after(text, cursor)
+        if not token:
+            return index
+        if token in _SECRET_VALUE_CONNECTORS:
+            saw_connector = True
+            connector_count += 1
+            if connector_count >= _SECRET_VALUE_CONNECTOR_LIMIT:
+                return len(text)
+            cursor = end
+            continue
+        if allow_plain_value or saw_connector or had_separator:
+            return end
+        return index
+
+
+def _query_token_after(text: str, index: int) -> tuple[str, int, int, bool]:
+    had_separator = False
+    while index < len(text) and (text[index].isspace() or text[index] in _SECRET_VALUE_SEPARATORS):
+        had_separator = had_separator or text[index] in _SECRET_VALUE_SEPARATORS
+        index += 1
+    match = _SECRET_QUERY_TOKEN_RE.match(text, index)
+    if not match:
+        return "", index, index, had_separator
+    return match.group(0).casefold(), match.start(), match.end(), had_separator
+
+
+def _span_start_for_marker(text: str, start: int) -> int:
+    while start > 0 and (text[start - 1].isspace() or text[start - 1] in _SECRET_VALUE_SEPARATORS):
+        start -= 1
+    return start
+
+
+def _drop_unsafe_query_spans(value: object) -> tuple[str, bool]:
     parts: list[str] = []
-    cleaned = _mask_secret_query_spans(str(value or "").replace("\r", " ").replace("\n", " "))
+    cleaned, redacted = _mask_secret_query_spans(str(value or "").replace("\r", " ").replace("\n", " "))
     for raw in cleaned.split():
         token = raw.strip()
         if not token:
             continue
         if _unsafe_query_span(token):
             parts.append(" ")
+            redacted = True
             continue
         parts.append(token)
-    return " ".join(parts)
+    return " ".join(parts), redacted
 
 
-def _mask_secret_query_spans(text: str) -> str:
+def _mask_secret_query_spans(text: str) -> tuple[str, bool]:
     if not text:
-        return ""
-    spans: list[tuple[int, int]] = []
-    for match in SECRET_SHAPE_RE.finditer(text):
-        spans.append(_query_token_bounds(text, match.start(), match.end()))
-    for match in SECRET_MARKER_RE.finditer(text):
-        start, end = _query_token_bounds(text, match.start(), match.end())
-        if not _marker_has_inline_value(text[match.end():end]):
-            end = _extend_secret_marker_value_window(text, end)
-        spans.append((start, end))
+        return "", False
+    spans = list(_secret_query_spans(text))
     if not spans:
-        return text
+        return text, False
     chars = list(text)
     for start, end in spans:
         for index in range(max(0, start), min(len(chars), end)):
             chars[index] = " "
-    return "".join(chars)
+    return "".join(chars), True
 
 
 def _query_token_bounds(text: str, start: int, end: int) -> tuple[int, int]:
@@ -578,39 +707,6 @@ def _query_token_bounds(text: str, start: int, end: int) -> tuple[int, int]:
     while end < len(text) and not text[end].isspace():
         end += 1
     return start, end
-
-
-def _marker_has_inline_value(tail: str) -> bool:
-    token = _clean_secret_connector_token(tail)
-    return bool(token) and token not in _SECRET_VALUE_CONNECTORS
-
-
-def _extend_secret_marker_value_window(text: str, index: int) -> int:
-    cursor = index
-    while True:
-        start, end = _next_query_token_span(text, cursor)
-        if start >= len(text):
-            return cursor
-        token = _clean_secret_connector_token(text[start:end])
-        if token in _SECRET_VALUE_CONNECTORS:
-            cursor = end
-            continue
-        return end
-
-
-def _next_query_token_span(text: str, index: int) -> tuple[int, int]:
-    while index < len(text) and (text[index].isspace() or text[index] in _SECRET_VALUE_SEPARATORS):
-        index += 1
-    end = index
-    while end < len(text) and not text[end].isspace():
-        end += 1
-    return index, end
-
-
-def _clean_secret_connector_token(value: object) -> str:
-    return str(value or "").strip(
-        " \t\r\n.,;:=，。；：、-–—−/\\|=\"'()[]{}<>（）【】《》"
-    ).casefold()
 
 
 def _unsafe_query_span(token: str) -> bool:
@@ -1126,10 +1222,12 @@ __all__ = [
     "CONNECTOR_STATUS_UNAVAILABLE",
     "FetchedSource",
     "MAX_CONNECTOR_HITS",
+    "SafeConnectorQuery",
     "SourceConnectorRegistry",
     "SourceConnectorResult",
     "SourceConnectorSpec",
     "SourceHit",
+    "connector_query_has_secret_signal",
     "built_in_connector_registry",
     "fetch_csv_tsv_file",
     "fetch_json_file",
@@ -1140,6 +1238,7 @@ __all__ = [
     "parse_arxiv_atom_fixture",
     "parse_pubmed_fixture",
     "resolve_local_source_path",
+    "safe_connector_query",
     "safe_connector_query_terms",
     "safe_connector_signal_text",
     "source_result_from_hits",

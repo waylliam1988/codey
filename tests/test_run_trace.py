@@ -651,6 +651,11 @@ class RunTraceStoreTests(unittest.TestCase):
                     "error": "ValueError",
                 },
                 {
+                    "connector_id": "connector",
+                    "action": "search",
+                    "error": "connector_query_sensitive_skipped",
+                },
+                {
                     "connector_id": "SECRET_CLIENT_NAME",
                     "action": "search",
                     "error": "ValueError",
@@ -671,12 +676,20 @@ class RunTraceStoreTests(unittest.TestCase):
             )
             serialized = json.dumps(payload, ensure_ascii=False)
 
-            self.assertEqual(payload["research_connector_errors"], [{
-                "connector_id": "pubmed",
-                "action": "fetch_lookup",
-                "error": "ValueError",
-                "count": 2,
-            }])
+            self.assertEqual(payload["research_connector_errors"], [
+                {
+                    "connector_id": "pubmed",
+                    "action": "fetch_lookup",
+                    "error": "ValueError",
+                    "count": 2,
+                },
+                {
+                    "connector_id": "connector",
+                    "action": "search",
+                    "error": "connector_query_sensitive_skipped",
+                    "count": 1,
+                },
+            ])
             self.assertNotIn("SECRET_CLIENT_NAME", serialized)
             self.assertNotIn("https://example.com/SECRET_URL", serialized)
             self.assertNotIn("sk-", serialized)

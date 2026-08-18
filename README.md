@@ -339,17 +339,17 @@ details stay inside Codey while the model sees unambiguous IDs instead of
 overloaded `open_url` shapes. Run Trace stores only bounded dry-run summaries
 without raw prompt text, source bodies, raw URLs, or raw absolute paths, and it
 records the model-visible controller action hash separately from the compiled
-runtime tool hash. PubMed/arXiv API queries are built from safe terms, so raw
-secrets, secret marker/value windows such as `api key ...` or
-`api key is ...`, plus longer connector phrases such as
+runtime tool hash. PubMed/arXiv API queries are built from one shared safe
+query boundary that masks high-confidence secret marker/value windows such as
+`api key ...` or `api key is ...`, plus longer connector phrases such as
 `password is equal to ...`, `password is set to ...`,
 `password is configured as ...`, `client secret known as ...`,
 `api key called ...`, over-padded or punctuation-separated connector phrases
 such as `password is configured as known as called ...` and
-`password - is - configured - as - known - as - called - ...`, Chinese windows
-such as `密码 是 ...` or `密钥等于 ...`,
-URLs, local paths, and path-like slash tokens are dropped before live connector
-requests.
+`password - is - configured - as - known - as - called - ...`, and Chinese
+windows such as `密码 是 ...` or `密钥等于 ...`. Cleaned domain terms can still
+drive connectors, while URLs, local paths, and path-like slash tokens are
+dropped; connector lookup is skipped when no safe terms remain.
 Browser-backed Research search explicitly reuses one dedicated Research
 profile/port for ordinary runs, while direct `BrowserSearchProvider()`
 construction stays isolated by default, CDP attach/port waits stay bounded at
@@ -365,9 +365,9 @@ Bounded connector fallback errors and adjacent evidence/proof reason or warning
 codes are recorded in Run Trace without raw request data while preserving safe
 audit codes such as `token_budget_exceeded` and `authorization_required`; live
 transport metadata uses a neutral tool name and User-Agent.
-Research JSON tool calls must be exactly one JSON object with only top-level
-`tool` plus `args`; hidden `name`, top-level-argument, extra-field, or
-extra-object shapes are protocol errors.
+Research JSON tool calls must be exactly one plain JSON object with only
+top-level `tool` plus `args`; hidden `name`, top-level-argument, extra-field,
+extra-object, array, fenced-block, or prose-wrapper shapes are protocol errors.
 The planner and live connector wrapper share one domain-routing table with
 RAG/NLP/retrieval/benchmark terms, enforce registry availability/capability
 flags, keep safe scientific terms such as `JAK/STAT`, drop CamelCase

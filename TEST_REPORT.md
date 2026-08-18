@@ -40,8 +40,8 @@ Production changes:
   `ConnectorAwareSearchProvider`. They remain locator candidates until opened;
   only fetched/opened sources can become evidence in the ledger.
 - Live PubMed/arXiv connector queries are built from the shared safe term
-  boundary used by the dry-run planner; raw secrets, secret marker/value windows
-  such as `api key ...`, `api key is ...`, `password is ...`,
+  boundary used by the dry-run planner; raw secrets and secret marker/value
+  windows such as `api key ...`, `api key is ...`, `password is ...`,
   `password is equal to ...`, `password is set to ...`,
   `password is configured as ...`, `api key called ...`, `api key named ...`,
   `client secret known as ...`, over-padded or punctuation-separated connector
@@ -49,11 +49,13 @@ Production changes:
   `password - is - configured - as - known - as - called - ...`, Chinese
   windows such as `密码 是 ...` and `密钥等于 ...`, `private key is ...`,
   `client_secret=...`, and
-  `Authorization: Bearer ...`, URLs, and local paths are dropped before any
-  source API request. Browser fallback search starts before connector lookup,
-  connector lookup has a short global request budget, direct PubMed/arXiv URL
-  fetch failures fall back to browser fetch, and normal browser result
-  de-duplication keeps query-string-distinct URLs.
+  `Authorization: Bearer ...` are masked before planner previews, connector
+  digests, and any source API request. Cleaned domain terms can still drive
+  connectors; URLs and local paths are dropped, and connector lookup is skipped
+  only when no safe terms remain. Browser fallback search starts before
+  connector lookup, connector lookup has a short global request budget, direct
+  PubMed/arXiv URL fetch failures fall back to browser fetch, and normal browser
+  result de-duplication keeps query-string-distinct URLs.
 - Recorded PubMed/arXiv fixture parsers and recorded fetches validate both
   connector-specific host and source-ID shape. `SourceHit` metadata refs and
   scalar audit fields filter secret-looking values, `FetchedSource` scalar audit

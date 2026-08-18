@@ -70,27 +70,31 @@ This file records Codey's release history. The newest release appears first.
   search-page navigation retries, and the manual connector A/B harness uses the
   same non-isolated Research browser reuse path as production Research.
 - Connector-aware live search now builds PubMed/arXiv API queries from the same
-  safe term boundary used by the dry-run planner, so raw secrets, secret
-  marker/value windows such as `api key ...`, `password ...`,
+  safe term boundary used by the dry-run planner. That boundary masks
+  high-confidence secret marker/value windows such as `api key ...`,
+  `password ...`,
   `api key is ...`, `password is equal to ...`, `password is set to ...`,
   `api key called ...`, `api key named ...`, `client secret known as ...`,
   `password is configured as ...`, over-padded or punctuation-separated
   connector phrases such as `password is configured as known as called ...` and
   `password - is - configured - as - known - as - called - ...`, Chinese
   windows such as `密码 是 ...` and `密钥等于 ...`, `private key is ...`,
-  `client_secret=...`, and
-  `Authorization: Bearer ...`, URLs, and local paths are not sent to source
-  APIs. Browser search starts before connector lookup, connector requests use a
-  short bounded budget, ordinary browser results keep query-string-distinct
-  URLs, and direct PubMed/arXiv URL fetches fall back to browser fetch when
-  connector lookup fails. Connector result digests also use the sanitized query,
+  `client_secret=...`, and `Authorization: Bearer ...` across planner
+  previews, connector digests, and live PubMed/arXiv requests. Cleaned
+  domain terms such as `clinical` or `cancer` can still drive connectors, while
+  URL/path spans are removed and connector lookup is skipped when no safe terms
+  remain. Browser search starts before connector lookup, connector
+  requests use a short bounded budget, ordinary browser results keep
+  query-string-distinct URLs, and direct PubMed/arXiv URL fetches fall back to
+  browser fetch when connector lookup fails. Connector result digests also use
+  the shared safe query,
   live connector transport metadata uses a neutral tool name and User-Agent
   without the product name, and the Research JSON codec no longer accepts
   legacy tool or argument aliases such as `open`/`fetch`, `queries`, or
   `done.summary`; the fallback contract no longer carries an alias layer and
-  requires exactly one JSON object with only top-level `tool` plus `args`,
-  rather than `name`, top-level argument fields, extra top-level fields, or
-  extra JSON objects.
+  requires exactly one plain JSON object with only top-level `tool` plus
+  `args`, rather than `name`, top-level argument fields, extra top-level fields,
+  extra JSON objects, arrays, fenced blocks, or prose wrappers.
   Providers that still emit legacy names may take one repair turn, but provider
   quirks stay in provider adapters or repair prompts instead of becoming shared
   parser compatibility.

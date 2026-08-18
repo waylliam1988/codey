@@ -19,12 +19,14 @@ from codey.research.source_connectors import (
     SourceConnectorRegistry,
     SourceConnectorSpec,
     built_in_connector_registry,
+    connector_query_has_secret_signal,
     fetch_csv_tsv_file,
     fetch_json_file,
     fetch_local_file,
     fetch_recorded_hit,
     parse_arxiv_atom_fixture,
     parse_pubmed_fixture,
+    safe_connector_query,
     safe_connector_query_terms,
     source_result_from_hits,
 )
@@ -84,26 +86,24 @@ def test_connector_registry_does_not_import_runtime_browser_or_provider_layers()
 
 def test_safe_connector_query_terms_drop_secret_url_and_path_spans() -> None:
     terms = safe_connector_query_terms(
-        "clinical hepatotoxicity SECRET_TOKEN_ABCDEFGHIJKLMNOPQRSTUVWX "
-        "https://example.com/items?token=SECRET E:/secret/project",
+        "clinical hepatotoxicity https://example.com/items?id=123 E:/docs/project",
     )
 
     joined = " ".join(terms)
     assert "clinical" in terms
     assert "hepatotoxicity" in terms
-    assert "SECRET" not in joined
     assert "example" not in joined
-    assert "secret" not in joined.casefold()
     assert "project" not in joined
 
 
-def test_safe_connector_query_terms_drop_secret_marker_value_windows() -> None:
+def test_safe_connector_query_terms_mask_secret_marker_value_windows() -> None:
     cases = (
         "api key abcdef clinical cancer",
         "api key is abcdef clinical cancer",
         "api key named abcdef clinical cancer",
         "api key called livekey clinical cancer",
         "api_key=abcdef clinical cancer",
+        "password hunter2 clinical cancer",
         "password: hunter2 clinical cancer",
         "password is hunter2 clinical cancer",
         "password is equal to hunter2 clinical cancer",
@@ -111,6 +111,7 @@ def test_safe_connector_query_terms_drop_secret_marker_value_windows() -> None:
         "password is configured as hunter2 clinical cancer",
         "password is configured as known as called livekey clinical cancer",
         "password - is - configured - as - known - as - called - livekey clinical cancer",
+        "password . is . configured . as . known . as . called . livekey clinical cancer",
         "api key — called — livekey clinical cancer",
         "client_secret = abcdef clinical cancer",
         "client_secret is mysecretvalue clinical cancer",
@@ -120,13 +121,15 @@ def test_safe_connector_query_terms_drop_secret_marker_value_windows() -> None:
     )
 
     for query in cases:
-        terms = safe_connector_query_terms(query)
-        joined = " ".join(terms).casefold()
+        safe = safe_connector_query(query)
+        joined = " ".join(safe.terms).casefold()
 
-        assert "clinical" in terms
-        assert "cancer" in terms
-        assert "api" not in terms
-        assert "key" not in terms
+        assert "clinical" in safe.terms
+        assert "cancer" in safe.terms
+        assert safe.redacted
+        assert safe.skip_reason == ""
+        assert "api" not in joined
+        assert "key" not in joined
         assert "password" not in joined
         assert "client" not in joined
         assert "secret" not in joined
@@ -142,22 +145,27 @@ def test_safe_connector_query_terms_drop_secret_marker_value_windows() -> None:
         assert "topsecret" not in joined
 
 
-def test_safe_connector_query_terms_drop_chinese_secret_marker_value_windows() -> None:
+def test_safe_connector_query_terms_mask_chinese_secret_marker_value_windows() -> None:
     cases = (
-        ("密码 是 hunter2 临床 癌症", ("临床", "癌症"), ("hunter2",)),
-        ("密钥等于 abcdef clinical", ("clinical",), ("abcdef", "等于")),
-        ("访问令牌 设置为 abcdef clinical cancer", ("clinical", "cancer"), ("abcdef",)),
-        ("私钥 名为 livekey clinical cancer", ("clinical", "cancer"), ("livekey",)),
+        "密码 是 hunter2 临床 癌症",
+        "密码 hunter2 临床 癌症",
+        "密钥 abcdef 临床 癌症",
+        "密钥等于 abcdef clinical",
+        "访问令牌 设置为 abcdef clinical cancer",
+        "私钥 名为 livekey clinical cancer",
     )
 
-    for query, expected_terms, forbidden_terms in cases:
-        terms = safe_connector_query_terms(query)
-        joined = " ".join(terms).casefold()
+    for query in cases:
+        safe = safe_connector_query(query)
+        joined = " ".join(safe.terms).casefold()
 
-        for term in expected_terms:
-            assert term in terms
-        for term in forbidden_terms:
-            assert term.casefold() not in joined
+        assert safe.terms
+        assert safe.redacted
+        assert safe.skip_reason == ""
+        assert "abcdef" not in joined
+        assert "hunter2" not in joined
+        assert "livekey" not in joined
+        assert "等于" not in joined
 
 
 def test_redaction_markers_are_boundary_aware_for_scientific_terms() -> None:
@@ -166,6 +174,32 @@ def test_redaction_markers_are_boundary_aware_for_scientific_terms() -> None:
     assert looks_secret_marker("secret_token")
     assert looks_secret_marker("api key")
     assert looks_secret_shape("sk-" + "A" * 16)
+
+
+def test_connector_query_secret_signal_detects_separator_split_markers() -> None:
+    sensitive = (
+        "api - key - abcdef clinical cancer",
+        "api:key abcdef clinical cancer",
+        "private - key topsecret clinical cancer",
+        "access + key abcdef clinical cancer",
+        "password . is . called . livekey clinical cancer",
+        "password hunter2 clinical cancer",
+        "client · secret abcdef clinical cancer",
+        "密 - 钥 abcdef 临床 癌症",
+        "密钥 abcdef 临床 癌症",
+        "密码 hunter2 临床 癌症",
+    )
+
+    for query in sensitive:
+        assert connector_query_has_secret_signal(query)
+
+    assert not connector_query_has_secret_signal("secreted insulin secretion pathway clinical cancer")
+    assert not connector_query_has_secret_signal("token efficient transformers benchmark")
+    assert not connector_query_has_secret_signal("authorization trial consent policy")
+    assert not connector_query_has_secret_signal("secret sharing cryptography benchmark")
+    assert safe_connector_query("token efficient transformers benchmark").terms
+    assert safe_connector_query("authorization trial consent policy").terms
+    assert safe_connector_query("secret sharing cryptography benchmark").terms
 
 
 def test_safe_connector_query_terms_keep_secreted_science_terms() -> None:
@@ -303,11 +337,13 @@ def test_arxiv_and_pubmed_recorded_fixtures_reject_malformed_ids_and_use_safe_qu
 
     arxiv = parse_arxiv_atom_fixture(arxiv_fixture, query=secret_query)
     pubmed = parse_pubmed_fixture(pubmed_fixture, query=secret_query)
+    result = source_result_from_hits("pubmed", query=secret_query, hits=[])
 
     assert arxiv.hits == ()
     assert pubmed.hits == ()
     assert arxiv.query_digest == digest_text("clinical hepatotoxicity")
     assert pubmed.query_digest == digest_text("clinical hepatotoxicity")
+    assert result.query_digest == digest_text("clinical hepatotoxicity")
     assert arxiv.query_digest != digest_text(secret_query)
     assert pubmed.query_digest != digest_text(secret_query)
 

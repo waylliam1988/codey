@@ -61,21 +61,25 @@
   search page 导航重试吞掉；manual connector A/B harness 也改为和生产 Research
   一样复用 non-isolated Research browser。
 - connector-aware live search 现在用和 dry-run planner 相同的 safe term 边界构造
-  PubMed/arXiv API query，不会把 raw secret、`api key ...`、`password ...`、
+  PubMed/arXiv API query；这个边界会遮掉高置信 secret marker/value 窗口，例如
+  `api key ...`、`password ...`、
   `api key is ...`、`password is equal to ...`、`password is set to ...`、
   `api key called ...`、`api key named ...`、`client secret known as ...`、
   `password is configured as ...`、`password is configured as known as called ...`、
   `password - is - configured - as - known - as - called - ...` 这类过度填充或标点分隔
   connector phrase、`密码 是 ...`、`密钥等于 ...`、
   `private key is ...`、`client_secret=...`、`Authorization: Bearer ...` 这类
-  marker/value 窗口、URL 或本地路径发给 source API。浏览器 search 会先于 connector
-  lookup 启动，connector 请求有更短的全局预算，普通 browser 结果会保留 query string
-  区分；direct PubMed/arXiv URL 在 connector lookup 失败时会回退到 browser fetch。
-  connector result digest 也只基于 sanitized query，live connector 的 tool name 和
+  marker/value 窗口，在 planner preview、connector digest 和 live PubMed/arXiv request
+  中都只保留清洗后的安全领域词；URL 或本地路径会移除，清洗后没有安全 terms 时才跳过
+  connector lookup。浏览器 search 会先于 connector lookup 启动，connector 请求有更短的全局预算，
+  普通 browser 结果会保留 query string 区分；direct PubMed/arXiv URL 在 connector lookup
+  失败时会回退到 browser fetch。connector result digest 也只基于 shared safe query，
+  live connector 的 tool name 和
   User-Agent 使用不含产品名的中性标识。Research JSON codec 不再接受
   `open`/`fetch`、`queries`、`done.summary` 这类旧工具或参数 alias；fallback
-  contract 本身也不再携带 alias 层，并且只接受恰好一个 JSON object，且顶层只能有
-  `tool` + `args`，不再接受 `name`、顶层参数字段、额外顶层字段或额外 JSON object。
+  contract 本身也不再携带 alias 层，并且只接受恰好一个 plain JSON object，且顶层只能有
+  `tool` + `args`，不再接受 `name`、顶层参数字段、额外顶层字段、额外 JSON object、
+  array、markdown fence 或 prose wrapper。
   仍输出旧名字的 provider 可能多走一轮 repair，但 provider 怪癖应留在 provider
   adapter 或 repair prompt，而不是放回通用 parser 做隐式兼容。
 - dry-run planner 和 live connector search 现在共用同一套领域路由词表，包含

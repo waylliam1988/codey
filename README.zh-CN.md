@@ -273,14 +273,15 @@ search。内置 registry 现在有 `local_file`、`csv_tsv`、`json_file`、`arx
 runtime 处理，模型不再看到重载的 `open_url(result_id/source_id/hit_id)` 形状。
 Run Trace 只记录有界 dry-run summary，不保存 raw prompt、source
 body、raw URL 或 raw absolute path，并把模型可见 controller action hash 和编译后的
-runtime tool hash 分开记录。PubMed/arXiv API query 会从 safe terms 构造，raw
-secret、`api key ...` / `api key is ...`，以及 `password is equal to ...`、
-`password is set to ...`、`password is configured as ...`、
-`client secret known as ...`、`api key called ...`、
-`password is configured as known as called ...`、
+runtime tool hash 分开记录。PubMed/arXiv API query 会从同一个 safe query 边界构造；
+这个边界会遮掉 raw secret、`api key ...` / `api key is ...`，以及
+`password is equal to ...`、`password is set to ...`、
+`password is configured as ...`、`client secret known as ...`、
+`api key called ...`、`password is configured as known as called ...`、
 `password - is - configured - as - known - as - called - ...` 这类过度填充或标点分隔
-connector phrase、`密码 是 ...`、`密钥等于 ...` 这类更长但有界的 marker/value 窗口、
-URL、本地路径和 path-like slash token 会在 live connector request 前丢弃。
+connector phrase、`密码 是 ...`、`密钥等于 ...` 这类更长但有界的 marker/value 窗口。
+清洗后的领域词仍可用于 connector；URL、本地路径和 path-like slash token 会被移除，
+清洗后没有安全 terms 时才跳过 connector lookup。
 浏览器 Research 搜索在普通运行中显式
 复用一个专用 Research profile/port；直接构造 `BrowserSearchProvider()` 仍默认
 isolated，CDP attach/端口等待保持 20 秒上限，取消不会被当成启动/导航失败重试。
