@@ -68,12 +68,14 @@
   `password is configured as ...`、`password is configured as known as called ...`、
   `password - is - configured - as - known - as - called - ...` 这类过度填充或标点分隔
   connector phrase、`密码 是 ...`、`密钥等于 ...`、
-  `private key is ...`、`client_secret=...`、`access_token ...`、`token ...`、
-  `cookie ...`、`passphrase ...`、`Authorization: Bearer ...` 这类 marker/value
-  窗口；`password correct horse battery staple ...` 这类高风险 marker 后的多词 value
-  会遮到有界领域词边界。planner preview、connector digest 和 live PubMed/arXiv request
-  中都只保留清洗后的安全领域词；URL 或本地路径会移除，清洗后没有安全 terms 时才跳过
-  connector lookup。live connector routing 和 request assembly 会复用同一个
+  `private key is ...`、`client_secret=...`、`access_token ...`、`passphrase ...`、
+  `token abcdef`、`cookie abcdef`、`jwt abcdef` 这类 value-shaped contextual marker、
+  `Authorization: Bearer ...` 这类 marker/value 窗口；`api key one two three ...`、
+  `password correct horse battery staple ...`
+  这类明确 secret marker 后的多词 value 会遮到有界领域词边界。planner preview、
+  connector digest 和 live PubMed/arXiv request 中都只保留清洗后的安全领域词；URL
+  或本地路径会移除，清洗后没有安全 terms 时才跳过 connector lookup。live connector
+  routing 和 request assembly 会复用同一个
   `SafeConnectorQuery`，不再从 raw text 重算。浏览器 search 会先于 connector lookup 启动，connector 请求有更短的全局预算，
   普通 browser 结果会保留 query string 区分；direct PubMed/arXiv URL 在 connector lookup
   失败时会回退到 browser fetch。connector result digest 也只基于 shared safe query，

@@ -143,23 +143,33 @@ def test_connector_live_query_masks_separator_split_secret_markers_before_api_re
     requested: list[str] = []
     queries = (
         "api - key - abcdef clinical cancer",
+        "api key one two three clinical cancer",
         "api:key abcdef clinical cancer",
         "private - key topsecret clinical cancer",
+        "private key one two three clinical cancer",
         "access + key abcdef clinical cancer",
         "password . is . called . livekey clinical cancer",
         "client · secret abcdef clinical cancer",
+        "client secret one two three clinical cancer",
         "password hunter2 clinical cancer",
         "access_token abcdef clinical cancer",
+        "access_token one two three clinical cancer",
         "token abcdef clinical cancer",
         "id_token abcdef clinical cancer",
+        "id_token one two three clinical cancer",
         "auth_token abcdef clinical cancer",
+        "auth_token one two three clinical cancer",
         "api_token abcdef clinical cancer",
+        "api_token one two three clinical cancer",
         "cookie abcdef clinical cancer",
+        "jwt abcdef clinical cancer",
         "bearer_token abcdef clinical cancer",
+        "bearer_token one two three clinical cancer",
         "password correct horse battery staple clinical cancer",
         "passphrase correct horse battery staple clinical cancer",
         "密 - 钥 abcdef 临床 癌症",
         "密钥 abcdef 临床 癌症",
+        "密钥 one two three 临床 癌症",
         "密码 hunter2 临床 癌症",
     )
 
@@ -184,6 +194,9 @@ def test_connector_live_query_masks_separator_split_secret_markers_before_api_re
         "topsecret",
         "livekey",
         "hunter2",
+        "one",
+        "two",
+        "three",
         "correct",
         "horse",
         "battery",
@@ -203,6 +216,28 @@ def test_connector_live_query_masks_separator_split_secret_markers_before_api_re
         "called",
     ):
         assert forbidden not in joined
+
+
+def test_connector_live_query_keeps_contextual_marker_domain_terms() -> None:
+    base = FakeBaseSearchProvider()
+    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
+    requested: list[str] = []
+
+    def response(url: str, *, timeout: float) -> str:
+        del timeout
+        requested.append(url)
+        return _fixture_response(url, timeout=1)
+
+    with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
+        provider.search("token classification benchmark arxiv", limit=3)
+        provider.search("token pruning transformer benchmark", limit=3)
+        provider.search("jwt authentication benchmark", limit=3)
+
+    joined = "\n".join(item for item in requested if "export.arxiv.org" in item).casefold()
+    assert "classification" in joined
+    assert "pruning" in joined
+    assert "authentication" in joined
+    assert "benchmark" in joined
 
 
 def test_connector_live_query_still_searches_non_sensitive_url_and_path_terms() -> None:

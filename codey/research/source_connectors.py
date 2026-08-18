@@ -97,8 +97,16 @@ _SECRET_VALUE_CONNECTORS = frozenset({
     "设置为",
 })
 _SECRET_VALUE_SEPARATORS = frozenset(":=,;-–—−/\\|，。；：、._+·•")
+_SECRET_ASSIGNMENT_SEPARATORS = frozenset(":=：＝")
 _SECRET_VALUE_CONNECTOR_LIMIT = 12
 _SECRET_QUERY_TOKEN_RE = re.compile(r"[A-Za-z0-9]+|[\u4e00-\u9fff]+")
+_SECRET_VALUE_TOKEN_RE = re.compile(
+    r"(?i)(?:"
+    r"[a-f0-9]{6,}|"
+    r"(?=[a-z0-9_-]{6,}$)(?=.*[a-z])(?=.*\d)[a-z0-9_-]+|"
+    r"[a-z0-9_-]{20,}"
+    r")"
+)
 _SECRET_QUERY_MARKER_PHRASES = frozenset({
     ("access", "key"),
     ("access", "token"),
@@ -146,15 +154,10 @@ _PLAIN_VALUE_SECRET_MARKERS = frozenset({
 _VALUE_SCHEME_SECRET_MARKERS = frozenset({"bearer"})
 _CONTEXTUAL_VALUE_SECRET_MARKERS = frozenset({"cookie", "jwt", "token"})
 _MULTI_TOKEN_VALUE_SECRET_MARKERS = frozenset({
+    *_SECRET_QUERY_MARKER_COMPOUNDS,
+    *_PLAIN_VALUE_SECRET_MARKERS,
+    *_VALUE_SCHEME_SECRET_MARKERS,
     "authorization",
-    "bearer",
-    "password",
-    "passphrase",
-    "passwd",
-    "privatekey",
-    "pwd",
-    "sshkey",
-    "密码",
 })
 _MULTI_TOKEN_SECRET_VALUE_LIMIT = 6
 _SECRET_VALUE_BOUNDARY_TERMS = frozenset({
@@ -626,6 +629,13 @@ def connector_query_has_secret_signal(value: object) -> bool:
     return bool(_secret_query_spans(str(value or "")))
 
 
+@dataclass(frozen=True)
+class _SecretMarkerPolicy:
+    allow_plain_value: bool
+    contextual: bool = False
+    value_token_limit: int = 1
+
+
 def _secret_query_spans(text: str) -> tuple[tuple[int, int], ...]:
     if not text:
         return ()
@@ -635,23 +645,13 @@ def _secret_query_spans(text: str) -> tuple[tuple[int, int], ...]:
     for match in SECRET_MARKER_RE.finditer(text):
         marker_tokens = tuple(token for token, _start, _end in _secret_query_tokens(match.group(0)))
         compact = "".join(marker_tokens)
-        contextual_marker = _is_contextual_secret_marker(marker_tokens, compact)
-        allow_plain_value = (
-            marker_tokens in _SECRET_QUERY_MARKER_PHRASES
-            or compact in _SECRET_QUERY_MARKER_COMPOUNDS
-            or compact in _PLAIN_VALUE_SECRET_MARKERS
-            or compact in _VALUE_SCHEME_SECRET_MARKERS
-            or contextual_marker
-        )
-        value_limit = _secret_value_token_limit(marker_tokens, compact)
+        policy = _secret_marker_policy(marker_tokens, compact)
         span_end = _secret_value_window_end(
             text,
             match.end(),
-            allow_plain_value=allow_plain_value,
-            contextual_marker=contextual_marker,
-            value_token_limit=value_limit,
+            policy=policy,
         )
-        if span_end > match.end() or (allow_plain_value and not contextual_marker):
+        if span_end > match.end() or (policy.allow_plain_value and not policy.contextual):
             spans.append((
                 _span_start_for_marker(text, match.start()),
                 max(span_end, match.end()),
@@ -662,9 +662,7 @@ def _secret_query_spans(text: str) -> tuple[tuple[int, int], ...]:
             span_end = _secret_value_window_end(
                 text,
                 end,
-                allow_plain_value=True,
-                contextual_marker=False,
-                value_token_limit=_secret_value_token_limit((token,), token),
+                policy=_secret_marker_policy((token,), token),
             )
             if span_end > end:
                 spans.append((_span_start_for_marker(text, tokens[index][1]), span_end))
@@ -672,9 +670,7 @@ def _secret_query_spans(text: str) -> tuple[tuple[int, int], ...]:
             span_end = _secret_value_window_end(
                 text,
                 end,
-                allow_plain_value=True,
-                contextual_marker=True,
-                value_token_limit=1,
+                policy=_secret_marker_policy((token,), token),
             )
             if span_end > end:
                 spans.append((_span_start_for_marker(text, tokens[index][1]), span_end))
@@ -682,15 +678,13 @@ def _secret_query_spans(text: str) -> tuple[tuple[int, int], ...]:
             pair = (token, tokens[index + 1][0])
             if pair in _SECRET_QUERY_MARKER_PHRASES:
                 compact = "".join(pair)
-                contextual_marker = _is_contextual_secret_marker(pair, compact)
+                policy = _secret_marker_policy(pair, compact)
                 span_end = _secret_value_window_end(
                     text,
                     tokens[index + 1][2],
-                    allow_plain_value=True,
-                    contextual_marker=contextual_marker,
-                    value_token_limit=_secret_value_token_limit(pair, compact),
+                    policy=policy,
                 )
-                if span_end > tokens[index + 1][2] or not contextual_marker:
+                if span_end > tokens[index + 1][2] or not policy.contextual:
                     spans.append((
                         _span_start_for_marker(text, tokens[index][1]),
                         max(span_end, tokens[index + 1][2]),
@@ -719,30 +713,36 @@ def _secret_query_tokens(text: str) -> tuple[tuple[str, int, int], ...]:
     )
 
 
-def _is_contextual_secret_marker(marker_tokens: tuple[str, ...], compact: str) -> bool:
-    return len(marker_tokens) == 1 and compact in _CONTEXTUAL_VALUE_SECRET_MARKERS
-
-
-def _secret_value_token_limit(marker_tokens: tuple[str, ...], compact: str) -> int:
-    del marker_tokens
-    if compact in _MULTI_TOKEN_VALUE_SECRET_MARKERS:
-        return _MULTI_TOKEN_SECRET_VALUE_LIMIT
-    return 1
+def _secret_marker_policy(marker_tokens: tuple[str, ...], compact: str) -> _SecretMarkerPolicy:
+    contextual = len(marker_tokens) == 1 and compact in _CONTEXTUAL_VALUE_SECRET_MARKERS
+    explicit = (
+        marker_tokens in _SECRET_QUERY_MARKER_PHRASES
+        or compact in _SECRET_QUERY_MARKER_COMPOUNDS
+        or compact in _PLAIN_VALUE_SECRET_MARKERS
+        or compact in _VALUE_SCHEME_SECRET_MARKERS
+    )
+    return _SecretMarkerPolicy(
+        allow_plain_value=explicit or contextual,
+        contextual=contextual,
+        value_token_limit=(
+            _MULTI_TOKEN_SECRET_VALUE_LIMIT
+            if compact in _MULTI_TOKEN_VALUE_SECRET_MARKERS
+            else 1
+        ),
+    )
 
 
 def _secret_value_window_end(
     text: str,
     index: int,
     *,
-    allow_plain_value: bool,
-    contextual_marker: bool,
-    value_token_limit: int,
+    policy: _SecretMarkerPolicy,
 ) -> int:
     cursor = index
     saw_connector = False
     connector_count = 0
     while True:
-        token, _start, end, had_separator = _query_token_after(text, cursor)
+        token, start, end, had_separator = _query_token_after(text, cursor)
         if not token:
             return index
         if token in _SECRET_VALUE_CONNECTORS:
@@ -752,13 +752,18 @@ def _secret_value_window_end(
                 return len(text)
             cursor = end
             continue
-        if not (allow_plain_value or saw_connector or had_separator):
+        if not (policy.allow_plain_value or saw_connector or had_separator):
             return index
-        if contextual_marker and not (saw_connector or had_separator) and not _looks_secret_value_token(token):
+        assignment_context = _has_assignment_separator(text[cursor:start])
+        if (
+            policy.contextual
+            and not (saw_connector or assignment_context)
+            and not _looks_secret_value_token(token)
+        ):
             return index
         if not (saw_connector or had_separator) and _is_secret_value_boundary(token):
             return index
-        return _secret_value_phrase_end(text, end, value_token_limit=value_token_limit)
+        return _secret_value_phrase_end(text, end, value_token_limit=policy.value_token_limit)
 
 
 def _secret_value_phrase_end(text: str, end: int, *, value_token_limit: int) -> int:
@@ -777,7 +782,11 @@ def _secret_value_phrase_end(text: str, end: int, *, value_token_limit: int) -> 
 
 
 def _looks_secret_value_token(token: str) -> bool:
-    return bool(token) and not _is_secret_value_boundary(token)
+    return bool(token) and not _is_secret_value_boundary(token) and bool(_SECRET_VALUE_TOKEN_RE.fullmatch(token))
+
+
+def _has_assignment_separator(text: str) -> bool:
+    return any(char in _SECRET_ASSIGNMENT_SEPARATORS for char in text)
 
 
 def _is_secret_value_boundary(token: str) -> bool:

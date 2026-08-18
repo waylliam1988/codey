@@ -99,6 +99,7 @@ def test_safe_connector_query_terms_drop_secret_url_and_path_spans() -> None:
 def test_safe_connector_query_terms_mask_secret_marker_value_windows() -> None:
     cases = (
         "api key abcdef clinical cancer",
+        "api key one two three clinical cancer",
         "api key is abcdef clinical cancer",
         "api key named abcdef clinical cancer",
         "api key called livekey clinical cancer",
@@ -115,16 +116,25 @@ def test_safe_connector_query_terms_mask_secret_marker_value_windows() -> None:
         "api key — called — livekey clinical cancer",
         "api key clinical cancer",
         "access_token abcdef clinical cancer",
+        "access_token one two three clinical cancer",
         "token abcdef clinical cancer",
         "id_token abcdef clinical cancer",
+        "id_token one two three clinical cancer",
         "auth_token abcdef clinical cancer",
+        "auth_token one two three clinical cancer",
         "api_token abcdef clinical cancer",
+        "api_token one two three clinical cancer",
         "cookie abcdef clinical cancer",
+        "jwt abcdef clinical cancer",
         "bearer_token abcdef clinical cancer",
+        "bearer_token one two three clinical cancer",
         "client_secret = abcdef clinical cancer",
+        "client_secret one two three clinical cancer",
         "client_secret is mysecretvalue clinical cancer",
         "client secret known as abcdef clinical cancer",
+        "client secret one two three clinical cancer",
         "private key is topsecret clinical cancer",
+        "private key one two three clinical cancer",
         "Authorization: Bearer abcdef clinical cancer",
         "password correct horse battery staple clinical cancer",
         "passphrase correct horse battery staple clinical cancer",
@@ -157,6 +167,9 @@ def test_safe_connector_query_terms_mask_secret_marker_value_windows() -> None:
         assert "hunter2" not in joined
         assert "mysecretvalue" not in joined
         assert "topsecret" not in joined
+        assert "one" not in joined
+        assert "two" not in joined
+        assert "three" not in joined
         assert "correct" not in joined
         assert "horse" not in joined
         assert "battery" not in joined
@@ -168,9 +181,12 @@ def test_safe_connector_query_terms_mask_chinese_secret_marker_value_windows() -
         "密码 是 hunter2 临床 癌症",
         "密码 hunter2 临床 癌症",
         "密钥 abcdef 临床 癌症",
+        "密钥 one two three 临床 癌症",
         "密钥等于 abcdef clinical",
         "访问令牌 设置为 abcdef clinical cancer",
+        "访问令牌 one two three clinical cancer",
         "私钥 名为 livekey clinical cancer",
+        "私钥 one two three clinical cancer",
     )
 
     for query in cases:
@@ -183,6 +199,9 @@ def test_safe_connector_query_terms_mask_chinese_secret_marker_value_windows() -
         assert "abcdef" not in joined
         assert "hunter2" not in joined
         assert "livekey" not in joined
+        assert "one" not in joined
+        assert "two" not in joined
+        assert "three" not in joined
         assert "等于" not in joined
 
 
@@ -221,9 +240,15 @@ def test_connector_query_secret_signal_detects_separator_split_markers() -> None
 
     assert not connector_query_has_secret_signal("secreted insulin secretion pathway clinical cancer")
     assert not connector_query_has_secret_signal("token efficient transformers benchmark")
+    assert not connector_query_has_secret_signal("token classification benchmark arxiv")
+    assert not connector_query_has_secret_signal("token pruning transformer benchmark")
+    assert not connector_query_has_secret_signal("jwt authentication benchmark")
     assert not connector_query_has_secret_signal("authorization trial consent policy")
     assert not connector_query_has_secret_signal("secret sharing cryptography benchmark")
     assert safe_connector_query("token efficient transformers benchmark").terms
+    assert "classification" in safe_connector_query("token classification benchmark arxiv").terms
+    assert "pruning" in safe_connector_query("token pruning transformer benchmark").terms
+    assert "authentication" in safe_connector_query("jwt authentication benchmark").terms
     assert safe_connector_query("authorization trial consent policy").terms
     assert safe_connector_query("secret sharing cryptography benchmark").terms
 

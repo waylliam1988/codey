@@ -348,13 +348,14 @@ query boundary that masks high-confidence secret marker/value windows such as
 such as `password is configured as known as called ...` and
 `password - is - configured - as - known - as - called - ...`, and Chinese
 windows such as `密码 是 ...` or `密钥等于 ...`. Common token and cookie markers
-such as `access_token ...`, `token ...`, `cookie ...`, and `passphrase ...`
-are masked too, and multi-word values after high-risk markers are bounded by
-domain terms. Cleaned domain terms can still drive connectors, while URLs,
-local paths, and path-like slash tokens are dropped; connector lookup is
-skipped when no safe terms remain. Live connector routing and request assembly
-reuse that single safe query instead of deriving terms repeatedly from raw
-text.
+such as `access_token ...` and `passphrase ...` are masked too. Bare contextual
+markers such as `token`, `cookie`, and `jwt` only mask value-shaped followers
+like `token abcdef`, so queries such as `token classification benchmark` keep
+their domain terms. Multi-word values after explicit secret markers are bounded
+by domain terms. Cleaned domain terms can still drive connectors, while URLs,
+local paths, and path-like slash tokens are dropped; connector lookup is skipped
+when no safe terms remain. Live connector routing and request assembly reuse
+that single safe query instead of deriving terms repeatedly from raw text.
 Browser-backed Research search explicitly reuses one dedicated Research
 profile/port for ordinary runs, while direct `BrowserSearchProvider()`
 construction stays isolated by default, CDP attach/port waits stay bounded at

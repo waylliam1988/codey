@@ -49,16 +49,19 @@ Production changes:
   `password - is - configured - as - known - as - called - ...`, Chinese
   windows such as `密码 是 ...` and `密钥等于 ...`, `private key is ...`,
   `client_secret=...`, and
-  `Authorization: Bearer ...`, plus `access_token ...`, `token ...`,
-  `cookie ...`, and `passphrase ...`, are masked before planner previews,
-  connector digests, and any source API request. Multi-word values after
-  high-risk markers are bounded by domain terms. Cleaned domain terms can still
-  drive connectors; URLs and local paths are dropped, connector lookup is
-  skipped only when no safe terms remain, and live connector routing/request
-  assembly reuse the same `SafeConnectorQuery`. Browser fallback search starts
-  before connector lookup, connector lookup has a short global request budget,
-  direct PubMed/arXiv URL fetch failures fall back to browser fetch, and normal
-  browser result de-duplication keeps query-string-distinct URLs.
+  `Authorization: Bearer ...`, plus `access_token ...`, `passphrase ...`, and
+  value-shaped contextual followers such as `token abcdef`, `cookie abcdef`,
+  or `jwt abcdef`, are masked before planner previews, connector digests, and
+  any source API request. Multi-word values after explicit secret markers are
+  bounded by domain terms, while NLP/security queries such as
+  `token classification benchmark` keep their domain terms. Cleaned domain
+  terms can still drive connectors; URLs and local paths are dropped, connector
+  lookup is skipped only when no safe terms remain, and live connector
+  routing/request assembly reuse the same `SafeConnectorQuery`. Browser
+  fallback search starts before connector lookup, connector lookup has a short
+  global request budget, direct PubMed/arXiv URL fetch failures fall back to
+  browser fetch, and normal browser result de-duplication keeps
+  query-string-distinct URLs.
 - Recorded PubMed/arXiv fixture parsers and recorded fetches validate both
   connector-specific host and source-ID shape. `SourceHit` metadata refs and
   scalar audit fields filter secret-looking values, `FetchedSource` scalar audit
