@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol
+from typing import Any, Mapping, Protocol
 
 from codey.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.research.protocol_diagnostics import classify_no_json_reply
@@ -17,6 +17,7 @@ from codey.research.tool_contract import (
 )
 
 MAX_CALLS_PER_TURN = 1
+_EXACT_TOOL_OBJECT_KEYS = frozenset({"tool", "args"})
 
 
 def _known_tool_names(include_source_search: bool = True) -> set[str]:
@@ -71,35 +72,35 @@ class JsonToolCodec:
         if not objects:
             kind, message = classify_no_json_reply(text or "")
             return ToolPlan(calls=[], control=None, protocol_error=message, protocol_error_kind=kind)
-        actions: list[tuple[str, str, dict[str, Any]]] = []
+        if len(objects) > MAX_CALLS_PER_TURN:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=(
+                    f"too many JSON tool calls in one reply ({len(objects)}); "
+                    "reply with exactly one JSON object"
+                ),
+                protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
+            )
         known_tools = _known_tool_names(self.include_source_search)
-        for obj in objects:
-            name = str(obj.get("tool") or "").strip().lower()
-            if not name:
-                continue
-            if name not in known_tools:
-                actions.append(("unknown", name, obj))
-                continue
-            actions.append(("known", name, obj))
-        if not actions:
+        obj = objects[0]
+        shape_error = exact_tool_object_error(obj)
+        if shape_error:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=shape_error,
+                protocol_error_kind=PROTOCOL_INVALID_ARGS,
+            )
+        runtime = str(obj.get("tool") or "").strip().lower()
+        if not runtime:
             return ToolPlan(
                 calls=[],
                 control=None,
                 protocol_error="no known tool in reply",
                 protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
             )
-        if len(actions) > MAX_CALLS_PER_TURN:
-            return ToolPlan(
-                calls=[],
-                control=None,
-                protocol_error=(
-                    f"too many JSON tool calls in one reply ({len(actions)}); "
-                    "reply with exactly one JSON object"
-                ),
-                protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
-            )
-        action_kind, runtime, obj = actions[0]
-        if action_kind == "unknown":
+        if runtime not in known_tools:
             return ToolPlan(
                 calls=[],
                 control=None,
@@ -193,6 +194,13 @@ def extract_json_objects(text: str) -> list[dict[str, Any]]:
 
 
 _extract_json_objects = extract_json_objects
+
+
+def exact_tool_object_error(obj: Mapping[str, Any]) -> str:
+    keys = set(obj.keys())
+    if keys == _EXACT_TOOL_OBJECT_KEYS:
+        return ""
+    return 'JSON tool object must contain exactly top-level "tool" and "args" fields'
 
 
 _SYSTEM_PROMPT = """You are a local research agent. You investigate a question on \

@@ -91,6 +91,7 @@ _SECRET_VALUE_CONNECTORS = frozenset({
     "等于",
     "设置为",
 })
+_SECRET_VALUE_SEPARATORS = frozenset(":=,;-–—−/\\|，。；：、")
 _ALLOWED_HIT_CONTENT_KINDS = frozenset({"abstract", "html", "json", "pdf", "table", "text"})
 _ALLOWED_FETCHED_CONTENT_KINDS = _ALLOWED_HIT_CONTENT_KINDS
 _ALLOWED_FETCHED_MIME_TYPES = frozenset({
@@ -598,7 +599,7 @@ def _extend_secret_marker_value_window(text: str, index: int) -> int:
 
 
 def _next_query_token_span(text: str, index: int) -> tuple[int, int]:
-    while index < len(text) and (text[index].isspace() or text[index] in ":=,;"):
+    while index < len(text) and (text[index].isspace() or text[index] in _SECRET_VALUE_SEPARATORS):
         index += 1
     end = index
     while end < len(text) and not text[end].isspace():
@@ -607,7 +608,9 @@ def _next_query_token_span(text: str, index: int) -> tuple[int, int]:
 
 
 def _clean_secret_connector_token(value: object) -> str:
-    return str(value or "").strip(" \t\r\n.,;:=，。；：=\"'()[]{}<>（）【】《》").casefold()
+    return str(value or "").strip(
+        " \t\r\n.,;:=，。；：、-–—−/\\|=\"'()[]{}<>（）【】《》"
+    ).casefold()
 
 
 def _unsafe_query_span(token: str) -> bool:
@@ -1044,8 +1047,10 @@ def _bounded_mapping(value: Mapping[str, object]) -> dict[str, str]:
 
 
 def _safe_connector_code(value: object) -> str:
-    text = _connector_id(value)
-    if not text or looks_sensitive_code(text):
+    raw = str(value or "")
+    stripped = raw.strip()
+    text = _connector_id(stripped)
+    if not text or raw != stripped or text != stripped or looks_sensitive_code(text):
         return ""
     return text
 
@@ -1078,7 +1083,7 @@ def _safe_payload_code(value: object, limit: int) -> str:
 
 def _connector_code_or_raise(value: object, label: str) -> None:
     if not _safe_connector_code(value):
-        raise ValueError(f"{label} must be non-sensitive snake_case")
+        raise ValueError(f"{label} must be canonical non-sensitive snake_case")
 
 
 def _connector_status(value: object) -> str:

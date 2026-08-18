@@ -44,9 +44,11 @@ Production changes:
   such as `api key ...`, `api key is ...`, `password is ...`,
   `password is equal to ...`, `password is set to ...`,
   `password is configured as ...`, `api key called ...`, `api key named ...`,
-  `client secret known as ...`, over-padded connector phrases such as
-  `password is configured as known as called ...`, Chinese windows such as
-  `密码 是 ...` and `密钥等于 ...`, `private key is ...`, `client_secret=...`, and
+  `client secret known as ...`, over-padded or punctuation-separated connector
+  phrases such as `password is configured as known as called ...` and
+  `password - is - configured - as - known - as - called - ...`, Chinese
+  windows such as `密码 是 ...` and `密钥等于 ...`, `private key is ...`,
+  `client_secret=...`, and
   `Authorization: Bearer ...`, URLs, and local paths are dropped before any
   source API request. Browser fallback search starts before connector lookup,
   connector lookup has a short global request budget, direct PubMed/arXiv URL
@@ -56,9 +58,10 @@ Production changes:
   connector-specific host and source-ID shape. `SourceHit` metadata refs and
   scalar audit fields filter secret-looking values, `FetchedSource` scalar audit
   fields are allow-listed, connector catalog id/kind values reject
-  secret-looking codes, catalog hints and result warning/error payloads filter
-  secret-looking codes, connector result query digests use sanitized terms, and
-  proof-complete no-op plans carry no availability-warning noise.
+  secret-looking or non-canonical codes, catalog hints and result warning/error
+  payloads filter secret-looking codes, connector result query digests use
+  sanitized terms, and proof-complete no-op plans carry no availability-warning
+  noise.
 - Run Trace records bounded connector fallback error summaries as connector,
   action, error kind, and count only; raw URLs, queries, exception messages, and
   secret-looking values are excluded. Research plan, evidence-ledger, and
@@ -84,9 +87,10 @@ Production changes:
   `queries`, and `done.summary` fail through the typed protocol path. That can
   cost one repair turn for providers that still emit legacy names; the clean
   boundary is provider adapter normalization plus typed repair prompts, not
-  shared parser compatibility. Hidden `name` tool fields and top-level
-  argument fields are also rejected; exact top-level `tool` plus `args` is the
-  only accepted Research JSON shape.
+  shared parser compatibility. Hidden `name` tool fields, top-level argument
+  fields, extra top-level fields, and extra JSON objects are also rejected;
+  exactly one JSON object with only top-level `tool` plus `args` is the accepted
+  Research JSON shape.
 - Planner and live connector routing share one domain vocabulary, including
   genetic/genomic and RAG/NLP/retrieval/benchmark terms. Registry
   availability/capability flags are enforced by the live wrapper; connector
@@ -103,11 +107,11 @@ Production changes:
 Validation during implementation:
 
 ```text
-python -m py_compile codey\research\redaction.py codey\research\source_connectors.py codey\research\connector_search.py codey\research\protocols.py codey\research\controller.py codey\research\query_planner.py codey\run_trace.py tests\manual\deep_research_core_ab.py tests\manual\research_repair_prompt_ab.py tests\manual\source_connector_ab.py
+python -m py_compile codey\research\source_connectors.py codey\research\protocols.py codey\research\controller.py tests\test_source_connectors.py tests\test_connector_search.py tests\test_research_protocol_contract.py tests\test_research_controller.py
 # passed
 
 python -m pytest tests\test_source_connectors.py tests\test_connector_search.py tests\test_query_planner.py tests\test_research_protocol_contract.py tests\test_research_controller.py tests\test_research.py tests\test_glm.py -q
-# 225 passed, 7 subtests passed in 14.38s
+# 231 passed, 7 subtests passed in 14.37s
 
 python -m pytest tests\test_source_connectors.py tests\test_connector_search.py tests\test_query_planner.py tests\test_browser.py tests\test_research.py tests\test_run_trace.py tests\test_architecture.py -q
 # 228 passed, 122 subtests passed in 14.46s
@@ -119,7 +123,7 @@ python -m compileall -q codey tests
 # passed
 
 python -m pytest -q
-# 2185 passed, 9 skipped, 621 subtests passed in 412.98s (0:06:52)
+# 2191 passed, 9 skipped, 621 subtests passed in 410.40s (0:06:50)
 
 python -m pytest tests\test_source_connectors.py tests\test_query_planner.py tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_capabilities.py tests\test_event_matrix.py tests\test_architecture.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q -p no:cacheprovider
 # 91 passed, 308 subtests passed

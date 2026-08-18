@@ -67,8 +67,8 @@ def test_protocol_rejects_name_field_as_hidden_tool_alias() -> None:
 
     assert not plan.calls
     assert plan.control is None
-    assert plan.protocol_error_kind == PROTOCOL_UNKNOWN_TOOL
-    assert "no known tool in reply" in plan.protocol_error
+    assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
+    assert 'exactly top-level "tool" and "args"' in plan.protocol_error
 
 
 def test_protocol_rejects_top_level_args_shape() -> None:
@@ -77,10 +77,37 @@ def test_protocol_rejects_top_level_args_shape() -> None:
 
     assert not search.calls
     assert search.protocol_error_kind == PROTOCOL_INVALID_ARGS
-    assert "web_search args must be an object" in search.protocol_error
+    assert 'exactly top-level "tool" and "args"' in search.protocol_error
     assert done.control is None
     assert done.protocol_error_kind == PROTOCOL_INVALID_ARGS
-    assert "done args must be an object" in done.protocol_error
+    assert 'exactly top-level "tool" and "args"' in done.protocol_error
+
+
+def test_protocol_rejects_extra_top_level_fields() -> None:
+    cases = (
+        {"tool": "web_search", "args": {"query": "alpha"}, "name": "done"},
+        {"tool": "web_search", "args": {"query": "alpha"}, "query": "SECRET"},
+    )
+
+    for payload in cases:
+        plan = parse(payload)
+
+        assert not plan.calls
+        assert plan.protocol_error_kind == PROTOCOL_INVALID_ARGS
+        assert 'exactly top-level "tool" and "args"' in plan.protocol_error
+
+
+def test_protocol_rejects_extra_json_object_before_valid_tool_call() -> None:
+    reply = "\n".join([
+        json.dumps({"foo": "bar"}),
+        json.dumps({"tool": "web_search", "args": {"query": "alpha"}}),
+    ])
+
+    plan = JsonToolCodec().parse(reply)
+
+    assert not plan.calls
+    assert plan.protocol_error_kind == PROTOCOL_TOO_MANY_TOOLS
+    assert "too many JSON tool calls" in plan.protocol_error
 
 
 def test_typographic_json_quotes_are_not_accepted_by_generic_protocol_codec() -> None:

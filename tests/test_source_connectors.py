@@ -110,6 +110,8 @@ def test_safe_connector_query_terms_drop_secret_marker_value_windows() -> None:
         "password is set to hunter2 clinical cancer",
         "password is configured as hunter2 clinical cancer",
         "password is configured as known as called livekey clinical cancer",
+        "password - is - configured - as - known - as - called - livekey clinical cancer",
+        "api key — called — livekey clinical cancer",
         "client_secret = abcdef clinical cancer",
         "client_secret is mysecretvalue clinical cancer",
         "client secret known as abcdef clinical cancer",
@@ -130,6 +132,9 @@ def test_safe_connector_query_terms_drop_secret_marker_value_windows() -> None:
         assert "secret" not in joined
         assert "authorization" not in joined
         assert "bearer" not in joined
+        assert "configured" not in joined
+        assert "known" not in joined
+        assert "called" not in joined
         assert "abcdef" not in joined
         assert "livekey" not in joined
         assert "hunter2" not in joined
@@ -460,14 +465,35 @@ def test_source_connector_spec_payload_filters_sensitive_catalog_codes() -> None
     assert "sk-" not in serialized
 
 
+def test_source_connector_spec_payload_filters_noncanonical_catalog_codes() -> None:
+    payload = SourceConnectorSpec(
+        id="PubMed",
+        kind="biomedical_literature ",
+    ).to_payload()
+
+    assert payload["id"] == ""
+    assert payload["kind"] == ""
+
+
 def test_source_connector_registry_rejects_sensitive_custom_id_or_kind() -> None:
-    with pytest.raises(ValueError, match="connector id must be non-sensitive snake_case"):
+    with pytest.raises(ValueError, match="connector id must be canonical non-sensitive snake_case"):
         SourceConnectorRegistry((
             SourceConnectorSpec(id="client_secret", kind="biomedical_literature"),
         ))
-    with pytest.raises(ValueError, match=r"pubmed\.kind must be non-sensitive snake_case"):
+    with pytest.raises(ValueError, match=r"pubmed\.kind must be canonical non-sensitive snake_case"):
         SourceConnectorRegistry((
             SourceConnectorSpec(id="pubmed", kind="client_secret"),
+        ))
+
+
+def test_source_connector_registry_rejects_noncanonical_custom_id_or_kind() -> None:
+    with pytest.raises(ValueError, match="connector id must be canonical non-sensitive snake_case"):
+        SourceConnectorRegistry((
+            SourceConnectorSpec(id="PubMed", kind="biomedical_literature"),
+        ))
+    with pytest.raises(ValueError, match=r"pubmed\.kind must be canonical non-sensitive snake_case"):
+        SourceConnectorRegistry((
+            SourceConnectorSpec(id="pubmed", kind="Biomedical_Literature"),
         ))
 
 

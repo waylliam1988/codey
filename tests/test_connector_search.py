@@ -145,6 +145,7 @@ def test_connector_live_query_strips_natural_language_secret_values_before_api_r
         provider.search("client secret known as abcdef clinical cancer", limit=3)
         provider.search("password is configured as hunter2 clinical cancer", limit=3)
         provider.search("password is configured as known as called livekey clinical cancer", limit=3)
+        provider.search("password - is - configured - as - known - as - called - livekey clinical cancer", limit=3)
         provider.search("密码 是 hunter2 临床 癌症", limit=3)
         provider.search("密钥等于 abcdef clinical cancer", limit=3)
 
@@ -152,6 +153,9 @@ def test_connector_live_query_strips_natural_language_secret_values_before_api_r
     assert "clinical" in joined
     assert "cancer" in joined
     assert "livekey" not in joined
+    assert "configured" not in joined
+    assert "known" not in joined
+    assert "called" not in joined
     assert "hunter2" not in joined
     assert "abcdef" not in joined
     assert "password" not in joined

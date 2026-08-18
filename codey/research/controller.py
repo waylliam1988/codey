@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from codey.models import ToolPlan, ToolResult
-from codey.research.protocols import ProtocolCodec, extract_json_objects
+from codey.research.protocols import ProtocolCodec, exact_tool_object_error, extract_json_objects
 from codey.research.source_document import compact_pages
 from codey.research.tool_contract import (
     PROTOCOL_DISALLOWED_TOOL,
@@ -198,42 +198,42 @@ class ResearchController:
         objects: list[dict[str, Any]],
         state: ResearchControlState,
     ) -> ToolPlan:
-        actions: list[tuple[str, str, dict[str, Any]]] = []
-        for obj in objects:
-            raw_tool = str(obj.get("tool") or "").strip().lower()
-            if not raw_tool:
-                continue
-            tool = controller_tool_name(
-                raw_tool,
-                include_source_search=self.include_source_search,
+        if len(objects) > 1:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=(
+                    f"too many JSON tool calls in one reply ({len(objects)}); "
+                    "reply with exactly one JSON object"
+                ),
+                protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
             )
-            if not tool:
-                actions.append(("unknown", raw_tool, obj))
-            else:
-                actions.append(("known", tool, obj))
-        if not actions:
+        obj = objects[0]
+        shape_error = exact_tool_object_error(obj)
+        if shape_error:
+            return ToolPlan(
+                calls=[],
+                control=None,
+                protocol_error=shape_error,
+                protocol_error_kind=PROTOCOL_INVALID_ARGS,
+            )
+        raw_tool = str(obj.get("tool") or "").strip().lower()
+        if not raw_tool:
             return ToolPlan(
                 calls=[],
                 control=None,
                 protocol_error="no known tool in reply",
                 protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
             )
-        if len(actions) > 1:
+        tool = controller_tool_name(
+            raw_tool,
+            include_source_search=self.include_source_search,
+        )
+        if not tool:
             return ToolPlan(
                 calls=[],
                 control=None,
-                protocol_error=(
-                    f"too many JSON tool calls in one reply ({len(actions)}); "
-                    "reply with exactly one JSON object"
-                ),
-                protocol_error_kind=PROTOCOL_TOO_MANY_TOOLS,
-            )
-        action_kind, tool, obj = actions[0]
-        if action_kind == "unknown":
-            return ToolPlan(
-                calls=[],
-                control=None,
-                protocol_error=f"unknown tool: {tool}",
+                protocol_error=f"unknown tool: {raw_tool}",
                 protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
             )
         if state.allowed_tools and tool not in state.allowed_tools:
@@ -330,6 +330,9 @@ def compile_controller_action(
     tool: str,
 ) -> tuple[dict[str, Any], str]:
     rewritten = dict(obj)
+    shape_error = exact_tool_object_error(rewritten)
+    if shape_error:
+        return rewritten, shape_error
     args = rewritten.get("args")
     if not isinstance(args, dict):
         return rewritten, f"{tool} args must be an object"

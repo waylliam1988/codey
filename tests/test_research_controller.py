@@ -210,8 +210,8 @@ class ResearchControllerTests(unittest.TestCase):
             state,
         )
 
-        self.assertEqual(plan.protocol_error_kind, "unknown_tool")
-        self.assertIn("no known tool in reply", plan.protocol_error)
+        self.assertEqual(plan.protocol_error_kind, "invalid_args")
+        self.assertIn('exactly top-level "tool" and "args"', plan.protocol_error)
         self.assertFalse(plan.calls)
 
     def test_controller_rejects_top_level_args_shape(self) -> None:
@@ -225,7 +225,35 @@ class ResearchControllerTests(unittest.TestCase):
         )
 
         self.assertEqual(plan.protocol_error_kind, "invalid_args")
-        self.assertIn("web_search args must be an object", plan.protocol_error)
+        self.assertIn('exactly top-level "tool" and "args"', plan.protocol_error)
+        self.assertFalse(plan.calls)
+
+    def test_controller_rejects_extra_top_level_fields(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ResearchLedger()), turn=1, max_turns=8)
+
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            '{"tool":"web_search","args":{"query":"alpha"},"query":"SECRET"}',
+            state,
+        )
+
+        self.assertEqual(plan.protocol_error_kind, "invalid_args")
+        self.assertIn('exactly top-level "tool" and "args"', plan.protocol_error)
+        self.assertFalse(plan.calls)
+
+    def test_controller_rejects_extra_json_object_before_valid_tool_call(self) -> None:
+        controller = ResearchController()
+        state = controller.build_state(tools_for(ResearchLedger()), turn=1, max_turns=8)
+
+        plan = controller.parse_plan(
+            JsonToolCodec(),
+            '{"foo":"bar"}\n{"tool":"web_search","args":{"query":"alpha"}}',
+            state,
+        )
+
+        self.assertEqual(plan.protocol_error_kind, "too_many_tools")
+        self.assertIn("too many JSON tool calls", plan.protocol_error)
         self.assertFalse(plan.calls)
 
     def test_controller_does_not_repair_provider_specific_typographic_quotes(self) -> None:
