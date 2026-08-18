@@ -63,6 +63,17 @@ class GlmDriverTests(unittest.TestCase):
         self.assertEqual(plan.calls[0].name, "web_search")
         self.assertEqual(plan.calls[0].args["query"], "arXiv RAG evaluation")
 
+    def test_normalize_tool_json_reply_repairs_research_done_answer_before_codec(self) -> None:
+        reply = '{“tool”:“done”,“args”:{“answer”:“结论文本”}}'
+
+        plan = JsonToolCodec().parse(glm.normalize_tool_json_reply(reply))
+
+        self.assertFalse(plan.protocol_error)
+        self.assertIsNotNone(plan.control)
+        assert plan.control is not None
+        self.assertEqual(plan.control.kind, "done")
+        self.assertEqual(plan.control.body, "结论文本")
+
     def test_normalize_tool_json_reply_preserves_smart_quotes_inside_summary(self) -> None:
         reply = '{“tool”:“done”,“args”:{“summary”:“构建“入场”掩码，并返回“安全”结果。”}}'
 

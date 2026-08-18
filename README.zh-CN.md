@@ -275,17 +275,21 @@ Run Trace 只记录有界 dry-run summary，不保存 raw prompt、source
 body、raw URL 或 raw absolute path，并把模型可见 controller action hash 和编译后的
 runtime tool hash 分开记录。PubMed/arXiv API query 会从 safe terms 构造，raw
 secret、`api key ...` / `api key is ...`，以及 `password is equal to ...`、
-`password is set to ...`、`api key named ...` 这类更长但有界的 marker/value
-窗口、URL、本地路径和 path-like slash token 会在 live connector request 前丢弃。
+`password is set to ...`、`password is configured as ...`、
+`client secret known as ...`、`api key called ...`、`密码 是 ...`、`密钥等于 ...`
+这类更长但有界的 marker/value 窗口、URL、本地路径和 path-like slash token 会在
+live connector request 前丢弃。
 浏览器 Research 搜索在普通运行中显式
 复用一个专用 Research profile/port；直接构造 `BrowserSearchProvider()` 仍默认
 isolated，CDP attach/端口等待保持 20 秒上限，取消不会被当成启动/导航失败重试。
 PubMed/arXiv recorded fixture 和 recorded fetch 同时校验 connector host 和 source
 ID 形状，connector result digest 只基于 safe query；`SourceHit` 审计 metadata 会过滤
 secret-looking refs，`SourceHit` 和 `FetchedSource` 的 scalar 审计字段都会走
-allow-list；proof 已完整时的 no-op plan 不再带无关 warning。connector fallback
-错误以及相邻 evidence/proof reason 或 warning code 会以不含 raw request data 的
-有界 summary 写入 Run Trace，
+allow-list；connector catalog/result warning 和 error payload 会过滤 secret-looking
+code；proof 已完整时的 no-op plan 不再带无关 warning。connector fallback 错误以及
+相邻 evidence/proof reason 或 warning code 会以不含 raw request data 的有界 summary
+写入 Run Trace，同时保留 `token_budget_exceeded`、`authorization_required` 这类合法
+审计 code；
 live transport 的 tool name 和 User-Agent 使用不含产品名的中性标识。
 planner 和 live connector wrapper 共用同一套领域路由词表，包含 RAG/NLP/retrieval/
 benchmark 等论文检索词；registry 的可用状态和能力标记会真正约束 live search/fetch，

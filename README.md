@@ -342,9 +342,11 @@ records the model-visible controller action hash separately from the compiled
 runtime tool hash. PubMed/arXiv API queries are built from safe terms, so raw
 secrets, secret marker/value windows such as `api key ...` or
 `api key is ...`, plus longer connector phrases such as
-`password is equal to ...`, `password is set to ...`, and
-`api key named ...`, URLs, local paths, and path-like slash tokens are dropped
-before live connector requests.
+`password is equal to ...`, `password is set to ...`,
+`password is configured as ...`, `client secret known as ...`,
+`api key called ...`, Chinese windows such as `密码 是 ...` or `密钥等于 ...`,
+URLs, local paths, and path-like slash tokens are dropped before live connector
+requests.
 Browser-backed Research search explicitly reuses one dedicated Research
 profile/port for ordinary runs, while direct `BrowserSearchProvider()`
 construction stays isolated by default, CDP attach/port waits stay bounded at
@@ -353,10 +355,12 @@ Recorded PubMed/arXiv fixtures and recorded fetches validate both connector
 host and source-ID shape, connector result digests derive from safe query
 terms, `SourceHit` audit payloads filter secret-looking refs and allow-list
 scalar fields, `FetchedSource` audit payloads allow-list fetched scalar fields,
+connector catalog/result warning and error payloads filter secret-looking codes,
 and proof-complete no-op plans stay warning-free.
 Bounded connector fallback errors and adjacent evidence/proof reason or warning
-codes are recorded in Run Trace without raw request data, while live transport
-metadata uses a neutral tool name and User-Agent.
+codes are recorded in Run Trace without raw request data while preserving safe
+audit codes such as `token_budget_exceeded` and `authorization_required`; live
+transport metadata uses a neutral tool name and User-Agent.
 The planner and live connector wrapper share one domain-routing table with
 RAG/NLP/retrieval/benchmark terms, enforce registry availability/capability
 flags, keep safe scientific terms such as `JAK/STAT`, drop CamelCase

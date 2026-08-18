@@ -16,6 +16,7 @@ from codey.research.redaction import (
 from codey.research.source_connectors import (
     FetchedSource,
     SourceHit,
+    SourceConnectorSpec,
     built_in_connector_registry,
     fetch_csv_tsv_file,
     fetch_json_file,
@@ -24,6 +25,7 @@ from codey.research.source_connectors import (
     parse_arxiv_atom_fixture,
     parse_pubmed_fixture,
     safe_connector_query_terms,
+    source_result_from_hits,
 )
 from codey.research.source_document import SourceDocument
 
@@ -99,13 +101,16 @@ def test_safe_connector_query_terms_drop_secret_marker_value_windows() -> None:
         "api key abcdef clinical cancer",
         "api key is abcdef clinical cancer",
         "api key named abcdef clinical cancer",
+        "api key called livekey clinical cancer",
         "api_key=abcdef clinical cancer",
         "password: hunter2 clinical cancer",
         "password is hunter2 clinical cancer",
         "password is equal to hunter2 clinical cancer",
         "password is set to hunter2 clinical cancer",
+        "password is configured as hunter2 clinical cancer",
         "client_secret = abcdef clinical cancer",
         "client_secret is mysecretvalue clinical cancer",
+        "client secret known as abcdef clinical cancer",
         "private key is topsecret clinical cancer",
         "Authorization: Bearer abcdef clinical cancer",
     )
@@ -124,9 +129,28 @@ def test_safe_connector_query_terms_drop_secret_marker_value_windows() -> None:
         assert "authorization" not in joined
         assert "bearer" not in joined
         assert "abcdef" not in joined
+        assert "livekey" not in joined
         assert "hunter2" not in joined
         assert "mysecretvalue" not in joined
         assert "topsecret" not in joined
+
+
+def test_safe_connector_query_terms_drop_chinese_secret_marker_value_windows() -> None:
+    cases = (
+        ("密码 是 hunter2 临床 癌症", ("临床", "癌症"), ("hunter2",)),
+        ("密钥等于 abcdef clinical", ("clinical",), ("abcdef", "等于")),
+        ("访问令牌 设置为 abcdef clinical cancer", ("clinical", "cancer"), ("abcdef",)),
+        ("私钥 名为 livekey clinical cancer", ("clinical", "cancer"), ("livekey",)),
+    )
+
+    for query, expected_terms, forbidden_terms in cases:
+        terms = safe_connector_query_terms(query)
+        joined = " ".join(terms).casefold()
+
+        for term in expected_terms:
+            assert term in terms
+        for term in forbidden_terms:
+            assert term.casefold() not in joined
 
 
 def test_redaction_markers_are_boundary_aware_for_scientific_terms() -> None:
@@ -373,6 +397,84 @@ def test_fetched_source_payload_allow_lists_document_scalar_fields() -> None:
     assert "SECRET_TOKEN" not in serialized
     assert "SECRET_MIME" not in serialized
     assert "document body" not in serialized
+
+
+def test_fetched_source_payload_filters_sensitive_warnings() -> None:
+    fetched = FetchedSource.from_document(
+        connector_id="pubmed",
+        source_ref="source_ref:" + "a" * 16,
+        source_id="connector_source:" + "b" * 16,
+        document=SourceDocument(
+            requested_url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+            final_url="https://pubmed.ncbi.nlm.nih.gov/12345678/",
+            title="metadata",
+            text="document body",
+        ),
+        warnings=("text_truncated", "SECRET_CLIENT_NAME", "authorization_required", "sk-" + "a" * 24),
+    )
+
+    payload = fetched.to_payload()
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert payload["warnings"] == ["text_truncated", "authorization_required"]
+    assert "SECRET_CLIENT_NAME" not in serialized
+    assert "sk-" not in serialized
+
+
+def test_source_connector_spec_payload_filters_sensitive_catalog_codes() -> None:
+    spec = SourceConnectorSpec(
+        id="pubmed",
+        kind="biomedical_literature",
+        status="available",
+        source_quality_hint={
+            "level": "primary source",
+            "client_secret": "SECRET_CLIENT_NAME",
+            "apiKey": "visible",
+            "token_budget": "token_budget_exceeded",
+            "密码": "hunter2",
+        },
+        failure_modes=(
+            "rate_limit",
+            "authorization_required",
+            "SECRET_CLIENT_NAME",
+            "client_secret",
+            "密码",
+            "sk-" + "a" * 24,
+        ),
+    )
+
+    payload = spec.to_payload()
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert payload["source_quality_hint"] == {
+        "level": "primary_source",
+        "token_budget": "token_budget_exceeded",
+    }
+    assert payload["failure_modes"] == ["rate_limit", "authorization_required"]
+    assert "SECRET_CLIENT_NAME" not in serialized
+    assert "client_secret" not in serialized
+    assert "apiKey" not in serialized
+    assert "密码" not in serialized
+    assert "sk-" not in serialized
+
+
+def test_source_connector_result_payload_filters_sensitive_warnings_and_errors() -> None:
+    result = source_result_from_hits(
+        "pubmed",
+        warnings=("rate_limit", "SECRET_CLIENT_NAME", "authorization_required", "密钥", "sk-" + "a" * 24),
+        errors=("fixture_parse_failed", "client_secret", "apiKey", "sk-" + "b" * 24),
+    )
+
+    payload = result.to_payload()
+    serialized = json.dumps(payload, ensure_ascii=False)
+
+    assert payload["warnings"] == ["rate_limit", "authorization_required"]
+    assert payload["errors"] == ["fixture_parse_failed"]
+    assert "SECRET_CLIENT_NAME" not in serialized
+    assert "client_secret" not in serialized
+    assert "apiKey" not in serialized
+    assert "密钥" not in serialized
+    assert "sk-" not in serialized
 
 
 def test_recorded_hit_fetch_rejects_private_or_local_urls() -> None:

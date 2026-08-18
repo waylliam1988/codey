@@ -42,24 +42,29 @@ Production changes:
 - Live PubMed/arXiv connector queries are built from the shared safe term
   boundary used by the dry-run planner; raw secrets, secret marker/value windows
   such as `api key ...`, `api key is ...`, `password is ...`,
-  `password is equal to ...`, `password is set to ...`, `api key named ...`,
-  `private key is ...`, `client_secret=...`, and `Authorization: Bearer ...`,
-  URLs, and local paths are dropped before any source API request. Browser
-  fallback search starts before connector lookup, connector lookup has a short
-  global request budget, direct PubMed/arXiv URL fetch failures fall back to
-  browser fetch, and normal browser result de-duplication keeps
-  query-string-distinct URLs.
+  `password is equal to ...`, `password is set to ...`,
+  `password is configured as ...`, `api key called ...`, `api key named ...`,
+  `client secret known as ...`, Chinese windows such as `密码 是 ...` and
+  `密钥等于 ...`, `private key is ...`, `client_secret=...`, and
+  `Authorization: Bearer ...`, URLs, and local paths are dropped before any
+  source API request. Browser fallback search starts before connector lookup,
+  connector lookup has a short global request budget, direct PubMed/arXiv URL
+  fetch failures fall back to browser fetch, and normal browser result
+  de-duplication keeps query-string-distinct URLs.
 - Recorded PubMed/arXiv fixture parsers and recorded fetches validate both
   connector-specific host and source-ID shape. `SourceHit` metadata refs and
   scalar audit fields filter secret-looking values, `FetchedSource` scalar audit
-  fields are allow-listed, connector result query digests use sanitized terms,
-  and proof-complete no-op plans carry no availability-warning noise.
+  fields are allow-listed, connector catalog hints and result warning/error
+  payloads filter secret-looking codes, connector result query digests use
+  sanitized terms, and proof-complete no-op plans carry no availability-warning
+  noise.
 - Run Trace records bounded connector fallback error summaries as connector,
   action, error kind, and count only; raw URLs, queries, exception messages, and
   secret-looking values are excluded. Research plan, evidence-ledger, and
   proof-review trace sinks share the same bounded list handling and
-  secret-looking reason/warning filtering. Live connector API transport uses a
-  neutral tool name and User-Agent without the product name.
+  secret-looking reason/warning filtering without dropping safe audit codes such
+  as `token_budget_exceeded` or `authorization_required`. Live connector API
+  transport uses a neutral tool name and User-Agent without the product name.
 - The Research controller no longer exposes overloaded
   `open_url(result_id/source_id/hit_id)` shapes to models. It exposes distinct
   `open_result`, `reopen_source`, and `open_hit` actions, then compiles those
@@ -75,7 +80,10 @@ Production changes:
   typographic JSON quotes, stay in the provider adapter instead of the generic
   Research protocol parser. The Research fallback contract no longer carries a
   tool or argument alias layer; legacy names such as `open`, `fetch`,
-  `queries`, and `done.summary` fail through the typed protocol path.
+  `queries`, and `done.summary` fail through the typed protocol path. That can
+  cost one repair turn for providers that still emit legacy names; the clean
+  boundary is provider adapter normalization plus typed repair prompts, not
+  shared parser compatibility.
 - Planner and live connector routing share one domain vocabulary, including
   genetic/genomic and RAG/NLP/retrieval/benchmark terms. Registry
   availability/capability flags are enforced by the live wrapper; connector
@@ -92,11 +100,11 @@ Production changes:
 Validation during implementation:
 
 ```text
-python -m py_compile codey\research\source_connectors.py codey\research\connector_search.py codey\research\protocols.py codey\research\tool_contract.py codey\research\runner.py codey\run_trace.py tests\manual\research_repair_prompt_ab.py tests\manual\deep_research_core_ab.py
+python -m py_compile codey\research\redaction.py codey\research\source_connectors.py codey\research\connector_search.py codey\run_trace.py tests\test_glm.py
 # passed
 
-python -m pytest tests\test_source_connectors.py tests\test_connector_search.py tests\test_run_trace.py tests\test_research_protocol_contract.py -q
-# 86 passed in 1.30s
+python -m pytest tests\test_source_connectors.py tests\test_connector_search.py tests\test_run_trace.py tests\test_research_protocol_contract.py tests\test_glm.py -q
+# 123 passed in 1.41s
 
 python -m pytest tests\test_source_connectors.py tests\test_connector_search.py tests\test_query_planner.py tests\test_browser.py tests\test_research.py tests\test_run_trace.py tests\test_architecture.py -q
 # 228 passed, 122 subtests passed in 14.46s
@@ -108,7 +116,7 @@ python -m compileall -q codey tests
 # passed
 
 python -m pytest -q
-# 2175 passed, 9 skipped, 621 subtests passed in 410.84s (0:06:50)
+# 2180 passed, 9 skipped, 621 subtests passed in 411.32s (0:06:51)
 
 python -m pytest tests\test_source_connectors.py tests\test_query_planner.py tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_capabilities.py tests\test_event_matrix.py tests\test_architecture.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q -p no:cacheprovider
 # 91 passed, 308 subtests passed

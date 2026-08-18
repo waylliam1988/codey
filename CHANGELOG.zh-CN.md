@@ -40,17 +40,19 @@
   arXiv fixture URL 统一 canonicalize 到 `https://arxiv.org/...`；fixture parser
   和 recorded fetch 都会拒绝 malformed PubMed/arXiv ID；`SourceHit` 审计
   metadata refs 会过滤 secret-looking 值，`SourceHit` 和 `FetchedSource` 的
-  scalar 审计字段都改成 allow-list；malformed limit 会回落到有界默认值；CSV/TSV
-  读取会多读一行再判断是否真的 truncated，避免刚好等于上限时误标。
+  scalar 审计字段都改成 allow-list；connector catalog hint 以及 connector result 的
+  warning/error code 会过滤 secret-looking 值；malformed limit 会回落到有界默认值；
+  CSV/TSV 读取会多读一行再判断是否真的 truncated，避免刚好等于上限时误标。
 - 收紧 `RunTrace.record_research_plan()` 和 planner trace payload：source preference
   只接受 connector-id 形状，list 字段只接受 list/tuple/set，字符串不会再被逐字符
   迭代，`None` 也不会抛出；reason/warning 会过滤 secret-looking 字符串。相邻的
   evidence-ledger 和 proof-review trace sink 也改用同一套 trace-safe
-  reason/warning 规则。proof 已通过且没有 gap 时，planner 现在产出 no-op 的
-  `proof_ok_no_required_followup` plan，不再生成 follow-up query candidates；no-op
-  plan 不再带无关 warning。Run Trace 也把模型可见 controller action contract hash
-  和编译后的 runtime tool contract hash 分开记录，并记录有界的 connector fallback
-  error summary，不保存 raw request data。
+  reason/warning 规则，同时不会误删 `token_budget_exceeded`、
+  `authorization_required` 这类合法审计 code。proof 已通过且没有 gap 时，planner
+  现在产出 no-op 的 `proof_ok_no_required_followup` plan，不再生成 follow-up query
+  candidates；no-op plan 不再带无关 warning。Run Trace 也把模型可见 controller
+  action contract hash 和编译后的 runtime tool contract hash 分开记录，并记录有界的
+  connector fallback error summary，不保存 raw request data。
 - 浏览器 Research search 在普通 Research 运行中显式复用一个专用 Research
   profile/port；自定义 CDP port family 不再回落到默认网页模型 provider 端口池。
   直接构造 `BrowserSearchProvider()` 仍保持默认 isolated，浏览器 attach/端口等待也
@@ -60,14 +62,18 @@
 - connector-aware live search 现在用和 dry-run planner 相同的 safe term 边界构造
   PubMed/arXiv API query，不会把 raw secret、`api key ...`、`password ...`、
   `api key is ...`、`password is equal to ...`、`password is set to ...`、
-  `api key named ...`、`private key is ...`、`client_secret=...`、
-  `Authorization: Bearer ...` 这类 marker/value 窗口、URL 或本地路径发给 source
-  API。浏览器 search 会先于 connector lookup 启动，connector 请求有更短的全局预算，
-  普通 browser 结果会保留 query string 区分；direct PubMed/arXiv URL 在 connector
-  lookup 失败时会回退到 browser fetch。connector result digest 也只基于 sanitized
-  query，live connector 的 tool name 和 User-Agent 使用不含产品名的中性标识。
-  Research JSON codec 不再接受 `open`/`fetch`、`queries`、`done.summary` 这类旧工具
-  或参数 alias；fallback contract 本身也不再携带 alias 层。
+  `api key called ...`、`api key named ...`、`client secret known as ...`、
+  `password is configured as ...`、`密码 是 ...`、`密钥等于 ...`、
+  `private key is ...`、`client_secret=...`、`Authorization: Bearer ...` 这类
+  marker/value 窗口、URL 或本地路径发给 source API。浏览器 search 会先于 connector
+  lookup 启动，connector 请求有更短的全局预算，普通 browser 结果会保留 query string
+  区分；direct PubMed/arXiv URL 在 connector lookup 失败时会回退到 browser fetch。
+  connector result digest 也只基于 sanitized query，live connector 的 tool name 和
+  User-Agent 使用不含产品名的中性标识。Research JSON codec 不再接受
+  `open`/`fetch`、`queries`、`done.summary` 这类旧工具或参数 alias；fallback
+  contract 本身也不再携带 alias 层。仍输出旧名字的 provider 可能多走一轮 repair，
+  但 provider 怪癖应留在 provider adapter 或 repair prompt，而不是放回通用 parser
+  做隐式兼容。
 - dry-run planner 和 live connector search 现在共用同一套领域路由词表，包含
   genetic/genomic 以及 RAG/NLP/retrieval/benchmark 等常见论文检索词。registry 的
   status、shipped 和 capability flag 现在是 live search/fetch 的权威边界；

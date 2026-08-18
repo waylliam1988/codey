@@ -19,6 +19,38 @@ SECRET_SHAPE_RE = re.compile(
     r"xox[baprs]-[A-Za-z0-9-]{16,}|AIza[0-9A-Za-z_-]{20,}|"
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----)"
 )
+_CODE_SEPARATOR_RE = re.compile(r"[^a-z0-9]+")
+_CJK_SECRET_CODE_RE = re.compile(r"(?:密钥|密码|令牌|私钥|访问令牌)")
+_SENSITIVE_CODE_COMPONENTS = frozenset({
+    "bearer",
+    "cookie",
+    "credential",
+    "credentials",
+    "jwt",
+    "passwd",
+    "password",
+    "pwd",
+    "secret",
+})
+_SENSITIVE_CODE_PHRASES = frozenset({
+    ("access", "key"),
+    ("api", "key"),
+    ("client", "secret"),
+    ("private", "key"),
+    ("refresh", "token"),
+    ("session", "id"),
+    ("ssh", "key"),
+})
+_SENSITIVE_CODE_COMPOUNDS = frozenset({
+    "accesskey",
+    "apikey",
+    "clientsecret",
+    "privatekey",
+    "refreshtoken",
+    "sessionid",
+    "sshkey",
+})
+_SENSITIVE_CODE_EXACT = frozenset({"authorization", "token"})
 
 
 def looks_secret_marker(value: object) -> bool:
@@ -35,9 +67,40 @@ def looks_sensitive_signal(value: object) -> bool:
     return looks_secret_marker(value) or looks_secret_shape(value)
 
 
+def looks_sensitive_code(value: object) -> bool:
+    """Return whether an audit code looks like a secret marker or secret shape.
+
+    Audit codes often contain safe marker words as context, for example
+    ``token_budget_exceeded`` or ``authorization_required``. This predicate
+    rejects direct secret shapes and high-risk marker components while preserving
+    those ordinary reason-code forms.
+    """
+
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if looks_secret_shape(text):
+        return True
+    if _CJK_SECRET_CODE_RE.search(text):
+        return True
+    normalized = _CODE_SEPARATOR_RE.sub("_", text.casefold()).strip("_")
+    if not normalized:
+        return False
+    parts = tuple(part for part in normalized.split("_") if part)
+    if normalized in _SENSITIVE_CODE_EXACT:
+        return True
+    if any(part in _SENSITIVE_CODE_COMPONENTS for part in parts):
+        return True
+    compact = "".join(parts)
+    if any(item in compact for item in _SENSITIVE_CODE_COMPOUNDS):
+        return True
+    return any(pair in _SENSITIVE_CODE_PHRASES for pair in zip(parts, parts[1:]))
+
+
 __all__ = [
     "SECRET_MARKER_RE",
     "SECRET_SHAPE_RE",
+    "looks_sensitive_code",
     "looks_secret_marker",
     "looks_secret_shape",
     "looks_sensitive_signal",

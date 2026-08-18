@@ -45,15 +45,18 @@ This file records Codey's release history. The newest release appears first.
   `arxiv.org`, arXiv fixture URLs are canonicalized to `https://arxiv.org/...`,
   fixture parsers and recorded fetches reject malformed PubMed/arXiv IDs,
   `SourceHit` audit metadata refs filter secret-looking values, `SourceHit`
-  and `FetchedSource` scalar audit fields are allow-listed, malformed fixture
-  limits fall back to bounded defaults, and CSV/TSV truncation now reads one row
-  past the display limit before marking a file truncated.
+  and `FetchedSource` scalar audit fields are allow-listed, connector catalog
+  hints plus connector result warning/error codes filter secret-looking values,
+  malformed fixture limits fall back to bounded defaults, and CSV/TSV
+  truncation now reads one row past the display limit before marking a file
+  truncated.
 - Hardened `RunTrace.record_research_plan()` and planner trace payloads so
   trace sinks accept only connector-id-shaped source preferences, ignore
   non-collection list fields instead of iterating strings or raising on `None`,
   and filter secret-looking reason or warning codes. Adjacent evidence-ledger
   and proof-review trace sinks now use the same trace-safe reason/warning
-  rules. Proof-ok/no-gap reviews now produce a no-op
+  rules without dropping safe audit codes such as `token_budget_exceeded` or
+  `authorization_required`. Proof-ok/no-gap reviews now produce a no-op
   `proof_ok_no_required_followup` plan with no query candidates. Run Trace now
   also separates the model-visible controller action contract hash from the
   compiled runtime tool contract hash, keeps proof-ok no-op warnings empty, and
@@ -70,7 +73,9 @@ This file records Codey's release history. The newest release appears first.
   safe term boundary used by the dry-run planner, so raw secrets, secret
   marker/value windows such as `api key ...`, `password ...`,
   `api key is ...`, `password is equal to ...`, `password is set to ...`,
-  `api key named ...`, `private key is ...`, `client_secret=...`, and
+  `api key called ...`, `api key named ...`, `client secret known as ...`,
+  `password is configured as ...`, Chinese windows such as `密码 是 ...` and
+  `密钥等于 ...`, `private key is ...`, `client_secret=...`, and
   `Authorization: Bearer ...`, URLs, and local paths are not sent to source
   APIs. Browser search starts before connector lookup, connector requests use a
   short bounded budget, ordinary browser results keep query-string-distinct
@@ -80,6 +85,9 @@ This file records Codey's release history. The newest release appears first.
   without the product name, and the Research JSON codec no longer accepts
   legacy tool or argument aliases such as `open`/`fetch`, `queries`, or
   `done.summary`; the fallback contract no longer carries an alias layer.
+  Providers that still emit legacy names may take one repair turn, but provider
+  quirks stay in provider adapters or repair prompts instead of becoming shared
+  parser compatibility.
 - Shared domain routing now drives both the dry-run planner and live connector
   search, including genetic/genomic and common RAG/NLP/retrieval/benchmark
   terms. The registry's availability, shipped, and capability flags are

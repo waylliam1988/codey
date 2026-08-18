@@ -339,8 +339,8 @@ class RunTraceStoreTests(unittest.TestCase):
                 "ok": True,
                 "ledger_ref": "evidence_ledger:" + "c" * 16,
                 "record_id": "research_record:" + "d" * 16,
-                "reason_code": "written",
-                "warnings": ["kept-warning", "SECRET_LEDGER_WARNING"],
+                "reason_code": "token_budget_exceeded",
+                "warnings": ["kept-warning", "authorization_required", "SECRET_LEDGER_WARNING", "密码"],
             })
             recorder.finish(status="done")
 
@@ -354,10 +354,14 @@ class RunTraceStoreTests(unittest.TestCase):
 
             self.assertEqual(payload["research_evidence_ledgers"][0]["reason_code"], "")
             self.assertNotIn("warnings", payload["research_evidence_ledgers"][0])
-            self.assertEqual(payload["research_evidence_ledgers"][1]["reason_code"], "written")
-            self.assertEqual(payload["research_evidence_ledgers"][1]["warnings"], ["kept-warning"])
+            self.assertEqual(payload["research_evidence_ledgers"][1]["reason_code"], "token_budget_exceeded")
+            self.assertEqual(
+                payload["research_evidence_ledgers"][1]["warnings"],
+                ["kept-warning", "authorization_required"],
+            )
             self.assertNotIn("SECRET_CLIENT_NAME", serialized)
             self.assertNotIn("SECRET_LEDGER_WARNING", serialized)
+            self.assertNotIn("密码", serialized)
 
     def test_research_proof_review_trace_is_bounded_and_ref_shaped(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -489,7 +493,7 @@ class RunTraceStoreTests(unittest.TestCase):
             recorder.record_research_proof_review({
                 "proof_ref": "research_proof:" + "b" * 16,
                 "ok": False,
-                "reason_codes": ["valid_code", "SECRET_CLIENT_NAME"],
+                "reason_codes": ["valid_code", "authorization_required", "SECRET_CLIENT_NAME"],
             })
             recorder.finish(status="done")
 
@@ -502,7 +506,10 @@ class RunTraceStoreTests(unittest.TestCase):
             serialized = json.dumps(payload, ensure_ascii=False)
 
             self.assertEqual(payload["research_proof_reviews"][0]["reason_codes"], [])
-            self.assertEqual(payload["research_proof_reviews"][1]["reason_codes"], ["valid_code"])
+            self.assertEqual(
+                payload["research_proof_reviews"][1]["reason_codes"],
+                ["valid_code", "authorization_required"],
+            )
             self.assertNotIn("SECRET_REASON", serialized)
             self.assertNotIn("SECRET_CLIENT_NAME", serialized)
 

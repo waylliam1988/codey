@@ -332,9 +332,11 @@ trace file is written next to the output file by default, or to
 production connector path builds PubMed/arXiv API queries from bounded safe
 terms, strips direct and natural-language secret marker/value windows such as
 `api key ...`, `api key is ...`, `password is equal to ...`,
-`password is set to ...`, and `api key named ...` before source API requests,
-starts browser search before connector lookup, and falls back to browser fetch
-when direct PubMed/arXiv connector lookup fails.
+`password is set to ...`, `password is configured as ...`,
+`client secret known as ...`, `api key called ...`, `api key named ...`,
+`密码 是 ...`, and `密钥等于 ...` before source API requests, starts browser
+search before connector lookup, and falls back to browser fetch when direct
+PubMed/arXiv connector lookup fails.
 For 0.4.3, the live connector smoke was run one provider at a time and used the
 atomic rows to resume only missing samples. DeepSeek showed PubMed connector
 search improving target source selection; MiMo and StepFun connector arms opened

@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.prompt_envelope import is_model_boundary_freshness
-from codey.research.redaction import looks_sensitive_signal
+from codey.research.redaction import looks_sensitive_code
 from codey.research.shape import digest_ref as _digest_ref
 from codey.research.shape import generated_ref as _generated_ref
 from codey.research.shape import safe_connector_id as _safe_connector_id
@@ -869,10 +869,10 @@ def _safe_trace_code(value: object, limit: int) -> str:
     raw = _clip(value, limit)
     if not raw:
         return ""
-    if looks_sensitive_signal(raw):
+    if looks_sensitive_code(raw):
         return ""
     text = _identifier(raw, limit)
-    if looks_sensitive_signal(text):
+    if looks_sensitive_code(text):
         return ""
     return text
 

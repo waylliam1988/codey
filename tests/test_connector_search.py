@@ -141,15 +141,23 @@ def test_connector_live_query_strips_natural_language_secret_values_before_api_r
     with mock.patch("codey.research.connector_search._read_url_text", side_effect=response):
         provider.search("password is equal to hunter2 clinical cancer", limit=3)
         provider.search("api key named abcdef clinical cancer", limit=3)
+        provider.search("api key called livekey clinical cancer", limit=3)
+        provider.search("client secret known as abcdef clinical cancer", limit=3)
+        provider.search("password is configured as hunter2 clinical cancer", limit=3)
+        provider.search("密码 是 hunter2 临床 癌症", limit=3)
+        provider.search("密钥等于 abcdef clinical cancer", limit=3)
 
     joined = "\n".join(requested)
     assert "clinical" in joined
     assert "cancer" in joined
+    assert "livekey" not in joined
     assert "hunter2" not in joined
     assert "abcdef" not in joined
     assert "password" not in joined
     assert "api" not in joined
     assert "key" not in joined
+    assert "client" not in joined
+    assert "secret" not in joined
 
 
 def test_connector_live_search_honors_registry_unavailable_status() -> None:

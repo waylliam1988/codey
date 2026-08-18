@@ -27,7 +27,12 @@ from codey.research.identity import (
     sanitize_research_url_ref,
     stable_ref,
 )
-from codey.research.redaction import SECRET_MARKER_RE, SECRET_SHAPE_RE, looks_sensitive_signal
+from codey.research.redaction import (
+    SECRET_MARKER_RE,
+    SECRET_SHAPE_RE,
+    looks_sensitive_code,
+    looks_sensitive_signal,
+)
 from codey.research.shape import (
     bounded_limit as _bounded_limit,
     connector_id as _connector_id,
@@ -66,14 +71,25 @@ _SAFE_SCIENTIFIC_SLASH_PART_RE = re.compile(
     r"(?:[A-Z]{2,}[A-Za-z0-9+-]*|[a-z][A-Z]{2,}[A-Za-z0-9+-]*|p\d+[A-Za-z0-9+-]*)"
 )
 _SECRET_VALUE_CONNECTORS = frozenset({
-    "is",
-    "was",
-    "equals",
+    "as",
+    "called",
+    "configured",
     "equal",
-    "value",
-    "to",
-    "set",
+    "equals",
+    "is",
+    "known",
     "named",
+    "set",
+    "to",
+    "value",
+    "was",
+    "为",
+    "叫",
+    "叫做",
+    "名为",
+    "是",
+    "等于",
+    "设置为",
 })
 _SECRET_VALUE_CONNECTOR_LIMIT = 4
 _ALLOWED_HIT_CONTENT_KINDS = frozenset({"abstract", "html", "json", "pdf", "table", "text"})
@@ -172,7 +188,7 @@ class SourceConnectorSpec:
             "local": bool(self.local),
             "rate_limit_seconds": max(0.0, round(float(self.rate_limit_seconds or 0.0), 3)),
             "source_quality_hint": _bounded_mapping(self.source_quality_hint),
-            "failure_modes": list(bounded_refs(self.failure_modes, limit=8)),
+            "failure_modes": list(_safe_payload_refs(self.failure_modes, limit=8)),
         }
         return payload
 
@@ -247,7 +263,7 @@ class FetchedSource:
             source_id=_generated_ref(source_id, "connector_source"),
             document=document,
             content_digest=digest_text(document.text),
-            warnings=bounded_refs(warnings, limit=8),
+            warnings=_safe_payload_refs(warnings, limit=8),
         )
 
     def to_source_document(self) -> SourceDocument:
@@ -271,7 +287,7 @@ class FetchedSource:
         if self.document.page_count:
             payload["page_count"] = max(0, int(self.document.page_count))
         if self.warnings:
-            payload["warnings"] = list(self.warnings)
+            payload["warnings"] = list(_safe_payload_refs(self.warnings, limit=8))
         return payload
 
 
@@ -289,8 +305,8 @@ class SourceConnectorResult:
             "query_digest": _digest_ref(self.query_digest),
             "hit_count": len(self.hits),
             "hits": [item.to_payload() for item in self.hits[:MAX_CONNECTOR_HITS]],
-            "warnings": list(bounded_refs(self.warnings, limit=8)),
-            "errors": list(bounded_refs(self.errors, limit=8)),
+            "warnings": list(_safe_payload_refs(self.warnings, limit=8)),
+            "errors": list(_safe_payload_refs(self.errors, limit=8)),
         }
 
 
@@ -437,8 +453,8 @@ def source_result_from_hits(
         connector_id=_connector_id(connector_id),
         query_digest=_safe_query_digest(query),
         hits=tuple(hits)[:MAX_CONNECTOR_HITS],
-        warnings=bounded_refs(warnings, limit=8),
-        errors=bounded_refs(errors, limit=8),
+        warnings=_safe_payload_refs(warnings, limit=8),
+        errors=_safe_payload_refs(errors, limit=8),
     )
 
 
@@ -565,7 +581,8 @@ def _query_token_bounds(text: str, start: int, end: int) -> tuple[int, int]:
 
 
 def _marker_has_inline_value(tail: str) -> bool:
-    return bool(tail.strip(":=,;"))
+    token = _clean_secret_connector_token(tail)
+    return bool(token) and token not in _SECRET_VALUE_CONNECTORS
 
 
 def _extend_secret_marker_value_window(text: str, index: int) -> int:
@@ -575,7 +592,7 @@ def _extend_secret_marker_value_window(text: str, index: int) -> int:
         start, end = _next_query_token_span(text, cursor)
         if start >= len(text):
             return cursor
-        token = text[start:end].strip(".,;:=\"'()[]{}<>").casefold()
+        token = _clean_secret_connector_token(text[start:end])
         if token in _SECRET_VALUE_CONNECTORS and skipped_connectors < _SECRET_VALUE_CONNECTOR_LIMIT:
             skipped_connectors += 1
             cursor = end
@@ -590,6 +607,10 @@ def _next_query_token_span(text: str, index: int) -> tuple[int, int]:
     while end < len(text) and not text[end].isspace():
         end += 1
     return index, end
+
+
+def _clean_secret_connector_token(value: object) -> str:
+    return str(value or "").strip(" \t\r\n.,;:=，。；：=\"'()[]{}<>（）【】《》").casefold()
 
 
 def _unsafe_query_span(token: str) -> bool:
@@ -1017,10 +1038,38 @@ def _bounded_mapping(value: Mapping[str, object]) -> dict[str, str]:
     out: dict[str, str] = {}
     for key in sorted(value):
         clean_key = _connector_id(key)
-        clean_value = identifier(value.get(key), 120)
+        clean_value = _safe_payload_code(value.get(key), 120)
+        if looks_sensitive_code(clean_key):
+            clean_key = ""
         if clean_key and clean_value:
             out[clean_key] = clean_value
     return out
+
+
+def _safe_payload_refs(values: Iterable[object], *, limit: int) -> tuple[str, ...]:
+    if isinstance(values, (str, bytes)):
+        values = (values,)
+    refs: list[str] = []
+    seen: set[str] = set()
+    for value in values or ():
+        text = _safe_payload_code(value, 120)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        refs.append(text)
+        if len(refs) >= limit:
+            break
+    return tuple(refs)
+
+
+def _safe_payload_code(value: object, limit: int) -> str:
+    raw = clip(value, limit)
+    if not raw or looks_sensitive_code(raw):
+        return ""
+    text = identifier(raw, limit)
+    if not text or looks_sensitive_code(text):
+        return ""
+    return text
 
 
 def _connector_id_or_raise(value: object, label: str) -> None:
