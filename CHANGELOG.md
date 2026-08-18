@@ -79,11 +79,15 @@ This file records Codey's release history. The newest release appears first.
   connector phrases such as `password is configured as known as called ...` and
   `password - is - configured - as - known - as - called - ...`, Chinese
   windows such as `密码 是 ...` and `密钥等于 ...`, `private key is ...`,
-  `client_secret=...`, and `Authorization: Bearer ...` across planner
-  previews, connector digests, and live PubMed/arXiv requests. Cleaned
-  domain terms such as `clinical` or `cancer` can still drive connectors, while
-  URL/path spans are removed and connector lookup is skipped when no safe terms
-  remain. Browser search starts before connector lookup, connector
+  `client_secret=...`, `access_token ...`, `token ...`, `cookie ...`,
+  `passphrase ...`, and `Authorization: Bearer ...` across planner previews,
+  connector digests, and live PubMed/arXiv requests. Multi-word values after
+  high-risk markers such as `password correct horse battery staple ...` are
+  masked until a bounded domain-term boundary. Cleaned domain terms such as
+  `clinical` or `cancer` can still drive connectors, while URL/path spans are
+  removed and connector lookup is skipped when no safe terms remain. Live
+  connector routing and request assembly reuse one `SafeConnectorQuery` instead
+  of recomputing from raw text. Browser search starts before connector lookup, connector
   requests use a short bounded budget, ordinary browser results keep
   query-string-distinct URLs, and direct PubMed/arXiv URL fetches fall back to
   browser fetch when connector lookup fails. Connector result digests also use

@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import Iterable, Mapping
 from urllib.parse import quote, urlparse
 
+from codey.research.connector_domains import (
+    ARXIV_CONNECTOR_TERMS,
+    LOCAL_CONNECTOR_TERMS,
+    MEDICAL_CONNECTOR_TERMS,
+)
 from codey.research.identity import (
     bounded_refs,
     clip,
@@ -96,8 +101,13 @@ _SECRET_VALUE_CONNECTOR_LIMIT = 12
 _SECRET_QUERY_TOKEN_RE = re.compile(r"[A-Za-z0-9]+|[\u4e00-\u9fff]+")
 _SECRET_QUERY_MARKER_PHRASES = frozenset({
     ("access", "key"),
+    ("access", "token"),
     ("api", "key"),
+    ("api", "token"),
+    ("auth", "token"),
+    ("bearer", "token"),
     ("client", "secret"),
+    ("id", "token"),
     ("private", "key"),
     ("refresh", "token"),
     ("session", "id"),
@@ -110,8 +120,13 @@ _SECRET_QUERY_MARKER_PHRASES = frozenset({
 })
 _SECRET_QUERY_MARKER_COMPOUNDS = frozenset({
     "accesskey",
+    "accesstoken",
     "apikey",
+    "apitoken",
+    "authtoken",
+    "bearertoken",
     "clientsecret",
+    "idtoken",
     "privatekey",
     "refreshtoken",
     "sessionid",
@@ -120,6 +135,7 @@ _SECRET_QUERY_MARKER_COMPOUNDS = frozenset({
 _PLAIN_VALUE_SECRET_MARKERS = frozenset({
     "passwd",
     "password",
+    "passphrase",
     "pwd",
     "令牌",
     "密码",
@@ -128,6 +144,34 @@ _PLAIN_VALUE_SECRET_MARKERS = frozenset({
     "访问令牌",
 })
 _VALUE_SCHEME_SECRET_MARKERS = frozenset({"bearer"})
+_CONTEXTUAL_VALUE_SECRET_MARKERS = frozenset({"cookie", "jwt", "token"})
+_MULTI_TOKEN_VALUE_SECRET_MARKERS = frozenset({
+    "authorization",
+    "bearer",
+    "password",
+    "passphrase",
+    "passwd",
+    "privatekey",
+    "pwd",
+    "sshkey",
+    "密码",
+})
+_MULTI_TOKEN_SECRET_VALUE_LIMIT = 6
+_SECRET_VALUE_BOUNDARY_TERMS = frozenset({
+    *ARXIV_CONNECTOR_TERMS,
+    *LOCAL_CONNECTOR_TERMS,
+    *MEDICAL_CONNECTOR_TERMS,
+    "budget",
+    "consent",
+    "cryptography",
+    "efficient",
+    "efficiency",
+    "exceeded",
+    "policy",
+    "required",
+    "sharing",
+    "transformers",
+})
 _ALLOWED_HIT_CONTENT_KINDS = frozenset({"abstract", "html", "json", "pdf", "table", "text"})
 _ALLOWED_FETCHED_CONTENT_KINDS = _ALLOWED_HIT_CONTENT_KINDS
 _ALLOWED_FETCHED_MIME_TYPES = frozenset({
@@ -591,27 +635,66 @@ def _secret_query_spans(text: str) -> tuple[tuple[int, int], ...]:
     for match in SECRET_MARKER_RE.finditer(text):
         marker_tokens = tuple(token for token, _start, _end in _secret_query_tokens(match.group(0)))
         compact = "".join(marker_tokens)
+        contextual_marker = _is_contextual_secret_marker(marker_tokens, compact)
         allow_plain_value = (
             marker_tokens in _SECRET_QUERY_MARKER_PHRASES
             or compact in _SECRET_QUERY_MARKER_COMPOUNDS
             or compact in _PLAIN_VALUE_SECRET_MARKERS
             or compact in _VALUE_SCHEME_SECRET_MARKERS
+            or contextual_marker
         )
-        span_end = _secret_value_window_end(text, match.end(), allow_plain_value=allow_plain_value)
-        if span_end > match.end():
-            spans.append((_span_start_for_marker(text, match.start()), span_end))
+        value_limit = _secret_value_token_limit(marker_tokens, compact)
+        span_end = _secret_value_window_end(
+            text,
+            match.end(),
+            allow_plain_value=allow_plain_value,
+            contextual_marker=contextual_marker,
+            value_token_limit=value_limit,
+        )
+        if span_end > match.end() or (allow_plain_value and not contextual_marker):
+            spans.append((
+                _span_start_for_marker(text, match.start()),
+                max(span_end, match.end()),
+            ))
     tokens = _secret_query_tokens(text)
     for index, (token, _start, end) in enumerate(tokens):
         if token in _VALUE_SCHEME_SECRET_MARKERS:
-            span_end = _secret_value_window_end(text, end, allow_plain_value=True)
+            span_end = _secret_value_window_end(
+                text,
+                end,
+                allow_plain_value=True,
+                contextual_marker=False,
+                value_token_limit=_secret_value_token_limit((token,), token),
+            )
+            if span_end > end:
+                spans.append((_span_start_for_marker(text, tokens[index][1]), span_end))
+        if token in _CONTEXTUAL_VALUE_SECRET_MARKERS:
+            span_end = _secret_value_window_end(
+                text,
+                end,
+                allow_plain_value=True,
+                contextual_marker=True,
+                value_token_limit=1,
+            )
             if span_end > end:
                 spans.append((_span_start_for_marker(text, tokens[index][1]), span_end))
         if index + 1 < len(tokens):
             pair = (token, tokens[index + 1][0])
             if pair in _SECRET_QUERY_MARKER_PHRASES:
-                span_end = _secret_value_window_end(text, tokens[index + 1][2], allow_plain_value=True)
-                if span_end > tokens[index + 1][2]:
-                    spans.append((_span_start_for_marker(text, tokens[index][1]), span_end))
+                compact = "".join(pair)
+                contextual_marker = _is_contextual_secret_marker(pair, compact)
+                span_end = _secret_value_window_end(
+                    text,
+                    tokens[index + 1][2],
+                    allow_plain_value=True,
+                    contextual_marker=contextual_marker,
+                    value_token_limit=_secret_value_token_limit(pair, compact),
+                )
+                if span_end > tokens[index + 1][2] or not contextual_marker:
+                    spans.append((
+                        _span_start_for_marker(text, tokens[index][1]),
+                        max(span_end, tokens[index + 1][2]),
+                    ))
     return tuple(spans)
 
 
@@ -636,7 +719,25 @@ def _secret_query_tokens(text: str) -> tuple[tuple[str, int, int], ...]:
     )
 
 
-def _secret_value_window_end(text: str, index: int, *, allow_plain_value: bool) -> int:
+def _is_contextual_secret_marker(marker_tokens: tuple[str, ...], compact: str) -> bool:
+    return len(marker_tokens) == 1 and compact in _CONTEXTUAL_VALUE_SECRET_MARKERS
+
+
+def _secret_value_token_limit(marker_tokens: tuple[str, ...], compact: str) -> int:
+    del marker_tokens
+    if compact in _MULTI_TOKEN_VALUE_SECRET_MARKERS:
+        return _MULTI_TOKEN_SECRET_VALUE_LIMIT
+    return 1
+
+
+def _secret_value_window_end(
+    text: str,
+    index: int,
+    *,
+    allow_plain_value: bool,
+    contextual_marker: bool,
+    value_token_limit: int,
+) -> int:
     cursor = index
     saw_connector = False
     connector_count = 0
@@ -651,9 +752,41 @@ def _secret_value_window_end(text: str, index: int, *, allow_plain_value: bool) 
                 return len(text)
             cursor = end
             continue
-        if allow_plain_value or saw_connector or had_separator:
-            return end
-        return index
+        if not (allow_plain_value or saw_connector or had_separator):
+            return index
+        if contextual_marker and not (saw_connector or had_separator) and not _looks_secret_value_token(token):
+            return index
+        if not (saw_connector or had_separator) and _is_secret_value_boundary(token):
+            return index
+        return _secret_value_phrase_end(text, end, value_token_limit=value_token_limit)
+
+
+def _secret_value_phrase_end(text: str, end: int, *, value_token_limit: int) -> int:
+    cursor = end
+    value_end = end
+    value_count = 1
+    limit = _bounded_limit(value_token_limit, default=1, upper=_MULTI_TOKEN_SECRET_VALUE_LIMIT)
+    while value_count < limit:
+        token, _start, next_end, _had_separator = _query_token_after(text, cursor)
+        if not token or token in _SECRET_VALUE_CONNECTORS or _is_secret_value_boundary(token):
+            break
+        value_end = next_end
+        cursor = next_end
+        value_count += 1
+    return value_end
+
+
+def _looks_secret_value_token(token: str) -> bool:
+    return bool(token) and not _is_secret_value_boundary(token)
+
+
+def _is_secret_value_boundary(token: str) -> bool:
+    if not token:
+        return True
+    folded = token.casefold()
+    if folded in _SAFE_QUERY_STOP_TERMS or folded in _SECRET_VALUE_BOUNDARY_TERMS:
+        return True
+    return False
 
 
 def _query_token_after(text: str, index: int) -> tuple[str, int, int, bool]:

@@ -21,6 +21,7 @@ from codey.research.source_connectors import (
     CONNECTOR_AVAILABLE_STATUSES,
     MAX_CONNECTOR_HITS,
     FetchedSource,
+    SafeConnectorQuery,
     SourceConnectorRegistry,
     SourceConnectorResult,
     SourceHit,
@@ -31,7 +32,6 @@ from codey.research.source_connectors import (
     parse_arxiv_atom_fixture,
     parse_pubmed_fixture,
     safe_connector_query,
-    safe_connector_query_terms,
 )
 from codey.research.shape import bounded_limit as _bounded_limit, connector_id as _connector_id
 from codey.research.url_policy import check_fetch_url
@@ -141,13 +141,13 @@ class ConnectorAwareSearchProvider:
             else None
         )
         try:
-            for connector_id in _preferred_connectors(query, self.connector_ids):
+            for connector_id in _preferred_connectors(safe_query, self.connector_ids):
                 if self._connector_budget_exhausted():
                     break
                 remaining = limit - len(results)
                 if remaining <= 0:
                     break
-                connector_result = self._search_connector(connector_id, query, remaining)
+                connector_result = self._search_connector(connector_id, safe_query, remaining)
                 for hit in connector_result.hits:
                     if hit.canonical_url:
                         self._hits_by_url[_canonical_url_key(hit.canonical_url)] = hit
@@ -160,22 +160,27 @@ class ConnectorAwareSearchProvider:
         finally:
             self._search_deadline = previous_deadline
 
-    def _search_connector(self, connector_id: str, query: str, limit: int) -> SourceConnectorResult:
+    def _search_connector(
+        self,
+        connector_id: str,
+        safe_query: SafeConnectorQuery,
+        limit: int,
+    ) -> SourceConnectorResult:
         if not self._connector_available(connector_id, capability="search_supported"):
             return SourceConnectorResult(connector_id=connector_id)
         try:
             if connector_id == "pubmed":
-                return self._search_pubmed(query, limit)
+                return self._search_pubmed(safe_query, limit)
             if connector_id == "arxiv":
-                return self._search_arxiv(query, limit)
+                return self._search_arxiv(safe_query, limit)
         except cancellation.TaskCancelled:
             raise
         except Exception as exc:
             self._record_error(connector_id, "search", exc)
         return SourceConnectorResult(connector_id=connector_id)
 
-    def _search_pubmed(self, query: str, limit: int) -> SourceConnectorResult:
-        connector_query = _connector_query(query, "pubmed")
+    def _search_pubmed(self, safe_query: SafeConnectorQuery, limit: int) -> SourceConnectorResult:
+        connector_query = _connector_query(safe_query.terms, "pubmed")
         if not connector_query:
             return SourceConnectorResult(connector_id="pubmed")
         ids = self._pubmed_ids(connector_query, limit=limit)
@@ -212,8 +217,8 @@ class ConnectorAwareSearchProvider:
         xml_text = self._read_connector_url("pubmed", f"{_PUBMED_FETCH_URL}?{params}")
         return parse_pubmed_fixture(xml_text, query=query, limit=limit)
 
-    def _search_arxiv(self, query: str, limit: int) -> SourceConnectorResult:
-        connector_query = _connector_query(query, "arxiv")
+    def _search_arxiv(self, safe_query: SafeConnectorQuery, limit: int) -> SourceConnectorResult:
+        connector_query = _connector_query(safe_query.terms, "arxiv")
         if not connector_query:
             return SourceConnectorResult(connector_id="arxiv")
         params = urlencode({
@@ -312,18 +317,18 @@ class ConnectorAwareSearchProvider:
         )
 
 
-def _preferred_connectors(query: str, connector_ids: tuple[str, ...]) -> tuple[str, ...]:
+def _preferred_connectors(safe_query: SafeConnectorQuery, connector_ids: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(
         item
         for item in preferred_connector_ids(
-            safe_connector_query_terms(query),
+            safe_query.terms,
             available_ids=connector_ids,
         )
         if item in connector_ids
     )
 
 
-def _connector_query(query: str, connector_id: str) -> str:
+def _connector_query(safe_terms: tuple[str, ...], connector_id: str) -> str:
     blocked = {
         "cited",
         "concise",
@@ -346,7 +351,7 @@ def _connector_query(query: str, connector_id: str) -> str:
         blocked.update({"arxiv", "preprint", "preprints", "paper", "papers"})
     terms = [
         item
-        for item in safe_connector_query_terms(query, limit=12)
+        for item in safe_terms[:MAX_CONNECTOR_HITS]
         if item.strip().casefold().strip(".,:;()[]{}") not in blocked
     ]
     return " ".join(terms)

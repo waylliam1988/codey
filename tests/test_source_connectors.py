@@ -113,11 +113,21 @@ def test_safe_connector_query_terms_mask_secret_marker_value_windows() -> None:
         "password - is - configured - as - known - as - called - livekey clinical cancer",
         "password . is . configured . as . known . as . called . livekey clinical cancer",
         "api key — called — livekey clinical cancer",
+        "api key clinical cancer",
+        "access_token abcdef clinical cancer",
+        "token abcdef clinical cancer",
+        "id_token abcdef clinical cancer",
+        "auth_token abcdef clinical cancer",
+        "api_token abcdef clinical cancer",
+        "cookie abcdef clinical cancer",
+        "bearer_token abcdef clinical cancer",
         "client_secret = abcdef clinical cancer",
         "client_secret is mysecretvalue clinical cancer",
         "client secret known as abcdef clinical cancer",
         "private key is topsecret clinical cancer",
         "Authorization: Bearer abcdef clinical cancer",
+        "password correct horse battery staple clinical cancer",
+        "passphrase correct horse battery staple clinical cancer",
     )
 
     for query in cases:
@@ -131,8 +141,12 @@ def test_safe_connector_query_terms_mask_secret_marker_value_windows() -> None:
         assert "api" not in joined
         assert "key" not in joined
         assert "password" not in joined
+        assert "passphrase" not in joined
         assert "client" not in joined
         assert "secret" not in joined
+        assert "token" not in joined
+        assert "cookie" not in joined
+        assert "auth" not in joined
         assert "authorization" not in joined
         assert "bearer" not in joined
         assert "configured" not in joined
@@ -143,6 +157,10 @@ def test_safe_connector_query_terms_mask_secret_marker_value_windows() -> None:
         assert "hunter2" not in joined
         assert "mysecretvalue" not in joined
         assert "topsecret" not in joined
+        assert "correct" not in joined
+        assert "horse" not in joined
+        assert "battery" not in joined
+        assert "staple" not in joined
 
 
 def test_safe_connector_query_terms_mask_chinese_secret_marker_value_windows() -> None:
@@ -184,6 +202,14 @@ def test_connector_query_secret_signal_detects_separator_split_markers() -> None
         "access + key abcdef clinical cancer",
         "password . is . called . livekey clinical cancer",
         "password hunter2 clinical cancer",
+        "access_token abcdef clinical cancer",
+        "token abcdef clinical cancer",
+        "id_token abcdef clinical cancer",
+        "auth_token abcdef clinical cancer",
+        "api_token abcdef clinical cancer",
+        "cookie abcdef clinical cancer",
+        "bearer_token abcdef clinical cancer",
+        "passphrase correct horse battery staple clinical cancer",
         "client · secret abcdef clinical cancer",
         "密 - 钥 abcdef 临床 癌症",
         "密钥 abcdef 临床 癌症",
@@ -200,6 +226,14 @@ def test_connector_query_secret_signal_detects_separator_split_markers() -> None
     assert safe_connector_query("token efficient transformers benchmark").terms
     assert safe_connector_query("authorization trial consent policy").terms
     assert safe_connector_query("secret sharing cryptography benchmark").terms
+
+
+def test_safe_connector_query_preserves_domain_terms_after_bare_secret_marker() -> None:
+    safe = safe_connector_query("api key clinical cancer")
+
+    assert safe.terms == ("clinical", "cancer")
+    assert safe.redacted
+    assert safe.skip_reason == ""
 
 
 def test_safe_connector_query_terms_keep_secreted_science_terms() -> None:

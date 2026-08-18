@@ -279,9 +279,12 @@ runtime tool hash 分开记录。PubMed/arXiv API query 会从同一个 safe que
 `password is configured as ...`、`client secret known as ...`、
 `api key called ...`、`password is configured as known as called ...`、
 `password - is - configured - as - known - as - called - ...` 这类过度填充或标点分隔
-connector phrase、`密码 是 ...`、`密钥等于 ...` 这类更长但有界的 marker/value 窗口。
-清洗后的领域词仍可用于 connector；URL、本地路径和 path-like slash token 会被移除，
-清洗后没有安全 terms 时才跳过 connector lookup。
+connector phrase、`密码 是 ...`、`密钥等于 ...` 这类更长但有界的 marker/value 窗口；
+`access_token ...`、`token ...`、`cookie ...`、`passphrase ...` 这类常见 token/cookie
+marker 也会被遮掉，高风险 marker 后的多词 value 会遮到有界领域词边界。清洗后的领域词
+仍可用于 connector；URL、本地路径和 path-like slash token 会被移除，清洗后没有安全
+terms 时才跳过 connector lookup。live connector routing 和 request assembly 会复用同一个
+safe query，不再从 raw text 重复推导。
 浏览器 Research 搜索在普通运行中显式
 复用一个专用 Research profile/port；直接构造 `BrowserSearchProvider()` 仍默认
 isolated，CDP attach/端口等待保持 20 秒上限，取消不会被当成启动/导航失败重试。

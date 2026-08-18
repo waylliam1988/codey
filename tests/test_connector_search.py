@@ -9,6 +9,7 @@ import pytest
 
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
+from codey.research import connector_search
 from codey.research.connector_search import ConnectorAwareSearchProvider, _read_url_text
 from codey.research.source_connectors import SourceConnectorRegistry, SourceConnectorSpec
 from codey.research.tools import ResearchTools
@@ -95,6 +96,18 @@ def test_connector_live_search_uses_shared_medical_routing_terms() -> None:
     assert any("eutils.ncbi.nlm.nih.gov" in item for item in requested)
 
 
+def test_connector_live_search_reuses_single_safe_query_for_routing_and_api_request() -> None:
+    base = FakeBaseSearchProvider()
+    provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
+    original = connector_search.safe_connector_query
+
+    with mock.patch("codey.research.connector_search.safe_connector_query", wraps=original) as safe:
+        with mock.patch("codey.research.connector_search._read_url_text", side_effect=_fixture_response):
+            provider.search("clinical cancer therapy", limit=3)
+
+    assert safe.call_count == 1
+
+
 def test_connector_live_query_strips_secret_shape_url_and_path_before_api_request() -> None:
     base = FakeBaseSearchProvider()
     provider = ConnectorAwareSearchProvider(base, rate_limit=False, connector_limit=1)
@@ -136,6 +149,15 @@ def test_connector_live_query_masks_separator_split_secret_markers_before_api_re
         "password . is . called . livekey clinical cancer",
         "client · secret abcdef clinical cancer",
         "password hunter2 clinical cancer",
+        "access_token abcdef clinical cancer",
+        "token abcdef clinical cancer",
+        "id_token abcdef clinical cancer",
+        "auth_token abcdef clinical cancer",
+        "api_token abcdef clinical cancer",
+        "cookie abcdef clinical cancer",
+        "bearer_token abcdef clinical cancer",
+        "password correct horse battery staple clinical cancer",
+        "passphrase correct horse battery staple clinical cancer",
         "密 - 钥 abcdef 临床 癌症",
         "密钥 abcdef 临床 癌症",
         "密码 hunter2 临床 癌症",
@@ -162,9 +184,17 @@ def test_connector_live_query_masks_separator_split_secret_markers_before_api_re
         "topsecret",
         "livekey",
         "hunter2",
+        "correct",
+        "horse",
+        "battery",
+        "staple",
         "password",
+        "passphrase",
         "client",
         "secret",
+        "token",
+        "cookie",
+        "auth",
         "private",
         "access",
         "bearer",

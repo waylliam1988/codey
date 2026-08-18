@@ -6,8 +6,9 @@ import re
 
 
 _LATIN_SECRET_MARKER = (
-    r"api[_ -]?key|access[_ -]?key|secret|client[_ -]?secret|"
-    r"password|passwd|pwd|token|refresh[_ -]?token|bearer|authorization|"
+    r"api[_ -]?key|access[_ -]?key|api[_ -]?token|access[_ -]?token|"
+    r"auth[_ -]?token|bearer[_ -]?token|id[_ -]?token|secret|client[_ -]?secret|"
+    r"password|passphrase|passwd|pwd|token|refresh[_ -]?token|bearer|authorization|"
     r"cookie|credential|credentials|session[_ -]?id|private[_ -]?key|ssh[_ -]?key|jwt"
 )
 SECRET_MARKER_RE = re.compile(
@@ -29,13 +30,19 @@ _SENSITIVE_CODE_COMPONENTS = frozenset({
     "jwt",
     "passwd",
     "password",
+    "passphrase",
     "pwd",
     "secret",
 })
 _SENSITIVE_CODE_PHRASES = frozenset({
     ("access", "key"),
+    ("access", "token"),
     ("api", "key"),
+    ("api", "token"),
+    ("auth", "token"),
+    ("bearer", "token"),
     ("client", "secret"),
+    ("id", "token"),
     ("private", "key"),
     ("refresh", "token"),
     ("session", "id"),
@@ -43,8 +50,13 @@ _SENSITIVE_CODE_PHRASES = frozenset({
 })
 _SENSITIVE_CODE_COMPOUNDS = frozenset({
     "accesskey",
+    "accesstoken",
     "apikey",
+    "apitoken",
+    "authtoken",
+    "bearertoken",
     "clientsecret",
+    "idtoken",
     "privatekey",
     "refreshtoken",
     "sessionid",
