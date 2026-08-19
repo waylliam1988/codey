@@ -3045,7 +3045,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertFalse(finalized.changed)
         self.assertEqual(finalized.reason, "no_citable_sources")
 
-    def test_done_finalizer_renders_no_citable_sections(self) -> None:
+    def test_done_finalizer_preserves_no_citable_preamble_for_quality_review(self) -> None:
         ledger = ResearchLedger()
         ledger.record_search("Alpha Safety Program", [{
             "title": "Alpha Safety Program official manual",
@@ -3053,7 +3053,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             "snippet": "Official manual.",
         }])
         report = (
-            "preamble note\n\n"
+            "preamble https://evil.example/secret\n\n"
             "## 结论\n"
             "未能确认 Alpha Safety Program 要求 72 小时事件通知阈值。\n\n"
             "## 关键证据\n"
@@ -3070,10 +3070,16 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         finalized = finalize_done_answer(report, ledger)
 
-        self.assertTrue(finalized.changed)
+        self.assertFalse(finalized.changed)
         self.assertEqual(finalized.reason, "no_citable_sources")
-        self.assertNotIn("preamble note", finalized.text)
-        self.assertTrue(finalized.text.startswith("## 结论"))
+        self.assertIn("https://evil.example/secret", finalized.text)
+        review = review_report_quality(
+            finalized.text,
+            ledger=ledger,
+            opened_sources=set(),
+            search_result_urls={"https://agency.gov/alpha-safety/manual"},
+        )
+        self.assertFalse(review.ok)
 
     def test_done_runner_uses_production_finalizer_before_quality_review(self) -> None:
         provider = FakeProvider(

@@ -216,10 +216,10 @@ leakage checks are shared between the compiler and quality gate and cover
 pre-heading prose plus the report body, while ignoring `## 来源` titles, so
 source titles such as `Analysis of [S1] Subunit Protein` are not treated as
 internal IDs. Conflicting duplicate old source numbers are rejected. When a
-report has no citable sources, the compiler still re-renders the sectioned
-output and drops any preamble before returning `no_citable_sources`. The
-manual `finalizer` arm used in these historical rows has been removed from the
-current probe because production now runs the compiler for every arm.
+report has no citable sources, the compiler leaves the original text intact so
+the quality gate can still reject preamble provenance or source-id violations.
+The manual `finalizer` arm used in these historical rows has been removed from
+the current probe because production now runs the compiler for every arm.
 
 Post-merge verification for the production citation compiler:
 

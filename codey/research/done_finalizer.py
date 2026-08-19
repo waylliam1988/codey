@@ -40,14 +40,7 @@ def finalize_done_answer(
         return FinalizedAnswer(text, reason="no_report_sections")
     citable_urls = _citable_urls(ledger)
     if not citable_urls:
-        rendered = _render_report(sections)
-        changed = _normalized_report(rendered) != _normalized_report(text)
-        return FinalizedAnswer(
-            rendered if changed else text,
-            changed=changed,
-            source_count=0,
-            reason="no_citable_sources",
-        )
+        return FinalizedAnswer(text, reason="no_citable_sources")
 
     full_number_for_url = {url: index for index, url in enumerate(citable_urls, 1)}
     full_url_by_number = {number: url for url, number in full_number_for_url.items()}
