@@ -105,7 +105,6 @@ class ResearchRunResult:
     advisor_count: int = 0
     research_record: ResearchRecord | None = None
     max_turns_used: int = DEFAULT_MAX_TURNS
-    runtime_tools: ResearchTools | None = field(default=None, repr=False)
 
     @property
     def receipt(self) -> str:
@@ -439,7 +438,6 @@ class ResearchRunner:
             advisor_count=advisor_count,
             research_record=research_record,
             max_turns_used=turn_limit,
-            runtime_tools=self.tools,
         )
         self.prompt_trace.call(
             "record_research_notes",

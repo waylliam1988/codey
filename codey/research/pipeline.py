@@ -16,6 +16,12 @@ from codey.research.runner import ResearchRunResult
 from codey.research.tools import ResearchTools
 
 
+@dataclass(frozen=True)
+class ResearchIterationRun:
+    result: ResearchRunResult
+    tools: ResearchTools | None = None
+
+
 class ResearchIterationRunner(Protocol):
     def __call__(
         self,
@@ -23,23 +29,11 @@ class ResearchIterationRunner(Protocol):
         task: str,
         max_turns: int,
         chat_handoff: str,
-        search: object | None = None,
-        close_search: bool = True,
+        search: object,
         tools: ResearchTools | None = None,
         iteration_context: str = "",
-    ) -> ResearchRunResult:
+    ) -> ResearchIterationRun:
         ...
-
-
-@dataclass(frozen=True)
-class ResearchPipelineIteration:
-    iteration_id: str
-    result: ResearchRunResult
-    proof_review: ResearchProofReview | None = None
-    plan_ref: str = ""
-    query_count: int = 0
-    opened_source_count: int = 0
-    stop_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -75,25 +69,25 @@ class ResearchPipeline:
         started = time.monotonic()
         search = self.search_factory()
         try:
-            initial = self.run_iteration(
+            initial_run = self.run_iteration(
                 task=self.context.question,
                 max_turns=self.context.max_turns,
                 chat_handoff=self.context.chat_handoff,
                 search=search,
-                close_search=False,
             )
+            initial = initial_run.result
             best = initial
+            best_tools = initial_run.tools
             best_review = self._review(best, require_ledger_record=False)
             plan = self._plan(best_review)
             self.context.trace.record_plan(plan)
             followup_rounds = 0
             planner_stop_reason = _pipeline_stop_reason(plan, best_review)
             if self._should_followup(initial, best_review, plan, started):
-                runtime_tools = _runtime_tools(initial)
-                if runtime_tools is None:
-                    planner_stop_reason = "missing_runtime_tools"
+                if best_tools is None:
+                    planner_stop_reason = "missing_iteration_tools"
                 else:
-                    current_tools = runtime_tools
+                    current_tools = best_tools
                     for round_index in range(1, self._max_rounds() + 1):
                         if self.context.should_stop():
                             planner_stop_reason = "stopped"
@@ -106,12 +100,11 @@ class ResearchPipeline:
                         planner_stop_reason = material.stop_reason
                         if not material.has_new_material:
                             break
-                        candidate = self.run_iteration(
+                        candidate_run = self.run_iteration(
                             task=self.context.question,
                             max_turns=self.context.max_turns,
                             chat_handoff=self.context.chat_handoff,
                             search=search,
-                            close_search=False,
                             tools=current_tools,
                             iteration_context=_followup_context(
                                 question=self.context.question,
@@ -121,12 +114,14 @@ class ResearchPipeline:
                                 limit=self.config.max_followup_context_chars,
                             ),
                         )
+                        candidate = candidate_run.result
                         followup_rounds = round_index
                         candidate_review = self._review(candidate, require_ledger_record=False)
                         if _selects_candidate(candidate, candidate_review, best, best_review):
                             best = candidate
                             best_review = candidate_review
-                        current_tools = _runtime_tools(candidate) or current_tools
+                            best_tools = candidate_run.tools or current_tools
+                        current_tools = candidate_run.tools or current_tools
                         plan = self._plan(best_review)
                         self.context.trace.record_plan(plan)
                         if not self._should_followup(best, best_review, plan, started):
@@ -140,7 +135,7 @@ class ResearchPipeline:
             final_review = self._review(best, require_ledger_record=self.evidence_ledgers is not None)
             self.context.trace.record_proof_review(final_review)
             self.context.trace.record_plan(self._plan(final_review))
-            self._record_research_changes(best)
+            self._record_research_changes(best_tools)
             return ResearchPipelineResult(
                 final_result=best,
                 followup_applied=followup_rounds > 0,
@@ -244,10 +239,9 @@ class ResearchPipeline:
             return None
         return None
 
-    def _record_research_changes(self, result: ResearchRunResult) -> None:
+    def _record_research_changes(self, tools: ResearchTools | None) -> None:
         if self.research_changes_sink is None or not self.context.run_id:
             return
-        tools = _runtime_tools(result)
         if tools is None:
             return
         self.research_changes_sink(self.context.run_id, tools.changes)
@@ -257,11 +251,6 @@ class ResearchPipeline:
             return max(0, min(3, int(self.config.max_followup_rounds or 0)))
         except (TypeError, ValueError):
             return 0
-
-
-def _runtime_tools(result: ResearchRunResult) -> ResearchTools | None:
-    tools = getattr(result, "runtime_tools", None)
-    return tools if isinstance(tools, ResearchTools) else None
 
 
 def _selects_candidate(
@@ -380,8 +369,8 @@ def _followup_context(
 
 
 __all__ = [
+    "ResearchIterationRun",
     "ResearchIterationRunner",
     "ResearchPipeline",
-    "ResearchPipelineIteration",
     "ResearchPipelineResult",
 ]

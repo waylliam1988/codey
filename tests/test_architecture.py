@@ -56,6 +56,22 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("http.server", imports)
         self.assertNotIn("codey.server", imports)
 
+    def test_research_pipeline_owns_iteration_boundary_without_legacy_seams(self) -> None:
+        pipeline = ROOT / "codey" / "research" / "pipeline.py"
+        task_runner = ROOT / "codey" / "task_runner.py"
+        research_runner = ROOT / "codey" / "research" / "runner.py"
+        pipeline_source = pipeline.read_text(encoding="utf-8")
+        task_runner_source = task_runner.read_text(encoding="utf-8")
+        research_runner_source = research_runner.read_text(encoding="utf-8")
+
+        self.assertIn("ResearchIterationRun", pipeline_source)
+        self.assertIn("ResearchIterationRun", task_runner_source)
+        self.assertNotIn("codey.task_runner", imported_modules(pipeline))
+        self.assertNotIn("codey.server", imported_modules(pipeline))
+        self.assertNotIn("_run_research_task", task_runner_source)
+        self.assertNotIn("close_search", pipeline_source)
+        self.assertNotIn("runtime_tools", research_runner_source)
+
     def test_ghost_runtime_has_no_provider_browser_tool_or_research_dependency(self) -> None:
         forbidden = {
             "torch",

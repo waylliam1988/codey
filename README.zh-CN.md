@@ -718,7 +718,7 @@ codey/
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
   ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列、affinity 账本和本地上下文控制面
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
-  research/                 Research controller/runner、共享 citation scanner、source connector、planner dry-run、done citation compiler、evidence ledger、object model、report/proof quality gate
+  research/                 Research controller/runner/pipeline、共享 citation scanner、source connector、planner dry-run/executor、done citation compiler、evidence ledger、object model、report/proof quality gate
   verification_map.py       Review 阶段的有边界验证候选
   review_impact_map.py      只给 Review 使用的 caller/test 影响提示
   change_brief.py           隐藏任务意图 brief

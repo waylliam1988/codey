@@ -22,6 +22,7 @@ if __package__ in (None, ""):
 
 from codey.agent import RunResult
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
+from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.review import ReviewResult
 from codey import server
@@ -159,9 +160,11 @@ def _run_case(
         def research_task(**_kwargs):
             nonlocal research_calls
             research_calls += 1
-            return ResearchRunResult("q", "stub research done", "done", 1)
+            return ResearchIterationRun(
+                result=ResearchRunResult("q", "stub research done", "done", 1)
+            )
 
-        runner._run_research_task = research_task  # production dispatch, safe body
+        runner._run_research_iteration = research_task  # production dispatch, safe body
         try:
             with _patched_provider(state):
                 runner.run(TaskRequest(

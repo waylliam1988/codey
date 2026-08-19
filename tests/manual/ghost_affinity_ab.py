@@ -26,6 +26,7 @@ from codey.ghost.hebbian import GhostNode
 import codey.ghost.work_queue as work_queue_module
 from codey.knowledge.research_interest import ResearchInterestCandidate
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
+from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.task_runner import TaskRequest, TaskRunner
 from codey.local_store import write_json_atomic
@@ -129,13 +130,15 @@ def _run_case(
             runner = _runner(state)
             _seed_case(state, case, arm=arm)
             if case.kind in {"work", "research", "permission"}:
-                runner._run_research_task = lambda **_kwargs: ResearchRunResult(
-                    "q",
-                    "researched with citation [1]",
-                    "done",
-                    1,
-                    synthesis_id=f"{case.name}-synthesis",
-                    citation_map=[{"claim": "x"}],
+                runner._run_research_iteration = lambda **_kwargs: ResearchIterationRun(
+                    result=ResearchRunResult(
+                        "q",
+                        "researched with citation [1]",
+                        "done",
+                        1,
+                        synthesis_id=f"{case.name}-synthesis",
+                        citation_map=[{"claim": "x"}],
+                    )
                 )
             with _patch_provider(state, provider):
                 intent = "chat" if case.kind == "explicit" else "auto"

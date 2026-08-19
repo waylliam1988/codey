@@ -32,6 +32,7 @@ from codey.models import ToolCall
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_discovery import Discovery
 from codey.providers.local_openai import LocalEndpoint
+from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
 from codey.run_ledger import read_ledger
 from codey.task_runner import TaskRunner, _project_has_user_files
@@ -2769,8 +2770,8 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch.object(
                 TaskRunner,
-                "_run_research_task",
-                return_value=ResearchRunResult("question", "summary", "done", 1),
+                "_run_research_iteration",
+                return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
             server._run_task(
@@ -2896,8 +2897,8 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch.object(
                 TaskRunner,
-                "_run_research_task",
-                return_value=ResearchRunResult("question", "summary", "done", 1),
+                "_run_research_iteration",
+                return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
             mock.patch.object(
                 server,
@@ -2941,8 +2942,8 @@ class SessionThreadingTests(unittest.TestCase):
             ) as get_provider,
             mock.patch.object(
                 TaskRunner,
-                "_run_research_task",
-                return_value=ResearchRunResult("question", "summary", "done", 1),
+                "_run_research_iteration",
+                return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
             server._run_task(
@@ -2978,8 +2979,8 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(state, "get_provider", return_value=provider) as get_provider,
             mock.patch.object(
                 TaskRunner,
-                "_run_research_task",
-                return_value=ResearchRunResult("question", "summary", "done", 1),
+                "_run_research_iteration",
+                return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
         ):
             server._run_task(
@@ -3084,8 +3085,8 @@ class SessionThreadingTests(unittest.TestCase):
             ) as get_provider,
             mock.patch.object(
                 TaskRunner,
-                "_run_research_task",
-                return_value=ResearchRunResult("question", "summary", "done", 1),
+                "_run_research_iteration",
+                return_value=ResearchIterationRun(result=ResearchRunResult("question", "summary", "done", 1)),
             ) as research_task,
             mock.patch.object(
                 server,
@@ -3560,8 +3561,8 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
                     TaskRunner,
-                    "_run_research_task",
-                    return_value=research_result,
+                    "_run_research_iteration",
+                    return_value=ResearchIterationRun(result=research_result),
                 ) as research_task,
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
@@ -3621,8 +3622,8 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(
                     TaskRunner,
-                    "_run_research_task",
-                    return_value=research_result,
+                    "_run_research_iteration",
+                    return_value=ResearchIterationRun(result=research_result),
                 ) as research_task,
                 mock.patch.object(
                     server,

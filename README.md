@@ -846,7 +846,7 @@ codey/
   project_task_context.py   project facts, map, checkpoint, and verification context
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
-  research/                 Research controller/runner, shared citation scanners, source connectors, planner dry-run, done citation compiler, evidence ledger, object model, report/proof quality gates
+  research/                 Research controller/runner/pipeline, shared citation scanners, source connectors, planner dry-run/executor, done citation compiler, evidence ledger, object model, report/proof quality gates
   verification_map.py       bounded review-time verification candidates
   review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief

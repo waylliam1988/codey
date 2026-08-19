@@ -829,7 +829,9 @@ local file: path_ref / line_start / line_end / file_hash
 ```text
 把 sanitize_research_url_ref / project_ref / path_ref / digest / stable_ref
 抽成 research/identity.py，避免 object_model 和 evidence_ledger 复制 identity 规则
-TaskRunner 只做薄接线：Research 完成后 append_record，再写 bounded trace summary
+0.4.2 阶段 TaskRunner 只做薄接线：Research 完成后 append_record，再写 bounded
+trace summary；0.4.4 起这段 Research persistence ownership 由 ResearchPipeline
+闭环负责，TaskRunner 只消费最终结果和外围 trace/UI 生命周期
 EvidenceLedgerStore 只消费 ResearchRecord，不读取网页正文或 Research prompt
 ```
 
@@ -1261,7 +1263,7 @@ DeepSeek、MiMo、Qwen 的样本能把首次 `done` 通过率从“需要质量�
 
 ## 0.4.4 - Bounded Research Planner v1
 
-状态：规划。目标是让 Codey 在 proof gap 明确时，能在后台做有限补搜、
+状态：实现完成，尚未 release。目标是让 Codey 在 proof gap 明确时，能在后台做有限补搜、
 验证和再综合，而不是停留在一次流水线。
 
 ### 做什么
@@ -1269,6 +1271,7 @@ DeepSeek、MiMo、Qwen 的样本能把首次 `done` 通过率从“需要质量�
 新增：
 
 ```text
+research/context.py
 research/pipeline.py
 research/plan_executor.py
 ```
@@ -1322,6 +1325,21 @@ _RunFrame 暂不拆；只把 research-only 状态迁入 ResearchContext
 Provider/session/trace lifecycle 仍由 TaskRunner 管
 ```
 
+实现约定：
+
+```text
+ResearchPipeline 是 Research 生命周期唯一编排 owner
+TaskRunner 只构造 context、注入外围生命周期依赖并消费最终结果
+_run_research_iteration 是单轮 Research primitive，不是兼容旧调用方的公共入口
+ResearchIterationRun(result, tools) 只在 pipeline 迭代边界传递运行态工具
+ResearchRunResult 不携带 runtime_tools 等隐式运行时依赖
+search 的创建和关闭由 ResearchPipeline 统一管理
+```
+
+这次没有保留 `_run_research_task`、`close_search` 或 `runtime_tools` 兼容层；
+测试和手工 harness 直接 patch 当前主 seam。这样可以避免冷启动项目为了迁就旧
+测试接口，把单轮 primitive 和最终 ResearchResult 混成一个隐式协议。
+
 ### 验证
 
 ```text
@@ -1336,6 +1354,9 @@ planner stop reason 可解释
 RunTrace 不含 raw prompt / raw webpage body / raw query transcript
 UI/SSE shape 不变
 ResearchPipeline deterministic fixture 可回归
+ResearchPipeline 不依赖 TaskRunner、Server 或 provider adapter
+单轮迭代工具状态不进入最终 ResearchRunResult
+每次 Research pipeline 只写一次最终 EvidenceLedger record
 ```
 
 ### A/B

@@ -135,6 +135,12 @@ Research 是 Codey 的原生能力，但它不是后台自动记忆，也不是�
 7. 代码本身留在项目目录；vault 记录为什么这么做、依据是什么、改了哪些文件、跑过什么检查。
 8. Restore 必须对应后端真实存在的 snapshot；重启后没有 snapshot 的旧 run 不能假装可恢复。
 
+Research 的生命周期编排必须只有一个 owner。外围运行时可以负责
+provider、session、取消、trace 和 UI/SSE 转发，但 proof、plan、bounded
+follow-up、最终选择和 Evidence Ledger 归档都应由 ResearchPipeline 统一决定。
+单轮运行的工具状态只能通过明确的迭代边界传递，不能偷偷挂在最终结果对象上，
+也不能为了迁就旧测试保留无意义的兼容入口。
+
 Research 的价值不是让 Codey 变成另一个资料库 app，而是补齐这条工作流：
 
 ```text

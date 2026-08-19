@@ -8,6 +8,7 @@ import codey.ghost.work_queue as work_queue_module
 from codey.knowledge.research_interest import ResearchInterestCandidate
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
+from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey import server
@@ -171,14 +172,16 @@ def test_task_runner_uses_affinity_to_order_strict_continue_work_items() -> None
             state,
             router_provider_factory=mock.Mock(side_effect=AssertionError("router should be bypassed")),
         )
-        runner._run_research_task = mock.Mock(return_value=ResearchRunResult(
-            "Research alpha provider recovery",
-            "researched",
-            "done",
-            1,
-            synthesis_id="alpha-result",
-            citation_map=[{"claim": "x"}],
-            research_record=_research_record("alpha"),
+        runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(
+            result=ResearchRunResult(
+                "Research alpha provider recovery",
+                "researched",
+                "done",
+                1,
+                synthesis_id="alpha-result",
+                citation_map=[{"claim": "x"}],
+                research_record=_research_record("alpha"),
+            ),
         ))
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
@@ -186,7 +189,7 @@ def test_task_runner_uses_affinity_to_order_strict_continue_work_items() -> None
             state.wait_for_ghost_sleep(timeout=2)
         items = {item.id: item for item in state.ghost_work_queue.list_items(session_id="s1")}
 
-    assert runner._run_research_task.call_count == 1
+    assert runner._run_research_iteration.call_count == 1
     assert items[favored.id].status == "done"
     assert items[baseline_top.id].status == "queued"
 

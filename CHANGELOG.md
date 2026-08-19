@@ -4,6 +4,26 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.4 - Bounded Research Planner v1 (implementation draft, unreleased)
+
+- Moved Research lifecycle orchestration into `codey/research/pipeline.py`.
+  Initial `ResearchRunner`, proof review, `QueryPlanner`, bounded
+  `PlanExecutor`, follow-up synthesis, final proof review, and Evidence Ledger
+  persistence now have one owner. `TaskRunner` keeps the outer
+  provider/session/trace/mode lifecycle.
+- Added `ResearchIterationRun` as the explicit single-iteration boundary.
+  Runtime `ResearchTools` now travels only across that boundary and is no
+  longer hidden on `ResearchRunResult.runtime_tools`.
+- Removed the `_run_research_task` and `close_search` legacy seams. Tests and
+  manual harnesses patch `_run_research_iteration`, the current cold-start
+  seam, instead of preserving unused compatibility for test scripts.
+- Kept one bounded follow-up round with sequential search/open/fetch, the
+  existing tool contract, URL guard, UI/SSE payload, and single final-record
+  write behavior unchanged.
+- Added architecture boundary coverage ensuring ResearchPipeline does not
+  depend on TaskRunner or Server and final Research results do not carry
+  runtime tool objects.
+
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 
 - Added `codey/research/source_connectors.py`, a pure source connector boundary

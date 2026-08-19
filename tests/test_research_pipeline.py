@@ -10,7 +10,7 @@ from codey.research.context import ResearchContext, ResearchPipelineConfig, RunT
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
-from codey.research.pipeline import ResearchPipeline, _selects_candidate
+from codey.research.pipeline import ResearchIterationRun, ResearchPipeline, _selects_candidate
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.proof_quality import CoverageGap, ResearchProofReview
 from codey.research.query_planner import QueryCandidate, ResearchPlan
@@ -145,21 +145,23 @@ def _result(
     record,
     tools: ResearchTools,
     notes: list[str] | None = None,
-) -> ResearchRunResult:
-    return ResearchRunResult(
-        question=question,
-        summary=summary,
-        stop_reason=stop_reason,
-        turns=1,
-        notes_created=notes or [],
-        opened_sources=[{
-            "requested_url": "https://example.com/pipeline",
-            "final_url": "https://example.com/pipeline",
-            "title": "Pipeline source",
-        }],
-        synthesis_id=synthesis_id,
-        research_record=record,
-        runtime_tools=tools,
+) -> ResearchIterationRun:
+    return ResearchIterationRun(
+        result=ResearchRunResult(
+            question=question,
+            summary=summary,
+            stop_reason=stop_reason,
+            turns=1,
+            notes_created=notes or [],
+            opened_sources=[{
+                "requested_url": "https://example.com/pipeline",
+                "final_url": "https://example.com/pipeline",
+                "title": "Pipeline source",
+            }],
+            synthesis_id=synthesis_id,
+            research_record=record,
+        ),
+        tools=tools,
     )
 
 
@@ -283,7 +285,7 @@ def test_pipeline_skips_followup_when_proof_is_ok_and_appends_ledger_once() -> N
             pipeline_module.build_research_plan = original_plan
             pipeline_module.PlanExecutor.execute = original_execute
 
-        assert output.final_result is result
+        assert output.final_result is result.result
         assert output.followup_applied is False
         assert output.followup_rounds == 0
         assert search.closed is True
@@ -432,7 +434,7 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
 
         assert output.followup_applied is True
         assert output.followup_rounds == 1
-        assert output.final_result is candidate
+        assert output.final_result is candidate.result
         assert output.planner_stop_reason == "no_actionable_gap"
         assert search.closed is True
         assert len(run_calls) == 2

@@ -26,6 +26,7 @@ from codey.knowledge.research_interest import build_research_interest_candidates
 from codey.knowledge.store import KnowledgeStore
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
+from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.runner import ResearchRunResult
@@ -198,18 +199,22 @@ def _run_case(
             if case.research_proof:
                 question = _research_question_from_task(str(_kwargs.get("task") or ""))
                 record = _proof_record(question, run_id=str(_kwargs.get("run_id") or ""))
-                return ResearchRunResult(
-                    question,
-                    "stub research done",
-                    "done",
-                    1,
-                    synthesis_id=f"note-{case.name}",
-                    citation_map=[{"claim": "x"}],
-                    research_record=record,
+                return ResearchIterationRun(
+                    result=ResearchRunResult(
+                        question,
+                        "stub research done",
+                        "done",
+                        1,
+                        synthesis_id=f"note-{case.name}",
+                        citation_map=[{"claim": "x"}],
+                        research_record=record,
+                    )
                 )
-            return ResearchRunResult("q", "stub research without proof", "done", 1)
+            return ResearchIterationRun(
+                result=ResearchRunResult("q", "stub research without proof", "done", 1)
+            )
 
-        runner._run_research_task = research_task
+        runner._run_research_iteration = research_task
         try:
             provider = provider_factory(provider_id) if provider_factory is not None else _MainProvider()
             with _patched_provider(state, provider):

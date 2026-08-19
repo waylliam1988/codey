@@ -25,6 +25,7 @@ import codey.ghost.work_queue as work_queue_module
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
+from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.review import ReviewResult
@@ -208,17 +209,19 @@ def _run_case(
             research_calls += 1
             question = _research_question_from_task(str(_kwargs.get("task") or ""))
             record = _proof_record(question, run_id=str(_kwargs.get("run_id") or ""))
-            return ResearchRunResult(
-                question,
-                "stub research done",
-                "done",
-                1,
-                synthesis_id="note-result",
-                citation_map=[{"claim": "x"}],
-                research_record=record,
+            return ResearchIterationRun(
+                result=ResearchRunResult(
+                    question,
+                    "stub research done",
+                    "done",
+                    1,
+                    synthesis_id="note-result",
+                    citation_map=[{"claim": "x"}],
+                    research_record=record,
+                )
             )
 
-        runner._run_research_task = research_task
+        runner._run_research_iteration = research_task
         try:
             provider = provider_factory(provider_id) if provider_factory is not None else _MainProvider()
             with _patched_provider(state, provider):

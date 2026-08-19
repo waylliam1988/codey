@@ -83,8 +83,8 @@ from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchComplet
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
-from codey.research.pipeline import ResearchPipeline, ResearchPipelineConfig
-from codey.research.proof_quality import proof_review_trace_payload, review_research_proof
+from codey.research.pipeline import ResearchIterationRun, ResearchPipeline, ResearchPipelineConfig
+from codey.research.proof_quality import proof_review_trace_payload
 from codey.research.query_planner import build_research_plan, research_plan_trace_payload
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
@@ -3026,7 +3026,7 @@ class TaskRunner:
             event["research"] = _research_payload(research_result)
         return _ModeOutcome(event, research_result=research_result)
 
-    def _run_research_task(
+    def _run_research_iteration(
         self,
         *,
         provider,
@@ -3036,56 +3036,45 @@ class TaskRunner:
         max_turns: int,
         on_event: Callable[[RunEvent], None],
         stop_flag,
-        provider_id: str = "",
-        run_id: str = "",
-        chat_handoff: str = "",
-        trace_recorder=None,
-        search=None,
-        close_search: bool = True,
+        provider_id: str,
+        run_id: str,
+        chat_handoff: str,
+        trace_recorder,
+        search,
         tools=None,
         iteration_context: str = "",
-    ):
+    ) -> ResearchIterationRun:
         if self.knowledge_store is None:
             raise RuntimeError("Research is not configured")
-        owned_search = search is None
-        if search is None:
-            search = self.search_factory()
-        try:
-            runner = ResearchRunner(
-                provider,
-                search,
-                self.knowledge_store,
-                max_turns=max_turns,
-                should_stop=stop_flag.is_set if stop_flag is not None else None,
-                session_id=session_id,
-                project=project,
-                chat_handoff=chat_handoff,
-                permission_profile="research",
-                trace_recorder=trace_recorder,
-                run_id=run_id,
-                review_advisors=(
-                    (lambda pack: self.run_research_advisors(
-                        selected_provider=provider,
-                        selected_provider_id=provider_id,
-                        pack=pack,
-                    ))
-                    if self.run_research_advisors is not None
-                    else None
-                ),
-                tools=tools,
-                iteration_context=iteration_context,
-            )
-            for event in runner.run(task):
-                on_event(event)
-            if runner.result is None:
-                raise RuntimeError("research finished without a result")
-            return runner.result
-        finally:
-            if close_search or owned_search:
-                try:
-                    search.close()
-                except Exception:
-                    pass
+        runner = ResearchRunner(
+            provider,
+            search,
+            self.knowledge_store,
+            max_turns=max_turns,
+            should_stop=stop_flag.is_set if stop_flag is not None else None,
+            session_id=session_id,
+            project=project,
+            chat_handoff=chat_handoff,
+            permission_profile="research",
+            trace_recorder=trace_recorder,
+            run_id=run_id,
+            review_advisors=(
+                (lambda pack: self.run_research_advisors(
+                    selected_provider=provider,
+                    selected_provider_id=provider_id,
+                    pack=pack,
+                ))
+                if self.run_research_advisors is not None
+                else None
+            ),
+            tools=tools,
+            iteration_context=iteration_context,
+        )
+        for event in runner.run(task):
+            on_event(event)
+        if runner.result is None:
+            raise RuntimeError("research finished without a result")
+        return ResearchIterationRun(result=runner.result, tools=runner.tools)
 
     def _run_research_pipeline(
         self,
@@ -3104,12 +3093,11 @@ class TaskRunner:
             task: str,
             max_turns: int,
             chat_handoff: str,
-            search=None,
-            close_search: bool = True,
+            search: object,
             tools=None,
             iteration_context: str = "",
         ):
-            return self._run_research_task(
+            return self._run_research_iteration(
                 provider=frame.provider,
                 session_id=request.session_id,
                 project=frame.project_text,
@@ -3122,7 +3110,6 @@ class TaskRunner:
                 chat_handoff=chat_handoff,
                 trace_recorder=frame.trace,
                 search=search,
-                close_search=close_search,
                 tools=tools,
                 iteration_context=iteration_context,
             )

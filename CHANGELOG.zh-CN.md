@@ -4,6 +4,22 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.4 - Bounded Research Planner v1（implementation draft，未 release）
+
+- 将 Research 生命周期编排收归 `codey/research/pipeline.py`：初始
+  `ResearchRunner`、proof review、`QueryPlanner`、有界 `PlanExecutor`、
+  follow-up synthesis、最终 proof review 和 Evidence Ledger 写入由 Pipeline
+  统一拥有；`TaskRunner` 只负责外围 provider/session/trace/mode 生命周期。
+- 新增 `ResearchIterationRun` 作为单轮 Research primitive 与 Pipeline 之间的
+  明确边界。运行时 `ResearchTools` 只在迭代边界传递，不再隐藏挂在
+  `ResearchRunResult.runtime_tools` 上。
+- 移除 `_run_research_task`、`close_search` 等旧 seam；测试和手工 harness 直接
+  使用 `_run_research_iteration`，避免冷启动项目为了迁就测试保留无意义兼容层。
+- Pipeline 继续执行一轮 bounded follow-up，保持串行 search/open/fetch、现有
+  tool contract、URL guard、UI/SSE payload 和最终 record 单写约束不变。
+- 增加架构边界测试，锁定 ResearchPipeline 不依赖 TaskRunner/Server，且最终
+  ResearchResult 不携带运行时工具对象。
+
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 
 - 新增 `codey/research/source_connectors.py`：提供纯 source connector 边界，

@@ -10,6 +10,7 @@ from codey.consensus import ConsensusResult
 from codey.agent import RunResult
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import ResearchRecord, build_research_record
+from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey import task_runner as task_runner_module
@@ -252,7 +253,7 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
 
         with mock.patch.object(state, "get_provider", return_value=main_provider):
             runner = _runner(state, router_provider_factory=router_factory)
-            runner._run_research_task = mock.Mock(return_value=result)
+            runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
             runner.run(TaskRequest(
                 "session-research-trace",
                 None,
@@ -317,7 +318,7 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
 
         with mock.patch.object(state, "get_provider", return_value=_Provider()):
             runner = _runner(state)
-            runner._run_research_task = mock.Mock(return_value=result)
+            runner._run_research_iteration = mock.Mock(return_value=ResearchIterationRun(result=result))
             runner.run(TaskRequest(
                 "session-evidence-ledger",
                 str(project),
@@ -411,15 +412,15 @@ def test_hybrid_trace_records_research_and_writer_phases() -> None:
                     "research_outbound_prompt",
                     "SECRET_RESEARCH_PROMPT_SHOULD_NOT_BE_SAVED",
                 )
-                return ResearchRunResult(
+                return ResearchIterationRun(result=ResearchRunResult(
                     question="Research first",
                     summary="research done",
                     stop_reason="done",
                     turns=1,
                     synthesis_id="synth-hybrid",
-                )
+                ))
 
-            runner._run_research_task = mock.Mock(side_effect=fake_research_task)
+            runner._run_research_iteration = mock.Mock(side_effect=fake_research_task)
             runner.run(TaskRequest(
                 "session-hybrid-trace",
                 str(project),
