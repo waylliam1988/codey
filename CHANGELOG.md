@@ -129,6 +129,12 @@ This file records Codey's release history. The newest release appears first.
   and reject separate notes or contextual leaks such as `source_id=s9`. Reports
   with no citable source are re-rendered into the required sections before
   quality review, and Run Trace records only a bounded compilation summary.
+- Added a shared `codey/research/citation_scanner.py` helper so the done
+  compiler and report-quality gate use the same citation and source-id scan
+  rules instead of drifting apart. The report-quality gate is now split into
+  small review helpers for missing sections, source-id leaks, no-citable
+  reports, provenance, source-table validation, body citation checks, and
+  source-quality warnings.
 - Qwen now waits for an interactive, non-generating composer before filling it,
   confirms that the controlled input keeps the complete message and enables
   send, and refuses to click if hydration has already cleared the draft. This

@@ -157,6 +157,19 @@ def _wait_for_file(path: Path, *, exists: bool, page: Page, timeout_ms: int = 15
     raise AssertionError(f"expected {path.name} to {state}")
 
 
+def _save_screenshot(page: Page, path: Path, *, full_page: bool = True) -> str:
+    try:
+        page.screenshot(path=str(path), full_page=full_page, timeout=5_000)
+        return str(path)
+    except Exception as exc:  # pragma: no cover - exercised with a fake page in unit tests.
+        marker = path.with_suffix(path.suffix + ".txt")
+        marker.write_text(
+            f"screenshot skipped: {type(exc).__name__}: {exc}",
+            encoding="utf-8",
+        )
+        return str(marker)
+
+
 def _exercise_page(
     page: Page,
     base_url: str,
@@ -248,7 +261,7 @@ def _exercise_page(
     }:
         raise AssertionError(f"unexpected run details style: {details_style}")
     details_screenshot = artifacts / "ui-run-details.png"
-    page.screenshot(path=str(details_screenshot), full_page=True)
+    details_screenshot_path = _save_screenshot(page, details_screenshot)
     details.click()
     expect(panel).to_be_hidden()
     if state_before_details != page.evaluate("JSON.stringify(activeSession().messages)"):
@@ -264,7 +277,7 @@ def _exercise_page(
     changed_file.click()
     expect(page.locator(".diff-line.add")).to_contain_text("browser e2e passed")
     done_screenshot = artifacts / "ui-done.png"
-    page.screenshot(path=str(done_screenshot), full_page=True)
+    done_screenshot_path = _save_screenshot(page, done_screenshot)
 
     restore = page.locator("#changes-restore")
     expect(restore).to_be_enabled()
@@ -273,7 +286,7 @@ def _exercise_page(
     expect(page.locator("#changes-body")).to_contain_text("No changes")
     page.wait_for_timeout(500)
     restored_screenshot = artifacts / "ui-restored.png"
-    page.screenshot(path=str(restored_screenshot), full_page=True)
+    restored_screenshot_path = _save_screenshot(page, restored_screenshot)
 
     page.locator("#changes-close").click()
     page.locator("#task").fill(
@@ -437,9 +450,9 @@ def _exercise_page(
             "responsive stop",
         ],
         "screenshots": [
-            str(details_screenshot),
-            str(done_screenshot),
-            str(restored_screenshot),
+            details_screenshot_path,
+            done_screenshot_path,
+            restored_screenshot_path,
         ],
     }
 
@@ -487,8 +500,10 @@ def run_ui_e2e(*, headed: bool = False, artifacts: str | Path | None = None) -> 
             page.on("pageerror", lambda exc: page_errors.append(str(exc)))
             try:
                 result = _exercise_page(page, base_url, project, artifact_dir)
-            except Exception:
-                page.screenshot(path=str(artifact_dir / "ui-failure.png"), full_page=True)
+            except Exception as exc:
+                failure_artifact = _save_screenshot(page, artifact_dir / "ui-failure.png")
+                if hasattr(exc, "add_note"):
+                    exc.add_note(f"UI failure artifact: {failure_artifact}")
                 raise
             if page_errors:
                 raise AssertionError("browser page errors: " + "; ".join(page_errors))

@@ -106,6 +106,10 @@
   `来源` section 改为逐行扫描，允许真实来源标题里的 `Analysis of [S1]`，同时拦截
   另起一行的 `note [s9]` 或 `source_id=s9` 这类上下文泄漏。无可引用来源报告会先被
   重渲染成标准 section 再进质量门，Run Trace 只记录有界 compilation summary。
+- 新增共享的 `codey/research/citation_scanner.py` helper，让 done compiler 和
+  report-quality gate 共用同一套 citation / source-id 扫描规则，避免后续分叉。report
+  quality gate 也顺手拆成几个小 helper：missing section、source-id leak、no-citable
+  report、provenance、source table、body citation 和 source-quality warnings。
 - Qwen 现在只等待 composer 可交互且页面不在生成中，再填入消息；随后确认受控输入框
   仍保留完整文本且发送按钮可用。如果 hydration 已经清空草稿，就在点击前停止，不会
   发送空消息。这个路径去掉了发送前固定 composer settle 窗口，同时保留点击后不重复

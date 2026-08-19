@@ -118,6 +118,14 @@ Production changes:
   source section for internal source-id leaks. The source section check is
   line-level: parsed source rows protect source titles such as `[S1]`, while
   separate notes and contextual leaks such as `source_id=s9` remain blockers.
+- `codey/research/citation_scanner.py` now holds the shared citation and
+  source-id scanners, and `review_report_quality()` is split into small review
+  helpers for missing sections, source-id leaks, no-citable reports,
+  provenance, source-table validation, body citation checks, and
+  source-quality warnings.
+- `tools/ui_e2e.py` now treats screenshot capture as best effort in CI so the
+  real Edge smoke records a fallback text artifact instead of failing the whole
+  run on a screenshot timeout.
 - Qwen waits only for an interactive, non-generating composer before filling,
   retries only the input-fill phase when hydration clears the draft, rejects a
   lost message before clicking, and never repeats a whole send because
@@ -257,7 +265,7 @@ python -m pytest tests/test_research.py tests/test_run_trace.py
 # 149 passed in 13.17s
 
 python -m pytest
-# 2229 passed, 9 skipped
+# 2232 passed, 9 skipped in 428.92s (0:07:08)
 ```
 
 Qwen done-stage A/B evidence from 2026-08-19 is archived under

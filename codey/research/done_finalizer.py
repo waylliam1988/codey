@@ -6,6 +6,11 @@ import re
 from dataclasses import dataclass
 from typing import Mapping
 
+from codey.research.citation_scanner import (
+    citation_ref_items,
+    source_id_ref_items,
+    source_id_refs,
+)
 from codey.research import report_quality
 from codey.research.ledger import ResearchLedger
 
@@ -171,7 +176,7 @@ def _numeric_ref_numbers(sections: Mapping[str, str]) -> tuple[int, ...]:
     for key in report_quality.REQUIRED_SECTIONS:
         if key == "sources":
             continue
-        for item in report_quality.citation_ref_items(sections.get(key, "")):
+        for item in citation_ref_items(sections.get(key, "")):
             if item.number in seen:
                 continue
             seen.add(item.number)
@@ -213,14 +218,14 @@ def _unmapped_source_id_refs(
         ref
         for key, body in sections.items()
         if key != "sources"
-        for ref in report_quality.source_id_refs(body)
+        for ref in source_id_refs(body)
     }
     return tuple(sorted(ref for ref in refs if ref not in source_id_to_number))
 
 
 def _rewrite_source_id_refs(text: str, source_id_to_number: dict[str, int]) -> str:
     result = text
-    for item in reversed(report_quality.source_id_ref_items(text)):
+    for item in reversed(source_id_ref_items(text)):
         number = source_id_to_number.get(item.source_id)
         if number is None:
             continue
@@ -248,7 +253,7 @@ def _referenced_urls(
     urls: list[str] = []
     seen: set[int] = set()
     for body in bodies.values():
-        for item in report_quality.citation_ref_items(body):
+        for item in citation_ref_items(body):
             if item.number in seen:
                 continue
             seen.add(item.number)

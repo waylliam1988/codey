@@ -6,23 +6,17 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Mapping
 
+from codey.research.citation_scanner import (
+    CitationRef,
+    citation_ref_items,
+    citation_refs,
+    source_id_ref_items,
+    source_id_refs,
+)
 from codey.research.ledger import ResearchLedger
 from codey.research.provenance import provenance_problem
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
-_CITATION_RE = re.compile(
-    r"(?<![A-Za-z0-9_!])\[(\d+)(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*(\d+(?:\s*-\s*\d+)?))?\]",
-    re.IGNORECASE,
-)
-_SOURCE_ID_BRACKET_RE = re.compile(
-    r"(?<![A-Za-z0-9_!])\[\[?(s\d+)"
-    r"((?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*\d+(?:\s*-\s*\d+)?)?)\]\]?",
-    re.IGNORECASE,
-)
-_SOURCE_ID_CONTEXT_RE = re.compile(
-    r"(?i)(?:source[-_\s]*id|source[-_\s]*ref|citation[-_\s]*id|"
-    r"internal[-_\s]*source|来源\s*id|引用\s*id)\s*[:=#-]?\s*(s\d+)(?![A-Za-z0-9_/-])"
-)
 _SOURCE_LINE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?\[(\d+)\]\s*(.*?)\s*(?:-|–|—)\s*(https?://\S+)\s*$"
 )
@@ -77,21 +71,6 @@ class Citation:
 
 
 @dataclass(frozen=True)
-class CitationRef:
-    number: int
-    pages: tuple[int, ...] = ()
-
-
-@dataclass(frozen=True)
-class SourceIdRef:
-    source_id: str
-    start: int
-    end: int
-    page_suffix: str = ""
-    bracketed: bool = False
-
-
-@dataclass(frozen=True)
 class ReportQualityReview:
     ok: bool
     message: str
@@ -112,14 +91,73 @@ def review_report_quality(
     search_result_urls: set[str],
 ) -> ReportQualityReview:
     sections = parse_sections(summary)
-    missing = [label for label in REQUIRED_SECTIONS if not sections.get(label, "").strip()]
+    missing = _missing_required_sections(sections)
     if missing:
+        return _missing_required_sections_review(missing)
+    source_id_review = _source_id_leak_review(summary, sections, ledger)
+    if source_id_review:
+        return source_id_review
+    no_citable_review = _no_citable_source_review(
+        summary,
+        sections,
+        ledger,
+        opened_sources=opened_sources,
+        search_result_urls=search_result_urls,
+    )
+    if no_citable_review:
+        return no_citable_review
+    provenance_review = _provenance_review(
+        sections,
+        summary,
+        opened_sources=opened_sources,
+        search_result_urls=search_result_urls,
+    )
+    if provenance_review:
+        return provenance_review
+    if not ledger.final_url_set():
         return ReportQualityReview(
             False,
-            "Report quality failed: missing required section(s): "
-            + ", ".join(section_title(item) for item in missing)
-            + ". Revise done.answer using the required Research report template.",
+            "Report quality failed: no opened source is available for citation. "
+            "Search and open a source before calling done.",
         )
+
+    source_review, citations, source_numbers = _review_source_table(sections, ledger)
+    if source_review:
+        return source_review
+    content_review = _required_body_citation_review(sections)
+    if content_review:
+        return content_review
+
+    warnings = _source_quality_warnings(citations, source_numbers, sections)
+
+    return ReportQualityReview(
+        True,
+        "report quality review passed",
+        tuple(warnings),
+        citation_map=citations,
+        counterpoints=tuple(_section_lines(sections["counter"])),
+        sections=sections,
+    )
+
+
+def _missing_required_sections(sections: Mapping[str, str]) -> list[str]:
+    return [label for label in REQUIRED_SECTIONS if not sections.get(label, "").strip()]
+
+
+def _missing_required_sections_review(missing: list[str]) -> ReportQualityReview:
+    return ReportQualityReview(
+        False,
+        "Report quality failed: missing required section(s): "
+        + ", ".join(section_title(item) for item in missing)
+        + ". Revise done.answer using the required Research report template.",
+    )
+
+
+def _source_id_leak_review(
+    summary: str,
+    sections: Mapping[str, str],
+    ledger: ResearchLedger,
+) -> ReportQualityReview | None:
     sources_text = sections.get("sources", "")
     source_id_values = source_id_refs(_text_without_sources(summary))
     source_id_values.update(_source_section_source_id_refs(sources_text, ledger))
@@ -129,19 +167,40 @@ def review_report_quality(
             "Report quality failed: source-id citation(s) must be compiled to numbered citations: "
             + ", ".join(f"[{item}]" for item in sorted(source_id_values)[:6]),
         )
-    if not ledger.final_url_set() and _is_no_citable_source_report(
+    return None
+
+
+def _no_citable_source_review(
+    summary: str,
+    sections: Mapping[str, str],
+    ledger: ResearchLedger,
+    *,
+    opened_sources: set[str],
+    search_result_urls: set[str],
+) -> ReportQualityReview | None:
+    if ledger.final_url_set() or not _is_no_citable_source_report(
         summary,
         sections,
         ledger,
         opened_sources=opened_sources,
         search_result_urls=search_result_urls,
     ):
-        return ReportQualityReview(
-            True,
-            "report quality review passed: no citable opened source found",
-            ("no opened source was available for citation",),
-            sections=sections,
-        )
+        return None
+    return ReportQualityReview(
+        True,
+        "report quality review passed: no citable opened source found",
+        ("no opened source was available for citation",),
+        sections=sections,
+    )
+
+
+def _provenance_review(
+    sections: Mapping[str, str],
+    summary: str,
+    *,
+    opened_sources: set[str],
+    search_result_urls: set[str],
+) -> ReportQualityReview | None:
     provenance = provenance_problem(
         _strict_provenance_text(sections, summary),
         opened_sources=opened_sources,
@@ -157,49 +216,65 @@ def review_report_quality(
     )
     if context_provenance:
         return ReportQualityReview(False, context_provenance)
-    if not ledger.final_url_set():
-        return ReportQualityReview(
-            False,
-            "Report quality failed: no opened source is available for citation. "
-            "Search and open a source before calling done.",
-        )
+    return None
 
+
+def _review_source_table(
+    sections: Mapping[str, str],
+    ledger: ResearchLedger,
+) -> tuple[ReportQualityReview | None, tuple[Citation, ...], set[int]]:
     body_ref_items = citation_ref_items(_without_sources(sections))
     pages_by_number = _pages_by_number(body_ref_items)
     source_rows = parse_citation_rows(sections["sources"], ledger)
     duplicate_sources = _conflicting_source_numbers(source_rows, ledger)
     if duplicate_sources:
-        return ReportQualityReview(
-            False,
-            "Report quality failed: duplicate 来源 number(s) map to multiple URLs: "
-            + ", ".join(f"[{item}]" for item in duplicate_sources[:6]),
+        return (
+            ReportQualityReview(
+                False,
+                "Report quality failed: duplicate 来源 number(s) map to multiple URLs: "
+                + ", ".join(f"[{item}]" for item in duplicate_sources[:6]),
+            ),
+            (),
+            set(),
         )
-    citations = [
+    citations = tuple(
         replace(item, pages=pages_by_number.get(item.number, ()))
         for item in parse_citations(sections["sources"], ledger)
-    ]
+    )
     if not citations:
-        return ReportQualityReview(
-            False,
-            "Report quality failed: the 来源 section must list numbered sources like "
-            "[1] Title - https://final-url.",
+        return (
+            ReportQualityReview(
+                False,
+                "Report quality failed: the 来源 section must list numbered sources like "
+                "[1] Title - https://final-url.",
+            ),
+            (),
+            set(),
         )
     source_numbers = {item.number for item in citations}
     body_refs = {item.number for item in body_ref_items}
     missing_sources = sorted(body_refs - source_numbers)
     if missing_sources:
-        return ReportQualityReview(
-            False,
-            "Report quality failed: citation number(s) appear in the report but not in 来源: "
-            + ", ".join(f"[{item}]" for item in missing_sources[:6]),
+        return (
+            ReportQualityReview(
+                False,
+                "Report quality failed: citation number(s) appear in the report but not in 来源: "
+                + ", ".join(f"[{item}]" for item in missing_sources[:6]),
+            ),
+            (),
+            set(),
         )
     final_urls = ledger.final_url_set()
     unopened = [item.url for item in citations if item.url not in final_urls]
     if unopened:
-        return ReportQualityReview(
-            False,
-            "Report quality failed: 来源 URL(s) were not opened as final URLs in this run: "
-            + ", ".join(unopened[:3]),
+        return (
+            ReportQualityReview(
+                False,
+                "Report quality failed: 来源 URL(s) were not opened as final URLs in this run: "
+                + ", ".join(unopened[:3]),
+            ),
+            (),
+            set(),
         )
     citation_urls = {item.url for item in citations}
     evidence_urls = {
@@ -209,16 +284,24 @@ def review_report_quality(
     }
     missing_evidence = sorted(citation_urls - evidence_urls)
     if missing_evidence:
-        return ReportQualityReview(
-            False,
-            "Report quality failed: every cited source needs at least one saved evidence snippet "
-            "copied from opened page text. Use knowledge_write with evidence.source_url and an exact "
-            "evidence.excerpt before done. Missing snippet-backed citation(s): "
-            + ", ".join(missing_evidence[:3]),
+        return (
+            ReportQualityReview(
+                False,
+                "Report quality failed: every cited source needs at least one saved evidence snippet "
+                "copied from opened page text. Use knowledge_write with evidence.source_url and an exact "
+                "evidence.excerpt before done. Missing snippet-backed citation(s): "
+                + ", ".join(missing_evidence[:3]),
+            ),
+            (),
+            set(),
         )
-    page_problem = _page_citation_problem(citations, ledger)
+    page_problem = _page_citation_problem(list(citations), ledger)
     if page_problem:
-        return ReportQualityReview(False, page_problem)
+        return (ReportQualityReview(False, page_problem), (), set())
+    return None, citations, source_numbers
+
+
+def _required_body_citation_review(sections: Mapping[str, str]) -> ReportQualityReview | None:
     if not citation_refs(sections["conclusion"]):
         return ReportQualityReview(
             False,
@@ -236,7 +319,14 @@ def review_report_quality(
             "Report quality failed: 反证与限制 must cite counter-evidence with [n], "
             "or explicitly say 未找到强反证 and explain what was searched.",
         )
+    return None
 
+
+def _source_quality_warnings(
+    citations: tuple[Citation, ...],
+    source_numbers: set[int],
+    sections: Mapping[str, str],
+) -> list[str]:
     warnings: list[str] = []
     if len(citations) < 2:
         warnings.append("strong conclusion is supported by only one cited source")
@@ -248,15 +338,7 @@ def review_report_quality(
         warnings.append("some cited sources may not be independent")
     if citations and all(str(item.quality.get("freshness") or "") == "undated" for item in citations):
         warnings.append("all cited sources look undated")
-
-    return ReportQualityReview(
-        True,
-        "report quality review passed",
-        tuple(warnings),
-        citation_map=tuple(citations),
-        counterpoints=tuple(_section_lines(counter_text)),
-        sections=sections,
-    )
+    return warnings
 
 
 def parse_sections(text: str) -> dict[str, str]:
@@ -311,64 +393,6 @@ def parse_citations(sources_section: str, ledger: ResearchLedger | None = None) 
     return citations
 
 
-def citation_refs(text: str) -> set[int]:
-    return {item.number for item in citation_ref_items(text)}
-
-
-def citation_ref_items(text: str) -> list[CitationRef]:
-    refs: list[CitationRef] = []
-    for value, pages in _CITATION_RE.findall(str(text or "")):
-        try:
-            number = int(value)
-        except ValueError:
-            continue
-        refs.append(CitationRef(number=number, pages=_parse_page_ref(pages)))
-    return refs
-
-
-def source_id_refs(text: str) -> set[str]:
-    return {item.source_id for item in source_id_ref_items(text)}
-
-
-def source_id_ref_items(text: str) -> list[SourceIdRef]:
-    value = str(text or "")
-    refs: list[SourceIdRef] = []
-    for match in _SOURCE_ID_BRACKET_RE.finditer(value):
-        refs.append(SourceIdRef(
-            source_id=match.group(1).lower(),
-            start=match.start(),
-            end=match.end(),
-            page_suffix=match.group(2) or "",
-            bracketed=True,
-        ))
-    for match in _SOURCE_ID_CONTEXT_RE.finditer(value):
-        refs.append(SourceIdRef(
-            source_id=match.group(1).lower(),
-            start=match.start(),
-            end=match.end(),
-        ))
-    return _dedupe_source_id_refs(refs)
-
-
-def _dedupe_source_id_refs(refs: list[SourceIdRef]) -> list[SourceIdRef]:
-    ordered = sorted(refs, key=lambda item: (item.start, item.end, not item.bracketed))
-    kept: list[SourceIdRef] = []
-    spans: set[tuple[int, int]] = set()
-    for item in ordered:
-        span = (item.start, item.end)
-        if span in spans:
-            continue
-        if any(item.start < existing.end and existing.start < item.end for existing in kept):
-            continue
-        kept.append(item)
-        spans.add(span)
-    return kept
-
-
-def source_id_bracket_ref_items(text: str) -> list[SourceIdRef]:
-    return [item for item in source_id_ref_items(text) if item.bracketed]
-
-
 def _pages_by_number(refs: list[CitationRef]) -> dict[int, tuple[int, ...]]:
     found: dict[int, list[int]] = {}
     for ref in refs:
@@ -379,22 +403,6 @@ def _pages_by_number(refs: list[CitationRef]) -> dict[int, tuple[int, ...]]:
             if page not in bucket:
                 bucket.append(page)
     return {number: tuple(pages) for number, pages in found.items()}
-
-
-def _parse_page_ref(value: str) -> tuple[int, ...]:
-    text = str(value or "").strip()
-    if not text:
-        return ()
-    match = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", text)
-    if not match:
-        return ()
-    start = max(1, int(match.group(1)))
-    end = max(1, int(match.group(2) or start))
-    if end < start:
-        start, end = end, start
-    if end - start > 99:
-        end = start + 99
-    return tuple(range(start, end + 1))
 
 
 def _page_citation_problem(citations: list[Citation], ledger: ResearchLedger) -> str:
