@@ -2514,10 +2514,11 @@ class ResearchBoundaryTests(unittest.TestCase):
             source_ids={},
         )
 
-        self.assertTrue(finalized.changed)
+        self.assertFalse(finalized.changed)
+        self.assertEqual(finalized.reason, "no_referenced_citable_sources")
         self.assertIn("Helium supply depends on gas processing.", finalized.text)
         self.assertIn("[s9]", finalized.text)
-        self.assertIn("[1] Helium article - https://example.com/helium", finalized.text)
+        self.assertNotIn("[1] Helium article - https://example.com/helium", finalized.text)
 
     def test_done_finalizer_skips_non_citable_opened_sources(self) -> None:
         url = "https://example.com/helium"
@@ -2543,6 +2544,91 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("[1] Helium article - https://example.com/helium", finalized.text)
         self.assertNotIn("Opened only", finalized.text)
         self.assertNotIn(extra, finalized.text)
+
+    def test_done_finalizer_does_not_rebind_unmapped_numeric_refs(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        finalized = finalize_done_answer(
+            "## 结论\n- Helium supply depends on gas processing. [1]\n\n"
+            "## 关键证据\n- Helium evidence [1]\n\n"
+            "## 反证与限制\n- 未找到强反证。\n\n"
+            "## 来源质量\n- good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            "## 来源\nSource list omitted",
+            ledger,
+        )
+
+        self.assertFalse(finalized.changed)
+        self.assertEqual(finalized.reason, "unmapped_numeric_refs")
+        self.assertNotIn("[1] Helium article - https://example.com/helium", finalized.text)
+
+    def test_done_finalizer_uses_parsed_numeric_source_map(self) -> None:
+        first = "https://example.com/a"
+        second = "https://example.com/b"
+        ledger = ResearchLedger()
+        ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
+        ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
+        ledger.add_evidence_items([
+            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+        ])
+
+        finalized = finalize_done_answer(
+            "## 结论\n- Alpha claim [1]\n- Beta claim [2]\n\n"
+            "## 关键证据\n- Alpha [1]\n- Beta [2]\n\n"
+            "## 反证与限制\n- 未找到强反证。\n\n"
+            "## 来源质量\n- [1] good\n- [2] good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n[1] A Source - {first}\n[2] B Source - {second}",
+            ledger,
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertIn("Alpha claim [2]", finalized.text)
+        self.assertIn("Beta claim [1]", finalized.text)
+        self.assertIn(f"[1] B Source - {second}", finalized.text)
+        self.assertIn(f"[2] A Source - {first}", finalized.text)
+
+    def test_done_finalizer_renders_only_referenced_citable_sources(self) -> None:
+        first = "https://example.com/a"
+        second = "https://example.com/b"
+        ledger = ResearchLedger()
+        ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
+        ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
+        ledger.add_evidence_items([
+            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+        ])
+
+        finalized = finalize_done_answer(
+            "## 结论\n- Beta claim [s2]\n\n"
+            "## 关键证据\n- Beta evidence [s2]\n\n"
+            "## 反证与限制\n- 未找到强反证。\n\n"
+            "## 来源质量\n- [s2] good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n[s2] B Source - {second}",
+            ledger,
+            source_ids={"s1": first, "s2": second},
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertEqual(finalized.source_count, 1)
+        self.assertIn("Beta claim [1]", finalized.text)
+        self.assertIn(f"[1] B Source - {second}", finalized.text)
+        self.assertNotIn(first, finalized.text)
+
+    def test_done_finalizer_requires_non_empty_evidence_excerpt(self) -> None:
+        url = "https://example.com/empty"
+        ledger = ResearchLedger()
+        ledger.record_open(requested_url=url, final_url=url, title="Empty Evidence", text="Alpha.")
+        ledger.add_evidence_items([
+            EvidenceItem(claim="alpha", source_url=url, excerpt=""),
+        ])
+
+        finalized = finalize_done_answer(valid_research_report(url), ledger)
+
+        self.assertFalse(finalized.changed)
+        self.assertEqual(finalized.reason, "no_citable_sources")
 
     def test_done_runner_uses_production_finalizer_before_quality_review(self) -> None:
         provider = FakeProvider(

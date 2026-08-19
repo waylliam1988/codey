@@ -324,6 +324,14 @@ class ResearchRunner:
                     self.tools.ledger,
                     source_ids=control_state.source_urls if control_state is not None else {},
                 )
+                if finalized.changed:
+                    self.prompt_trace.call(
+                        "record_research_done_compilation",
+                        {
+                            "reason": finalized.reason,
+                            "source_count": finalized.source_count,
+                        },
+                    )
                 summary_candidate = finalized.text.strip()
                 review = review_report_quality(
                     summary_candidate,

@@ -1,8 +1,8 @@
-"""Live A/B probe for done-stage boundary tuning on connector runs.
+"""Live A/B probe for done-stage prompt tuning on connector runs.
 
-This probe does not change production code. It reuses the live source connector
-Research flow, but wraps the model-facing prompt with an experimental overlay
-that makes the final citation boundary harder:
+Production Research now always runs the narrow done citation compiler before
+the report-quality gate. This probe reuses the live source connector Research
+flow and compares optional model-facing prompt overlays:
 - only citable sources may appear in done.answer or 来源
 - opened-but-not-citable sources are warning-only
 - quality retry prompts get a short checklist instead of a vague nudge
@@ -19,7 +19,7 @@ import json
 import sys
 import tempfile
 import time
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -31,13 +31,10 @@ from codey import provider_controls
 from codey.knowledge.store import KnowledgeStore
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
-from codey.research.done_finalizer import finalize_done_answer
 from codey.research import report_quality as report_quality_module
 from codey.research import runner as runner_module
-from codey.research.ledger import EvidenceItem, ResearchLedger
+from codey.research.ledger import ResearchLedger
 from codey.research.proof_quality import review_research_proof
-from codey.research.protocols import exact_json_object
-from codey.research.source_document import SourceDocument
 from codey.research.runner import ResearchRunner
 from codey.providers.registry import connect_provider, provider_ids
 
@@ -45,12 +42,11 @@ from tests.manual import source_connector_ab as base
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
-ARMS = ("baseline", "boundary", "batch", "finalizer")
-DEFAULT_ARMS = "baseline,finalizer"
-BOUNDARY_ARMS = {"boundary", "finalizer"}
-QUALITY_CHECKLIST_ARMS = {"boundary", "batch", "finalizer"}
-BATCH_REVIEW_ARMS = {"batch", "finalizer"}
-FINALIZER_ARMS = {"finalizer"}
+ARMS = ("baseline", "boundary", "batch")
+DEFAULT_ARMS = "baseline,batch"
+BOUNDARY_ARMS = {"boundary"}
+QUALITY_CHECKLIST_ARMS = {"boundary", "batch"}
+BATCH_REVIEW_ARMS = {"batch"}
 MAX_RESULT_BYTES = base.MAX_RESULT_BYTES
 MAX_TRACE_BYTES = base.MAX_TRACE_BYTES * 4
 TRACE_PROMPT_CHARS = base.TRACE_PROMPT_CHARS
@@ -78,89 +74,6 @@ _QUALITY_CHECKLIST = """Probe quality-review checklist:
 5. Remove any [n] attached to an opened-only source.
 6. If a source cannot be cited, mention it only as an unnumbered limitation.
 """
-
-@dataclass
-class DoneFinalizerStats:
-    attempts: int = 0
-    rewrites: int = 0
-    errors: int = 0
-    generated_sources: int = 0
-    added_citations: int = 0
-    last_reason: str = ""
-
-class DoneFinalizer:
-    def __init__(self) -> None:
-        self.runner: ResearchRunner | None = None
-        self.stats = DoneFinalizerStats()
-
-    def bind(self, runner: ResearchRunner) -> None:
-        self.runner = runner
-
-    def rewrite_reply(
-        self,
-        reply: str,
-        *,
-        trace: base.LiveTrace | None,
-        run_id: str,
-        provider: str,
-        provider_name: str,
-        case: str,
-        arm: str,
-        sample: int,
-        turn: int,
-    ) -> str:
-        obj, _kind, error = exact_json_object(reply or "")
-        if error or set(obj.keys()) != {"tool", "args"}:
-            return reply
-        if str(obj.get("tool") or "").strip().lower() != "done":
-            return reply
-        args = obj.get("args")
-        if not isinstance(args, dict):
-            return reply
-        answer = str(args.get("answer") or "")
-        if not answer.strip() or self.runner is None:
-            return reply
-        self.stats.attempts += 1
-        try:
-            source_ids = _source_id_url_map(getattr(self.runner, "controller", None))
-            finalized = finalize_done_answer(answer, self.runner.tools.ledger, source_ids=source_ids)
-        except Exception as exc:
-            self.stats.errors += 1
-            self.stats.last_reason = f"{type(exc).__name__}: {exc}"
-            return reply
-        self.stats.generated_sources = max(self.stats.generated_sources, finalized.source_count)
-        self.stats.added_citations += finalized.added_citations
-        self.stats.last_reason = finalized.reason
-        if not finalized.changed:
-            return reply
-        self.stats.rewrites += 1
-        rewritten_args = dict(args)
-        rewritten_args["answer"] = finalized.text
-        rewritten = json.dumps({"tool": "done", "args": rewritten_args}, ensure_ascii=False)
-        if trace is not None:
-            trace.record({
-                "event": "finalizer_rewrite",
-                "run_id": run_id,
-                "provider": provider,
-                "provider_name": provider_name,
-                "case": case,
-                "arm": arm,
-                "sample": sample,
-                "turn": turn,
-                "source_count": finalized.source_count,
-                "added_citations": finalized.added_citations,
-                "reason": finalized.reason,
-                "raw_reply": base._clip(reply, TRACE_REPLY_CHARS),
-                "rewritten_reply": base._clip(rewritten, TRACE_REPLY_CHARS),
-            })
-        return rewritten
-
-
-def _source_id_url_map(controller: object) -> dict[str, str]:
-    value = getattr(controller, "_source_urls_by_id", {}) if controller is not None else {}
-    if not isinstance(value, dict):
-        return {}
-    return {str(key).lower(): str(url) for key, url in value.items() if str(key) and str(url)}
 
 @contextlib.contextmanager
 def _patched_quality_review(enabled: bool):
@@ -304,7 +217,6 @@ class PromptBoundaryProvider:
         case: str,
         arm: str,
         sample: int,
-        finalizer: "DoneFinalizer | None" = None,
     ) -> None:
         self.provider = provider
         self.trace = trace
@@ -314,7 +226,6 @@ class PromptBoundaryProvider:
         self.case = case
         self.arm = arm
         self.sample = int(sample)
-        self.finalizer = finalizer
         self.send_index = 0
         self.name = getattr(provider, "name", "")
         self.location = getattr(provider, "location", "")
@@ -380,20 +291,6 @@ class PromptBoundaryProvider:
                     event["provider_failure"] = failure
                 self.trace.record(event)
             raise
-        raw_reply = str(reply or "")
-        final_reply = raw_reply
-        if self.finalizer is not None:
-            final_reply = self.finalizer.rewrite_reply(
-                raw_reply,
-                trace=self.trace,
-                run_id=self.run_id,
-                provider=self.provider_id,
-                provider_name=self.provider_name,
-                case=self.case,
-                arm=self.arm,
-                sample=self.sample,
-                turn=turn,
-            )
         if self.trace is not None:
             self.trace.record_reply(
                 run_id=self.run_id,
@@ -404,9 +301,9 @@ class PromptBoundaryProvider:
                 sample=self.sample,
                 turn=turn,
                 prompt=prompt,
-                reply=final_reply,
+                reply=str(reply or ""),
             )
-        return final_reply
+        return str(reply or "")
 
     def close(self) -> None:
         return self.provider.close()
@@ -441,7 +338,6 @@ def run_case(
                     sample=sample,
                     question=case.question,
                 )
-            finalizer = DoneFinalizer() if arm in FINALIZER_ARMS else None
             run_provider = PromptBoundaryProvider(
                 provider,
                 trace=trace,
@@ -451,7 +347,6 @@ def run_case(
                 case=case.name,
                 arm=arm,
                 sample=sample,
-                finalizer=finalizer,
             )
             runner = ResearchRunner(
                 run_provider,
@@ -462,8 +357,6 @@ def run_case(
                 project="",
                 run_id=run_id,
             )
-            if finalizer is not None:
-                finalizer.bind(runner)
             with _patched_quality_review(arm in BATCH_REVIEW_ARMS):
                 for event in runner.run(case.question):
                     if event.kind == "turn":
@@ -527,12 +420,6 @@ def run_case(
                 "overlay_hits": run_provider.overlay_hits,
                 "boundary_overlay_hits": run_provider.boundary_overlay_hits,
                 "quality_overlay_hits": run_provider.quality_overlay_hits,
-                "finalizer_attempts": finalizer.stats.attempts if finalizer is not None else 0,
-                "finalizer_rewrites": finalizer.stats.rewrites if finalizer is not None else 0,
-                "finalizer_errors": finalizer.stats.errors if finalizer is not None else 0,
-                "finalizer_generated_sources": finalizer.stats.generated_sources if finalizer is not None else 0,
-                "finalizer_added_citations": finalizer.stats.added_citations if finalizer is not None else 0,
-                "finalizer_reason": finalizer.stats.last_reason if finalizer is not None else "",
                 "model_actions": model_actions[:40],
                 "used_controller_open_action": any(
                     item.get("tool") in {"open_result", "reopen_source", "open_hit"}
@@ -728,17 +615,17 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         }
         baseline_rows = arms.get("baseline", [])
         boundary_rows = arms.get("boundary", [])
-        finalizer_rows = arms.get("finalizer", [])
+        batch_rows = arms.get("batch", [])
         summary["by_case"][case] = {
             "runs": len(case_rows),
             "arms": {arm: _aggregate_rows(arm_rows) for arm, arm_rows in arms.items()},
             "paired_vs_baseline": _paired_vs_baseline(case_rows),
             "baseline_first_pass_rate": _rate(baseline_rows, "first_done_passed"),
             "boundary_first_pass_rate": _rate(boundary_rows, "first_done_passed"),
-            "finalizer_first_pass_rate": _rate(finalizer_rows, "first_done_passed"),
+            "batch_first_pass_rate": _rate(batch_rows, "first_done_passed"),
             "baseline_eventual_success_rate": _rate(baseline_rows, "eventual_done_passed"),
             "boundary_eventual_success_rate": _rate(boundary_rows, "eventual_done_passed"),
-            "finalizer_eventual_success_rate": _rate(finalizer_rows, "eventual_done_passed"),
+            "batch_eventual_success_rate": _rate(batch_rows, "eventual_done_passed"),
         }
     return summary
 
@@ -755,8 +642,6 @@ def _aggregate_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "average_done_attempts": _avg(rows, "done_attempts"),
         "average_quality_retry_count": _avg(rows, "quality_retry_count"),
         "average_score": _avg(rows, "score"),
-        "average_finalizer_rewrites": _avg(rows, "finalizer_rewrites"),
-        "average_finalizer_added_citations": _avg(rows, "finalizer_added_citations"),
     }
 
 
@@ -1141,27 +1026,6 @@ def _self_test() -> None:
     assert wrapper.boundary_overlay_hits == 1
     assert wrapper.quality_overlay_hits == 1
 
-    finalizer_ledger = ResearchLedger()
-    finalizer_ledger.record_open_document(
-        SourceDocument.html(
-            requested_url="https://example.com/a",
-            final_url="https://example.com/a",
-            title="Example A",
-            text="Alpha evidence line.",
-        )
-    )
-    finalizer_ledger.add_evidence_items([
-        EvidenceItem(claim="alpha", source_url="https://example.com/a", excerpt="Alpha evidence line.")
-    ])
-    finalized = finalize_done_answer(
-        "## 结论\nAlpha [s1]\n\n## 关键证据\n- Alpha [s1]\n\n## 反证与限制\n未找到强反证\n\n## 来源质量\n- good\n\n## 搜索覆盖\n- search\n\n## 来源\n[s1] Example A - https://example.com/a",
-        finalizer_ledger,
-        source_ids={"s1": "https://example.com/a"},
-    )
-    assert finalized.changed
-    assert "[1] Alpha" in finalized.text or "[1] Example A" in finalized.text
-    assert finalized.source_count == 1
-
     baseline_provider = DummyProvider()
     baseline_wrapper = PromptBoundaryProvider(
         baseline_provider,
@@ -1184,22 +1048,22 @@ def _self_test() -> None:
     rows = [
         {"case": "pubmed", "arm": "baseline", "sample": 1, "score": 4, "done_attempts": 2, "quality_retry_count": 1},
         {"case": "pubmed", "arm": "boundary", "sample": 1, "score": 7, "done_attempts": 1, "quality_retry_count": 0, "first_done_passed": True, "eventual_done_passed": True},
-        {"case": "pubmed", "arm": "finalizer", "sample": 1, "score": 8, "done_attempts": 1, "quality_retry_count": 0, "first_done_passed": True, "eventual_done_passed": True},
+        {"case": "pubmed", "arm": "batch", "sample": 1, "score": 8, "done_attempts": 1, "quality_retry_count": 0, "first_done_passed": True, "eventual_done_passed": True},
     ]
     summary = summarize(rows)
     assert summary["by_case"]["pubmed"]["baseline_first_pass_rate"] == 0.0
     assert summary["by_case"]["pubmed"]["boundary_first_pass_rate"] == 1.0
-    assert summary["by_case"]["pubmed"]["finalizer_eventual_success_rate"] == 1.0
-    assert summary["by_arm"]["finalizer"]["count"] == 1
+    assert summary["by_case"]["pubmed"]["batch_eventual_success_rate"] == 1.0
+    assert summary["by_arm"]["batch"]["count"] == 1
     assert _pending_case_sample_keys(
         cases=(CASES["pubmed"],),
-        arms=("baseline", "finalizer"),
+        arms=("baseline", "batch"),
         samples=2,
         existing={("pubmed", "baseline", 1)},
     ) == [
-        ("pubmed", "finalizer", 1),
+        ("pubmed", "batch", 1),
         ("pubmed", "baseline", 2),
-        ("pubmed", "finalizer", 2),
+        ("pubmed", "batch", 2),
     ]
     with tempfile.TemporaryDirectory(prefix="codey-source-connector-done-ab-self-") as td:
         output = Path(td) / "payload.json"

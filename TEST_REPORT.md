@@ -177,8 +177,8 @@ GLM PubMed rerun was paused after repeated attempts hit provider rate limits.
 
 MiMo done-stage A/B evidence from 2026-08-19 is archived under
 `tests/manual/results/`. The baseline row came from
-`source_connector_done_ab-mimo-pubmed-max24.json`; the cleaner finalizer sample
-was rerun alone after the baseline process finished and is stored in
+`source_connector_done_ab-mimo-pubmed-max24.json`; the cleaner pre-production
+finalizer sample was rerun alone after the baseline process finished and is stored in
 `source_connector_done_ab-mimo-pubmed-finalizer-only.json`. Full model report
 text for both arms is archived in
 `tests/manual/source_connector_done_ab_mimo_pubmed_reports.md`.
@@ -204,31 +204,41 @@ from saved evidence.
 
 That same narrow citation compiler is now wired into production `done`
 handling before the quality gate. It standardizes source numbering and the
-`来源` table, but it does not invent citations or bypass blocker checks.
+`来源` table for reliable source-id or parsed source-map references, but it
+does not invent citations, rebind unmapped numeric references, or bypass
+blocker checks. The manual `finalizer` arm used in these historical rows has
+been removed from the current probe because production now runs the compiler
+for every arm.
 
 Post-merge verification for the production citation compiler:
 
 ```text
-python -m py_compile codey/research/done_finalizer.py codey/research/report_quality.py codey/research/runner.py codey/research/__init__.py tests/test_research.py tests/manual/source_connector_done_ab.py
+python -m py_compile codey/research/done_finalizer.py codey/research/runner.py codey/run_trace.py tests/test_research.py tests/test_run_trace.py tests/manual/source_connector_done_ab.py
 # passed
 
-python -m ruff check codey/research/done_finalizer.py codey/research/report_quality.py codey/research/runner.py codey/research/__init__.py tests/test_research.py tests/manual/source_connector_done_ab.py
-# All checks passed
+python -m ruff check .
+# All checks passed!
 
-python -m pytest tests/test_research.py
-# 97 passed in 12.87s
+python -m pytest tests/test_research.py -k "done_finalizer or done_runner_uses_production_finalizer"
+# 8 passed
 
-python tests/manual/source_connector_done_ab.py --self-test
+python -m pytest tests/test_run_trace.py -k "done_compilation or connector_errors"
+# 2 passed
+
+python -B tests/manual/source_connector_done_ab.py --self-test
 # self-test ok
 
+python -m pytest tests/test_research.py tests/test_run_trace.py
+# 128 passed in 13.38s
+
 python -m pytest
-# 2203 passed, 9 skipped in 371.32s
+# 2208 passed, 9 skipped in 418.52s (0:06:58)
 ```
 
 Qwen done-stage A/B evidence from 2026-08-19 is archived under
 `tests/manual/results/`. The baseline row came from
 `source_connector_done_ab-qwen-pubmed-baseline-20260819-134023.json`; the
-cleaner finalizer sample was rerun alone after the baseline process finished
+cleaner pre-production finalizer sample was rerun alone after the baseline process finished
 and is stored in
 `source_connector_done_ab-qwen-pubmed-finalizer-20260819-134023.json`. Full
 model report text for both arms is archived in

@@ -694,6 +694,41 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertNotIn("https://example.com/SECRET_URL", serialized)
             self.assertNotIn("sk-", serialized)
 
+    def test_research_done_compilation_is_bounded_trace_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-done-compiler",
+                session_id="session-done-compiler",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_research_done_compilation({
+                "reason": "compiled_citations",
+                "source_count": 2,
+                "answer": "RAW_ANSWER_SHOULD_NOT_BE_SAVED",
+            })
+            recorder.record_research_done_compilation({
+                "reason": "client_secret",
+                "source_count": 1,
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-done-compiler",
+                    "run-done-compiler",
+                ).read_text(encoding="utf-8")
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(payload["research_done_compilations"], [
+                {"reason": "compiled_citations", "source_count": 2},
+            ])
+            self.assertNotIn("RAW_ANSWER_SHOULD_NOT_BE_SAVED", serialized)
+            self.assertNotIn("client_secret", serialized)
+
     def test_policy_decision_records_digest_without_raw_display(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)

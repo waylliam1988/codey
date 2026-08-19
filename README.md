@@ -475,7 +475,9 @@ until Codey opens them.
 
 Final `done` replies now pass through a narrow citation compiler first: it
 renumbers existing source IDs and renders `来源` from evidence-backed opened
-URLs, but it does not add new support or relax the quality gate.
+URLs when references have a reliable source-id or parsed source-map binding,
+but it does not add new support, rebind unmapped numeric citations, or relax
+the quality gate.
 
 PDF is part of the same `open_url` source intake. There is no `open_pdf` tool,
 PDF mode, or extra button. When a URL points to a text PDF, Codey reads bounded

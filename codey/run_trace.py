@@ -41,6 +41,7 @@ MAX_EVIDENCE_LEDGER_WRITES = 8
 MAX_RESEARCH_PROOF_REVIEWS = 8
 MAX_RESEARCH_PLANS = 8
 MAX_RESEARCH_CONNECTOR_ERRORS = 8
+MAX_RESEARCH_DONE_COMPILATIONS = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 RESEARCH_ANSWER_STATUSES = frozenset({
@@ -187,6 +188,7 @@ class RunTraceManifest:
     research_proof_reviews: list[dict[str, object]] = field(default_factory=list)
     research_plans: list[dict[str, object]] = field(default_factory=list)
     research_connector_errors: list[dict[str, object]] = field(default_factory=list)
+    research_done_compilations: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -228,6 +230,9 @@ class RunTraceManifest:
                 _research_connector_error_payload(item)
                 for item in self.research_connector_errors[:MAX_RESEARCH_CONNECTOR_ERRORS]
             ],
+            "research_done_compilations": (
+                self.research_done_compilations[:MAX_RESEARCH_DONE_COMPILATIONS]
+            ),
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
             "policy_decisions": self.policy_decisions[:MAX_POLICY_DECISIONS],
@@ -709,6 +714,22 @@ class RunTraceRecorder:
             del self.manifest.research_connector_errors[:-MAX_RESEARCH_CONNECTOR_ERRORS]
             self.manifest.warnings.append("research_connector_errors_truncated")
         self.flush()
+
+    def record_research_done_compilation(self, result: Mapping[str, object]) -> None:
+        if not isinstance(result, Mapping):
+            return
+        reason = _safe_trace_code(result.get("reason"), 80)
+        if not reason:
+            return
+        payload = {
+            "reason": reason,
+            "source_count": _bounded_int(result.get("source_count"), 0, 64),
+        }
+        self.manifest.research_done_compilations.append(payload)
+        if len(self.manifest.research_done_compilations) > MAX_RESEARCH_DONE_COMPILATIONS:
+            del self.manifest.research_done_compilations[:-MAX_RESEARCH_DONE_COMPILATIONS]
+            self.manifest.warnings.append("research_done_compilations_truncated")
+        self.checkpoint()
 
     def record_fallback(
         self,
