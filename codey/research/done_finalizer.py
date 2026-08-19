@@ -10,7 +10,6 @@ from codey.research import report_quality
 from codey.research.ledger import ResearchLedger
 
 _PAGE_REF_SUFFIX = r"(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*\d+(?:\s*-\s*\d+)?)?"
-_SOURCE_ID_REF_RE = re.compile(rf"\[\[?(s\d+)({_PAGE_REF_SUFFIX})\]\]?", re.IGNORECASE)
 _NUMERIC_REF_RE = re.compile(rf"(?<![A-Za-z0-9_!])\[(\d+)({_PAGE_REF_SUFFIX})\]", re.IGNORECASE)
 
 
@@ -47,8 +46,16 @@ def finalize_done_answer(
     full_url_by_number = {number: url for url, number in full_number_for_url.items()}
     source_id_to_number = _source_id_numbers(source_ids or {}, ledger, full_number_for_url)
     old_number_to_new = _old_source_numbers(sections.get("sources", ""), ledger, full_number_for_url)
-    unresolved_numeric_refs = _unmapped_numeric_refs(sections, old_number_to_new)
-    if unresolved_numeric_refs:
+    unresolved_source_id_refs = _unmapped_source_id_refs(sections, source_id_to_number)
+    if unresolved_source_id_refs:
+        return FinalizedAnswer(
+            text,
+            source_count=len(citable_urls),
+            reason="unmapped_source_id_refs",
+        )
+    body_numeric_refs = _numeric_ref_numbers(sections)
+    numeric_ref_map = _safe_numeric_ref_map(body_numeric_refs, old_number_to_new)
+    if numeric_ref_map is None:
         return FinalizedAnswer(
             text,
             source_count=len(citable_urls),
@@ -63,7 +70,7 @@ def finalize_done_answer(
         if not body.strip():
             continue
         # Old numeric refs must be interpreted before source-id refs become numbers.
-        body = _rewrite_numeric_refs(body, old_number_to_new)
+        body = _rewrite_numeric_refs(body, numeric_ref_map)
         body = _rewrite_source_id_refs(body, source_id_to_number)
         compiled_bodies[key] = body
 
@@ -140,25 +147,67 @@ def _old_source_numbers(
     return mapping
 
 
-def _unmapped_numeric_refs(
-    sections: Mapping[str, str],
+def _numeric_ref_numbers(sections: Mapping[str, str]) -> tuple[int, ...]:
+    refs: list[int] = []
+    seen: set[int] = set()
+    for key in report_quality.REQUIRED_SECTIONS:
+        if key == "sources":
+            continue
+        for item in report_quality.citation_ref_items(sections.get(key, "")):
+            if item.number in seen:
+                continue
+            seen.add(item.number)
+            refs.append(item.number)
+    return tuple(refs)
+
+
+def _safe_numeric_ref_map(
+    body_refs: tuple[int, ...],
     old_number_to_new: dict[int, int],
-) -> tuple[int, ...]:
+) -> dict[int, int] | None:
+    number_map = dict(old_number_to_new)
+    unresolved = tuple(ref for ref in body_refs if ref not in number_map)
+    if not unresolved:
+        return number_map
+    inferred = _infer_unmapped_numeric_refs(unresolved, old_number_to_new)
+    if not inferred:
+        return None
+    number_map.update(inferred)
+    return number_map
+
+
+def _infer_unmapped_numeric_refs(
+    unresolved: tuple[int, ...],
+    old_number_to_new: dict[int, int],
+) -> dict[int, int]:
+    targets = set(old_number_to_new.values())
+    if len(targets) == 1:
+        target = next(iter(targets))
+        return {ref: target for ref in unresolved}
+    return {}
+
+
+def _unmapped_source_id_refs(
+    sections: Mapping[str, str],
+    source_id_to_number: dict[str, int],
+) -> tuple[str, ...]:
     refs = {
-        item.number
+        ref
         for key, body in sections.items()
         if key != "sources"
-        for item in report_quality.citation_ref_items(body)
+        for ref in report_quality.source_id_refs(body)
     }
-    return tuple(sorted(ref for ref in refs if ref not in old_number_to_new))
+    return tuple(sorted(ref for ref in refs if ref not in source_id_to_number))
 
 
 def _rewrite_source_id_refs(text: str, source_id_to_number: dict[str, int]) -> str:
-    def repl(match: re.Match[str]) -> str:
-        number = source_id_to_number.get(match.group(1).lower())
-        return f"[{number}{match.group(2)}]" if number else match.group(0)
-
-    return _SOURCE_ID_REF_RE.sub(repl, text)
+    result = text
+    for item in reversed(report_quality.source_id_bracket_ref_items(text)):
+        number = source_id_to_number.get(item.source_id)
+        if number is None:
+            continue
+        result = result[:item.start] + f"[{number}{item.page_suffix}]" + result[item.end:]
+    return result
 
 
 def _rewrite_numeric_refs(
@@ -177,15 +226,16 @@ def _referenced_urls(
     bodies: Mapping[str, str],
     url_by_number: dict[int, str],
 ) -> list[str]:
-    referenced = {
-        item.number
-        for body in bodies.values()
-        for item in report_quality.citation_ref_items(body)
-    }
     urls: list[str] = []
-    for number in sorted(referenced):
-        url = url_by_number.get(number)
-        if url and url not in urls:
+    seen: set[int] = set()
+    for body in bodies.values():
+        for item in report_quality.citation_ref_items(body):
+            if item.number in seen:
+                continue
+            seen.add(item.number)
+            url = url_by_number.get(item.number)
+            if not url or url in urls:
+                continue
             urls.append(url)
     return urls
 

@@ -207,9 +207,16 @@ handling before the quality gate. It standardizes source numbering and the
 `来源` table for reliable source-id or parsed source-map references, but it
 does not invent citations, rebind unmapped numeric references, remap source-id
 references through stale numeric source tables, rewrite non-citation bracket
-text such as `[2nd]`, or bypass blocker checks. The manual `finalizer` arm used
-in these historical rows has been removed from the current probe because
-production now runs the compiler for every arm.
+text such as `[2nd]`, leak unresolved internal source IDs, or bypass blocker
+checks. It still repairs numeric drift when parsed old source rows all dedupe
+to the same canonical URL, such as a body `[1]` with parsed source row `[10]`
+URL, and also repairs repeated numeric labels for the same source. It leaves
+ambiguous multi-source drift for the quality repair loop. Source-id
+leakage checks are shared between the compiler and quality gate and are scoped
+to the final report body/metadata sections, so source titles such as
+`Analysis of [S1] Subunit Protein` are not treated as internal IDs. The manual
+`finalizer` arm used in these historical rows has been removed from the current
+probe because production now runs the compiler for every arm.
 
 Post-merge verification for the production citation compiler:
 
@@ -221,7 +228,7 @@ python -m ruff check .
 # All checks passed!
 
 python -m pytest tests/test_research.py -k "done_finalizer or done_runner_uses_production_finalizer"
-# 10 passed
+# 18 passed, 95 deselected
 
 python -m pytest tests/test_run_trace.py -k "done_compilation or connector_errors"
 # 2 passed
@@ -230,10 +237,10 @@ python -B tests/manual/source_connector_done_ab.py --self-test
 # self-test ok
 
 python -m pytest tests/test_research.py tests/test_run_trace.py
-# 130 passed in 12.84s
+# 138 passed in 13.35s
 
 python -m pytest
-# 2210 passed, 9 skipped in 418.65s (0:06:58)
+# 2218 passed, 9 skipped in 421.23s (0:07:01)
 ```
 
 Qwen done-stage A/B evidence from 2026-08-19 is archived under

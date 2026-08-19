@@ -1017,6 +1017,97 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertFalse(review.ok)
         self.assertIn("[2]", review.message)
 
+    def test_report_quality_rejects_source_id_refs(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(url).replace(
+            "- [1] secondary · web · undated · example.com",
+            "- [1] secondary · web · undated · example.com\n- stray internal source id [s9]",
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("source-id citation", review.message)
+        self.assertIn("[s9]", review.message)
+
+    def test_report_quality_rejects_contextual_source_id_refs(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(url).replace(
+            "- query: helium",
+            "- query: helium\n- stray internal source_id=s9",
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("source-id citation", review.message)
+        self.assertIn("[s9]", review.message)
+
+    def test_report_quality_allows_normal_words_like_s1_in_prose(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(url).replace(
+            "Helium supply depends on gas processing.",
+            "In our code, s1 was used as key.",
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+
+    def test_report_quality_allows_source_id_like_text_in_source_title(self) -> None:
+        url = "https://example.com/s1-paper"
+        ledger = ResearchLedger()
+        ledger.record_open(
+            requested_url=url,
+            final_url=url,
+            title="Analysis of [S1] Subunit Protein",
+            text="Protein evidence.",
+        )
+        ledger.add_evidence_items([
+            EvidenceItem(claim="protein", source_url=url, excerpt="Protein evidence."),
+        ])
+        report = (
+            "## 结论\n"
+            "- Protein evidence is available. [1]\n\n"
+            "## 关键证据\n"
+            "- [1] Protein evidence.\n\n"
+            "## 反证与限制\n"
+            "- 未找到强反证；本轮搜索了 protein。\n\n"
+            "## 来源质量\n"
+            "- [1] secondary · web · undated · example.com\n\n"
+            "## 搜索覆盖\n"
+            "- query: protein\n\n"
+            "## 来源\n"
+            f"[1] Analysis of [S1] Subunit Protein - {url}"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertTrue(review.ok, review.message)
+
     def test_report_quality_rejects_source_url_not_opened_as_final_url(self) -> None:
         url = "https://example.com/final"
         ledger = helium_ledger(url)
@@ -2509,7 +2600,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("[1]", finalized.text)
         self.assertIn("[1] Example A - https://example.com/a", finalized.text)
 
-    def test_done_finalizer_leaves_uncited_claims_unmodified(self) -> None:
+    def test_done_finalizer_rejects_unmapped_source_id_refs(self) -> None:
         ledger = helium_ledger()
         finalized = finalize_done_answer(
             "## 结论\nHelium supply depends on gas processing. [s9]\n\n## 关键证据\n- Helium supply depends on gas processing.\n\n## 反证与限制\n未找到强反证\n\n## 来源质量\n- good\n\n## 搜索覆盖\n- search\n\n## 来源\n[99] Helium article - https://example.com/helium",
@@ -2518,10 +2609,46 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
         self.assertFalse(finalized.changed)
-        self.assertEqual(finalized.reason, "no_referenced_citable_sources")
+        self.assertEqual(finalized.reason, "unmapped_source_id_refs")
         self.assertIn("Helium supply depends on gas processing.", finalized.text)
         self.assertIn("[s9]", finalized.text)
         self.assertNotIn("[1] Helium article - https://example.com/helium", finalized.text)
+
+    def test_done_finalizer_rejects_contextual_source_id_refs(self) -> None:
+        ledger = helium_ledger()
+        finalized = finalize_done_answer(
+            "## 结论\nHelium supply depends on gas processing. source_id=s9\n\n"
+            "## 关键证据\n- Helium supply depends on gas processing.\n\n"
+            "## 反证与限制\n未找到强反证\n\n"
+            "## 来源质量\n- good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            "## 来源\n[99] Helium article - https://example.com/helium",
+            ledger,
+            source_ids={},
+        )
+
+        self.assertFalse(finalized.changed)
+        self.assertEqual(finalized.reason, "unmapped_source_id_refs")
+        self.assertIn("source_id=s9", finalized.text)
+        self.assertNotIn("[1] Helium article - https://example.com/helium", finalized.text)
+
+    def test_done_finalizer_allows_normal_words_like_s1_in_prose(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+
+        finalized = finalize_done_answer(
+            "## 结论\nIn our code, s1 was used as key. [1]\n\n"
+            "## 关键证据\n- Helium evidence [1]\n\n"
+            "## 反证与限制\n未找到强反证\n\n"
+            "## 来源质量\n- good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n[10] Helium article - {url}",
+            ledger,
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertIn("In our code, s1 was used as key. [1]", finalized.text)
+        self.assertIn(f"[1] Helium article - {url}", finalized.text)
 
     def test_done_finalizer_skips_non_citable_opened_sources(self) -> None:
         url = "https://example.com/helium"
@@ -2577,20 +2704,119 @@ class ResearchBoundaryTests(unittest.TestCase):
         ])
 
         finalized = finalize_done_answer(
-            "## 结论\n- Alpha claim [1]\n- Beta claim [2]\n\n"
-            "## 关键证据\n- Alpha [1]\n- Beta [2]\n\n"
+            "## 结论\n- Alpha claim [10]\n- Beta claim [20]\n\n"
+            "## 关键证据\n- Alpha [10]\n- Beta [20]\n\n"
             "## 反证与限制\n- 未找到强反证。\n\n"
-            "## 来源质量\n- [1] good\n- [2] good\n\n"
+            "## 来源质量\n- [10] good\n- [20] good\n\n"
             "## 搜索覆盖\n- search\n\n"
-            f"## 来源\n[1] A Source - {first}\n[2] B Source - {second}",
+            f"## 来源\n[10] A Source - {first}\n[20] B Source - {second}",
             ledger,
         )
 
         self.assertTrue(finalized.changed)
-        self.assertIn("Alpha claim [2]", finalized.text)
-        self.assertIn("Beta claim [1]", finalized.text)
-        self.assertIn(f"[1] B Source - {second}", finalized.text)
-        self.assertIn(f"[2] A Source - {first}", finalized.text)
+        self.assertIn("Alpha claim [1]", finalized.text)
+        self.assertIn("Beta claim [2]", finalized.text)
+        self.assertIn(f"[1] A Source - {first}", finalized.text)
+        self.assertIn(f"[2] B Source - {second}", finalized.text)
+        self.assertNotIn("[10]", finalized.text)
+        self.assertNotIn("[20]", finalized.text)
+
+    def test_done_finalizer_repairs_single_source_number_drift(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+
+        finalized = finalize_done_answer(
+            "## 结论\n- Helium supply depends on gas processing. [1]\n\n"
+            "## 关键证据\n- Helium evidence [1]\n\n"
+            "## 反证与限制\n- 未找到强反证。\n\n"
+            "## 来源质量\n- [1] good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n[10] Helium article - {url}",
+            ledger,
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertEqual(finalized.source_count, 1)
+        self.assertIn("Helium supply depends on gas processing. [1]", finalized.text)
+        self.assertIn(f"[1] Helium article - {url}", finalized.text)
+        self.assertNotIn("[10]", finalized.text)
+        review = review_report_quality(
+            finalized.text,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls=set(),
+        )
+        self.assertTrue(review.ok)
+
+    def test_done_finalizer_repairs_single_source_multi_label_drift(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+
+        finalized = finalize_done_answer(
+            "## 结论\n"
+            "- Helium supply depends on gas processing. [1]\n"
+            "- The same opened source supports this narrow claim. [2]\n\n"
+            "## 关键证据\n"
+            "- Helium evidence [1]\n"
+            "- More helium evidence [2]\n\n"
+            "## 反证与限制\n- 未找到强反证。\n\n"
+            "## 来源质量\n- [1] good\n- [2] good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n[10] Helium article - {url}",
+            ledger,
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertEqual(finalized.source_count, 1)
+        self.assertIn("Helium supply depends on gas processing. [1]", finalized.text)
+        self.assertIn("same opened source supports this narrow claim. [1]", finalized.text)
+        self.assertIn(f"[1] Helium article - {url}", finalized.text)
+        self.assertNotIn("[2]", finalized.text)
+        self.assertNotIn("[10]", finalized.text)
+
+    def test_done_finalizer_repairs_duplicate_rows_for_same_source(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+
+        finalized = finalize_done_answer(
+            "## 结论\n- Helium supply depends on gas processing. [1]\n\n"
+            "## 关键证据\n- Helium evidence [1]\n\n"
+            "## 反证与限制\n- 未找到强反证。\n\n"
+            "## 来源质量\n- [1] good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n[10] Helium article - {url}\n[20] Duplicate Helium article - {url}",
+            ledger,
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertEqual(finalized.source_count, 1)
+        self.assertIn(f"[1] Helium article - {url}", finalized.text)
+        self.assertNotIn("[10]", finalized.text)
+        self.assertNotIn("[20]", finalized.text)
+
+    def test_done_finalizer_does_not_guess_ambiguous_numeric_drift(self) -> None:
+        first = "https://example.com/a"
+        second = "https://example.com/b"
+        ledger = ResearchLedger()
+        ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
+        ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
+        ledger.add_evidence_items([
+            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+        ])
+
+        finalized = finalize_done_answer(
+            "## 结论\n- Alpha claim [1]\n\n"
+            "## 关键证据\n- Alpha evidence [1]\n\n"
+            "## 反证与限制\n- 未找到强反证。\n\n"
+            "## 来源质量\n- [1] good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n[10] A Source - {first}\n[20] B Source - {second}",
+            ledger,
+        )
+
+        self.assertFalse(finalized.changed)
+        self.assertEqual(finalized.reason, "unmapped_numeric_refs")
 
     def test_done_finalizer_does_not_remap_source_id_refs_through_old_sources(self) -> None:
         first = "https://example.com/a"

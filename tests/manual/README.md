@@ -342,7 +342,11 @@ The same narrow citation compiler now runs in production `done` handling
 before the quality gate; it compiles sources, but it does not add new support
 or weaken the blocker checks. Source-id citations and parsed numeric citations
 are compiled through separate bindings, and bracket text outside the citation
-grammar is left untouched.
+grammar is left untouched. Numeric drift can be normalized when parsed old
+source rows all dedupe to one canonical URL, including repeated rows for the
+same source; ambiguous multi-source drift is left to the repair loop. Internal
+source-id leakage checks are scoped to final report body/metadata sections so
+literal `[S1]` text in a rendered source title is allowed.
 
 ```powershell
 python -B tests\manual\source_connector_done_ab.py --self-test

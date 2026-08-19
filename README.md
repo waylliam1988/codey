@@ -477,8 +477,13 @@ Final `done` replies now pass through a narrow citation compiler first: it
 renumbers existing source IDs and renders `来源` from evidence-backed opened
 URLs when references have a reliable source-id or parsed source-map binding,
 keeps source-id rewrites separate from old numeric source-table remaps, and
-leaves non-citation bracket text alone. It does not add new support, rebind
-unmapped numeric citations, or relax the quality gate.
+leaves non-citation bracket text alone. It can normalize numeric drift when the
+parsed old source rows all resolve to one canonical URL, including repeated
+rows for the same source, but it does not add new support, guess ambiguous
+citation mappings, leak internal source IDs, or relax the quality gate.
+Source-id leakage checks apply to the final report body and metadata sections;
+source titles in `来源` may still contain literal text such as `[S1]`, and
+ordinary prose tokens like `s1` are not treated as internal IDs.
 
 PDF is part of the same `open_url` source intake. There is no `open_pdf` tool,
 PDF mode, or extra button. When a URL points to a text PDF, Codey reads bounded

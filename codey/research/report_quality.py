@@ -14,6 +14,15 @@ _CITATION_RE = re.compile(
     r"(?<![A-Za-z0-9_!])\[(\d+)(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*(\d+(?:\s*-\s*\d+)?))?\]",
     re.IGNORECASE,
 )
+_SOURCE_ID_BRACKET_RE = re.compile(
+    r"(?<![A-Za-z0-9_!])\[\[?(s\d+)"
+    r"((?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*\d+(?:\s*-\s*\d+)?)?)\]\]?",
+    re.IGNORECASE,
+)
+_SOURCE_ID_CONTEXT_RE = re.compile(
+    r"(?i)(?:source[-_\s]*id|source[-_\s]*ref|citation[-_\s]*id|"
+    r"internal[-_\s]*source|来源\s*id|引用\s*id)\s*[:=#-]?\s*(s\d+)(?![A-Za-z0-9_/-])"
+)
 _SOURCE_LINE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?\[(\d+)\]\s*(.*?)\s*(?:-|–|—)\s*(https?://\S+)\s*$"
 )
@@ -74,6 +83,15 @@ class CitationRef:
 
 
 @dataclass(frozen=True)
+class SourceIdRef:
+    source_id: str
+    start: int
+    end: int
+    page_suffix: str = ""
+    bracketed: bool = False
+
+
+@dataclass(frozen=True)
 class ReportQualityReview:
     ok: bool
     message: str
@@ -101,6 +119,13 @@ def review_report_quality(
             "Report quality failed: missing required section(s): "
             + ", ".join(section_title(item) for item in missing)
             + ". Revise done.answer using the required Research report template.",
+        )
+    source_id_values = source_id_refs(_without_sources(sections))
+    if source_id_values:
+        return ReportQualityReview(
+            False,
+            "Report quality failed: source-id citation(s) must be compiled to numbered citations: "
+            + ", ".join(f"[{item}]" for item in sorted(source_id_values)[:6]),
         )
     if not ledger.final_url_set() and _is_no_citable_source_report(
         summary,
@@ -282,6 +307,49 @@ def citation_ref_items(text: str) -> list[CitationRef]:
             continue
         refs.append(CitationRef(number=number, pages=_parse_page_ref(pages)))
     return refs
+
+
+def source_id_refs(text: str) -> set[str]:
+    return {item.source_id for item in source_id_ref_items(text)}
+
+
+def source_id_ref_items(text: str) -> list[SourceIdRef]:
+    value = str(text or "")
+    refs: list[SourceIdRef] = []
+    for match in _SOURCE_ID_BRACKET_RE.finditer(value):
+        refs.append(SourceIdRef(
+            source_id=match.group(1).lower(),
+            start=match.start(),
+            end=match.end(),
+            page_suffix=match.group(2) or "",
+            bracketed=True,
+        ))
+    for match in _SOURCE_ID_CONTEXT_RE.finditer(value):
+        refs.append(SourceIdRef(
+            source_id=match.group(1).lower(),
+            start=match.start(1),
+            end=match.end(1),
+        ))
+    return _dedupe_source_id_refs(refs)
+
+
+def _dedupe_source_id_refs(refs: list[SourceIdRef]) -> list[SourceIdRef]:
+    ordered = sorted(refs, key=lambda item: (item.start, item.end, not item.bracketed))
+    kept: list[SourceIdRef] = []
+    spans: set[tuple[int, int]] = set()
+    for item in ordered:
+        span = (item.start, item.end)
+        if span in spans:
+            continue
+        if any(item.start < existing.end and existing.start < item.end for existing in kept):
+            continue
+        kept.append(item)
+        spans.add(span)
+    return kept
+
+
+def source_id_bracket_ref_items(text: str) -> list[SourceIdRef]:
+    return [item for item in source_id_ref_items(text) if item.bracketed]
 
 
 def _pages_by_number(refs: list[CitationRef]) -> dict[int, tuple[int, ...]]:
