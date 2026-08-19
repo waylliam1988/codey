@@ -35,17 +35,30 @@ def finalize_done_answer(
     """
 
     text = str(answer or "")
-    citable_urls = _citable_urls(ledger)
-    if not citable_urls:
-        return FinalizedAnswer(text, reason="no_citable_sources")
     sections = report_quality.parse_sections(text)
     if not sections:
         return FinalizedAnswer(text, reason="no_report_sections")
+    citable_urls = _citable_urls(ledger)
+    if not citable_urls:
+        rendered = _render_report(sections)
+        changed = _normalized_report(rendered) != _normalized_report(text)
+        return FinalizedAnswer(
+            rendered if changed else text,
+            changed=changed,
+            source_count=0,
+            reason="no_citable_sources",
+        )
 
     full_number_for_url = {url: index for index, url in enumerate(citable_urls, 1)}
     full_url_by_number = {number: url for url, number in full_number_for_url.items()}
     source_id_to_number = _source_id_numbers(source_ids or {}, ledger, full_number_for_url)
     old_number_to_new = _old_source_numbers(sections.get("sources", ""), ledger, full_number_for_url)
+    if old_number_to_new is None:
+        return FinalizedAnswer(
+            text,
+            source_count=len(citable_urls),
+            reason="unmapped_numeric_refs",
+        )
     unresolved_source_id_refs = _unmapped_source_id_refs(sections, source_id_to_number)
     if unresolved_source_id_refs:
         return FinalizedAnswer(
@@ -138,12 +151,18 @@ def _old_source_numbers(
     source_text: str,
     ledger: ResearchLedger,
     number_for_url: dict[str, int],
-) -> dict[int, int]:
+) -> dict[int, int] | None:
     mapping: dict[int, int] = {}
-    for citation in report_quality.parse_citations(source_text, ledger):
+    urls_by_number: dict[int, set[str]] = {}
+    for citation in report_quality.parse_citation_rows(source_text, ledger):
         url = ledger.canonical_opened_url(citation.url) or citation.url
         if url in number_for_url:
-            mapping[int(citation.number)] = number_for_url[url]
+            number = int(citation.number)
+            urls = urls_by_number.setdefault(number, set())
+            urls.add(url)
+            if len(urls) > 1:
+                return None
+            mapping[number] = number_for_url[url]
     return mapping
 
 
@@ -202,11 +221,12 @@ def _unmapped_source_id_refs(
 
 def _rewrite_source_id_refs(text: str, source_id_to_number: dict[str, int]) -> str:
     result = text
-    for item in reversed(report_quality.source_id_bracket_ref_items(text)):
+    for item in reversed(report_quality.source_id_ref_items(text)):
         number = source_id_to_number.get(item.source_id)
         if number is None:
             continue
-        result = result[:item.start] + f"[{number}{item.page_suffix}]" + result[item.end:]
+        replacement = f"[{number}{item.page_suffix}]" if item.bracketed else f"[{number}]"
+        result = result[:item.start] + replacement + result[item.end:]
     return result
 
 

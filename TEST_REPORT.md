@@ -212,11 +212,14 @@ checks. It still repairs numeric drift when parsed old source rows all dedupe
 to the same canonical URL, such as a body `[1]` with parsed source row `[10]`
 URL, and also repairs repeated numeric labels for the same source. It leaves
 ambiguous multi-source drift for the quality repair loop. Source-id
-leakage checks are shared between the compiler and quality gate and are scoped
-to the final report body/metadata sections, so source titles such as
-`Analysis of [S1] Subunit Protein` are not treated as internal IDs. The manual
-`finalizer` arm used in these historical rows has been removed from the current
-probe because production now runs the compiler for every arm.
+leakage checks are shared between the compiler and quality gate and cover
+pre-heading prose plus the report body, while ignoring `## 来源` titles, so
+source titles such as `Analysis of [S1] Subunit Protein` are not treated as
+internal IDs. Conflicting duplicate old source numbers are rejected. When a
+report has no citable sources, the compiler still re-renders the sectioned
+output and drops any preamble before returning `no_citable_sources`. The
+manual `finalizer` arm used in these historical rows has been removed from the
+current probe because production now runs the compiler for every arm.
 
 Post-merge verification for the production citation compiler:
 
@@ -228,7 +231,7 @@ python -m ruff check .
 # All checks passed!
 
 python -m pytest tests/test_research.py -k "done_finalizer or done_runner_uses_production_finalizer"
-# 18 passed, 95 deselected
+# 24 passed, 94 deselected
 
 python -m pytest tests/test_run_trace.py -k "done_compilation or connector_errors"
 # 2 passed
@@ -237,10 +240,10 @@ python -B tests/manual/source_connector_done_ab.py --self-test
 # self-test ok
 
 python -m pytest tests/test_research.py tests/test_run_trace.py
-# 138 passed in 13.35s
+# 145 passed in 15.09s
 
 python -m pytest
-# 2218 passed, 9 skipped in 421.23s (0:07:01)
+# 2225 passed, 9 skipped in 411.42s (0:06:51)
 ```
 
 Qwen done-stage A/B evidence from 2026-08-19 is archived under

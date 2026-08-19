@@ -120,7 +120,7 @@ def review_report_quality(
             + ", ".join(section_title(item) for item in missing)
             + ". Revise done.answer using the required Research report template.",
         )
-    source_id_values = source_id_refs(_without_sources(sections))
+    source_id_values = source_id_refs(_text_without_sources(summary))
     if source_id_values:
         return ReportQualityReview(
             False,
@@ -164,6 +164,14 @@ def review_report_quality(
 
     body_ref_items = citation_ref_items(_without_sources(sections))
     pages_by_number = _pages_by_number(body_ref_items)
+    source_rows = parse_citation_rows(sections["sources"], ledger)
+    duplicate_sources = _conflicting_source_numbers(source_rows, ledger)
+    if duplicate_sources:
+        return ReportQualityReview(
+            False,
+            "Report quality failed: duplicate 来源 number(s) map to multiple URLs: "
+            + ", ".join(f"[{item}]" for item in duplicate_sources[:6]),
+        )
     citations = [
         replace(item, pages=pages_by_number.get(item.number, ()))
         for item in parse_citations(sections["sources"], ledger)
@@ -263,9 +271,8 @@ def parse_sections(text: str) -> dict[str, str]:
     return {key: "\n".join(value).strip() for key, value in sections.items()}
 
 
-def parse_citations(sources_section: str, ledger: ResearchLedger | None = None) -> list[Citation]:
+def parse_citation_rows(sources_section: str, ledger: ResearchLedger | None = None) -> list[Citation]:
     citations: list[Citation] = []
-    seen: set[int] = set()
     for line in str(sources_section or "").splitlines():
         stripped = line.strip()
         match = (
@@ -285,12 +292,20 @@ def parse_citations(sources_section: str, ledger: ResearchLedger | None = None) 
             number = int(match.group(1))
             url = match.group(3).rstrip(".,;:，。；、)]")
             raw_title = match.group(2)
-        if number in seen:
-            continue
-        seen.add(number)
         title = _citation_title(raw_title, url, ledger)
         quality = ledger.quality_for_url(url).to_dict() if ledger is not None else {}
         citations.append(Citation(number=number, title=title, url=url, quality=quality))
+    return citations
+
+
+def parse_citations(sources_section: str, ledger: ResearchLedger | None = None) -> list[Citation]:
+    citations: list[Citation] = []
+    seen: set[int] = set()
+    for item in parse_citation_rows(sources_section, ledger):
+        if item.number in seen:
+            continue
+        seen.add(item.number)
+        citations.append(item)
     return citations
 
 
@@ -327,8 +342,8 @@ def source_id_ref_items(text: str) -> list[SourceIdRef]:
     for match in _SOURCE_ID_CONTEXT_RE.finditer(value):
         refs.append(SourceIdRef(
             source_id=match.group(1).lower(),
-            start=match.start(1),
-            end=match.end(1),
+            start=match.start(),
+            end=match.end(),
         ))
     return _dedupe_source_id_refs(refs)
 
@@ -405,6 +420,32 @@ def _page_citation_problem(citations: list[Citation], ledger: ResearchLedger) ->
 
 def _without_sources(sections: Mapping[str, str]) -> str:
     return "\n\n".join(value for key, value in sections.items() if key != "sources")
+
+
+def _text_without_sources(summary: str) -> str:
+    lines: list[str] = []
+    in_sources = False
+    for line in str(summary or "").splitlines():
+        key = _heading_key(line)
+        if key == "sources":
+            in_sources = True
+            continue
+        if key and in_sources:
+            in_sources = False
+        if not in_sources:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def _conflicting_source_numbers(
+    source_rows: list[Citation],
+    ledger: ResearchLedger,
+) -> tuple[int, ...]:
+    urls_by_number: dict[int, set[str]] = {}
+    for item in source_rows:
+        canonical = ledger.canonical_opened_url(item.url) or item.url
+        urls_by_number.setdefault(item.number, set()).add(canonical)
+    return tuple(sorted(number for number, urls in urls_by_number.items() if len(urls) > 1))
 
 
 def _citation_title(raw: str, url: str, ledger: ResearchLedger | None) -> str:

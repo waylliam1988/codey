@@ -481,9 +481,11 @@ leaves non-citation bracket text alone. It can normalize numeric drift when the
 parsed old source rows all resolve to one canonical URL, including repeated
 rows for the same source, but it does not add new support, guess ambiguous
 citation mappings, leak internal source IDs, or relax the quality gate.
-Source-id leakage checks apply to the final report body and metadata sections;
-source titles in `来源` may still contain literal text such as `[S1]`, and
-ordinary prose tokens like `s1` are not treated as internal IDs.
+Conflicting duplicate old source numbers are rejected. Source-id leakage checks
+cover pre-heading prose and the report body, but ignore `## 来源` titles;
+ordinary prose tokens like `s1` are not treated as internal IDs. When a report
+has no citable sources, the compiler still re-renders the sectioned output and
+drops any preamble before returning `no_citable_sources`.
 
 PDF is part of the same `open_url` source intake. There is no `open_pdf` tool,
 PDF mode, or extra button. When a URL points to a text PDF, Codey reads bounded
