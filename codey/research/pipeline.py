@@ -1,0 +1,387 @@
+"""Research lifecycle pipeline for bounded planner execution."""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from typing import Callable, Mapping, Protocol
+
+from codey.research.context import ResearchContext, ResearchPipelineConfig
+from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
+from codey.research.identity import clip
+from codey.research.plan_executor import PlanExecutionResult, PlanExecutor
+from codey.research.proof_quality import ResearchProofReview, review_research_proof
+from codey.research.query_planner import ResearchPlan, build_research_plan
+from codey.research.runner import ResearchRunResult
+from codey.research.tools import ResearchTools
+
+
+class ResearchIterationRunner(Protocol):
+    def __call__(
+        self,
+        *,
+        task: str,
+        max_turns: int,
+        chat_handoff: str,
+        search: object | None = None,
+        close_search: bool = True,
+        tools: ResearchTools | None = None,
+        iteration_context: str = "",
+    ) -> ResearchRunResult:
+        ...
+
+
+@dataclass(frozen=True)
+class ResearchPipelineIteration:
+    iteration_id: str
+    result: ResearchRunResult
+    proof_review: ResearchProofReview | None = None
+    plan_ref: str = ""
+    query_count: int = 0
+    opened_source_count: int = 0
+    stop_reason: str = ""
+
+
+@dataclass(frozen=True)
+class ResearchPipelineResult:
+    final_result: ResearchRunResult
+    followup_applied: bool = False
+    followup_rounds: int = 0
+    stop_reason: str = ""
+    planner_stop_reason: str = ""
+
+
+class ResearchPipeline:
+    def __init__(
+        self,
+        *,
+        context: ResearchContext,
+        run_iteration: ResearchIterationRunner,
+        search_factory: Callable[[], object],
+        evidence_ledgers: EvidenceLedgerStore | None = None,
+        config: ResearchPipelineConfig | None = None,
+        ledger_event_sink: Callable[[EvidenceLedgerWriteResult], None] | None = None,
+        research_changes_sink: Callable[[str, object], None] | None = None,
+    ) -> None:
+        self.context = context
+        self.run_iteration = run_iteration
+        self.search_factory = search_factory
+        self.evidence_ledgers = evidence_ledgers
+        self.config = config or ResearchPipelineConfig()
+        self.ledger_event_sink = ledger_event_sink
+        self.research_changes_sink = research_changes_sink
+
+    def run(self) -> ResearchPipelineResult:
+        started = time.monotonic()
+        search = self.search_factory()
+        try:
+            initial = self.run_iteration(
+                task=self.context.question,
+                max_turns=self.context.max_turns,
+                chat_handoff=self.context.chat_handoff,
+                search=search,
+                close_search=False,
+            )
+            best = initial
+            best_review = self._review(best, require_ledger_record=False)
+            plan = self._plan(best_review)
+            self.context.trace.record_plan(plan)
+            followup_rounds = 0
+            planner_stop_reason = _pipeline_stop_reason(plan, best_review)
+            if self._should_followup(initial, best_review, plan, started):
+                runtime_tools = _runtime_tools(initial)
+                if runtime_tools is None:
+                    planner_stop_reason = "missing_runtime_tools"
+                else:
+                    current_tools = runtime_tools
+                    for round_index in range(1, self._max_rounds() + 1):
+                        if self.context.should_stop():
+                            planner_stop_reason = "stopped"
+                            break
+                        executor = PlanExecutor(
+                            config=self.config,
+                            should_stop=self.context.should_stop,
+                        )
+                        material = executor.execute(plan, current_tools)
+                        planner_stop_reason = material.stop_reason
+                        if not material.has_new_material:
+                            break
+                        candidate = self.run_iteration(
+                            task=self.context.question,
+                            max_turns=self.context.max_turns,
+                            chat_handoff=self.context.chat_handoff,
+                            search=search,
+                            close_search=False,
+                            tools=current_tools,
+                            iteration_context=_followup_context(
+                                question=self.context.question,
+                                initial=best,
+                                plan=plan,
+                                material=material,
+                                limit=self.config.max_followup_context_chars,
+                            ),
+                        )
+                        followup_rounds = round_index
+                        candidate_review = self._review(candidate, require_ledger_record=False)
+                        if _selects_candidate(candidate, candidate_review, best, best_review):
+                            best = candidate
+                            best_review = candidate_review
+                        current_tools = _runtime_tools(candidate) or current_tools
+                        plan = self._plan(best_review)
+                        self.context.trace.record_plan(plan)
+                        if not self._should_followup(best, best_review, plan, started):
+                            planner_stop_reason = _pipeline_stop_reason(plan, best_review)
+                            break
+            ledger_result = self._append_final_record(best)
+            self.context.trace.record_evidence_ledger_write(ledger_result)
+            if self.ledger_event_sink is not None and ledger_result is not None:
+                self.ledger_event_sink(ledger_result)
+            self.context.trace.record_result(best)
+            final_review = self._review(best, require_ledger_record=self.evidence_ledgers is not None)
+            self.context.trace.record_proof_review(final_review)
+            self.context.trace.record_plan(self._plan(final_review))
+            self._record_research_changes(best)
+            return ResearchPipelineResult(
+                final_result=best,
+                followup_applied=followup_rounds > 0,
+                followup_rounds=followup_rounds,
+                stop_reason=best.stop_reason,
+                planner_stop_reason=planner_stop_reason,
+            )
+        finally:
+            close = getattr(search, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+
+    def _should_followup(
+        self,
+        result: ResearchRunResult,
+        review: ResearchProofReview | None,
+        plan: ResearchPlan,
+        started: float,
+    ) -> bool:
+        if not self.config.enabled or self._max_rounds() <= 0:
+            return False
+        if result.stop_reason != "done":
+            return False
+        if not _has_actionable_gap(review):
+            return False
+        if not plan.query_candidates:
+            return False
+        if self.context.should_stop():
+            return False
+        max_wall_time = float(self.config.max_wall_time or 0)
+        if max_wall_time > 0 and (time.monotonic() - started) >= max_wall_time:
+            return False
+        return True
+
+    def _review(
+        self,
+        result: ResearchRunResult,
+        *,
+        require_ledger_record: bool,
+    ) -> ResearchProofReview | None:
+        record = getattr(result, "research_record", None)
+        if record is None:
+            return None
+        ledger_payload = self._ledger_payload() if require_ledger_record else None
+        try:
+            return review_research_proof(
+                record,
+                question=(
+                    self.context.effective_proof_question
+                    or str(getattr(result, "question", "") or "").strip()
+                    or self.context.question
+                ),
+                evidence_ledger=ledger_payload,
+                require_ledger_record=require_ledger_record,
+            )
+        except Exception:
+            return None
+
+    def _plan(self, review: ResearchProofReview | None) -> ResearchPlan:
+        return build_research_plan(
+            review,
+            question=self.context.effective_proof_question or self.context.question,
+            max_queries=self.config.max_queries_per_round,
+            max_sources=self.config.max_total_sources,
+        )
+
+    def _append_final_record(self, result: ResearchRunResult) -> EvidenceLedgerWriteResult | None:
+        if self.evidence_ledgers is None:
+            return None
+        record = getattr(result, "research_record", None)
+        if record is None:
+            return None
+        try:
+            return self.evidence_ledgers.append_record(
+                record,
+                run_id=self.context.run_id,
+                session_id=self.context.session_id,
+                project=self.context.project,
+            )
+        except Exception:
+            return EvidenceLedgerWriteResult(
+                skipped=True,
+                reason_code="write_failed",
+                record_id=getattr(record, "record_id", ""),
+            )
+
+    def _ledger_payload(self) -> Mapping[str, object] | None:
+        if self.evidence_ledgers is None:
+            return None
+        try:
+            snapshot = self.evidence_ledgers.load(
+                session_id=self.context.session_id,
+                project=self.context.project,
+            )
+            if getattr(snapshot, "available", False):
+                return snapshot.payload
+        except Exception:
+            return None
+        return None
+
+    def _record_research_changes(self, result: ResearchRunResult) -> None:
+        if self.research_changes_sink is None or not self.context.run_id:
+            return
+        tools = _runtime_tools(result)
+        if tools is None:
+            return
+        self.research_changes_sink(self.context.run_id, tools.changes)
+
+    def _max_rounds(self) -> int:
+        try:
+            return max(0, min(3, int(self.config.max_followup_rounds or 0)))
+        except (TypeError, ValueError):
+            return 0
+
+
+def _runtime_tools(result: ResearchRunResult) -> ResearchTools | None:
+    tools = getattr(result, "runtime_tools", None)
+    return tools if isinstance(tools, ResearchTools) else None
+
+
+def _selects_candidate(
+    candidate: ResearchRunResult,
+    candidate_review: ResearchProofReview | None,
+    current: ResearchRunResult,
+    current_review: ResearchProofReview | None,
+) -> bool:
+    if candidate.stop_reason in {"error", "protocol", "stopped"}:
+        return False
+    if candidate_review is None:
+        return False
+    current_score = _review_score(current, current_review)
+    candidate_score = _review_score(candidate, candidate_review)
+    if _unsupported_regression(candidate_review, current_review):
+        return False
+    return candidate_score > current_score
+
+
+def _review_score(
+    result: ResearchRunResult,
+    review: ResearchProofReview | None,
+) -> tuple[float, ...]:
+    if review is None:
+        return (0.0, _stop_score(result.stop_reason), 0.0, 0.0, 0.0, 0.0)
+    return (
+        4.0 if review.ok else float(_answer_status_rank(review.answer_status)),
+        _stop_score(result.stop_reason),
+        1.0 if review.answers_question else 0.0,
+        _bounded_score(review.answer_coverage_score),
+        1.0 if review.citation_locator_verified else 0.0,
+        1.0 if review.support_relation_verified else 0.0,
+        1.0 if review.counterevidence_checked else 0.0,
+        -float(len(review.missing_evidence)),
+    )
+
+
+def _unsupported_regression(
+    candidate: ResearchProofReview,
+    current: ResearchProofReview | None,
+) -> bool:
+    if current is None:
+        return False
+    current_unsupported = "unsupported_claims" in set(current.missing_evidence)
+    candidate_unsupported = "unsupported_claims" in set(candidate.missing_evidence)
+    return candidate_unsupported and not current_unsupported
+
+
+def _answer_status_rank(status: str) -> int:
+    return {
+        "answered": 3,
+        "partial": 2,
+        "insufficient_evidence": 1,
+        "not_answered": 0,
+    }.get(str(status or ""), 0)
+
+
+def _bounded_score(value: object) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return max(0.0, min(1.0, parsed))
+
+
+def _stop_score(stop_reason: str) -> float:
+    if stop_reason == "done":
+        return 1.0
+    if stop_reason in {"max_turns", "no_progress"}:
+        return 0.4
+    return 0.0
+
+
+def _has_actionable_gap(review: ResearchProofReview | None) -> bool:
+    if review is None:
+        return False
+    return review.answer_status in {"not_answered", "insufficient_evidence"}
+
+
+def _pipeline_stop_reason(
+    plan: ResearchPlan,
+    review: ResearchProofReview | None = None,
+) -> str:
+    if not plan.query_candidates:
+        reasons = set(plan.reason_codes)
+        if "proof_ok_no_required_followup" in reasons:
+            return "proof_ok_no_required_followup"
+        return "no_query_candidates"
+    if not _has_actionable_gap(review):
+        return "no_actionable_gap"
+    return "planned"
+
+
+def _followup_context(
+    *,
+    question: str,
+    initial: ResearchRunResult,
+    plan: ResearchPlan,
+    material: PlanExecutionResult,
+    limit: int,
+) -> str:
+    lines = [
+        "Follow-up Research synthesis input.",
+        f"question: {clip(question, 240)}",
+        f"initial_stop_reason: {initial.stop_reason}",
+        f"initial_summary: {clip(initial.summary, 1200)}",
+        f"plan_ref: {plan.plan_ref}",
+        "queries_executed:",
+        *[f"- {clip(query, 180)}" for query in material.queries_executed],
+        "opened_material:",
+        *[f"- {clip(preview, 1600)}" for preview in material.previews],
+    ]
+    if material.errors:
+        lines.extend(["bounded_errors:", *[f"- {clip(error, 180)}" for error in material.errors]])
+    return clip("\n".join(lines), max(1000, min(20000, int(limit or 0))))
+
+
+__all__ = [
+    "ResearchIterationRunner",
+    "ResearchPipeline",
+    "ResearchPipelineIteration",
+    "ResearchPipelineResult",
+]

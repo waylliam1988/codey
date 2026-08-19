@@ -81,7 +81,9 @@ from codey.run_ledger_projection import (
 from codey.run_trace import RunTraceStore
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
+from codey.research.pipeline import ResearchPipeline, ResearchPipelineConfig
 from codey.research.proof_quality import proof_review_trace_payload, review_research_proof
 from codey.research.query_planner import build_research_plan, research_plan_trace_payload
 from codey.research.browser_search import BrowserSearchProvider
@@ -1901,33 +1903,12 @@ class TaskRunner:
         request = frame.request
         if frame.provider is None:
             raise RuntimeError("provider is not connected")
-        result = self._run_research_task(
-            provider=frame.provider,
-            session_id=request.session_id,
-            project=frame.project_text,
-            task=request.task,
-            max_turns=request.max_turns,
-            on_event=hooks.on_event,
-            stop_flag=state.stop_flag,
-            provider_id=frame.provider_id,
-            run_id=frame.run_id,
-            chat_handoff=frame.research_handoff,
-            trace_recorder=frame.trace,
-        )
-        ledger_result = self._append_evidence_ledger(frame, hooks, result)
-        _record_evidence_ledger_write_trace(frame.trace, ledger_result)
-        _record_research_result_trace(frame.trace, result)
-        proof_review = self._review_research_result_proof(
+        result = self._run_research_pipeline(
             frame,
-            result,
-            question=proof_question,
-        )
-        _record_research_proof_review_trace(frame.trace, proof_review)
-        _record_research_plan_trace(
-            frame.trace,
-            proof_review,
-            question=proof_question or getattr(result, "question", "") or request.task,
-        )
+            hooks,
+            max_turns=request.max_turns,
+            proof_question=proof_question,
+        ).final_result
         state.set_provider_session(
             frame.provider_id,
             None if result.stop_reason == "stopped" else request.session_id,
@@ -1981,29 +1962,11 @@ class TaskRunner:
         request = frame.request
         if frame.provider is None:
             raise RuntimeError("provider is not connected")
-        research_result = self._run_research_task(
-            provider=frame.provider,
-            session_id=request.session_id,
-            project=frame.project_text,
-            task=request.task,
+        research_result = self._run_research_pipeline(
+            frame,
+            hooks,
             max_turns=max(1, min(request.max_turns, 18)),
-            on_event=hooks.on_event,
-            stop_flag=self.state.stop_flag,
-            provider_id=frame.provider_id,
-            run_id=frame.run_id,
-            chat_handoff=frame.research_handoff,
-            trace_recorder=frame.trace,
-        )
-        ledger_result = self._append_evidence_ledger(frame, hooks, research_result)
-        _record_evidence_ledger_write_trace(frame.trace, ledger_result)
-        _record_research_result_trace(frame.trace, research_result)
-        proof_review = self._review_research_result_proof(frame, research_result)
-        _record_research_proof_review_trace(frame.trace, proof_review)
-        _record_research_plan_trace(
-            frame.trace,
-            proof_review,
-            question=getattr(research_result, "question", "") or request.task,
-        )
+        ).final_result
         if research_result.stop_reason != "done":
             return _ModeOutcome({
                 "type": "task_done",
@@ -3077,10 +3040,16 @@ class TaskRunner:
         run_id: str = "",
         chat_handoff: str = "",
         trace_recorder=None,
+        search=None,
+        close_search: bool = True,
+        tools=None,
+        iteration_context: str = "",
     ):
         if self.knowledge_store is None:
             raise RuntimeError("Research is not configured")
-        search = self.search_factory()
+        owned_search = search is None
+        if search is None:
+            search = self.search_factory()
         try:
             runner = ResearchRunner(
                 provider,
@@ -3103,46 +3072,93 @@ class TaskRunner:
                     if self.run_research_advisors is not None
                     else None
                 ),
+                tools=tools,
+                iteration_context=iteration_context,
             )
             for event in runner.run(task):
                 on_event(event)
             if runner.result is None:
                 raise RuntimeError("research finished without a result")
-            recorder = getattr(self.state, "record_research_changes", None)
-            if callable(recorder) and run_id:
-                recorder(run_id, runner.changes)
             return runner.result
         finally:
-            try:
-                search.close()
-            except Exception:
-                pass
+            if close_search or owned_search:
+                try:
+                    search.close()
+                except Exception:
+                    pass
 
-    def _append_evidence_ledger(
+    def _run_research_pipeline(
         self,
         frame: _RunFrame,
         hooks: _RunHooks,
-        result: Any,
-    ) -> Any | None:
-        if self.evidence_ledgers is None:
-            return None
-        record = getattr(result, "research_record", None)
-        if record is None:
-            return None
-        try:
-            ledger_result = self.evidence_ledgers.append_record(
-                record,
-                run_id=frame.run_id,
-                session_id=frame.request.session_id,
+        *,
+        max_turns: int,
+        proof_question: str = "",
+    ):
+        request = frame.request
+        if frame.provider is None:
+            raise RuntimeError("provider is not connected")
+
+        def run_iteration(
+            *,
+            task: str,
+            max_turns: int,
+            chat_handoff: str,
+            search=None,
+            close_search: bool = True,
+            tools=None,
+            iteration_context: str = "",
+        ):
+            return self._run_research_task(
+                provider=frame.provider,
+                session_id=request.session_id,
                 project=frame.project_text,
+                task=task,
+                max_turns=max_turns,
+                on_event=hooks.on_event,
+                stop_flag=self.state.stop_flag,
+                provider_id=frame.provider_id,
+                run_id=frame.run_id,
+                chat_handoff=chat_handoff,
+                trace_recorder=frame.trace,
+                search=search,
+                close_search=close_search,
+                tools=tools,
+                iteration_context=iteration_context,
             )
-        except Exception:
-            ledger_result = EvidenceLedgerWriteResult(
-                skipped=True,
-                reason_code="write_failed",
-                record_id=getattr(record, "record_id", ""),
-            )
-        payload = ledger_result.to_trace_payload()
+
+        recorder = getattr(self.state, "record_research_changes", None)
+        changes_sink = recorder if callable(recorder) else None
+        context = ResearchContext(
+            question=request.task,
+            session_id=request.session_id,
+            run_id=frame.run_id,
+            project=frame.project_text,
+            provider_id=frame.provider_id,
+            proof_question=proof_question,
+            permission_profile="research",
+            max_turns=max_turns,
+            chat_handoff=frame.research_handoff,
+            should_stop=self.state.stop_flag.is_set,
+            trace=RunTraceResearchSink(frame.trace),
+        )
+        pipeline = ResearchPipeline(
+            context=context,
+            run_iteration=run_iteration,
+            search_factory=self.search_factory,
+            evidence_ledgers=self.evidence_ledgers,
+            config=ResearchPipelineConfig(),
+            ledger_event_sink=lambda result: self._record_evidence_ledger_write(hooks, result),
+            research_changes_sink=changes_sink,
+        )
+        return pipeline.run()
+
+    def _record_evidence_ledger_write(
+        self,
+        hooks: _RunHooks,
+        result: EvidenceLedgerWriteResult,
+    ) -> None:
+        payload = result.to_trace_payload()
         hooks.append_ledger(
             lambda ledger: ledger.append(
                 "evidence_ledger_write",
@@ -3154,43 +3170,6 @@ class TaskRunner:
                 counts=payload.get("counts"),
             )
         )
-        return ledger_result
-
-    def _review_research_result_proof(
-        self,
-        frame: _RunFrame,
-        result: Any,
-        *,
-        question: str = "",
-    ) -> Any | None:
-        record = getattr(result, "research_record", None)
-        if record is None:
-            return None
-        ledger_payload = None
-        if self.evidence_ledgers is not None:
-            try:
-                snapshot = self.evidence_ledgers.load(
-                    session_id=frame.request.session_id,
-                    project=frame.project_text,
-                )
-                if getattr(snapshot, "available", False):
-                    ledger_payload = snapshot.payload
-            except Exception:
-                ledger_payload = None
-        try:
-            proof_question = (
-                str(question or "").strip()
-                or str(getattr(result, "question", "") or "").strip()
-                or frame.request.task
-            )
-            return review_research_proof(
-                record,
-                question=proof_question,
-                evidence_ledger=ledger_payload,
-                require_ledger_record=self.evidence_ledgers is not None,
-            )
-        except Exception:
-            return None
 
     def _record_project_memory(
         self,

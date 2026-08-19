@@ -46,7 +46,7 @@ from codey.research.tool_contract import (
     TOOL_CONTRACTS,
     tool_example,
 )
-from codey.research.tools import ResearchTools
+from codey.research.tools import ResearchTools, clone_research_tools
 
 DEFAULT_MAX_TURNS = 14
 COMPLETION_EXTENSION_TURNS = 4
@@ -105,6 +105,7 @@ class ResearchRunResult:
     advisor_count: int = 0
     research_record: ResearchRecord | None = None
     max_turns_used: int = DEFAULT_MAX_TURNS
+    runtime_tools: ResearchTools | None = field(default=None, repr=False)
 
     @property
     def receipt(self) -> str:
@@ -136,6 +137,8 @@ class ResearchRunner:
         permission_profile: str = "research",
         trace_recorder=None,
         run_id: str = "",
+        tools: ResearchTools | None = None,
+        iteration_context: str = "",
     ) -> None:
         self.provider = provider
         self.search = search
@@ -150,6 +153,7 @@ class ResearchRunner:
         self.permission_profile = profile_for_name(permission_profile).name
         self.prompt_trace = FailOpenPromptTrace(trace_recorder)
         self.chat_handoff = (chat_handoff or "").strip()
+        self.iteration_context = (iteration_context or "").strip()
         self.review_advisors = review_advisors
         self.controller_enabled = bool(controller_enabled)
         self.controller = (
@@ -159,15 +163,25 @@ class ResearchRunner:
             if self.controller_enabled
             else None
         )
-        self.changes = KnowledgeChanges(root=store.root)
-        self.tools = ResearchTools(
-            search=search,
-            store=store,
-            changes=self.changes,
-            diagnostics=diagnostics,
-            session_id=session_id,
-            project=project,
-        )
+        if tools is None:
+            self.changes = KnowledgeChanges(root=store.root)
+            self.tools = ResearchTools(
+                search=search,
+                store=store,
+                changes=self.changes,
+                diagnostics=diagnostics,
+                session_id=session_id,
+                project=project,
+            )
+        else:
+            self.tools = clone_research_tools(
+                tools,
+                search=search,
+                diagnostics=diagnostics,
+                session_id=session_id,
+                project=project,
+            )
+            self.changes = self.tools.changes
         self.result: ResearchRunResult | None = None
 
     def run(self, question: str):
@@ -425,6 +439,7 @@ class ResearchRunner:
             advisor_count=advisor_count,
             research_record=research_record,
             max_turns_used=turn_limit,
+            runtime_tools=self.tools,
         )
         self.prompt_trace.call(
             "record_research_notes",
@@ -573,6 +588,13 @@ class ResearchRunner:
                 purpose="bounded chat handoff for research",
                 freshness="run_start",
                 source_refs=("conversation:research_handoff",),
+            ),
+            PromptEnvelopeSection(
+                name="research_iteration_context",
+                text=_iteration_context(self.iteration_context),
+                purpose="bounded follow-up research material",
+                freshness="run_start",
+                source_refs=("research_pipeline:followup_material",),
             ),
             PromptEnvelopeSection(
                 name="research_question",
@@ -739,6 +761,18 @@ def _chat_handoff_context(handoff: str) -> str:
     return (
         "Conversation context from this chat. Use this only as bounded background "
         "for the research question; do not mention handoff mechanics.\n"
+        f"{text}"
+    )
+
+
+def _iteration_context(context: str) -> str:
+    text = (context or "").strip()
+    if not text:
+        return ""
+    return (
+        "Bounded material from the Research pipeline. Use it as already opened "
+        "research context for this follow-up synthesis; verify citations against "
+        "the opened-source ledger before calling done.\n"
         f"{text}"
     )
 

@@ -454,3 +454,30 @@ def _pages_meta(pages: tuple[int, ...], page_count: int) -> str:
         return ""
     page_text = compact_pages(pages)
     return f"pages {page_text} / {page_count}" if page_count else f"pages {page_text}"
+
+
+def clone_research_tools(
+    tools: ResearchTools,
+    *,
+    search: object | None = None,
+    diagnostics: object | None = None,
+    session_id: str | None = None,
+    project: str | None = None,
+) -> ResearchTools:
+    """Create a fresh tool facade over the same run-scoped research facts."""
+
+    return ResearchTools(
+        search=search if search is not None else tools.search,
+        store=tools.store,
+        changes=tools.changes,
+        diagnostics=diagnostics if diagnostics is not None else tools.diagnostics,
+        session_id=tools.session_id if session_id is None else session_id,
+        project=tools.project if project is None else project,
+        sources_read=tools.sources_read,
+        search_result_urls=tools.search_result_urls,
+        grounded_ids=tools.grounded_ids,
+        created_ids=tools.created_ids,
+        updated_ids=tools.updated_ids,
+        links_created=tools.links_created,
+        ledger=tools.ledger,
+    )
