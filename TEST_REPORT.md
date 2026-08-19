@@ -206,6 +206,25 @@ That same narrow citation compiler is now wired into production `done`
 handling before the quality gate. It standardizes source numbering and the
 `来源` table, but it does not invent citations or bypass blocker checks.
 
+Post-merge verification for the production citation compiler:
+
+```text
+python -m py_compile codey/research/done_finalizer.py codey/research/report_quality.py codey/research/runner.py codey/research/__init__.py tests/test_research.py tests/manual/source_connector_done_ab.py
+# passed
+
+python -m ruff check codey/research/done_finalizer.py codey/research/report_quality.py codey/research/runner.py codey/research/__init__.py tests/test_research.py tests/manual/source_connector_done_ab.py
+# All checks passed
+
+python -m pytest tests/test_research.py
+# 97 passed in 12.87s
+
+python tests/manual/source_connector_done_ab.py --self-test
+# self-test ok
+
+python -m pytest
+# 2203 passed, 9 skipped in 371.32s
+```
+
 Qwen done-stage A/B evidence from 2026-08-19 is archived under
 `tests/manual/results/`. The baseline row came from
 `source_connector_done_ab-qwen-pubmed-baseline-20260819-134023.json`; the
