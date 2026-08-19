@@ -120,7 +120,9 @@ def review_report_quality(
             + ", ".join(section_title(item) for item in missing)
             + ". Revise done.answer using the required Research report template.",
         )
+    sources_text = sections.get("sources", "")
     source_id_values = source_id_refs(_text_without_sources(summary))
+    source_id_values.update(_source_section_source_id_refs(sources_text, ledger))
     if source_id_values:
         return ReportQualityReview(
             False,
@@ -437,6 +439,15 @@ def _text_without_sources(summary: str) -> str:
     return "\n".join(lines)
 
 
+def _source_section_source_id_refs(source_text: str, ledger: ResearchLedger) -> set[str]:
+    if not str(source_text or "").strip():
+        return set()
+    refs = {item.source_id for item in source_id_ref_items(source_text) if not item.bracketed}
+    if not parse_citation_rows(source_text, ledger):
+        refs.update(source_id_refs(source_text))
+    return refs
+
+
 def _conflicting_source_numbers(
     source_rows: list[Citation],
     ledger: ResearchLedger,
@@ -462,6 +473,7 @@ def _citation_title(raw: str, url: str, ledger: ResearchLedger | None) -> str:
 
 def _strict_provenance_text(sections: Mapping[str, str], fallback: str) -> str:
     parts = [
+        _preamble_text(fallback),
         sections.get("conclusion", ""),
         sections.get("evidence", ""),
         sections.get("source_quality", ""),
@@ -469,6 +481,15 @@ def _strict_provenance_text(sections: Mapping[str, str], fallback: str) -> str:
     ]
     text = "\n\n".join(part for part in parts if part).strip()
     return text or fallback
+
+
+def _preamble_text(summary: str) -> str:
+    lines: list[str] = []
+    for line in str(summary or "").splitlines():
+        if _heading_key(line):
+            break
+        lines.append(line)
+    return "\n".join(lines).strip()
 
 
 def _context_provenance_text(sections: Mapping[str, str]) -> str:
@@ -491,6 +512,8 @@ def _is_no_citable_source_report(
     if citation_ref_items(_without_sources(sections)):
         return False
     sources = sections.get("sources", "")
+    if source_id_refs(sources):
+        return False
     if parse_citations(sources, ledger) or "http://" in sources.lower() or "https://" in sources.lower():
         return False
     if provenance_problem(

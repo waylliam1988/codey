@@ -484,8 +484,8 @@ citation mappings, leak internal source IDs, or relax the quality gate.
 Conflicting duplicate old source numbers are rejected. Source-id leakage checks
 cover pre-heading prose and the report body, but ignore `## 来源` titles;
 ordinary prose tokens like `s1` are not treated as internal IDs. When a report
-has no citable sources, the compiler leaves the original text intact so the
-quality gate can still reject preamble provenance or source-id violations.
+has no citable sources, the compiler re-renders the sectioned report and drops
+any preamble before handing the result to the quality gate.
 
 PDF is part of the same `open_url` source intake. There is no `open_pdf` tool,
 PDF mode, or extra button. When a URL points to a text PDF, Codey reads bounded

@@ -1379,6 +1379,45 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertTrue(review.ok, review.message)
         self.assertIn("no opened source", review.warnings[0])
 
+    def test_report_quality_rejects_preamble_url_even_when_report_is_no_citable(self) -> None:
+        url = "https://example.com/opened"
+        ledger = ResearchLedger()
+        ledger.record_open(
+            requested_url=url,
+            final_url=url,
+            title="Opened source",
+            text="Opened source text.",
+        )
+        ledger.add_evidence_items([
+            EvidenceItem(claim="claim", source_url=url, excerpt=""),
+        ])
+        report = (
+            "preamble https://evil.example/secret\n\n"
+            "## 结论\n"
+            "未能确认任何可引证来源。\n\n"
+            "## 关键证据\n"
+            "无可引用的有效来源。\n\n"
+            "## 反证与限制\n"
+            "未找到强反证。\n\n"
+            "## 来源质量\n"
+            "无有效来源；没有可引用的已打开页面。\n\n"
+            "## 搜索覆盖\n"
+            "搜索了 opened 线索。\n\n"
+            "## 来源\n"
+            "本报告无可引用的已打开有效来源。"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("did not open", review.message)
+        self.assertIn("evil.example", review.message)
+
     def test_report_quality_rejects_no_citable_report_that_lists_unopened_url_as_source(self) -> None:
         ledger = ResearchLedger()
         ledger.record_search("Alpha Safety Program", [{
@@ -1410,6 +1449,39 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertFalse(review.ok)
         self.assertIn("did not open", review.message)
+
+    def test_report_quality_rejects_source_id_in_no_citable_sources_section(self) -> None:
+        ledger = ResearchLedger()
+        ledger.record_search("Alpha Safety Program", [{
+            "title": "Alpha Safety Program official manual",
+            "url": "https://agency.gov/alpha-safety/manual",
+            "snippet": "Official manual.",
+        }])
+        report = (
+            "## 结论\n"
+            "未能确认 Alpha Safety Program 要求 72 小时事件通知阈值。\n\n"
+            "## 关键证据\n"
+            "无可引用的有效来源；搜索结果里的 agency.gov 没有提供可验证正文。\n\n"
+            "## 反证与限制\n"
+            "未找到强反证。\n\n"
+            "## 来源质量\n"
+            "无有效来源；没有可引用的已打开页面。\n\n"
+            "## 搜索覆盖\n"
+            "搜索了 Alpha Safety Program。\n\n"
+            "## 来源\n"
+            "本报告无可引用的已打开有效来源；source_id=s9"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources=set(),
+            search_result_urls={"https://agency.gov/alpha-safety/manual"},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("source-id citation", review.message)
+        self.assertIn("[s9]", review.message)
 
     def test_report_quality_accepts_pdf_page_citations_with_page_backed_evidence(self) -> None:
         url = "https://example.com/report.pdf"
@@ -3045,7 +3117,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertFalse(finalized.changed)
         self.assertEqual(finalized.reason, "no_citable_sources")
 
-    def test_done_finalizer_preserves_no_citable_preamble_for_quality_review(self) -> None:
+    def test_done_finalizer_renders_no_citable_sections(self) -> None:
         ledger = ResearchLedger()
         ledger.record_search("Alpha Safety Program", [{
             "title": "Alpha Safety Program official manual",
@@ -3070,16 +3142,17 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         finalized = finalize_done_answer(report, ledger)
 
-        self.assertFalse(finalized.changed)
+        self.assertTrue(finalized.changed)
         self.assertEqual(finalized.reason, "no_citable_sources")
-        self.assertIn("https://evil.example/secret", finalized.text)
+        self.assertNotIn("https://evil.example/secret", finalized.text)
+        self.assertTrue(finalized.text.startswith("## 结论"))
         review = review_report_quality(
             finalized.text,
             ledger=ledger,
             opened_sources=set(),
             search_result_urls={"https://agency.gov/alpha-safety/manual"},
         )
-        self.assertFalse(review.ok)
+        self.assertTrue(review.ok, review.message)
 
     def test_done_runner_uses_production_finalizer_before_quality_review(self) -> None:
         provider = FakeProvider(

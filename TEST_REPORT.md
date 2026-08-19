@@ -216,10 +216,10 @@ leakage checks are shared between the compiler and quality gate and cover
 pre-heading prose plus the report body, while ignoring `## 来源` titles, so
 source titles such as `Analysis of [S1] Subunit Protein` are not treated as
 internal IDs. Conflicting duplicate old source numbers are rejected. When a
-report has no citable sources, the compiler leaves the original text intact so
-the quality gate can still reject preamble provenance or source-id violations.
-The manual `finalizer` arm used in these historical rows has been removed from
-the current probe because production now runs the compiler for every arm.
+report has no citable sources, the compiler re-renders the sectioned report and
+drops any preamble before handing the result to the quality gate. The manual
+`finalizer` arm used in these historical rows has been removed from the current
+probe because production now runs the compiler for every arm.
 
 Post-merge verification for the production citation compiler:
 
@@ -231,7 +231,7 @@ python -m ruff check .
 # All checks passed!
 
 python -m pytest tests/test_research.py -k "done_finalizer or done_runner_uses_production_finalizer"
-# 24 passed, 94 deselected
+# 19 passed, 101 deselected
 
 python -m pytest tests/test_run_trace.py -k "done_compilation or connector_errors"
 # 2 passed
@@ -240,10 +240,10 @@ python -B tests/manual/source_connector_done_ab.py --self-test
 # self-test ok
 
 python -m pytest tests/test_research.py tests/test_run_trace.py
-# 145 passed in 15.09s
+# 147 passed in 14.24s
 
 python -m pytest
-# 2225 passed, 9 skipped in 411.42s (0:06:51)
+# 2227 passed, 9 skipped in 416.09s (0:06:56)
 ```
 
 Qwen done-stage A/B evidence from 2026-08-19 is archived under
