@@ -126,6 +126,9 @@ class RecordingTrace:
     def record_research_connector_errors(self, *args, **kwargs) -> None:
         self.calls.append(("record_research_connector_errors", args, kwargs))
 
+    def record_research_done_compilation(self, *args, **kwargs) -> None:
+        self.calls.append(("record_research_done_compilation", args, kwargs))
+
 
 class FakePdfPage:
     def __init__(self, text: str, stream_size: int = 0) -> None:
@@ -2589,6 +2592,68 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn(f"[1] B Source - {second}", finalized.text)
         self.assertIn(f"[2] A Source - {first}", finalized.text)
 
+    def test_done_finalizer_does_not_remap_source_id_refs_through_old_sources(self) -> None:
+        first = "https://example.com/a"
+        second = "https://example.com/b"
+        ledger = ResearchLedger()
+        ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
+        ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
+        ledger.add_evidence_items([
+            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+        ])
+
+        finalized = finalize_done_answer(
+            "## 结论\n- Alpha claim [s1]\n\n"
+            "## 关键证据\n- Alpha evidence [s1]\n\n"
+            "## 反证与限制\n- 未找到强反证。\n\n"
+            "## 来源质量\n- [s1] good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n[1] B Source - {second}\n[2] A Source - {first}",
+            ledger,
+            source_ids={"s1": first, "s2": second},
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertEqual(finalized.source_count, 1)
+        self.assertIn("Alpha claim [1]", finalized.text)
+        self.assertIn(f"[1] A Source - {first}", finalized.text)
+        self.assertNotIn(second, finalized.text)
+        review = review_report_quality(
+            finalized.text,
+            ledger=ledger,
+            opened_sources={first, second},
+            search_result_urls=set(),
+        )
+        self.assertTrue(review.ok)
+
+    def test_done_finalizer_leaves_non_citation_bracket_text_unmodified(self) -> None:
+        first = "https://example.com/a"
+        second = "https://example.com/b"
+        ledger = ResearchLedger()
+        ledger.record_open(requested_url=first, final_url=first, title="A Source", text="Alpha evidence.")
+        ledger.record_open(requested_url=second, final_url=second, title="B Source", text="Beta evidence.")
+        ledger.add_evidence_items([
+            EvidenceItem(claim="alpha", source_url=first, excerpt="Alpha evidence."),
+            EvidenceItem(claim="beta", source_url=second, excerpt="Beta evidence."),
+        ])
+
+        finalized = finalize_done_answer(
+            "## 结论\n- Beta claim [2], and the table ranked item [2nd].\n\n"
+            "## 关键证据\n- Beta evidence [2]\n\n"
+            "## 反证与限制\n- 未找到强反证。\n\n"
+            "## 来源质量\n- [2] good\n\n"
+            "## 搜索覆盖\n- search\n\n"
+            f"## 来源\n[1] A Source - {first}\n[2] B Source - {second}",
+            ledger,
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertIn("Beta claim [1], and the table ranked item [2nd].", finalized.text)
+        self.assertNotIn("[1nd]", finalized.text)
+        self.assertIn(f"[1] B Source - {second}", finalized.text)
+        self.assertNotIn(first, finalized.text)
+
     def test_done_finalizer_renders_only_referenced_citable_sources(self) -> None:
         first = "https://example.com/a"
         second = "https://example.com/b"
@@ -2664,9 +2729,17 @@ class ResearchBoundaryTests(unittest.TestCase):
             }),
         )
         search = FakeSearch()
+        trace = RecordingTrace()
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))
-            runner = ResearchRunner(provider, search, store, session_id="s1", max_turns=4)
+            runner = ResearchRunner(
+                provider,
+                search,
+                store,
+                session_id="s1",
+                max_turns=4,
+                trace_recorder=trace,
+            )
 
             list(runner.run("Research helium"))
             result = runner.result
@@ -2677,6 +2750,14 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertIn("[1] Helium article - https://example.com/helium", result.summary)
         self.assertNotIn("[s1]", result.summary)
+        compilation_calls = [
+            item for item in trace.calls if item[0] == "record_research_done_compilation"
+        ]
+        self.assertEqual(compilation_calls, [(
+            "record_research_done_compilation",
+            ({"reason": "compiled_citations", "source_count": 1},),
+            {},
+        )])
 
     def test_runner_synthesis_records_opened_sources_for_project_brief(self) -> None:
         url = "https://example.com/helium"

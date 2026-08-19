@@ -205,10 +205,11 @@ from saved evidence.
 That same narrow citation compiler is now wired into production `done`
 handling before the quality gate. It standardizes source numbering and the
 `来源` table for reliable source-id or parsed source-map references, but it
-does not invent citations, rebind unmapped numeric references, or bypass
-blocker checks. The manual `finalizer` arm used in these historical rows has
-been removed from the current probe because production now runs the compiler
-for every arm.
+does not invent citations, rebind unmapped numeric references, remap source-id
+references through stale numeric source tables, rewrite non-citation bracket
+text such as `[2nd]`, or bypass blocker checks. The manual `finalizer` arm used
+in these historical rows has been removed from the current probe because
+production now runs the compiler for every arm.
 
 Post-merge verification for the production citation compiler:
 
@@ -220,7 +221,7 @@ python -m ruff check .
 # All checks passed!
 
 python -m pytest tests/test_research.py -k "done_finalizer or done_runner_uses_production_finalizer"
-# 8 passed
+# 10 passed
 
 python -m pytest tests/test_run_trace.py -k "done_compilation or connector_errors"
 # 2 passed
@@ -229,10 +230,10 @@ python -B tests/manual/source_connector_done_ab.py --self-test
 # self-test ok
 
 python -m pytest tests/test_research.py tests/test_run_trace.py
-# 128 passed in 13.38s
+# 130 passed in 12.84s
 
 python -m pytest
-# 2208 passed, 9 skipped in 418.52s (0:06:58)
+# 2210 passed, 9 skipped in 418.65s (0:06:58)
 ```
 
 Qwen done-stage A/B evidence from 2026-08-19 is archived under

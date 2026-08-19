@@ -9,8 +9,9 @@ from typing import Mapping
 from codey.research import report_quality
 from codey.research.ledger import ResearchLedger
 
-_SOURCE_ID_REF_RE = re.compile(r"\[\[?(s\d+)([^\]\[]*)\]\]?", re.IGNORECASE)
-_NUMERIC_REF_RE = re.compile(r"(?<![A-Za-z0-9_!])\[(\d+)([^\]]*)\]")
+_PAGE_REF_SUFFIX = r"(?:\s+(?:p\.?|pp\.?|pages?|page)\s*\.?\s*\d+(?:\s*-\s*\d+)?)?"
+_SOURCE_ID_REF_RE = re.compile(rf"\[\[?(s\d+)({_PAGE_REF_SUFFIX})\]\]?", re.IGNORECASE)
+_NUMERIC_REF_RE = re.compile(rf"(?<![A-Za-z0-9_!])\[(\d+)({_PAGE_REF_SUFFIX})\]", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -61,8 +62,9 @@ def finalize_done_answer(
         body = sections.get(key, "")
         if not body.strip():
             continue
-        body = _rewrite_source_id_refs(body, source_id_to_number)
+        # Old numeric refs must be interpreted before source-id refs become numbers.
         body = _rewrite_numeric_refs(body, old_number_to_new)
+        body = _rewrite_source_id_refs(body, source_id_to_number)
         compiled_bodies[key] = body
 
     referenced_urls = _referenced_urls(compiled_bodies, full_url_by_number)

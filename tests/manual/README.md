@@ -340,7 +340,9 @@ times.
 
 The same narrow citation compiler now runs in production `done` handling
 before the quality gate; it compiles sources, but it does not add new support
-or weaken the blocker checks.
+or weaken the blocker checks. Source-id citations and parsed numeric citations
+are compiled through separate bindings, and bracket text outside the citation
+grammar is left untouched.
 
 ```powershell
 python -B tests\manual\source_connector_done_ab.py --self-test
