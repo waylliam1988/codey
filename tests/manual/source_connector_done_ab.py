@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
-import re
 import sys
 import tempfile
 import time
@@ -32,6 +31,7 @@ from codey import provider_controls
 from codey.knowledge.store import KnowledgeStore
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.research.done_finalizer import finalize_done_answer
 from codey.research import report_quality as report_quality_module
 from codey.research import runner as runner_module
 from codey.research.ledger import EvidenceItem, ResearchLedger
@@ -79,10 +79,6 @@ _QUALITY_CHECKLIST = """Probe quality-review checklist:
 6. If a source cannot be cited, mention it only as an unnumbered limitation.
 """
 
-_SOURCE_ID_REF_RE = re.compile(r"\[\[?(s\d+)([^\]\[]*)\]\]?", re.IGNORECASE)
-_NUMERIC_REF_RE = re.compile(r"(?<![A-Za-z0-9_!])\[(\d+)([^\]]*)\]")
-
-
 @dataclass
 class DoneFinalizerStats:
     attempts: int = 0
@@ -91,16 +87,6 @@ class DoneFinalizerStats:
     generated_sources: int = 0
     added_citations: int = 0
     last_reason: str = ""
-
-
-@dataclass(frozen=True)
-class FinalizedAnswer:
-    text: str
-    changed: bool = False
-    source_count: int = 0
-    added_citations: int = 0
-    reason: str = ""
-
 
 class DoneFinalizer:
     def __init__(self) -> None:
@@ -170,142 +156,11 @@ class DoneFinalizer:
         return rewritten
 
 
-def finalize_done_answer(
-    answer: str,
-    ledger: ResearchLedger,
-    *,
-    source_ids: dict[str, str] | None = None,
-) -> FinalizedAnswer:
-    citable_urls = _citable_urls(ledger)
-    if not citable_urls:
-        return FinalizedAnswer(answer, reason="no_citable_sources")
-    source_ids = source_ids or {}
-    sections = report_quality_module.parse_sections(answer)
-    if not sections:
-        return FinalizedAnswer(answer, reason="no_report_sections")
-    number_for_url = {url: index for index, url in enumerate(citable_urls, 1)}
-    source_id_to_number = {
-        source_id.lower(): number_for_url[url]
-        for source_id, url in source_ids.items()
-        if url in number_for_url
-    }
-    old_number_to_new = _old_source_numbers(sections.get("sources", ""), ledger, number_for_url)
-    added_citations = 0
-    rewritten: dict[str, str] = {}
-    for key in report_quality_module.REQUIRED_SECTIONS:
-        if key == "sources":
-            continue
-        body = sections.get(key, "")
-        if not body.strip():
-            continue
-        body = _rewrite_source_id_refs(body, source_id_to_number)
-        body = _rewrite_numeric_refs(body, old_number_to_new, len(citable_urls))
-        if key in {"conclusion", "evidence", "source_quality"}:
-            body, added = _ensure_citation(body, 1)
-            added_citations += int(added)
-        elif key == "counter" and not report_quality_module._says_no_strong_counter(body):
-            body, added = _ensure_citation(body, 1)
-            added_citations += int(added)
-        rewritten[key] = body
-    rewritten["sources"] = _render_sources(citable_urls, ledger)
-    compiled = _render_report(rewritten)
-    changed = _normalized_report(compiled) != _normalized_report(answer)
-    reason = "compiled_citations" if changed else "already_compiled"
-    return FinalizedAnswer(
-        compiled if changed else answer,
-        changed=changed,
-        source_count=len(citable_urls),
-        added_citations=added_citations,
-        reason=reason,
-    )
-
-
-def _citable_urls(ledger: ResearchLedger) -> list[str]:
-    final_urls = ledger.final_url_set()
-    urls: list[str] = []
-    for item in ledger.evidence_items:
-        url = str(item.source_url or "").strip()
-        canonical = ledger.canonical_opened_url(url) or url
-        if canonical in final_urls and canonical not in urls:
-            urls.append(canonical)
-    return urls
-
-
 def _source_id_url_map(controller: object) -> dict[str, str]:
     value = getattr(controller, "_source_urls_by_id", {}) if controller is not None else {}
     if not isinstance(value, dict):
         return {}
     return {str(key).lower(): str(url) for key, url in value.items() if str(key) and str(url)}
-
-
-def _old_source_numbers(source_text: str, ledger: ResearchLedger, number_for_url: dict[str, int]) -> dict[int, int]:
-    mapping: dict[int, int] = {}
-    for citation in report_quality_module.parse_citations(source_text, ledger):
-        url = ledger.canonical_opened_url(citation.url) or citation.url
-        if url in number_for_url:
-            mapping[int(citation.number)] = number_for_url[url]
-    return mapping
-
-
-def _rewrite_source_id_refs(text: str, source_id_to_number: dict[str, int]) -> str:
-    def repl(match: re.Match[str]) -> str:
-        number = source_id_to_number.get(match.group(1).lower())
-        return f"[{number}{match.group(2)}]" if number else match.group(0)
-
-    return _SOURCE_ID_REF_RE.sub(repl, text)
-
-
-def _rewrite_numeric_refs(text: str, old_number_to_new: dict[int, int], source_count: int) -> str:
-    def repl(match: re.Match[str]) -> str:
-        old_number = int(match.group(1))
-        new_number = old_number_to_new.get(old_number)
-        if new_number is None and 1 <= old_number <= source_count:
-            new_number = old_number
-        if new_number is None and source_count == 1:
-            new_number = 1
-        return f"[{new_number}{match.group(2)}]" if new_number is not None else match.group(0)
-
-    return _NUMERIC_REF_RE.sub(repl, text)
-
-
-def _ensure_citation(text: str, number: int) -> tuple[str, bool]:
-    if report_quality_module.citation_refs(text):
-        return text, False
-    lines = str(text or "").splitlines()
-    for index, line in enumerate(lines):
-        if not line.strip():
-            continue
-        lines[index] = line.rstrip() + f" [{number}]"
-        return "\n".join(lines), True
-    return text, False
-
-
-def _render_sources(urls: list[str], ledger: ResearchLedger) -> str:
-    lines: list[str] = []
-    for index, url in enumerate(urls, 1):
-        title = _source_title(ledger, url)
-        lines.append(f"[{index}] {title} - {url}")
-    return "\n".join(lines)
-
-
-def _source_title(ledger: ResearchLedger, url: str) -> str:
-    title = ledger.source_title(url).strip() or "Source"
-    return re.sub(r"\s+", " ", title).strip(" -–—:：") or "Source"
-
-
-def _render_report(sections: dict[str, str]) -> str:
-    parts: list[str] = []
-    for key in report_quality_module.REQUIRED_SECTIONS:
-        body = str(sections.get(key) or "").strip()
-        if not body and key != "sources":
-            continue
-        parts.append(f"## {report_quality_module._section_title(key)}\n{body}".rstrip())
-    return "\n\n".join(parts).strip()
-
-
-def _normalized_report(value: str) -> str:
-    return re.sub(r"\s+", " ", str(value or "")).strip()
-
 
 @contextlib.contextmanager
 def _patched_quality_review(enabled: bool):
@@ -371,7 +226,7 @@ def _quality_blockers(
     if missing:
         blockers.append(
             "missing required section(s): "
-            + ", ".join(report_quality_module._section_title(item) for item in missing)
+            + ", ".join(report_quality_module.section_title(item) for item in missing)
         )
         return blockers
     strict_problem = report_quality_module.provenance_problem(

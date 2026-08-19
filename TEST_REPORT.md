@@ -202,6 +202,10 @@ Mimo still produced proof-quality gaps, but the final report passed the
 report-quality gate on the first `done` call when source numbering was compiled
 from saved evidence.
 
+That same narrow citation compiler is now wired into production `done`
+handling before the quality gate. It standardizes source numbering and the
+`来源` table, but it does not invent citations or bypass blocker checks.
+
 Qwen done-stage A/B evidence from 2026-08-19 is archived under
 `tests/manual/results/`. The baseline row came from
 `source_connector_done_ab-qwen-pubmed-baseline-20260819-134023.json`; the

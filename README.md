@@ -473,6 +473,10 @@ that run. Each cited source must also have at least one saved evidence snippet
 copied from the opened page text. Search-result URLs do not count as evidence
 until Codey opens them.
 
+Final `done` replies now pass through a narrow citation compiler first: it
+renumbers existing source IDs and renders `来源` from evidence-backed opened
+URLs, but it does not add new support or relax the quality gate.
+
 PDF is part of the same `open_url` source intake. There is no `open_pdf` tool,
 PDF mode, or extra button. When a URL points to a text PDF, Codey reads bounded
 pages by default, records page metadata in the Evidence Ledger, and lets the

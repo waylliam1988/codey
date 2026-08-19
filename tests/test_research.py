@@ -27,6 +27,7 @@ from codey.research.controller import (
     format_controller_results,
     render_control_block,
 )
+from codey.research.done_finalizer import finalize_done_answer
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
 from codey.research.provenance import provenance_problem
@@ -37,7 +38,6 @@ from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tools import ResearchTools
 from codey.research.tool_contract import research_tool_contract_hash
 from codey.research.url_policy import check_fetch_url
-from tests.manual import source_connector_done_ab as done_ab
 
 
 class FakeProvider:
@@ -2482,7 +2482,7 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(result.turns, 5)
         self.assertGreater(result.max_turns_used, 4)
 
-    def test_done_ab_finalizer_compiles_source_ids_and_numbering(self) -> None:
+    def test_done_finalizer_compiles_source_ids_and_numbering(self) -> None:
         ledger = ResearchLedger()
         url = "https://example.com/a"
         ledger.record_open_document(SourceDocument.html(
@@ -2495,7 +2495,7 @@ class ResearchBoundaryTests(unittest.TestCase):
             EvidenceItem(claim="alpha", source_url=url, excerpt="Alpha evidence line."),
         ])
 
-        finalized = done_ab.finalize_done_answer(
+        finalized = finalize_done_answer(
             "## 结论\nAlpha [s1]\n\n## 关键证据\n- Alpha [s1]\n\n## 反证与限制\n未找到强反证\n\n## 来源质量\n- good\n\n## 搜索覆盖\n- search\n\n## 来源\n[s1] Example A - https://example.com/a",
             ledger,
             source_ids={"s1": url},
@@ -2506,18 +2506,91 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn("[1]", finalized.text)
         self.assertIn("[1] Example A - https://example.com/a", finalized.text)
 
-    def test_done_ab_summarize_tracks_sample_level_runs(self) -> None:
-        summary = done_ab.summarize([
-            {"case": "pubmed", "arm": "baseline", "sample": 1, "score": 4, "done_attempts": 2, "quality_retry_count": 1},
-            {"case": "pubmed", "arm": "finalizer", "sample": 1, "score": 8, "done_attempts": 1, "quality_retry_count": 0, "first_done_passed": True},
-            {"case": "pubmed", "arm": "finalizer", "sample": 2, "score": 7, "done_attempts": 1, "quality_retry_count": 0, "first_done_passed": False},
-        ])
+    def test_done_finalizer_leaves_uncited_claims_unmodified(self) -> None:
+        ledger = helium_ledger()
+        finalized = finalize_done_answer(
+            "## 结论\nHelium supply depends on gas processing. [s9]\n\n## 关键证据\n- Helium supply depends on gas processing.\n\n## 反证与限制\n未找到强反证\n\n## 来源质量\n- good\n\n## 搜索覆盖\n- search\n\n## 来源\n[99] Helium article - https://example.com/helium",
+            ledger,
+            source_ids={},
+        )
 
-        self.assertEqual(summary["rows"], 3)
-        self.assertEqual(summary["by_arm"]["finalizer"]["count"], 2)
-        self.assertEqual(summary["by_case"]["pubmed"]["runs"], 3)
-        self.assertEqual(summary["by_case"]["pubmed"]["finalizer_first_pass_rate"], 0.5)
-        self.assertEqual(summary["by_case"]["pubmed"]["paired_vs_baseline"]["finalizer"]["paired_samples"], 1)
+        self.assertTrue(finalized.changed)
+        self.assertIn("Helium supply depends on gas processing.", finalized.text)
+        self.assertIn("[s9]", finalized.text)
+        self.assertIn("[1] Helium article - https://example.com/helium", finalized.text)
+
+    def test_done_finalizer_skips_non_citable_opened_sources(self) -> None:
+        url = "https://example.com/helium"
+        extra = "https://example.com/opened-only"
+        ledger = helium_ledger(url)
+        ledger.record_open(
+            requested_url=extra,
+            final_url=extra,
+            title="Opened only",
+            text="Opened but not evidence-backed.",
+        )
+
+        finalized = finalize_done_answer(
+            valid_research_report(url).replace(
+                "## 来源\n[1] Helium article - https://example.com/helium",
+                "## 来源\n[1] Helium article - https://example.com/helium\n[2] Opened only - https://example.com/opened-only",
+            ),
+            ledger,
+            source_ids={"s1": url, "s2": extra},
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertIn("[1] Helium article - https://example.com/helium", finalized.text)
+        self.assertNotIn("Opened only", finalized.text)
+        self.assertNotIn(extra, finalized.text)
+
+    def test_done_runner_uses_production_finalizer_before_quality_review(self) -> None:
+        provider = FakeProvider(
+            json.dumps({"tool": "web_search", "args": {"query": "helium"}}),
+            json.dumps({"tool": "open_result", "args": {"result_id": "r1"}}),
+            json.dumps({
+                "tool": "knowledge_write",
+                "args": {
+                    "type": "fact",
+                    "title": "Helium supply",
+                    "body": "Helium supply depends on gas processing.",
+                    "sources": ["s1"],
+                    "evidence": {
+                        "claim": "Helium supply depends on gas processing.",
+                        "source_url": "s1",
+                        "excerpt": "Helium is separated from natural gas streams.",
+                        "stance": "supports",
+                    },
+                },
+            }),
+            json.dumps({
+                "tool": "done",
+                "args": {
+                    "answer": (
+                        "## 结论\n- Helium supply depends on gas processing. [s1]\n\n"
+                        "## 关键证据\n- [s1] Helium is separated from natural gas streams.\n\n"
+                        "## 反证与限制\n- 未找到强反证；本轮搜索了 helium。\n\n"
+                        "## 来源质量\n- [s1] secondary · web · undated · example.com\n\n"
+                        "## 搜索覆盖\n- query: helium\n- opened: Helium article\n- skipped: none representative\n- stop: enough for this narrow fixture\n\n"
+                        "## 来源\n[s1] Helium article - https://example.com/helium"
+                    )
+                },
+            }),
+        )
+        search = FakeSearch()
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            runner = ResearchRunner(provider, search, store, session_id="s1", max_turns=4)
+
+            list(runner.run("Research helium"))
+            result = runner.result
+            store.close()
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.stop_reason, "done")
+        self.assertIn("[1] Helium article - https://example.com/helium", result.summary)
+        self.assertNotIn("[s1]", result.summary)
 
     def test_runner_synthesis_records_opened_sources_for_project_brief(self) -> None:
         url = "https://example.com/helium"

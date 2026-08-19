@@ -30,6 +30,7 @@ from codey.research.controller import (
     controller_tool_example,
     format_controller_results,
 )
+from codey.research.done_finalizer import finalize_done_answer
 from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.report_quality import ReportQualityReview, review_report_quality
 from codey.research.protocols import JsonToolCodec, ProtocolCodec
@@ -318,6 +319,12 @@ class ResearchRunner:
                     )
                     continue
                 summary_candidate = plan.control.body.strip()
+                finalized = finalize_done_answer(
+                    summary_candidate,
+                    self.tools.ledger,
+                    source_ids=control_state.source_urls if control_state is not None else {},
+                )
+                summary_candidate = finalized.text.strip()
                 review = review_report_quality(
                     summary_candidate,
                     ledger=self.tools.ledger,

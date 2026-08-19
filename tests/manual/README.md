@@ -337,6 +337,10 @@ final `done.answer` source block from saved evidence so the model no longer owns
 final citation numbering, and the `batch` arm groups quality blockers into one
 reply. Use `--samples N` to repeat each case/arm N times.
 
+The same narrow citation compiler now runs in production `done` handling
+before the quality gate; it compiles sources, but it does not add new support
+or weaken the blocker checks.
+
 ```powershell
 python -B tests\manual\source_connector_done_ab.py --self-test
 python -B tests\manual\source_connector_done_ab.py `

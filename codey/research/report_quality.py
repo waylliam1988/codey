@@ -99,7 +99,7 @@ def review_report_quality(
         return ReportQualityReview(
             False,
             "Report quality failed: missing required section(s): "
-            + ", ".join(_section_title(item) for item in missing)
+            + ", ".join(section_title(item) for item in missing)
             + ". Revise done.answer using the required Research report template.",
         )
     if not ledger.final_url_set() and _is_no_citable_source_report(
@@ -460,7 +460,7 @@ def _normalize_heading(value: str) -> str:
     return re.sub(r"\s+", " ", text).lower()
 
 
-def _section_title(key: str) -> str:
+def section_title(key: str) -> str:
     return {
         "conclusion": "结论",
         "evidence": "关键证据",
