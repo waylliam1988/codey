@@ -175,6 +175,58 @@ recorded arm. The live evidence is connector smoke, not a proof-quality win
 claim: several providers still stopped at `max_turns` or protocol repair, and
 GLM PubMed rerun was paused after repeated attempts hit provider rate limits.
 
+MiMo done-stage A/B evidence from 2026-08-19 is archived under
+`tests/manual/results/`. The baseline row came from
+`source_connector_done_ab-mimo-pubmed-max24.json`; the cleaner finalizer sample
+was rerun alone after the baseline process finished and is stored in
+`source_connector_done_ab-mimo-pubmed-finalizer-only.json`. Full model report
+text for both arms is archived in
+`tests/manual/source_connector_done_ab_mimo_pubmed_reports.md`.
+
+```text
+python tests/manual/source_connector_done_ab.py --provider mimo --case pubmed --arms baseline,finalizer --samples 1 --open-if-missing --output tests/manual/results/source_connector_done_ab-mimo-pubmed-max24.json --trace-output tests/manual/results/source_connector_done_ab-mimo-pubmed-max24.trace.json
+# baseline row: score=9, connector_valid=true, done_attempts=2,
+# quality_retry_count=1, first_done_passed=false, eventual_done_passed=true
+
+python tests/manual/source_connector_done_ab.py --provider mimo --case pubmed --arms finalizer --samples 1 --open-if-missing --output tests/manual/results/source_connector_done_ab-mimo-pubmed-finalizer-only.json --trace-output tests/manual/results/source_connector_done_ab-mimo-pubmed-finalizer-only.trace.json
+# finalizer-only row: score=9, connector_valid=true, done_attempts=1,
+# quality_retry_count=0, first_done_passed=true, eventual_done_passed=true,
+# finalizer_rewrites=1
+```
+
+The paired same-process run also completed the finalizer arm in one done
+attempt, but that row recorded browser-search connector errors. The cleaner
+single-arm rerun removed those connector errors while preserving the done-stage
+gain. This supports the finalizer direction for citation/source formatting:
+Mimo still produced proof-quality gaps, but the final report passed the
+report-quality gate on the first `done` call when source numbering was compiled
+from saved evidence.
+
+Qwen done-stage A/B evidence from 2026-08-19 is archived under
+`tests/manual/results/`. The baseline row came from
+`source_connector_done_ab-qwen-pubmed-baseline-20260819-134023.json`; the
+cleaner finalizer sample was rerun alone after the baseline process finished
+and is stored in
+`source_connector_done_ab-qwen-pubmed-finalizer-20260819-134023.json`. Full
+model report text for both arms is archived in
+`tests/manual/source_connector_done_ab_qwen_pubmed_reports.md`.
+
+```text
+python tests/manual/source_connector_done_ab.py --provider qwen --case pubmed --arms baseline --samples 1 --open-if-missing --output tests/manual/results/source_connector_done_ab-qwen-pubmed-baseline-20260819-134023.json --trace-output tests/manual/results/source_connector_done_ab-qwen-pubmed-baseline-20260819-134023.trace.json
+# baseline row: score=5, connector_valid=false, done_attempts=2,
+# quality_retry_count=1, first_done_passed=false, eventual_done_passed=true
+
+python tests/manual/source_connector_done_ab.py --provider qwen --case pubmed --arms finalizer --samples 1 --open-if-missing --output tests/manual/results/source_connector_done_ab-qwen-pubmed-finalizer-20260819-134023.json --trace-output tests/manual/results/source_connector_done_ab-qwen-pubmed-finalizer-20260819-134023.trace.json
+# finalizer row: score=5, connector_valid=false, done_attempts=1,
+# quality_retry_count=0, first_done_passed=true, eventual_done_passed=true,
+# finalizer_rewrites=1
+```
+
+Unlike MiMo, Qwen's clean finalizer run did not recover connector validity or
+target-host selection. It did, however, cut one done attempt and one quality
+retry, so the prompt overlay still appears useful for report closure even when
+connector selection stays weak.
+
 ## 0.4.2 Research Proof Quality Gate + Planner Signals v0
 
 Codey 0.4.2 adds a deterministic Research proof-quality gate for queued

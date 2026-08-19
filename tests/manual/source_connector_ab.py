@@ -91,6 +91,9 @@ class TimedProvider:
         self.name = getattr(provider, "name", "")
         self.location = getattr(provider, "location", "")
 
+    def __getattr__(self, name: str):
+        return getattr(self.provider, name)
+
     def new_chat(self, timeout=None) -> None:
         effective = self.new_chat_timeout if timeout is None else timeout
         return self.provider.new_chat(timeout=effective)
@@ -101,6 +104,16 @@ class TimedProvider:
 
     def close(self) -> None:
         return self.provider.close()
+
+
+class OutputProviderMismatch(ValueError):
+    def __init__(self, *, path: Path, expected: str, found: str) -> None:
+        self.path = path
+        self.expected = expected
+        self.found = found
+        super().__init__(
+            f"{path} was created for provider {found!r}; refusing to reuse it for {expected!r}"
+        )
 
 
 class LiveTrace:
@@ -294,7 +307,7 @@ class TracingProvider:
         try:
             reply = self.provider.send(text, timeout=timeout)
         except Exception as exc:
-            self.trace.record({
+            event = {
                 "event": "send_error",
                 "run_id": self.run_id,
                 "provider": self.provider_id,
@@ -303,7 +316,11 @@ class TracingProvider:
                 "arm": self.arm,
                 "turn": turn,
                 "error": f"{type(exc).__name__}: {exc}",
-            })
+            }
+            failure = _provider_failure_payload(self.provider)
+            if failure:
+                event["provider_failure"] = failure
+            self.trace.record(event)
             raise
         self.trace.record_reply(
             run_id=self.run_id,
@@ -433,6 +450,7 @@ def run_case(
                 )
             return row
         except Exception as exc:
+            provider_failure = _provider_failure_payload(provider)
             row = {
                 "provider": provider_id,
                 "case": case.name,
@@ -444,6 +462,8 @@ def run_case(
                 "tool_calls": tool_calls[:40],
                 "info": infos[:12],
             }
+            if provider_failure:
+                row["provider_failure"] = provider_failure
             if trace is not None:
                 trace.record_case_complete(
                     run_id=run_id,
@@ -454,10 +474,7 @@ def run_case(
                 )
             return row
         finally:
-            try:
-                search.close()
-            except Exception:
-                pass
+            _detach_search_provider(search)
             store.close()
 
 
@@ -560,14 +577,26 @@ def run_provider(
     trace: LiveTrace | None,
     run_id: str,
 ) -> dict[str, Any]:
-    payload = _load_or_new_payload(output, provider_id=provider_id, cases=cases, arms=arms)
+    try:
+        payload = _load_or_new_payload(output, provider_id=provider_id, cases=cases, arms=arms)
+    except OutputProviderMismatch as exc:
+        if trace is not None:
+            trace.record({
+                "event": "provider_mismatch",
+                "run_id": run_id,
+                "provider": provider_id,
+                "output": str(output),
+                "expected_provider": exc.expected,
+                "found_provider": exc.found,
+            })
+        raise
     payload["trace_output"] = str(trace.path) if trace is not None else ""
     existing = {
         (str(row.get("case") or ""), str(row.get("arm") or ""))
         for row in payload["rows"]
         if row.get("ok") or not rerun_failed
     }
-    _write_payload(output, payload)
+    pending = _pending_case_keys(cases=cases, arms=arms, existing=existing)
     if trace is not None:
         trace.record_run_start(
             run_id=run_id,
@@ -577,6 +606,26 @@ def run_provider(
             arms=arms,
             max_turns=max_turns,
         )
+    if not pending:
+        if trace is not None:
+            trace.record({
+                "event": "no_pending_rows",
+                "run_id": run_id,
+                "provider": provider_id,
+                "output": str(output),
+                "cases": [case.name for case in cases],
+                "arms": list(arms),
+                "rerun_failed": bool(rerun_failed),
+                "existing_rows": len(payload["rows"]),
+            })
+            trace.record_run_complete(run_id=run_id, provider=provider_id, rows=len(payload["rows"]))
+        print(
+            f"[{provider_id}] no pending rows for cases={','.join(case.name for case in cases)} "
+            f"arms={','.join(arms)}; use --rerun-failed or a new --output to run again.",
+            flush=True,
+        )
+        return payload
+    _write_payload(output, payload)
     provider_controls.begin_task_context(f"source-connector-ab:{provider_id}")
     provider = None
     try:
@@ -638,6 +687,7 @@ def _load_or_new_payload(output: Path, *, provider_id: str, cases: tuple[Case, .
         try:
             payload = json.loads(output.read_text(encoding="utf-8"))
             if isinstance(payload, dict) and isinstance(payload.get("rows"), list):
+                _ensure_payload_provider(payload, provider_id=provider_id, output=output)
                 payload["complete"] = False
                 return payload
         except (OSError, json.JSONDecodeError):
@@ -654,6 +704,63 @@ def _load_or_new_payload(output: Path, *, provider_id: str, cases: tuple[Case, .
         "rows": [],
         "summary": {},
     }
+
+
+def _ensure_payload_provider(payload: dict[str, Any], *, provider_id: str, output: Path) -> None:
+    found = str(payload.get("provider") or "").strip().lower()
+    expected = str(provider_id or "").strip().lower()
+    if found and expected and found != expected:
+        raise OutputProviderMismatch(path=output, expected=expected, found=found)
+
+
+def _pending_case_keys(
+    *,
+    cases: tuple[Case, ...],
+    arms: tuple[str, ...],
+    existing: set[tuple[str, str]],
+) -> list[tuple[str, str]]:
+    return [
+        (case.name, arm)
+        for case in cases
+        for arm in arms
+        if (case.name, arm) not in existing
+    ]
+
+
+def _detach_search_provider(provider: object) -> None:
+    """Release manual probe references without blocking on browser-thread close."""
+    current = provider
+    seen: set[int] = set()
+    for _ in range(6):
+        if current is None or id(current) in seen:
+            return
+        seen.add(id(current))
+        for name in ("_fetch_page", "_search_page", "_session"):
+            if hasattr(current, name):
+                try:
+                    setattr(current, name, None)
+                except Exception:
+                    pass
+        current = getattr(current, "base_provider", None)
+
+
+def _provider_failure_payload(provider: object) -> dict[str, Any]:
+    current = provider
+    seen: set[int] = set()
+    for _ in range(6):
+        if current is None or id(current) in seen:
+            break
+        seen.add(id(current))
+        failure = getattr(current, "last_failure", None)
+        if failure is not None:
+            try:
+                payload = failure.to_dict()
+            except Exception:
+                payload = {}
+            if isinstance(payload, dict):
+                return payload
+        current = getattr(current, "provider", None)
+    return {}
 
 
 def _write_payload(path: Path, payload: dict[str, Any]) -> None:
@@ -719,12 +826,52 @@ def _self_test() -> None:
     assert _opened_target_host(["https://pubmed.ncbi.nlm.nih.gov/123/"], ("pubmed.ncbi.nlm.nih.gov",))
     assert _expected_terms_present("Retrieval augmented generation", ("retrieval", "generation"))
     assert _trace_output_path(Path("tests/manual/results/source_connector_ab-deepseek.json")).name == "source_connector_ab-deepseek.trace.json"
+    assert _pending_case_keys(cases=(CASES["pubmed"],), arms=("baseline",), existing=set()) == [
+        ("pubmed", "baseline")
+    ]
+    assert _pending_case_keys(
+        cases=(CASES["pubmed"],),
+        arms=("baseline",),
+        existing={("pubmed", "baseline")},
+    ) == []
+    class FakeSearch:
+        def __init__(self) -> None:
+            self.closed = False
+            self._session = object()
+            self._search_page = object()
+            self._fetch_page = object()
+
+        def close(self) -> None:
+            self.closed = True
+
+    class FakeConnector:
+        def __init__(self) -> None:
+            self.base_provider = FakeSearch()
+
+    fake = FakeConnector()
+    _detach_search_provider(fake)
+    assert not fake.base_provider.closed
+    assert fake.base_provider._session is None
+    assert fake.base_provider._search_page is None
+    assert fake.base_provider._fetch_page is None
     with tempfile.TemporaryDirectory(prefix="codey-source-connector-ab-self-") as td:
         trace = LiveTrace(Path(td) / "trace.json")
         trace.record({"event": "probe"})
         payload = json.loads((Path(td) / "trace.json").read_text(encoding="utf-8"))
         assert payload["probe"] == "source_connector_ab_trace"
         assert payload["event_count"] == 1
+        output = Path(td) / "payload.json"
+        output.write_text(
+            json.dumps({"probe": "source_connector_ab", "provider": "qwen", "rows": []}),
+            encoding="utf-8",
+        )
+        try:
+            _load_or_new_payload(output, provider_id="deepseek", cases=(CASES["pubmed"],), arms=("baseline",))
+        except OutputProviderMismatch as exc:
+            assert exc.expected == "deepseek"
+            assert exc.found == "qwen"
+        else:
+            raise AssertionError("provider mismatch was not rejected")
 
 
 def main() -> int:
@@ -735,7 +882,7 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--trace-output", type=Path, default=None, help="trace path; default is next to output with a .trace.json suffix")
-    parser.add_argument("--max-turns", type=int, default=12)
+    parser.add_argument("--max-turns", type=int, default=24)
     parser.add_argument("--send-timeout", type=float, default=120)
     parser.add_argument("--new-chat-timeout", type=float, default=60)
     parser.add_argument("--open-if-missing", action="store_true")
@@ -766,20 +913,24 @@ def main() -> int:
             else:
                 trace_output = _trace_output_path(output)
             trace = LiveTrace(trace_output)
-        run_provider(
-            provider_id,
-            cases=selected_cases,
-            arms=selected_arms,
-            port=args.port,
-            output=output,
-            max_turns=max(1, args.max_turns),
-            send_timeout=args.send_timeout,
-            new_chat_timeout=args.new_chat_timeout,
-            open_if_missing=args.open_if_missing,
-            rerun_failed=args.rerun_failed,
-            trace=trace,
-            run_id=run_id,
-        )
+        try:
+            run_provider(
+                provider_id,
+                cases=selected_cases,
+                arms=selected_arms,
+                port=args.port,
+                output=output,
+                max_turns=max(1, args.max_turns),
+                send_timeout=args.send_timeout,
+                new_chat_timeout=args.new_chat_timeout,
+                open_if_missing=args.open_if_missing,
+                rerun_failed=args.rerun_failed,
+                trace=trace,
+                run_id=run_id,
+            )
+        except OutputProviderMismatch as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
     return 0
 
 

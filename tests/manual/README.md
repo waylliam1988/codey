@@ -329,7 +329,68 @@ open or foreground that provider page. Rows are written atomically after each
 case/arm, and reruns skip completed rows unless `--rerun-failed` is set. The
 trace file is written next to the output file by default, or to
 `--trace-output` when set.
-production connector path builds PubMed/arXiv API queries from bounded safe
+
+`source_connector_done_ab.py` is the companion done-stage probe. It keeps the
+same live connector setup, but compares final-report strategies with run-level
+stats for first-pass and eventual pass rates. The `finalizer` arm rewrites the
+final `done.answer` source block from saved evidence so the model no longer owns
+final citation numbering, and the `batch` arm groups quality blockers into one
+reply. Use `--samples N` to repeat each case/arm N times.
+
+```powershell
+python -B tests\manual\source_connector_done_ab.py --self-test
+python -B tests\manual\source_connector_done_ab.py `
+  --provider qwen `
+  --case pubmed `
+  --arms baseline,boundary,batch,finalizer `
+  --samples 3 `
+  --open-if-missing `
+  --output tests\manual\results\source_connector_done_ab-qwen-pubmed.json
+```
+
+Run this on one provider at a time. The probe writes per-run rows so the JSON
+summary can compare first-pass vs eventual-pass behavior across repeated live
+runs.
+
+2026-08-19 MiMo PubMed done-stage sample:
+
+- Baseline from `source_connector_done_ab-mimo-pubmed-max24.json`: score `9`,
+  connector-valid, `done_attempts=2`, `quality_retry_count=1`,
+  `first_done_passed=false`, `eventual_done_passed=true`.
+- Finalizer from a clean single-arm process
+  `source_connector_done_ab-mimo-pubmed-finalizer-only.json`: score `9`,
+  connector-valid, `done_attempts=1`, `quality_retry_count=0`,
+  `first_done_passed=true`, `eventual_done_passed=true`,
+  `finalizer_rewrites=1`.
+- Full baseline/finalizer report text is archived in
+  `tests/manual/source_connector_done_ab_mimo_pubmed_reports.md`.
+
+For strict done-stage comparisons, let the baseline row finish and persist,
+then rerun the finalizer arm in a separate process/output. Same-process paired
+runs are still useful for quick smoke checks, but browser/provider state can
+make connector errors harder to interpret.
+
+2026-08-19 Qwen PubMed done-stage sample:
+
+- Baseline from `source_connector_done_ab-qwen-pubmed-baseline-20260819-134023.json`:
+  score `5`, `done_attempts=2`, `quality_retry_count=1`,
+  `first_done_passed=false`, `eventual_done_passed=true`,
+  `connector_valid=false`, `opened_target_host=false`.
+- Finalizer from a clean single-arm process
+  `source_connector_done_ab-qwen-pubmed-finalizer-20260819-134023.json`:
+  score `5`, `done_attempts=1`, `quality_retry_count=0`,
+  `first_done_passed=true`, `eventual_done_passed=true`,
+  `connector_valid=false`, `opened_target_host=false`,
+  `finalizer_rewrites=1`.
+- Full baseline/finalizer report text is archived in
+  `tests/manual/source_connector_done_ab_qwen_pubmed_reports.md`.
+
+The isolated finalizer rerun improved first-pass done success and reduced the
+turn budget, but both arms still missed the target host and proof-quality
+remained partial. For Qwen, the experiment mainly confirmed that a clean arm
+boundary can help done-stage stability even when connector selection is weak.
+
+The production connector path builds PubMed/arXiv API queries from bounded safe
 terms, masks direct and natural-language secret marker/value windows such as
 `api key ...`, `api key is ...`, `password is equal to ...`,
 `password is set to ...`, `password is configured as ...`,

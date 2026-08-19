@@ -27,7 +27,7 @@ from codey.research.controller import (
     format_controller_results,
     render_control_block,
 )
-from codey.research.ledger import ResearchLedger
+from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.pdf_extract import PDF_MAX_BYTES, extract_pdf_document, parse_pages
 from codey.research.provenance import provenance_problem
 from codey.research.protocols import JsonToolCodec
@@ -37,6 +37,7 @@ from codey.research.source_document import SourceDocument, SourcePage
 from codey.research.tools import ResearchTools
 from codey.research.tool_contract import research_tool_contract_hash
 from codey.research.url_policy import check_fetch_url
+from tests.manual import source_connector_done_ab as done_ab
 
 
 class FakeProvider:
@@ -2480,6 +2481,43 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(result.turns, 5)
         self.assertGreater(result.max_turns_used, 4)
+
+    def test_done_ab_finalizer_compiles_source_ids_and_numbering(self) -> None:
+        ledger = ResearchLedger()
+        url = "https://example.com/a"
+        ledger.record_open_document(SourceDocument.html(
+            requested_url=url,
+            final_url=url,
+            title="Example A",
+            text="Alpha evidence line.",
+        ))
+        ledger.add_evidence_items([
+            EvidenceItem(claim="alpha", source_url=url, excerpt="Alpha evidence line."),
+        ])
+
+        finalized = done_ab.finalize_done_answer(
+            "## 结论\nAlpha [s1]\n\n## 关键证据\n- Alpha [s1]\n\n## 反证与限制\n未找到强反证\n\n## 来源质量\n- good\n\n## 搜索覆盖\n- search\n\n## 来源\n[s1] Example A - https://example.com/a",
+            ledger,
+            source_ids={"s1": url},
+        )
+
+        self.assertTrue(finalized.changed)
+        self.assertEqual(finalized.source_count, 1)
+        self.assertIn("[1]", finalized.text)
+        self.assertIn("[1] Example A - https://example.com/a", finalized.text)
+
+    def test_done_ab_summarize_tracks_sample_level_runs(self) -> None:
+        summary = done_ab.summarize([
+            {"case": "pubmed", "arm": "baseline", "sample": 1, "score": 4, "done_attempts": 2, "quality_retry_count": 1},
+            {"case": "pubmed", "arm": "finalizer", "sample": 1, "score": 8, "done_attempts": 1, "quality_retry_count": 0, "first_done_passed": True},
+            {"case": "pubmed", "arm": "finalizer", "sample": 2, "score": 7, "done_attempts": 1, "quality_retry_count": 0, "first_done_passed": False},
+        ])
+
+        self.assertEqual(summary["rows"], 3)
+        self.assertEqual(summary["by_arm"]["finalizer"]["count"], 2)
+        self.assertEqual(summary["by_case"]["pubmed"]["runs"], 3)
+        self.assertEqual(summary["by_case"]["pubmed"]["finalizer_first_pass_rate"], 0.5)
+        self.assertEqual(summary["by_case"]["pubmed"]["paired_vs_baseline"]["finalizer"]["paired_samples"], 1)
 
     def test_runner_synthesis_records_opened_sources_for_project_brief(self) -> None:
         url = "https://example.com/helium"
