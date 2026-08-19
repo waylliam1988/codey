@@ -1181,6 +1181,64 @@ class ResearchBoundaryTests(unittest.TestCase):
 
         self.assertTrue(review.ok, review.message)
 
+    def test_report_quality_rejects_source_id_note_after_valid_source_row(self) -> None:
+        url = "https://example.com/s1-paper"
+        ledger = ResearchLedger()
+        ledger.record_open(
+            requested_url=url,
+            final_url=url,
+            title="Analysis of [S1] Subunit Protein",
+            text="Protein evidence.",
+        )
+        ledger.add_evidence_items([
+            EvidenceItem(claim="protein", source_url=url, excerpt="Protein evidence."),
+        ])
+        report = (
+            "## 结论\n"
+            "- Protein evidence is available. [1]\n\n"
+            "## 关键证据\n"
+            "- [1] Protein evidence.\n\n"
+            "## 反证与限制\n"
+            "- 未找到强反证；本轮搜索了 protein。\n\n"
+            "## 来源质量\n"
+            "- [1] secondary · web · undated · example.com\n\n"
+            "## 搜索覆盖\n"
+            "- query: protein\n\n"
+            "## 来源\n"
+            f"[1] Analysis of [S1] Subunit Protein - {url}\n"
+            "note [s9]"
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("source-id citation", review.message)
+        self.assertIn("[s9]", review.message)
+
+    def test_report_quality_rejects_contextual_source_id_inside_source_row(self) -> None:
+        url = "https://example.com/helium"
+        ledger = helium_ledger(url)
+        report = valid_research_report(url).replace(
+            f"[1] Helium article - {url}",
+            f"[1] source_id=s9 Helium article - {url}",
+        )
+
+        review = review_report_quality(
+            report,
+            ledger=ledger,
+            opened_sources={url},
+            search_result_urls={url},
+        )
+
+        self.assertFalse(review.ok)
+        self.assertIn("source-id citation", review.message)
+        self.assertIn("[s9]", review.message)
+
     def test_report_quality_rejects_source_url_not_opened_as_final_url(self) -> None:
         url = "https://example.com/final"
         ledger = helium_ledger(url)

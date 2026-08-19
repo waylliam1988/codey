@@ -440,11 +440,19 @@ def _text_without_sources(summary: str) -> str:
 
 
 def _source_section_source_id_refs(source_text: str, ledger: ResearchLedger) -> set[str]:
-    if not str(source_text or "").strip():
-        return set()
-    refs = {item.source_id for item in source_id_ref_items(source_text) if not item.bracketed}
-    if not parse_citation_rows(source_text, ledger):
-        refs.update(source_id_refs(source_text))
+    refs: set[str] = set()
+    for line in str(source_text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if parse_citation_rows(stripped, ledger):
+            refs.update(
+                item.source_id
+                for item in source_id_ref_items(stripped)
+                if not item.bracketed
+            )
+            continue
+        refs.update(source_id_refs(stripped))
     return refs
 
 

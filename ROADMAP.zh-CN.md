@@ -1030,9 +1030,10 @@ fallback、权限、UI 或 SSE。
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 
 状态：已完成（0.4.3）。本版落地 source connector 边界、ResearchPlan dry-run，
-并默认启用 PubMed/arXiv connector-aware search/fetch。planner 仍然只产出 dry-run
-计划，不自动执行 bounded follow-up；connector-aware search 只通过现有 Research
-工具面暴露结果，不新增模型工具名。
+默认启用 PubMed/arXiv connector-aware search/fetch，并补上生产 `done` citation
+compiler。planner 仍然只产出 dry-run 计划，不自动执行 bounded follow-up；
+connector-aware search 只通过现有 Research 工具面暴露结果，不新增模型工具名；
+done compiler 只做引用和 `来源` 收口，不替模型补语义支撑。
 
 ### 做什么
 
@@ -1154,6 +1155,22 @@ host 和合法 source ID 形状；`SourceHit` audit metadata refs 必须过滤 s
 值；`SourceConnectorResult.query_digest` 只能来自 sanitized query，safe query 为空时保持为空。
 只实现 catalog 但没有 fixture 或真实工具路径的 connector，不能计入 shipped set。
 
+生产 `done` 收口也在 0.4.3 落地：
+
+```text
+research/done_finalizer.py
+source-id / numeric citation compiler
+line-level source-section source-id gate
+bounded RunTrace compilation summary
+```
+
+compiler 只编译可靠绑定：`[s1]` / `source_id=s1` 必须能映射到本轮已打开且有
+evidence excerpt 的来源；旧数字引用必须能通过可解析 `来源` 行映射到 canonical
+URL。重复旧编号如果指向不同 URL，直接交给质量修复；单来源且无歧义的编号漂移可以
+顺手归一化。`来源` section 按行判定：真实来源标题里的 `[S1]` 不算内部 source id，
+但非来源行里的 `note [s9]` 或来源行里的 `source_id=s9` 会被拦截。无可引用来源报告
+会被重渲染成标准 section，前言不会进入最终答案。
+
 ### 边界
 
 - 不做第三方 connector 插件。
@@ -1169,6 +1186,8 @@ host 和合法 source ID 形状；`SourceHit` audit metadata refs 必须过滤 s
   connector 结果，不引入复杂 ranking。
 - browser/base search 先启动，connector lookup 只在短全局 budget 内补充结果；connector
   lookup 或 direct PubMed/arXiv URL fetch 失败时，必须 bounded fallback 到 browser 路径。
+- done compiler 只做结构化引用编译和 `来源` 渲染；不能新增引用支撑，也不能把不可靠
+  的 source-id 或旧数字编号猜成某个来源。
 
 ### 顺手架构优化
 
@@ -1176,6 +1195,7 @@ host 和合法 source ID 形状；`SourceHit` audit metadata refs 必须过滤 s
 把 browser_search / pdf_extract / source_document 的 fetch/read 输出收敛到 FetchedSource
 SourceDocument 保留为模型无关的 normalized document
 新增 research/query_planner.py，只产出 ResearchPlan，不执行 plan
+新增 research/done_finalizer.py，只做 Research final report citation compiler
 TaskRunner 不接 planner 分支；后续 0.4.4 再由 ResearchPipeline 消费 plan
 ```
 
@@ -1210,6 +1230,9 @@ safe scientific slash terms、path-like slash token 负例、PubMed ID、redacti
 必须能路由到 arXiv connector。
 Qwen provider 必须在 composer 可交互且未生成中才填入消息，点击后不得因为响应信号慢而
 重复整轮发送，发送前不依赖固定 settle 窗口。
+done compiler 必须不重绑混用 source-id/numeric 的引用，不改 `[2nd]` 这类非 citation
+文本，不让来源标题中的 `[S1]` 触发泄漏误判，且要拦截 heading 前言、报告正文、无来源
+报告和 `来源` 自由文本里的内部 source-id 泄漏。
 ```
 
 ### A/B
@@ -1230,9 +1253,11 @@ provider 浏览器页面。实机结果支持把 connector-aware PubMed/arXiv se
 PubMed 目标 host，Qwen 在 provenance 修复后改善 arXiv，arXiv 目标 host 在多个 provider
 样本中可达。限制也记录在案：多条 run 仍停在 `max_turns` 或 protocol repair，GLM
 PubMed 重测因 provider 限流暂停，所以这版 A/B 只作为 source-selection smoke，不宣称
-proof-quality 全模型提升。新 controller action `open_result` / `reopen_source` /
-`open_hit` 也通过这些实机样本验证，旧的 `open_url(result_id/source_id/hit_id)` 不再
-作为模型可见协议。
+proof-quality 全模型提升。done-stage A/B 只支持把 finalizer 作为格式收口器合入生产：
+DeepSeek、MiMo、Qwen 的样本能把首次 `done` 通过率从“需要质量修复一轮”压到“一次过”，
+但不把它解释成 proof quality 或 connector selection 的提升。新 controller action
+`open_result` / `reopen_source` / `open_hit` 也通过这些实机样本验证，旧的
+`open_url(result_id/source_id/hit_id)` 不再作为模型可见协议。
 
 ## 0.4.4 - Bounded Research Planner v1
 

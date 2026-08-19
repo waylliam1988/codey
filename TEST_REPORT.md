@@ -106,6 +106,18 @@ Production changes:
   slash tokens including CamelCase path shapes are rejected, and shared
   redaction helpers split marker words from key-shaped values so ordinary words
   such as `secreted` and `secretion` remain searchable.
+- `codey/research/done_finalizer.py` now runs before the Research
+  report-quality gate as a narrow citation compiler. It compiles reliable
+  source-id/contextual refs and parsed numeric source rows, renders the final
+  source table from opened sources that have saved evidence excerpts, removes
+  opened-only sources, and leaves unsupported claims for the quality gate
+  rather than adding citations. Numeric refs and source-id refs are bound
+  separately, duplicate old numbers with conflicting URLs are rejected, and
+  unambiguous single-source numeric drift can still be normalized. The quality
+  gate checks pre-heading prose, report body text, no-citable reports, and the
+  source section for internal source-id leaks. The source section check is
+  line-level: parsed source rows protect source titles such as `[S1]`, while
+  separate notes and contextual leaks such as `source_id=s9` remain blockers.
 - Qwen waits only for an interactive, non-generating composer before filling,
   retries only the input-fill phase when hydration clears the draft, rejects a
   lost message before clicking, and never repeats a whole send because
@@ -213,9 +225,11 @@ to the same canonical URL, such as a body `[1]` with parsed source row `[10]`
 URL, and also repairs repeated numeric labels for the same source. It leaves
 ambiguous multi-source drift for the quality repair loop. Source-id
 leakage checks are shared between the compiler and quality gate and cover
-pre-heading prose plus the report body, while ignoring `## 来源` titles, so
-source titles such as `Analysis of [S1] Subunit Protein` are not treated as
-internal IDs. Conflicting duplicate old source numbers are rejected. When a
+pre-heading prose plus the report body. The `## 来源` section is scanned line
+by line: parsed source rows protect titles such as
+`Analysis of [S1] Subunit Protein`, while free-text notes such as `note [s9]`
+and contextual leaks such as `source_id=s9` are treated as internal IDs.
+Conflicting duplicate old source numbers are rejected. When a
 report has no citable sources, the compiler re-renders the sectioned report and
 drops any preamble before handing the result to the quality gate. The manual
 `finalizer` arm used in these historical rows has been removed from the current
@@ -224,14 +238,14 @@ probe because production now runs the compiler for every arm.
 Post-merge verification for the production citation compiler:
 
 ```text
-python -m py_compile codey/research/done_finalizer.py codey/research/runner.py codey/run_trace.py tests/test_research.py tests/test_run_trace.py tests/manual/source_connector_done_ab.py
+python -m py_compile codey/research/report_quality.py codey/research/done_finalizer.py codey/research/runner.py codey/run_trace.py tests/test_research.py tests/test_run_trace.py tests/manual/source_connector_done_ab.py
 # passed
 
-python -m ruff check .
+python -m ruff check codey/research/report_quality.py codey/research/done_finalizer.py tests/test_research.py
 # All checks passed!
 
-python -m pytest tests/test_research.py -k "done_finalizer or done_runner_uses_production_finalizer"
-# 19 passed, 101 deselected
+python -m pytest tests/test_research.py -k "source_id or no_citable or duplicate_source_numbers or done_finalizer or provenance"
+# 34 passed, 88 deselected
 
 python -m pytest tests/test_run_trace.py -k "done_compilation or connector_errors"
 # 2 passed
@@ -240,10 +254,10 @@ python -B tests/manual/source_connector_done_ab.py --self-test
 # self-test ok
 
 python -m pytest tests/test_research.py tests/test_run_trace.py
-# 147 passed in 14.24s
+# 149 passed in 13.17s
 
 python -m pytest
-# 2227 passed, 9 skipped in 416.09s (0:06:56)
+# 2229 passed, 9 skipped
 ```
 
 Qwen done-stage A/B evidence from 2026-08-19 is archived under

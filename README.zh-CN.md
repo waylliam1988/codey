@@ -301,6 +301,13 @@ connector fallback 错误以及
 live transport 的 tool name 和 User-Agent 使用不含产品名的中性标识。
 Research JSON tool call 只接受恰好一个 JSON object，且顶层只能有 `tool` + `args`；
 隐藏 `name`、顶层参数字段、额外顶层字段或额外 JSON object 都会走协议错误。
+最终 `done` 现在会先经过一个很窄的 deterministic citation compiler，再进入报告质量门。
+它只重写可靠的 source-id 引用或可解析旧来源表里的数字引用；最终 `来源` 表只从已经
+打开且保存过 evidence excerpt 的来源生成；只打开但没有 evidence 的来源会被丢掉；
+没有引用支撑的论断仍交给质量门退回，而不是由 compiler 自动补引用。质量门也会检查
+heading 前言和 no-citable 报告里的内部 source-id 泄漏；`来源` section 改为逐行扫描：
+合法来源标题里的 `Analysis of [S1] Subunit Protein` 会保留，但另起一行的 `note [s9]`
+或明确上下文泄漏 `source_id=s9` 会被拦住。
 planner 和 live connector wrapper 共用同一套领域路由词表，包含 RAG/NLP/retrieval/
 benchmark 等论文检索词；registry 的可用状态和能力标记会真正约束 live search/fetch，
 `JAK/STAT` 这类安全科研术语不会被误删，`Docs/ADR/Plan` 这类 CamelCase 路径样式
@@ -711,7 +718,7 @@ codey/
   project_task_context.py   项目事实、地图、checkpoint 和验证上下文
   ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列、affinity 账本和本地上下文控制面
   knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
-  research/                 Research controller/runner、隔离网页/source search 工具、evidence ledger、object model、report/proof quality gate
+  research/                 Research controller/runner、source connector、planner dry-run、done citation compiler、evidence ledger、object model、report/proof quality gate
   verification_map.py       Review 阶段的有边界验证候选
   review_impact_map.py      只给 Review 使用的 caller/test 影响提示
   change_brief.py           隐藏任务意图 brief

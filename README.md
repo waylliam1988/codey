@@ -374,6 +374,15 @@ transport metadata uses a neutral tool name and User-Agent.
 Research JSON tool calls must be exactly one plain JSON object with only
 top-level `tool` plus `args`; hidden `name`, top-level-argument, extra-field,
 extra-object, array, fenced-block, or prose-wrapper shapes are protocol errors.
+Final `done` handling now passes through a narrow deterministic citation
+compiler before the report-quality gate. It rewrites only reliable source-id or
+parsed numeric references, renders the final `Sources`/`来源` table from
+opened sources with saved evidence excerpts, drops opened-only sources, and
+leaves uncited claims for the quality gate instead of adding support. The gate
+also checks pre-heading prose and no-citable reports for leaked internal
+source-id refs. The `Sources` section is scanned line by line, so a real source
+title like `Analysis of [S1] Subunit Protein` is allowed while a separate note
+or contextual leak such as `source_id=s9` is blocked.
 The planner and live connector wrapper share one domain-routing table with
 RAG/NLP/retrieval/benchmark terms, enforce registry availability/capability
 flags, keep safe scientific terms such as `JAK/STAT`, drop CamelCase
@@ -837,7 +846,7 @@ codey/
   project_task_context.py   project facts, map, checkpoint, and verification context
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
-  research/                 Research controller/runner, isolated web/source search tools, evidence ledger, object model, report/proof quality gates
+  research/                 Research controller/runner, source connectors, planner dry-run, done citation compiler, evidence ledger, object model, report/proof quality gates
   verification_map.py       bounded review-time verification candidates
   review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief

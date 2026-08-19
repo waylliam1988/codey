@@ -115,6 +115,20 @@ This file records Codey's release history. The newest release appears first.
   marker words from key-shaped values, so `secreted` and `secretion` stay valid
   Research terms. Shared Research shape helpers now cover connector IDs,
   generated refs, digest refs, and bounded connector limits.
+- Added `codey/research/done_finalizer.py`, a narrow deterministic citation
+  compiler that runs before the Research report-quality gate. It compiles only
+  reliable source-id/contextual refs and parsed numeric source rows, renders the
+  final source table from opened sources with saved evidence excerpts, removes
+  opened-only sources, and leaves missing support to the quality gate instead
+  of adding citations. Numeric and source-id refs use separate bindings so
+  mixed `[s1]` and numeric source rows are not rebound through stale tables;
+  duplicate old source numbers that point to different URLs are rejected, while
+  unambiguous single-source drift can still be normalized. Source-id leakage
+  checks now cover pre-heading prose plus report body text, scan the `Sources`
+  section line by line, allow real source titles such as `Analysis of [S1]`,
+  and reject separate notes or contextual leaks such as `source_id=s9`. Reports
+  with no citable source are re-rendered into the required sections before
+  quality review, and Run Trace records only a bounded compilation summary.
 - Qwen now waits for an interactive, non-generating composer before filling it,
   confirms that the controlled input keeps the complete message and enables
   send, and refuses to click if hydration has already cleared the draft. This

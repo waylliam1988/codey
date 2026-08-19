@@ -96,6 +96,16 @@
   独立敏感词 marker 和密钥形状，`secreted`、`secretion` 不再被当成 `secret`。
   共用 Research shape helper 现在覆盖 connector id、generated ref、digest ref 和
   connector limit。
+- 新增 `codey/research/done_finalizer.py`：一个很窄的 deterministic citation
+  compiler，会在 Research 报告质量门前运行。它只编译可靠的 source-id/contextual ref
+  和可解析旧来源表里的数字引用；最终 `来源` 表只从已经打开且保存过 evidence excerpt
+  的来源生成；只打开但没有 evidence 的来源会被移除；缺少引用支撑的论断仍由质量门
+  退回，不由 compiler 自动补引用。数字引用和 source-id 引用分开绑定，所以混用
+  `[s1]` 和旧数字来源表时不会被陈旧来源表重绑；指向不同 URL 的重复旧编号会被拒绝，
+  单来源且无歧义的编号漂移仍可归一化。source-id 泄漏检查覆盖 heading 前言和报告正文；
+  `来源` section 改为逐行扫描，允许真实来源标题里的 `Analysis of [S1]`，同时拦截
+  另起一行的 `note [s9]` 或 `source_id=s9` 这类上下文泄漏。无可引用来源报告会先被
+  重渲染成标准 section 再进质量门，Run Trace 只记录有界 compilation summary。
 - Qwen 现在只等待 composer 可交互且页面不在生成中，再填入消息；随后确认受控输入框
   仍保留完整文本且发送按钮可用。如果 hydration 已经清空草稿，就在点击前停止，不会
   发送空消息。这个路径去掉了发送前固定 composer settle 窗口，同时保留点击后不重复

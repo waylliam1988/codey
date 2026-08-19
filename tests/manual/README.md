@@ -345,11 +345,12 @@ are compiled through separate bindings, and bracket text outside the citation
 grammar is left untouched. Numeric drift can be normalized when parsed old
 source rows all dedupe to one canonical URL, including repeated rows for the
 same source; ambiguous multi-source drift is left to the repair loop. Internal
-source-id leakage checks cover pre-heading prose plus the report body, while
-ignoring `## 来源` titles, so literal `[S1]` text in a rendered source title
-is allowed. When a report has no citable sources, the compiler re-renders the
-sectioned report and drops any preamble before handing the result to the
-quality gate.
+source-id leakage checks cover pre-heading prose plus the report body. The
+quality gate scans `## 来源` line by line: parsed source rows protect title
+text such as literal `[S1]`, while non-source notes such as `note [s9]` and
+contextual leaks such as `source_id=s9` are still blockers. When a report has
+no citable sources, the compiler re-renders the sectioned report and drops any
+preamble before handing the result to the quality gate.
 
 ```powershell
 python -B tests\manual\source_connector_done_ab.py --self-test
