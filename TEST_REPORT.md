@@ -20,8 +20,8 @@ Production changes under validation:
   `followup_applied`, `followup_rounds`, and `planner_stop_reason`.
 - The manual bounded planner A/B harness records atomic send/reply traces and
   conservative paired `followup_usefulness` summaries. The current
-  hidden-material probe remains experimental and does not by itself enable the
-  production planner behavior.
+  hidden-material and evidence-only patch-merge probes remain experimental and
+  do not by themselves enable the production planner behavior.
 - Qwen Studio homepage first submit now waits out a short false-ready state:
   the page can expose `textarea.message-input-textarea` and
   `button.send-button` before its homepage submit handler is hydrated. The wait
@@ -42,11 +42,17 @@ ad hoc Qwen provider.new_chat(timeout=60) live probe
 
 python -B -m pytest
 # 2251 passed in 386.30s
+
+python -B -m py_compile tests\manual\bounded_research_planner_ab.py
+# passed
+
+python -B tests\manual\bounded_research_planner_ab.py --self-test
+# self-test ok
 ```
 
 Live bounded-planner A/B evidence is recorded under `tests/manual/results/` and
 summarized in `tests/manual/bounded_research_planner_ab_reports.md`. The current
-paired hidden-material `widget_noop` web-provider results:
+paired `widget_noop` web-provider results:
 
 - DeepSeek: score `5 -> 6`, useful, one new evidence-backed source, coverage
   `+0.111`, unsupported-claim rate `-0.083`, provider sends unchanged.
@@ -55,10 +61,12 @@ paired hidden-material `widget_noop` web-provider results:
 - Qwen: score `5 -> 6`, useful after the homepage readiness fix, one new
   evidence-backed source, coverage `+0.111`, unsupported-claim rate `-0.083`,
   provider sends `+2`.
-- GLM: raw score `1 -> 6`, but usefulness is false because unsupported-claim
-  rate regressed from `0.000` to `0.400`.
-- StepFun: score `1 -> 1`; planner did not run because the initial row stopped
-  at `initial_stop_reason_protocol`.
+- GLM evidence-only3: score `1 -> 6`, useful, one new evidence-backed source,
+  coverage `+0.112`, unsupported-claim rate unchanged at `0.000`, provider
+  sends `+1`.
+- StepFun evidence-only3: score `1 -> 6`, useful, one new evidence-backed
+  source, coverage `+0.112`, unsupported-claim rate unchanged at `0.000`,
+  provider sends `+1`.
 
 ## 0.4.3 Source Connector Boundary + Query Planner Dry Run v1
 

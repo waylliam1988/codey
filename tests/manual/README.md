@@ -353,10 +353,11 @@ cleaner shape: normal Research search sees only source A, while the A/B
 PlanExecutor material phase can reveal hidden source B. The current
 `widget_noop` web-provider summary is recorded in
 `tests\manual\bounded_research_planner_ab_reports.md`: DeepSeek, MiMo, and Qwen
-each improved from score `5` to `6` with one new evidence-backed source; GLM
-improved raw score from `1` to `6` but regressed unsupported-claim rate, so it
-is not counted useful; StepFun stayed `1 -> 1` because the initial run stopped
-at protocol before follow-up could execute.
+each improved from score `5` to `6` with one new evidence-backed source. The
+later evidence-only patch-merge probe also recovered GLM and StepFun on
+`widget_noop`: both moved from `1` to `6`, added one fresh source/evidence pair,
+and avoided unsupported-claim regression by limiting follow-up to
+`knowledge_write` and compiling the final report deterministically.
 
 Use this probe when you want to judge whether 0.4.4 follow-up search is adding
 real value or just extra traffic. The paired summary is the main signal; if

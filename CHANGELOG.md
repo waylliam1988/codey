@@ -43,6 +43,10 @@ This file records Codey's release history. The newest release appears first.
   executor skips already-opened URLs, separates `execution_material_gain` from
   final-record `material_gain`, and verifies that patch-only merge is safer
   than asking the model to rewrite the whole follow-up report.
+- Added an A/B-only evidence-only follow-up mode to the bounded planner probe.
+  Planner follow-up is limited to one `knowledge_write` turn, forbids `done`
+  report rewrites, then compiles a deterministic evidence-only patch that keeps
+  evidence-backed base claims and drops unsupported provider-written claims.
 - Fixed Qwen Studio homepage first-submit readiness. Qwen can expose
   `textarea.message-input-textarea` and `button.send-button` before its
   homepage submit handler is hydrated; immediate submit can clear the composer
@@ -56,6 +60,12 @@ This file records Codey's release history. The newest release appears first.
   unsupported-claim rate, so it is not counted useful by the conservative
   gate. StepFun stayed `1 -> 1` because the initial run stopped at protocol
   before follow-up could execute.
+- Evidence-only patch-merge A/B on 2026-08-20 recovered the GLM and StepFun
+  failure modes without changing production Research code. Both providers moved
+  `widget_noop` from score `1` to `6`, added one fresh source/evidence pair,
+  improved coverage by `+0.112`, and kept unsupported-claim rate flat at
+  `0.000`; StepFun avoided the long `done.answer` JSON failure because the
+  follow-up model never writes the final report.
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 

@@ -18,11 +18,12 @@ The live runs show that a planner can add value when three conditions are true:
 3. The final result is merged as a narrow evidence patch, not as a full report
    rewrite.
 
-The strongest MiMo paired run improved score from 5 to 6 with one follow-up
-round, one new source, one new evidence item, and no quality regression. Earlier
-runs showed that prompt-only follow-up is unstable: models may rewrite too much,
-cite synthetic URLs too broadly, wrap JSON in code fences, or fail to persist
-new evidence before `done`.
+The strongest current signal is the evidence-only patch-merge probe. StepFun and
+GLM both moved `widget_noop` from score 1 to 6 with one follow-up round, one new
+source, one new evidence item, and no unsupported-claim regression. Earlier runs
+showed that prompt-only follow-up is unstable: models may rewrite too much, cite
+synthetic URLs too broadly, wrap JSON in code fences, or fail to persist new
+evidence before `done`.
 
 ## Result Files
 
@@ -41,6 +42,8 @@ new evidence before `done`.
 - `bounded_research_planner_ab-qwen-hiddenmaterial2-paired-widget-20260820.json`
 - `bounded_research_planner_ab-glm-hiddenmaterial-paired-widget-20260820.json`
 - `bounded_research_planner_ab-stepfun-hiddenmaterial-paired-widget-20260820.json`
+- `bounded_research_planner_ab-stepfun-evidenceonly3-paired-widget-20260820.json`
+- `bounded_research_planner_ab-glm-evidenceonly3-paired-widget-20260820.json`
 
 ## Experiment Timeline
 
@@ -185,6 +188,37 @@ StepFun did not reach planner execution. Both arms ended with score 1 and
 `answer_status=not_answered`; the planner row stopped at
 `initial_stop_reason_protocol`, so there was no material gain to evaluate.
 
+### Evidence-Only Patch Merge Runs
+
+Files:
+
+- `bounded_research_planner_ab-stepfun-evidenceonly3-paired-widget-20260820.json`
+- `bounded_research_planner_ab-glm-evidenceonly3-paired-widget-20260820.json`
+
+The harness was narrowed again:
+
+- The follow-up model can only call `knowledge_write`.
+- `done`, report rewrite, search/open/read/link, and multi-tool replies are
+  forbidden in the follow-up controller.
+- The follow-up turn is limited to one evidence-capture turn.
+- The final result is rebuilt as a deterministic evidence-only patch. It keeps
+  evidence-backed base claims, creates claims for written evidence that lacked a
+  claim projection, adds only fresh evidence-backed patch claims, and drops
+  unsupported claims from the experimental merged record.
+
+| provider | baseline | planner | delta | useful | follow-up | sources | evidence | claims | coverage delta | unsupported delta | send delta | time delta |
+|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| StepFun | 1 | 6 | +5 | true | 1 | 1 -> 2 | 1 -> 2 | 0 -> 2 | +0.112 | 0.000 | +1 | -4.123s |
+| GLM | 1 | 6 | +5 | true | 1 | 1 -> 2 | 1 -> 2 | 0 -> 2 | +0.112 | 0.000 | +1 | +40.971s |
+
+Finding: the StepFun failure was not primarily a search/planner problem. It was
+the normal follow-up/report path asking a provider with fragile long JSON
+`done.answer` behavior to keep rewriting the final report. The evidence-only
+probe avoids that failure mode by never asking the follow-up model to produce
+`done`. GLM's earlier overclaim regression was also blocked by deterministic
+merge: unsupported provider-written claims are not carried into the experimental
+final record.
+
 ### Qwen
 
 File: `bounded_research_planner_ab-qwen-20260820.json`
@@ -206,7 +240,10 @@ The A/B harness now tests these concepts without changing production code:
 - Normal fixture search returns only default material.
 - PlanExecutor fixture phase can reveal hidden new material.
 - Follow-up material is recorded per run.
-- Patch-only merge first prefers evidence actually written by the model.
+- Planner follow-up can run in the experimental evidence-only mode where the
+  controller permits only `knowledge_write` and forbids `done`.
+- Patch-only merge first prefers evidence actually written by the model, then
+  compiles the final report as a deterministic evidence-only patch.
 - If the model fails to write new evidence, an A/B-only material patch path can
   construct a deterministic source/evidence/claim patch from opened material.
 - Usefulness requires both rows to be `ok`, follow-up to run, material gain,
@@ -221,7 +258,7 @@ problems:
 2. Follow-up synthesis could see new material but fail to save it as citable
    evidence.
 3. Even when evidence existed, asking the model to rewrite the full report could
-   add unsupported claims or lower coverage.
+   add unsupported claims, lower coverage, or fail provider JSON transport.
 
 The hidden-material runs separate those concerns. They show the most promising
 production shape is not "planner asks model to rewrite the answer"; it is:
@@ -229,7 +266,8 @@ production shape is not "planner asks model to rewrite the answer"; it is:
 ```text
 initial ResearchRecord
   + new opened material
-  + evidence-backed narrow patch
+  + evidence-only knowledge_write
+  + deterministic evidence-backed patch
   -> deterministic merged ResearchRecord
 ```
 
@@ -240,15 +278,14 @@ initial ResearchRecord
 | DeepSeek | 5 | 6 | +1 | true | 1 | true | +0.111 | -0.083 | 0 | +3.568s |
 | MiMo | 5 | 6 | +1 | true | 1 | true | +0.111 | -0.300 | +2 | +54.066s |
 | Qwen | 5 | 6 | +1 | true | 1 | true | +0.111 | -0.083 | +2 | +27.528s |
-| GLM | 1 | 6 | +5 | false | 1 | true | +0.223 | +0.400 | +5 | +64.578s |
-| StepFun | 1 | 1 | 0 | false | 0 | false | 0.000 | 0.000 | 0 | +2.730s |
+| GLM evidence-only3 | 1 | 6 | +5 | true | 1 | true | +0.112 | 0.000 | +1 | +40.971s |
+| StepFun evidence-only3 | 1 | 6 | +5 | true | 1 | true | +0.112 | 0.000 | +1 | -4.123s |
 
-Current signal: the design is directionally useful on 3 of 5 web providers
-when the missing material is hidden from the initial model search and exposed
-only through the planner executor. It is not ready to enable as a generic
-production behavior because GLM shows a quality-regression failure mode and
-StepFun shows that provider protocol behavior can block the planner before it
-starts.
+Current signal: the design is directionally useful on all five tested web
+providers only after the follow-up role is narrowed to evidence capture and the
+final result is merged deterministically. It is still not ready to enable as a
+generic production behavior from synthetic fixture evidence alone; the next
+gate is a real connector-backed case plus production-design review.
 
 ## Production Criteria Before Merge
 
@@ -273,7 +310,8 @@ Keep the roadmap direction, but treat patch-only merge as the production design
 candidate:
 
 1. `PlanExecutor` retrieves genuinely new material and exposes bounded material.
-2. Follow-up synthesis is restricted to evidence extraction, not report rewrite.
+2. Follow-up model work is restricted to evidence extraction, not report
+   rewrite.
 3. Final answer selection uses a deterministic patch merge against the previous
    best `ResearchRecord`.
 4. Planner usefulness is audited by quality deltas, not by source count alone.

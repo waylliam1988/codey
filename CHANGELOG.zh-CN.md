@@ -34,7 +34,7 @@
 - 2026-08-20 的 DeepSeek / MiMo bounded planner 实机 A/B 已落盘：DeepSeek 的
   `warehouse_gap` 提升主要来自初始回答质量而不是 follow-up 新材料，`widget_noop`
   只用一次 follow-up 换来轻微 coverage 提升；MiMo 两个 case 都在 `max_wall_time`
-  前没走到 follow-up。当前结果支持继续保持 planner 保守启用，先改善 budget
+  前没走到 follow-up。当时结果支持继续保持 planner 保守启用，先改善 budget
   预留、gap 触发和 material-gain 判定。
 - 关闭 planner-arm wall-clock limiter 后，MiMo 复跑显示 `warehouse_gap` 仍停在
   `no_actionable_gap`，`widget_noop` 虽然执行了一轮 follow-up，但没有新增 source 或
@@ -46,6 +46,11 @@
   `widget-storage-update` fixture，coverage 和 unsupported-claim rate 改善，但最终
   ResearchRecord 仍没有新增 source/evidence；下一步应验证 follow-up synthesis 如何把
   executor 材料吸收到 ledger，而不是先改生产 PlanExecutor。
+- 手工 A/B harness 增加未进主代码的 evidence-only follow-up 实验：planner follow-up
+  只允许 1 轮 `knowledge_write`，禁止 `done` 长报告重写，然后由脚本做 deterministic
+  evidence-only patch merge。该 merge 只保留 evidence-backed base claim，给缺失
+  claim projection 的 evidence 生成窄 claim，并丢弃 provider 新写出的 unsupported
+  claim。
 - 修复 Qwen Studio 首页首发 false-ready：页面会先暴露
   `textarea.message-input-textarea` 与 `button.send-button`，但 submit handler 还未
   完全 ready，立即提交会清空输入且不进入会话。`new_chat()` 现在只在 Qwen 首页首发前
@@ -58,6 +63,10 @@
 - GLM / StepFun hidden-material paired A/B 已补跑：GLM raw score `1 -> 6`，
   但 unsupported claim rate `0.0 -> 0.4`，按保守 usefulness gate 判定为 false；
   StepFun `1 -> 1`，planner 停在 `initial_stop_reason_protocol`，没有进入 follow-up。
+- GLM / StepFun evidence-only patch-merge A/B 已补跑：两者 `widget_noop` 都从
+  score `1 -> 6`，新增 `source-b` source/evidence 各 1，coverage 均提升 `+0.112`，
+  unsupported claim rate 保持 `0.000` 不回退。StepFun 不再触发长 `done.answer`
+  JSON 转义失败，因为 follow-up model 不再负责最终报告。
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 
