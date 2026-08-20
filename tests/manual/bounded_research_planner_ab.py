@@ -22,14 +22,18 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from codey import provider_controls
+from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_ledger import EvidenceLedgerStore
+from codey.research.plan_executor import PlanExecutionResult
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.proof_quality import review_research_proof
 from codey.research.protocols import extract_json_objects
+from codey.research.query_planner import QueryCandidate, ResearchPlan
 from codey.research.runner import ResearchRunner
+from codey.research.tools import ResearchTools, clone_research_tools
 
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
@@ -113,6 +117,15 @@ CASES = {
                 keywords=("widget", "storage", "endpoint", "stable-v2", "recommend"),
                 default=True,
             ),
+            FixtureDocument(
+                "https://standards.example.org/widget-storage-update",
+                "Widget Storage update note",
+                (
+                    "The Widget Storage working group has not adopted a stable-v3 "
+                    "successor; stable-v2 remains the recommended endpoint."
+                ),
+                keywords=("primary", "source", "evidence", "current"),
+            ),
         ),
         expected_terms=("stable-v2",),
     ),
@@ -158,6 +171,117 @@ class FixtureSearchProvider:
             "text": "ERROR: fixture URL not found",
             "truncated": False,
         }
+
+
+class FreshMaterialPlanExecutor:
+    """A/B-only executor variant that treats already-opened URLs as non-material."""
+
+    def __init__(self, *, config: ResearchPipelineConfig, should_stop) -> None:
+        self.config = config
+        self.should_stop = should_stop
+
+    def execute(self, plan: ResearchPlan, tools: ResearchTools) -> PlanExecutionResult:
+        runtime = clone_research_tools(tools)
+        baseline_opened = _opened_url_set(runtime)
+        queries: list[str] = []
+        opened: list[dict[str, Any]] = []
+        previews: list[str] = []
+        skipped = 0
+        errors: list[str] = []
+        seen = set(baseline_opened)
+        query_limit = max(0, min(int(plan.max_queries or 0), int(self.config.max_queries_per_round or 0)))
+        total_limit = max(0, int(self.config.max_total_sources or 0))
+        per_query_limit = max(0, int(self.config.max_sources_per_query or 0))
+        stop_reason = "no_queries"
+        for candidate in plan.query_candidates[:query_limit]:
+            if self.should_stop():
+                stop_reason = "stopped"
+                break
+            query = " ".join(str(candidate.query_preview or "").split())
+            if not query:
+                skipped += 1
+                continue
+            before_searches = len(runtime.ledger.searches)
+            result = runtime.web_search(query)
+            queries.append(query)
+            if str(result or "").startswith("ERROR:"):
+                errors.append(_clip(result, 180))
+                stop_reason = "search_error"
+                continue
+            search = runtime.ledger.searches[-1] if len(runtime.ledger.searches) > before_searches else None
+            if search is None:
+                stop_reason = "no_results"
+                continue
+            opened_for_query = 0
+            for hit in search.results:
+                if len(opened) >= total_limit:
+                    stop_reason = "max_sources"
+                    break
+                if opened_for_query >= per_query_limit:
+                    break
+                url = str(hit.url or "").strip()
+                if not url or url in seen or runtime.ledger.canonical_opened_url(url):
+                    skipped += 1
+                    seen.add(url)
+                    continue
+                seen.add(url)
+                before_opened = _opened_url_set(runtime)
+                body = runtime.open_url(url, limit=self.config.max_source_preview_chars)
+                text = str(body or "")
+                if text.startswith(("ERROR:", "SKIPPED:")):
+                    skipped += 1
+                    errors.append(_clip(text, 180))
+                    continue
+                after_opened = _opened_url_set(runtime)
+                new_urls = sorted(after_opened - before_opened - baseline_opened)
+                if not new_urls:
+                    skipped += 1
+                    continue
+                source = _opened_source_payload(runtime, new_urls[-1])
+                if not source:
+                    skipped += 1
+                    continue
+                opened.append(source)
+                previews.append(_source_preview(query, source, text, self.config.max_source_preview_chars))
+                opened_for_query += 1
+                stop_reason = "opened_sources"
+            if stop_reason in {"max_sources", "stopped"}:
+                break
+        if queries and not opened and stop_reason not in {"search_error", "stopped"}:
+            stop_reason = "no_new_material"
+        return PlanExecutionResult(
+            queries_executed=tuple(queries),
+            opened_sources=tuple(opened),
+            previews=tuple(previews),
+            skipped_count=skipped,
+            stop_reason=stop_reason,
+            errors=tuple(errors[:12]),
+        )
+
+
+def _opened_url_set(tools: ResearchTools) -> set[str]:
+    urls = {str(url or "").strip() for url in getattr(tools, "sources_read", set())}
+    urls.update(str(url or "").strip() for url in tools.ledger.final_url_set())
+    for item in tools.ledger.opened_sources:
+        urls.add(str(item.requested_url or "").strip())
+        urls.add(str(item.final_url or "").strip())
+    return {url for url in urls if url}
+
+
+def _opened_source_payload(tools: ResearchTools, url: str) -> dict[str, Any]:
+    final_url = tools.ledger.canonical_opened_url(url) or str(url or "")
+    for item in tools.ledger.opened_sources:
+        if item.final_url == final_url or item.requested_url == final_url:
+            return item.to_dict()
+    return {}
+
+
+def _source_preview(query: str, source: dict[str, Any], body: str, limit: int) -> str:
+    title = str(source.get("title") or "").strip()
+    final_url = str(source.get("final_url") or source.get("url") or "").strip()
+    header = " | ".join(part for part in (title, final_url) if part)
+    text = _clip(body, max(500, min(4000, int(limit or 0))))
+    return "\n".join(part for part in (f"query: {query}", header, text) if part)
 
 
 class TimedProvider:
@@ -533,7 +657,7 @@ def run_case(
                 evidence_ledgers=evidence_ledgers,
                 config=_config_for_arm(arm),
             )
-            pipeline_result = pipeline.run()
+            pipeline_result = _run_pipeline_with_ab_experiment(pipeline, arm=arm)
             result = pipeline_result.final_result
             proof = (
                 review_research_proof(result.research_record, question=case.question)
@@ -641,6 +765,80 @@ def _config_for_arm(arm: str) -> ResearchPipelineConfig:
         max_queries_per_round=3,
         max_sources_per_query=2,
         max_total_sources=6,
+        max_wall_time=0.0,
+    )
+
+
+def _run_pipeline_with_ab_experiment(pipeline: ResearchPipeline, *, arm: str):
+    if arm != "planner":
+        return pipeline.run()
+    from codey.research import pipeline as pipeline_module
+
+    original_executor = pipeline_module.PlanExecutor
+    original_has_actionable_gap = pipeline_module._has_actionable_gap
+    original_pipeline_stop_reason = pipeline_module._pipeline_stop_reason
+
+    class _FreshMaterialExecutor(FreshMaterialPlanExecutor):
+        def __init__(self, *, config=None, should_stop=None) -> None:
+            super().__init__(
+                config=config or ResearchPipelineConfig(),
+                should_stop=should_stop or (lambda: False),
+            )
+
+    def ab_pipeline_stop_reason(plan, review=None):
+        if _ab_has_actionable_gap(review) and not _ab_needs_new_material(review):
+            return "no_new_material_needed"
+        return original_pipeline_stop_reason(plan, review)
+
+    try:
+        pipeline_module.PlanExecutor = _FreshMaterialExecutor
+        pipeline_module._has_actionable_gap = _ab_needs_new_material
+        pipeline_module._pipeline_stop_reason = ab_pipeline_stop_reason
+        return pipeline.run()
+    finally:
+        pipeline_module.PlanExecutor = original_executor
+        pipeline_module._has_actionable_gap = original_has_actionable_gap
+        pipeline_module._pipeline_stop_reason = original_pipeline_stop_reason
+
+
+def _ab_has_actionable_gap(review: object | None) -> bool:
+    if review is None or bool(getattr(review, "ok", False)):
+        return False
+    if _ab_needs_new_material(review):
+        return True
+    missing = set(getattr(review, "missing_evidence", ()) or ())
+    return bool(
+        missing.intersection({
+            "assumption_used_as_answer",
+            "claim_missing_citation",
+            "claim_missing_evidence_ref",
+            "claim_missing_support_relation",
+            "claim_not_evidence_backed",
+            "support_relation_bad_locator",
+            "support_relation_missing_evidence",
+            "unsupported_claims",
+        })
+        or getattr(review, "overclaim_warnings", ())
+    )
+
+
+def _ab_needs_new_material(review: object | None) -> bool:
+    if review is None or bool(getattr(review, "ok", False)):
+        return False
+    answer_status = str(getattr(review, "answer_status", "") or "")
+    if answer_status in {"not_answered", "insufficient_evidence"}:
+        return True
+    missing = set(getattr(review, "missing_evidence", ()) or ())
+    return bool(
+        getattr(review, "coverage_gaps", ())
+        or getattr(review, "followup_questions", ())
+        or getattr(review, "query_rewrite_candidates", ())
+        or missing.intersection({
+            "answer_coverage_gap",
+            "counterevidence_not_checked",
+            "partial_answer",
+        })
+        or getattr(review, "source_trust_warnings", ())
     )
 
 
@@ -807,6 +1005,9 @@ def _followup_usefulness(
     evidence_delta = int(planner.get("record_evidence_count") or 0) - int(baseline.get("record_evidence_count") or 0)
     query_delta = len(planner.get("fixture_queries") or ()) - len(baseline.get("fixture_queries") or ())
     fetch_delta = len(planner.get("fixture_fetches") or ()) - len(baseline.get("fixture_fetches") or ())
+    baseline_fetch_urls = {str(item or "") for item in baseline.get("fixture_fetches") or ()}
+    planner_fetch_urls = {str(item or "") for item in planner.get("fixture_fetches") or ()}
+    new_fetched_urls = tuple(sorted(url for url in planner_fetch_urls - baseline_fetch_urls if url))
     send_delta = int(planner.get("provider_send_count") or 0) - int(baseline.get("provider_send_count") or 0)
     seconds_delta = round(_float(planner.get("seconds")) - _float(baseline.get("seconds")), 3)
     answer_status_delta = _answer_status_rank(planner.get("proof_answer_status")) - _answer_status_rank(
@@ -829,6 +1030,8 @@ def _followup_usefulness(
         reasons.append("new_evidence")
     if source_delta > 0:
         reasons.append("new_sources")
+    if new_fetched_urls:
+        reasons.append("new_fetched_sources")
     if answer_status_delta > 0:
         reasons.append("answer_status_improved")
         quality_reasons.append("answer_status_improved")
@@ -849,6 +1052,7 @@ def _followup_usefulness(
     elif baseline.get("expected_terms_present") and not planner.get("expected_terms_present"):
         quality_regressions.append("expected_terms_lost")
     material_gain = bool(source_delta > 0 or evidence_delta > 0)
+    execution_material_gain = bool(new_fetched_urls)
     quality_gain = bool(quality_reasons)
     quality_regression = bool(quality_regressions)
     useful = bool(
@@ -861,6 +1065,7 @@ def _followup_usefulness(
         "evaluated": True,
         "useful": useful,
         "material_gain": material_gain,
+        "execution_material_gain": execution_material_gain,
         "quality_gain": quality_gain,
         "quality_regression": quality_regression,
         "reason_codes": reasons,
@@ -868,6 +1073,8 @@ def _followup_usefulness(
         "followup_rounds": int(planner.get("followup_rounds") or 0),
         "new_sources": max(0, source_delta),
         "new_evidence": max(0, evidence_delta),
+        "new_fetched_sources": len(new_fetched_urls),
+        "new_fetched_source_urls": [_clip(url, 160) for url in new_fetched_urls[:6]],
         "answer_coverage_delta": coverage_delta,
         "unsupported_claim_rate_delta": unsupported_rate_delta,
         "answer_status_delta": answer_status_delta,
@@ -1174,13 +1381,64 @@ def _self_test() -> None:
     usefulness = summary["by_case"]["warehouse_gap"]["followup_usefulness"]
     assert usefulness["useful"] is True
     assert usefulness["material_gain"] is True
+    assert usefulness["execution_material_gain"] is True
     assert usefulness["quality_gain"] is True
     assert usefulness["quality_regression"] is False
     assert usefulness["new_sources"] == 1
     assert usefulness["new_evidence"] == 2
+    assert usefulness["new_fetched_sources"] == 1
     assert usefulness["answer_coverage_delta"] == 0.29
     assert usefulness["unsupported_claim_rate_delta"] == -0.06
     assert usefulness["provider_send_delta"] == 2
+    assert _config_for_arm("baseline").max_wall_time == 90.0
+    assert _config_for_arm("planner").max_wall_time == 0.0
+    with tempfile.TemporaryDirectory(prefix="codey-bounded-planner-ab-material-", ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        fixture = FixtureSearchProvider(CASES["widget_noop"])
+        tools = ResearchTools(
+            search=fixture,
+            store=store,
+            changes=KnowledgeChanges(root=store.root),
+            session_id="self",
+        )
+        try:
+            assert "Widget Storage standard" in tools.open_url("https://standards.example.org/widget-storage")
+            material = FreshMaterialPlanExecutor(
+                config=_config_for_arm("planner"),
+                should_stop=lambda: False,
+            ).execute(
+                ResearchPlan(
+                    plan_ref="research_plan:" + "f" * 16,
+                    query_candidates=(
+                        QueryCandidate("research_query:" + "f" * 16, "current primary source evidence"),
+                    ),
+                    max_queries=1,
+                    max_sources=2,
+                ),
+                tools,
+            )
+            assert material.stop_reason == "opened_sources"
+            assert material.has_new_material is True
+            assert material.opened_sources[0]["final_url"] == "https://standards.example.org/widget-storage-update"
+            no_material = FreshMaterialPlanExecutor(
+                config=_config_for_arm("planner"),
+                should_stop=lambda: False,
+            ).execute(
+                ResearchPlan(
+                    plan_ref="research_plan:" + "e" * 16,
+                    query_candidates=(
+                        QueryCandidate("research_query:" + "e" * 16, "Widget Storage API recommendation endpoint"),
+                    ),
+                    max_queries=1,
+                    max_sources=2,
+                ),
+                tools,
+            )
+            assert no_material.stop_reason == "no_new_material"
+            assert no_material.has_new_material is False
+        finally:
+            store.index.close()
     failed_usefulness = _followup_usefulness(
         {"arm": "baseline", "ok": False, "error": "timeout"},
         {

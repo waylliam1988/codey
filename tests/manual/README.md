@@ -303,14 +303,16 @@ path.
 
 `bounded_research_planner_ab.py` is the 0.4.4 bounded Research planner A/B
 probe. The baseline arm runs the production ResearchPipeline with follow-up
-disabled; the planner arm enables one bounded follow-up round. It uses
-deterministic fixture search documents and a live provider, and it records
-atomic send/reply trace rows plus a paired `followup_usefulness` summary with
-coverage, unsupported-claim, evidence, source, query, fetch, send, and time
-deltas. The summary also carries a `material_gain` flag so you can tell whether
-the follow-up produced new sources or evidence versus only improving the
-final synthesis. `useful=true` is intentionally conservative: both rows must
-complete successfully, follow-up must run, new material must appear, quality
+disabled; the planner arm enables one bounded follow-up round, leaves the
+wall-clock limiter off, and uses an A/B-only fresh-material executor that skips
+already-opened URLs. It uses deterministic fixture search documents and a live
+provider, and it records atomic send/reply trace rows plus a paired
+`followup_usefulness` summary with coverage, unsupported-claim, evidence,
+source, query, fetch, send, and time deltas. The summary separates
+`execution_material_gain` (the planner fetched a previously unread source) from
+`material_gain` (the final ResearchRecord gained sources or evidence).
+`useful=true` is intentionally conservative: both rows must complete
+successfully, follow-up must run, final-record material must appear, quality
 must improve, and coverage/status/unsupported-claim score must not regress.
 
 ```powershell
@@ -321,6 +323,30 @@ python -B tests\manual\bounded_research_planner_ab.py `
   --case widget_noop `
   --output tests\manual\results\bounded_research_planner_ab-deepseek.json
 ```
+
+2026-08-20 live runs:
+
+- DeepSeek: `warehouse_gap` went from score `4` to `8` with `planner_stop_reason=no_actionable_gap`; `widget_noop` stayed at `5` with one follow-up round, `+18.166s`, and `+1` provider send, but no new sources or evidence.
+- MiMo: `warehouse_gap` went from score `4` to `6`; `widget_noop` stayed at `5`; both cases hit `max_wall_time` before any follow-up round, so no new material was added.
+- Artifacts: `tests\manual\results\bounded_research_planner_ab-deepseek-20260820.json`, `tests\manual\results\bounded_research_planner_ab-mimo-20260820.json`.
+
+After disabling the planner-arm wall-clock limiter in the probe, MiMo reran to
+`tests\manual\results\bounded_research_planner_ab-mimo-nowall-20260820.json`:
+`warehouse_gap` improved from score `6` to `8` but still stopped at
+`no_actionable_gap` with no follow-up round; `widget_noop` ran one follow-up
+round and stayed at score `5`, with `+3` queries, `+1` fetch, `+2` provider
+sends, and no new sources or evidence. This confirms wall time was masking one
+case but was not the core planner-value problem.
+
+With the A/B-only fresh-material executor, MiMo reran to
+`tests\manual\results\bounded_research_planner_ab-mimo-freshmaterial-20260820.json`:
+`warehouse_gap` stayed `4 -> 4` and correctly reported `no_new_material`;
+`widget_noop` stayed `5 -> 5`, fetched one previously unread source
+(`https://standards.example.org/widget-storage-update`), improved coverage by
+`+0.111` and unsupported-claim rate by `-0.467`, but the final ResearchRecord
+still gained `0` sources and `0` evidence items. This shows the fresh-material
+executor is finding new material; the remaining gap is follow-up synthesis
+absorption, not search dedupe.
 
 Use this probe when you want to judge whether 0.4.4 follow-up search is adding
 real value or just extra traffic. The paired summary is the main signal; if

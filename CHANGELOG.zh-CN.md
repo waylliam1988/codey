@@ -24,11 +24,28 @@
   仍然是 bounded planner 能补的类型，就允许继续做有限补搜。
 - 新增 `tests/manual/bounded_research_planner_ab.py`：和现有 manual probe 一样按行
   原子落盘 send/reply 轨迹，同时记录 baseline/planner 两个 arm 的 pipeline metadata。
+  planner arm 的 `max_wall_time` 已在 A/B 里关闭，时间只作为诊断字段保留，不再当作
+  质量判定条件。
 - 收紧 bounded planner A/B 的 `followup_usefulness` 口径：失败 row 不参与成对评估，
   `useful=true` 必须同时有新增材料、质量侧改善且没有明显质量回退；Pipeline 也将
   proof review 缺失明确记录为 `proof_review_missing`，不再误报为没有 actionable gap。
 - 增加架构边界测试，锁定 ResearchPipeline 不依赖 TaskRunner/Server，且最终
   ResearchResult 不携带运行时工具对象。
+- 2026-08-20 的 DeepSeek / MiMo bounded planner 实机 A/B 已落盘：DeepSeek 的
+  `warehouse_gap` 提升主要来自初始回答质量而不是 follow-up 新材料，`widget_noop`
+  只用一次 follow-up 换来轻微 coverage 提升；MiMo 两个 case 都在 `max_wall_time`
+  前没走到 follow-up。当前结果支持继续保持 planner 保守启用，先改善 budget
+  预留、gap 触发和 material-gain 判定。
+- 关闭 planner-arm wall-clock limiter 后，MiMo 复跑显示 `warehouse_gap` 仍停在
+  `no_actionable_gap`，`widget_noop` 虽然执行了一轮 follow-up，但没有新增 source 或
+  evidence；这说明时间限制不是核心收益瓶颈，下一步应让 planner 更明确地区分
+  “回答修饰” 与 “新材料补搜”。
+- 手工 A/B harness 增加未进主代码的 fresh-material executor 实验：planner arm 会跳过
+  已打开 URL，并在 summary 中区分 `execution_material_gain` 与最终 record 的
+  `material_gain`。MiMo 复跑显示 `widget_noop` 能 fetch 到新的
+  `widget-storage-update` fixture，coverage 和 unsupported-claim rate 改善，但最终
+  ResearchRecord 仍没有新增 source/evidence；下一步应验证 follow-up synthesis 如何把
+  executor 材料吸收到 ledger，而不是先改生产 PlanExecutor。
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 
