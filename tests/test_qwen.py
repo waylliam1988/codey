@@ -33,12 +33,14 @@ class QwenDriverTests(unittest.TestCase):
 
     def test_new_chat_applies_one_budget_to_navigation_and_ready_wait(self) -> None:
         page = mock.Mock()
+        page.url = qwen.QWEN_URL
         with (
             mock.patch.object(qwen, "start_deadline", return_value=20.0) as start,
             mock.patch.object(qwen, "navigation_timeout_ms", return_value=2500) as nav,
             mock.patch.object(qwen, "remaining", return_value=1.25) as remaining,
             mock.patch.object(qwen, "wait_ready") as ready,
             mock.patch.object(qwen, "_wait_composer_ready") as composer_ready,
+            mock.patch.object(qwen.cancellation, "wait") as wait,
         ):
             qwen.new_chat(page, timeout=5.0)
 
@@ -54,10 +56,38 @@ class QwenDriverTests(unittest.TestCase):
             [
                 mock.call(20.0, qwen.READY_TIMEOUT),
                 mock.call(20.0, qwen.COMPOSER_READY_TIMEOUT),
+                mock.call(20.0, qwen.HOME_SUBMIT_HYDRATION_DELAY),
             ],
         )
         ready.assert_called_once_with(page, timeout=1.25)
         composer_ready.assert_called_once_with(page, timeout=1.25)
+        wait.assert_called_once_with(1.25)
+
+    def test_new_chat_skips_home_submit_hydration_off_home_url(self) -> None:
+        page = mock.Mock()
+        page.url = "https://chat.qwen.ai/c/thread-id"
+
+        with mock.patch.object(qwen.cancellation, "wait") as wait:
+            qwen._wait_home_submit_hydrated(page)
+
+        wait.assert_not_called()
+
+    def test_new_chat_caps_home_submit_hydration_inside_timeout_budget(self) -> None:
+        page = mock.Mock()
+        page.url = qwen.QWEN_URL
+        with (
+            mock.patch.object(qwen, "start_deadline", return_value=20.0),
+            mock.patch.object(qwen, "navigation_timeout_ms", return_value=2500),
+            mock.patch.object(qwen, "remaining", side_effect=[30.0, 20.0, 60.0]),
+            mock.patch.object(qwen, "wait_ready") as ready,
+            mock.patch.object(qwen, "_wait_composer_ready") as composer_ready,
+            mock.patch.object(qwen.cancellation, "wait") as wait,
+        ):
+            qwen.new_chat(page, timeout=60.0)
+
+        ready.assert_called_once_with(page, timeout=30.0)
+        composer_ready.assert_called_once_with(page, timeout=20.0)
+        wait.assert_called_once_with(qwen.HOME_SUBMIT_HYDRATION_DELAY)
 
     def test_late_grace_does_not_swallow_total_deadline(self) -> None:
         with (

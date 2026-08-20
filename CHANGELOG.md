@@ -23,6 +23,39 @@ This file records Codey's release history. The newest release appears first.
 - Added architecture boundary coverage ensuring ResearchPipeline does not
   depend on TaskRunner or Server and final Research results do not carry
   runtime tool objects.
+- Pipeline follow-up observability now flows through `task_done` and Run Trace:
+  `followup_applied`, `followup_rounds`, and `planner_stop_reason` are visible
+  above `ResearchRunResult`. Follow-up execution failures keep the successful
+  initial result instead of letting the enhancement path fail the whole
+  research task.
+- Follow-up eligibility now includes actionable `max_turns` / `no_progress`
+  initial runs when proof review still exposes a planner-addressable gap.
+- Added `tests/manual/bounded_research_planner_ab.py`, a live bounded-planner
+  A/B harness with atomic send/reply trace writes. Its planner arm disables the
+  wall-clock limiter, treats time as diagnostic cost, and records paired
+  baseline/planner deltas for coverage, unsupported-claim rate, material gain,
+  provider traffic, and elapsed time.
+- Tightened `followup_usefulness`: failed rows are not evaluated as pairs, and
+  `useful=true` requires a completed pair, a follow-up round, final-record
+  material gain, quality-side improvement, and no quality regression. Pipeline
+  diagnostics now distinguish missing proof review from no actionable gap.
+- Added A/B-only fresh-material and hidden-material probes. The experimental
+  executor skips already-opened URLs, separates `execution_material_gain` from
+  final-record `material_gain`, and verifies that patch-only merge is safer
+  than asking the model to rewrite the whole follow-up report.
+- Fixed Qwen Studio homepage first-submit readiness. Qwen can expose
+  `textarea.message-input-textarea` and `button.send-button` before its
+  homepage submit handler is hydrated; immediate submit can clear the composer
+  without creating a chat. `new_chat()` now waits out that homepage false-ready
+  state with the same timeout budget. Live Qwen submit probe and
+  `new_chat(timeout=60)` both pass after the fix.
+- Live hidden-material paired A/B on 2026-08-20 now shows useful planner uplift
+  on MiMo, DeepSeek, and Qwen: each moved `widget_noop` from score `5` to `6`,
+  added one evidence-backed source, improved coverage by `+0.111`, and reduced
+  unsupported-claim rate. GLM improved raw score from `1` to `6` but regressed
+  unsupported-claim rate, so it is not counted useful by the conservative
+  gate. StepFun stayed `1 -> 1` because the initial run stopped at protocol
+  before follow-up could execute.
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 

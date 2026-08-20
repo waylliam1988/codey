@@ -46,6 +46,18 @@
   `widget-storage-update` fixture，coverage 和 unsupported-claim rate 改善，但最终
   ResearchRecord 仍没有新增 source/evidence；下一步应验证 follow-up synthesis 如何把
   executor 材料吸收到 ledger，而不是先改生产 PlanExecutor。
+- 修复 Qwen Studio 首页首发 false-ready：页面会先暴露
+  `textarea.message-input-textarea` 与 `button.send-button`，但 submit handler 还未
+  完全 ready，立即提交会清空输入且不进入会话。`new_chat()` 现在只在 Qwen 首页首发前
+  等待短暂 hydration，并且该等待受同一个 timeout budget 约束；Qwen live submit probe
+  和 `new_chat(timeout=60)` 均已验证通过。
+- Qwen hidden-material paired A/B 已补跑成功：baseline/planner 分数 `5 -> 6`，
+  coverage `0.556 -> 0.667`，unsupported claim rate `0.333 -> 0.250`，新增
+  `source-b` source/evidence 各 1，`followup_usefulness=true`；代价是 provider sends
+  `5 -> 7`、耗时增加 27.528 秒。
+- GLM / StepFun hidden-material paired A/B 已补跑：GLM raw score `1 -> 6`，
+  但 unsupported claim rate `0.0 -> 0.4`，按保守 usefulness gate 判定为 false；
+  StepFun `1 -> 1`，planner 停在 `initial_stop_reason_protocol`，没有进入 follow-up。
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 

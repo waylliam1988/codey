@@ -45,6 +45,7 @@ COMPOSER_REFILL_DELAY = 0.4
 COMPOSER_READY_TIMEOUT = 10.0
 COMPOSER_READY_TICK = 0.1
 COMPOSER_ACCEPT_TIMEOUT = 3.0
+HOME_SUBMIT_HYDRATION_DELAY = 2.5
 SUBMIT_CONFIRM_TIMEOUT = 15.0
 COPY_READY_TIMEOUT = 10.0
 PREFERENCE_TIMEOUT = 15.0
@@ -305,6 +306,25 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
     raise TimeoutError("Qwen Studio did not finish loading its model selector. Are you logged in?")
 
 
+def _is_qwen_home(page: Page) -> bool:
+    try:
+        return str(page.url or "").split("?", 1)[0].rstrip("/") == QWEN_URL.rstrip("/")
+    except Exception:
+        return False
+
+
+def _wait_home_submit_hydrated(
+    page: Page,
+    timeout: float = HOME_SUBMIT_HYDRATION_DELAY,
+) -> None:
+    """Wait out Qwen's homepage false-ready state before the first submit."""
+    if not _is_qwen_home(page):
+        return
+    delay = max(0.0, float(timeout))
+    if delay > 0:
+        cancellation.wait(delay)
+
+
 def new_chat(page: Page, timeout: float | None = None) -> None:
     cancellation.check()
     deadline = start_deadline(timeout)
@@ -320,9 +340,17 @@ def new_chat(page: Page, timeout: float | None = None) -> None:
     if deadline is None:
         wait_ready(page)
         _wait_composer_ready(page)
+        _wait_home_submit_hydrated(page)
     else:
         wait_ready(page, timeout=remaining(deadline, READY_TIMEOUT))
         _wait_composer_ready(page, timeout=remaining(deadline, COMPOSER_READY_TIMEOUT))
+        _wait_home_submit_hydrated(
+            page,
+            timeout=min(
+                HOME_SUBMIT_HYDRATION_DELAY,
+                remaining(deadline, HOME_SUBMIT_HYDRATION_DELAY),
+            ),
+        )
 
 
 def _response_count(page: Page) -> int:

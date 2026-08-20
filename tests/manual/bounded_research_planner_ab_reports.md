@@ -36,7 +36,11 @@ new evidence before `done`.
 - `bounded_research_planner_ab-mimo-materialpatch-paired-widget-20260820.json`
 - `bounded_research_planner_ab-mimo-hiddenmaterial-paired-widget-20260820.json`
 - `bounded_research_planner_ab-mimo-hiddenmaterial2-paired-widget-20260820.json`
+- `bounded_research_planner_ab-deepseek-hiddenmaterial-paired-widget-20260820.json`
 - `bounded_research_planner_ab-qwen-20260820.json`
+- `bounded_research_planner_ab-qwen-hiddenmaterial2-paired-widget-20260820.json`
+- `bounded_research_planner_ab-glm-hiddenmaterial-paired-widget-20260820.json`
+- `bounded_research_planner_ab-stepfun-hiddenmaterial-paired-widget-20260820.json`
 
 ## Experiment Timeline
 
@@ -138,6 +142,10 @@ Files:
 
 - `bounded_research_planner_ab-mimo-hiddenmaterial-paired-widget-20260820.json`
 - `bounded_research_planner_ab-mimo-hiddenmaterial2-paired-widget-20260820.json`
+- `bounded_research_planner_ab-deepseek-hiddenmaterial-paired-widget-20260820.json`
+- `bounded_research_planner_ab-qwen-hiddenmaterial2-paired-widget-20260820.json`
+- `bounded_research_planner_ab-glm-hiddenmaterial-paired-widget-20260820.json`
+- `bounded_research_planner_ab-stepfun-hiddenmaterial-paired-widget-20260820.json`
 
 The harness was changed so the normal Research model search only sees default
 source A. Only the A/B `PlanExecutor` material phase can retrieve hidden source
@@ -148,20 +156,47 @@ execution opens B, follow-up/patch path integrates B.
 |---|---:|---:|---:|---:|---|---:|---:|---:|---:|---|
 | `hiddenmaterial` | 5 | 6 | +1 | 1 | `patch_only_merge` | 1 -> 2 | 1 -> 2 | 0.000 | -0.125 | true |
 | `hiddenmaterial2` | 5 | 6 | +1 | 1 | `patch_only_merge` | 1 -> 2 | 1 -> 2 | +0.111 | -0.300 | true |
+| `deepseek-hiddenmaterial` | 5 | 6 | +1 | 1 | `patch_only_merge` | 1 -> 2 | 1 -> 2 | +0.111 | -0.083 | true |
+| `qwen-hiddenmaterial2` | 5 | 6 | +1 | 1 | `patch_only_merge` | 1 -> 2 | 1 -> 2 | +0.111 | -0.083 | true |
+| `glm-hiddenmaterial` | 1 | 6 | +5 | 1 | `patch_only_merge` | 1 -> 2 | 1 -> 2 | +0.223 | +0.400 | false |
+| `stepfun-hiddenmaterial` | 1 | 1 | 0 | 0 | `no_new_patch_source` | 1 -> 1 | 1 -> 1 | 0.000 | 0.000 | false |
 
 Finding: this is the first clean evidence that the desired design can help. The
-second run improved coverage from 0.556 to 0.667 and unsupported claim rate from
-0.800 to 0.500 with one follow-up round and one new evidence-backed source.
+MiMo `hiddenmaterial2` run improved coverage from 0.556 to 0.667 and
+unsupported claim rate from 0.800 to 0.500 with one follow-up round and one new
+evidence-backed source. DeepSeek and Qwen both replicated the same +1 score and
++0.111 coverage lift while reducing unsupported claim rate by 0.083.
 
 Cost for `hiddenmaterial2`: provider sends increased from 7 to 9 and elapsed
 time increased by 54.066 seconds.
+
+Cost for `deepseek-hiddenmaterial`: provider sends stayed at 7 and elapsed time
+increased by 3.568 seconds.
+
+Cost for `qwen-hiddenmaterial2`: provider sends increased from 5 to 7 and
+elapsed time increased by 27.528 seconds.
+
+GLM shows why the conservative usefulness gate is necessary. Its raw score rose
+from 1 to 6 and it added the hidden source/evidence, but unsupported-claim rate
+regressed from 0.000 to 0.400. The result is not safe to count as useful without
+a stricter patch-only merge that prevents new unsupported conclusions.
+
+StepFun did not reach planner execution. Both arms ended with score 1 and
+`answer_status=not_answered`; the planner row stopped at
+`initial_stop_reason_protocol`, so there was no material gain to evaluate.
 
 ### Qwen
 
 File: `bounded_research_planner_ab-qwen-20260820.json`
 
 All rows failed with transient Qwen Studio send/new-chat errors, so Qwen was
-excluded from usefulness conclusions.
+excluded from usefulness conclusions. Follow-up diagnosis found this was not a
+planner failure: Qwen's homepage exposed `textarea.message-input-textarea` and
+`button.send-button` before the homepage submit handler was ready. Immediate
+submit after `new_chat()` could clear the composer and leave the URL at
+`https://chat.qwen.ai/` with no response. The Qwen driver now waits out that
+homepage false-ready state before the first submit, and the clean hidden-material
+paired run above supersedes the failed Qwen rows for planner usefulness.
 
 ## Current Harness Behavior
 
@@ -198,12 +233,28 @@ initial ResearchRecord
   -> deterministic merged ResearchRecord
 ```
 
+## Web Provider Summary
+
+| provider | baseline | planner | delta | useful | follow-up | material gain | coverage delta | unsupported delta | send delta | time delta |
+|---|---:|---:|---:|---|---:|---|---:|---:|---:|---:|
+| DeepSeek | 5 | 6 | +1 | true | 1 | true | +0.111 | -0.083 | 0 | +3.568s |
+| MiMo | 5 | 6 | +1 | true | 1 | true | +0.111 | -0.300 | +2 | +54.066s |
+| Qwen | 5 | 6 | +1 | true | 1 | true | +0.111 | -0.083 | +2 | +27.528s |
+| GLM | 1 | 6 | +5 | false | 1 | true | +0.223 | +0.400 | +5 | +64.578s |
+| StepFun | 1 | 1 | 0 | false | 0 | false | 0.000 | 0.000 | 0 | +2.730s |
+
+Current signal: the design is directionally useful on 3 of 5 web providers
+when the missing material is hidden from the initial model search and exposed
+only through the planner executor. It is not ready to enable as a generic
+production behavior because GLM shows a quality-regression failure mode and
+StepFun shows that provider protocol behavior can block the planner before it
+starts.
+
 ## Production Criteria Before Merge
 
 Before moving this from A/B harness into production code, run at least:
 
-- DeepSeek hidden-material paired `widget_noop`.
-- MiMo and DeepSeek hidden-material `warehouse_gap` after the fixture is tuned so
+- MiMo, DeepSeek, and Qwen hidden-material `warehouse_gap` after the fixture is tuned so
   the hidden material represents a true missing limitation.
 - One real connector-backed case where the second source is not synthetic.
 
@@ -226,4 +277,3 @@ candidate:
 3. Final answer selection uses a deterministic patch merge against the previous
    best `ResearchRecord`.
 4. Planner usefulness is audited by quality deltas, not by source count alone.
-

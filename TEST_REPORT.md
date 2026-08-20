@@ -1,5 +1,65 @@
 # Codey Test Report
 
+## 0.4.4 Bounded Research Planner v1 (implementation draft)
+
+Codey 0.4.4 moves Research orchestration into `ResearchPipeline` and adds the
+first bounded planner execution loop while keeping provider/session/UI
+ownership outside the Research lifecycle. This draft also includes the Qwen
+homepage submit-readiness repair that was found while running the 0.4.4 bounded
+planner web-provider A/B.
+
+Production changes under validation:
+
+- `ResearchPipeline` owns initial research, proof review, planner execution,
+  follow-up synthesis, final proof review, and the final Evidence Ledger write.
+  `TaskRunner` keeps the outer provider/session/trace/mode lifecycle.
+- `ResearchIterationRun` is the explicit single-iteration primitive used by the
+  Pipeline and test harnesses; runtime tools are passed across iteration
+  boundaries instead of being hidden on the result object.
+- Follow-up metadata is surfaced above the raw `ResearchRunResult`, including
+  `followup_applied`, `followup_rounds`, and `planner_stop_reason`.
+- The manual bounded planner A/B harness records atomic send/reply traces and
+  conservative paired `followup_usefulness` summaries. The current
+  hidden-material probe remains experimental and does not by itself enable the
+  production planner behavior.
+- Qwen Studio homepage first submit now waits out a short false-ready state:
+  the page can expose `textarea.message-input-textarea` and
+  `button.send-button` before its homepage submit handler is hydrated. The wait
+  is scoped only to the Qwen home URL and is capped by the same provider
+  timeout budget.
+
+Validation during implementation:
+
+```text
+python -B -m pytest tests\test_qwen.py -q
+# 57 passed in 1.39s
+
+python -B tests\manual\qwen_submit_probe.py --timeout 60 'Reply exactly {"ok":true} and no markdown.'
+# Qwen new_chat seconds=4.53; send seconds=6.17; reply={"ok":true}
+
+ad hoc Qwen provider.new_chat(timeout=60) live probe
+# new_chat_ok 4.517 https://chat.qwen.ai/
+
+python -B -m pytest
+# 2251 passed in 386.30s
+```
+
+Live bounded-planner A/B evidence is recorded under `tests/manual/results/` and
+summarized in `tests/manual/bounded_research_planner_ab_reports.md`. The current
+paired hidden-material `widget_noop` web-provider results:
+
+- DeepSeek: score `5 -> 6`, useful, one new evidence-backed source, coverage
+  `+0.111`, unsupported-claim rate `-0.083`, provider sends unchanged.
+- MiMo: score `5 -> 6`, useful, one new evidence-backed source, coverage
+  `+0.111`, unsupported-claim rate `-0.300`, provider sends `+2`.
+- Qwen: score `5 -> 6`, useful after the homepage readiness fix, one new
+  evidence-backed source, coverage `+0.111`, unsupported-claim rate `-0.083`,
+  provider sends `+2`.
+- GLM: raw score `1 -> 6`, but usefulness is false because unsupported-claim
+  rate regressed from `0.000` to `0.400`.
+- StepFun: score `1 -> 1`; planner did not run because the initial row stopped
+  at `initial_stop_reason_protocol`.
+
 ## 0.4.3 Source Connector Boundary + Query Planner Dry Run v1
 
 Codey 0.4.3 adds the Research source boundary, deterministic planner dry-run,
