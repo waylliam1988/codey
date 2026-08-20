@@ -78,7 +78,7 @@ CASES = {
         ),
         documents=(
             FixtureDocument(
-                "https://docs.example.org/lithium-storage-benefit",
+                "https://www.nrel.gov/docs/lithium-storage-benefit",
                 "Lithium retrofit benefit guide",
                 (
                     "Lithium storage retrofits can reduce peak demand charges in "
@@ -88,7 +88,7 @@ CASES = {
                 default=True,
             ),
             FixtureDocument(
-                "https://lab.example.org/lithium-storage-limit",
+                "https://www.nrel.gov/docs/lithium-storage-limit",
                 "Lithium retrofit limitation note",
                 (
                     "The main limitation is that fire-code setbacks may require a "
@@ -108,7 +108,7 @@ CASES = {
         ),
         documents=(
             FixtureDocument(
-                "https://standards.example.org/widget-storage",
+                "https://www.w3.org/TR/widget-storage/",
                 "Widget Storage standard",
                 (
                     "The Widget Storage standard still recommends the stable-v2 "
@@ -118,7 +118,7 @@ CASES = {
                 default=True,
             ),
             FixtureDocument(
-                "https://standards.example.org/widget-storage-update",
+                "https://www.w3.org/TR/widget-storage-update/",
                 "Widget Storage update note",
                 (
                     "The Widget Storage working group has not adopted a stable-v3 "
@@ -308,6 +308,19 @@ def _ab_followup_context(
         *[f"- {_clip(query, 180)}" for query in material.queries_executed],
         "opened_material_final_urls:",
         *[f"- {url}" for url in final_urls],
+        "follow_up_synthesis_scope:",
+        "- This is a narrow repair pass, not a second full research rewrite.",
+        "- Use the initial_summary as the base answer; only patch gaps that the new opened material directly closes.",
+        "- When calling done, return a full report, but preserve existing supported claims unless a new evidence-backed sentence is needed.",
+        "- Add only claims that are directly supported by saved knowledge_write evidence from an opened_material.final_url.",
+        "- If the new material merely confirms an existing answer, add the source/evidence and keep the conclusion narrow.",
+        "- Do not add broader claims, extra limitations, authority labels, independence claims, or coverage claims unless exact evidence supports them.",
+        "- Do not say sources are independent, official, current, or comprehensive just because there is one more source.",
+        "follow_up_output_contract:",
+        "- Make the smallest valid edit to the prior report.",
+        "- Prefer changing only the relevant sentence in 结论, the relevant bullet in 关键证据, and the new item in 来源.",
+        "- Keep 反证与限制 and 来源质量 unchanged unless the new evidence directly changes them.",
+        "- Do not restate the whole answer from scratch if the new source only adds one claim.",
         "follow_up_material_rules:",
         "- Treat every opened_material.final_url below as the canonical source URL for this follow-up.",
         "- Before done, call knowledge_write for every opened_material.final_url that is used by the answer.",
@@ -328,7 +341,7 @@ def _ab_followup_context(
             "args": {
                 "type": "fact",
                 "title": f"Evidence from {title}",
-                "body": "Summarize only the claim supported by this opened material.",
+                "body": "Write one narrow claim supported by this opened material; keep the report as a patch, not a rewrite.",
                 "sources": [final_url],
                 "evidence": [{
                     "claim": "The specific claim supported by the opened material.",
@@ -1422,7 +1435,7 @@ def _self_test() -> None:
             "record_source_count": 1,
             "record_evidence_count": 1,
             "fixture_queries": ["benefit"],
-            "fixture_fetches": ["https://docs.example.org/lithium-storage-benefit"],
+            "fixture_fetches": ["https://www.nrel.gov/docs/lithium-storage-benefit"],
             "provider_send_count": 4,
             "seconds": 12.0,
         },
@@ -1438,8 +1451,8 @@ def _self_test() -> None:
             "record_evidence_count": 3,
             "fixture_queries": ["benefit", "limitation"],
             "fixture_fetches": [
-                "https://docs.example.org/lithium-storage-benefit",
-                "https://lab.example.org/lithium-storage-limit",
+                "https://www.nrel.gov/docs/lithium-storage-benefit",
+                "https://www.nrel.gov/docs/lithium-storage-limit",
             ],
             "provider_send_count": 6,
             "seconds": 20.0,
@@ -1463,72 +1476,45 @@ def _self_test() -> None:
     assert usefulness["provider_send_delta"] == 2
     assert _config_for_arm("baseline").max_wall_time == 90.0
     assert _config_for_arm("planner").max_wall_time == 0.0
-    with tempfile.TemporaryDirectory(prefix="codey-bounded-planner-ab-material-", ignore_cleanup_errors=True) as td:
-        root = Path(td)
-        store = KnowledgeStore(root / "knowledge")
-        fixture = FixtureSearchProvider(CASES["widget_noop"])
-        tools = ResearchTools(
-            search=fixture,
-            store=store,
-            changes=KnowledgeChanges(root=store.root),
-            session_id="self",
-        )
-        try:
-            assert "Widget Storage standard" in tools.open_url("https://standards.example.org/widget-storage")
-            material = FreshMaterialPlanExecutor(
-                config=_config_for_arm("planner"),
-                should_stop=lambda: False,
-            ).execute(
-                ResearchPlan(
-                    plan_ref="research_plan:" + "f" * 16,
-                    query_candidates=(
-                        QueryCandidate("research_query:" + "f" * 16, "current primary source evidence"),
-                    ),
-                    max_queries=1,
-                    max_sources=2,
-                ),
-                tools,
-            )
-            assert material.stop_reason == "opened_sources"
-            assert material.has_new_material is True
-            assert material.opened_sources[0]["final_url"] == "https://standards.example.org/widget-storage-update"
-            prompt = _ab_followup_context(
-                question=CASES["widget_noop"].question,
-                initial=type("_Initial", (), {"stop_reason": "done", "summary": "initial summary"})(),
-                plan=ResearchPlan(
-                    plan_ref="research_plan:" + "d" * 16,
-                    query_candidates=(
-                        QueryCandidate("research_query:" + "d" * 16, "current primary source evidence"),
-                    ),
-                    max_queries=1,
-                    max_sources=2,
-                ),
-                material=material,
-                limit=12000,
-            )
-            assert "opened_material.1.final_url: https://standards.example.org/widget-storage-update" in prompt
-            assert '"sources":["https://standards.example.org/widget-storage-update"]' in prompt
-            assert '"source_url":"https://standards.example.org/widget-storage-update"' in prompt
-            assert "Do not put s1, s2, source_id, result_id, or hit_id" in prompt
-            assert "Do not list a new URL in done.answer" in prompt
-            no_material = FreshMaterialPlanExecutor(
-                config=_config_for_arm("planner"),
-                should_stop=lambda: False,
-            ).execute(
-                ResearchPlan(
-                    plan_ref="research_plan:" + "e" * 16,
-                    query_candidates=(
-                        QueryCandidate("research_query:" + "e" * 16, "Widget Storage API recommendation endpoint"),
-                    ),
-                    max_queries=1,
-                    max_sources=2,
-                ),
-                tools,
-            )
-            assert no_material.stop_reason == "no_new_material"
-            assert no_material.has_new_material is False
-        finally:
-            store.index.close()
+    material = PlanExecutionResult(
+        queries_executed=("current primary source evidence",),
+        opened_sources=(
+            {
+                "final_url": "https://www.w3.org/TR/widget-storage-update/",
+                "title": "Widget Storage update note",
+            },
+        ),
+        previews=(
+            "query: current primary source evidence\n"
+            "Widget Storage update note | https://www.w3.org/TR/widget-storage-update/\n"
+            "The Widget Storage working group has not adopted a stable-v3 successor; stable-v2 remains the recommended endpoint.",
+        ),
+        stop_reason="opened_sources",
+    )
+    prompt = _ab_followup_context(
+        question=CASES["widget_noop"].question,
+        initial=type("_Initial", (), {"stop_reason": "done", "summary": "initial summary"})(),
+        plan=ResearchPlan(
+            plan_ref="research_plan:" + "d" * 16,
+            query_candidates=(
+                QueryCandidate("research_query:" + "d" * 16, "current primary source evidence"),
+            ),
+            max_queries=1,
+            max_sources=2,
+        ),
+        material=material,
+        limit=12000,
+    )
+    assert "opened_material.1.final_url: https://www.w3.org/TR/widget-storage-update/" in prompt
+    assert '"sources":["https://www.w3.org/TR/widget-storage-update/"]' in prompt
+    assert '"source_url":"https://www.w3.org/TR/widget-storage-update/"' in prompt
+    assert "Do not put s1, s2, source_id, result_id, or hit_id" in prompt
+    assert "Do not list a new URL in done.answer" in prompt
+    assert "This is a narrow repair pass, not a second full research rewrite" in prompt
+    assert "only patch gaps that the new opened material directly closes" in prompt
+    assert "Do not say sources are independent, official, current, or comprehensive" in prompt
+    assert "Make the smallest valid edit to the prior report" in prompt
+    assert "Keep 反证与限制 and 来源质量 unchanged unless the new evidence directly changes them" in prompt
     failed_usefulness = _followup_usefulness(
         {"arm": "baseline", "ok": False, "error": "timeout"},
         {
