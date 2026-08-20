@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol
 
+from codey import cancellation
 from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.identity import clip
@@ -43,6 +44,14 @@ class ResearchPipelineResult:
     followup_rounds: int = 0
     stop_reason: str = ""
     planner_stop_reason: str = ""
+
+    def to_payload(self) -> dict[str, object]:
+        return {
+            "followup_applied": bool(self.followup_applied),
+            "followup_rounds": max(0, min(3, int(self.followup_rounds or 0))),
+            "stop_reason": str(self.stop_reason or ""),
+            "planner_stop_reason": str(self.planner_stop_reason or ""),
+        }
 
 
 class ResearchPipeline:
@@ -82,13 +91,14 @@ class ResearchPipeline:
             plan = self._plan(best_review)
             self.context.trace.record_plan(plan)
             followup_rounds = 0
-            planner_stop_reason = _pipeline_stop_reason(plan, best_review)
-            if self._should_followup(initial, best_review, plan, started):
+            planner_stop_reason = self._followup_block_reason(initial, best_review, plan, started) or "planned"
+            if planner_stop_reason == "planned":
                 if best_tools is None:
                     planner_stop_reason = "missing_iteration_tools"
                 else:
                     current_tools = best_tools
-                    for round_index in range(1, self._max_rounds() + 1):
+                    max_rounds = self._max_rounds()
+                    for round_index in range(1, max_rounds + 1):
                         if self.context.should_stop():
                             planner_stop_reason = "stopped"
                             break
@@ -96,24 +106,36 @@ class ResearchPipeline:
                             config=self.config,
                             should_stop=self.context.should_stop,
                         )
-                        material = executor.execute(plan, current_tools)
+                        try:
+                            material = executor.execute(plan, current_tools)
+                        except cancellation.TaskCancelled:
+                            raise
+                        except Exception:
+                            planner_stop_reason = "followup_execution_error"
+                            break
                         planner_stop_reason = material.stop_reason
                         if not material.has_new_material:
                             break
-                        candidate_run = self.run_iteration(
-                            task=self.context.question,
-                            max_turns=self.context.max_turns,
-                            chat_handoff=self.context.chat_handoff,
-                            search=search,
-                            tools=current_tools,
-                            iteration_context=_followup_context(
-                                question=self.context.question,
-                                initial=best,
-                                plan=plan,
-                                material=material,
-                                limit=self.config.max_followup_context_chars,
-                            ),
-                        )
+                        try:
+                            candidate_run = self.run_iteration(
+                                task=self.context.question,
+                                max_turns=self.context.max_turns,
+                                chat_handoff=self.context.chat_handoff,
+                                search=search,
+                                tools=current_tools,
+                                iteration_context=_followup_context(
+                                    question=self.context.question,
+                                    initial=best,
+                                    plan=plan,
+                                    material=material,
+                                    limit=self.config.max_followup_context_chars,
+                                ),
+                            )
+                        except cancellation.TaskCancelled:
+                            raise
+                        except Exception:
+                            planner_stop_reason = "followup_iteration_error"
+                            break
                         candidate = candidate_run.result
                         followup_rounds = round_index
                         candidate_review = self._review(candidate, require_ledger_record=False)
@@ -124,9 +146,16 @@ class ResearchPipeline:
                         current_tools = candidate_run.tools or current_tools
                         plan = self._plan(best_review)
                         self.context.trace.record_plan(plan)
-                        if not self._should_followup(best, best_review, plan, started):
-                            planner_stop_reason = _pipeline_stop_reason(plan, best_review)
+                        block_reason = self._followup_block_reason(best, best_review, plan, started)
+                        if block_reason:
+                            planner_stop_reason = block_reason
                             break
+                    else:
+                        if (
+                            followup_rounds >= max_rounds
+                            and self._followup_block_reason(best, best_review, plan, started) == ""
+                        ):
+                            planner_stop_reason = "max_followup_rounds"
             ledger_result = self._append_final_record(best)
             self.context.trace.record_evidence_ledger_write(ledger_result)
             if self.ledger_event_sink is not None and ledger_result is not None:
@@ -136,13 +165,15 @@ class ResearchPipeline:
             self.context.trace.record_proof_review(final_review)
             self.context.trace.record_plan(self._plan(final_review))
             self._record_research_changes(best_tools)
-            return ResearchPipelineResult(
+            output = ResearchPipelineResult(
                 final_result=best,
                 followup_applied=followup_rounds > 0,
                 followup_rounds=followup_rounds,
                 stop_reason=best.stop_reason,
                 planner_stop_reason=planner_stop_reason,
             )
+            self.context.trace.record_pipeline_result(output)
+            return output
         finally:
             close = getattr(search, "close", None)
             if callable(close):
@@ -151,27 +182,30 @@ class ResearchPipeline:
                 except Exception:
                     pass
 
-    def _should_followup(
+    def _followup_block_reason(
         self,
         result: ResearchRunResult,
         review: ResearchProofReview | None,
         plan: ResearchPlan,
         started: float,
-    ) -> bool:
-        if not self.config.enabled or self._max_rounds() <= 0:
-            return False
-        if result.stop_reason != "done":
-            return False
+    ) -> str:
+        if not self.config.enabled:
+            return "disabled"
+        if self._max_rounds() <= 0:
+            return "max_followup_rounds"
         if not _has_actionable_gap(review):
-            return False
+            return _pipeline_stop_reason(plan, review)
         if not plan.query_candidates:
-            return False
+            return _pipeline_stop_reason(plan, review)
+        if not _is_followup_eligible_stop(result.stop_reason):
+            reason = str(result.stop_reason or "unknown").strip() or "unknown"
+            return "initial_stop_reason_" + _reason_code(reason)
         if self.context.should_stop():
-            return False
+            return "stopped"
         max_wall_time = float(self.config.max_wall_time or 0)
         if max_wall_time > 0 and (time.monotonic() - started) >= max_wall_time:
-            return False
-        return True
+            return "max_wall_time"
+        return ""
 
     def _review(
         self,
@@ -327,7 +361,28 @@ def _stop_score(stop_reason: str) -> float:
 def _has_actionable_gap(review: ResearchProofReview | None) -> bool:
     if review is None:
         return False
-    return review.answer_status in {"not_answered", "insufficient_evidence"}
+    if review.ok:
+        return False
+    if review.answer_status in {"not_answered", "insufficient_evidence"}:
+        return True
+    missing = set(review.missing_evidence)
+    return bool(
+        review.answer_status == "partial"
+        and (
+            review.coverage_gaps
+            or review.followup_questions
+            or review.query_rewrite_candidates
+            or missing.intersection({
+                "answer_coverage_gap",
+                "counterevidence_not_checked",
+                "partial_answer",
+            })
+        )
+    )
+
+
+def _is_followup_eligible_stop(stop_reason: str) -> bool:
+    return str(stop_reason or "") in {"done", "max_turns", "no_progress"}
 
 
 def _pipeline_stop_reason(
@@ -342,6 +397,12 @@ def _pipeline_stop_reason(
     if not _has_actionable_gap(review):
         return "no_actionable_gap"
     return "planned"
+
+
+def _reason_code(value: object) -> str:
+    text = str(value or "").strip()
+    rendered = "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
+    return rendered[:80] or "unknown"
 
 
 def _followup_context(

@@ -301,6 +301,28 @@ provider pages. Use this probe before changing source_search behavior further,
 or before promoting ResearchPlan / Coverage Review into the production Research
 path.
 
+`bounded_research_planner_ab.py` is the 0.4.4 bounded Research planner A/B
+probe. The baseline arm runs the production ResearchPipeline with follow-up
+disabled; the planner arm enables one bounded follow-up round. It uses
+deterministic fixture search documents and a live provider, and it records
+atomic send/reply trace rows plus a paired `followup_usefulness` summary with
+coverage, unsupported-claim, evidence, source, query, fetch, send, and time
+deltas.
+
+```powershell
+python -B tests\manual\bounded_research_planner_ab.py --self-test
+python -B tests\manual\bounded_research_planner_ab.py `
+  --provider deepseek `
+  --case warehouse_gap `
+  --case widget_noop `
+  --output tests\manual\results\bounded_research_planner_ab-deepseek.json
+```
+
+Use this probe when you want to judge whether 0.4.4 follow-up search is adding
+real value or just extra traffic. The paired summary is the main signal; if
+coverage and unsupported-claim rate barely move while time and traffic grow,
+the planner arm is not paying for itself.
+
 `source_connector_ab.py` is the live Research probe for the PubMed/arXiv
 connector-aware search path. The baseline arm uses the same non-isolated
 Research browser search provider reuse path as production Research; the

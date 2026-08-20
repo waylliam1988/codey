@@ -40,6 +40,7 @@ MAX_RESEARCH_RECORDS = 8
 MAX_EVIDENCE_LEDGER_WRITES = 8
 MAX_RESEARCH_PROOF_REVIEWS = 8
 MAX_RESEARCH_PLANS = 8
+MAX_RESEARCH_PIPELINE_RUNS = 8
 MAX_RESEARCH_CONNECTOR_ERRORS = 8
 MAX_RESEARCH_DONE_COMPILATIONS = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
@@ -187,6 +188,7 @@ class RunTraceManifest:
     research_evidence_ledgers: list[dict[str, object]] = field(default_factory=list)
     research_proof_reviews: list[dict[str, object]] = field(default_factory=list)
     research_plans: list[dict[str, object]] = field(default_factory=list)
+    research_pipeline_runs: list[dict[str, object]] = field(default_factory=list)
     research_connector_errors: list[dict[str, object]] = field(default_factory=list)
     research_done_compilations: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
@@ -226,6 +228,9 @@ class RunTraceManifest:
                 self.research_proof_reviews[:MAX_RESEARCH_PROOF_REVIEWS]
             ),
             "research_plans": self.research_plans[:MAX_RESEARCH_PLANS],
+            "research_pipeline_runs": (
+                self.research_pipeline_runs[:MAX_RESEARCH_PIPELINE_RUNS]
+            ),
             "research_connector_errors": [
                 _research_connector_error_payload(item)
                 for item in self.research_connector_errors[:MAX_RESEARCH_CONNECTOR_ERRORS]
@@ -670,6 +675,21 @@ class RunTraceRecorder:
         if len(self.manifest.research_plans) > MAX_RESEARCH_PLANS:
             del self.manifest.research_plans[:-MAX_RESEARCH_PLANS]
             self.manifest.warnings.append("research_plans_truncated")
+        self.checkpoint()
+
+    def record_research_pipeline_result(self, result: Mapping[str, object]) -> None:
+        if not isinstance(result, Mapping):
+            return
+        payload = {
+            "followup_applied": bool(result.get("followup_applied")),
+            "followup_rounds": _bounded_int(result.get("followup_rounds"), 0, 3),
+            "stop_reason": _safe_trace_code(result.get("stop_reason"), 80),
+            "planner_stop_reason": _safe_trace_code(result.get("planner_stop_reason"), 80),
+        }
+        self.manifest.research_pipeline_runs.append(payload)
+        if len(self.manifest.research_pipeline_runs) > MAX_RESEARCH_PIPELINE_RUNS:
+            del self.manifest.research_pipeline_runs[:-MAX_RESEARCH_PIPELINE_RUNS]
+            self.manifest.warnings.append("research_pipeline_runs_truncated")
         self.checkpoint()
 
     def record_research_connector_errors(self, errors: Iterable[object]) -> None:

@@ -177,6 +177,7 @@ class _RunHooks:
 class _ModeOutcome:
     event: dict
     research_result: Any | None = None
+    research_pipeline_result: Any | None = None
 
 
 def _prepend_ghost_directive(prompt: str, directive: str) -> str:
@@ -515,8 +516,8 @@ def _render_review_only_summary(review: object) -> str:
     return "\n".join(lines)
 
 
-def _research_payload(result) -> dict:
-    return {
+def _research_payload(result, *, pipeline_result: Any | None = None) -> dict:
+    payload = {
         "max_turns_used": int(getattr(result, "max_turns_used", 0) or 0),
         "synthesis_id": result.synthesis_id,
         "notes_created": result.notes_created,
@@ -532,6 +533,17 @@ def _research_payload(result) -> dict:
         "counterpoints": result.counterpoints,
         "quality_warnings": result.quality_warnings,
     }
+    if pipeline_result is not None:
+        to_payload = getattr(pipeline_result, "to_payload", None)
+        metadata = to_payload() if callable(to_payload) else {}
+        if isinstance(metadata, dict):
+            payload.update({
+                "followup_applied": bool(metadata.get("followup_applied")),
+                "followup_rounds": max(0, min(3, int(metadata.get("followup_rounds") or 0))),
+                "pipeline_stop_reason": str(metadata.get("stop_reason") or ""),
+                "planner_stop_reason": str(metadata.get("planner_stop_reason") or ""),
+            })
+    return payload
 
 
 class TaskRunner:
@@ -1903,12 +1915,13 @@ class TaskRunner:
         request = frame.request
         if frame.provider is None:
             raise RuntimeError("provider is not connected")
-        result = self._run_research_pipeline(
+        pipeline_result = self._run_research_pipeline(
             frame,
             hooks,
             max_turns=request.max_turns,
             proof_question=proof_question,
-        ).final_result
+        )
+        result = pipeline_result.final_result
         state.set_provider_session(
             frame.provider_id,
             None if result.stop_reason == "stopped" else request.session_id,
@@ -1950,8 +1963,8 @@ class TaskRunner:
             "provider": frame.provider_id,
             "mode": "research",
             "receipt": receipt,
-            "research": _research_payload(result),
-        }, research_result=result)
+            "research": _research_payload(result, pipeline_result=pipeline_result),
+        }, research_result=result, research_pipeline_result=pipeline_result)
 
     def _run_hybrid_mode(
         self,
@@ -1962,11 +1975,12 @@ class TaskRunner:
         request = frame.request
         if frame.provider is None:
             raise RuntimeError("provider is not connected")
-        research_result = self._run_research_pipeline(
+        pipeline_result = self._run_research_pipeline(
             frame,
             hooks,
             max_turns=max(1, min(request.max_turns, 18)),
-        ).final_result
+        )
+        research_result = pipeline_result.final_result
         if research_result.stop_reason != "done":
             return _ModeOutcome({
                 "type": "task_done",
@@ -1979,8 +1993,8 @@ class TaskRunner:
                 "provider": frame.provider_id,
                 "mode": "research",
                 "receipt": {"text": research_result.receipt},
-                "research": _research_payload(research_result),
-            }, research_result=research_result)
+                "research": _research_payload(research_result, pipeline_result=pipeline_result),
+            }, research_result=research_result, research_pipeline_result=pipeline_result)
         frame.fresh_chat = True
         frame.handoff = ""
         frame.conversation.update_snapshot(replace(
@@ -1999,6 +2013,7 @@ class TaskRunner:
             work,
             hooks,
             research_result=research_result,
+            research_pipeline_result=pipeline_result,
         )
 
     def _run_chat_mode(self, frame: _RunFrame) -> _ModeOutcome:
@@ -2390,6 +2405,7 @@ class TaskRunner:
         hooks: _RunHooks,
         *,
         research_result=None,
+        research_pipeline_result=None,
     ) -> _ModeOutcome:
         state = self.state
         request = frame.request
@@ -3023,8 +3039,15 @@ class TaskRunner:
                 "project": project,
             }
         if research_result is not None:
-            event["research"] = _research_payload(research_result)
-        return _ModeOutcome(event, research_result=research_result)
+            event["research"] = _research_payload(
+                research_result,
+                pipeline_result=research_pipeline_result,
+            )
+        return _ModeOutcome(
+            event,
+            research_result=research_result,
+            research_pipeline_result=research_pipeline_result,
+        )
 
     def _run_research_iteration(
         self,

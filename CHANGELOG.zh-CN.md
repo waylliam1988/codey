@@ -16,7 +16,14 @@
 - 移除 `_run_research_task`、`close_search` 等旧 seam；测试和手工 harness 直接
   使用 `_run_research_iteration`，避免冷启动项目为了迁就测试保留无意义兼容层。
 - Pipeline 继续执行一轮 bounded follow-up，保持串行 search/open/fetch、现有
-  tool contract、URL guard、UI/SSE payload 和最终 record 单写约束不变。
+  tool contract、URL guard、既有 UI/SSE 字段和最终 record 单写约束不变。
+- follow-up 结果现在会把 `followup_applied`、`followup_rounds` 和
+  `planner_stop_reason` 一路透出到 `task_done` / Run Trace；follow-up 迭代或执行
+  出错时会保留已成功的 initial result，不再让增强路径拖死主结果。
+- follow-up eligibility 放宽到可行动的 `max_turns` / `no_progress` 场景，只要 proof gap
+  仍然是 bounded planner 能补的类型，就允许继续做有限补搜。
+- 新增 `tests/manual/bounded_research_planner_ab.py`：和现有 manual probe 一样按行
+  原子落盘 send/reply 轨迹，同时记录 baseline/planner 两个 arm 的 pipeline metadata。
 - 增加架构边界测试，锁定 ResearchPipeline 不依赖 TaskRunner/Server，且最终
   ResearchResult 不携带运行时工具对象。
 

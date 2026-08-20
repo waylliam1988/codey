@@ -1352,7 +1352,7 @@ follow-up 产生 iteration record / ledger candidate，不能直接 mutate final
 最终 ResearchRecord 必须从最终报告重新 projection
 planner stop reason 可解释
 RunTrace 不含 raw prompt / raw webpage body / raw query transcript
-UI/SSE shape 不变
+UI/SSE 既有字段不变；`task_done.research` 可追加 bounded pipeline metadata
 ResearchPipeline deterministic fixture 可回归
 ResearchPipeline 不依赖 TaskRunner、Server 或 provider adapter
 单轮迭代工具状态不进入最终 ResearchRunResult
@@ -1363,7 +1363,11 @@ ResearchPipeline 不依赖 TaskRunner、Server 或 provider adapter
 
 需要。只要启用自动 bounded follow-up search，就改变 Research 行为，
 必须做小型 Research A/B，并记录 citation quality、answer coverage、
-unsupported claim rate、UI interruption count 和 provider 流量。
+unsupported claim rate、UI interruption count、provider 流量和
+follow-up usefulness。0.4.4 的 `bounded_research_planner_ab.py` 还必须按
+provider send/reply 原子落盘，并成对记录 baseline -> planner 的 coverage、
+unsupported claim、new sources/evidence、query/fetch/send/time delta，便于分析
+prompt、协议、额外流量和最终回答质量的关系。
 
 ## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 

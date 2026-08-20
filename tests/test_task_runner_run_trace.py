@@ -278,6 +278,8 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         assert payload["router"]["selected_mode"] == "research"
         assert set(payload["research_note_ids"]) == {"note-created", "note-updated", "synth-1"}
         assert payload["research_source_refs"][0]["host"] == "example.com"
+        assert payload["research_pipeline_runs"]
+        assert payload["research_pipeline_runs"][-1]["followup_applied"] is False
         assert payload["research_records"] == [{
             "record_id": "research_record:" + "b" * 16,
             "answer_status": "partial",
@@ -292,6 +294,9 @@ def test_auto_router_and_research_result_write_structured_trace_refs() -> None:
         assert "https://example.com/final" not in serialized
         assert "Example Source" not in serialized
         assert "SECRET_RESEARCH_RECORD_SHOULD_NOT_BE_SAVED" not in serialized
+        assert research_payload["followup_applied"] is False
+        assert research_payload["followup_rounds"] == 0
+        assert "planner_stop_reason" in research_payload
         assert "research_record" not in research_payload
 
 
@@ -364,6 +369,13 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
         research_plans = trace_payload["research_plans"]
         assert len(research_plans) == 1
         research_plan = research_plans[0]
+        pipeline_runs = trace_payload["research_pipeline_runs"]
+        assert pipeline_runs == [{
+            "followup_applied": False,
+            "followup_rounds": 0,
+            "stop_reason": "done",
+            "planner_stop_reason": "proof_ok_no_required_followup",
+        }]
         assert proof_review["proof_ref"].startswith("research_proof:")
         assert proof_review["record_id"] == record.record_id
         assert proof_review["record_digest"] == record.record_digest
@@ -381,6 +393,10 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
         assert research_plan["dry_run"] is True
         assert "query_preview" not in research_plan
         assert "SECRET_TOKEN" not in serialized_trace
+        assert terminal_research_payload["followup_applied"] is False
+        assert terminal_research_payload["followup_rounds"] == 0
+        assert terminal_research_payload["pipeline_stop_reason"] == "done"
+        assert terminal_research_payload["planner_stop_reason"] == "proof_ok_no_required_followup"
         assert "research_record" not in terminal_research_payload
         assert "research_proof" not in terminal_research_payload
         assert "research_plan" not in terminal_research_payload

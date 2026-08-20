@@ -15,6 +15,9 @@ class ResearchTraceSink(Protocol):
     def record_result(self, result: object) -> None:
         ...
 
+    def record_pipeline_result(self, result: object) -> None:
+        ...
+
     def record_proof_review(self, review: ResearchProofReview | Mapping[str, object] | None) -> None:
         ...
 
@@ -27,6 +30,9 @@ class ResearchTraceSink(Protocol):
 
 class NullResearchTraceSink:
     def record_result(self, result: object) -> None:
+        del result
+
+    def record_pipeline_result(self, result: object) -> None:
         del result
 
     def record_proof_review(self, review: ResearchProofReview | Mapping[str, object] | None) -> None:
@@ -67,6 +73,13 @@ class RunTraceResearchSink:
             summary = record
         if summary is not None:
             self._sink.call("record_research_record_summary", summary)
+
+    def record_pipeline_result(self, result: object) -> None:
+        to_payload = getattr(result, "to_payload", None)
+        payload = to_payload() if callable(to_payload) else result
+        if isinstance(payload, Mapping):
+            self._sink.call("record_research_pipeline_result", payload)
+            self._sink.call("flush")
 
     def record_proof_review(self, review: ResearchProofReview | Mapping[str, object] | None) -> None:
         if review is None:

@@ -38,6 +38,9 @@ class _TraceRecorder:
     def record_research_plan(self, *args, **kwargs) -> None:
         self.calls.append(("record_research_plan", args, kwargs))
 
+    def record_research_pipeline_result(self, *args, **kwargs) -> None:
+        self.calls.append(("record_research_pipeline_result", args, kwargs))
+
     def record_research_proof_review(self, *args, **kwargs) -> None:
         self.calls.append(("record_research_proof_review", args, kwargs))
 
@@ -296,6 +299,7 @@ def test_pipeline_skips_followup_when_proof_is_ok_and_appends_ledger_once() -> N
         assert len(snapshot.payload["records"]) == 1
         assert any(name == "record_evidence_ledger_write" for name, *_ in trace.calls)
         assert any(name == "record_research_plan" for name, *_ in trace.calls)
+        assert any(name == "record_research_pipeline_result" for name, *_ in trace.calls)
 
 
 def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -> None:
@@ -314,7 +318,7 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
         initial = _result(
             question="Pipeline question",
             summary="initial summary",
-            stop_reason="done",
+            stop_reason="max_turns",
             synthesis_id="initial",
             record=initial_record,
             tools=tools,
@@ -435,7 +439,7 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
         assert output.followup_applied is True
         assert output.followup_rounds == 1
         assert output.final_result is candidate.result
-        assert output.planner_stop_reason == "no_actionable_gap"
+        assert output.planner_stop_reason == "max_followup_rounds"
         assert search.closed is True
         assert len(run_calls) == 2
         assert "queries_executed:" in str(run_calls[1]["iteration_context"])
@@ -447,6 +451,119 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
         assert len(snapshot.payload["records"]) == 1
         assert "run-pipeline" in ledger_events
         assert "insufficient_evidence" in plan_calls
+
+
+def test_pipeline_keeps_initial_result_when_followup_iteration_raises() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        project = root / "project"
+        project.mkdir()
+        state_root = root / "state"
+        store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(root=store.root)
+        search = _PipelineSearch()
+        tools = ResearchTools(search=search, store=store, changes=changes, session_id="session-pipeline", project="project-pipeline")
+        trace = _TraceRecorder()
+        initial_record = _record(question="Pipeline question", synthesis_id="initial", project=project)
+        initial = _result(
+            question="Pipeline question",
+            summary="initial summary",
+            stop_reason="done",
+            synthesis_id="initial",
+            record=initial_record,
+            tools=tools,
+        )
+        evidence_ledgers = EvidenceLedgerStore(state_root)
+        run_calls: list[dict[str, object]] = []
+
+        def run_iteration(**kwargs):
+            run_calls.append(kwargs)
+            if len(run_calls) == 1:
+                return initial
+            raise RuntimeError("follow-up synthesis failed")
+
+        def fake_review(record, *, question: str = "", evidence_ledger=None, require_ledger_record: bool = False):
+            del question, evidence_ledger
+            return replace(
+                _review(
+                    record_id=getattr(record, "record_id", ""),
+                    record_digest=getattr(record, "record_digest", ""),
+                    ok=False,
+                    answer_status="insufficient_evidence",
+                    score=0.35,
+                    missing=("answer_coverage_gap",),
+                ),
+                ledger_record_verified=require_ledger_record,
+            )
+
+        def fake_plan(review, *, question: str = "", max_queries: int, max_sources: int):
+            del question
+            return ResearchPlan(
+                plan_ref="research_plan:" + getattr(review, "answer_status", "none"),
+                proof_ref=getattr(review, "proof_ref", ""),
+                query_candidates=(
+                    QueryCandidate("research_query:" + "2" * 16, "follow-up query"),
+                ),
+                reason_codes=("proof_gap",),
+                max_queries=max_queries,
+                max_sources=max_sources,
+            )
+
+        followup_material = PlanExecutionResult(
+            queries_executed=("follow-up query",),
+            opened_sources=({
+                "requested_url": "https://example.com/followup",
+                "final_url": "https://example.com/followup",
+                "title": "Followup source",
+            },),
+            previews=("query: follow-up query\nFollowup source | https://example.com/followup\nFollow-up body",),
+            skipped_count=0,
+            stop_reason="opened_sources",
+        )
+
+        context = ResearchContext(
+            question="Pipeline question",
+            session_id="session-pipeline",
+            run_id="run-pipeline",
+            project="project-pipeline",
+            proof_question="Pipeline question",
+            max_turns=4,
+            should_stop=lambda: False,
+            trace=RunTraceResearchSink(trace),
+        )
+
+        from codey.research import pipeline as pipeline_module
+
+        original_review = pipeline_module.review_research_proof
+        original_plan = pipeline_module.build_research_plan
+        original_execute = pipeline_module.PlanExecutor.execute
+        try:
+            pipeline_module.review_research_proof = fake_review
+            pipeline_module.build_research_plan = fake_plan
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: followup_material
+            pipeline = ResearchPipeline(
+                context=context,
+                run_iteration=run_iteration,
+                search_factory=lambda: search,
+                evidence_ledgers=evidence_ledgers,
+                config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
+            )
+            output = pipeline.run()
+        finally:
+            pipeline_module.review_research_proof = original_review
+            pipeline_module.build_research_plan = original_plan
+            pipeline_module.PlanExecutor.execute = original_execute
+
+        assert output.final_result is initial.result
+        assert output.followup_applied is False
+        assert output.followup_rounds == 0
+        assert output.planner_stop_reason == "followup_iteration_error"
+        assert len(run_calls) == 2
+        snapshot = evidence_ledgers.load(session_id="session-pipeline", project="project-pipeline")
+        assert snapshot.available is True
+        assert len(snapshot.payload["records"]) == 1
+        assert snapshot.payload["records"][0]["synthesis_id"] == "initial"
+        assert search.closed is True
 
 
 def test_pipeline_selection_rejects_unsupported_claim_regression() -> None:

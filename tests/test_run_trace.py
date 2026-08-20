@@ -629,6 +629,43 @@ class RunTraceStoreTests(unittest.TestCase):
             self.assertEqual(payload["research_plans"][0]["reason_codes"], [])
             self.assertEqual(payload["research_plans"][0]["warnings"], [])
 
+    def test_research_pipeline_result_trace_is_bounded_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-research-pipeline",
+                session_id="session-research-pipeline",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_research_pipeline_result({
+                "followup_applied": True,
+                "followup_rounds": 99,
+                "stop_reason": "done",
+                "planner_stop_reason": "followup_iteration_error",
+                "raw_query": "SECRET_QUERY_SHOULD_NOT_BE_SAVED",
+                "raw_url": "https://example.com/secret",
+            })
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-research-pipeline",
+                    "run-research-pipeline",
+                ).read_text(encoding="utf-8")
+            )
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(payload["research_pipeline_runs"], [{
+                "followup_applied": True,
+                "followup_rounds": 3,
+                "stop_reason": "done",
+                "planner_stop_reason": "followup_iteration_error",
+            }])
+            self.assertNotIn("SECRET_QUERY_SHOULD_NOT_BE_SAVED", serialized)
+            self.assertNotIn("https://example.com/secret", serialized)
+
     def test_research_connector_errors_are_bounded_trace_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
