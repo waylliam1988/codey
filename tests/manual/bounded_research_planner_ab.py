@@ -83,7 +83,7 @@ CASES = {
         documents=(
             FixtureDocument(
                 "https://source-a.test/lithium-storage-benefit",
-                "Lithium benchmark benefit note",
+                "Benchmark source A",
                 (
                     "Lithium storage retrofits can reduce peak demand charges in "
                     "small warehouses with predictable loads and daily cycling."
@@ -93,7 +93,7 @@ CASES = {
             ),
             FixtureDocument(
                 "https://source-b.test/lithium-storage-limit",
-                "Lithium benchmark limitation note",
+                "Benchmark source B",
                 (
                     "The main limitation is that fire-code setbacks may require a "
                     "separated battery room and ventilation retrofit costs can exceed "
@@ -113,7 +113,7 @@ CASES = {
         documents=(
             FixtureDocument(
                 "https://source-a.test/widget-storage",
-                "Widget benchmark standard note",
+                "Benchmark source A",
                 (
                     "The Widget Storage standard still recommends the stable-v2 "
                     "endpoint for client storage integration."
@@ -123,7 +123,7 @@ CASES = {
             ),
             FixtureDocument(
                 "https://source-b.test/widget-storage-update",
-                "Widget benchmark update note",
+                "Benchmark source B",
                 (
                     "The Widget Storage working group has not adopted a stable-v3 "
                     "successor; stable-v2 remains the recommended endpoint."
@@ -343,6 +343,7 @@ def _ab_followup_context(
         "- If the new material merely confirms an existing answer, add the source/evidence and keep the conclusion narrow.",
         "- Do not add broader claims, extra limitations, authority labels, independence claims, or coverage claims unless exact evidence supports them.",
         "- Do not say sources are independent, official, current, or comprehensive just because there is one more source.",
+        "- The synthetic URLs and titles are benchmark locators only; do not infer authority, freshness, or official status from domain or title.",
         "follow_up_output_contract:",
         "- Make the smallest valid edit to the prior report.",
         "- Prefer changing only the relevant sentence in 结论, the relevant bullet in 关键证据, and the new item in 来源.",
@@ -1509,12 +1510,12 @@ def _self_test() -> None:
         opened_sources=(
             {
                 "final_url": "https://source-b.test/widget-storage-update",
-                "title": "Widget benchmark update note",
+                "title": "Benchmark source B",
             },
         ),
         previews=(
             "query: current primary source evidence\n"
-            "Widget benchmark update note | https://source-b.test/widget-storage-update\n"
+            "Benchmark source B | https://source-b.test/widget-storage-update\n"
             "The Widget Storage working group has not adopted a stable-v3 successor; stable-v2 remains the recommended endpoint.",
         ),
         stop_reason="opened_sources",
@@ -1541,6 +1542,7 @@ def _self_test() -> None:
     assert "This is a narrow repair pass, not a second full research rewrite" in prompt
     assert "only patch gaps that the new opened material directly closes" in prompt
     assert "Do not say sources are independent, official, current, or comprehensive" in prompt
+    assert "benchmark locators only" in prompt
     assert "Make the smallest valid edit to the prior report" in prompt
     assert "Keep 反证与限制 and 来源质量 unchanged unless the new evidence directly changes them" in prompt
     failed_usefulness = _followup_usefulness(
