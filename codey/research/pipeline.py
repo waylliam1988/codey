@@ -193,6 +193,8 @@ class ResearchPipeline:
             return "disabled"
         if self._max_rounds() <= 0:
             return "max_followup_rounds"
+        if review is None:
+            return "proof_review_missing"
         if not _has_actionable_gap(review):
             return _pipeline_stop_reason(plan, review)
         if not plan.query_candidates:

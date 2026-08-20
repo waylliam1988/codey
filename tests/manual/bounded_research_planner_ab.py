@@ -199,6 +199,25 @@ class LiveTrace:
         self.started = time.monotonic()
         self.started_at = _timestamp()
         self.events: list[dict[str, Any]] = []
+        self._load_existing()
+
+    def _load_existing(self) -> None:
+        if not self.path.exists():
+            return
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, dict):
+            return
+        if payload.get("probe") != "bounded_research_planner_ab_trace":
+            return
+        started_at = str(payload.get("started_at") or "").strip()
+        events = payload.get("events")
+        if started_at:
+            self.started_at = started_at
+        if isinstance(events, list):
+            self.events = [dict(event) for event in events if isinstance(event, dict)]
 
     def record(self, event: dict[str, Any]) -> None:
         payload = dict(event)
@@ -726,6 +745,15 @@ def _score_row(row: dict[str, Any]) -> int:
     )
 
 
+def _answer_status_rank(status: object) -> int:
+    return {
+        "answered": 3,
+        "partial": 2,
+        "insufficient_evidence": 1,
+        "not_answered": 0,
+    }.get(str(status or ""), 0)
+
+
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     summary: dict[str, Any] = {"rows": len(rows), "by_case": {}}
     for case in sorted({str(row.get("case") or "") for row in rows if row.get("case")}):
@@ -757,6 +785,15 @@ def _followup_usefulness(
 ) -> dict[str, Any]:
     if not baseline or not planner:
         return {"evaluated": False}
+    baseline_ok = bool(baseline.get("ok"))
+    planner_ok = bool(planner.get("ok"))
+    if not baseline_ok or not planner_ok:
+        return {
+            "evaluated": False,
+            "reason": "row_not_ok",
+            "baseline_ok": baseline_ok,
+            "planner_ok": planner_ok,
+        }
     coverage_delta = round(
         _float(planner.get("proof_coverage")) - _float(baseline.get("proof_coverage")),
         3,
@@ -772,29 +809,68 @@ def _followup_usefulness(
     fetch_delta = len(planner.get("fixture_fetches") or ()) - len(baseline.get("fixture_fetches") or ())
     send_delta = int(planner.get("provider_send_count") or 0) - int(baseline.get("provider_send_count") or 0)
     seconds_delta = round(_float(planner.get("seconds")) - _float(baseline.get("seconds")), 3)
+    answer_status_delta = _answer_status_rank(planner.get("proof_answer_status")) - _answer_status_rank(
+        baseline.get("proof_answer_status")
+    )
     reasons: list[str] = []
+    quality_reasons: list[str] = []
+    quality_regressions: list[str] = []
     if coverage_delta >= 0.05:
         reasons.append("coverage_improved")
+        quality_reasons.append("coverage_improved")
+    elif coverage_delta <= -0.05:
+        quality_regressions.append("coverage_regressed")
     if unsupported_rate_delta <= -0.02:
         reasons.append("unsupported_rate_improved")
+        quality_reasons.append("unsupported_rate_improved")
+    elif unsupported_rate_delta >= 0.02:
+        quality_regressions.append("unsupported_rate_regressed")
     if evidence_delta > 0:
         reasons.append("new_evidence")
     if source_delta > 0:
         reasons.append("new_sources")
+    if answer_status_delta > 0:
+        reasons.append("answer_status_improved")
+        quality_reasons.append("answer_status_improved")
+    elif answer_status_delta < 0:
+        quality_regressions.append("answer_status_regressed")
+    if planner.get("proof_ok") and not baseline.get("proof_ok"):
+        reasons.append("proof_ok_recovered")
+        quality_reasons.append("proof_ok_recovered")
+    elif baseline.get("proof_ok") and not planner.get("proof_ok"):
+        quality_regressions.append("proof_ok_regressed")
     if score_delta > 0:
         reasons.append("score_improved")
+    elif score_delta < 0:
+        quality_regressions.append("score_regressed")
     if planner.get("expected_terms_present") and not baseline.get("expected_terms_present"):
         reasons.append("expected_terms_recovered")
-    useful = bool(int(planner.get("followup_rounds") or 0) > 0 and reasons)
+        quality_reasons.append("expected_terms_recovered")
+    elif baseline.get("expected_terms_present") and not planner.get("expected_terms_present"):
+        quality_regressions.append("expected_terms_lost")
+    material_gain = bool(source_delta > 0 or evidence_delta > 0)
+    quality_gain = bool(quality_reasons)
+    quality_regression = bool(quality_regressions)
+    useful = bool(
+        int(planner.get("followup_rounds") or 0) > 0
+        and material_gain
+        and quality_gain
+        and not quality_regression
+    )
     return {
         "evaluated": True,
         "useful": useful,
+        "material_gain": material_gain,
+        "quality_gain": quality_gain,
+        "quality_regression": quality_regression,
         "reason_codes": reasons,
+        "quality_regression_codes": quality_regressions,
         "followup_rounds": int(planner.get("followup_rounds") or 0),
         "new_sources": max(0, source_delta),
         "new_evidence": max(0, evidence_delta),
         "answer_coverage_delta": coverage_delta,
         "unsupported_claim_rate_delta": unsupported_rate_delta,
+        "answer_status_delta": answer_status_delta,
         "score_delta": score_delta,
         "query_delta": query_delta,
         "fetch_delta": fetch_delta,
@@ -819,7 +895,9 @@ def run_provider(
     run_id: str,
 ) -> dict[str, Any]:
     payload = _load_or_new_payload(output, provider_id=provider_id, cases=cases, arms=arms)
-    payload["trace_output"] = str(trace.path) if trace is not None else ""
+    _normalize_payload_metadata(payload, provider_id=provider_id, cases=cases, arms=arms)
+    if trace is not None:
+        payload["trace_output"] = str(trace.path)
     existing = {
         (str(row.get("case") or ""), str(row.get("arm") or ""))
         for row in payload["rows"]
@@ -848,6 +926,10 @@ def run_provider(
                 "existing_rows": len(payload["rows"]),
             })
             trace.record_run_complete(run_id=run_id, provider=provider_id, rows=len(payload["rows"]))
+        payload["complete"] = True
+        payload["summary"] = summarize(payload["rows"])
+        payload["updated_at"] = _timestamp()
+        _write_payload(output, payload)
         print(
             f"[{provider_id}] no pending rows for cases={','.join(case.name for case in cases)} "
             f"arms={','.join(arms)}; use --rerun-failed or a new --output to run again.",
@@ -943,6 +1025,18 @@ def _load_or_new_payload(
     }
 
 
+def _normalize_payload_metadata(
+    payload: dict[str, Any],
+    *,
+    provider_id: str,
+    cases: tuple[Case, ...],
+    arms: tuple[str, ...],
+) -> None:
+    payload["provider"] = provider_id
+    payload["cases"] = _merge_unique_names(payload.get("cases"), [case.name for case in cases])
+    payload["arms"] = _merge_unique_names(payload.get("arms"), list(arms))
+
+
 def _ensure_payload_provider(payload: dict[str, Any], *, provider_id: str, output: Path) -> None:
     found = str(payload.get("provider") or "").strip().lower()
     expected = str(provider_id or "").strip().lower()
@@ -962,6 +1056,28 @@ def _pending_case_keys(
         for arm in arms
         if (case.name, arm) not in existing
     ]
+
+
+def _merge_unique_names(*values: object) -> list[str]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            candidates = (value,)
+        else:
+            try:
+                candidates = tuple(value)  # type: ignore[arg-type]
+            except TypeError:
+                candidates = (value,)
+        for candidate in candidates:
+            name = str(candidate or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            merged.append(name)
+    return merged
 
 
 def _write_payload(path: Path, payload: dict[str, Any]) -> None:
@@ -1020,6 +1136,7 @@ def _self_test() -> None:
         {
             "case": "warehouse_gap",
             "arm": "baseline",
+            "ok": True,
             "score": 3,
             "proof_answer_status": "partial",
             "proof_coverage": 0.62,
@@ -1034,6 +1151,7 @@ def _self_test() -> None:
         {
             "case": "warehouse_gap",
             "arm": "planner",
+            "ok": True,
             "score": 8,
             "proof_answer_status": "answered",
             "proof_coverage": 0.91,
@@ -1055,11 +1173,54 @@ def _self_test() -> None:
     assert summary["by_case"]["warehouse_gap"]["delta"] == 5
     usefulness = summary["by_case"]["warehouse_gap"]["followup_usefulness"]
     assert usefulness["useful"] is True
+    assert usefulness["material_gain"] is True
+    assert usefulness["quality_gain"] is True
+    assert usefulness["quality_regression"] is False
     assert usefulness["new_sources"] == 1
     assert usefulness["new_evidence"] == 2
     assert usefulness["answer_coverage_delta"] == 0.29
     assert usefulness["unsupported_claim_rate_delta"] == -0.06
     assert usefulness["provider_send_delta"] == 2
+    failed_usefulness = _followup_usefulness(
+        {"arm": "baseline", "ok": False, "error": "timeout"},
+        {
+            "arm": "planner",
+            "ok": True,
+            "followup_rounds": 1,
+            "score": 8,
+            "proof_coverage": 0.9,
+            "record_source_count": 2,
+            "record_evidence_count": 2,
+        },
+    )
+    assert failed_usefulness["evaluated"] is False
+    assert failed_usefulness["reason"] == "row_not_ok"
+    material_only = _followup_usefulness(
+        {
+            "arm": "baseline",
+            "ok": True,
+            "score": 8,
+            "proof_answer_status": "answered",
+            "proof_coverage": 0.9,
+            "unsupported_claim_rate": 0.0,
+            "record_source_count": 1,
+            "record_evidence_count": 1,
+        },
+        {
+            "arm": "planner",
+            "ok": True,
+            "score": 7,
+            "proof_answer_status": "partial",
+            "proof_coverage": 0.8,
+            "unsupported_claim_rate": 0.1,
+            "record_source_count": 2,
+            "record_evidence_count": 2,
+            "followup_rounds": 1,
+        },
+    )
+    assert material_only["material_gain"] is True
+    assert material_only["quality_regression"] is True
+    assert material_only["useful"] is False
     assert _expected_terms_present("stable-v2 endpoint", ("stable-v2",))
     assert _trace_output_path(Path("tests/manual/results/bounded_research_planner_ab-deepseek.json")).name == (
         "bounded_research_planner_ab-deepseek.trace.json"
@@ -1093,6 +1254,21 @@ def _self_test() -> None:
         payload = json.loads((Path(td) / "trace.json").read_text(encoding="utf-8"))
         assert payload["probe"] == "bounded_research_planner_ab_trace"
         assert payload["event_count"] == 2
+        appended_trace = LiveTrace(Path(td) / "trace.json")
+        appended_trace.record_case_complete(
+            run_id="run-self",
+            provider="deepseek",
+            case="warehouse_gap",
+            arm="planner",
+            row={"ok": True, "score": 1, "stop_reason": "done", "summary_preview": "ok"},
+        )
+        appended_payload = json.loads((Path(td) / "trace.json").read_text(encoding="utf-8"))
+        assert appended_payload["event_count"] == 3
+        assert [event["event"] for event in appended_payload["events"]] == [
+            "send_start",
+            "reply",
+            "case_complete",
+        ]
         output = Path(td) / "payload.json"
         output.write_text(
             json.dumps({"probe": "bounded_research_planner_ab", "provider": "qwen", "rows": []}),
@@ -1110,6 +1286,21 @@ def _self_test() -> None:
             assert exc.found == "qwen"
         else:
             raise AssertionError("provider mismatch was not rejected")
+        payload = {
+            "probe": "bounded_research_planner_ab",
+            "provider": "deepseek",
+            "rows": [],
+            "cases": ["warehouse_gap"],
+            "arms": ["baseline"],
+        }
+        _normalize_payload_metadata(
+            payload,
+            provider_id="deepseek",
+            cases=(CASES["warehouse_gap"], CASES["widget_noop"]),
+            arms=("planner",),
+        )
+        assert payload["cases"] == ["warehouse_gap", "widget_noop"]
+        assert payload["arms"] == ["baseline", "planner"]
 
 
 def main() -> int:

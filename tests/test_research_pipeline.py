@@ -302,6 +302,65 @@ def test_pipeline_skips_followup_when_proof_is_ok_and_appends_ledger_once() -> N
         assert any(name == "record_research_pipeline_result" for name, *_ in trace.calls)
 
 
+def test_pipeline_reports_missing_proof_review_without_followup() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(root=store.root)
+        search = _PipelineSearch()
+        tools = ResearchTools(
+            search=search,
+            store=store,
+            changes=changes,
+            session_id="session-pipeline",
+            project="project-pipeline",
+        )
+        trace = _TraceRecorder()
+        result = ResearchRunResult(
+            question="Pipeline question",
+            summary="initial summary",
+            stop_reason="done",
+            turns=1,
+        )
+
+        def run_iteration(**_kwargs):
+            return ResearchIterationRun(result=result, tools=tools)
+
+        context = ResearchContext(
+            question="Pipeline question",
+            session_id="session-pipeline",
+            run_id="run-pipeline",
+            project="project-pipeline",
+            proof_question="Pipeline question",
+            max_turns=4,
+            should_stop=lambda: False,
+            trace=RunTraceResearchSink(trace),
+        )
+
+        from codey.research import pipeline as pipeline_module
+
+        original_execute = pipeline_module.PlanExecutor.execute
+        try:
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: (_ for _ in ()).throw(
+                AssertionError("follow-up search should not run without a proof review")
+            )
+            pipeline = ResearchPipeline(
+                context=context,
+                run_iteration=run_iteration,
+                search_factory=lambda: search,
+                config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
+            )
+            output = pipeline.run()
+        finally:
+            pipeline_module.PlanExecutor.execute = original_execute
+
+        assert output.final_result is result
+        assert output.followup_applied is False
+        assert output.followup_rounds == 0
+        assert output.planner_stop_reason == "proof_review_missing"
+        assert search.closed is True
+
+
 def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

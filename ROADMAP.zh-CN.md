@@ -1367,7 +1367,9 @@ unsupported claim rate、UI interruption count、provider 流量和
 follow-up usefulness。0.4.4 的 `bounded_research_planner_ab.py` 还必须按
 provider send/reply 原子落盘，并成对记录 baseline -> planner 的 coverage、
 unsupported claim、new sources/evidence、query/fetch/send/time delta，便于分析
-prompt、协议、额外流量和最终回答质量的关系。
+prompt、协议、额外流量和最终回答质量的关系。`useful=true` 必须是保守口径：
+baseline/planner 两行都成功、follow-up 实际执行、有新增 source/evidence、质量侧
+有改善，并且 coverage/status/unsupported-claim/score 没有明显回退。
 
 ## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 

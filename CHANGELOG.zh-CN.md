@@ -24,6 +24,9 @@
   仍然是 bounded planner 能补的类型，就允许继续做有限补搜。
 - 新增 `tests/manual/bounded_research_planner_ab.py`：和现有 manual probe 一样按行
   原子落盘 send/reply 轨迹，同时记录 baseline/planner 两个 arm 的 pipeline metadata。
+- 收紧 bounded planner A/B 的 `followup_usefulness` 口径：失败 row 不参与成对评估，
+  `useful=true` 必须同时有新增材料、质量侧改善且没有明显质量回退；Pipeline 也将
+  proof review 缺失明确记录为 `proof_review_missing`，不再误报为没有 actionable gap。
 - 增加架构边界测试，锁定 ResearchPipeline 不依赖 TaskRunner/Server，且最终
   ResearchResult 不携带运行时工具对象。
 

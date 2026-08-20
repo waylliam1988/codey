@@ -307,7 +307,11 @@ disabled; the planner arm enables one bounded follow-up round. It uses
 deterministic fixture search documents and a live provider, and it records
 atomic send/reply trace rows plus a paired `followup_usefulness` summary with
 coverage, unsupported-claim, evidence, source, query, fetch, send, and time
-deltas.
+deltas. The summary also carries a `material_gain` flag so you can tell whether
+the follow-up produced new sources or evidence versus only improving the
+final synthesis. `useful=true` is intentionally conservative: both rows must
+complete successfully, follow-up must run, new material must appear, quality
+must improve, and coverage/status/unsupported-claim score must not regress.
 
 ```powershell
 python -B tests\manual\bounded_research_planner_ab.py --self-test
