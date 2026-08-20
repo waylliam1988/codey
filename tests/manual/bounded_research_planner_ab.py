@@ -284,6 +284,74 @@ def _source_preview(query: str, source: dict[str, Any], body: str, limit: int) -
     return "\n".join(part for part in (f"query: {query}", header, text) if part)
 
 
+def _ab_followup_context(
+    *,
+    question: str,
+    initial: Any,
+    plan: ResearchPlan,
+    material: PlanExecutionResult,
+    limit: int,
+) -> str:
+    opened_sources = tuple(source for source in material.opened_sources if isinstance(source, dict))
+    final_urls = tuple(
+        str(source.get("final_url") or source.get("url") or "").strip()
+        for source in opened_sources
+        if str(source.get("final_url") or source.get("url") or "").strip()
+    )
+    lines = [
+        "A/B follow-up Research synthesis input.",
+        f"question: {_clip(question, 240)}",
+        f"initial_stop_reason: {getattr(initial, 'stop_reason', '')}",
+        f"initial_summary: {_clip(getattr(initial, 'summary', ''), 1200)}",
+        f"plan_ref: {plan.plan_ref}",
+        "queries_executed:",
+        *[f"- {_clip(query, 180)}" for query in material.queries_executed],
+        "opened_material_final_urls:",
+        *[f"- {url}" for url in final_urls],
+        "follow_up_material_rules:",
+        "- Treat every opened_material.final_url below as the canonical source URL for this follow-up.",
+        "- Before done, call knowledge_write for every opened_material.final_url that is used by the answer.",
+        "- In knowledge_write args, sources must contain the final URL string exactly.",
+        "- In each evidence item, source_url must be the same final URL string exactly.",
+        "- Do not put s1, s2, source_id, result_id, or hit_id in sources or evidence.source_url.",
+        "- If knowledge_write reports NEEDS_OPEN or says the URL was not opened, call open_url on that final URL once, then retry knowledge_write with the final URL.",
+        "- Do not list a new URL in done.answer or final sources until that exact URL is evidence-backed by knowledge_write.",
+        "knowledge_write_templates:",
+    ]
+    for index, source in enumerate(opened_sources, 1):
+        final_url = str(source.get("final_url") or source.get("url") or "").strip()
+        if not final_url:
+            continue
+        title = str(source.get("title") or "").strip() or final_url
+        template = {
+            "tool": "knowledge_write",
+            "args": {
+                "type": "fact",
+                "title": f"Evidence from {title}",
+                "body": "Summarize only the claim supported by this opened material.",
+                "sources": [final_url],
+                "evidence": [{
+                    "claim": "The specific claim supported by the opened material.",
+                    "source_url": final_url,
+                    "excerpt": "Exact short excerpt copied from the opened material.",
+                    "stance": "supports",
+                }],
+            },
+        }
+        lines.extend([
+            f"- opened_material.{index}.final_url: {final_url}",
+            f"  opened_material.{index}.title: {_clip(title, 160)}",
+            f"  required_write_shape: {json.dumps(template, ensure_ascii=True, separators=(',', ':'))}",
+        ])
+    lines.extend([
+        "opened_material_previews:",
+        *[f"- {_clip(preview, 1600)}" for preview in material.previews],
+    ])
+    if material.errors:
+        lines.extend(["bounded_errors:", *[f"- {_clip(error, 180)}" for error in material.errors]])
+    return _clip("\n".join(lines), max(1000, min(20000, int(limit or 0))))
+
+
 class TimedProvider:
     def __init__(self, provider, *, send_timeout: float, new_chat_timeout: float) -> None:
         self.provider = provider
@@ -777,6 +845,7 @@ def _run_pipeline_with_ab_experiment(pipeline: ResearchPipeline, *, arm: str):
     original_executor = pipeline_module.PlanExecutor
     original_has_actionable_gap = pipeline_module._has_actionable_gap
     original_pipeline_stop_reason = pipeline_module._pipeline_stop_reason
+    original_followup_context = pipeline_module._followup_context
 
     class _FreshMaterialExecutor(FreshMaterialPlanExecutor):
         def __init__(self, *, config=None, should_stop=None) -> None:
@@ -794,11 +863,13 @@ def _run_pipeline_with_ab_experiment(pipeline: ResearchPipeline, *, arm: str):
         pipeline_module.PlanExecutor = _FreshMaterialExecutor
         pipeline_module._has_actionable_gap = _ab_needs_new_material
         pipeline_module._pipeline_stop_reason = ab_pipeline_stop_reason
+        pipeline_module._followup_context = _ab_followup_context
         return pipeline.run()
     finally:
         pipeline_module.PlanExecutor = original_executor
         pipeline_module._has_actionable_gap = original_has_actionable_gap
         pipeline_module._pipeline_stop_reason = original_pipeline_stop_reason
+        pipeline_module._followup_context = original_followup_context
 
 
 def _ab_has_actionable_gap(review: object | None) -> bool:
@@ -1421,6 +1492,25 @@ def _self_test() -> None:
             assert material.stop_reason == "opened_sources"
             assert material.has_new_material is True
             assert material.opened_sources[0]["final_url"] == "https://standards.example.org/widget-storage-update"
+            prompt = _ab_followup_context(
+                question=CASES["widget_noop"].question,
+                initial=type("_Initial", (), {"stop_reason": "done", "summary": "initial summary"})(),
+                plan=ResearchPlan(
+                    plan_ref="research_plan:" + "d" * 16,
+                    query_candidates=(
+                        QueryCandidate("research_query:" + "d" * 16, "current primary source evidence"),
+                    ),
+                    max_queries=1,
+                    max_sources=2,
+                ),
+                material=material,
+                limit=12000,
+            )
+            assert "opened_material.1.final_url: https://standards.example.org/widget-storage-update" in prompt
+            assert '"sources":["https://standards.example.org/widget-storage-update"]' in prompt
+            assert '"source_url":"https://standards.example.org/widget-storage-update"' in prompt
+            assert "Do not put s1, s2, source_id, result_id, or hit_id" in prompt
+            assert "Do not list a new URL in done.answer" in prompt
             no_material = FreshMaterialPlanExecutor(
                 config=_config_for_arm("planner"),
                 should_stop=lambda: False,
