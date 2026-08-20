@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from contextlib import contextmanager
 import sys
 import tempfile
 import time
@@ -27,6 +28,9 @@ from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_ledger import EvidenceLedgerStore
+from codey.research import plan_executor as research_plan_executor_module
+from codey.research import tools as research_tools_module
+from codey.research import url_policy as research_url_policy_module
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.proof_quality import review_research_proof
@@ -78,8 +82,8 @@ CASES = {
         ),
         documents=(
             FixtureDocument(
-                "https://www.nrel.gov/docs/lithium-storage-benefit",
-                "Lithium retrofit benefit guide",
+                "https://source-a.test/lithium-storage-benefit",
+                "Lithium benchmark benefit note",
                 (
                     "Lithium storage retrofits can reduce peak demand charges in "
                     "small warehouses with predictable loads and daily cycling."
@@ -88,8 +92,8 @@ CASES = {
                 default=True,
             ),
             FixtureDocument(
-                "https://www.nrel.gov/docs/lithium-storage-limit",
-                "Lithium retrofit limitation note",
+                "https://source-b.test/lithium-storage-limit",
+                "Lithium benchmark limitation note",
                 (
                     "The main limitation is that fire-code setbacks may require a "
                     "separated battery room and ventilation retrofit costs can exceed "
@@ -108,8 +112,8 @@ CASES = {
         ),
         documents=(
             FixtureDocument(
-                "https://www.w3.org/TR/widget-storage/",
-                "Widget Storage standard",
+                "https://source-a.test/widget-storage",
+                "Widget benchmark standard note",
                 (
                     "The Widget Storage standard still recommends the stable-v2 "
                     "endpoint for client storage integration."
@@ -118,8 +122,8 @@ CASES = {
                 default=True,
             ),
             FixtureDocument(
-                "https://www.w3.org/TR/widget-storage-update/",
-                "Widget Storage update note",
+                "https://source-b.test/widget-storage-update",
+                "Widget benchmark update note",
                 (
                     "The Widget Storage working group has not adopted a stable-v3 "
                     "successor; stable-v2 remains the recommended endpoint."
@@ -171,6 +175,29 @@ class FixtureSearchProvider:
             "text": "ERROR: fixture URL not found",
             "truncated": False,
         }
+
+
+@contextmanager
+def _fixture_url_policy_bypass() -> Any:
+    original_research = research_url_policy_module.check_fetch_url
+    original_tools = research_tools_module.check_fetch_url
+    original_plan_executor = research_plan_executor_module.check_fetch_url
+
+    def _allow_fixture_urls(url: str, *, resolve: bool = True) -> str | None:
+        text = str(url or "").strip().lower()
+        if text.startswith(("https://source-a.test/", "https://source-b.test/")):
+            return None
+        return original_research(url, resolve=resolve)
+
+    research_url_policy_module.check_fetch_url = _allow_fixture_urls
+    research_tools_module.check_fetch_url = _allow_fixture_urls
+    research_plan_executor_module.check_fetch_url = _allow_fixture_urls
+    try:
+        yield
+    finally:
+        research_url_policy_module.check_fetch_url = original_research
+        research_tools_module.check_fetch_url = original_tools
+        research_plan_executor_module.check_fetch_url = original_plan_executor
 
 
 class FreshMaterialPlanExecutor:
@@ -1231,52 +1258,53 @@ def run_provider(
     provider_controls.begin_task_context(f"bounded-research-planner-ab:{provider_id}")
     provider = None
     try:
-        provider = TimedProvider(
-            connect_provider(
-                provider_id,
-                port=port,
-                open_if_missing=open_if_missing,
-                bring_to_front=open_if_missing,
-            ),
-            send_timeout=send_timeout,
-            new_chat_timeout=new_chat_timeout,
-        )
-        for case in cases:
-            for arm in arms:
-                key = (case.name, arm)
-                if key in existing:
-                    continue
-                row = run_case(
-                    provider,
-                    provider_id=provider_id,
-                    case=case,
-                    arm=arm,
-                    max_turns=max_turns,
-                    run_id=run_id,
-                    trace=trace,
-                )
-                payload["rows"].append(row)
-                payload["summary"] = summarize(payload["rows"])
-                payload["updated_at"] = _timestamp()
-                _write_payload(output, payload)
-                print(
-                    f"[{provider_id} {case.name} {arm}] "
-                    f"ok={row.get('ok')} score={row.get('score')} "
-                    f"followup={row.get('followup_rounds')} "
-                    f"stop={row.get('planner_stop_reason') or row.get('stop_reason', row.get('error', ''))}",
-                    flush=True,
-                )
-        payload["complete"] = True
-        payload["summary"] = summarize(payload["rows"])
-        payload["updated_at"] = _timestamp()
-        _write_payload(output, payload)
-        if trace is not None:
-            trace.record_run_complete(
-                run_id=run_id,
-                provider=provider_id,
-                rows=len(payload["rows"]),
+        with _fixture_url_policy_bypass():
+            provider = TimedProvider(
+                connect_provider(
+                    provider_id,
+                    port=port,
+                    open_if_missing=open_if_missing,
+                    bring_to_front=open_if_missing,
+                ),
+                send_timeout=send_timeout,
+                new_chat_timeout=new_chat_timeout,
             )
-        return payload
+            for case in cases:
+                for arm in arms:
+                    key = (case.name, arm)
+                    if key in existing:
+                        continue
+                    row = run_case(
+                        provider,
+                        provider_id=provider_id,
+                        case=case,
+                        arm=arm,
+                        max_turns=max_turns,
+                        run_id=run_id,
+                        trace=trace,
+                    )
+                    payload["rows"].append(row)
+                    payload["summary"] = summarize(payload["rows"])
+                    payload["updated_at"] = _timestamp()
+                    _write_payload(output, payload)
+                    print(
+                        f"[{provider_id} {case.name} {arm}] "
+                        f"ok={row.get('ok')} score={row.get('score')} "
+                        f"followup={row.get('followup_rounds')} "
+                        f"stop={row.get('planner_stop_reason') or row.get('stop_reason', row.get('error', ''))}",
+                        flush=True,
+                    )
+            payload["complete"] = True
+            payload["summary"] = summarize(payload["rows"])
+            payload["updated_at"] = _timestamp()
+            _write_payload(output, payload)
+            if trace is not None:
+                trace.record_run_complete(
+                    run_id=run_id,
+                    provider=provider_id,
+                    rows=len(payload["rows"]),
+                )
+            return payload
     finally:
         provider_controls.end_task_context()
         if provider is not None:
@@ -1480,13 +1508,13 @@ def _self_test() -> None:
         queries_executed=("current primary source evidence",),
         opened_sources=(
             {
-                "final_url": "https://www.w3.org/TR/widget-storage-update/",
-                "title": "Widget Storage update note",
+                "final_url": "https://source-b.test/widget-storage-update",
+                "title": "Widget benchmark update note",
             },
         ),
         previews=(
             "query: current primary source evidence\n"
-            "Widget Storage update note | https://www.w3.org/TR/widget-storage-update/\n"
+            "Widget benchmark update note | https://source-b.test/widget-storage-update\n"
             "The Widget Storage working group has not adopted a stable-v3 successor; stable-v2 remains the recommended endpoint.",
         ),
         stop_reason="opened_sources",
@@ -1505,9 +1533,9 @@ def _self_test() -> None:
         material=material,
         limit=12000,
     )
-    assert "opened_material.1.final_url: https://www.w3.org/TR/widget-storage-update/" in prompt
-    assert '"sources":["https://www.w3.org/TR/widget-storage-update/"]' in prompt
-    assert '"source_url":"https://www.w3.org/TR/widget-storage-update/"' in prompt
+    assert "opened_material.1.final_url: https://source-b.test/widget-storage-update" in prompt
+    assert '"sources":["https://source-b.test/widget-storage-update"]' in prompt
+    assert '"source_url":"https://source-b.test/widget-storage-update"' in prompt
     assert "Do not put s1, s2, source_id, result_id, or hit_id" in prompt
     assert "Do not list a new URL in done.answer" in prompt
     assert "This is a narrow repair pass, not a second full research rewrite" in prompt
