@@ -11,9 +11,11 @@ This file records Codey's release history. The newest release appears first.
   rejected candidates incur 0 writes to disk store or changes, guaranteeing zero pollution for store, `sources_read`, and `created_ids`;
   `link()` validates endpoint note existence; changes are committed only upon candidate selection.
 - Added Staging Commit Exception Guard and Atomic Rollback in ResearchPipeline:
-  safely protects `commit_staged` against disk full or IO exceptions by automatically unlinking any newly written note files on disk,
+  safely protects `commit_staged` against disk full or IO exceptions by automatically unlinking any newly written note files on disk
+  (including cleaning up moved folder paths while restoring original files with 100% byte-exact precision without timestamp drift),
   removing newly created notes from the SQLite index (preventing ghost index entries), and restoring `KnowledgeChanges` snapshots,
   cleanly preserving the initial successful result with `planner_stop_reason="followup_commit_error"` and zero partial residue.
+
 - Enhanced deterministic graph patch merger (`codey/research/record_merge.py`):
   enforces strict evidence-backed citation verification across all sections (conclusion, evidence, counter), filtering uncited or dangling citations (e.g. `[99]`),
   idempotently merges new evidence and sources based on `(canonical_url, excerpt_hash)`, re-indexes citations with `done_finalizer`,

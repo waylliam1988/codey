@@ -12,8 +12,10 @@
   `link()` 严格校验两端 note 存在性；仅当候选方案通过评测胜出时才批量持久化提交。
 - Pipeline Staging Commit 事务回滚与异常安全护栏：
   在候选方案胜出提交（`commit_staged`）阶段增加异常保护与原子补偿回滚，若多 note 写入中途抛出磁盘满或底层 IO 错误，
-  自动逆序清理本次已写入磁盘的 note 文件、彻底从 SQLite 索引中清除（消除幽灵 index）并完整恢复 `KnowledgeChanges` 快照，
-  平稳回退并保留 initial 成功结果，标记 `planner_stop_reason="followup_commit_error"`，彻底消除“半提交脏写”与增强路径拖垮主任务的风险。
+  自动逆序清理本次已写入磁盘的 note 文件（针对已有 note 发生路径/folder 移动，彻底删除新路径文件并 100% 字节级还原旧路径文件内容与时间戳）、
+  彻底从 SQLite 索引中清除（消除幽灵 index）并完整恢复 `KnowledgeChanges` 快照，平稳回退并保留 initial 成功结果，
+  标记 `planner_stop_reason="followup_commit_error"`，彻底消除“半提交脏写”与增强路径拖垮主任务的风险。
+
 - 强化确定性图谱合并器（`codey/research/record_merge.py`）：
   对结论（conclusion）、关键证据（evidence）、反证（counter）实现严格的 Evidence-Backed 引用校验与全段落修剪，
   彻底过滤未引用或包含未映射悬空编号（如 `[99]`）的行，按 `(canonical_url, excerpt_hash)` 幂等去重合并新增证据与来源，

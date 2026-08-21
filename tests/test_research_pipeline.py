@@ -1083,44 +1083,65 @@ def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
         from codey.knowledge.note import KnowledgeNote
         from codey.research.tools import StagedKnowledgeStore
 
+        # Pre-populate an existing note in hypotheses folder
+        existing_note = KnowledgeNote(id="existing-note", title="Original Title", body="Original Body", type="hypothesis")
+        target_store.write_note(existing_note)
+        orig_existing_path = target_store.path_for(existing_note)
+        orig_existing_bytes = orig_existing_path.read_bytes()
+
         staged_store = StagedKnowledgeStore(target_store)
 
+        # 1. New note
         note1 = KnowledgeNote(id="note-1", title="Note 1", body="Body 1", type="fact")
-        note2 = KnowledgeNote(id="note-2", title="Note 2", body="Body 2", type="fact")
+        # 2. Existing note modified and moved from hypothesis to fact folder
+        modified_existing = KnowledgeNote(id="existing-note", title="New Title", body="New Body", type="fact")
+        # 3. Flaky note that fails
+        note3 = KnowledgeNote(id="note-3", title="Note 3", body="Body 3", type="fact")
+
         staged_store.write_note(note1)
-        staged_store.write_note(note2)
+        staged_store.write_note(modified_existing)
+        staged_store.write_note(note3)
 
         original_write = target_store.write_note
         call_count = [0]
 
         def flaky_write_note(note, *, changes=None):
             call_count[0] += 1
-            if call_count[0] == 2:
-                raise OSError("Disk full on second note")
+            if call_count[0] == 3:
+                raise OSError("Disk full on third note")
             return original_write(note, changes=changes)
 
         target_store.write_note = flaky_write_note
 
-        # Commit fails on the 2nd note and rolls back note-1 completely
-        with pytest.raises(OSError, match="Disk full on second note"):
+        # Commit fails on the 3rd note and rolls back note-1 and modified_existing completely
+        with pytest.raises(OSError, match="Disk full on third note"):
             staged_store.commit_to(target_store, changes=changes)
 
-        # Verify disk is 100% clean: note-1 was unlinked during rollback
+        # Verify new note-1 was completely unlinked
         note1_path = target_store.path_for(note1)
-        note2_path = target_store.path_for(note2)
         assert note1_path.exists() is False
-        assert note2_path.exists() is False
-        assert len(list(target_store.root.glob("**/*.md"))) == 0
 
-        # Verify SQLite index is 100% clean: zero ghost index entries
+        # Verify moved path (facts/existing-note.md) was cleaned up, and original (hypotheses/existing-note.md) is 100% byte-exact
+        moved_path = target_store.path_for(modified_existing)
+        assert moved_path.exists() is False
+        assert orig_existing_path.exists() is True
+        assert orig_existing_path.read_bytes() == orig_existing_bytes
+
+        # Verify SQLite index is 100% clean
         assert target_store.exists("note-1") is False
-        assert target_store.exists("note-2") is False
-        assert target_store.index.count() == 0
+        assert target_store.exists("note-3") is False
+        assert target_store.exists("existing-note") is True
+        assert target_store.index.count() == 1
+        idx_existing = target_store.index.get("existing-note")
+        assert idx_existing["title"] == "Original Title"
+        assert idx_existing["type"] == "hypothesis"
 
         # Verify KnowledgeChanges is 100% clean: zero false created/updated records
         assert changes.created == []
         assert changes.updated == []
         assert changes.has_changes() is False
+
+
 
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -548,16 +549,18 @@ class StagedKnowledgeStore:
         saved_touched = set(getattr(changes, "_touched", ())) if changes is not None else None
 
         # Track written/modified notes and files for complete rollback:
-        # note_id -> (path, orig_content_or_None, orig_note_or_None)
-        tracked_notes: dict[str, tuple[Path, str | None, KnowledgeNote | None]] = {}
+        # note_id -> (new_path, orig_path_or_None, orig_bytes_or_None, orig_note_or_None)
+        tracked_notes: dict[str, tuple[Path, Path | None, bytes | None, KnowledgeNote | None]] = {}
         try:
             for note in self._staged_notes.values():
-                path = target_store.path_for(note)
+                new_path = target_store.path_for(note)
                 orig_existed = target_store.exists(note.id)
                 orig_note = target_store.read_note(note.id) if orig_existed else None
-                orig_content = path.read_text(encoding="utf-8") if path.is_file() else None
-                tracked_notes[note.id] = (path, orig_content, orig_note)
+                orig_path = target_store.path_for(orig_note) if orig_note is not None else None
+                orig_bytes = orig_path.read_bytes() if (orig_path and orig_path.is_file()) else None
+                tracked_notes[note.id] = (new_path, orig_path, orig_bytes, orig_note)
                 target_store.write_note(note, changes=changes)
+
             for src, dst, kind in self._staged_links:
                 src_id = target_store.index.resolve(src) or src
                 if src_id not in tracked_notes:
@@ -565,24 +568,38 @@ class StagedKnowledgeStore:
                     orig_src_note = target_store.read_note(src_id) if orig_existed else None
                     if orig_src_note is not None:
                         src_path = target_store.path_for(orig_src_note)
-                        src_content = src_path.read_text(encoding="utf-8") if src_path.is_file() else None
-                        tracked_notes[src_id] = (src_path, src_content, orig_src_note)
+                        src_bytes = src_path.read_bytes() if src_path.is_file() else None
+                        tracked_notes[src_id] = (src_path, src_path, src_bytes, orig_src_note)
                 target_store.link(src, dst, kind, changes=changes)
+
             self._staged_notes.clear()
             self._staged_links.clear()
         except Exception:
             # Atomic rollback: revert all notes, index entries, links, and changes
-            for note_id, (path, orig_content, orig_note) in reversed(list(tracked_notes.items())):
+            for note_id, (new_path, orig_path, orig_bytes, orig_note) in reversed(list(tracked_notes.items())):
                 try:
                     if orig_note is None:
-                        if path.is_file():
-                            path.unlink(missing_ok=True)
+                        # 1. New note created during this commit attempt
+                        if new_path.is_file():
+                            new_path.unlink(missing_ok=True)
                         if hasattr(target_store.index, "remove"):
                             target_store.index.remove(note_id)
                     else:
-                        if orig_content is not None:
-                            path.write_text(orig_content, encoding="utf-8")
-                        target_store.write_note(orig_note)
+                        # 2. Existing note modified or moved during this commit attempt
+                        # If folder/type changed, delete the newly created path file
+                        if orig_path is not None and new_path != orig_path and new_path.is_file():
+                            new_path.unlink(missing_ok=True)
+                        # Byte-level exact restoration of original markdown file (no timestamp bump)
+                        if orig_path is not None and orig_bytes is not None:
+                            orig_path.parent.mkdir(parents=True, exist_ok=True)
+                            orig_path.write_bytes(orig_bytes)
+                        # Exact index & links restoration to original snapshot
+                        if hasattr(target_store, "rel") and hasattr(target_store, "index") and orig_path is not None:
+                            rel = target_store.rel(orig_path)
+                            c_hash = hashlib.sha256(orig_bytes).hexdigest()[:16] if orig_bytes is not None else ""
+                            target_store.index.upsert(orig_note, path=rel, content_hash=c_hash)
+                            if hasattr(target_store, "_index_body_links"):
+                                target_store._index_body_links(orig_note)
                 except Exception:
                     pass
 
@@ -591,6 +608,8 @@ class StagedKnowledgeStore:
                 changes._after_hashes = saved_after or {}
                 changes._touched = saved_touched or set()
             raise
+
+
 
 
 
