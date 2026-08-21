@@ -479,3 +479,118 @@ def test_merge_evidence_patch_builds_minimal_candidate_from_protocol_result_with
             assert len(merged.search_results) == 2
         finally:
             store.index.close()
+
+
+def test_merge_evidence_patch_rebuilds_when_pruning_leaves_no_supported_body_lines() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-pruned-rebuild",
+                project="project-pruned-rebuild",
+            )
+            source_a = "https://example.com/source-a"
+            source_b = "https://example.com/source-b"
+            tools.ledger.record_search("primary evidence", [{
+                "title": "Source A",
+                "url": source_a,
+                "snippet": "Source A verified fact.",
+            }])
+            tools.sources_read.add(source_a)
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url=source_a,
+                final_url=source_a,
+                title="Source A",
+                text="Source A verified fact.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Source A Fact",
+                "body": "Source A verified fact.",
+                "sources": [source_a],
+                "evidence": [{
+                    "source_url": source_a,
+                    "excerpt": "Source A verified fact.",
+                    "claim": "Source A verified fact.",
+                }],
+            })
+            hallucinated_summary = (
+                "## 结论\n"
+                "Uncited invented conclusion.\n"
+                "Dangling invented conclusion [99].\n\n"
+                "## 关键证据\n"
+                "- Uncited invented evidence.\n"
+                "- [99] Dangling invented evidence.\n\n"
+                "## 反证与限制\n"
+                "- Uncited invented limitation.\n\n"
+                "## 来源质量\n"
+                "- invented quality text.\n\n"
+                "## 搜索覆盖\n"
+                "- invented coverage text.\n\n"
+                "## 来源\n"
+                "[1] Source A - https://example.com/source-a"
+            )
+            initial_record = build_research_record(
+                summary=hallucinated_summary,
+                question="What facts are supported?",
+                session_id="session-pruned-rebuild",
+                project="project-pruned-rebuild",
+                run_id="run-pruned-rebuild",
+                ledger=tools.ledger,
+                stop_reason="done",
+            )
+            assert initial_record.answer_status == "partial"
+            initial_result = ResearchRunResult(
+                question="What facts are supported?",
+                summary=hallucinated_summary,
+                stop_reason="done",
+                turns=2,
+                research_record=initial_record,
+            )
+
+            tools.ledger.record_search("fresh evidence", [{
+                "title": "Source B",
+                "url": source_b,
+                "snippet": "Source B verified follow-up fact.",
+            }])
+            tools.sources_read.add(source_b)
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url=source_b,
+                final_url=source_b,
+                title="Source B",
+                text="Source B verified follow-up fact.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Source B Fact",
+                "body": "Source B verified follow-up fact.",
+                "sources": [source_b],
+                "evidence": [{
+                    "source_url": source_b,
+                    "excerpt": "Source B verified follow-up fact.",
+                    "claim": "Source B verified follow-up fact.",
+                }],
+            })
+            material = PlanExecutionResult(
+                queries_executed=("fresh evidence",),
+                fresh_source_urls=(source_b,),
+            )
+
+            merged = merge_evidence_patch(initial_result, tools, material)
+
+            assert merged.stop_reason == "done"
+            assert "Uncited invented" not in merged.summary
+            assert "Dangling invented" not in merged.summary
+            assert "Research findings supported" not in merged.summary
+            assert "Source A verified fact" in merged.summary
+            assert "Source B verified follow-up fact" in merged.summary
+            assert "- 查询:" in merged.summary
+            assert "- 已打开来源: 2; 证据条目: 2" in merged.summary
+            assert len(merged.research_record.evidence) == 2
+            assert merged.research_record.unsupported_claim_count == 0
+        finally:
+            store.index.close()

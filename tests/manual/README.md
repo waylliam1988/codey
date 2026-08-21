@@ -405,6 +405,12 @@ candidate unselected; the projection converted that paired row to
 from ledger evidence, source quality, and coverage instead of inheriting stale
 model-written sections.
 
+A post-fix Qwen paired rerun on the same fixture confirms the intended
+production effect: score `5 -> 6`, `useful=true`, sources/evidence `1/1 -> 2/2`,
+coverage unchanged at `0.667`, unsupported-claim rate `0.333 -> 0.250`,
+provider sends `5 -> 6`, and wall time `44.521s -> 49.388s`. This replaces the
+older Qwen production row where unsupported-claim rate regressed to `0.750`.
+
 Use this probe when you want to judge whether 0.4.4 follow-up search is adding
 real value or just extra traffic. The paired summary is the main signal; if
 coverage and unsupported-claim rate barely move while time and traffic grow,

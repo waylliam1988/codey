@@ -130,6 +130,10 @@
   `search_results_payload()` 派生 search-result URL，修掉不存在的 ledger helper；
   对 protocol/not_answered 初稿改为从 staged ledger evidence 重建最小报告；
   `来源质量` 与 `搜索覆盖` 段落由 deterministic merge 重新生成，不继承旧模型段落。
+- 记录 narrow rebuild 后的 Qwen production paired A/B：`widget_noop` 保持
+  score `5 -> 6`，`useful=true`，新增 1 个 fresh source/evidence pair，
+  unsupported-claim rate 从 `0.333` 降到 `0.250`，不再复现旧 production row
+  回退到 `0.750` 的问题。
 - 深度加固与卫生清理（Evidence-Only Follow-up & Deterministic Record Merge 生产落地）：
   1. 彻底移除 `max_wall_time` 生产 gate 与停止分支，研究行为边界由 query/source/round/cancellation 保证，时间仅作诊断指标。
   2. 强化 `evidence_followup.py`：Prompt note type 修正为 `fact`；强制显式非空 `evidence`（支持 list 与 singleton dict）；URL 白名单严禁内部 `s1/s2` 标签；出现非 `knowledge_write` 工具整轮直接标记 `invalid_tool_called`，且严格只执行 1 个合法的 `knowledge_write`。

@@ -146,6 +146,12 @@ python -B tests\manual\bounded_research_merge_projection.py --input tests\manual
 # attempted_new_evidence_count=1; projection converted it to 6/true. This
 # validates the narrow evidence-backed record_merge production fix.
 
+python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-qwen-production-narrowmerge-20260821.json
+python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-qwen-production-narrowmerge-20260821.json
+# Qwen post-fix narrow merge: score 5 -> 6, useful=true, sources/evidence
+# 1/1 -> 2/2, coverage delta 0.000, unsupported-claim rate 0.333 -> 0.250,
+# provider sends 5 -> 6, seconds 44.521 -> 49.388.
+
 python -B -m py_compile codey\research\record_merge.py tests\test_research_record_merge.py tests\test_research_pipeline.py tests\manual\bounded_research_merge_projection.py
 # ok
 
@@ -153,10 +159,10 @@ ruff check codey\research\record_merge.py tests\test_research_record_merge.py te
 # All checks passed
 
 pytest tests\test_research_evidence_followup.py tests\test_research_plan_executor.py tests\test_research_record_merge.py tests\test_research_pipeline.py tests\test_run_trace.py tests\test_task_runner_run_trace.py -q
-# 66 passed
+# 67 passed
 
 pytest -q
-# 2264 passed, 9 skipped, 638 subtests passed in 368.57s
+# 2265 passed, 9 skipped, 638 subtests passed in 390.77s
 ```
 
 ## 0.4.3 Source Connector Boundary + Query Planner Dry Run v1

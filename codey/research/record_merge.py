@@ -239,6 +239,15 @@ def _report_evidence_items(
     return preferred + remaining
 
 
+def _evidence_urls(items: Sequence[EvidenceItem], ledger: ResearchLedger) -> set[str]:
+    urls: set[str] = set()
+    for item in items:
+        url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
+        if url:
+            urls.add(url)
+    return urls
+
+
 def _search_result_urls(ledger: ResearchLedger) -> set[str]:
     urls: set[str] = set()
     for row in ledger.search_results_payload():
@@ -373,6 +382,16 @@ def _inject_new_evidence_into_sections(
                     continue
                 if _is_valid_counter(sline):
                     counter_lines.append(sline)
+        if not conclusion_lines and not evidence_lines:
+            return _inject_new_evidence_into_sections(
+                _blank_sections(),
+                _report_evidence_items(
+                    ledger,
+                    preferred_urls=_evidence_urls(new_evidence, ledger),
+                ),
+                ledger,
+                rebuild=True,
+            )
 
     for item in new_evidence:
         url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
@@ -397,10 +416,10 @@ def _inject_new_evidence_into_sections(
             conclusion_lines.append(f"- {c_text} [{c_num}]")
         if not conclusion_lines:
             c_num = next(iter(url_to_num.values()), 1)
-            conclusion_lines.append(f"- Research findings supported by verified sources. [{c_num}]")
+            conclusion_lines.append(f"- 基于已验证来源的研究结论。 [{c_num}]")
     elif not conclusion_lines and url_to_num:
         c_num = next(iter(url_to_num.values()), 1)
-        conclusion_lines.append(f"- Research findings supported by verified sources. [{c_num}]")
+        conclusion_lines.append(f"- 基于已验证来源的研究结论。 [{c_num}]")
 
     if not counter_lines:
         counter_lines.append("- 未找到强反证；当前有界补搜未发现与已保存证据直接冲突的来源。")
@@ -436,9 +455,9 @@ def _render_source_quality(
     for url, number in sorted(url_to_num.items(), key=lambda item: item[1]):
         if cited_numbers and number not in cited_numbers:
             continue
-        title = ledger.source_title(url).strip() or "Source"
+        title = ledger.source_title(url).strip() or "来源"
         quality = ledger.quality_for_url(url).render()
-        lines.append(f"- [{number}] {title}: {quality or 'source quality unavailable'}")
+        lines.append(f"- [{number}] {title}: {quality or '来源质量不可用'}")
     return "\n".join(lines).strip()
 
 
@@ -447,12 +466,12 @@ def _render_search_coverage(ledger: ResearchLedger, cited_numbers: set[int]) -> 
     lines: list[str] = []
     queries = [str(item).strip() for item in coverage.get("queries", ()) if str(item).strip()]
     if queries:
-        lines.append("- queries: " + "; ".join(queries[:4]))
+        lines.append("- 查询: " + "; ".join(queries[:4]))
     opened_count = max(0, int(coverage.get("opened_count") or len(ledger.final_url_set())))
     evidence_count = len(getattr(ledger, "evidence_items", ()) or ())
-    lines.append(f"- opened sources: {opened_count}; evidence items: {evidence_count}")
+    lines.append(f"- 已打开来源: {opened_count}; 证据条目: {evidence_count}")
     if cited_numbers:
-        lines.append(f"- cited sources assessed: {len(cited_numbers)}")
+        lines.append(f"- 已评估引用来源: {len(cited_numbers)}")
     skipped = coverage.get("skipped_results") or []
     if skipped:
         skipped_titles: list[str] = []
@@ -463,7 +482,7 @@ def _render_search_coverage(ledger: ResearchLedger, cited_numbers: set[int]) -> 
             if title:
                 skipped_titles.append(title)
         if skipped_titles:
-            lines.append("- skipped results: " + "; ".join(skipped_titles))
+            lines.append("- 未打开结果: " + "; ".join(skipped_titles))
     return "\n".join(lines).strip()
 
 

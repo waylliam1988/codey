@@ -359,6 +359,20 @@ result is protocol/not_answered but the staged ledger contains evidence, the
 candidate report should be rebuilt from evidence-backed claims plus
 deterministic source-quality and coverage sections.
 
+### Post-Fix Narrow Merge Validation
+
+After the production narrow rebuild landed, Qwen was rerun on the same
+`widget_noop` paired fixture:
+
+| provider | baseline | planner | delta | useful | follow-up | sources | evidence | coverage delta | unsupported delta | send delta | time delta |
+|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| Qwen production narrow-merge | 5 | 6 | +1 | true | 1 | 1 -> 2 | 1 -> 2 | 0.000 | -0.083 | +1 | +4.867s |
+
+This closes the earlier Qwen regression: the old production row improved score
+but failed usefulness because unsupported-claim rate regressed `0.333 -> 0.750`.
+The narrow rebuild keeps the material gain and changes the paired summary to
+`useful=true` with unsupported-claim rate `0.333 -> 0.250`.
+
 ### Pre-Integration Evidence-Only3 Probe
 
 | provider | baseline | planner | delta | useful | follow-up | material gain | coverage delta | unsupported delta | send delta | time delta |
