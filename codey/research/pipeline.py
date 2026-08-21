@@ -79,9 +79,8 @@ class ResearchPipelineResult:
         }
 
 
-
-
 class ResearchPipeline:
+
     def __init__(
         self,
         *,

@@ -200,7 +200,45 @@ def test_run_evidence_followup_rejects_multiple_tool_calls() -> None:
             store.index.close()
 
 
+def test_run_evidence_followup_rejects_missing_tool_field() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-ev",
+                project="project-ev",
+            )
+            # Model returns JSON without explicit "tool" field
+            reply = """```json
+{"type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}
+```"""
+            provider = _MockProvider(reply)
+            plan = ResearchPlan(plan_ref="plan:123")
+            material = PlanExecutionResult(
+                fresh_source_urls=("https://example.com/fresh",),
+                previews=("Fresh source preview",),
+            )
+
+            result = run_evidence_followup(
+                provider=provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question="Question?",
+            )
+            assert result.ok is False
+            assert result.stop_reason == "missing_tool_name"
+            assert "requires explicit 'tool': 'knowledge_write'" in result.errors[0]
+        finally:
+            store.index.close()
+
+
 def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
+
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
         store = KnowledgeStore(root / "knowledge")

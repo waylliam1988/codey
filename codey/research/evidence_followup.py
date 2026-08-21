@@ -123,7 +123,6 @@ class EvidenceFollowupController:
         return self.tools.knowledge_write(args)
 
 
-
 def run_evidence_followup(
     *,
     provider: Any,
@@ -138,7 +137,7 @@ def run_evidence_followup(
     if should_stop and should_stop():
         return EvidenceFollowupResult(stop_reason="stopped")
     cancellation.check()
-    fresh_urls = list(material.fresh_source_urls)
+    fresh_urls = tuple(material.fresh_source_urls)
     if not fresh_urls:
         return EvidenceFollowupResult(ok=True, stop_reason="no_fresh_urls")
     prompt = build_evidence_followup_prompt(
@@ -179,26 +178,41 @@ def run_evidence_followup(
             errors=(f"Evidence-only follow-up strictly requires exactly 1 tool call, got {len(tool_calls)}.",),
         )
     first_call = tool_calls[0]
-    tname = str(first_call.get("tool") or first_call.get("name") or first_call.get("action") or "").strip().lower()
-    if tname and tname != "knowledge_write":
+    if not isinstance(first_call, dict):
+        return EvidenceFollowupResult(
+            ok=False,
+            stop_reason="invalid_tool_call_shape",
+            errors=("Tool call must be a JSON object",),
+        )
+    tool_name = str(first_call.get("tool") or first_call.get("name") or "").strip().lower()
+    if not tool_name:
+        return EvidenceFollowupResult(
+            ok=False,
+            stop_reason="missing_tool_name",
+            errors=("Evidence-only follow-up requires explicit 'tool': 'knowledge_write'",),
+        )
+    if tool_name != "knowledge_write":
         return EvidenceFollowupResult(
             ok=False,
             stop_reason="invalid_tool_called",
-            errors=(f"Forbidden tool '{tname}' was called in evidence-only follow-up",),
+            errors=(f"Forbidden tool '{tool_name}' was called in evidence-only follow-up",),
         )
-    name = str(first_call.get("tool") or first_call.get("name") or first_call.get("action") or "knowledge_write").strip()
-    args = first_call.get("args") or first_call.get("parameters") or first_call
+    if "args" in first_call and isinstance(first_call["args"], dict):
+        args = first_call["args"]
+    elif "parameters" in first_call and isinstance(first_call["parameters"], dict):
+        args = first_call["parameters"]
+    else:
+        args = {k: v for k, v in first_call.items() if k not in {"tool", "name"}}
+    res = controller.execute_tool_call(tool_name, args)
 
-    if isinstance(args, dict):
-        res = controller.execute_tool_call(name, args)
-        if str(res).startswith("ERROR:"):
-            errors.append(clip(res, 200))
-        elif "saved" in str(res) and "note id=" in str(res):
-            parts = str(res).split("note id=")
-            if len(parts) > 1:
-                nid = parts[1].split()[0].strip()
-                if nid:
-                    written_note_ids.append(nid)
+    if str(res).startswith("ERROR:"):
+        errors.append(clip(res, 200))
+    elif "saved" in str(res) and "note id=" in str(res):
+        parts = str(res).split("note id=")
+        if len(parts) > 1:
+            nid = parts[1].split()[0].strip()
+            if nid:
+                written_note_ids.append(nid)
     final_evidence_count = len(getattr(tools.ledger, "evidence_items", ()))
     new_ev_count = max(0, final_evidence_count - initial_evidence_count)
     return EvidenceFollowupResult(
@@ -211,8 +225,8 @@ def run_evidence_followup(
     )
 
 
-
 __all__ = [
+
     "EvidenceFollowupController",
     "EvidenceFollowupResult",
     "build_evidence_followup_prompt",

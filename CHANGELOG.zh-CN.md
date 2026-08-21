@@ -114,7 +114,8 @@
   2. 强化 `evidence_followup.py`：Prompt note type 修正为 `fact`；强制显式非空 `evidence`（支持 list 与 singleton dict）；URL 白名单严禁内部 `s1/s2` 标签；出现非 `knowledge_write` 工具整轮直接标记 `invalid_tool_called`，且严格只执行 1 个合法的 `knowledge_write`。
   3. Follow-up 阶段引入 Staged Ledger（`ledger.clone()`）事务隔离机制：只有在 candidate 胜出被选中时才应用到最终 `best_tools`，未选中的 candidate 零污染主知识库。
   4. 强化 `record_merge.py`：幂等去重键严格对齐 `(canonical_url, excerpt_digest)`；支持非标/协议停止初稿恢复与格式化；全面同步 `ResearchRunResult` 元数据（`source_urls`, `opened_sources`, `sources_read`, `evidence_items`, `citation_map`, `coverage` 等）；生成确定性 `synthesis:merge:{digest}` synthesis_id 并修正 `project_ref`。
-  5. 修复 `PlanExecutor` 字段为 `tools.ledger.evidence_items`，删除 `_followup_context` 死代码，扩展 `ResearchPipelineResult` 观测字段（`fresh_source_count`, `new_evidence_count`, `merged_evidence_count`）。
+  5. 修复 `PlanExecutor` 字段为 `tools.ledger.evidence_items`，删除 `_followup_context` 死代码，扩展 `ResearchPipelineResult` 观测字段（`fresh_source_count`, `new_evidence_count`, `final_evidence_count`）。
+
 
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1

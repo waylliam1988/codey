@@ -691,10 +691,8 @@ class RunTraceRecorder:
             "attempted_fresh_source_count": _nonnegative_int(result.get("attempted_fresh_source_count")),
             "attempted_new_evidence_count": _nonnegative_int(result.get("attempted_new_evidence_count")),
         }
-
-
-
         self.manifest.research_pipeline_runs.append(payload)
+
         if len(self.manifest.research_pipeline_runs) > MAX_RESEARCH_PIPELINE_RUNS:
             del self.manifest.research_pipeline_runs[:-MAX_RESEARCH_PIPELINE_RUNS]
             self.manifest.warnings.append("research_pipeline_runs_truncated")

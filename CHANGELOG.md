@@ -111,7 +111,8 @@ This file records Codey's release history. The newest release appears first.
   2. Strengthened `evidence_followup.py`: updated prompt note type to `fact`, strictly enforced explicit non-empty `evidence` items (both list and singleton dict forms), tightened URL whitelisting against internal `s1/s2` IDs, invalidated entire round upon forbidden tool calls (`invalid_tool_called`), and restricted execution to exactly 1 valid `knowledge_write`.
   3. Introduced staged ledger isolation (`ledger.clone()`) during follow-up iterations: rejected candidate follow-up artifacts cause zero pollution to the primary knowledge store and ledger.
   4. Strengthened `record_merge.py`: aligned idempotent deduplication key on `(canonical_url, excerpt_digest)`, supported non-standard/protocol-stop initial summary recovery and formatting, synchronized all `ResearchRunResult` metadata fields (`source_urls`, `opened_sources`, `sources_read`, `evidence_items`, `citation_map`, `coverage`), and generated a deterministic `synthesis:merge:{digest}` synthesis ID.
-  5. Fixed `PlanExecutor` field reference to `tools.ledger.evidence_items`, removed dead `_followup_context` helper, and expanded `ResearchPipelineResult` trace observability metrics (`fresh_source_count`, `new_evidence_count`, `merged_evidence_count`).
+  5. Fixed `PlanExecutor` field reference to `tools.ledger.evidence_items`, removed dead `_followup_context` helper, and expanded `ResearchPipelineResult` trace observability metrics (`fresh_source_count`, `new_evidence_count`, `final_evidence_count`).
+
 
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
