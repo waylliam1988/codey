@@ -33,12 +33,6 @@
   `notes_created`、`notes_updated`、`links_created`、`counterpoints` 与稳定排序的 `source_urls`。
 - 彻底清理 `PlanExecutor` 中 `max_wall_time` 残留死分支，消除已废弃的计时器参数，确保执行边界语义纯粹干净。
 - 将 Research 生命周期编排收归 `codey/research/pipeline.py`：初始
-
-
-
-
-
-
   `ResearchRunner`、proof review、`QueryPlanner`、有界 `PlanExecutor`、
   evidence-only follow-up、确定性 `merge_evidence_patch`、最终 proof review 和 Evidence Ledger 写入由 Pipeline
   统一拥有；`TaskRunner` 只负责外围 provider/session/trace/mode 生命周期。
@@ -81,17 +75,16 @@
   `no_actionable_gap`，`widget_noop` 虽然执行了一轮 follow-up，但没有新增 source 或
   evidence；这说明时间限制不是核心收益瓶颈，下一步应让 planner 更明确地区分
   “回答修饰” 与 “新材料补搜”。
-- 手工 A/B harness 增加未进主代码的 fresh-material executor 实验：planner arm 会跳过
+- 生产合入前的手工 A/B harness 增加 fresh-material executor 实验：planner arm 会跳过
   已打开 URL，并在 summary 中区分 `execution_material_gain` 与最终 record 的
   `material_gain`。MiMo 复跑显示 `widget_noop` 能 fetch 到新的
   `widget-storage-update` fixture，coverage 和 unsupported-claim rate 改善，但最终
   ResearchRecord 仍没有新增 source/evidence；下一步应验证 follow-up synthesis 如何把
   executor 材料吸收到 ledger，而不是先改生产 PlanExecutor。
-- 手工 A/B harness 增加未进主代码的 evidence-only follow-up 实验：planner follow-up
-  只允许 1 轮 `knowledge_write`，禁止 `done` 长报告重写，然后由脚本做 deterministic
-  evidence-only patch merge。该 merge 只保留 evidence-backed base claim，给缺失
-  claim projection 的 evidence 生成窄 claim，并丢弃 provider 新写出的 unsupported
-  claim。
+- 生产合入前的手工 A/B harness 增加 evidence-only follow-up 实验：planner
+  follow-up 只允许 1 轮 `knowledge_write`，禁止 `done` 长报告重写，并用确定性
+  patch 验证“模型只采 evidence、最终报告由程序合并”的方向；该方向已经落成生产
+  `run_evidence_followup()` + `record_merge`。
 - 修复 Qwen Studio 首页首发 false-ready：页面会先暴露
   `textarea.message-input-textarea` 与 `button.send-button`，但 submit handler 还未
   完全 ready，立即提交会清空输入且不进入会话。`new_chat()` 现在只在 Qwen 首页首发前
@@ -104,11 +97,18 @@
 - GLM / StepFun hidden-material paired A/B 已补跑：GLM raw score `1 -> 6`，
   但 unsupported claim rate `0.0 -> 0.4`，按保守 usefulness gate 判定为 false；
   StepFun `1 -> 1`，planner 停在 `initial_stop_reason_protocol`，没有进入 follow-up。
-- evidence-only patch-merge A/B 现在已在五个网页 provider 上全部显示
+- 生产合入前的 evidence-only patch-merge A/B 已在五个网页 provider 上全部显示
   `useful=true`：DeepSeek、MiMo、Qwen 的 `widget_noop` 均从 score `5 -> 6`，
   StepFun、GLM 均从 `1 -> 6`。每个 planner row 都新增 `source-b`
   source/evidence 各 1，且 unsupported-claim rate 没有回退。StepFun 不再触发长
   `done.answer` JSON 转义失败，因为 follow-up model 不再负责最终报告。
+- bounded planner 手工 A/B harness 现在直接调用生产 `run_evidence_followup()`
+  和生产 deterministic merge；唯一保留的 A/B 专用执行补丁只是 fixture
+  material-phase executor，用来可控暴露隐藏 source B。旧的 harness-only
+  follow-up controller 和 patch-only merge 旁路已删除。
+- 已把五家 evidence-only3 成功 follow-up reply 回放到当前生产
+  `run_evidence_followup()`：DeepSeek、MiMo、Qwen、StepFun、GLM 均接受严格显式
+  `{"tool":"knowledge_write","args":{...}}` schema，并各写入 1 条新 evidence。
 - 深度加固与卫生清理（Evidence-Only Follow-up & Deterministic Record Merge 生产落地）：
   1. 彻底移除 `max_wall_time` 生产 gate 与停止分支，研究行为边界由 query/source/round/cancellation 保证，时间仅作诊断指标。
   2. 强化 `evidence_followup.py`：Prompt note type 修正为 `fact`；强制显式非空 `evidence`（支持 list 与 singleton dict）；URL 白名单严禁内部 `s1/s2` 标签；出现非 `knowledge_write` 工具整轮直接标记 `invalid_tool_called`，且严格只执行 1 个合法的 `knowledge_write`。

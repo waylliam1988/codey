@@ -206,7 +206,6 @@ def run_evidence_followup(
     args = first_call["args"]
     res = controller.execute_tool_call(tool_name, args)
 
-
     if str(res).startswith("ERROR:"):
         errors.append(clip(res, 200))
     elif "saved" in str(res) and "note id=" in str(res):
@@ -228,7 +227,6 @@ def run_evidence_followup(
 
 
 __all__ = [
-
     "EvidenceFollowupController",
     "EvidenceFollowupResult",
     "build_evidence_followup_prompt",

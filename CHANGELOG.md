@@ -32,12 +32,6 @@ This file records Codey's release history. The newest release appears first.
   and fully synchronizes `queries`, `search_results` with full `query/opened/final_url` shape, `notes_created`, `notes_updated`, `links_created`, `counterpoints`, and stably sorted `source_urls`.
 - Thoroughly removed dead `max_wall_time` branches and unused timer arguments from `PlanExecutor`.
 - Moved Research lifecycle orchestration into `codey/research/pipeline.py`.
-
-
-
-
-
-
   Initial `ResearchRunner`, proof review, `QueryPlanner`, bounded
   `PlanExecutor`, evidence-only follow-up, deterministic `merge_evidence_patch`, final proof review, and Evidence Ledger
   persistence now have one owner. `TaskRunner` keeps the outer
@@ -78,14 +72,14 @@ This file records Codey's release history. The newest release appears first.
   `useful=true` requires a completed pair, a follow-up round, final-record
   material gain, quality-side improvement, and no quality regression. Pipeline
   diagnostics now distinguish missing proof review from no actionable gap.
-- Added A/B-only fresh-material and hidden-material probes. The experimental
+- Added pre-integration fresh-material and hidden-material probes. The experimental
   executor skips already-opened URLs, separates `execution_material_gain` from
   final-record `material_gain`, and verifies that patch-only merge is safer
   than asking the model to rewrite the whole follow-up report.
-- Added an A/B-only evidence-only follow-up mode to the bounded planner probe.
-  Planner follow-up is limited to one `knowledge_write` turn, forbids `done`
-  report rewrites, then compiles a deterministic evidence-only patch that keeps
-  evidence-backed base claims and drops unsupported provider-written claims.
+- Added a pre-integration evidence-only follow-up probe to validate the bounded
+  planner shape before production merge. Planner follow-up was limited to one
+  `knowledge_write` turn and deterministic patching, which became the
+  production evidence follow-up plus `record_merge` design.
 - Fixed Qwen Studio homepage first-submit readiness. Qwen can expose
   `textarea.message-input-textarea` and `button.send-button` before its
   homepage submit handler is hydrated; immediate submit can clear the composer
@@ -99,13 +93,22 @@ This file records Codey's release history. The newest release appears first.
   unsupported-claim rate, so it is not counted useful by the conservative
   gate. StepFun stayed `1 -> 1` because the initial run stopped at protocol
   before follow-up could execute.
-- Evidence-only patch-merge A/B now shows useful planner uplift on all five
-  tested web providers without changing production Research code. DeepSeek,
+- The pre-integration evidence-only patch-merge A/B showed useful planner uplift
+  on all five tested web providers. DeepSeek,
   MiMo, and Qwen moved `widget_noop` from score `5` to `6`; StepFun and GLM
   moved from `1` to `6`. Every planner row added one fresh source/evidence pair
   with no unsupported-claim-rate regression. StepFun avoided the long
   `done.answer` JSON failure because the follow-up model never writes the final
   report.
+- The bounded planner manual A/B harness now exercises the production
+  `run_evidence_followup()` and production deterministic merge path directly;
+  the only remaining A/B-specific execution patch is the fixture material-phase
+  executor used to expose hidden source B. The old harness-only follow-up
+  controller and patch-only merge path were removed.
+- Replayed the five successful evidence-only3 follow-up replies against the
+  current production `run_evidence_followup()`: DeepSeek, MiMo, Qwen, StepFun,
+  and GLM all accepted the strict explicit `{"tool":"knowledge_write","args":{...}}`
+  schema and wrote exactly one new evidence item.
 - Production hardening & code hygiene cleanup for bounded evidence-only follow-up & deterministic merge:
   1. Completely removed `max_wall_time` production gate and stop branch; bounded semantics are enforced solely via queries/sources/rounds/cancellation, treating wall time strictly as a diagnostic metric.
   2. Strengthened `evidence_followup.py`: updated prompt note type to `fact`, strictly enforced explicit non-empty `evidence` items (both list and singleton dict forms), tightened URL whitelisting against internal `s1/s2` IDs, invalidated entire round upon forbidden tool calls (`invalid_tool_called`), and restricted execution to exactly 1 valid `knowledge_write`.

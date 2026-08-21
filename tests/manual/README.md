@@ -304,9 +304,11 @@ path.
 `bounded_research_planner_ab.py` is the 0.4.4 bounded Research planner A/B
 probe. The baseline arm runs the production ResearchPipeline with follow-up
 disabled; the planner arm enables one bounded follow-up round, leaves the
-wall-clock limiter off, and uses an A/B-only fresh-material executor that skips
-already-opened URLs. It uses deterministic fixture search documents and a live
-provider, and it records atomic send/reply trace rows plus a paired
+wall-clock limiter off, and calls production `run_evidence_followup()` plus the
+production deterministic merge. The only remaining A/B-specific execution
+piece is the fresh-material fixture executor that exposes hidden source B and
+skips already-opened URLs. It uses deterministic fixture search documents and a
+live provider, and it records atomic send/reply trace rows plus a paired
 `followup_usefulness` summary with coverage, unsupported-claim, evidence,
 source, query, fetch, send, and time deltas. The summary separates
 `execution_material_gain` (the planner fetched a previously unread source) from
@@ -359,6 +361,14 @@ and Qwen, and the same evidence-only shape recovered GLM and StepFun on
 `widget_noop`: all five tested web providers now show `useful=true`, one fresh
 source/evidence pair, and no unsupported-claim regression by limiting follow-up
 to `knowledge_write` and compiling the final report deterministically.
+
+A trace replay check then fed the five successful evidence-only3 follow-up
+replies back into the current production `run_evidence_followup()`. DeepSeek,
+MiMo, Qwen, StepFun, and GLM all passed the strict explicit
+`{"tool":"knowledge_write","args":{...}}` schema and wrote one new evidence
+item, confirming that the schema hardening itself does not invalidate those
+successful model replies. New live A/B rows now exercise the production
+follow-up prompt directly rather than the older harness-only controller.
 
 Use this probe when you want to judge whether 0.4.4 follow-up search is adding
 real value or just extra traffic. The paired summary is the main signal; if

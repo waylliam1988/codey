@@ -847,6 +847,11 @@ codey/
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
   research/                 Research controller/runner/pipeline, shared citation scanners, source connectors, planner dry-run/executor, done citation compiler, evidence ledger, object model, report/proof quality gates
+    context.py              narrow ResearchPipeline context/config and trace sink
+    pipeline.py             Research lifecycle owner and bounded follow-up orchestration
+    plan_executor.py        bounded fresh-material ResearchPlan execution
+    evidence_followup.py    single-turn knowledge_write-only evidence extraction
+    record_merge.py         deterministic evidence patch merge and citation re-indexing
   verification_map.py       bounded review-time verification candidates
   review_impact_map.py      review-only changed-symbol caller/test hints
   change_brief.py           hidden task intent brief

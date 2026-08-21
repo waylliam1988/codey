@@ -1311,18 +1311,9 @@ stop_reason
 - Follow-up 模型交互严格限制为单轮单动作，仅允许 `type='fact'` 的 `knowledge_write`；严密校验来源归属（Provenance），提取的 `evidence[].source_url` 必须属于当前 note 声明的 `sources` 列表并属于允许的白名单；`PlanExecutor` 自动对重定向目标 URL 去重，杜绝重复打开与预算浪费。
 - Accepted 候选方案在 commit 阶段具备异常安全与补偿回滚护栏（`followup_commit_error`），若写入中途抛出异常，自动逆序清理已落盘文件（若已有 note 发生 folder/path 移动则删除新路径文件并字节级还原旧路径文件内容与时间戳，统一使用 `content_hash_bytes` 保持索引哈希防漂移）、清理 SQLite 索引条目与 links 关系（消除幽灵 index）并恢复 `KnowledgeChanges` 快照，平稳回退并保留 initial 成功结果。
 - 最终 ResearchRecord 由 `record_merge` 确定性合并与重新编号，实现严格的全段落（结论/证据/反证）citation 存在性与有效性校验，彻底过滤未引用或包含未映射悬空编号（如 `[99]`）的行，同步全量元数据（`queries`、包含完整 `query/opened/final_url` 的 `search_results`、`notes_created`、`notes_updated`、`counterpoints`、稳定排序的 `source_urls`）并透出最新观测指标（`fresh_source_count`、`new_evidence_count`、`final_evidence_count`，以及无论候选方案是否被选中均完全可持久化审计的 `attempted_fresh_source_count`、`attempted_new_evidence_count`）。
-
-
 - Planner 不设 wall-clock 质量 gate，执行时间仅作成本诊断指标；达到查询/来源有界预算必须停止并解释 gap。
 - UI 不新增 planner 面板，不自动弹窗；Run Details 只显示 bounded summary。
 - Run Trace 只记录 plan_ref、counts、stop_reason、gap refs，不保存 raw query transcript。
-
-
-
-
-
-
-
 
 ### 顺手架构优化
 
@@ -1379,6 +1370,13 @@ unsupported claim、new sources/evidence、query/fetch/send/time delta，便于�
 prompt、协议、额外流量和最终回答质量的关系。`useful=true` 必须是保守口径：
 baseline/planner 两行都成功、follow-up 实际执行、有新增 source/evidence、质量侧
 有改善，并且 coverage/status/unsupported-claim/score 没有明显回退。
+
+当前 harness 的 baseline arm 关闭 follow-up；planner arm 直接调用生产
+`run_evidence_followup()` 和生产 `record_merge`，只保留 fixture material-phase
+executor 用来控制隐藏来源暴露。2026-08-21 的 evidence-only3 trace 已回放到当前
+生产 `run_evidence_followup()`：DeepSeek、MiMo、Qwen、StepFun、GLM 的 follow-up
+reply 都符合显式 `{"tool":"knowledge_write","args":{...}}` schema，并各写入 1
+条新 evidence。
 
 ## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 

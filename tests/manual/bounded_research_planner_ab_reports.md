@@ -2,18 +2,22 @@
 
 Generated from live manual results on 2026-08-20 and 2026-08-21.
 
-This report records the 0.4.4 bounded planner experiments that were run while
-keeping production Research code unchanged. The harness changes live in
-`tests/manual/bounded_research_planner_ab.py`; result JSON and trace files were
+This report records the 0.4.4 bounded planner experiments. Early rows were run
+with production Research code unchanged to validate the design before merging;
+the current harness now exercises the production evidence-only follow-up and
+merge path directly. The harness lives in
+`tests/manual/bounded_research_planner_ab.py`; result JSON and trace files are
 written under `tests/manual/results/`.
 
 ## Decision
 
 Proceed with the default production implementation of evidence-only follow-up
-plus deterministic merge for 0.4.4. Do not copy the A/B harness monkeypatches
-into production, and do not ship the older full-report follow-up shape. Before
-release, validate the production implementation with focused tests and at least
-one real connector-backed A/B case.
+plus deterministic merge for 0.4.4. The manual harness now calls production
+`run_evidence_followup()` and production deterministic merge; the only remaining
+A/B-specific execution patch is the fixture material-phase executor used to make
+hidden source B available in a controlled comparison. Do not ship the older
+full-report follow-up shape. Before release, validate with focused tests and at
+least one real connector-backed A/B case.
 
 The live runs show that a planner can add value when three conditions are true:
 
@@ -28,6 +32,13 @@ one new source, one new evidence item, and no unsupported-claim regression.
 Earlier runs showed that prompt-only follow-up is unstable: models may rewrite
 too much, cite synthetic URLs too broadly, wrap JSON in code fences, or fail to
 persist new evidence before `done`.
+
+The 2026-08-21 trace replay check fed the five successful evidence-only3
+follow-up replies into the current production `run_evidence_followup()`. All
+five providers accepted the strict explicit
+`{"tool":"knowledge_write","args":{...}}` shape and wrote exactly one new
+evidence item, so the later schema hardening does not invalidate those
+successful replies.
 
 ## Result Files
 
@@ -189,7 +200,7 @@ elapsed time increased by 27.528 seconds.
 GLM shows why the conservative usefulness gate is necessary. Its raw score rose
 from 1 to 6 and it added the hidden source/evidence, but unsupported-claim rate
 regressed from 0.000 to 0.400. The result is not safe to count as useful without
-a stricter patch-only merge that prevents new unsupported conclusions.
+a stricter evidence-only merge that prevents new unsupported conclusions.
 
 StepFun did not reach planner execution. Both arms ended with score 1 and
 `answer_status=not_answered`; the planner row stopped at
@@ -326,8 +337,8 @@ new URL. It should require:
 
 ## Recommended 0.4.4 Direction
 
-Keep the roadmap direction, but treat patch-only merge as the production design
-candidate:
+Keep the roadmap direction, with production evidence-only follow-up and
+deterministic `record_merge` as the production design:
 
 1. `PlanExecutor` retrieves genuinely new material and exposes bounded material.
 2. Follow-up model work is restricted to evidence extraction, not report

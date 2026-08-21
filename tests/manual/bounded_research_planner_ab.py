@@ -15,7 +15,7 @@ from contextlib import contextmanager
 import sys
 import tempfile
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,29 +26,17 @@ from codey import provider_controls
 from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
-from codey.research.controller import ResearchController, ResearchControlState
 from codey.research.evidence_ledger import EvidenceLedgerStore
-from codey.research.identity import digest_json, digest_text, sanitize_research_url_ref, stable_ref
+from codey.research.evidence_followup import run_evidence_followup
 from codey.research import plan_executor as research_plan_executor_module
 from codey.research import tools as research_tools_module
 from codey.research import url_policy as research_url_policy_module
-from codey.research.object_model import (
-    RESEARCH_RECORD_KIND,
-    RESEARCH_RECORD_SCHEMA_VERSION,
-    EvidenceLocator,
-    ResearchClaim,
-    ResearchClaimRelation,
-    ResearchEvidence,
-    ResearchQuestion,
-    ResearchRecord,
-    ResearchSource,
-)
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.proof_quality import review_research_proof
 from codey.research.protocols import extract_json_objects
 from codey.research.query_planner import QueryCandidate, ResearchPlan
-from codey.research.runner import ResearchRunner, ResearchRunResult
+from codey.research.runner import ResearchRunner
 from codey.research.tools import ResearchTools, clone_research_tools
 
 
@@ -59,7 +47,7 @@ MAX_RESULT_BYTES = 1024 * 1024
 MAX_TRACE_BYTES = 2 * 1024 * 1024
 TRACE_PROMPT_CHARS = 8000
 TRACE_REPLY_CHARS = 8000
-AB_EVIDENCE_ONLY_FOLLOWUP_MODE = "evidence_only_patch_merge"
+AB_EVIDENCE_ONLY_FOLLOWUP_MODE = "production_evidence_followup"
 
 
 @dataclass(frozen=True)
@@ -243,6 +231,7 @@ class FreshMaterialPlanExecutor:
         queries: list[str] = []
         opened: list[dict[str, Any]] = []
         previews: list[str] = []
+        fresh_urls: list[str] = []
         skipped = 0
         errors: list[str] = []
         seen = set(baseline_opened)
@@ -300,6 +289,7 @@ class FreshMaterialPlanExecutor:
                     skipped += 1
                     continue
                 opened.append(source)
+                fresh_urls.append(new_urls[-1])
                 previews.append(_source_preview(query, source, text, self.config.max_source_preview_chars))
                 opened_for_query += 1
                 stop_reason = "opened_sources"
@@ -311,118 +301,12 @@ class FreshMaterialPlanExecutor:
             queries_executed=tuple(queries),
             opened_sources=tuple(opened),
             previews=tuple(previews),
+            fresh_source_urls=tuple(fresh_urls),
+            fresh_source_count=len(fresh_urls),
             skipped_count=skipped,
             stop_reason=stop_reason,
             errors=tuple(errors[:12]),
         )
-
-
-class ABEvidenceOnlyFollowupController(ResearchController):
-    """Harness-only controller that turns follow-up into evidence capture.
-
-    Production follow-up still uses the normal Research controller. This probe
-    tests a narrower loop where the model can only save evidence for freshly
-    opened material, and the harness does the final patch merge deterministically.
-    """
-
-    def __init__(self, *, required_urls: tuple[str, ...]) -> None:
-        super().__init__(include_source_search=False)
-        self.required_urls = tuple(url for url in required_urls if url)
-
-    def build_state(self, tools: object, *, turn: int, max_turns: int) -> ResearchControlState:
-        state = super().build_state(tools, turn=turn, max_turns=max_turns)
-        source_urls = {
-            key: value
-            for key, value in state.source_urls.items()
-            if not self.required_urls or value in self.required_urls
-        }
-        required = set(self.required_urls)
-        source_lines = tuple(
-            line for line in state.source_lines if not required or any(url in line for url in required)
-        )
-        noncitable_source_lines = tuple(
-            line for line in state.noncitable_source_lines
-            if not required or any(url in line for url in required)
-        )
-        citable_source_lines = tuple(
-            line for line in state.citable_source_lines
-            if not required or any(url in line for url in required)
-        )
-        return replace(
-            state,
-            allowed_tools=("knowledge_write",),
-            source_urls=source_urls,
-            result_lines=(),
-            hit_lines=(),
-            source_lines=source_lines,
-            noncitable_source_lines=noncitable_source_lines,
-            citable_source_lines=citable_source_lines,
-            done_escape=False,
-        )
-
-    def append_block(self, message: str, state: ResearchControlState) -> str:
-        urls = self.required_urls or tuple(dict.fromkeys(state.source_urls.values()))
-        lines = [
-            "A/B evidence-only follow-up controller:",
-            f"- mode: {AB_EVIDENCE_ONLY_FOLLOWUP_MODE}",
-            "- Allowed tools this turn: knowledge_write",
-            "- Forbidden tools this turn: done, web_search, open_result, reopen_source, open_hit, source_search, knowledge_search, knowledge_read, knowledge_link.",
-            "- Reply with exactly one JSON object using only knowledge_write.",
-            "- Do not call done, do not write a final report, and do not rewrite the prior report.",
-            "- Save only narrow new evidence that directly patches the stated gap.",
-            "- Do not add broader claims, new limitations, authority labels, independence claims, or coverage claims.",
-            "- Use each opened_material.final_url string exactly in sources and evidence.source_url.",
-            "- Do not use s1, s2, source_id, result_id, hit_id, or hand-written source labels as provenance.",
-        ]
-        if urls:
-            lines.append("- Required opened_material.final_url values:")
-            lines.extend(f"  - {url}" for url in urls)
-        lines.extend([
-            "- Allowed JSON shape:",
-        ])
-        for url in urls[:4] or ("https://example.test/source",):
-            example = {
-                "tool": "knowledge_write",
-                "args": {
-                    "type": "fact",
-                    "title": "Narrow follow-up evidence",
-                    "body": "One short evidence-backed claim from the opened material.",
-                    "sources": [url],
-                    "evidence": [{
-                        "claim": "The specific claim supported by the opened material.",
-                        "source_url": url,
-                        "excerpt": "Exact short excerpt copied from the opened material.",
-                        "stance": "supports",
-                    }],
-                },
-            }
-            lines.append(f"- {json.dumps(example, ensure_ascii=True, separators=(',', ':'))}")
-        if state.source_lines:
-            lines.extend(["", "Opened material sources available for knowledge_write:"])
-            lines.extend(f"- {line}" for line in state.source_lines)
-        lines.extend(["", "Do not output multiple JSON objects."])
-        return str(message or "").rstrip() + "\n\n" + "\n".join(lines)
-
-
-def _ab_followup_final_urls(iteration_context: str) -> tuple[str, ...]:
-    urls: list[str] = []
-    for raw in str(iteration_context or "").splitlines():
-        line = raw.strip()
-        prefix = "- https://"
-        if line.startswith(prefix):
-            urls.append(line.removeprefix("- ").strip())
-            continue
-        marker = ".final_url:"
-        if marker in line:
-            _, value = line.split(marker, 1)
-            url = value.strip()
-            if url.startswith("https://"):
-                urls.append(url)
-    return tuple(dict.fromkeys(url for url in urls if url))
-
-
-def _ab_is_evidence_only_followup(arm: str, iteration_context: str) -> bool:
-    return arm == "planner" and bool(_ab_followup_final_urls(iteration_context))
 
 
 def _opened_url_set(tools: ResearchTools) -> set[str]:
@@ -448,867 +332,6 @@ def _source_preview(query: str, source: dict[str, Any], body: str, limit: int) -
     header = " | ".join(part for part in (title, final_url) if part)
     text = _clip(body, max(500, min(4000, int(limit or 0))))
     return "\n".join(part for part in (f"query: {query}", header, text) if part)
-
-
-def _ab_followup_context(
-    *,
-    question: str,
-    initial: Any,
-    plan: ResearchPlan,
-    material: PlanExecutionResult,
-    limit: int,
-) -> str:
-    opened_sources = tuple(source for source in material.opened_sources if isinstance(source, dict))
-    final_urls = tuple(
-        str(source.get("final_url") or source.get("url") or "").strip()
-        for source in opened_sources
-        if str(source.get("final_url") or source.get("url") or "").strip()
-    )
-    lines = [
-        "A/B follow-up Research synthesis input.",
-        f"question: {_clip(question, 240)}",
-        f"initial_stop_reason: {getattr(initial, 'stop_reason', '')}",
-        f"initial_summary: {_clip(getattr(initial, 'summary', ''), 1200)}",
-        f"plan_ref: {plan.plan_ref}",
-        "queries_executed:",
-        *[f"- {_clip(query, 180)}" for query in material.queries_executed],
-        "opened_material_final_urls:",
-        *[f"- {url}" for url in final_urls],
-        "follow_up_synthesis_scope:",
-        "- This is an evidence-only repair pass, not a second full research rewrite.",
-        "- Do not call done and do not write a final report in this follow-up.",
-        "- The A/B harness will merge saved evidence into the initial report deterministically.",
-        "- Add only evidence items that directly support the narrow gap the opened material closes.",
-        "- If the new material merely confirms an existing answer, save that evidence and keep the claim narrow.",
-        "- Do not add broader claims, extra limitations, authority labels, independence claims, or coverage claims unless exact evidence supports them.",
-        "- Do not say sources are independent, official, current, or comprehensive just because there is one more source.",
-        "- The synthetic URLs and titles are benchmark locators only; do not infer authority, freshness, or official status from domain or title.",
-        "follow_up_output_contract:",
-        "- The only allowed model output is one knowledge_write call.",
-        "- Save one concise fact note per useful opened_material.final_url.",
-        "- Do not restate the answer, do not edit 结论, and do not produce 来源 text.",
-        "- The deterministic merge will add the new evidence-backed claim and source line.",
-        "follow_up_material_rules:",
-        "- Treat every opened_material.final_url below as the canonical source URL for this follow-up.",
-        "- Call knowledge_write for every opened_material.final_url that directly closes the gap.",
-        "- In knowledge_write args, sources must contain the final URL string exactly.",
-        "- In each evidence item, source_url must be the same final URL string exactly.",
-        "- Do not put s1, s2, source_id, result_id, or hit_id in sources or evidence.source_url.",
-        "- Do not call search/open/read/link/done; if a write cannot be made, return the closest valid knowledge_write with a narrow unsupported-by-new-material note omitted.",
-        "- Do not cite or list a new URL in prose; provenance belongs only in knowledge_write sources/evidence.source_url.",
-        "knowledge_write_templates:",
-    ]
-    for index, source in enumerate(opened_sources, 1):
-        final_url = str(source.get("final_url") or source.get("url") or "").strip()
-        if not final_url:
-            continue
-        title = str(source.get("title") or "").strip() or final_url
-        template = {
-            "tool": "knowledge_write",
-            "args": {
-                "type": "fact",
-                "title": f"Evidence from {title}",
-                "body": "Write one narrow claim supported by this opened material; keep the report as a patch, not a rewrite.",
-                "sources": [final_url],
-                "evidence": [{
-                    "claim": "The specific claim supported by the opened material.",
-                    "source_url": final_url,
-                    "excerpt": "Exact short excerpt copied from the opened material.",
-                    "stance": "supports",
-                }],
-            },
-        }
-        lines.extend([
-            f"- opened_material.{index}.final_url: {final_url}",
-            f"  opened_material.{index}.title: {_clip(title, 160)}",
-            f"  required_write_shape: {json.dumps(template, ensure_ascii=True, separators=(',', ':'))}",
-        ])
-    lines.extend([
-        "opened_material_previews:",
-        *[f"- {_clip(preview, 1600)}" for preview in material.previews],
-    ])
-    if material.errors:
-        lines.extend(["bounded_errors:", *[f"- {_clip(error, 180)}" for error in material.errors]])
-    return _clip("\n".join(lines), max(1000, min(20000, int(limit or 0))))
-
-
-@dataclass(frozen=True)
-class PatchOnlyMerge:
-    result: ResearchRunResult | None = None
-    applied: bool = False
-    reason: str = ""
-    new_source_urls: tuple[str, ...] = ()
-    new_evidence_count: int = 0
-    new_claim_count: int = 0
-
-    def row_payload(self) -> dict[str, Any]:
-        return {
-            "ab_patch_merge_applied": bool(self.applied),
-            "ab_patch_merge_reason": self.reason,
-            "ab_patch_merge_new_source_urls": list(self.new_source_urls[:8]),
-            "ab_patch_merge_new_evidence_count": max(0, int(self.new_evidence_count or 0)),
-            "ab_patch_merge_new_claim_count": max(0, int(self.new_claim_count or 0)),
-        }
-
-
-def _ab_patch_only_merge_result(
-    initial: ResearchRunResult | None,
-    followup: ResearchRunResult | None,
-    material: PlanExecutionResult | None = None,
-) -> PatchOnlyMerge:
-    if initial is None or followup is None:
-        return PatchOnlyMerge(reason="missing_iteration")
-    initial_record = initial.research_record
-    followup_record = followup.research_record
-    if initial_record is None or followup_record is None:
-        return _ab_material_patch_only_merge_result(
-            initial,
-            followup,
-            material,
-            prior_reason="missing_record",
-        )
-
-    initial_source_ids = {item.source_id for item in initial_record.sources}
-    initial_evidence_ids = {item.evidence_id for item in initial_record.evidence}
-    new_sources = tuple(
-        item for item in followup_record.sources if item.source_id not in initial_source_ids
-    )
-    new_source_ids = {item.source_id for item in new_sources}
-    source_payloads = _ab_source_payloads_by_id(followup)
-    source_url_by_id = {
-        source_id: str(payload.get("final_url") or payload.get("url") or "").strip()
-        for source_id, payload in source_payloads.items()
-    }
-    new_source_urls = tuple(
-        url
-        for source in new_sources
-        for url in (source_url_by_id.get(source.source_id, ""),)
-        if url
-    )
-    if not new_source_urls:
-        return _ab_material_patch_only_merge_result(
-            initial,
-            followup,
-            material,
-            prior_reason="no_new_patch_source",
-        )
-
-    raw_evidence = tuple(
-        dict(item) for item in followup.evidence_items if isinstance(item, dict)
-    )
-    new_evidence = tuple(
-        item
-        for item in followup_record.evidence
-        if item.evidence_id not in initial_evidence_ids and item.source_id in new_source_ids
-    )
-    if not new_evidence:
-        return _ab_material_patch_only_merge_result(
-            initial,
-            followup,
-            material,
-            prior_reason="no_new_patch_evidence",
-            observed_source_urls=new_source_urls,
-        )
-
-    next_citation = _ab_next_citation_number(initial)
-    citation_by_source_id = {
-        source.source_id: next_citation + offset
-        for offset, source in enumerate(new_sources)
-    }
-    base_claims, base_relations = _ab_evidence_backed_base(initial_record)
-    existing_claim_ids = {item.claim_id for item in base_claims}
-    patch_claims: list[ResearchClaim] = []
-    patch_relations: list[ResearchClaimRelation] = []
-    patch_items: list[dict[str, Any]] = []
-    for evidence in new_evidence:
-        raw = _ab_raw_evidence_for_record_evidence(evidence, raw_evidence, source_url_by_id)
-        claim_text = _ab_patch_claim_text(raw, evidence)
-        if not claim_text:
-            continue
-        citation_number = citation_by_source_id.get(evidence.source_id, next_citation)
-        claim_id = stable_ref("ab_patch_claim", claim_text, evidence.evidence_id)
-        if claim_id in existing_claim_ids:
-            continue
-        existing_claim_ids.add(claim_id)
-        claim = ResearchClaim(
-            claim_id=claim_id,
-            claim_text=claim_text,
-            claim_section="evidence",
-            citation_numbers=(citation_number,),
-            evidence_refs=(evidence.evidence_id,),
-            status="evidence_backed",
-        )
-        relation = ResearchClaimRelation(
-            relation_id=stable_ref("relation", "supports", claim_id, evidence.evidence_id),
-            relation_kind="supports",
-            from_ref=claim_id,
-            to_ref=evidence.evidence_id,
-            citation_numbers=(citation_number,),
-        )
-        patch_claims.append(claim)
-        patch_relations.append(relation)
-        patch_items.append({
-            "number": citation_number,
-            "claim": claim_text,
-            "source_url": source_url_by_id.get(evidence.source_id, ""),
-            "title": str(source_payloads.get(evidence.source_id, {}).get("title") or ""),
-            "excerpt": evidence.bounded_excerpt,
-        })
-    if not patch_claims:
-        return _ab_material_patch_only_merge_result(
-            initial,
-            followup,
-            material,
-            prior_reason="no_new_patch_claim",
-            observed_source_urls=new_source_urls,
-        )
-
-    patched_record = _ab_rehash_record(
-        initial_record,
-        answer_status=_ab_patch_answer_status(initial_record.answer_status, bool(patch_claims)),
-        sources=(*initial_record.sources, *new_sources),
-        evidence=(*initial_record.evidence, *new_evidence),
-        claims=(*base_claims, *patch_claims),
-        assumptions=initial_record.assumptions,
-        relations=(*base_relations, *patch_relations),
-        unsupported_claim_count=0,
-        stop_reason=followup.stop_reason or initial.stop_reason,
-    )
-    patched_evidence_payload = _ab_patched_evidence_payload(initial, followup, new_source_urls)
-    patched = replace(
-        followup,
-        summary=_ab_finalizer_patch_summary(initial, patch_items),
-        stop_reason=followup.stop_reason or initial.stop_reason,
-        evidence_items=patched_evidence_payload,
-        research_record=patched_record,
-        citation_map=_ab_patched_citation_map(initial, patch_items),
-    )
-    return PatchOnlyMerge(
-        result=patched,
-        applied=True,
-        reason="patch_only_merge",
-        new_source_urls=new_source_urls,
-        new_evidence_count=len(new_evidence),
-        new_claim_count=len(patch_claims),
-    )
-
-
-def _ab_material_patch_only_merge_result(
-    initial: ResearchRunResult,
-    followup: ResearchRunResult | None,
-    material: PlanExecutionResult | None,
-    *,
-    prior_reason: str,
-    observed_source_urls: tuple[str, ...] = (),
-) -> PatchOnlyMerge:
-    record = initial.research_record
-    if record is None:
-        return PatchOnlyMerge(reason=prior_reason)
-    if material is None or not material.opened_sources:
-        return PatchOnlyMerge(reason=prior_reason, new_source_urls=observed_source_urls)
-    existing_urls = _ab_result_url_set(initial)
-    next_citation = _ab_next_citation_number(initial)
-    new_sources: list[ResearchSource] = []
-    new_evidence: list[ResearchEvidence] = []
-    patch_claims: list[ResearchClaim] = []
-    patch_relations: list[ResearchClaimRelation] = []
-    patch_items: list[dict[str, Any]] = []
-    seen_source_ids = {item.source_id for item in record.sources}
-    seen_evidence_ids = {item.evidence_id for item in record.evidence}
-    base_claims, base_relations = _ab_evidence_backed_base(record)
-    seen_claim_ids = {item.claim_id for item in base_claims}
-    for index, source_payload in enumerate(material.opened_sources):
-        if not isinstance(source_payload, dict):
-            continue
-        final_url = str(source_payload.get("final_url") or source_payload.get("url") or "").strip()
-        if not final_url or final_url in existing_urls:
-            continue
-        title = str(source_payload.get("title") or "").strip() or final_url
-        preview = str(material.previews[index] if index < len(material.previews) else "")
-        excerpt = _ab_material_excerpt(preview, final_url=final_url, title=title)
-        if not excerpt:
-            continue
-        source = _ab_material_source(source_payload, final_url=final_url, title=title, preview=preview)
-        if source.source_id in seen_source_ids:
-            continue
-        seen_source_ids.add(source.source_id)
-        citation_number = next_citation + len(new_sources)
-        evidence = _ab_material_evidence(source, excerpt=excerpt, preview=preview)
-        if evidence.evidence_id in seen_evidence_ids:
-            continue
-        seen_evidence_ids.add(evidence.evidence_id)
-        claim_text = _clip(excerpt, 240)
-        claim_id = stable_ref("ab_patch_claim", claim_text, evidence.evidence_id)
-        if claim_id in seen_claim_ids:
-            continue
-        seen_claim_ids.add(claim_id)
-        claim = ResearchClaim(
-            claim_id=claim_id,
-            claim_text=claim_text,
-            claim_section="evidence",
-            citation_numbers=(citation_number,),
-            evidence_refs=(evidence.evidence_id,),
-            status="evidence_backed",
-        )
-        relation = ResearchClaimRelation(
-            relation_id=stable_ref("relation", "supports", claim_id, evidence.evidence_id),
-            relation_kind="supports",
-            from_ref=claim_id,
-            to_ref=evidence.evidence_id,
-            citation_numbers=(citation_number,),
-        )
-        new_sources.append(source)
-        new_evidence.append(evidence)
-        patch_claims.append(claim)
-        patch_relations.append(relation)
-        patch_items.append({
-            "number": citation_number,
-            "claim": claim_text,
-            "source_url": final_url,
-            "title": title,
-            "excerpt": excerpt,
-        })
-    new_source_urls = tuple(str(item.get("source_url") or "") for item in patch_items)
-    if not patch_items:
-        return PatchOnlyMerge(
-            reason=prior_reason,
-            new_source_urls=observed_source_urls,
-        )
-    base_result = followup or initial
-    patched_record = _ab_rehash_record(
-        record,
-        answer_status=_ab_patch_answer_status(record.answer_status, bool(patch_claims)),
-        sources=(*record.sources, *new_sources),
-        evidence=(*record.evidence, *new_evidence),
-        claims=(*base_claims, *patch_claims),
-        assumptions=record.assumptions,
-        relations=(*base_relations, *patch_relations),
-        unsupported_claim_count=0,
-        stop_reason=base_result.stop_reason or initial.stop_reason,
-    )
-    patched = replace(
-        base_result,
-        summary=_ab_finalizer_patch_summary(initial, patch_items),
-        stop_reason=base_result.stop_reason or initial.stop_reason,
-        opened_sources=_ab_patched_opened_sources(initial, material.opened_sources),
-        evidence_items=_ab_patched_evidence_payload_from_material(initial, patch_items),
-        citation_map=_ab_patched_citation_map(initial, patch_items),
-        source_urls=sorted(_ab_result_url_set(initial).union(new_source_urls)),
-        sources_read=len(_ab_result_url_set(initial).union(new_source_urls)),
-        research_record=patched_record,
-    )
-    return PatchOnlyMerge(
-        result=patched,
-        applied=True,
-        reason="material_patch_only_merge",
-        new_source_urls=tuple(url for url in new_source_urls if url),
-        new_evidence_count=len(new_evidence),
-        new_claim_count=len(patch_claims),
-    )
-
-
-def _ab_result_url_set(result: ResearchRunResult) -> set[str]:
-    urls = {str(url or "").strip() for url in result.source_urls}
-    for item in result.citation_map:
-        if isinstance(item, dict):
-            urls.add(str(item.get("url") or "").strip())
-    for item in result.opened_sources:
-        if isinstance(item, dict):
-            urls.add(str(item.get("final_url") or item.get("url") or "").strip())
-    return {url for url in urls if url}
-
-
-def _ab_material_source(
-    source_payload: dict[str, Any],
-    *,
-    final_url: str,
-    title: str,
-    preview: str,
-) -> ResearchSource:
-    requested_url = str(source_payload.get("requested_url") or final_url).strip() or final_url
-    final_ref = sanitize_research_url_ref(final_url)
-    requested_ref = sanitize_research_url_ref(requested_url)
-    content_kind = str(source_payload.get("content_kind") or "html").strip() or "html"
-    content_hash = str(source_payload.get("text_hash") or source_payload.get("content_hash") or "").strip()
-    if not content_hash:
-        content_hash = digest_text(preview)
-    return ResearchSource(
-        source_id=stable_ref(
-            "source",
-            final_ref.get("url_digest") or requested_ref.get("url_digest") or final_url,
-            content_hash,
-            content_kind,
-        ),
-        requested_url_ref=requested_ref,
-        final_url_ref=final_ref,
-        host=str(final_ref.get("host") or requested_ref.get("host") or ""),
-        title_digest=digest_text(title),
-        content_hash=_clip(content_hash, 80),
-        retrieved_at=str(source_payload.get("retrieved_at") or _timestamp()),
-        content_kind=content_kind,
-        page_count=max(0, int(source_payload.get("page_count") or 0)),
-        pages_read=tuple(int(page) for page in source_payload.get("pages_read") or () if int(page) > 0),
-        truncated=bool(source_payload.get("truncated")),
-        quality=dict(source_payload.get("quality") or {"level": "unknown", "kind": "web"}),
-    )
-
-
-def _ab_material_evidence(
-    source: ResearchSource,
-    *,
-    excerpt: str,
-    preview: str,
-) -> ResearchEvidence:
-    start = max(0, preview.find(excerpt))
-    end = start + len(excerpt) if excerpt else start
-    stance = "supports"
-    excerpt_digest = digest_text(excerpt)
-    return ResearchEvidence(
-        evidence_id=stable_ref("evidence", source.source_id, excerpt_digest, "", stance),
-        source_id=source.source_id,
-        excerpt_digest=excerpt_digest,
-        bounded_excerpt=_clip(excerpt, 360),
-        locator=EvidenceLocator(
-            kind=source.content_kind or "html",
-            source_id=source.source_id,
-            char_start=start,
-            char_end=end,
-            locator="ab.opened_material",
-        ),
-        stance=stance,
-        claim_text_digest=digest_text(_ab_norm(excerpt)),
-    )
-
-
-def _ab_material_excerpt(preview: str, *, final_url: str, title: str) -> str:
-    lines = [line.strip() for line in str(preview or "").splitlines() if line.strip()]
-    candidates = []
-    for line in lines:
-        if line.startswith("query:"):
-            continue
-        if final_url and final_url in line:
-            continue
-        if title and line == title:
-            continue
-        candidates.append(line)
-    if not candidates:
-        return ""
-    return _clip(max(candidates, key=len), 320)
-
-
-def _ab_patched_opened_sources(
-    initial: ResearchRunResult,
-    opened_sources: tuple[dict, ...],
-) -> list[dict[str, Any]]:
-    rows = [dict(item) for item in initial.opened_sources if isinstance(item, dict)]
-    seen = {
-        str(item.get("final_url") or item.get("url") or "").strip()
-        for item in rows
-    }
-    for item in opened_sources:
-        if not isinstance(item, dict):
-            continue
-        url = str(item.get("final_url") or item.get("url") or "").strip()
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        rows.append(dict(item))
-    return rows
-
-
-def _ab_patched_evidence_payload_from_material(
-    initial: ResearchRunResult,
-    patch_items: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    rows = [dict(item) for item in initial.evidence_items if isinstance(item, dict)]
-    seen = {
-        (
-            str(item.get("source_url") or "").strip(),
-            _ab_norm(item.get("claim")),
-            _ab_norm(item.get("excerpt")),
-        )
-        for item in rows
-    }
-    for item in patch_items:
-        row = {
-            "claim": str(item.get("claim") or "").strip(),
-            "source_url": str(item.get("source_url") or "").strip(),
-            "excerpt": str(item.get("excerpt") or "").strip(),
-            "stance": "supports",
-        }
-        sig = (row["source_url"], _ab_norm(row["claim"]), _ab_norm(row["excerpt"]))
-        if not row["source_url"] or not row["excerpt"] or sig in seen:
-            continue
-        seen.add(sig)
-        rows.append(row)
-    return rows
-
-
-def _ab_source_payloads_by_id(result: ResearchRunResult) -> dict[str, dict[str, Any]]:
-    record = result.research_record
-    if record is None:
-        return {}
-    payloads = tuple(item for item in result.opened_sources if isinstance(item, dict))
-    return {
-        source.source_id: dict(payload)
-        for source, payload in zip(record.sources, payloads, strict=False)
-        if source.source_id
-    }
-
-
-def _ab_raw_evidence_for_record_evidence(
-    evidence: ResearchEvidence,
-    raw_evidence: tuple[dict[str, Any], ...],
-    source_url_by_id: dict[str, str],
-) -> dict[str, Any]:
-    source_url = source_url_by_id.get(evidence.source_id, "")
-    excerpt = _ab_norm(evidence.bounded_excerpt)
-    for raw in raw_evidence:
-        if str(raw.get("source_url") or "").strip() != source_url:
-            continue
-        if _ab_norm(raw.get("excerpt")) == excerpt:
-            return raw
-    for raw in raw_evidence:
-        if str(raw.get("source_url") or "").strip() == source_url:
-            return raw
-    return {}
-
-
-def _ab_patch_claim_text(raw: dict[str, Any], evidence: ResearchEvidence) -> str:
-    claim = _clip(raw.get("claim") or evidence.bounded_excerpt, 240)
-    return " ".join(claim.split())
-
-
-def _ab_patch_answer_status(current: object, has_patch_claims: bool) -> str:
-    status = str(current or "").strip()
-    if status in {"answered", "partial"}:
-        return status
-    if has_patch_claims and status in {"", "not_answered", "insufficient_evidence"}:
-        return "partial"
-    return status if status in {"answered", "partial", "insufficient_evidence", "not_answered"} else "partial"
-
-
-def _ab_evidence_backed_claims(record: ResearchRecord) -> tuple[ResearchClaim, ...]:
-    return tuple(
-        claim
-        for claim in record.claims
-        if str(claim.status or "") == "evidence_backed" and tuple(claim.evidence_refs)
-    )
-
-
-def _ab_evidence_backed_base(
-    record: ResearchRecord,
-) -> tuple[tuple[ResearchClaim, ...], tuple[ResearchClaimRelation, ...]]:
-    claims = list(_ab_evidence_backed_claims(record))
-    claim_ids = {claim.claim_id for claim in claims}
-    covered_evidence = {
-        evidence_ref
-        for claim in claims
-        for evidence_ref in claim.evidence_refs
-    }
-    citation_by_source_id = {
-        source.source_id: index
-        for index, source in enumerate(record.sources, 1)
-    }
-    relations = list(_ab_evidence_backed_relations(record, tuple(claims)))
-    relation_ids = {relation.relation_id for relation in relations}
-    for evidence in record.evidence:
-        if evidence.evidence_id in covered_evidence:
-            continue
-        claim_text = _clip(evidence.bounded_excerpt, 240)
-        if not claim_text:
-            continue
-        claim_id = stable_ref("ab_base_claim", claim_text, evidence.evidence_id)
-        if claim_id in claim_ids:
-            continue
-        citation_number = citation_by_source_id.get(evidence.source_id, 0)
-        claim = ResearchClaim(
-            claim_id=claim_id,
-            claim_text=claim_text,
-            claim_section="evidence",
-            citation_numbers=(citation_number,) if citation_number > 0 else (),
-            evidence_refs=(evidence.evidence_id,),
-            status="evidence_backed",
-        )
-        relation_id = stable_ref("relation", "supports", claim_id, evidence.evidence_id)
-        relation = ResearchClaimRelation(
-            relation_id=relation_id,
-            relation_kind="supports",
-            from_ref=claim_id,
-            to_ref=evidence.evidence_id,
-            citation_numbers=(citation_number,) if citation_number > 0 else (),
-        )
-        claims.append(claim)
-        claim_ids.add(claim_id)
-        covered_evidence.add(evidence.evidence_id)
-        if relation_id not in relation_ids:
-            relations.append(relation)
-            relation_ids.add(relation_id)
-    return tuple(claims), tuple(relations)
-
-
-def _ab_evidence_backed_relations(
-    record: ResearchRecord,
-    claims: tuple[ResearchClaim, ...],
-) -> tuple[ResearchClaimRelation, ...]:
-    claim_ids = {claim.claim_id for claim in claims}
-    evidence_ids = {evidence.evidence_id for evidence in record.evidence}
-    return tuple(
-        relation
-        for relation in record.relations
-        if relation.from_ref in claim_ids and relation.to_ref in evidence_ids
-    )
-
-
-def _ab_rehash_record(
-    record: ResearchRecord,
-    *,
-    answer_status: str,
-    sources: tuple[ResearchSource, ...],
-    evidence: tuple[ResearchEvidence, ...],
-    claims: tuple[ResearchClaim, ...],
-    assumptions: tuple[Any, ...],
-    relations: tuple[ResearchClaimRelation, ...],
-    unsupported_claim_count: int,
-    stop_reason: str,
-) -> ResearchRecord:
-    payload = {
-        "schema_version": RESEARCH_RECORD_SCHEMA_VERSION,
-        "kind": RESEARCH_RECORD_KIND,
-        "question": record.question.to_jsonable(),
-        "answer_status": answer_status,
-        "sources": [item.to_jsonable() for item in sources],
-        "evidence": [item.to_jsonable() for item in evidence],
-        "claims": [item.to_jsonable() for item in claims],
-        "assumptions": [item.to_jsonable() for item in assumptions],
-        "relations": [item.to_jsonable() for item in relations],
-        "unsupported_claim_count": max(0, int(unsupported_claim_count or 0)),
-        "run_id": _clip(record.run_id, 120),
-        "session_id": _clip(record.session_id, 120),
-        "project_ref": dict(record.project_ref),
-        "synthesis_id": _clip(record.synthesis_id, 120),
-        "stop_reason": str(stop_reason or ""),
-    }
-    digest = digest_json(payload)
-    return replace(
-        record,
-        record_id="research_record:" + digest.removeprefix("sha256:")[:16],
-        record_digest=digest,
-        answer_status=answer_status,
-        sources=sources,
-        evidence=evidence,
-        claims=claims,
-        assumptions=assumptions,
-        relations=relations,
-        unsupported_claim_count=max(0, int(unsupported_claim_count or 0)),
-        stop_reason=str(stop_reason or ""),
-    )
-
-
-def _ab_finalizer_patch_summary(
-    initial: ResearchRunResult,
-    patch_items: list[dict[str, Any]],
-) -> str:
-    citation_by_url: dict[str, int] = {}
-    source_titles: dict[str, str] = {}
-    record = initial.research_record
-    source_payloads = _ab_source_payloads_by_id(initial) if record is not None else {}
-    if record is not None:
-        for index, source in enumerate(record.sources, 1):
-            payload = source_payloads.get(source.source_id, {})
-            url = str(payload.get("final_url") or payload.get("url") or "").strip()
-            if not url:
-                continue
-            citation_by_url.setdefault(url, index)
-            title = str(payload.get("title") or "").strip()
-            if title:
-                source_titles.setdefault(url, title)
-    for item in initial.citation_map:
-        if not isinstance(item, dict):
-            continue
-        url = str(item.get("url") or "").strip()
-        if not url:
-            continue
-        try:
-            number = int(item.get("number") or 0)
-        except (TypeError, ValueError):
-            number = 0
-        if number > 0:
-            citation_by_url.setdefault(url, number)
-        title = str(item.get("title") or "").strip()
-        if title:
-            source_titles.setdefault(url, title)
-    for item in patch_items:
-        url = str(item.get("source_url") or "").strip()
-        if not url:
-            continue
-        try:
-            number = int(item.get("number") or 0)
-        except (TypeError, ValueError):
-            number = 0
-        if number > 0:
-            citation_by_url.setdefault(url, number)
-        title = str(item.get("title") or "").strip()
-        if title:
-            source_titles.setdefault(url, title)
-
-    evidence_lines: list[str] = []
-    seen_evidence: set[tuple[str, str]] = set()
-    if record is not None:
-        source_url_by_id = {
-            source_id: str(payload.get("final_url") or payload.get("url") or "").strip()
-            for source_id, payload in source_payloads.items()
-        }
-        for evidence in record.evidence:
-            url = source_url_by_id.get(evidence.source_id, "")
-            number = citation_by_url.get(url, 0)
-            claim = _clip(evidence.bounded_excerpt, 240)
-            sig = (url, _ab_norm(claim))
-            if number <= 0 or not claim or sig in seen_evidence:
-                continue
-            seen_evidence.add(sig)
-            evidence_lines.append(f"- {claim} [{number}]")
-    for item in initial.evidence_items:
-        if not isinstance(item, dict):
-            continue
-        url = str(item.get("source_url") or "").strip()
-        number = citation_by_url.get(url, 0)
-        claim = _clip(item.get("claim") or item.get("excerpt"), 240)
-        sig = (url, _ab_norm(claim))
-        if number <= 0 or not claim or sig in seen_evidence:
-            continue
-        seen_evidence.add(sig)
-        evidence_lines.append(f"- {claim} [{number}]")
-    for item in patch_items:
-        url = str(item.get("source_url") or "").strip()
-        number = int(item.get("number") or citation_by_url.get(url, 0) or 0)
-        claim = _clip(item.get("claim"), 240)
-        sig = (url, _ab_norm(claim))
-        if number <= 0 or not claim or sig in seen_evidence:
-            continue
-        seen_evidence.add(sig)
-        evidence_lines.append(f"- {claim} [{number}]")
-
-    first_claim = ""
-    if evidence_lines:
-        first_claim = evidence_lines[0].removeprefix("- ").strip()
-    conclusion = (
-        f"可证实结论仅限于已写入 evidence 的事项：{first_claim}"
-        if first_claim
-        else "未形成可引用结论。"
-    )
-    source_lines = []
-    for url, number in sorted(citation_by_url.items(), key=lambda item: item[1]):
-        title = source_titles.get(url) or url
-        source_lines.append(f"[{number}] {title} - {url}")
-    sections = [
-        "## 结论",
-        conclusion,
-        "",
-        "## 关键证据",
-        *(evidence_lines or ["- 未写入新的可引用 evidence。"]),
-        "",
-        "## 反证与限制",
-        "本 A/B 合并只保留 evidence-backed claim；未由 evidence 支持的新增结论被丢弃。",
-        "",
-        "## 来源质量",
-        "本 A/B 合并只使用已打开并写入 evidence 的 fixture 来源，不推断额外权威性或覆盖范围。",
-        "",
-        "## 搜索覆盖",
-        "结论范围限制为本次已写入 evidence 的来源内容。",
-        "",
-        "## 来源",
-        *(source_lines or ["无可引用来源。"]),
-    ]
-    return _clip("\n".join(sections), 8000)
-
-
-def _ab_patched_evidence_payload(
-    initial: ResearchRunResult,
-    followup: ResearchRunResult,
-    new_source_urls: tuple[str, ...],
-) -> list[dict[str, Any]]:
-    seen = {
-        (
-            str(item.get("source_url") or "").strip(),
-            _ab_norm(item.get("claim")),
-            _ab_norm(item.get("excerpt")),
-        )
-        for item in initial.evidence_items
-        if isinstance(item, dict)
-    }
-    rows = [dict(item) for item in initial.evidence_items if isinstance(item, dict)]
-    allowed_urls = set(new_source_urls)
-    for item in followup.evidence_items:
-        if not isinstance(item, dict):
-            continue
-        source_url = str(item.get("source_url") or "").strip()
-        if source_url not in allowed_urls:
-            continue
-        sig = (source_url, _ab_norm(item.get("claim")), _ab_norm(item.get("excerpt")))
-        if sig in seen:
-            continue
-        seen.add(sig)
-        rows.append(dict(item))
-    return rows
-
-
-def _ab_patched_citation_map(
-    initial: ResearchRunResult,
-    patch_items: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    rows = [dict(item) for item in initial.citation_map if isinstance(item, dict)]
-    seen_urls = {str(item.get("url") or "").strip() for item in rows}
-    next_number = max(
-        (
-            int(item.get("number") or 0)
-            for item in rows
-            if not isinstance(item.get("number"), bool)
-        ),
-        default=0,
-    )
-    for item in initial.opened_sources:
-        if not isinstance(item, dict):
-            continue
-        url = str(item.get("final_url") or item.get("url") or "").strip()
-        if not url or url in seen_urls:
-            continue
-        next_number += 1
-        seen_urls.add(url)
-        rows.append({
-            "number": next_number,
-            "title": str(item.get("title") or "").strip() or url,
-            "url": url,
-        })
-    for item in patch_items:
-        url = str(item.get("source_url") or "").strip()
-        if not url or url in seen_urls:
-            continue
-        seen_urls.add(url)
-        rows.append({
-            "number": int(item.get("number") or len(rows) + 1),
-            "title": str(item.get("title") or "").strip() or url,
-            "url": url,
-        })
-    return rows
-
-
-def _ab_next_citation_number(result: ResearchRunResult) -> int:
-    numbers = []
-    for item in result.citation_map:
-        if not isinstance(item, dict):
-            continue
-        try:
-            number = int(item.get("number") or 0)
-        except (TypeError, ValueError):
-            number = 0
-        if number > 0:
-            numbers.append(number)
-    return max(numbers or [len(result.source_urls)]) + 1
-
-
-def _ab_norm(value: object) -> str:
-    return " ".join(str(value or "").casefold().split())
 
 
 class TimedProvider:
@@ -1532,6 +555,8 @@ class TracingProvider:
         self.reply_count = 0
         self.prompt_chars = 0
         self.reply_chars = 0
+        self.last_turn = 0
+        self.last_reply = ""
         self.name = getattr(provider, "name", "")
         self.location = getattr(provider, "location", "")
         self.thread_safe_send = getattr(provider, "thread_safe_send", False)
@@ -1574,6 +599,8 @@ class TracingProvider:
         reply_text = str(reply or "")
         self.reply_count += 1
         self.reply_chars += len(reply_text)
+        self.last_turn = turn
+        self.last_reply = reply_text
         if self.trace is not None:
             self.trace.record_reply(
                 run_id=self.run_id,
@@ -1639,13 +666,11 @@ def run_case(
             tools=None,
             iteration_context: str = "",
         ) -> ResearchIterationRun:
-            evidence_only_followup = _ab_is_evidence_only_followup(arm, iteration_context)
-            effective_max_turns = 1 if evidence_only_followup else max_turns
             runner = ResearchRunner(
                 run_provider,
                 search,
                 store,
-                max_turns=effective_max_turns,
+                max_turns=max_turns,
                 session_id=f"bounded-planner-ab-{provider_id}-{case.name}-{arm}",
                 project="",
                 run_id=run_id,
@@ -1653,10 +678,6 @@ def run_case(
                 tools=tools,
                 iteration_context=iteration_context,
             )
-            if evidence_only_followup:
-                runner.controller = ABEvidenceOnlyFollowupController(
-                    required_urls=_ab_followup_final_urls(iteration_context),
-                )
             for event in runner.run(task):
                 if event.kind == "turn":
                     model_actions.extend(_safe_model_actions(event.turn, event.reply)[:3])
@@ -1677,6 +698,40 @@ def run_case(
             iterations.append(iteration)
             return iteration
 
+        def run_followup(
+            *,
+            tools,
+            plan,
+            material,
+            question: str,
+            initial_summary: str = "",
+            max_context_chars: int = 8000,
+            should_stop=None,
+        ):
+            before_turn = run_provider.send_index
+            result = run_evidence_followup(
+                provider=run_provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question=question,
+                initial_summary=initial_summary,
+                max_context_chars=max_context_chars,
+                should_stop=should_stop,
+            )
+            if run_provider.send_index > before_turn:
+                actions = _safe_model_actions(run_provider.last_turn, run_provider.last_reply)[:3]
+                model_actions.extend(actions)
+                for action in actions or [{"tool": "", "args": {}}]:
+                    tool_calls.append({
+                        "turn": run_provider.last_turn,
+                        "name": str(action.get("tool") or ""),
+                        "args": action.get("args", {}) if isinstance(action.get("args"), dict) else {},
+                        "ok": bool(result.ok),
+                        "status": result.stop_reason or ("ok" if result.ok else "error"),
+                    })
+            return result
+
         try:
             context = ResearchContext(
                 question=case.question,
@@ -1690,6 +745,7 @@ def run_case(
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                evidence_followup_runner=run_followup,
                 evidence_ledgers=evidence_ledgers,
                 config=_config_for_arm(arm),
             )
@@ -1699,16 +755,7 @@ def run_case(
                 arm=arm,
                 materials=materials,
             )
-            patch_merge = None
             result = pipeline_result.final_result
-            if arm == "planner":
-                patch_merge = _ab_patch_only_merge_result(
-                    iterations[0].result if iterations else None,
-                    iterations[-1].result if iterations else None,
-                    materials[-1] if materials else None,
-                )
-                if patch_merge.applied and patch_merge.result is not None:
-                    result = patch_merge.result
             proof = (
                 review_research_proof(result.research_record, question=case.question)
                 if result.research_record is not None
@@ -1753,6 +800,11 @@ def run_case(
                 "followup_rounds": pipeline_result.followup_rounds,
                 "pipeline_stop_reason": pipeline_result.stop_reason,
                 "planner_stop_reason": pipeline_result.planner_stop_reason,
+                "fresh_source_count": pipeline_result.fresh_source_count,
+                "new_evidence_count": pipeline_result.new_evidence_count,
+                "final_evidence_count": pipeline_result.final_evidence_count,
+                "attempted_fresh_source_count": pipeline_result.attempted_fresh_source_count,
+                "attempted_new_evidence_count": pipeline_result.attempted_new_evidence_count,
                 "ab_followup_mode": (
                     AB_EVIDENCE_ONLY_FOLLOWUP_MODE
                     if arm == "planner" and pipeline_result.followup_rounds
@@ -1761,7 +813,6 @@ def run_case(
                 "ab_followup_max_turns": (
                     1 if arm == "planner" and pipeline_result.followup_rounds else 0
                 ),
-                **(patch_merge.row_payload() if patch_merge is not None else {}),
                 "fixture_queries": search.queries[:12],
                 "fixture_fetches": search.fetches[:12],
                 "provider_send_count": run_provider.send_index,
@@ -1774,12 +825,6 @@ def run_case(
                 "summary_chars": len(result.summary or ""),
                 "summary_preview": _clip(result.summary, 1600),
             }
-            if patch_merge is not None:
-                row["ab_patch_merge_applied"] = bool(patch_merge.applied)
-                row["ab_patch_merge_reason"] = patch_merge.reason
-                row["ab_patch_merge_new_source_urls"] = list(patch_merge.new_source_urls[:8])
-                row["ab_patch_merge_new_evidence_count"] = int(patch_merge.new_evidence_count or 0)
-                row["ab_patch_merge_new_claim_count"] = int(patch_merge.new_claim_count or 0)
             row["score"] = _score_row(row)
             if trace is not None:
                 trace.record_case_complete(
@@ -2500,60 +1545,116 @@ def _self_test() -> None:
         ),
         stop_reason="opened_sources",
     )
-    prompt = _ab_followup_context(
-        question=CASES["widget_noop"].question,
-        initial=type("_Initial", (), {"stop_reason": "done", "summary": "initial summary"})(),
-        plan=ResearchPlan(
-            plan_ref="research_plan:" + "d" * 16,
-            query_candidates=(
-                QueryCandidate("research_query:" + "d" * 16, "current primary source evidence"),
-            ),
-            max_queries=1,
-            max_sources=2,
-        ),
-        material=material,
-        limit=12000,
+    executor = FreshMaterialPlanExecutor(
+        config=ResearchPipelineConfig(max_queries_per_round=1, max_sources_per_query=2, max_total_sources=2),
+        should_stop=lambda: False,
     )
-    assert "opened_material.1.final_url: https://source-b.test/widget-storage-update" in prompt
-    assert '"sources":["https://source-b.test/widget-storage-update"]' in prompt
-    assert '"source_url":"https://source-b.test/widget-storage-update"' in prompt
-    assert "Do not put s1, s2, source_id, result_id, or hit_id" in prompt
-    assert "Do not call done and do not write a final report" in prompt
-    assert "This is an evidence-only repair pass, not a second full research rewrite" in prompt
-    assert "The only allowed model output is one knowledge_write call" in prompt
-    assert "The deterministic merge will add the new evidence-backed claim and source line" in prompt
-    assert "Do not say sources are independent, official, current, or comprehensive" in prompt
-    assert "benchmark locators only" in prompt
-    controller = ABEvidenceOnlyFollowupController(
-        required_urls=("https://source-b.test/widget-storage-update",),
-    )
-    state = ResearchControlState(
-        allowed_tools=("web_search", "open_result", "knowledge_write", "done"),
-        source_urls={"s1": "https://source-a.test/widget-storage", "s2": "https://source-b.test/widget-storage-update"},
-        source_lines=(
-            "s1: Benchmark source A - https://source-a.test/widget-storage",
-            "s2: Benchmark source B - https://source-b.test/widget-storage-update",
-        ),
-        noncitable_source_lines=(
-            "s2: Benchmark source B - https://source-b.test/widget-storage-update",
-        ),
-        evidence_count=1,
-        note_count=1,
-    )
-    block = controller.append_block("followup", state)
-    assert "Allowed tools this turn: knowledge_write" in block
-    assert "Forbidden tools this turn: done" in block
-    assert "Do not call done" in block
-    restricted_state = controller.build_state(
-        type("_Tools", (), {"ledger": type("_Ledger", (), {
-            "searches": (),
-            "opened_sources": (),
-            "evidence_items": (),
-        })(), "created_ids": (), "updated_ids": (), "grounded_ids": ()})(),
-        turn=1,
-        max_turns=1,
-    )
-    assert restricted_state.allowed_tools == ("knowledge_write",)
+    with tempfile.TemporaryDirectory(prefix="codey-bounded-planner-ab-self-") as td:
+        from codey.knowledge.changes import KnowledgeChanges
+        from codey.research.source_document import SourceDocument
+
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=fixture,
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="self-test",
+            )
+            tools.sources_read.add("https://source-a.test/widget-storage")
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://source-a.test/widget-storage",
+                final_url="https://source-a.test/widget-storage",
+                title="Benchmark source A",
+                text=(
+                    "The Widget Storage standard still recommends the stable-v2 "
+                    "endpoint for client storage integration."
+                ),
+            ))
+            with _fixture_url_policy_bypass():
+                material_result = executor.execute(
+                    ResearchPlan(
+                        plan_ref="research_plan:" + "d" * 16,
+                        query_candidates=(
+                            QueryCandidate("research_query:" + "d" * 16, "current primary source evidence"),
+                        ),
+                        max_queries=1,
+                        max_sources=2,
+                    ),
+                    tools,
+                )
+            assert material_result.fresh_source_urls == ("https://source-b.test/widget-storage-update",)
+            assert material_result.fresh_source_count == 1
+        finally:
+            store.close()
+    with tempfile.TemporaryDirectory(prefix="codey-bounded-planner-ab-self-") as td:
+        from codey.knowledge.changes import KnowledgeChanges
+        from codey.research.source_document import SourceDocument
+
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=None,
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="self-test",
+            )
+            url = "https://source-b.test/widget-storage-update"
+            tools.sources_read.add(url)
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url=url,
+                final_url=url,
+                title="Benchmark source B",
+                text=(
+                    "The Widget Storage working group has not adopted a stable-v3 "
+                    "successor; stable-v2 remains the recommended endpoint."
+                ),
+            ))
+
+            class _ReplyProvider:
+                def send(self, prompt: str) -> str:
+                    assert '"tool": "knowledge_write"' in prompt
+                    return json.dumps({
+                        "tool": "knowledge_write",
+                        "args": {
+                            "type": "fact",
+                            "title": "Evidence from Benchmark source B",
+                            "body": (
+                                "The Widget Storage working group has not adopted a stable-v3 "
+                                "successor; stable-v2 remains the recommended endpoint."
+                            ),
+                            "sources": [url],
+                            "evidence": [{
+                                "claim": "stable-v2 remains the recommended endpoint.",
+                                "source_url": url,
+                                "excerpt": (
+                                    "The Widget Storage working group has not adopted a stable-v3 "
+                                    "successor; stable-v2 remains the recommended endpoint."
+                                ),
+                                "stance": "supports",
+                            }],
+                        },
+                    })
+
+            replay = run_evidence_followup(
+                provider=_ReplyProvider(),
+                tools=tools,
+                plan=ResearchPlan(plan_ref="research_plan:" + "e" * 16),
+                material=PlanExecutionResult(
+                    fresh_source_urls=(url,),
+                    opened_sources=({"final_url": url, "title": "Benchmark source B"},),
+                    previews=material.previews,
+                    stop_reason="opened_sources",
+                ),
+                question=CASES["widget_noop"].question,
+            )
+            assert replay.ok is True
+            assert replay.stop_reason == "written"
+            assert replay.new_evidence_count == 1
+        finally:
+            store.close()
     failed_usefulness = _followup_usefulness(
         {"arm": "baseline", "ok": False, "error": "timeout"},
         {
@@ -2594,289 +1695,6 @@ def _self_test() -> None:
     assert material_only["material_gain"] is True
     assert material_only["quality_regression"] is True
     assert material_only["useful"] is False
-    initial_record = ResearchRecord(
-        record_id="research_record:1111111111111111",
-        record_digest=digest_text("initial-record"),
-        question=ResearchQuestion(
-            question_id="question:widget",
-            question_text_digest=digest_text("Widget Storage API recommendation"),
-            chars=34,
-        ),
-        answer_status="partial",
-        sources=(
-            ResearchSource(
-                source_id="source:1111111111111111",
-                requested_url_ref={"host": "source-a.test"},
-                final_url_ref={"host": "source-a.test"},
-                host="source-a.test",
-                title_digest=digest_text("Benchmark source A"),
-                content_hash="hash-a",
-                retrieved_at="2026-08-20T00:00:00Z",
-                content_kind="html",
-                quality={"level": "primary", "kind": "web", "freshness": "recent"},
-            ),
-        ),
-        evidence=(
-            ResearchEvidence(
-                evidence_id="evidence:1111111111111111",
-                source_id="source:1111111111111111",
-                excerpt_digest=digest_text("stable-v2 remains recommended"),
-                bounded_excerpt="stable-v2 remains recommended",
-                locator=EvidenceLocator(
-                    kind="html",
-                    source_id="source:1111111111111111",
-                    char_start=5,
-                    char_end=32,
-                    locator="p.1",
-                ),
-                stance="supports",
-                claim_text_digest=digest_text("stable-v2 remains recommended"),
-            ),
-        ),
-        claims=(
-            ResearchClaim(
-                claim_id="claim:1111111111111111",
-                claim_text="stable-v2 remains recommended",
-                claim_section="evidence",
-                citation_numbers=(1,),
-                evidence_refs=("evidence:1111111111111111",),
-                status="evidence_backed",
-            ),
-            ResearchClaim(
-                claim_id="claim:2222222222222222",
-                claim_text="The current recommendation is official.",
-                claim_section="conclusion",
-                citation_numbers=(1,),
-                evidence_refs=(),
-                status="unsupported",
-            ),
-        ),
-        assumptions=(),
-        relations=(
-            ResearchClaimRelation(
-                relation_id="relation:1111111111111111",
-                relation_kind="supports",
-                from_ref="claim:1111111111111111",
-                to_ref="evidence:1111111111111111",
-                citation_numbers=(1,),
-            ),
-        ),
-        unsupported_claim_count=1,
-        run_id="run-self",
-        session_id="session-self",
-        project_ref={"basename": "", "digest": ""},
-        synthesis_id="synthesis:self",
-        stop_reason="done",
-    )
-    followup_record = ResearchRecord(
-        record_id="research_record:2222222222222222",
-        record_digest=digest_text("followup-record"),
-        question=initial_record.question,
-        answer_status="partial",
-        sources=(
-            *initial_record.sources,
-            ResearchSource(
-                source_id="source:2222222222222222",
-                requested_url_ref={"host": "source-b.test"},
-                final_url_ref={"host": "source-b.test"},
-                host="source-b.test",
-                title_digest=digest_text("Benchmark source B"),
-                content_hash="hash-b",
-                retrieved_at="2026-08-20T00:00:00Z",
-                content_kind="html",
-                quality={"level": "primary", "kind": "web", "freshness": "recent"},
-            ),
-        ),
-        evidence=(
-            *initial_record.evidence,
-            ResearchEvidence(
-                evidence_id="evidence:2222222222222222",
-                source_id="source:2222222222222222",
-                excerpt_digest=digest_text("stable-v2 remains recommended"),
-                bounded_excerpt="stable-v2 remains recommended",
-                locator=EvidenceLocator(
-                    kind="html",
-                    source_id="source:2222222222222222",
-                    char_start=7,
-                    char_end=34,
-                    locator="p.1",
-                ),
-                stance="supports",
-                claim_text_digest=digest_text("stable-v2 remains recommended"),
-            ),
-        ),
-        claims=initial_record.claims,
-        assumptions=(),
-        relations=initial_record.relations,
-        unsupported_claim_count=1,
-        run_id="run-self",
-        session_id="session-self",
-        project_ref={"basename": "", "digest": ""},
-        synthesis_id="synthesis:self",
-        stop_reason="done",
-    )
-    initial_result = ResearchRunResult(
-        question="Widget Storage API recommendation endpoint",
-        summary=(
-            "## 结论\n"
-            "stable-v2 endpoint remains recommended [1].\n\n"
-            "## 关键证据\n"
-            "- stable-v2 remains recommended [1].\n\n"
-            "## 反证与限制\n"
-            "- 未找到强反证。\n\n"
-            "## 来源质量\n"
-            "- [1] Benchmark source A - https://source-a.test/widget-storage\n\n"
-            "## 搜索覆盖\n"
-            "- Widget Storage API recommendation endpoint\n\n"
-            "## 来源\n"
-            "[1] Benchmark source A - https://source-a.test/widget-storage"
-        ),
-        stop_reason="done",
-        turns=6,
-        opened_sources=[
-            {
-                "final_url": "https://source-a.test/widget-storage",
-                "title": "Benchmark source A",
-            },
-        ],
-        evidence_items=[
-            {
-                "claim": "stable-v2 remains recommended",
-                "source_url": "https://source-a.test/widget-storage",
-                "excerpt": "stable-v2 remains recommended",
-                "stance": "supports",
-            },
-        ],
-        citation_map=[
-            {
-                "number": 1,
-                "title": "Benchmark source A",
-                "url": "https://source-a.test/widget-storage",
-            },
-        ],
-        source_urls=["https://source-a.test/widget-storage"],
-        sources_read=1,
-        research_record=initial_record,
-        max_turns_used=14,
-    )
-    followup_result = ResearchRunResult(
-        question=initial_result.question,
-        summary=(
-            "## 结论\n"
-            "stable-v2 endpoint remains recommended [1][2].\n\n"
-            "## 关键证据\n"
-            "- stable-v2 remains recommended [1].\n"
-            "- stable-v2 remains recommended [2].\n\n"
-            "## 反证与限制\n"
-            "- 未找到强反证。\n\n"
-            "## 来源质量\n"
-            "- [1] Benchmark source A - https://source-a.test/widget-storage\n"
-            "- [2] Benchmark source B - https://source-b.test/widget-storage-update\n\n"
-            "## 搜索覆盖\n"
-            "- Widget Storage API recommendation endpoint\n\n"
-            "## 来源\n"
-            "[1] Benchmark source A - https://source-a.test/widget-storage\n"
-            "[2] Benchmark source B - https://source-b.test/widget-storage-update"
-        ),
-        stop_reason="done",
-        turns=2,
-        opened_sources=[
-            {
-                "final_url": "https://source-a.test/widget-storage",
-                "title": "Benchmark source A",
-            },
-            {
-                "final_url": "https://source-b.test/widget-storage-update",
-                "title": "Benchmark source B",
-            },
-        ],
-        evidence_items=[
-            {
-                "claim": "stable-v2 remains recommended",
-                "source_url": "https://source-a.test/widget-storage",
-                "excerpt": "stable-v2 remains recommended",
-                "stance": "supports",
-            },
-            {
-                "claim": "stable-v2 remains recommended",
-                "source_url": "https://source-b.test/widget-storage-update",
-                "excerpt": "stable-v2 remains recommended",
-                "stance": "supports",
-            },
-        ],
-        citation_map=[
-            {
-                "number": 1,
-                "title": "Benchmark source A",
-                "url": "https://source-a.test/widget-storage",
-            },
-            {
-                "number": 2,
-                "title": "Benchmark source B",
-                "url": "https://source-b.test/widget-storage-update",
-            },
-        ],
-        source_urls=[
-            "https://source-a.test/widget-storage",
-            "https://source-b.test/widget-storage-update",
-        ],
-        sources_read=2,
-        research_record=followup_record,
-        max_turns_used=14,
-    )
-    patched = _ab_patch_only_merge_result(initial_result, followup_result)
-    assert patched.applied is True
-    assert patched.reason == "patch_only_merge"
-    assert patched.new_source_urls == ("https://source-b.test/widget-storage-update",)
-    assert patched.new_evidence_count == 1
-    assert patched.new_claim_count == 1
-    assert patched.result is not None
-    assert "A/B Patch-Only Follow-up" not in patched.result.summary
-    assert "Benchmark source B" in patched.result.summary
-    assert "- stable-v2 remains recommended [2]" in patched.result.summary
-    assert "## 来源\n[1] Benchmark source A - https://source-a.test/widget-storage\n[2] Benchmark source B - https://source-b.test/widget-storage-update" in patched.result.summary
-    assert patched.result.research_record is not None
-    patched_counts = _record_counts(patched.result.research_record)
-    assert patched_counts["source_count"] == 2
-    assert patched_counts["evidence_count"] == 2
-    assert patched_counts["claim_count"] == 2
-    assert patched_counts["unsupported_claim_count"] == 0
-    assert patched.result.research_record.answer_status == "partial"
-    patched_review = review_research_proof(
-        patched.result.research_record,
-        question=patched.result.question,
-    )
-    assert "unsupported_claims" not in patched_review.missing_evidence
-    no_evidence_record = replace(
-        followup_record,
-        evidence=initial_record.evidence,
-        claims=initial_record.claims,
-        relations=initial_record.relations,
-    )
-    no_evidence_result = replace(
-        followup_result,
-        evidence_items=list(initial_result.evidence_items),
-        research_record=no_evidence_record,
-    )
-    material_patched = _ab_patch_only_merge_result(
-        initial_result,
-        no_evidence_result,
-        material,
-    )
-    assert material_patched.applied is True
-    assert material_patched.reason == "material_patch_only_merge"
-    assert material_patched.new_source_urls == ("https://source-b.test/widget-storage-update",)
-    assert material_patched.new_evidence_count == 1
-    assert material_patched.new_claim_count == 1
-    assert material_patched.result is not None
-    assert "Benchmark source B" in material_patched.result.summary
-    assert "## 来源\n[1] Benchmark source A - https://source-a.test/widget-storage\n[2] Benchmark source B - https://source-b.test/widget-storage-update" in material_patched.result.summary
-    assert material_patched.result.research_record is not None
-    material_counts = _record_counts(material_patched.result.research_record)
-    assert material_counts["source_count"] == 2
-    assert material_counts["evidence_count"] == 2
-    assert material_counts["claim_count"] == 2
-    assert material_counts["unsupported_claim_count"] == 0
     assert _expected_terms_present("stable-v2 endpoint", ("stable-v2",))
     assert _trace_output_path(Path("tests/manual/results/bounded_research_planner_ab-deepseek.json")).name == (
         "bounded_research_planner_ab-deepseek.trace.json"

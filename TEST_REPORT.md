@@ -19,9 +19,11 @@ Production changes under validation:
 - Follow-up metadata is surfaced above the raw `ResearchRunResult`, including
   `followup_applied`, `followup_rounds`, and `planner_stop_reason`.
 - The manual bounded planner A/B harness records atomic send/reply traces and
-  conservative paired `followup_usefulness` summaries. The current
-  hidden-material and evidence-only patch-merge probes remain experimental and
-  do not by themselves enable the production planner behavior.
+  conservative paired `followup_usefulness` summaries. The planner arm now
+  injects the production `run_evidence_followup()` path and production
+  deterministic merge; the remaining A/B-only behavior is limited to the
+  fixture material-phase executor that exposes hidden source B for controlled
+  comparison.
 - Qwen Studio homepage first submit now waits out a short false-ready state:
   the page can expose `textarea.message-input-textarea` and
   `button.send-button` before its homepage submit handler is hydrated. The wait
@@ -49,6 +51,15 @@ python -B -m py_compile tests\manual\bounded_research_planner_ab.py
 python -B tests\manual\bounded_research_planner_ab.py --self-test
 # self-test ok
 ```
+
+The 2026-08-21 trace replay check fed the five successful `evidenceonly3`
+follow-up replies back into the current production `run_evidence_followup()`.
+DeepSeek, MiMo, Qwen, StepFun, and GLM all accepted the strict explicit
+`{"tool":"knowledge_write","args":{...}}` shape and wrote exactly one new
+evidence item. This shows the later schema hardening does not break those
+successful follow-up replies, while the live A/B harness now measures the
+production follow-up prompt rather than the older harness-only
+`iteration_context` controller.
 
 Live bounded-planner A/B evidence is recorded under `tests/manual/results/` and
 summarized in `tests/manual/bounded_research_planner_ab_reports.md`. The current
