@@ -378,7 +378,10 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
             "fresh_source_count": 0,
             "new_evidence_count": 0,
             "merged_evidence_count": 1,
+            "attempted_fresh_source_count": 0,
+            "attempted_new_evidence_count": 0,
         }]
+
 
         assert proof_review["proof_ref"].startswith("research_proof:")
         assert proof_review["record_id"] == record.record_id

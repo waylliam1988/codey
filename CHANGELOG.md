@@ -6,18 +6,19 @@ This file records Codey's release history. The newest release appears first.
 
 ## 0.4.4 - Bounded Research Planner v1 (implementation draft, unreleased)
 
-- Implemented true memory Staging isolation (`StagedKnowledgeStore` / `StagedKnowledgeChanges`):
-  knowledge writes and note links during follow-up are buffered in-memory with full read-through capability and transactional rollback;
+- Implemented memory Staging isolation (`StagedKnowledgeStore` / `StagedKnowledgeChanges`):
+  knowledge writes and note links during follow-up are buffered in-memory with full read-through capability and compensating rollback;
   rejected candidates incur 0 writes to disk store or changes, guaranteeing zero pollution for store, `sources_read`, and `created_ids`;
   `link()` validates endpoint note existence; changes are committed only upon candidate selection.
-- Added Staging Commit Exception Guard and Atomic Rollback in ResearchPipeline:
-  safely protects `commit_staged` against disk full or IO exceptions by automatically unlinking any newly written note files on disk
-  (including cleaning up moved folder paths while restoring original files with 100% byte-exact precision without timestamp drift, unified with `content_hash_bytes`),
+- Added Staging Commit Exception Guard and Compensating Rollback in ResearchPipeline:
+  safely protects `commit_staged` against disk full or IO exceptions by automatically unlinking newly written note files on disk
+  (including cleaning up moved folder paths while restoring original files with byte-exact precision without timestamp drift, unified with `content_hash_bytes`),
   removing newly created notes from the SQLite index (preventing ghost index entries), and restoring `KnowledgeChanges` snapshots,
-  cleanly preserving the initial successful result with `planner_stop_reason="followup_commit_error"` and zero partial residue.
-- Improved pipeline observability (`task_runner.py` / `pipeline.py` / `run_trace.py`):
-  surfaced `fresh_source_count`, `new_evidence_count`, and `merged_evidence_count` as well as fully observable `attempted_fresh_source_count`
-  and `attempted_new_evidence_count` regardless of candidate selection, providing complete traffic and cost transparency.
+  cleanly preserving the initial successful result with `planner_stop_reason="followup_commit_error"`.
+- Improved pipeline and trace observability (`task_runner.py` / `pipeline.py` / `run_trace.py`):
+  surfaced and persisted `fresh_source_count`, `new_evidence_count`, and `merged_evidence_count` as well as fully observable `attempted_fresh_source_count`
+  and `attempted_new_evidence_count` regardless of candidate selection, providing complete traffic and cost persistence transparency.
+
 - Enhanced deterministic graph patch merger (`codey/research/record_merge.py`):
   enforces strict evidence-backed citation verification across all sections (conclusion, evidence, counter), filtering uncited or dangling citations (e.g. `[99]`),
   idempotently merges new evidence and sources based on `(canonical_url, excerpt_hash)`, re-indexes citations with `done_finalizer`,

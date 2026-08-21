@@ -1178,6 +1178,7 @@ def test_content_hash_bytes_consistency() -> None:
 
 
 def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
+    from codey.research.context import NullResearchTraceSink
     from codey.research.plan_executor import PlanExecutionResult
 
 
@@ -1185,10 +1186,17 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
         root = Path(td)
         store = KnowledgeStore(root / "knowledge")
         ledgers = EvidenceLedgerStore(root / "ledgers")
+        recorded_pipeline_results = []
+
+        class RecordingTraceSink(NullResearchTraceSink):
+            def record_pipeline_result(self, result: object) -> None:
+                recorded_pipeline_results.append(result)
+
         context = ResearchContext(
             question="What is the latency?",
             session_id="s-attempt",
             run_id="r-attempt",
+            trace=RecordingTraceSink(),
         )
         tools = ResearchTools(
             search=None,
@@ -1206,7 +1214,6 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
             quality_warnings=("low_confidence",),
         )
 
-
         def runner(*, task, max_turns, chat_handoff, search, tools=None, iteration_context=""):
             return ResearchIterationRun(result=initial_result, tools=tools)
 
@@ -1216,7 +1223,6 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
                 new_evidence_count=2,
                 stop_reason="done",
             )
-
 
         pipeline = ResearchPipeline(
             context=context,
@@ -1254,8 +1260,6 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
                 ledger_record_verified=False,
             )
 
-
-
         pipeline._review = reject_candidate
 
         # Mock executor to return fresh material
@@ -1272,12 +1276,9 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
             query_candidates=(QueryCandidate(query_id="q1", query_preview="query preview"),),
         )
 
-
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("codey.research.pipeline.PlanExecutor.execute", lambda self, plan, staged_tools: mock_executor(plan, staged_tools))
             pipeline_result = pipeline.run()
-
-
 
         # Followup was attempted but rejected
         assert pipeline_result.followup_applied is False
@@ -1291,3 +1292,6 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
         payload = pipeline_result.to_payload()
         assert payload["attempted_fresh_source_count"] == 2
         assert payload["attempted_new_evidence_count"] == 2
+        assert len(recorded_pipeline_results) == 1
+        assert recorded_pipeline_results[0].attempted_fresh_source_count == 2
+        assert recorded_pipeline_results[0].attempted_new_evidence_count == 2

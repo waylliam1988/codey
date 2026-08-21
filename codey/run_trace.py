@@ -688,7 +688,10 @@ class RunTraceRecorder:
             "fresh_source_count": _nonnegative_int(result.get("fresh_source_count")),
             "new_evidence_count": _nonnegative_int(result.get("new_evidence_count")),
             "merged_evidence_count": _nonnegative_int(result.get("merged_evidence_count")),
+            "attempted_fresh_source_count": _nonnegative_int(result.get("attempted_fresh_source_count")),
+            "attempted_new_evidence_count": _nonnegative_int(result.get("attempted_new_evidence_count")),
         }
+
 
         self.manifest.research_pipeline_runs.append(payload)
         if len(self.manifest.research_pipeline_runs) > MAX_RESEARCH_PIPELINE_RUNS:

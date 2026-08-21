@@ -644,6 +644,8 @@ class RunTraceStoreTests(unittest.TestCase):
                 "followup_rounds": 99,
                 "stop_reason": "done",
                 "planner_stop_reason": "followup_iteration_error",
+                "attempted_fresh_source_count": 2,
+                "attempted_new_evidence_count": 3,
                 "raw_query": "SECRET_QUERY_SHOULD_NOT_BE_SAVED",
                 "raw_url": "https://example.com/secret",
             })
@@ -665,7 +667,10 @@ class RunTraceStoreTests(unittest.TestCase):
                 "fresh_source_count": 0,
                 "new_evidence_count": 0,
                 "merged_evidence_count": 0,
+                "attempted_fresh_source_count": 2,
+                "attempted_new_evidence_count": 3,
             }])
+
             self.assertNotIn("SECRET_QUERY_SHOULD_NOT_BE_SAVED", serialized)
             self.assertNotIn("https://example.com/secret", serialized)
 
