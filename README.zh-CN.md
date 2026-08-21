@@ -359,6 +359,12 @@ unsupported claim 增加，保守 gate 仍把该 row 判定为 non-useful。Step
 取到了 fresh material，但最终仍停在 protocol/not-answered，所以该生产路径 row
 没有形成最终 material gain。
 
+生产路径现在继续保持窄边界：`PlanExecutor` 在 fresh-source 预算满后立即停止，
+不再多打一轮 search；evidence-only staging 会按普通 note 标题解析 link 端点，
+staged commit 失败时会恢复触及的 link 边；deterministic merge 复用共享 citation
+parser，不再单独维护来源行解析正则。确定性报告装配通过 follow-up 指标表达，不再
+虚增 Research turn 计数。
+
 MiMo 在加入 one-tool Research 边界后重新做过实机补测。fresh-tab 的
 `long-official-doc/source_search` 跑满 10 轮并完成：使用了 `source_search`，
 打开目标 offset，保存精确 evidence，并通过 report quality。没有这个边界的早期 MiMo

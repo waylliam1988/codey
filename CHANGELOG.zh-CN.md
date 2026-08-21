@@ -10,6 +10,10 @@
   follow-up 阶段笔记写入和关联在内存暂存缓冲中执行，支持完整 read-through 读穿透与补偿回滚（rollback）机制；
   候选方案被拒绝时零写入磁盘主知识库与 changes，主 store、`sources_read`、`created_ids` 零污染；
   `link()` 严格校验两端 note 存在性；仅当候选方案通过评测胜出时才批量持久化提交。
+- 加固 staged note-link 语义与回滚：
+  staged link 现在通过普通 `KnowledgeStore.link()` 同一层窄 resolver 解析 note 标题；
+  staged commit 失败时会快照并恢复所有触及 staged/link endpoint note 的 SQLite link 边；
+  staging 阶段的 changes 跟踪收敛为纯 no-op facade，不再保留半使用状态。
 - Pipeline Staging Commit 补偿回滚与异常安全护栏：
   在候选方案胜出提交（`commit_staged`）阶段增加异常保护与补偿回滚，若多 note 写入中途抛出磁盘满或底层 IO 错误，
   自动逆序清理本次已写入磁盘的 note 文件（针对已有 note 发生路径/folder 移动，彻底删除新路径文件并字节级还原旧路径文件内容与时间戳，统一使用 `content_hash_bytes` 保持算法收口一致）、
@@ -29,9 +33,10 @@
 - 强化确定性图谱合并器（`codey/research/record_merge.py`）：
   对结论（conclusion）、关键证据（evidence）、反证（counter）实现严格的 Evidence-Backed 引用校验与全段落修剪，
   彻底过滤未引用或包含未映射悬空编号（如 `[99]`）的行，按 `(canonical_url, excerpt_hash)` 幂等去重合并新增证据与来源，
-  通过 `done_finalizer` 顺延并重新编号引用，全面同步 `queries`、包含完整 `query/opened/final_url` 的 `search_results`、
+  通过 `done_finalizer` 顺延并重新编号引用，并复用 report-quality 的统一 citation parser，避免在 merge 层再维护一套 Markdown 正则；全面同步 `queries`、包含完整 `query/opened/final_url` 的 `search_results`、
   `notes_created`、`notes_updated`、`links_created`、`counterpoints` 与稳定排序的 `source_urls`。
 - 彻底清理 `PlanExecutor` 中 `max_wall_time` 残留死分支，消除已废弃的计时器参数，确保执行边界语义纯粹干净。
+- `PlanExecutor` 在 fresh-source 总预算已满时会先停止，不再多打一轮无效 search；deterministic merge 也不再把非模型报告装配计入 `ResearchRunResult.turns`。
 - 将 Research 生命周期编排收归 `codey/research/pipeline.py`：初始
   `ResearchRunner`、proof review、`QueryPlanner`、有界 `PlanExecutor`、
   evidence-only follow-up、确定性 `merge_evidence_patch`、最终 proof review 和 Evidence Ledger 写入由 Pipeline

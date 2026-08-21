@@ -73,6 +73,18 @@ class _PipelineSearch:
         self.closed = True
 
 
+def _link_rows(store: KnowledgeStore, note_ids: list[str]) -> list[tuple[str, str, str]]:
+    rows = store.index.links_touching(note_ids)
+    return sorted(
+        (
+            str(row.get("src_id") or ""),
+            str(row.get("dst_id") or ""),
+            str(row.get("kind") or ""),
+        )
+        for row in rows
+    )
+
+
 def _record(
     *,
     question: str,
@@ -1189,6 +1201,55 @@ def test_staged_knowledge_store_link_validation() -> None:
         # Link succeeds when both exist
         res3 = staged_store.link("existing-note", "existing-note")
         assert res3.startswith("linked:")
+
+        # Staging resolves titles like the real KnowledgeStore, including staged-only notes.
+        store.write_note(KnowledgeNote(id="parent-note", title="Parent Title", body="Parent Body", type="fact"))
+        staged_store.write_note(KnowledgeNote(id="staged-note", title="Staged Title", body="Staged Body", type="fact"))
+        res4 = staged_store.link("Staged Title", "Parent Title", "supports")
+        assert res4 == "linked: staged-note -> parent-note (supports)"
+
+
+def test_staged_knowledge_store_rollback_restores_links_after_link_failure() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(root=store.root)
+        from codey.knowledge.note import KnowledgeNote
+        from codey.research.tools import StagedKnowledgeStore
+
+        source = KnowledgeNote(id="source-note", title="Source Title", body="Source body.", type="fact")
+        old_target = KnowledgeNote(id="old-target", title="Old Target", body="Old body.", type="fact")
+        new_target = KnowledgeNote(id="new-target", title="New Target", body="New body.", type="fact")
+        store.write_note(source)
+        store.write_note(old_target)
+        store.write_note(new_target)
+        assert store.link("Source Title", "Old Target", "supports").startswith("linked:")
+        original_body = store.read_note("source-note").body
+        original_links = _link_rows(store, ["source-note", "old-target", "new-target"])
+
+        staged_store = StagedKnowledgeStore(store)
+        assert staged_store.link("Source Title", "New Target", "supports") == (
+            "linked: source-note -> new-target (supports)"
+        )
+        original_link = store.link
+
+        def fail_after_link(src, dst, kind="relates", *, changes=None):
+            result = original_link(src, dst, kind, changes=changes)
+            assert result.startswith(("linked:", "updated link:", "already linked:"))
+            raise OSError("link failed after side effect")
+
+        store.link = fail_after_link
+
+        with pytest.raises(OSError, match="link failed after side effect"):
+            staged_store.commit_to(store, changes=changes)
+
+        restored = store.read_note("source-note")
+        assert restored is not None
+        assert restored.body == original_body
+        assert _link_rows(store, ["source-note", "old-target", "new-target"]) == original_links
+        assert changes.created == []
+        assert changes.updated == []
+        assert changes.has_changes() is False
 
 
 def test_content_hash_bytes_consistency() -> None:

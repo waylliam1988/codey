@@ -74,6 +74,9 @@ class PlanExecutor:
             if self._is_stopped():
                 stop_reason = "stopped"
                 break
+            if len(opened) >= total_limit or total_limit <= 0 or per_query_limit <= 0:
+                stop_reason = "max_sources"
+                break
             query = " ".join(str(candidate.query_preview or "").split())
             if not query:
                 skipped += 1
@@ -175,21 +178,20 @@ class PlanExecutor:
 
 def _collect_baseline_urls(tools: ResearchTools) -> set[str]:
     baseline: set[str] = set()
-    for url in getattr(tools, "sources_read", ()):
+    for url in tools.sources_read:
         if str(url or "").strip():
             baseline.add(str(url).strip())
-    if hasattr(tools, "ledger") and tools.ledger is not None:
-        for url in tools.ledger.final_url_set():
-            if str(url or "").strip():
-                baseline.add(str(url).strip())
-        for opened in tools.ledger.opened_sources:
-            if str(opened.final_url or "").strip():
-                baseline.add(str(opened.final_url).strip())
-            if str(opened.requested_url or "").strip():
-                baseline.add(str(opened.requested_url).strip())
-        for ev in getattr(tools.ledger, "evidence_items", ()):
-            if str(getattr(ev, "source_url", "") or "").strip():
-                baseline.add(str(ev.source_url).strip())
+    for url in tools.ledger.final_url_set():
+        if str(url or "").strip():
+            baseline.add(str(url).strip())
+    for opened in tools.ledger.opened_sources:
+        if str(opened.final_url or "").strip():
+            baseline.add(str(opened.final_url).strip())
+        if str(opened.requested_url or "").strip():
+            baseline.add(str(opened.requested_url).strip())
+    for ev in tools.ledger.evidence_items:
+        if str(ev.source_url or "").strip():
+            baseline.add(str(ev.source_url).strip())
     return baseline
 
 

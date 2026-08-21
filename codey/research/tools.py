@@ -8,7 +8,7 @@ from pathlib import Path
 from codey import cancellation
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
-from codey.knowledge.note import NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
+from codey.knowledge.note import LINK_KINDS, NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
 from codey.knowledge.store import KnowledgeStore, content_hash_bytes
 from codey.research.ledger import ResearchLedger
 from codey.research.pdf_extract import (
@@ -363,10 +363,9 @@ class ResearchTools:
         result = self.store.link(src, dst, (kind or "relates").strip().lower(), changes=self.changes)
         if result.startswith("ERROR:"):
             return result
-        changed = result.startswith(("linked:", "updated link:"))
         if result.startswith("linked:"):
             self.links_created += 1
-        return result if changed else result
+        return result
 
     def _source_problem(self, sources: list[str]) -> str | None:
         urls = [s for s in sources if _looks_like_url(s)]
@@ -512,6 +511,20 @@ class StagedKnowledgeStore:
     def exists(self, note_id: str) -> bool:
         return note_id in self._staged_notes or self._parent.exists(note_id)
 
+    def resolve(self, target: str) -> str | None:
+        target = str(target or "").strip()
+        if not target:
+            return None
+        if target in self._staged_notes:
+            return target
+        parent_id = self._parent.index.resolve(target)
+        if parent_id:
+            return parent_id
+        for note in self._staged_notes.values():
+            if note.title == target:
+                return note.id
+        return None
+
     def get_note(self, note_id: str) -> KnowledgeNote | None:
         return self.read_note(note_id)
 
@@ -535,12 +548,16 @@ class StagedKnowledgeStore:
         return self._parent.rel(path) if path.exists() else f"{note.folder}/{note.id}.md"
 
     def link(self, src: str, dst: str, kind: str = "relates", *, changes: KnowledgeChanges | None = None) -> str:
-        if not self.exists(src):
+        del changes
+        kind = kind if kind in LINK_KINDS else "relates"
+        src_id = self.resolve(src)
+        if src_id is None:
             return f"ERROR: unknown source note: {src}"
-        if not self.exists(dst):
+        dst_id = self.resolve(dst)
+        if dst_id is None:
             return f"ERROR: unknown target note: {dst}"
-        self._staged_links.append((src, dst, kind))
-        return f"linked: {src} -> {dst} ({kind})"
+        self._staged_links.append((src_id, dst_id, kind))
+        return f"linked: {src_id} -> {dst_id} ({kind})"
 
     def commit_to(self, target_store: KnowledgeStore, changes: KnowledgeChanges | None = None) -> None:
         saved_before = dict(getattr(changes, "_before", {})) if changes is not None else None
@@ -550,6 +567,10 @@ class StagedKnowledgeStore:
         # Track written/modified notes and files for compensating rollback:
         # note_id -> (new_path, orig_path_or_None, orig_bytes_or_None, orig_note_or_None)
         tracked_notes: dict[str, tuple[Path, Path | None, bytes | None, KnowledgeNote | None]] = {}
+        link_touch_ids = set(self._staged_notes)
+        for src_id, dst_id, _ in self._staged_links:
+            link_touch_ids.update((src_id, dst_id))
+        saved_links = target_store.index.links_touching(sorted(link_touch_ids))
         try:
             for note in self._staged_notes.values():
                 new_path = target_store.path_for(note)
@@ -560,8 +581,7 @@ class StagedKnowledgeStore:
                 tracked_notes[note.id] = (new_path, orig_path, orig_bytes, orig_note)
                 target_store.write_note(note, changes=changes)
 
-            for src, dst, kind in self._staged_links:
-                src_id = target_store.index.resolve(src) or src
+            for src_id, dst_id, kind in self._staged_links:
                 if src_id not in tracked_notes:
                     orig_existed = target_store.exists(src_id)
                     orig_src_note = target_store.read_note(src_id) if orig_existed else None
@@ -569,20 +589,20 @@ class StagedKnowledgeStore:
                         src_path = target_store.path_for(orig_src_note)
                         src_bytes = src_path.read_bytes() if src_path.is_file() else None
                         tracked_notes[src_id] = (src_path, src_path, src_bytes, orig_src_note)
-                target_store.link(src, dst, kind, changes=changes)
+                target_store.link(src_id, dst_id, kind, changes=changes)
 
             self._staged_notes.clear()
             self._staged_links.clear()
-        except Exception:
+        except Exception as exc:
             # Compensating rollback: revert all notes, index entries, links, and changes
+            cleanup_errors: list[str] = []
             for note_id, (new_path, orig_path, orig_bytes, orig_note) in reversed(list(tracked_notes.items())):
                 try:
                     if orig_note is None:
                         # 1. New note created during this commit attempt
                         if new_path.is_file():
                             new_path.unlink(missing_ok=True)
-                        if hasattr(target_store.index, "remove"):
-                            target_store.index.remove(note_id)
+                        target_store.index.remove(note_id)
                     else:
                         # 2. Existing note modified or moved during this commit attempt
                         # If folder/type changed, delete the newly created path file
@@ -593,19 +613,25 @@ class StagedKnowledgeStore:
                             orig_path.parent.mkdir(parents=True, exist_ok=True)
                             orig_path.write_bytes(orig_bytes)
                         # Exact index & links restoration to original snapshot
-                        if hasattr(target_store, "rel") and hasattr(target_store, "index") and orig_path is not None:
+                        if orig_path is not None:
                             rel = target_store.rel(orig_path)
                             c_hash = content_hash_bytes(orig_bytes) if orig_bytes is not None else ""
                             target_store.index.upsert(orig_note, path=rel, content_hash=c_hash)
-                            if hasattr(target_store, "_index_body_links"):
-                                target_store._index_body_links(orig_note)
-                except Exception:
-                    pass
+                            target_store._index_body_links(orig_note)
+                except Exception as cleanup_exc:
+                    cleanup_errors.append(f"{note_id}: {cleanup_exc}")
+
+            try:
+                target_store.index.replace_links_touching(sorted(link_touch_ids), saved_links)
+            except Exception as cleanup_exc:
+                cleanup_errors.append(f"links: {cleanup_exc}")
 
             if changes is not None and saved_before is not None:
                 changes._before = saved_before
                 changes._after_hashes = saved_after or {}
                 changes._touched = saved_touched or set()
+            if cleanup_errors:
+                exc.add_note("staged knowledge rollback cleanup errors: " + "; ".join(cleanup_errors[:6]))
             raise
 
 
@@ -613,20 +639,17 @@ class StagedKnowledgeChanges:
     """In-memory tracking for note file changes during staging without disk side-effects."""
 
     def __init__(self, parent_changes: KnowledgeChanges | None = None) -> None:
-        self._parent = parent_changes
-        self._staged_files: set[str] = set()
+        del parent_changes
 
     def record_staged_note(self, note: KnowledgeNote) -> None:
-        self._staged_files.add(f"{note.folder}/{note.id}.md")
+        del note
 
     def capture_before(self, rel: str, path: Path) -> None:
         """No-op during staging: staged notes do not inspect or snapshot disk paths."""
         del rel, path
 
     def record_after(self, rel: str, path: Path) -> None:
-        del path
-        self._staged_files.add(rel)
-
+        del rel, path
 
 
 def clone_research_tools(

@@ -26,6 +26,7 @@ from codey.research.object_model import (
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.report_quality import (
     ReportQualityReview,
+    parse_citation_rows,
     parse_sections,
     review_report_quality,
 )
@@ -39,8 +40,6 @@ def merge_evidence_patch(
     material: PlanExecutionResult | None = None,
 ) -> ResearchRunResult:
     """Merge newly collected evidence items into initial ResearchRunResult deterministically."""
-    if not hasattr(tools, "ledger") or tools.ledger is None:
-        return initial
     initial_record = getattr(initial, "research_record", None)
     ledger = tools.ledger
     fresh_urls = set(material.fresh_source_urls) if material is not None else set()
@@ -101,7 +100,7 @@ def merge_evidence_patch(
 
     seen_final: set[str] = set()
     final_urls: list[str] = []
-    for opened in getattr(ledger, "opened_sources", ()):
+    for opened in ledger.opened_sources:
         c_url = ledger.canonical_opened_url(opened.final_url or opened.requested_url) or str(opened.final_url or opened.requested_url or "").strip()
         if c_url and c_url not in seen_final:
             seen_final.add(c_url)
@@ -111,8 +110,8 @@ def merge_evidence_patch(
             seen_final.add(u)
             final_urls.append(u)
 
-    opened_list = [item.to_dict() for item in getattr(ledger, "opened_sources", ())]
-    evidence_list = [item.to_dict() for item in getattr(ledger, "evidence_items", ())]
+    opened_list = [item.to_dict() for item in ledger.opened_sources]
+    evidence_list = [item.to_dict() for item in ledger.evidence_items]
     citation_map = [
         item.to_dict()
         for item in (getattr(quality_review, "citation_map", ()) or ())
@@ -150,7 +149,7 @@ def merge_evidence_patch(
     )
     staged_counterpoints = [
         str(item.claim or item.excerpt or "").strip()
-        for item in getattr(ledger, "evidence_items", ())
+        for item in ledger.evidence_items
         if item.stance in {"contradicts", "context"} and str(item.claim or item.excerpt or "").strip()
     ]
     merged_counterpoints = list(
@@ -181,8 +180,8 @@ def merge_evidence_patch(
         links_created=merged_links_created,
         counterpoints=merged_counterpoints,
         synthesis_id=merge_synthesis_id,
-        turns=initial.turns + 1,
-        max_turns_used=max(initial.max_turns_used, initial.turns + 1),
+        turns=initial.turns,
+        max_turns_used=initial.max_turns_used,
         stop_reason="done",
     )
 
@@ -223,7 +222,7 @@ def _report_evidence_items(
     seen: set[tuple[str, str]] = set()
     preferred: list[EvidenceItem] = []
     remaining: list[EvidenceItem] = []
-    for item in getattr(ledger, "evidence_items", ()):
+    for item in ledger.evidence_items:
         url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
         excerpt = str(item.excerpt or "").strip()
         if not url or not excerpt or url not in final_urls:
@@ -268,7 +267,7 @@ def _find_new_evidence_items(
     existing_pairs: set[tuple[str, str]] = set()
     if initial_record is not None:
         source_id_to_canonical_url: dict[str, str] = {}
-        for opened in getattr(ledger, "opened_sources", ()):
+        for opened in ledger.opened_sources:
             src_obj = source_from_opened(opened)
             c_url = ledger.canonical_opened_url(opened.final_url or opened.requested_url)
 
@@ -286,7 +285,7 @@ def _find_new_evidence_items(
 
     new_items: list[EvidenceItem] = []
     final_urls = ledger.final_url_set()
-    for item in getattr(ledger, "evidence_items", ()):
+    for item in ledger.evidence_items:
         url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
         excerpt = str(item.excerpt or "").strip()
         if not url or not excerpt:
@@ -321,12 +320,10 @@ def _inject_new_evidence_into_sections(
         source_lines.extend(existing_source_text.splitlines())
 
     url_to_num: dict[str, int] = {}
-    for line in source_lines:
-        match = re.match(r"^\[(\d+)\]\s+(.*?)\s+-\s+(https?://\S+)", line.strip())
-        if match:
-            num, _, url = match.groups()
-            canonical = ledger.canonical_opened_url(url) or url
-            url_to_num[canonical] = int(num)
+    for citation in parse_citation_rows(existing_source_text, ledger):
+        canonical = ledger.canonical_opened_url(citation.url) or citation.url
+        if canonical and canonical not in url_to_num:
+            url_to_num[canonical] = citation.number
 
     next_num = max(url_to_num.values(), default=0) + 1
 
@@ -468,7 +465,7 @@ def _render_search_coverage(ledger: ResearchLedger, cited_numbers: set[int]) -> 
     if queries:
         lines.append("- 查询: " + "; ".join(queries[:4]))
     opened_count = max(0, int(coverage.get("opened_count") or len(ledger.final_url_set())))
-    evidence_count = len(getattr(ledger, "evidence_items", ()) or ())
+    evidence_count = len(ledger.evidence_items)
     lines.append(f"- 已打开来源: {opened_count}; 证据条目: {evidence_count}")
     if cited_numbers:
         lines.append(f"- 已评估引用来源: {len(cited_numbers)}")

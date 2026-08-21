@@ -1307,10 +1307,10 @@ stop_reason
 - Planner 不能绕过 PermissionProfile / ActionPolicy / URL guard。
 - Planner 不能调用没有 connector contract 的来源。
 - Planner 不能把 Ghost hint 当 evidence。
-- Follow-up 阶段通过内存 Staging（`StagedKnowledgeStore` / `StagedKnowledgeChanges`）隔离副作用；具备完整 read-through 读穿透与补偿回滚能力；未被选中的补搜结果零写入主知识库与 changes。
-- Follow-up 模型交互严格限制为单轮单动作，仅允许 `type='fact'` 的 `knowledge_write`；严密校验来源归属（Provenance），提取的 `evidence[].source_url` 必须属于当前 note 声明的 `sources` 列表并属于允许的白名单；`PlanExecutor` 自动对重定向目标 URL 去重，杜绝重复打开与预算浪费。
-- Accepted 候选方案在 commit 阶段具备异常安全与补偿回滚护栏（`followup_commit_error`），若写入中途抛出异常，自动逆序清理已落盘文件（若已有 note 发生 folder/path 移动则删除新路径文件并字节级还原旧路径文件内容与时间戳，统一使用 `content_hash_bytes` 保持索引哈希防漂移）、清理 SQLite 索引条目与 links 关系（消除幽灵 index）并恢复 `KnowledgeChanges` 快照，平稳回退并保留 initial 成功结果。
-- 最终 ResearchRecord 由 `record_merge` 确定性合并与重新编号，实现严格的全段落（结论/证据/反证）citation 存在性与有效性校验，彻底过滤未引用或包含未映射悬空编号（如 `[99]`）的行；对 protocol/not_answered 但 staged ledger 已有 evidence 的候选，以及正文剪枝后没有有效结论/证据行的候选，直接从 evidence-backed claim、重新生成的中文 `来源质量` 与 `搜索覆盖` 构造最小报告，不继承旧模型段落；同步全量元数据（`queries`、包含完整 `query/opened/final_url` 的 `search_results`、`notes_created`、`notes_updated`、`counterpoints`、稳定排序的 `source_urls`）并透出最新观测指标（`fresh_source_count`、`new_evidence_count`、`final_evidence_count`，以及无论候选方案是否被选中均完全可持久化审计的 `attempted_fresh_source_count`、`attempted_new_evidence_count`）。
+- Follow-up 阶段通过内存 Staging（`StagedKnowledgeStore` / `StagedKnowledgeChanges`）隔离副作用；具备完整 read-through 读穿透与补偿回滚能力；staged link 端点按普通 note id/title 解析，未被选中的补搜结果零写入主知识库与 changes。
+- Follow-up 模型交互严格限制为单轮单动作，仅允许 `type='fact'` 的 `knowledge_write`；严密校验来源归属（Provenance），提取的 `evidence[].source_url` 必须属于当前 note 声明的 `sources` 列表并属于允许的白名单；`PlanExecutor` 自动对重定向目标 URL 去重，并在 fresh-source 总预算已满时先停止、不再多打一轮 search，杜绝重复打开与预算浪费。
+- Accepted 候选方案在 commit 阶段具备异常安全与补偿回滚护栏（`followup_commit_error`），若写入中途抛出异常，自动逆序清理已落盘文件（若已有 note 发生 folder/path 移动则删除新路径文件并字节级还原旧路径文件内容与时间戳，统一使用 `content_hash_bytes` 保持索引哈希防漂移）、恢复触及 staged/link endpoint note 的 SQLite links 关系与 `KnowledgeChanges` 快照，平稳回退并保留 initial 成功结果。
+- 最终 ResearchRecord 由 `record_merge` 确定性合并与重新编号，实现严格的全段落（结论/证据/反证）citation 存在性与有效性校验，彻底过滤未引用或包含未映射悬空编号（如 `[99]`）的行；对 protocol/not_answered 但 staged ledger 已有 evidence 的候选，以及正文剪枝后没有有效结论/证据行的候选，直接从 evidence-backed claim、重新生成的中文 `来源质量` 与 `搜索覆盖` 构造最小报告，不继承旧模型段落；来源行解析复用 report-quality 的统一 citation parser，不在 merge 层维护第二套 Markdown 正则；同步全量元数据（`queries`、包含完整 `query/opened/final_url` 的 `search_results`、`notes_created`、`notes_updated`、`counterpoints`、稳定排序的 `source_urls`）并透出最新观测指标（`fresh_source_count`、`new_evidence_count`、`final_evidence_count`，以及无论候选方案是否被选中均完全可持久化审计的 `attempted_fresh_source_count`、`attempted_new_evidence_count`）。
 - Planner 不设 wall-clock 质量 gate，执行时间仅作成本诊断指标；达到查询/来源有界预算必须停止并解释 gap。
 - UI 不新增 planner 面板，不自动弹窗；Run Details 只显示 bounded summary。
 - Run Trace 只记录 plan_ref、counts、stop_reason、gap refs，不保存 raw query transcript。
@@ -1334,6 +1334,7 @@ _run_research_iteration 是单轮 Research primitive，不是兼容旧调用方�
 ResearchIterationRun(result, tools) 只在 pipeline 迭代边界传递运行态工具
 ResearchRunResult 不携带 runtime_tools 等隐式运行时依赖
 search 的创建和关闭由 ResearchPipeline 统一管理
+deterministic merge 不虚增 ResearchRunResult.turns；follow-up 成本通过 pipeline metrics 表达
 ```
 
 这次没有保留 `_run_research_task`、`close_search` 或 `runtime_tools` 兼容层；

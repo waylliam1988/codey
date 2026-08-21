@@ -103,7 +103,8 @@ def test_merge_evidence_patch_appends_new_evidence_and_reindexes_citations() -> 
             # 3. Perform deterministic merge
             merged_result = merge_evidence_patch(initial_result, tools, material)
 
-            assert merged_result.turns == 3
+            assert merged_result.turns == 2
+            assert merged_result.max_turns_used == 2
             assert merged_result.stop_reason == "done"
             assert "https://example.com/followup" in merged_result.summary
             assert "## 来源" in merged_result.summary
@@ -243,6 +244,99 @@ def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
             store.index.close()
 
 
+def test_merge_evidence_patch_preserves_markdown_link_source_citations() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-markdown-citation",
+                project="project-markdown-citation",
+            )
+            source_a = "https://example.com/source-a"
+            source_b = "https://example.com/source-b"
+            tools.sources_read.add(source_a)
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url=source_a,
+                final_url=source_a,
+                title="Source A",
+                text="Source A verified fact.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Source A Fact",
+                "body": "Source A verified fact.",
+                "sources": [source_a],
+                "evidence": [{
+                    "source_url": source_a,
+                    "excerpt": "Source A verified fact.",
+                    "claim": "Source A verified fact.",
+                }],
+            })
+            initial_summary = (
+                "## 结论\n"
+                "Source A verified fact [1].\n\n"
+                "## 关键证据\n"
+                "- [1] Source A verified fact.\n\n"
+                "## 反证与限制\n"
+                "- 未找到强反证。\n\n"
+                "## 来源质量\n"
+                "- [1] Source A: primary.\n\n"
+                "## 搜索覆盖\n"
+                "- 查询: source a.\n\n"
+                "## 来源\n"
+                "[1] [Source A](https://example.com/source-a)"
+            )
+            initial_record = build_research_record(
+                summary=initial_summary,
+                question="What facts are supported?",
+                session_id="session-markdown-citation",
+                project="project-markdown-citation",
+                run_id="run-markdown-citation",
+                ledger=tools.ledger,
+                stop_reason="done",
+            )
+            initial_result = ResearchRunResult(
+                question="What facts are supported?",
+                summary=initial_summary,
+                stop_reason="done",
+                turns=2,
+                max_turns_used=2,
+                research_record=initial_record,
+            )
+
+            tools.sources_read.add(source_b)
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url=source_b,
+                final_url=source_b,
+                title="Source B",
+                text="Source B verified follow-up fact.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Source B Fact",
+                "body": "Source B verified follow-up fact.",
+                "sources": [source_b],
+                "evidence": [{
+                    "source_url": source_b,
+                    "excerpt": "Source B verified follow-up fact.",
+                    "claim": "Source B verified follow-up fact.",
+                }],
+            })
+            material = PlanExecutionResult(fresh_source_urls=(source_b,))
+
+            merged = merge_evidence_patch(initial_result, tools, material)
+
+            assert "Source A verified fact" in merged.summary
+            assert "Source B verified follow-up fact" in merged.summary
+            assert source_a in merged.summary
+            assert source_b in merged.summary
+            assert len(merged.research_record.evidence) == 2
+        finally:
+            store.index.close()
 
 
 def test_merge_evidence_patch_preserves_same_excerpt_from_different_sources() -> None:

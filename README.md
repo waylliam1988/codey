@@ -446,6 +446,13 @@ that row non-useful because unsupported claims increased. StepFun fetched the
 fresh material but stayed protocol/not-answered, so it produced no final
 material gain in that production-path row.
 
+The production path now keeps that follow-up narrow: `PlanExecutor` stops as
+soon as its fresh-source budget is full, evidence-only staging resolves normal
+note titles before committing links, failed staged commits restore touched link
+edges, and deterministic merge reuses the shared citation parser instead of
+maintaining a separate source-line parser. Deterministic report assembly is
+tracked through follow-up metrics rather than inflating Research turn counts.
+
 MiMo was retested after adding the one-tool Research boundary. A fresh-tab
 `long-official-doc/source_search` run completed in 10 turns, used
 `source_search`, opened the target offset, saved exact evidence, and passed the

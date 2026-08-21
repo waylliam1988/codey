@@ -272,6 +272,33 @@ class KnowledgeIndex:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def replace_links_touching(self, note_ids: list[str], links: list[dict]) -> None:
+        ids = _unique(note_ids)
+        if not ids:
+            return
+        marks = ",".join("?" * len(ids))
+        rows = [
+            (
+                str(row.get("src_id") or ""),
+                str(row.get("dst_id") or ""),
+                str(row.get("kind") or "relates"),
+            )
+            for row in links
+            if str(row.get("src_id") or "") and str(row.get("dst_id") or "")
+        ]
+        with self._lock:
+            c = self._conn
+            c.execute(
+                "DELETE FROM links"
+                f" WHERE src_id IN ({marks}) OR dst_id IN ({marks})",
+                (*ids, *ids),
+            )
+            c.executemany(
+                "INSERT OR IGNORE INTO links(src_id,dst_id,kind) VALUES(?,?,?)",
+                rows,
+            )
+            c.commit()
+
     def sources_for(self, note_ids: list[str]) -> list[dict]:
         ids = _unique(note_ids)
         if not ids:

@@ -10,6 +10,10 @@ This file records Codey's release history. The newest release appears first.
   knowledge writes and note links during follow-up are buffered in-memory with full read-through capability and compensating rollback;
   rejected candidates incur 0 writes to disk store or changes, guaranteeing zero pollution for store, `sources_read`, and `created_ids`;
   `link()` validates endpoint note existence; changes are committed only upon candidate selection.
+- Hardened staged note-link semantics and rollback:
+  staged links now resolve note titles through the same narrow store resolver used by normal `KnowledgeStore.link()`,
+  staged commit snapshots and restores the SQLite link edges touching staged/link endpoint notes on failure,
+  and staging-only change tracking is a pure no-op facade rather than a half-used state holder.
 - Added Staging Commit Exception Guard and Compensating Rollback in ResearchPipeline:
   safely protects `commit_staged` against disk full or IO exceptions by automatically unlinking newly written note files on disk
   (including cleaning up moved folder paths while restoring original files with byte-exact precision without timestamp drift, unified with `content_hash_bytes`),
@@ -29,8 +33,9 @@ This file records Codey's release history. The newest release appears first.
 - Enhanced deterministic graph patch merger (`codey/research/record_merge.py`):
   enforces strict evidence-backed citation verification across all sections (conclusion, evidence, counter), filtering uncited or dangling citations (e.g. `[99]`),
   idempotently merges new evidence and sources based on `(canonical_url, excerpt_hash)`, re-indexes citations with `done_finalizer`,
-  and fully synchronizes `queries`, `search_results` with full `query/opened/final_url` shape, `notes_created`, `notes_updated`, `links_created`, `counterpoints`, and stably sorted `source_urls`.
+  reuses the shared report-quality citation parser instead of a merge-local Markdown regex, and fully synchronizes `queries`, `search_results` with full `query/opened/final_url` shape, `notes_created`, `notes_updated`, `links_created`, `counterpoints`, and stably sorted `source_urls`.
 - Thoroughly removed dead `max_wall_time` branches and unused timer arguments from `PlanExecutor`.
+- `PlanExecutor` now stops before issuing another search once the total fresh-source budget is already exhausted, and deterministic merge no longer increments `ResearchRunResult.turns` for non-model report assembly.
 - Moved Research lifecycle orchestration into `codey/research/pipeline.py`.
   Initial `ResearchRunner`, proof review, `QueryPlanner`, bounded
   `PlanExecutor`, evidence-only follow-up, deterministic `merge_evidence_patch`, final proof review, and Evidence Ledger

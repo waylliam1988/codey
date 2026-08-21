@@ -116,6 +116,75 @@ def test_plan_executor_bounds_queries_sources_and_url_guard() -> None:
             store.index.close()
 
 
+def test_plan_executor_stops_before_search_when_total_source_budget_is_full() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+
+        class _TwoHitBackend:
+            def __init__(self) -> None:
+                self.search_calls: list[tuple[str, int]] = []
+                self.fetch_calls: list[str] = []
+
+            def search(self, query: str, limit: int = 8) -> list[dict]:
+                self.search_calls.append((query, limit))
+                if query == "alpha evidence":
+                    return [
+                        {"title": "Alpha One", "url": "https://example.com/alpha-1"},
+                        {"title": "Alpha Two", "url": "https://example.com/alpha-2"},
+                    ]
+                if query == "beta evidence":
+                    return [{"title": "Beta", "url": "https://example.com/beta"}]
+                return []
+
+            def fetch(self, url: str) -> dict:
+                self.fetch_calls.append(url)
+                return {
+                    "url": url,
+                    "title": url.rsplit("/", 1)[-1],
+                    "text": f"opened body for {url}",
+                    "truncated": False,
+                }
+
+        backend = _TwoHitBackend()
+        try:
+            tools = ResearchTools(
+                search=backend,
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-budget",
+                project="project-budget",
+            )
+            plan = ResearchPlan(
+                plan_ref="research_plan:" + "d" * 16,
+                query_candidates=(
+                    QueryCandidate("research_query:" + "1" * 16, "alpha evidence"),
+                    QueryCandidate("research_query:" + "2" * 16, "beta evidence"),
+                ),
+                max_queries=2,
+                max_sources=2,
+            )
+
+            result = PlanExecutor(
+                config=ResearchPipelineConfig(
+                    max_queries_per_round=2,
+                    max_sources_per_query=2,
+                    max_total_sources=2,
+                )
+            ).execute(plan, tools)
+
+            assert result.stop_reason == "max_sources"
+            assert result.queries_executed == ("alpha evidence",)
+            assert backend.search_calls == [("alpha evidence", 8)]
+            assert backend.fetch_calls == [
+                "https://example.com/alpha-1",
+                "https://example.com/alpha-2",
+            ]
+            assert result.fresh_source_count == 2
+        finally:
+            store.index.close()
+
+
 def test_plan_executor_skips_baseline_urls_and_reports_no_new_material() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

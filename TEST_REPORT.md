@@ -165,6 +165,44 @@ pytest -q
 # 2265 passed, 9 skipped, 638 subtests passed in 390.77s
 ```
 
+2026-08-21 staged-link and deterministic-merge hygiene follow-up:
+
+```text
+python -B -m py_compile codey\knowledge\index.py codey\research\tools.py codey\research\plan_executor.py codey\research\record_merge.py codey\research\done_finalizer.py tests\test_research_plan_executor.py tests\test_research_record_merge.py tests\test_research_pipeline.py
+# ok
+
+ruff check codey\knowledge\index.py codey\research\tools.py codey\research\plan_executor.py codey\research\record_merge.py codey\research\done_finalizer.py tests\test_research_plan_executor.py tests\test_research_record_merge.py tests\test_research_pipeline.py
+# All checks passed
+
+pytest tests\test_research_plan_executor.py tests\test_research_record_merge.py tests\test_research_pipeline.py -q
+# 26 passed
+
+pytest tests\test_research_evidence_followup.py tests\test_research_plan_executor.py tests\test_research_record_merge.py tests\test_research_pipeline.py tests\test_run_trace.py tests\test_task_runner_run_trace.py tests\test_architecture.py -q
+# 88 passed, 125 subtests passed
+
+python -B tests\manual\bounded_research_planner_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\bounded_research_merge_projection.py --self-test
+# self-test ok
+
+ruff check .
+# All checks passed
+
+git diff --check
+# ok
+
+pytest -q
+# 2268 passed, 9 skipped, 638 subtests passed in 684.49s
+```
+
+This pass closes the staged-link and merge hygiene review items without changing
+the evidence-only prompt surface: staged links now resolve normal note titles,
+commit rollback restores touched SQLite link edges, `PlanExecutor` stops before
+extra searches once the fresh-source budget is full, deterministic merge reuses
+the shared citation parser, and non-model merge assembly no longer increments
+Research turn counts.
+
 ## 0.4.3 Source Connector Boundary + Query Planner Dry Run v1
 
 Codey 0.4.3 adds the Research source boundary, deterministic planner dry-run,
