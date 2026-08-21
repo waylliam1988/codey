@@ -19,13 +19,16 @@ class PlanExecutionResult:
     queries_executed: tuple[str, ...] = ()
     opened_sources: tuple[dict, ...] = ()
     previews: tuple[str, ...] = ()
+    fresh_source_urls: tuple[str, ...] = ()
+    fresh_source_count: int = 0
+    baseline_source_urls: tuple[str, ...] = ()
     skipped_count: int = 0
     stop_reason: str = ""
     errors: tuple[str, ...] = ()
 
     @property
     def has_new_material(self) -> bool:
-        return bool(self.opened_sources or self.previews)
+        return bool(self.fresh_source_urls)
 
 
 class PlanExecutor:
@@ -44,9 +47,11 @@ class PlanExecutor:
         queries: list[str] = []
         opened: list[dict] = []
         previews: list[str] = []
+        fresh_urls: list[str] = []
         errors: list[str] = []
         skipped = 0
-        seen_urls: set[str] = set()
+        baseline_urls = _collect_baseline_urls(tools)
+        seen_urls: set[str] = set(baseline_urls)
         stop_reason = "no_queries"
         query_limit = _bounded_int(
             min(int(plan.max_queries or 0), self.config.max_queries_per_round),
@@ -120,22 +125,35 @@ class PlanExecutor:
                     continue
                 after_opened = set(runtime.ledger.final_url_set())
                 new_urls = sorted(after_opened - before_opened)
+                canonical_final = (
+                    runtime.ledger.canonical_opened_url(new_urls[-1])
+                    if new_urls
+                    else runtime.ledger.canonical_opened_url(url)
+                ) or url
+                if canonical_final in baseline_urls:
+                    skipped += 1
+                    continue
                 opened_for_query += 1
-                source = _opened_source_payload(runtime, new_urls[-1] if new_urls else url)
+                source = _opened_source_payload(runtime, canonical_final)
                 if source:
                     opened.append(source)
+                if canonical_final not in fresh_urls:
+                    fresh_urls.append(canonical_final)
                 previews.append(_source_preview(query, source, text, self.config.max_source_preview_chars))
                 stop_reason = "opened_sources"
             if stop_reason in {"max_sources", "max_wall_time", "stopped"}:
                 break
         if stop_reason == "opened_sources" and len(opened) >= total_limit:
             stop_reason = "max_sources"
-        if stop_reason == "no_queries" and queries:
-            stop_reason = "no_new_material" if not opened else "opened_sources"
+        if stop_reason in {"no_queries", "opened_sources"} and queries and not fresh_urls:
+            stop_reason = "no_new_material"
         return PlanExecutionResult(
             queries_executed=tuple(queries),
             opened_sources=tuple(opened),
             previews=tuple(previews),
+            fresh_source_urls=tuple(fresh_urls),
+            fresh_source_count=len(fresh_urls),
+            baseline_source_urls=tuple(sorted(baseline_urls)),
             skipped_count=skipped,
             stop_reason=stop_reason,
             errors=tuple(errors[:12]),
@@ -147,6 +165,26 @@ class PlanExecutor:
         cancellation.check()
         max_wall_time = float(self.config.max_wall_time or 0)
         return max_wall_time > 0 and (time.monotonic() - started) >= max_wall_time
+
+
+def _collect_baseline_urls(tools: ResearchTools) -> set[str]:
+    baseline: set[str] = set()
+    for url in getattr(tools, "sources_read", ()):
+        if str(url or "").strip():
+            baseline.add(str(url).strip())
+    if hasattr(tools, "ledger") and tools.ledger is not None:
+        for url in tools.ledger.final_url_set():
+            if str(url or "").strip():
+                baseline.add(str(url).strip())
+        for opened in tools.ledger.opened_sources:
+            if str(opened.final_url or "").strip():
+                baseline.add(str(opened.final_url).strip())
+            if str(opened.requested_url or "").strip():
+                baseline.add(str(opened.requested_url).strip())
+        for ev in getattr(tools.ledger, "evidence", ()):
+            if str(getattr(ev, "source_url", "") or "").strip():
+                baseline.add(str(ev.source_url).strip())
+    return baseline
 
 
 def _opened_source_payload(tools: ResearchTools, url: str) -> dict:

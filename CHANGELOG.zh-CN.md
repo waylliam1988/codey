@@ -8,8 +8,17 @@
 
 - 将 Research 生命周期编排收归 `codey/research/pipeline.py`：初始
   `ResearchRunner`、proof review、`QueryPlanner`、有界 `PlanExecutor`、
-  follow-up synthesis、最终 proof review 和 Evidence Ledger 写入由 Pipeline
+  evidence-only follow-up、确定性 `merge_evidence_patch`、最终 proof review 和 Evidence Ledger 写入由 Pipeline
   统一拥有；`TaskRunner` 只负责外围 provider/session/trace/mode 生命周期。
+- 实现真正的 Evidence-Only Follow-up 模式（`codey/research/evidence_followup.py`）：
+  follow-up 阶段严格限制为 1 个模型交互 turn，程序级白名单仅允许 `knowledge_write`，
+  严禁 `done/web_search/open_url/knowledge_link`，程序级校验确保 URL 必须在 `fresh_source_urls` 白名单中，
+  严禁使用内部 `s1/s2` 标签。
+- 实现确定性补丁合并器（`codey/research/record_merge.py`）：
+  丢弃未受支持的新断言，按 `(canonical_url, excerpt_hash)` 幂等去重合并新增证据与来源，
+  通过 `done_finalizer` 顺延并重新编号引用，确定性生成最终 ResearchRecord 和报告。
+- `PlanExecutor` 引入严格的 Fresh-Material 语义：执行前收集 baseline URLs（已读、已打开、已入 evidence），
+  跳过重复 URL，无新 URL 打开时干净返回 `stop_reason="no_new_material"`。
 - 新增 `ResearchIterationRun` 作为单轮 Research primitive 与 Pipeline 之间的
   明确边界。运行时 `ResearchTools` 只在迭代边界传递，不再隐藏挂在
   `ResearchRunResult.runtime_tools` 上。

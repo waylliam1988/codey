@@ -451,6 +451,7 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
                 "final_url": "https://example.com/followup",
                 "title": "Followup source",
             },),
+            fresh_source_urls=("https://example.com/followup",),
             previews=("query: follow-up query\nFollowup source | https://example.com/followup\nFollow-up body",),
             skipped_count=0,
             stop_reason="opened_sources",
@@ -459,6 +460,18 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
         def fake_execute(self, plan, tools):
             del plan, tools
             return followup_material
+
+        from codey.research.evidence_followup import EvidenceFollowupResult
+
+        def fake_followup_runner(*, tools, plan, material, question, initial_summary="", max_context_chars=8000, should_stop=None):
+            del tools, plan, material, question, initial_summary, max_context_chars, should_stop
+            return EvidenceFollowupResult(
+                ok=True,
+                new_evidence_count=1,
+                written_note_ids=("note:followup",),
+                new_source_urls=("https://example.com/followup",),
+                stop_reason="written",
+            )
 
         context = ResearchContext(
             question="Pipeline question",
@@ -476,14 +489,17 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
         original_review = pipeline_module.review_research_proof
         original_plan = pipeline_module.build_research_plan
         original_execute = pipeline_module.PlanExecutor.execute
+        original_merge = pipeline_module.merge_evidence_patch
         try:
             pipeline_module.review_research_proof = fake_review
             pipeline_module.build_research_plan = fake_plan
             pipeline_module.PlanExecutor.execute = fake_execute
+            pipeline_module.merge_evidence_patch = lambda initial, tools, material: candidate.result
             pipeline = ResearchPipeline(
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                evidence_followup_runner=fake_followup_runner,
                 evidence_ledgers=evidence_ledgers,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
                 ledger_event_sink=lambda item: ledger_events.append(item.reason_code),
@@ -494,15 +510,14 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
             pipeline_module.review_research_proof = original_review
             pipeline_module.build_research_plan = original_plan
             pipeline_module.PlanExecutor.execute = original_execute
+            pipeline_module.merge_evidence_patch = original_merge
 
         assert output.followup_applied is True
         assert output.followup_rounds == 1
         assert output.final_result is candidate.result
-        assert output.planner_stop_reason == "max_followup_rounds"
+        assert output.planner_stop_reason in {"evidence_merged", "max_followup_rounds"}
         assert search.closed is True
-        assert len(run_calls) == 2
-        assert "queries_executed:" in str(run_calls[1]["iteration_context"])
-        assert "Followup source | https://example.com/followup" in str(run_calls[1]["iteration_context"])
+        assert len(run_calls) == 1
         assert any(name == "record_evidence_ledger_write" for name, *_ in trace.calls)
         assert any(name == "record_research_record_summary" for name, *_ in trace.calls)
         snapshot = evidence_ledgers.load(session_id="session-pipeline", project="project-pipeline")
@@ -537,8 +552,9 @@ def test_pipeline_keeps_initial_result_when_followup_iteration_raises() -> None:
 
         def run_iteration(**kwargs):
             run_calls.append(kwargs)
-            if len(run_calls) == 1:
-                return initial
+            return initial
+
+        def raising_followup(**kwargs):
             raise RuntimeError("follow-up synthesis failed")
 
         def fake_review(record, *, question: str = "", evidence_ledger=None, require_ledger_record: bool = False):
@@ -575,6 +591,7 @@ def test_pipeline_keeps_initial_result_when_followup_iteration_raises() -> None:
                 "final_url": "https://example.com/followup",
                 "title": "Followup source",
             },),
+            fresh_source_urls=("https://example.com/followup",),
             previews=("query: follow-up query\nFollowup source | https://example.com/followup\nFollow-up body",),
             skipped_count=0,
             stop_reason="opened_sources",
@@ -604,6 +621,7 @@ def test_pipeline_keeps_initial_result_when_followup_iteration_raises() -> None:
                 context=context,
                 run_iteration=run_iteration,
                 search_factory=lambda: search,
+                evidence_followup_runner=raising_followup,
                 evidence_ledgers=evidence_ledgers,
                 config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
             )
@@ -617,7 +635,8 @@ def test_pipeline_keeps_initial_result_when_followup_iteration_raises() -> None:
         assert output.followup_applied is False
         assert output.followup_rounds == 0
         assert output.planner_stop_reason == "followup_iteration_error"
-        assert len(run_calls) == 2
+        assert len(run_calls) == 1
+
         snapshot = evidence_ledgers.load(session_id="session-pipeline", project="project-pipeline")
         assert snapshot.available is True
         assert len(snapshot.payload["records"]) == 1

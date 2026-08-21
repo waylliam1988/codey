@@ -112,6 +112,7 @@ class ResearchPipelineConfig:
     max_wall_time: float = 90.0
     max_source_preview_chars: int = 2400
     max_followup_context_chars: int = 8000
+    max_evidence_followup_turns: int = 1
 
 
 @dataclass(frozen=True)

@@ -1274,17 +1274,18 @@ DeepSeek、MiMo、Qwen 的样本能把首次 `done` 通过率从“需要质量�
 research/context.py
 research/pipeline.py
 research/plan_executor.py
+research/evidence_followup.py
+research/record_merge.py
 ```
 
-Planner execution v1：
+Bounded Evidence-Only Pipeline & Deterministic Merge v1：
 
 ```text
-ResearchProofReview
+ResearchProofReview (with actionable gap)
   -> ResearchPlan
-  -> bounded follow-up search/fetch
-  -> append into per-run ResearchLedger / EvidenceLedger candidate
-  -> re-run synthesis and report_quality
-  -> rebuild consolidated final ResearchRecord
+  -> PlanExecutor (fresh-material search/fetch with baseline deduplication)
+  -> Evidence-Only Follow-up (single turn, knowledge_write only, URL whitelist)
+  -> merge_evidence_patch (deterministic evidence graph merge + citation re-index)
   -> proof review again
   -> final ResearchRunResult
 ```
@@ -1292,11 +1293,11 @@ ResearchProofReview
 硬限制：
 
 ```text
-max_followup_rounds
-max_queries_per_round
-max_sources_per_query
-max_total_sources
-max_total_tokens_for_synthesis
+max_followup_rounds = 1
+max_queries_per_round = 3
+max_sources_per_query = 2
+max_total_sources = 6
+max_evidence_followup_turns = 1
 max_wall_time
 reason_codes
 stop_reason

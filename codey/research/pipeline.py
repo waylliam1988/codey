@@ -8,11 +8,13 @@ from typing import Callable, Mapping, Protocol
 
 from codey import cancellation
 from codey.research.context import ResearchContext, ResearchPipelineConfig
+from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.identity import clip
 from codey.research.plan_executor import PlanExecutionResult, PlanExecutor
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
 from codey.research.query_planner import ResearchPlan, build_research_plan
+from codey.research.record_merge import merge_evidence_patch
 from codey.research.runner import ResearchRunResult
 from codey.research.tools import ResearchTools
 
@@ -34,6 +36,21 @@ class ResearchIterationRunner(Protocol):
         tools: ResearchTools | None = None,
         iteration_context: str = "",
     ) -> ResearchIterationRun:
+        ...
+
+
+class EvidenceFollowupRunner(Protocol):
+    def __call__(
+        self,
+        *,
+        tools: ResearchTools,
+        plan: ResearchPlan,
+        material: PlanExecutionResult,
+        question: str,
+        initial_summary: str = "",
+        max_context_chars: int = 8000,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> EvidenceFollowupResult:
         ...
 
 
@@ -61,6 +78,7 @@ class ResearchPipeline:
         context: ResearchContext,
         run_iteration: ResearchIterationRunner,
         search_factory: Callable[[], object],
+        evidence_followup_runner: EvidenceFollowupRunner | None = None,
         evidence_ledgers: EvidenceLedgerStore | None = None,
         config: ResearchPipelineConfig | None = None,
         ledger_event_sink: Callable[[EvidenceLedgerWriteResult], None] | None = None,
@@ -69,6 +87,7 @@ class ResearchPipeline:
         self.context = context
         self.run_iteration = run_iteration
         self.search_factory = search_factory
+        self.evidence_followup_runner = evidence_followup_runner
         self.evidence_ledgers = evidence_ledgers
         self.config = config or ResearchPipelineConfig()
         self.ledger_event_sink = ledger_event_sink
@@ -95,6 +114,8 @@ class ResearchPipeline:
             if planner_stop_reason == "planned":
                 if best_tools is None:
                     planner_stop_reason = "missing_iteration_tools"
+                elif self.evidence_followup_runner is None:
+                    planner_stop_reason = "missing_evidence_followup_runner"
                 else:
                     current_tools = best_tools
                     max_rounds = self._max_rounds()
@@ -117,33 +138,37 @@ class ResearchPipeline:
                         if not material.has_new_material:
                             break
                         try:
-                            candidate_run = self.run_iteration(
-                                task=self.context.question,
-                                max_turns=self.context.max_turns,
-                                chat_handoff=self.context.chat_handoff,
-                                search=search,
+                            followup_result = self.evidence_followup_runner(
                                 tools=current_tools,
-                                iteration_context=_followup_context(
-                                    question=self.context.question,
-                                    initial=best,
-                                    plan=plan,
-                                    material=material,
-                                    limit=self.config.max_followup_context_chars,
-                                ),
+                                plan=plan,
+                                material=material,
+                                question=self.context.question,
+                                initial_summary=best.summary,
+                                max_context_chars=self.config.max_followup_context_chars,
+                                should_stop=self.context.should_stop,
                             )
                         except cancellation.TaskCancelled:
                             raise
                         except Exception:
                             planner_stop_reason = "followup_iteration_error"
                             break
-                        candidate = candidate_run.result
-                        followup_rounds = round_index
+                        if not followup_result.has_new_evidence:
+                            planner_stop_reason = followup_result.stop_reason or "no_evidence_extracted"
+                            break
+                        candidate = merge_evidence_patch(
+                            initial=best,
+                            tools=current_tools,
+                            material=material,
+                        )
                         candidate_review = self._review(candidate, require_ledger_record=False)
                         if _selects_candidate(candidate, candidate_review, best, best_review):
                             best = candidate
                             best_review = candidate_review
-                            best_tools = candidate_run.tools or current_tools
-                        current_tools = candidate_run.tools or current_tools
+                            followup_rounds = round_index
+                            planner_stop_reason = "evidence_merged"
+                        else:
+                            planner_stop_reason = "candidate_not_selected"
+                            break
                         plan = self._plan(best_review)
                         self.context.trace.record_plan(plan)
                         block_reason = self._followup_block_reason(best, best_review, plan, started)
@@ -156,6 +181,7 @@ class ResearchPipeline:
                             and self._followup_block_reason(best, best_review, plan, started) == ""
                         ):
                             planner_stop_reason = "max_followup_rounds"
+
             ledger_result = self._append_final_record(best)
             self.context.trace.record_evidence_ledger_write(ledger_result)
             if self.ledger_event_sink is not None and ledger_result is not None:
@@ -432,6 +458,7 @@ def _followup_context(
 
 
 __all__ = [
+    "EvidenceFollowupRunner",
     "ResearchIterationRun",
     "ResearchIterationRunner",
     "ResearchPipeline",

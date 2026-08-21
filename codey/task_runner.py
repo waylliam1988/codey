@@ -82,6 +82,7 @@ from codey.run_trace import RunTraceStore
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.context import ResearchContext, RunTraceResearchSink
+from codey.research.evidence_followup import run_evidence_followup
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline, ResearchPipelineConfig
 from codey.research.proof_quality import proof_review_trace_payload
@@ -3137,6 +3138,27 @@ class TaskRunner:
                 iteration_context=iteration_context,
             )
 
+        def run_followup(
+            *,
+            tools,
+            plan,
+            material,
+            question: str,
+            initial_summary: str = "",
+            max_context_chars: int = 8000,
+            should_stop=None,
+        ):
+            return run_evidence_followup(
+                provider=frame.provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question=question,
+                initial_summary=initial_summary,
+                max_context_chars=max_context_chars,
+                should_stop=should_stop,
+            )
+
         recorder = getattr(self.state, "record_research_changes", None)
         changes_sink = recorder if callable(recorder) else None
         context = ResearchContext(
@@ -3156,6 +3178,7 @@ class TaskRunner:
             context=context,
             run_iteration=run_iteration,
             search_factory=self.search_factory,
+            evidence_followup_runner=run_followup,
             evidence_ledgers=self.evidence_ledgers,
             config=ResearchPipelineConfig(),
             ledger_event_sink=lambda result: self._record_evidence_ledger_write(hooks, result),

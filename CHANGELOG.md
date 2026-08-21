@@ -8,9 +8,17 @@ This file records Codey's release history. The newest release appears first.
 
 - Moved Research lifecycle orchestration into `codey/research/pipeline.py`.
   Initial `ResearchRunner`, proof review, `QueryPlanner`, bounded
-  `PlanExecutor`, follow-up synthesis, final proof review, and Evidence Ledger
+  `PlanExecutor`, evidence-only follow-up, deterministic `merge_evidence_patch`, final proof review, and Evidence Ledger
   persistence now have one owner. `TaskRunner` keeps the outer
   provider/session/trace/mode lifecycle.
+- Implemented true Evidence-Only Follow-up mode (`codey/research/evidence_followup.py`):
+  follow-up is strictly bounded to a single model turn, program-level allowlist permits ONLY `knowledge_write`,
+  forbids `done/web_search/open_url/knowledge_link`, and enforces URL whitelisting against `fresh_source_urls` while rejecting internal `s1/s2` labels.
+- Implemented deterministic record patch applier (`codey/research/record_merge.py`):
+  discards unsupported new claims, merges new sources and evidence idempotently based on `(canonical_url, excerpt_hash)`,
+  re-indexes citations with `done_finalizer`, and deterministically generates the final ResearchRecord and report.
+- `PlanExecutor` enforces fresh-material semantics: collects baseline URLs (read, opened, cited evidence),
+  skips duplicate URLs, and returns `stop_reason="no_new_material"` when no fresh URL is opened.
 - Added `ResearchIterationRun` as the explicit single-iteration boundary.
   Runtime `ResearchTools` now travels only across that boundary and is no
   longer hidden on `ResearchRunResult.runtime_tools`.

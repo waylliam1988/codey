@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from codey.research.citation_scanner import (
     citation_ref_items,
@@ -287,5 +287,23 @@ def _render_report(sections: dict[str, str]) -> str:
     return "\n\n".join(parts).strip()
 
 
+def render_research_report_sections(sections: Mapping[str, str]) -> str:
+    """Render standard markdown report text from section mapping."""
+    return _render_report(dict(sections))
+
+
+def render_sources_section(urls: Sequence[str], ledger: ResearchLedger) -> str:
+    """Render formatted sources markdown lines for given URLs."""
+    return _render_sources(list(urls), ledger)
+
+
 def _normalized_report(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+__all__ = [
+    "FinalizedAnswer",
+    "finalize_done_answer",
+    "render_research_report_sections",
+    "render_sources_section",
+]
