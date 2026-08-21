@@ -122,6 +122,41 @@ python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case wid
 python -B tests\manual\bounded_research_planner_ab.py --provider stepfun --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-stepfun-production-20260821.json
 python -B tests\manual\bounded_research_planner_ab.py --provider stepfun --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-stepfun-production-20260821.json
 # StepFun production path: score 1 -> 1, useful=false; material fetched, candidate not selected
+
+python -B tests\manual\bounded_research_merge_projection.py --self-test
+# self-test ok
+
+python -B tests\manual\bounded_research_merge_projection.py --output tests\manual\results\bounded_research_merge_projection-20260821.json
+# Projection kept five evidence-only3 rows useful and converted Qwen production
+# plus the earlier StepFun production row to useful.
+
+python -B tests\manual\bounded_research_planner_ab.py --provider stepfun --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-stepfun-production-narrowmerge-20260821.json
+python -B tests\manual\bounded_research_planner_ab.py --provider stepfun --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-stepfun-production-narrowmerge-20260821.json
+python -B tests\manual\bounded_research_merge_projection.py --input tests\manual\results\bounded_research_planner_ab-stepfun-production-narrowmerge-20260821.json --output tests\manual\results\bounded_research_merge_projection-stepfun-narrowmerge-20260821.json
+# Fresh StepFun rerun: raw score 5 -> 1, stop=no_tool_calls; projection stayed
+# 1/false because no fresh evidence-only reply existed. This row was collected
+# while StepFun was rate-limited after repeated tests, so it is an invalid gate
+# sample rather than a planner/merge regression.
+
+python -B tests\manual\bounded_research_planner_ab.py --provider stepfun --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-stepfun-production-rerun2-20260821.json
+python -B tests\manual\bounded_research_planner_ab.py --provider stepfun --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-stepfun-production-rerun2-20260821.json
+python -B tests\manual\bounded_research_merge_projection.py --input tests\manual\results\bounded_research_planner_ab-stepfun-production-rerun2-20260821.json --output tests\manual\results\bounded_research_merge_projection-stepfun-rerun2-20260821.json
+# Clean StepFun paired rerun: raw production stayed 1/false with
+# candidate_not_selected despite attempted_fresh_source_count=1 and
+# attempted_new_evidence_count=1; projection converted it to 6/true. This
+# validates the narrow evidence-backed record_merge production fix.
+
+python -B -m py_compile codey\research\record_merge.py tests\test_research_record_merge.py tests\test_research_pipeline.py tests\manual\bounded_research_merge_projection.py
+# ok
+
+ruff check codey\research\record_merge.py tests\test_research_record_merge.py tests\test_research_pipeline.py tests\manual\bounded_research_merge_projection.py
+# All checks passed
+
+pytest tests\test_research_evidence_followup.py tests\test_research_plan_executor.py tests\test_research_record_merge.py tests\test_research_pipeline.py tests\test_run_trace.py tests\test_task_runner_run_trace.py -q
+# 66 passed
+
+pytest -q
+# 2264 passed, 9 skipped, 638 subtests passed in 368.57s
 ```
 
 ## 0.4.3 Source Connector Boundary + Query Planner Dry Run v1

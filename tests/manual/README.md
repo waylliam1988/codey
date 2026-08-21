@@ -380,6 +380,31 @@ regressed `0.333 -> 0.750`, so the conservative paired summary correctly keeps
 material phase, but the final run stayed protocol/not-answered, selected no
 candidate, and remained `useful=false`.
 
+`bounded_research_merge_projection.py` is an offline-only diagnostic for the
+0.4.4 merge shape. It reads saved bounded-planner A/B JSON plus trace files and
+projects whether an evidence-only final report rebuild would improve the paired
+`followup_usefulness` result. It does not replay a provider and does not rebuild
+the full Research ledger, so treat it as a hypothesis check before changing
+production code.
+
+```powershell
+python -B tests\manual\bounded_research_merge_projection.py --self-test
+python -B tests\manual\bounded_research_merge_projection.py `
+  --output tests\manual\results\bounded_research_merge_projection-20260821.json
+```
+
+On the saved five-provider evidence-only3 rows plus the three post-production
+rows, the projection kept the five old useful rows useful and converted Qwen
+production and the earlier StepFun production row to useful. One fresh StepFun
+rerun stopped before evidence-only follow-up while StepFun was rate-limited, so
+that row is an invalid gate sample. A later clean paired StepFun rerun showed
+the raw production path could fetch and write fresh evidence but still left the
+candidate unselected; the projection converted that paired row to
+`projected=6/useful=true`. This is the validating signal for the production
+`record_merge.py` narrow rebuild: protocol/not_answered summaries are rebuilt
+from ledger evidence, source quality, and coverage instead of inheriting stale
+model-written sections.
+
 Use this probe when you want to judge whether 0.4.4 follow-up search is adding
 real value or just extra traffic. The paired summary is the main signal; if
 coverage and unsupported-claim rate barely move while time and traffic grow,

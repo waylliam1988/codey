@@ -23,7 +23,6 @@ from codey.research.object_model import (
     build_research_record,
     source_from_opened,
 )
-
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.report_quality import (
     ReportQualityReview,
@@ -50,20 +49,21 @@ def merge_evidence_patch(
         return initial
 
     sections = parse_sections(initial.summary)
+    minimal_rebuild = _needs_minimal_evidence_rebuild(initial, initial_record, sections)
     if not sections:
-        initial_body = initial.summary.strip()
-        if not initial_body or initial_body.startswith("ERROR:") or "protocol" in str(initial.stop_reason or ""):
-            initial_body = f"Research findings for: {initial.question}"
-        sections = {
-            "conclusion": initial_body,
-            "evidence": "",
-            "counter": "",
-            "quality": "",
-            "coverage": "",
-            "sources": "",
-        }
+        sections = _blank_sections()
 
-    merged_sections = _inject_new_evidence_into_sections(sections, new_evidence, ledger)
+    report_evidence = (
+        _report_evidence_items(ledger, preferred_urls=fresh_urls)
+        if minimal_rebuild
+        else new_evidence
+    )
+    merged_sections = _inject_new_evidence_into_sections(
+        sections,
+        report_evidence,
+        ledger,
+        rebuild=minimal_rebuild,
+    )
     preliminary_text = render_research_report_sections(merged_sections)
 
     finalized = finalize_done_answer(preliminary_text, ledger)
@@ -75,7 +75,7 @@ def merge_evidence_patch(
             final_text,
             ledger=ledger,
             opened_sources=ledger.final_url_set(),
-            search_result_urls=ledger.search_result_urls(),
+            search_result_urls=_search_result_urls(ledger),
         )
     except Exception:
         quality_review = None
@@ -117,7 +117,7 @@ def merge_evidence_patch(
         item.to_dict()
         for item in (getattr(quality_review, "citation_map", ()) or ())
     ]
-    coverage = getattr(quality_review, "coverage", {}) if quality_review is not None else initial.coverage
+    coverage = ledger.coverage_payload()
     warnings = list(getattr(quality_review, "warnings", ()) or ())
 
     merged_queries = list(
@@ -172,7 +172,7 @@ def merge_evidence_patch(
         sources_read=len(final_urls) or initial.sources_read,
         evidence_items=evidence_list or initial.evidence_items,
         citation_map=citation_map or initial.citation_map,
-        coverage=coverage or initial.coverage,
+        coverage=coverage,
         quality_warnings=warnings or initial.quality_warnings,
         queries=merged_queries,
         search_results=merged_search_results,
@@ -185,6 +185,70 @@ def merge_evidence_patch(
         max_turns_used=max(initial.max_turns_used, initial.turns + 1),
         stop_reason="done",
     )
+
+
+def _blank_sections() -> dict[str, str]:
+    return {
+        "conclusion": "",
+        "evidence": "",
+        "counter": "",
+        "source_quality": "",
+        "coverage": "",
+        "sources": "",
+    }
+
+
+def _needs_minimal_evidence_rebuild(
+    initial: ResearchRunResult,
+    initial_record: ResearchRecord | None,
+    sections: dict[str, str],
+) -> bool:
+    if not sections:
+        return True
+    summary = str(initial.summary or "").strip()
+    if not summary or summary.startswith("ERROR:"):
+        return True
+    stop_reason = str(initial.stop_reason or "").strip().lower()
+    if stop_reason.startswith("protocol"):
+        return True
+    return getattr(initial_record, "answer_status", "") == "not_answered"
+
+
+def _report_evidence_items(
+    ledger: ResearchLedger,
+    *,
+    preferred_urls: set[str],
+) -> list[EvidenceItem]:
+    final_urls = ledger.final_url_set()
+    seen: set[tuple[str, str]] = set()
+    preferred: list[EvidenceItem] = []
+    remaining: list[EvidenceItem] = []
+    for item in getattr(ledger, "evidence_items", ()):
+        url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
+        excerpt = str(item.excerpt or "").strip()
+        if not url or not excerpt or url not in final_urls:
+            continue
+        key = (url, _digest_text(excerpt))
+        if key in seen:
+            continue
+        seen.add(key)
+        if url in preferred_urls:
+            preferred.append(item)
+        else:
+            remaining.append(item)
+    return preferred + remaining
+
+
+def _search_result_urls(ledger: ResearchLedger) -> set[str]:
+    urls: set[str] = set()
+    for row in ledger.search_results_payload():
+        if not isinstance(row, dict):
+            continue
+        for key in ("url", "final_url"):
+            url = str(row.get(key) or "").strip()
+            if url:
+                urls.add(url)
+    return urls
 
 
 def _find_new_evidence_items(
@@ -235,13 +299,15 @@ def _inject_new_evidence_into_sections(
     sections: dict[str, str],
     new_evidence: Sequence[EvidenceItem],
     ledger: ResearchLedger,
+    *,
+    rebuild: bool = False,
 ) -> dict[str, str]:
     updated = dict(sections)
     conclusion_lines: list[str] = []
     evidence_lines: list[str] = []
     counter_lines: list[str] = []
     source_lines: list[str] = []
-    existing_source_text = updated.get("sources", "").strip()
+    existing_source_text = "" if rebuild else updated.get("sources", "").strip()
     if existing_source_text:
         source_lines.extend(existing_source_text.splitlines())
 
@@ -280,35 +346,33 @@ def _inject_new_evidence_into_sections(
             return all(r in valid_numbers for r in refs)
         return any(m in line for m in ("未找到", "没有找到", "限制", "持续追踪", "no strong counter", "limitation"))
 
-    # Prune un-cited or unmapped/unsupported raw lines from conclusion
-    existing_conclusion_text = updated.get("conclusion", "").strip()
-    if existing_conclusion_text:
-        for line in existing_conclusion_text.splitlines():
-            sline = line.strip()
-            if not sline:
-                continue
-            if _is_evidence_backed(sline):
-                conclusion_lines.append(sline)
+    if not rebuild:
+        existing_conclusion_text = updated.get("conclusion", "").strip()
+        if existing_conclusion_text:
+            for line in existing_conclusion_text.splitlines():
+                sline = line.strip()
+                if not sline:
+                    continue
+                if _is_evidence_backed(sline):
+                    conclusion_lines.append(sline)
 
-    # Prune un-cited or unmapped/unsupported raw lines from initial evidence
-    existing_evidence_text = updated.get("evidence", "").strip()
-    if existing_evidence_text:
-        for line in existing_evidence_text.splitlines():
-            sline = line.strip()
-            if not sline:
-                continue
-            if _is_evidence_backed(sline):
-                evidence_lines.append(sline)
+        existing_evidence_text = updated.get("evidence", "").strip()
+        if existing_evidence_text:
+            for line in existing_evidence_text.splitlines():
+                sline = line.strip()
+                if not sline:
+                    continue
+                if _is_evidence_backed(sline):
+                    evidence_lines.append(sline)
 
-    # Prune un-cited or unmapped/unsupported raw lines from initial counter
-    existing_counter_text = updated.get("counter", "").strip()
-    if existing_counter_text:
-        for line in existing_counter_text.splitlines():
-            sline = line.strip()
-            if not sline:
-                continue
-            if _is_valid_counter(sline):
-                counter_lines.append(sline)
+        existing_counter_text = updated.get("counter", "").strip()
+        if existing_counter_text:
+            for line in existing_counter_text.splitlines():
+                sline = line.strip()
+                if not sline:
+                    continue
+                if _is_valid_counter(sline):
+                    counter_lines.append(sline)
 
     for item in new_evidence:
         url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
@@ -325,27 +389,82 @@ def _inject_new_evidence_into_sections(
             evidence_lines.append(line)
 
     if not conclusion_lines and evidence_lines:
-        first_ev = evidence_lines[0]
-        match = re.search(r"\[(\d+)\]\s*(.*)", first_ev)
-        if match:
+        for evidence_line in evidence_lines[:3]:
+            match = re.search(r"\[(\d+)\]\s*(.*)", evidence_line)
+            if not match:
+                continue
             c_num, c_text = match.groups()
             conclusion_lines.append(f"- {c_text} [{c_num}]")
-        else:
+        if not conclusion_lines:
             c_num = next(iter(url_to_num.values()), 1)
             conclusion_lines.append(f"- Research findings supported by verified sources. [{c_num}]")
     elif not conclusion_lines and url_to_num:
         c_num = next(iter(url_to_num.values()), 1)
         conclusion_lines.append(f"- Research findings supported by verified sources. [{c_num}]")
 
-    updated["conclusion"] = "\n".join(conclusion_lines).strip()
-    updated["evidence"] = "\n".join(evidence_lines).strip()
-    updated["counter"] = "\n".join(counter_lines).strip()
+    if not counter_lines:
+        counter_lines.append("- 未找到强反证；当前有界补搜未发现与已保存证据直接冲突的来源。")
+
+    conclusion_refs = _citation_numbers(conclusion_lines)
+    evidence_refs = _citation_numbers(evidence_lines)
+    counter_refs = _citation_numbers(counter_lines)
+    cited_numbers = conclusion_refs | evidence_refs | counter_refs
+
+    updated["conclusion"] = "\n".join(dict.fromkeys(conclusion_lines)).strip()
+    updated["evidence"] = "\n".join(dict.fromkeys(evidence_lines)).strip()
+    updated["counter"] = "\n".join(dict.fromkeys(counter_lines)).strip()
+    updated["source_quality"] = _render_source_quality(url_to_num, ledger, cited_numbers)
+    updated["coverage"] = _render_search_coverage(ledger, cited_numbers)
     updated["sources"] = "\n".join(source_lines).strip()
 
     return updated
 
 
+def _citation_numbers(lines: Sequence[str]) -> set[int]:
+    refs: set[int] = set()
+    for line in lines:
+        refs.update(int(item) for item in re.findall(r"\[(\d+)\]", line))
+    return refs
 
+
+def _render_source_quality(
+    url_to_num: dict[str, int],
+    ledger: ResearchLedger,
+    cited_numbers: set[int],
+) -> str:
+    lines: list[str] = []
+    for url, number in sorted(url_to_num.items(), key=lambda item: item[1]):
+        if cited_numbers and number not in cited_numbers:
+            continue
+        title = ledger.source_title(url).strip() or "Source"
+        quality = ledger.quality_for_url(url).render()
+        lines.append(f"- [{number}] {title}: {quality or 'source quality unavailable'}")
+    return "\n".join(lines).strip()
+
+
+def _render_search_coverage(ledger: ResearchLedger, cited_numbers: set[int]) -> str:
+    coverage = ledger.coverage_payload()
+    lines: list[str] = []
+    queries = [str(item).strip() for item in coverage.get("queries", ()) if str(item).strip()]
+    if queries:
+        lines.append("- queries: " + "; ".join(queries[:4]))
+    opened_count = max(0, int(coverage.get("opened_count") or len(ledger.final_url_set())))
+    evidence_count = len(getattr(ledger, "evidence_items", ()) or ())
+    lines.append(f"- opened sources: {opened_count}; evidence items: {evidence_count}")
+    if cited_numbers:
+        lines.append(f"- cited sources assessed: {len(cited_numbers)}")
+    skipped = coverage.get("skipped_results") or []
+    if skipped:
+        skipped_titles: list[str] = []
+        for item in skipped[:4]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or item.get("url") or "").strip()
+            if title:
+                skipped_titles.append(title)
+        if skipped_titles:
+            lines.append("- skipped results: " + "; ".join(skipped_titles))
+    return "\n".join(lines).strip()
 
 
 __all__ = [

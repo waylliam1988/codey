@@ -118,6 +118,18 @@
   从 `0.333 -> 0.750`，因此保守 usefulness gate 记录为 `useful=false`。StepFun
   取到了隐藏 fresh source，但最终仍是 protocol/not-answered，candidate 未被选中，
   score `1 -> 1` / `useful=false`。
+- 新增 `tests/manual/bounded_research_merge_projection.py` 离线诊断脚本，用已落盘的
+  bounded-planner A/B JSON 与 trace 评估“只从 evidence-backed claim 重建最终报告”
+  的 narrow merge 投影。projection 保持五家 evidence-only3 row 为 useful，并把 Qwen
+  与较早 StepFun production row 投影为 useful；其中一条 StepFun 实机复跑是在多轮
+  测试触发 provider-side rate limit 后采集的无效 gate 样本，不作为 planner/merge
+  反证。后续干净 paired StepFun 复跑已经进入 fresh evidence extraction，raw 仍为
+  `1/false` 是因为 candidate_not_selected，而 projection 将其转成 `6/true`，因此支持把
+  narrow rebuild 合入生产 `record_merge.py`。
+- 强化 `record_merge.py` 的 evidence-backed candidate 合并：质量复评改为从
+  `search_results_payload()` 派生 search-result URL，修掉不存在的 ledger helper；
+  对 protocol/not_answered 初稿改为从 staged ledger evidence 重建最小报告；
+  `来源质量` 与 `搜索覆盖` 段落由 deterministic merge 重新生成，不继承旧模型段落。
 - 深度加固与卫生清理（Evidence-Only Follow-up & Deterministic Record Merge 生产落地）：
   1. 彻底移除 `max_wall_time` 生产 gate 与停止分支，研究行为边界由 query/source/round/cancellation 保证，时间仅作诊断指标。
   2. 强化 `evidence_followup.py`：Prompt note type 修正为 `fact`；强制显式非空 `evidence`（支持 list 与 singleton dict）；URL 白名单严禁内部 `s1/s2` 标签；出现非 `knowledge_write` 工具整轮直接标记 `invalid_tool_called`，且严格只执行 1 个合法的 `knowledge_write`。

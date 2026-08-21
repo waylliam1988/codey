@@ -336,6 +336,29 @@ unsupported-claim rate. StepFun fetched the same hidden source in the material
 phase, but `followup_rounds=0`, `planner_stop_reason=candidate_not_selected`,
 and the final record stayed at one source/evidence pair.
 
+### Narrow Merge Projection Check
+
+`bounded_research_merge_projection.py` was added as an offline-only diagnostic
+after comparing the pre-integration evidence-only3 traces with post-production
+traces. The saved A/B rows do not contain full ledger or ResearchRecord
+payloads, so this is a projection rather than a production-equivalent replay.
+It asks one narrow question: if the final report were rebuilt only from
+evidence-backed claims and deterministic source/coverage sections, would the
+paired usefulness gate improve?
+
+The projection kept all five evidence-only3 rows useful and converted the
+post-production Qwen row plus the earlier post-production StepFun row to
+`useful=true`. One fresh StepFun production rerun stopped at `no_tool_calls`
+before evidence-only follow-up, but it was collected after repeated StepFun
+tests hit provider-side rate limiting and is treated as an invalid gate sample.
+A later clean paired StepFun rerun reached fresh evidence extraction:
+raw production stayed `1/false` with `candidate_not_selected`, while projection
+converted the same row to `6/true` with one fresh source/evidence pair. That
+supports the production `record_merge.py` narrow rebuild: when the initial
+result is protocol/not_answered but the staged ledger contains evidence, the
+candidate report should be rebuilt from evidence-backed claims plus
+deterministic source-quality and coverage sections.
+
 ### Pre-Integration Evidence-Only3 Probe
 
 | provider | baseline | planner | delta | useful | follow-up | material gain | coverage delta | unsupported delta | send delta | time delta |

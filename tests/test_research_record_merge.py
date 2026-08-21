@@ -370,3 +370,112 @@ def test_merge_evidence_patch_handles_unparseable_or_protocol_initial_summary() 
             assert len(merged.research_record.evidence) == 1
         finally:
             store.index.close()
+
+
+def test_merge_evidence_patch_builds_minimal_candidate_from_protocol_result_with_ledger_evidence() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-stepfun",
+                project="project-stepfun",
+            )
+            source_a = "https://source-a.test/widget-storage"
+            source_b = "https://source-b.test/widget-storage-update"
+            tools.ledger.record_search("current Widget Storage API recommendation endpoint", [{
+                "title": "Benchmark source A",
+                "url": source_a,
+                "snippet": "The stable-v2 endpoint is still recommended.",
+            }])
+            tools.sources_read.add(source_a)
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url=source_a,
+                final_url=source_a,
+                title="Benchmark source A",
+                text="The Widget Storage standard still recommends the stable-v2 endpoint.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Initial Widget Storage endpoint",
+                "body": "The Widget Storage standard still recommends stable-v2.",
+                "sources": [source_a],
+                "evidence": [{
+                    "source_url": source_a,
+                    "excerpt": "The Widget Storage standard still recommends the stable-v2 endpoint.",
+                    "claim": "The Widget Storage standard still recommends the stable-v2 endpoint.",
+                }],
+            })
+            initial_record = build_research_record(
+                summary="",
+                question="What is the current Widget Storage API recommendation endpoint?",
+                session_id="session-stepfun",
+                project="project-stepfun",
+                run_id="run-stepfun",
+                ledger=tools.ledger,
+                stop_reason="protocol",
+            )
+            assert initial_record.answer_status == "not_answered"
+            initial_result = ResearchRunResult(
+                question="What is the current Widget Storage API recommendation endpoint?",
+                summary="",
+                stop_reason="protocol",
+                turns=7,
+                max_turns_used=14,
+                research_record=initial_record,
+                evidence_items=tools.ledger.evidence_payload(),
+                opened_sources=tools.ledger.opened_sources_payload(),
+                coverage=tools.ledger.coverage_payload(),
+            )
+
+            tools.ledger.record_search("current primary source evidence", [{
+                "title": "Benchmark source B",
+                "url": source_b,
+                "snippet": "After the 2026 update, stable-v3 is recommended.",
+            }])
+            tools.sources_read.add(source_b)
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url=source_b,
+                final_url=source_b,
+                title="Benchmark source B",
+                text="After the May 2026 update, Widget Storage recommends the stable-v3 endpoint.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Updated Widget Storage endpoint",
+                "body": "After the May 2026 update, Widget Storage recommends stable-v3.",
+                "sources": [source_b],
+                "evidence": [{
+                    "source_url": source_b,
+                    "excerpt": "After the May 2026 update, Widget Storage recommends the stable-v3 endpoint.",
+                    "claim": "After the May 2026 update, Widget Storage recommends the stable-v3 endpoint.",
+                }],
+            })
+            material = PlanExecutionResult(
+                queries_executed=("current primary source evidence",),
+                fresh_source_urls=(source_b,),
+            )
+
+            merged = merge_evidence_patch(initial_result, tools, material)
+
+            assert merged.stop_reason == "done"
+            assert merged.research_record is not None
+            assert merged.research_record.answer_status in {"answered", "partial"}
+            assert merged.research_record.unsupported_claim_count == 0
+            assert len(merged.research_record.sources) == 2
+            assert len(merged.research_record.evidence) == 2
+            assert len(merged.research_record.claims) >= 2
+            assert len(merged.citation_map) == 2
+            assert source_a in merged.summary
+            assert source_b in merged.summary
+            assert "stable-v3" in merged.summary
+            assert "## 来源质量" in merged.summary
+            assert "## 搜索覆盖" in merged.summary
+            assert "ERROR:" not in merged.summary
+            assert merged.coverage["opened_count"] == 2
+            assert len(merged.search_results) == 2
+        finally:
+            store.index.close()

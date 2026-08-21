@@ -119,6 +119,21 @@ This file records Codey's release history. The newest release appears first.
   usefulness gate keeps that production-path row `useful=false`. StepFun fetched
   the hidden fresh source but stayed protocol/not-answered, selected no
   candidate, and remained score `1 -> 1` / `useful=false`.
+- Added `tests/manual/bounded_research_merge_projection.py`, an offline-only
+  diagnostic that applies saved bounded-planner A/B JSON and trace files to a
+  narrow evidence-backed merge projection. The projection kept the five
+  evidence-only3 rows useful and converted Qwen plus the earlier StepFun
+  production rows. One StepFun live rerun under provider-rate-limit pressure is
+  treated as an invalid gate sample; a later clean paired StepFun rerun reached
+  fresh evidence extraction and stayed raw `1/false` only because the candidate
+  was not selected. The projection converted that row to `6/true`, validating
+  the production `record_merge.py` narrow rebuild.
+- Strengthened `record_merge.py` for narrow evidence-backed candidates: report
+  quality review now receives search-result URLs from `search_results_payload`
+  instead of a nonexistent ledger helper, protocol/not_answered initial reports
+  are rebuilt from staged ledger evidence, and source-quality / coverage
+  sections are regenerated deterministically instead of inherited from the old
+  model-written report.
 - Production hardening & code hygiene cleanup for bounded evidence-only follow-up & deterministic merge:
   1. Completely removed `max_wall_time` production gate and stop branch; bounded semantics are enforced solely via queries/sources/rounds/cancellation, treating wall time strictly as a diagnostic metric.
   2. Strengthened `evidence_followup.py`: updated prompt note type to `fact`, strictly enforced explicit non-empty `evidence` items (both list and singleton dict forms), tightened URL whitelisting against internal `s1/s2` IDs, invalidated entire round upon forbidden tool calls (`invalid_tool_called`), and restricted execution to exactly 1 valid `knowledge_write`.

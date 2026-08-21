@@ -917,6 +917,29 @@ def test_pipeline_selection_rejects_unsupported_claim_regression() -> None:
     assert _selects_candidate(candidate, candidate_review, current, current_review) is False
 
 
+def test_pipeline_selection_accepts_minimal_evidence_candidate_after_protocol_not_answered() -> None:
+    current = ResearchRunResult("question", "", "protocol", 7)
+    candidate = ResearchRunResult("question", "minimal evidence-backed report", "done", 8)
+    current_review = _review(
+        record_id="research_record:" + "1" * 16,
+        record_digest="sha256:" + "1" * 64,
+        ok=False,
+        answer_status="not_answered",
+        score=0.1,
+        missing=("not_answered", "answer_coverage_gap"),
+    )
+    candidate_review = _review(
+        record_id="research_record:" + "2" * 16,
+        record_digest="sha256:" + "2" * 64,
+        ok=False,
+        answer_status="partial",
+        score=0.55,
+        missing=("answer_coverage_gap",),
+    )
+
+    assert _selects_candidate(candidate, candidate_review, current, current_review) is True
+
+
 def test_pipeline_retains_best_when_staging_commit_fails() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
