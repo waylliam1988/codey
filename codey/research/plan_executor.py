@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from typing import Callable
 
@@ -43,8 +42,8 @@ class PlanExecutor:
 
     def execute(self, plan: ResearchPlan, tools: ResearchTools) -> PlanExecutionResult:
         runtime = clone_research_tools(tools)
-        started = time.monotonic()
         queries: list[str] = []
+
         opened: list[dict] = []
         previews: list[str] = []
         fresh_urls: list[str] = []
@@ -72,8 +71,8 @@ class PlanExecutor:
             upper=8,
         )
         for candidate in plan.query_candidates[:query_limit]:
-            if self._stopped_or_expired(started):
-                stop_reason = "stopped" if self.should_stop() else "max_wall_time"
+            if self._is_stopped():
+                stop_reason = "stopped"
                 break
             query = " ".join(str(candidate.query_preview or "").split())
             if not query:
@@ -115,8 +114,8 @@ class PlanExecutor:
                     )
                 except cancellation.TaskCancelled:
                     raise
-                if self._stopped_or_expired(started):
-                    stop_reason = "stopped" if self.should_stop() else "max_wall_time"
+                if self._is_stopped():
+                    stop_reason = "stopped"
                     break
                 text = str(body or "")
                 if text.startswith(("ERROR:", "SKIPPED:")):
@@ -159,11 +158,12 @@ class PlanExecutor:
             errors=tuple(errors[:12]),
         )
 
-    def _stopped_or_expired(self, _started: float) -> bool:
+    def _is_stopped(self) -> bool:
         if self.should_stop():
             return True
         cancellation.check()
         return False
+
 
 
 def _collect_baseline_urls(tools: ResearchTools) -> set[str]:

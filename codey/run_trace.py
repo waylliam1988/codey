@@ -685,7 +685,11 @@ class RunTraceRecorder:
             "followup_rounds": _bounded_int(result.get("followup_rounds"), 0, 3),
             "stop_reason": _safe_trace_code(result.get("stop_reason"), 80),
             "planner_stop_reason": _safe_trace_code(result.get("planner_stop_reason"), 80),
+            "fresh_source_count": _nonnegative_int(result.get("fresh_source_count")),
+            "new_evidence_count": _nonnegative_int(result.get("new_evidence_count")),
+            "merged_evidence_count": _nonnegative_int(result.get("merged_evidence_count")),
         }
+
         self.manifest.research_pipeline_runs.append(payload)
         if len(self.manifest.research_pipeline_runs) > MAX_RESEARCH_PIPELINE_RUNS:
             del self.manifest.research_pipeline_runs[:-MAX_RESEARCH_PIPELINE_RUNS]

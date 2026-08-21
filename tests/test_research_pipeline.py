@@ -643,8 +643,135 @@ def test_pipeline_staging_isolates_rejected_followup_side_effects() -> None:
 
         assert output.final_result is initial.result
         assert output.planner_stop_reason == "candidate_not_selected"
-        # Initial tools ledger was NOT polluted by the rejected staging run
+        # Initial tools state and store were NOT polluted by the rejected staging run
         assert len(initial_tools.ledger.evidence_items) == 0
+        assert "https://example.com/rejected" not in initial_tools.sources_read
+        assert len(initial_tools.created_ids) == 0
+        # KnowledgeStore on disk contains zero written notes
+        assert len(list(store.root.glob("**/*.md"))) == 0
+
+
+def test_pipeline_staging_commits_accepted_followup_side_effects() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        project = root / "project"
+        project.mkdir()
+        store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(root=store.root)
+        search = _PipelineSearch()
+        initial_tools = ResearchTools(search=search, store=store, changes=changes, session_id="session-acc", project="project-acc")
+        trace = _TraceRecorder()
+        initial_record = _record(question="Pipeline question", synthesis_id="initial", project=project)
+        initial = _result(
+            question="Pipeline question",
+            summary="initial summary",
+            stop_reason="done",
+            synthesis_id="initial",
+            record=initial_record,
+            tools=initial_tools,
+        )
+
+        def run_iteration(**_kwargs):
+            return initial
+
+        def fake_followup_runner(*, tools, **_kwargs):
+            from codey.research.source_document import SourceDocument
+            tools.sources_read.add("https://example.com/accepted")
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://example.com/accepted",
+                final_url="https://example.com/accepted",
+                title="Accepted Source",
+                text="Accepted text",
+            ))
+
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Accepted Claim",
+                "body": "Accepted body",
+                "sources": ["https://example.com/accepted"],
+                "evidence": [{
+                    "source_url": "https://example.com/accepted",
+                    "excerpt": "Accepted text",
+                    "claim": "Accepted Claim",
+                }],
+            })
+            return EvidenceFollowupResult(
+                ok=True,
+                new_evidence_count=1,
+                new_source_urls=("https://example.com/accepted",),
+                stop_reason="written",
+            )
+
+        def fake_review(record, *, question: str = "", evidence_ledger=None, require_ledger_record: bool = False):
+            del question, evidence_ledger
+            return _review(
+                record_id=getattr(record, "record_id", ""),
+                record_digest=getattr(record, "record_digest", ""),
+                ok=False,
+                answer_status="insufficient_evidence",
+                score=0.35,
+                missing=("answer_coverage_gap",),
+            )
+
+        def fake_plan(review, *, max_queries: int, max_sources: int, **_kwargs):
+            return ResearchPlan(
+                plan_ref="research_plan:gap",
+                query_candidates=(QueryCandidate("q:1", "gap query"),),
+                reason_codes=("proof_gap",),
+                max_queries=max_queries,
+                max_sources=max_sources,
+            )
+
+        material = PlanExecutionResult(
+            queries_executed=("gap query",),
+            fresh_source_urls=("https://example.com/accepted",),
+            stop_reason="opened_sources",
+        )
+
+        context = ResearchContext(
+            question="Pipeline question",
+            session_id="session-acc",
+            run_id="run-acc",
+            project="project-acc",
+            max_turns=4,
+            trace=RunTraceResearchSink(trace),
+        )
+
+        from codey.research import pipeline as pipeline_module
+
+        original_review = pipeline_module.review_research_proof
+        original_plan = pipeline_module.build_research_plan
+        original_execute = pipeline_module.PlanExecutor.execute
+        original_selects = pipeline_module._selects_candidate
+        try:
+            pipeline_module.review_research_proof = fake_review
+            pipeline_module.build_research_plan = fake_plan
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: material
+            # Candidate is accepted
+            pipeline_module._selects_candidate = lambda cand, cr, best, br: True
+            pipeline = ResearchPipeline(
+                context=context,
+                run_iteration=run_iteration,
+                search_factory=lambda: search,
+                evidence_followup_runner=fake_followup_runner,
+                config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
+            )
+            output = pipeline.run()
+        finally:
+            pipeline_module.review_research_proof = original_review
+            pipeline_module.build_research_plan = original_plan
+            pipeline_module.PlanExecutor.execute = original_execute
+            pipeline_module._selects_candidate = original_selects
+
+        assert output.followup_applied is True
+        assert output.planner_stop_reason in {"evidence_merged", "max_followup_rounds"}
+        # Initial tools committed changes to primary store
+        assert len(initial_tools.ledger.evidence_items) == 1
+        assert "https://example.com/accepted" in initial_tools.sources_read
+        assert len(initial_tools.created_ids) == 1
+        assert len(list(store.root.glob("**/*.md"))) == 1
+
+
 
 
 def test_pipeline_keeps_initial_result_when_followup_iteration_raises() -> None:

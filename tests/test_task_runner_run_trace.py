@@ -375,7 +375,11 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
             "followup_rounds": 0,
             "stop_reason": "done",
             "planner_stop_reason": "proof_ok_no_required_followup",
+            "fresh_source_count": 0,
+            "new_evidence_count": 0,
+            "merged_evidence_count": 1,
         }]
+
         assert proof_review["proof_ref"].startswith("research_proof:")
         assert proof_review["record_id"] == record.record_id
         assert proof_review["record_digest"] == record.record_digest

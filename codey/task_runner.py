@@ -543,8 +543,12 @@ def _research_payload(result, *, pipeline_result: Any | None = None) -> dict:
                 "followup_rounds": max(0, min(3, int(metadata.get("followup_rounds") or 0))),
                 "pipeline_stop_reason": str(metadata.get("stop_reason") or ""),
                 "planner_stop_reason": str(metadata.get("planner_stop_reason") or ""),
+                "fresh_source_count": max(0, int(metadata.get("fresh_source_count") or 0)),
+                "new_evidence_count": max(0, int(metadata.get("new_evidence_count") or 0)),
+                "merged_evidence_count": max(0, int(metadata.get("merged_evidence_count") or 0)),
             })
     return payload
+
 
 
 class TaskRunner:

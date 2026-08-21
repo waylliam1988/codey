@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol
 
 from codey import cancellation
@@ -129,11 +129,11 @@ class ResearchPipeline:
                         if self.context.should_stop():
                             planner_stop_reason = "stopped"
                             break
-                        staged_ledger = current_tools.ledger.clone() if getattr(current_tools, "ledger", None) is not None else None
-                        staged_tools = replace(
-                            current_tools,
-                            ledger=staged_ledger,
-                        ) if staged_ledger is not None else current_tools
+                        staged_tools = (
+                            current_tools.create_staged()
+                            if hasattr(current_tools, "create_staged")
+                            else current_tools
+                        )
 
                         executor = PlanExecutor(
                             config=self.config,
@@ -174,10 +174,11 @@ class ResearchPipeline:
                         )
                         candidate_review = self._review(candidate, require_ledger_record=False)
                         if _selects_candidate(candidate, candidate_review, best, best_review):
+                            if hasattr(best_tools, "commit_staged"):
+                                best_tools.commit_staged(staged_tools)
                             best = candidate
                             best_review = candidate_review
-                            best_tools = staged_tools
-                            current_tools = staged_tools
+                            current_tools = best_tools
                             followup_rounds = round_index
                             total_fresh_sources += len(material.fresh_source_urls) if material.fresh_source_urls else max(0, int(material.fresh_source_count or 0))
                             total_new_evidence += followup_result.new_evidence_count

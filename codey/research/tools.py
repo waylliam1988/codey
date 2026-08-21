@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from codey import cancellation
 from codey.knowledge.changes import KnowledgeChanges
@@ -50,6 +51,36 @@ class ResearchTools:
     updated_ids: list[str] = field(default_factory=list)
     links_created: int = 0
     ledger: ResearchLedger = field(default_factory=ResearchLedger)
+
+    def create_staged(self) -> ResearchTools:
+        staged_store = StagedKnowledgeStore(self.store)
+        staged_changes = StagedKnowledgeChanges(self.changes)
+        return ResearchTools(
+            search=self.search,
+            store=staged_store,
+            changes=staged_changes,
+            diagnostics=self.diagnostics,
+            session_id=self.session_id,
+            project=self.project,
+            sources_read=set(self.sources_read),
+            search_result_urls=set(self.search_result_urls),
+            grounded_ids=set(self.grounded_ids),
+            created_ids=list(self.created_ids),
+            updated_ids=list(self.updated_ids),
+            links_created=self.links_created,
+            ledger=self.ledger.clone(),
+        )
+
+    def commit_staged(self, staged: ResearchTools) -> None:
+        if isinstance(staged.store, StagedKnowledgeStore):
+            staged.store.commit_to(self.store, changes=self.changes)
+        self.sources_read.update(staged.sources_read)
+        self.search_result_urls.update(staged.search_result_urls)
+        self.grounded_ids.update(staged.grounded_ids)
+        self.created_ids = list(dict.fromkeys(self.created_ids + staged.created_ids))
+        self.updated_ids = list(dict.fromkeys(self.updated_ids + staged.updated_ids))
+        self.links_created = max(self.links_created, staged.links_created)
+        self.ledger = staged.ledger
 
     def web_search(self, query: str) -> str:
         query = (query or "").strip()
@@ -454,6 +485,75 @@ def _pages_meta(pages: tuple[int, ...], page_count: int) -> str:
         return ""
     page_text = compact_pages(pages)
     return f"pages {page_text} / {page_count}" if page_count else f"pages {page_text}"
+
+
+class StagedKnowledgeStore:
+    """In-memory staging buffer over KnowledgeStore that defers disk writes until committed."""
+
+    def __init__(self, parent_store: KnowledgeStore) -> None:
+        self._parent = parent_store
+        self._staged_notes: dict[str, KnowledgeNote] = {}
+        self._staged_links: list[tuple[str, str, str]] = []
+
+    @property
+    def root(self) -> Path:
+        return self._parent.root
+
+    @property
+    def index(self) -> object:
+        return self._parent.index
+
+    def path_for(self, note: KnowledgeNote) -> Path:
+        return self._parent.path_for(note)
+
+    def rel(self, path: Path) -> str:
+        return self._parent.rel(path)
+
+    def exists(self, note_id: str) -> bool:
+        return note_id in self._staged_notes or self._parent.exists(note_id)
+
+    def write_note(
+        self,
+        note: KnowledgeNote,
+        *,
+        changes: KnowledgeChanges | None = None,
+    ) -> str:
+        self._staged_notes[note.id] = note
+        if changes is not None:
+            record_staged = getattr(changes, "record_staged_note", None)
+            if callable(record_staged):
+                record_staged(note)
+        path = self._parent.path_for(note)
+        return self._parent.rel(path) if path.exists() else f"{note.folder}/{note.id}.md"
+
+    def link(self, src: str, dst: str, kind: str = "relates", *, changes: KnowledgeChanges | None = None) -> str:
+        self._staged_links.append((src, dst, kind))
+        return f"linked: {src} -> {dst} ({kind})"
+
+    def commit_to(self, target_store: KnowledgeStore, changes: KnowledgeChanges | None = None) -> None:
+        for note in self._staged_notes.values():
+            target_store.write_note(note, changes=changes)
+        for src, dst, kind in self._staged_links:
+            target_store.link(src, dst, kind, changes=changes)
+        self._staged_notes.clear()
+        self._staged_links.clear()
+
+
+class StagedKnowledgeChanges:
+    """In-memory tracking for changes during staging."""
+
+    def __init__(self, parent_changes: KnowledgeChanges | None = None) -> None:
+        self._parent = parent_changes
+        self._staged_files: set[str] = set()
+
+    def record_staged_note(self, note: KnowledgeNote) -> None:
+        self._staged_files.add(f"{note.folder}/{note.id}.md")
+
+    def capture_before(self, rel: str, path: Path) -> None:
+        pass
+
+    def record_after(self, rel: str, path: Path) -> None:
+        self._staged_files.add(rel)
 
 
 def clone_research_tools(

@@ -116,6 +116,9 @@ def test_merge_evidence_patch_appends_new_evidence_and_reindexes_citations() -> 
             assert len(merged_result.source_urls) == 2
             assert merged_result.sources_read == 2
             assert len(merged_result.evidence_items) == 2
+            assert len(merged_result.notes_created) == 2
+            assert len(merged_result.counterpoints) == 1
+            assert "Followup Limitation Claim" in merged_result.counterpoints[0]
 
             # 4. Merging again with same inputs is idempotent
             merged_again = merge_evidence_patch(merged_result, tools, material)
@@ -123,6 +126,90 @@ def test_merge_evidence_patch_appends_new_evidence_and_reindexes_citations() -> 
             assert merged_again.research_record.record_digest == merged_result.research_record.record_digest
         finally:
             store.index.close()
+
+
+def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-prune",
+                project="project-prune",
+            )
+            tools.sources_read.add("https://example.com/source1")
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://example.com/source1",
+                final_url="https://example.com/source1",
+                title="Source 1",
+                text="Verified text excerpt.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Claim 1",
+                "body": "Body",
+                "sources": ["https://example.com/source1"],
+                "evidence": [{
+                    "source_url": "https://example.com/source1",
+                    "excerpt": "Verified text excerpt.",
+                    "claim": "Claim 1",
+                }],
+            })
+            # Initial summary has an unsupported overclaim line with no citations
+            initial_summary = (
+                "## 结论\nVerified finding [1].\n\n"
+                "## 关键证据\n"
+                "- [1] Claim 1.\n"
+                "- Unsupported hallucinated claim without any citation bracket.\n\n"
+                "## 来源\n[1] Source 1 - https://example.com/source1"
+            )
+            initial_finalized = finalize_done_answer(initial_summary, tools.ledger)
+            initial_record = build_research_record(
+                summary=initial_finalized.text,
+                question="What is the truth?",
+                session_id="session-prune",
+                ledger=tools.ledger,
+                stop_reason="done",
+            )
+            initial_result = ResearchRunResult(
+                question="What is the truth?",
+                summary=initial_finalized.text,
+                stop_reason="done",
+                turns=1,
+                research_record=initial_record,
+            )
+
+            # Fresh source
+            tools.sources_read.add("https://example.com/source2")
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://example.com/source2",
+                final_url="https://example.com/source2",
+                title="Source 2",
+                text="Second verified fact.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Claim 2",
+                "body": "Body 2",
+                "sources": ["https://example.com/source2"],
+                "evidence": [{
+                    "source_url": "https://example.com/source2",
+                    "excerpt": "Second verified fact.",
+                    "claim": "Claim 2",
+                }],
+            })
+            material = PlanExecutionResult(fresh_source_urls=("https://example.com/source2",))
+            merged = merge_evidence_patch(initial_result, tools, material)
+
+            assert "Unsupported hallucinated claim" not in merged.summary
+            assert "[1] Source 1" in merged.summary
+            assert "[2] Source 2" in merged.summary
+        finally:
+            store.index.close()
+
 
 
 def test_merge_evidence_patch_preserves_same_excerpt_from_different_sources() -> None:

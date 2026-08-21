@@ -6,7 +6,17 @@ This file records Codey's release history. The newest release appears first.
 
 ## 0.4.4 - Bounded Research Planner v1 (implementation draft, unreleased)
 
+- Implemented true memory Staging isolation (`StagedKnowledgeStore` / `StagedKnowledgeChanges`):
+  knowledge writes and note links during follow-up are buffered in-memory; rejected candidates incur 0 writes to disk store or changes,
+  guaranteeing zero pollution for store, `sources_read`, and `created_ids`; changes are safely committed only upon candidate selection.
+- Enhanced deterministic graph patch merger (`codey/research/record_merge.py`):
+  prunes unsupported raw claims and uncited hallucinated paragraphs, idempotently merges new evidence and sources based on `(canonical_url, excerpt_hash)`,
+  re-indexes citations with `done_finalizer`, and fully synchronizes all `queries`, `search_results`, `notes_created`, `notes_updated`, `links_created`, and `counterpoints` metadata.
+- Improved pipeline observability (`task_runner.py` / `run_trace.py`):
+  surfaced `fresh_source_count`, `new_evidence_count`, and `merged_evidence_count` into UI payloads and `RunTrace`.
+- Thoroughly removed dead `max_wall_time` branches and unused timer arguments from `PlanExecutor`.
 - Moved Research lifecycle orchestration into `codey/research/pipeline.py`.
+
   Initial `ResearchRunner`, proof review, `QueryPlanner`, bounded
   `PlanExecutor`, evidence-only follow-up, deterministic `merge_evidence_patch`, final proof review, and Evidence Ledger
   persistence now have one owner. `TaskRunner` keeps the outer

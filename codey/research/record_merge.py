@@ -108,6 +108,58 @@ def merge_evidence_patch(
     coverage = getattr(quality_review, "coverage", {}) if quality_review is not None else initial.coverage
     warnings = list(getattr(quality_review, "warnings", ()) or ())
 
+    merged_queries = list(
+        dict.fromkeys(
+            list(initial.queries or [])
+            + list(getattr(material, "queries_executed", ()) or [])
+        )
+    )
+
+    staged_searches = []
+    for s in getattr(ledger, "searches", ()):
+        for r in getattr(s, "results", ()):
+            if hasattr(r, "to_dict"):
+                staged_searches.append(r.to_dict())
+            elif isinstance(r, dict):
+                staged_searches.append(r)
+    merged_search_results = list(initial.search_results or []) + staged_searches
+    seen_sr_keys = set()
+    unique_search_results = []
+    for sr in merged_search_results:
+        sr_url = str(sr.get("url") or "")
+        if sr_url and sr_url in seen_sr_keys:
+            continue
+        if sr_url:
+            seen_sr_keys.add(sr_url)
+        unique_search_results.append(sr)
+
+    merged_notes_created = list(
+        dict.fromkeys(
+            list(initial.notes_created or [])
+            + list(getattr(tools, "created_ids", ()) or [])
+        )
+    )
+    merged_notes_updated = list(
+        dict.fromkeys(
+            list(initial.notes_updated or [])
+            + list(getattr(tools, "updated_ids", ()) or [])
+        )
+    )
+    staged_counterpoints = [
+        str(item.claim or item.excerpt or "").strip()
+        for item in getattr(ledger, "evidence_items", ())
+        if item.stance in {"contradicts", "context"} and str(item.claim or item.excerpt or "").strip()
+    ]
+    merged_counterpoints = list(
+        dict.fromkeys(
+            list(initial.counterpoints or []) + staged_counterpoints
+        )
+    )
+    merged_links_created = max(
+        int(getattr(initial, "links_created", 0) or 0),
+        int(getattr(tools, "links_created", 0) or 0),
+    )
+
     return replace(
         initial,
         summary=final_text,
@@ -119,13 +171,17 @@ def merge_evidence_patch(
         citation_map=citation_map or initial.citation_map,
         coverage=coverage or initial.coverage,
         quality_warnings=warnings or initial.quality_warnings,
+        queries=merged_queries,
+        search_results=unique_search_results,
+        notes_created=merged_notes_created,
+        notes_updated=merged_notes_updated,
+        links_created=merged_links_created,
+        counterpoints=merged_counterpoints,
         synthesis_id=merge_synthesis_id,
         turns=initial.turns + 1,
         max_turns_used=max(initial.max_turns_used, initial.turns + 1),
         stop_reason="done",
     )
-
-
 
 
 def _find_new_evidence_items(
@@ -194,6 +250,17 @@ def _inject_new_evidence_into_sections(
 
     next_num = max(url_to_num.values(), default=0) + 1
 
+    # Prune un-cited or unsupported raw lines from initial evidence to keep evidence-backed base
+    existing_evidence_text = updated.get("evidence", "").strip()
+    if existing_evidence_text:
+        for line in existing_evidence_text.splitlines():
+            sline = line.strip()
+            if not sline:
+                continue
+            # Retain bullet lines that carry a citation bracket [num]
+            if re.search(r"\[\d+\]", sline):
+                evidence_lines.append(sline)
+
     for item in new_evidence:
         url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
         claim = str(item.claim or "").strip()
@@ -214,9 +281,7 @@ def _inject_new_evidence_into_sections(
             evidence_lines.append(line)
 
     if evidence_lines:
-        cur = updated.get("evidence", "").strip()
-        joined = "\n".join(evidence_lines)
-        updated["evidence"] = f"{cur}\n{joined}".strip() if cur else joined
+        updated["evidence"] = "\n".join(evidence_lines).strip()
 
     if counter_lines:
         cur = updated.get("counter", "").strip()
