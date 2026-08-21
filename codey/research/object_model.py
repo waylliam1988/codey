@@ -469,12 +469,13 @@ def research_record_summary(record: ResearchRecord | Mapping[str, object]) -> di
 def _build_sources(ledger: ResearchLedger) -> tuple[ResearchSource, ...]:
     rows: list[ResearchSource] = []
     for opened in list(getattr(ledger, "opened_sources", ()))[:MAX_RECORD_SOURCES]:
-        rows.append(_source_from_opened(opened))
+        rows.append(source_from_opened(opened))
     return tuple(rows)
 
 
-def _source_from_opened(opened: OpenedSource) -> ResearchSource:
+def source_from_opened(opened: OpenedSource) -> ResearchSource:
     final_ref = sanitize_research_url_ref(opened.final_url)
+
     requested_ref = sanitize_research_url_ref(opened.requested_url)
     host = str(final_ref.get("host") or requested_ref.get("host") or "")
     source_id = _stable_ref(

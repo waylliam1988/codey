@@ -19,12 +19,18 @@ This file records Codey's release history. The newest release appears first.
   surfaced and persisted `fresh_source_count`, `new_evidence_count`, and `merged_evidence_count` as well as fully observable `attempted_fresh_source_count`
   and `attempted_new_evidence_count` regardless of candidate selection, providing complete traffic and cost persistence transparency.
 
+- Strengthened Evidence Follow-up and executor boundaries (`evidence_followup.py` / `plan_executor.py`):
+  - fixed schema divergence by strictly constraining follow-up prompts to `type='fact'` and enforcing it in controller validation;
+  - enforced strict evidence provenance integrity requiring `evidence[].source_url` to be declared within the note's `sources` list;
+  - added duplicate redirect prevention for `canonical_final` URLs in `PlanExecutor`, avoiding redundant opens and budget exhaustion;
+  - replaced private helper cross-module import with public `source_from_opened` and removed dead code in `done_finalizer`.
 - Enhanced deterministic graph patch merger (`codey/research/record_merge.py`):
   enforces strict evidence-backed citation verification across all sections (conclusion, evidence, counter), filtering uncited or dangling citations (e.g. `[99]`),
   idempotently merges new evidence and sources based on `(canonical_url, excerpt_hash)`, re-indexes citations with `done_finalizer`,
   and fully synchronizes `queries`, `search_results` with full `query/opened/final_url` shape, `notes_created`, `notes_updated`, `links_created`, `counterpoints`, and stably sorted `source_urls`.
 - Thoroughly removed dead `max_wall_time` branches and unused timer arguments from `PlanExecutor`.
 - Moved Research lifecycle orchestration into `codey/research/pipeline.py`.
+
 
 
 

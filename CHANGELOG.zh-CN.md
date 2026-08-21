@@ -19,6 +19,11 @@
   不仅透传并持久化成功应用的 `fresh_source_count`、`new_evidence_count`、`merged_evidence_count`，还完整记录无论候选方案是否胜出均可审计的
   `attempted_fresh_source_count`、`attempted_new_evidence_count`，提供完整的 provider traffic 与尝试成本持久化审计透明度。
 
+- 强化 Evidence Follow-up 与执行器边界保护（`evidence_followup.py` / `plan_executor.py`）：
+  - 修复 follow-up prompt 与 schema 不一致，严格限制 `type='fact'` 并在控制器中强制校验；
+  - 增加严密的 Evidence 来源归属（Provenance）校验，强制要求 `evidence[].source_url` 必须属于当前 note 声明的 `sources` 列表；
+  - 在 `PlanExecutor` 中对重定向目标 URL（`canonical_final`）建立自动去重与跳过机制，杜绝别名导致的重复打开与预算浪费；
+  - 清理跨模块私有 helper 导入，导出公共 `source_from_opened` 并删除 `done_finalizer` 中未使用的死代码。
 - 强化确定性图谱合并器（`codey/research/record_merge.py`）：
   对结论（conclusion）、关键证据（evidence）、反证（counter）实现严格的 Evidence-Backed 引用校验与全段落修剪，
   彻底过滤未引用或包含未映射悬空编号（如 `[99]`）的行，按 `(canonical_url, excerpt_hash)` 幂等去重合并新增证据与来源，
@@ -26,6 +31,7 @@
   `notes_created`、`notes_updated`、`links_created`、`counterpoints` 与稳定排序的 `source_urls`。
 - 彻底清理 `PlanExecutor` 中 `max_wall_time` 残留死分支，消除已废弃的计时器参数，确保执行边界语义纯粹干净。
 - 将 Research 生命周期编排收归 `codey/research/pipeline.py`：初始
+
 
 
 

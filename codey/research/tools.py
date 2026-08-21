@@ -547,7 +547,7 @@ class StagedKnowledgeStore:
         saved_after = dict(getattr(changes, "_after_hashes", {})) if changes is not None else None
         saved_touched = set(getattr(changes, "_touched", ())) if changes is not None else None
 
-        # Track written/modified notes and files for complete rollback:
+        # Track written/modified notes and files for compensating rollback:
         # note_id -> (new_path, orig_path_or_None, orig_bytes_or_None, orig_note_or_None)
         tracked_notes: dict[str, tuple[Path, Path | None, bytes | None, KnowledgeNote | None]] = {}
         try:
@@ -574,7 +574,7 @@ class StagedKnowledgeStore:
             self._staged_notes.clear()
             self._staged_links.clear()
         except Exception:
-            # Atomic rollback: revert all notes, index entries, links, and changes
+            # Compensating rollback: revert all notes, index entries, links, and changes
             for note_id, (new_path, orig_path, orig_bytes, orig_note) in reversed(list(tracked_notes.items())):
                 try:
                     if orig_note is None:
@@ -609,12 +609,8 @@ class StagedKnowledgeStore:
             raise
 
 
-
-
-
-
 class StagedKnowledgeChanges:
-    """In-memory tracking for changes during staging."""
+    """In-memory tracking for note file changes during staging without disk side-effects."""
 
     def __init__(self, parent_changes: KnowledgeChanges | None = None) -> None:
         self._parent = parent_changes
@@ -624,10 +620,13 @@ class StagedKnowledgeChanges:
         self._staged_files.add(f"{note.folder}/{note.id}.md")
 
     def capture_before(self, rel: str, path: Path) -> None:
-        pass
+        """No-op during staging: staged notes do not inspect or snapshot disk paths."""
+        del rel, path
 
     def record_after(self, rel: str, path: Path) -> None:
+        del path
         self._staged_files.add(rel)
+
 
 
 def clone_research_tools(

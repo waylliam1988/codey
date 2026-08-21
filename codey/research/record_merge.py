@@ -20,9 +20,10 @@ from codey.research.identity import clip, digest_text as _digest_text
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import (
     ResearchRecord,
-    _source_from_opened,
     build_research_record,
+    source_from_opened,
 )
+
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.report_quality import (
     ReportQualityReview,
@@ -195,8 +196,9 @@ def _find_new_evidence_items(
     if initial_record is not None:
         source_id_to_canonical_url: dict[str, str] = {}
         for opened in getattr(ledger, "opened_sources", ()):
-            src_obj = _source_from_opened(opened)
+            src_obj = source_from_opened(opened)
             c_url = ledger.canonical_opened_url(opened.final_url or opened.requested_url)
+
             if c_url:
                 source_id_to_canonical_url[src_obj.source_id] = c_url
 

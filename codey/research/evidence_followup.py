@@ -51,7 +51,7 @@ def build_evidence_followup_prompt(
         "Your ONLY task is to extract factual evidence excerpts from the freshly retrieved material below using `knowledge_write`.",
         "",
         "STRICT RULES:",
-        "1. ONLY call the tool `knowledge_write` (type='fact' or 'concept').",
+        "1. ONLY call the tool `knowledge_write` (type='fact').",
         "2. Do NOT attempt to call `done`, `web_search`, `open_url`, or any other tool.",
         "3. Every source in `sources` or `evidence[].source_url` MUST EXACTLY match one of the Allowed Fresh URLs below.",
         "4. NEVER use internal labels like 's1', 's2', or placeholders. Always use the full URL.",
@@ -87,6 +87,9 @@ class EvidenceFollowupController:
         tool_name = str(name or "").strip().lower()
         if tool_name != "knowledge_write":
             return f"ERROR: Tool '{tool_name}' is forbidden in evidence-only follow-up mode. ONLY 'knowledge_write' is allowed."
+        note_type = str(args.get("type") or "fact").strip().lower()
+        if note_type != "fact":
+            return f"ERROR: Evidence-only follow-up requires type='fact', got '{note_type}'."
         sources = args.get("sources")
         source_list = [str(s).strip() for s in (sources if isinstance(sources, list) else [sources]) if str(s).strip()]
         if not source_list:
@@ -110,10 +113,13 @@ class EvidenceFollowupController:
                 return f"ERROR: Invalid evidence source_url '{ev_src}'. Internal IDs like s1/s2 are strictly forbidden."
             if ev_src not in self.allowed_urls:
                 return f"ERROR: Evidence source_url '{ev_src}' is not in the allowed fresh material whitelist."
+            if ev_src not in source_list:
+                return f"ERROR: Evidence source_url '{ev_src}' must be declared in the note's 'sources' list."
             excerpt = str(item.get("excerpt") or item.get("quote") or "").strip()
             if not excerpt:
                 return "ERROR: Evidence item requires a non-empty excerpt string."
         return self.tools.knowledge_write(args)
+
 
 
 def run_evidence_followup(

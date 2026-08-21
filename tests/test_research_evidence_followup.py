@@ -116,8 +116,37 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                 },
             })
             assert "Evidence source_url 'https://example.com/unauthorized' is not in the allowed fresh material whitelist" in res_bad_single
+
+            # 7. Non-fact note type (e.g. concept) is rejected
+            res_bad_type = controller.execute_tool_call("knowledge_write", {
+                "type": "concept",
+                "title": "Concept Note",
+                "body": "Body",
+                "sources": [allowed_url],
+                "evidence": [{
+                    "source_url": allowed_url,
+                    "excerpt": "Fresh source body",
+                }],
+            })
+            assert "requires type='fact', got 'concept'" in res_bad_type
+
+            # 8. Evidence source_url not in note's sources is rejected for provenance integrity
+            tools.sources_read.add("https://example.com/fresh2")
+            controller_two = EvidenceFollowupController(tools, [allowed_url, "https://example.com/fresh2"])
+            res_mismatch_src = controller_two.execute_tool_call("knowledge_write", {
+                "type": "fact",
+                "title": "Mismatch Sources Note",
+                "body": "Body",
+                "sources": [allowed_url],
+                "evidence": [{
+                    "source_url": "https://example.com/fresh2",
+                    "excerpt": "Fresh source body",
+                }],
+            })
+            assert "must be declared in the note's 'sources' list" in res_mismatch_src
         finally:
             store.index.close()
+
 
 
 def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:

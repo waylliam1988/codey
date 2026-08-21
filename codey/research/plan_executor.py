@@ -129,17 +129,18 @@ class PlanExecutor:
                     if new_urls
                     else runtime.ledger.canonical_opened_url(url)
                 ) or url
-                if canonical_final in baseline_urls:
+                seen_urls.add(canonical_final)
+                if canonical_final in baseline_urls or canonical_final in fresh_urls:
                     skipped += 1
                     continue
                 opened_for_query += 1
                 source = _opened_source_payload(runtime, canonical_final)
                 if source:
                     opened.append(source)
-                if canonical_final not in fresh_urls:
-                    fresh_urls.append(canonical_final)
+                fresh_urls.append(canonical_final)
                 previews.append(_source_preview(query, source, text, self.config.max_source_preview_chars))
                 stop_reason = "opened_sources"
+
             if stop_reason in {"max_sources", "stopped"}:
                 break
         if stop_reason == "opened_sources" and len(opened) >= total_limit:

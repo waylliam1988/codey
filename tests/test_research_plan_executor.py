@@ -157,3 +157,60 @@ def test_plan_executor_skips_baseline_urls_and_reports_no_new_material() -> None
             assert "https://example.com/alpha" in result.baseline_source_urls
         finally:
             store.index.close()
+
+
+def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+
+        class _RedirectSearchBackend:
+            def search(self, query: str, limit: int = 8) -> list[dict]:
+                return [
+                    {"title": "Target HTTP", "url": "http://example.com/target"},
+                    {"title": "Target HTTPS", "url": "https://example.com/target"},
+                ]
+
+            def fetch(self, url: str) -> dict:
+                # Both URLs resolve to canonical final URL https://example.com/target
+                return {
+                    "url": "https://example.com/target",
+                    "title": "Target Title",
+                    "text": "Target body text",
+                    "truncated": False,
+                }
+
+            def close(self) -> None:
+                pass
+
+        try:
+            tools = ResearchTools(
+                search=_RedirectSearchBackend(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-redirect",
+                project="project-redirect",
+            )
+            plan = ResearchPlan(
+                plan_ref="research_plan:" + "c" * 16,
+                query_candidates=(
+                    QueryCandidate("research_query:" + "1" * 16, "redirect query"),
+                ),
+                max_queries=1,
+                max_sources=4,
+            )
+
+            result = PlanExecutor(
+                config=ResearchPipelineConfig(
+                    max_queries_per_round=1,
+                    max_sources_per_query=4,
+                    max_total_sources=4,
+                )
+            ).execute(plan, tools)
+
+            assert result.fresh_source_urls == ("https://example.com/target",)
+            assert result.fresh_source_count == 1
+            assert len(result.opened_sources) == 1
+            assert result.skipped_count == 1
+        finally:
+            store.index.close()
