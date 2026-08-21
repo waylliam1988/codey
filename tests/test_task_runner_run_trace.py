@@ -377,10 +377,11 @@ def test_research_result_appends_evidence_ledger_without_terminal_payload_change
             "planner_stop_reason": "proof_ok_no_required_followup",
             "fresh_source_count": 0,
             "new_evidence_count": 0,
-            "merged_evidence_count": 1,
+            "final_evidence_count": 1,
             "attempted_fresh_source_count": 0,
             "attempted_new_evidence_count": 0,
         }]
+
 
 
         assert proof_review["proof_ref"].startswith("research_proof:")

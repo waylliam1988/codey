@@ -165,14 +165,23 @@ def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
         store = KnowledgeStore(root / "knowledge")
 
         class _RedirectSearchBackend:
+            def __init__(self) -> None:
+                self.fetch_calls: list[str] = []
+
             def search(self, query: str, limit: int = 8) -> list[dict]:
-                return [
-                    {"title": "Target HTTP", "url": "http://example.com/target"},
-                    {"title": "Target HTTPS", "url": "https://example.com/target"},
-                ]
+                if query == "first query":
+                    return [
+                        {"title": "Target HTTP", "url": "http://example.com/target"},
+                        {"title": "Target HTTPS", "url": "https://example.com/target"},
+                    ]
+                if query == "second query":
+                    return [
+                        {"title": "Target HTTP Again", "url": "http://example.com/target"},
+                    ]
+                return []
 
             def fetch(self, url: str) -> dict:
-                # Both URLs resolve to canonical final URL https://example.com/target
+                self.fetch_calls.append(url)
                 return {
                     "url": "https://example.com/target",
                     "title": "Target Title",
@@ -183,9 +192,10 @@ def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
             def close(self) -> None:
                 pass
 
+        backend = _RedirectSearchBackend()
         try:
             tools = ResearchTools(
-                search=_RedirectSearchBackend(),
+                search=backend,
                 store=store,
                 changes=KnowledgeChanges(root=store.root),
                 session_id="session-redirect",
@@ -194,15 +204,16 @@ def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
             plan = ResearchPlan(
                 plan_ref="research_plan:" + "c" * 16,
                 query_candidates=(
-                    QueryCandidate("research_query:" + "1" * 16, "redirect query"),
+                    QueryCandidate("research_query:" + "1" * 16, "first query"),
+                    QueryCandidate("research_query:" + "2" * 16, "second query"),
                 ),
-                max_queries=1,
+                max_queries=2,
                 max_sources=4,
             )
 
             result = PlanExecutor(
                 config=ResearchPipelineConfig(
-                    max_queries_per_round=1,
+                    max_queries_per_round=2,
                     max_sources_per_query=4,
                     max_total_sources=4,
                 )
@@ -211,6 +222,10 @@ def test_plan_executor_deduplicates_redirected_fresh_sources() -> None:
             assert result.fresh_source_urls == ("https://example.com/target",)
             assert result.fresh_source_count == 1
             assert len(result.opened_sources) == 1
-            assert result.skipped_count == 1
+            # 1st fetch: http://example.com/target -> final https://example.com/target (seen_urls tracks both!)
+            # 2nd item https://example.com/target in 1st query is pre-filtered by seen_urls before fetch
+            # 2nd query http://example.com/target is pre-filtered by canonical_opened_url before fetch
+            assert len(backend.fetch_calls) == 1
+            assert result.skipped_count == 2
         finally:
             store.index.close()

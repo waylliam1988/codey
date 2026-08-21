@@ -802,4 +802,5 @@ __all__ = [
     "project_ref",
     "research_record_summary",
     "sanitize_research_url_ref",
+    "source_from_opened",
 ]

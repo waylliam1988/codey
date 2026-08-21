@@ -100,8 +100,14 @@ class PlanExecutor:
                 if not url or url in seen_urls:
                     skipped += 1
                     continue
+                pre_canonical = runtime.ledger.canonical_opened_url(url)
+                if pre_canonical and (pre_canonical in seen_urls or pre_canonical in baseline_urls or pre_canonical in fresh_urls):
+                    seen_urls.add(url)
+                    skipped += 1
+                    continue
                 seen_urls.add(url)
                 reason = check_fetch_url(url)
+
                 if reason:
                     skipped += 1
                     errors.append(_safe_error(reason))

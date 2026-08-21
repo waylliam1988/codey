@@ -1286,12 +1286,15 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
         # Merged / applied counts are 0
         assert pipeline_result.fresh_source_count == 0
         assert pipeline_result.new_evidence_count == 0
+        assert pipeline_result.final_evidence_count == 0
         # Attempted counts are fully observable!
         assert pipeline_result.attempted_fresh_source_count == 2
         assert pipeline_result.attempted_new_evidence_count == 2
         payload = pipeline_result.to_payload()
+        assert payload["final_evidence_count"] == 0
         assert payload["attempted_fresh_source_count"] == 2
         assert payload["attempted_new_evidence_count"] == 2
         assert len(recorded_pipeline_results) == 1
+        assert recorded_pipeline_results[0].final_evidence_count == 0
         assert recorded_pipeline_results[0].attempted_fresh_source_count == 2
         assert recorded_pipeline_results[0].attempted_new_evidence_count == 2

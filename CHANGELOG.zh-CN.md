@@ -16,14 +16,16 @@
   从 SQLite 索引中清除对应条目（消除幽灵 index）并完整恢复 `KnowledgeChanges` 快照，平稳回退并保留 initial 成功结果，
   标记 `planner_stop_reason="followup_commit_error"`，防止增强路径异常影响已成功的初稿。
 - 完善管道与 Trace 可观测性（`task_runner.py` / `pipeline.py` / `run_trace.py`）：
-  不仅透传并持久化成功应用的 `fresh_source_count`、`new_evidence_count`、`merged_evidence_count`，还完整记录无论候选方案是否胜出均可审计的
+  不仅透传并持久化成功应用的 `fresh_source_count`、`new_evidence_count`、`final_evidence_count`（最终交付报告证据总数），还完整记录无论候选方案是否胜出均可审计的
   `attempted_fresh_source_count`、`attempted_new_evidence_count`，提供完整的 provider traffic 与尝试成本持久化审计透明度。
 
 - 强化 Evidence Follow-up 与执行器边界保护（`evidence_followup.py` / `plan_executor.py`）：
-  - 修复 follow-up prompt 与 schema 不一致，严格限制 `type='fact'` 并在控制器中强制校验；
+  - 修复 follow-up prompt 与 schema 不一致，严格限制且必填 `type='fact'` 并在控制器中强制拦截缺失或非法类型；
+  - 严格限制单轮单动作：模型返回多个 tool calls 时直接判定为 `invalid_tool_calls_count` 并拒绝，绝不静默忽略；
   - 增加严密的 Evidence 来源归属（Provenance）校验，强制要求 `evidence[].source_url` 必须属于当前 note 声明的 `sources` 列表；
-  - 在 `PlanExecutor` 中对重定向目标 URL（`canonical_final`）建立自动去重与跳过机制，杜绝别名导致的重复打开与预算浪费；
-  - 清理跨模块私有 helper 导入，导出公共 `source_from_opened` 并删除 `done_finalizer` 中未使用的死代码。
+  - 在 `PlanExecutor` 中对重定向目标 URL（`canonical_final`）建立预判与自动去重机制，杜绝别名导致的重复 fetch 与预算浪费；
+  - 清理跨模块私有 helper 导入，导出公共 `source_from_opened`（加入 `__all__`）并删除 `done_finalizer` 中未使用的死代码。
+
 - 强化确定性图谱合并器（`codey/research/record_merge.py`）：
   对结论（conclusion）、关键证据（evidence）、反证（counter）实现严格的 Evidence-Backed 引用校验与全段落修剪，
   彻底过滤未引用或包含未映射悬空编号（如 `[99]`）的行，按 `(canonical_url, excerpt_hash)` 幂等去重合并新增证据与来源，

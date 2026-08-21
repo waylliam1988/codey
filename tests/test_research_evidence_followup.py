@@ -130,7 +130,19 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
             })
             assert "requires type='fact', got 'concept'" in res_bad_type
 
-            # 8. Evidence source_url not in note's sources is rejected for provenance integrity
+            # 8. Missing explicit type field is rejected
+            res_missing_type = controller.execute_tool_call("knowledge_write", {
+                "title": "Missing Type Note",
+                "body": "Body",
+                "sources": [allowed_url],
+                "evidence": [{
+                    "source_url": allowed_url,
+                    "excerpt": "Fresh source body",
+                }],
+            })
+            assert "requires explicit type='fact'" in res_missing_type
+
+            # 9. Evidence source_url not in note's sources is rejected for provenance integrity
             tools.sources_read.add("https://example.com/fresh2")
             controller_two = EvidenceFollowupController(tools, [allowed_url, "https://example.com/fresh2"])
             res_mismatch_src = controller_two.execute_tool_call("knowledge_write", {
@@ -147,6 +159,45 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
         finally:
             store.index.close()
 
+
+def test_run_evidence_followup_rejects_multiple_tool_calls() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-ev",
+                project="project-ev",
+            )
+            # Model attempts to output multiple tool calls
+            reply = """```json
+{"tool": "knowledge_write", "type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}
+```
+```json
+{"tool": "knowledge_write", "type": "fact", "title": "Fact 2", "body": "Body 2", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 2"}]}
+```"""
+            provider = _MockProvider(reply)
+            plan = ResearchPlan(plan_ref="plan:123")
+            material = PlanExecutionResult(
+                fresh_source_urls=("https://example.com/fresh",),
+                previews=("Fresh source preview",),
+            )
+
+            result = run_evidence_followup(
+                provider=provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question="Question?",
+            )
+            assert result.ok is False
+            assert result.stop_reason == "invalid_tool_calls_count"
+            assert "strictly requires exactly 1 tool call, got 2" in result.errors[0]
+        finally:
+            store.index.close()
 
 
 def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
@@ -184,6 +235,7 @@ def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
             assert "Forbidden tool 'web_search' was called" in result.errors[0]
         finally:
             store.index.close()
+
 
 
 

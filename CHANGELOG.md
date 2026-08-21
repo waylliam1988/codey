@@ -16,14 +16,16 @@ This file records Codey's release history. The newest release appears first.
   removing newly created notes from the SQLite index (preventing ghost index entries), and restoring `KnowledgeChanges` snapshots,
   cleanly preserving the initial successful result with `planner_stop_reason="followup_commit_error"`.
 - Improved pipeline and trace observability (`task_runner.py` / `pipeline.py` / `run_trace.py`):
-  surfaced and persisted `fresh_source_count`, `new_evidence_count`, and `merged_evidence_count` as well as fully observable `attempted_fresh_source_count`
+  surfaced and persisted `fresh_source_count`, `new_evidence_count`, and `final_evidence_count` (total evidence count in final delivered report) as well as fully observable `attempted_fresh_source_count`
   and `attempted_new_evidence_count` regardless of candidate selection, providing complete traffic and cost persistence transparency.
 
 - Strengthened Evidence Follow-up and executor boundaries (`evidence_followup.py` / `plan_executor.py`):
-  - fixed schema divergence by strictly constraining follow-up prompts to `type='fact'` and enforcing it in controller validation;
+  - fixed schema divergence by strictly requiring explicit `type='fact'` and rejecting missing or invalid types in controller validation;
+  - strictly enforced single tool call execution: replies with multiple tool calls are rejected as `invalid_tool_calls_count` rather than silently ignored;
   - enforced strict evidence provenance integrity requiring `evidence[].source_url` to be declared within the note's `sources` list;
-  - added duplicate redirect prevention for `canonical_final` URLs in `PlanExecutor`, avoiding redundant opens and budget exhaustion;
-  - replaced private helper cross-module import with public `source_from_opened` and removed dead code in `done_finalizer`.
+  - added pre-check and duplicate redirect prevention for `canonical_final` URLs in `PlanExecutor`, avoiding redundant fetches and budget exhaustion;
+  - replaced private helper cross-module import with public `source_from_opened` (exported in `__all__`) and removed dead code in `done_finalizer`.
+
 - Enhanced deterministic graph patch merger (`codey/research/record_merge.py`):
   enforces strict evidence-backed citation verification across all sections (conclusion, evidence, counter), filtering uncited or dangling citations (e.g. `[99]`),
   idempotently merges new evidence and sources based on `(canonical_url, excerpt_hash)`, re-indexes citations with `done_finalizer`,

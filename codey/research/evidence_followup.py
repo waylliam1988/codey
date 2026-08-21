@@ -87,7 +87,9 @@ class EvidenceFollowupController:
         tool_name = str(name or "").strip().lower()
         if tool_name != "knowledge_write":
             return f"ERROR: Tool '{tool_name}' is forbidden in evidence-only follow-up mode. ONLY 'knowledge_write' is allowed."
-        note_type = str(args.get("type") or "fact").strip().lower()
+        if "type" not in args or not str(args.get("type") or "").strip():
+            return "ERROR: knowledge_write in evidence-only mode requires explicit type='fact'."
+        note_type = str(args.get("type") or "").strip().lower()
         if note_type != "fact":
             return f"ERROR: Evidence-only follow-up requires type='fact', got '{note_type}'."
         sources = args.get("sources")
@@ -136,7 +138,7 @@ def run_evidence_followup(
     if should_stop and should_stop():
         return EvidenceFollowupResult(stop_reason="stopped")
     cancellation.check()
-    fresh_urls = tuple(material.fresh_source_urls)
+    fresh_urls = list(material.fresh_source_urls)
     if not fresh_urls:
         return EvidenceFollowupResult(ok=True, stop_reason="no_fresh_urls")
     prompt = build_evidence_followup_prompt(
@@ -170,17 +172,23 @@ def run_evidence_followup(
             stop_reason="no_tool_calls",
             errors=("Model reply contained no structured tool call JSON",),
         )
-    for call in tool_calls:
-        tname = str(call.get("tool") or call.get("name") or call.get("action") or "").strip().lower()
-        if tname and tname != "knowledge_write":
-            return EvidenceFollowupResult(
-                ok=False,
-                stop_reason="invalid_tool_called",
-                errors=(f"Forbidden tool '{tname}' was called in evidence-only follow-up",),
-            )
+    if len(tool_calls) != 1:
+        return EvidenceFollowupResult(
+            ok=False,
+            stop_reason="invalid_tool_calls_count",
+            errors=(f"Evidence-only follow-up strictly requires exactly 1 tool call, got {len(tool_calls)}.",),
+        )
     first_call = tool_calls[0]
+    tname = str(first_call.get("tool") or first_call.get("name") or first_call.get("action") or "").strip().lower()
+    if tname and tname != "knowledge_write":
+        return EvidenceFollowupResult(
+            ok=False,
+            stop_reason="invalid_tool_called",
+            errors=(f"Forbidden tool '{tname}' was called in evidence-only follow-up",),
+        )
     name = str(first_call.get("tool") or first_call.get("name") or first_call.get("action") or "knowledge_write").strip()
     args = first_call.get("args") or first_call.get("parameters") or first_call
+
     if isinstance(args, dict):
         res = controller.execute_tool_call(name, args)
         if str(res).startswith("ERROR:"):

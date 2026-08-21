@@ -61,7 +61,7 @@ class ResearchPipelineResult:
     planner_stop_reason: str = ""
     fresh_source_count: int = 0
     new_evidence_count: int = 0
-    merged_evidence_count: int = 0
+    final_evidence_count: int = 0
     attempted_fresh_source_count: int = 0
     attempted_new_evidence_count: int = 0
 
@@ -73,10 +73,11 @@ class ResearchPipelineResult:
             "planner_stop_reason": str(self.planner_stop_reason or ""),
             "fresh_source_count": max(0, int(self.fresh_source_count or 0)),
             "new_evidence_count": max(0, int(self.new_evidence_count or 0)),
-            "merged_evidence_count": max(0, int(self.merged_evidence_count or 0)),
+            "final_evidence_count": max(0, int(self.final_evidence_count or 0)),
             "attempted_fresh_source_count": max(0, int(self.attempted_fresh_source_count or 0)),
             "attempted_new_evidence_count": max(0, int(self.attempted_new_evidence_count or 0)),
         }
+
 
 
 
@@ -229,10 +230,11 @@ class ResearchPipeline:
                 planner_stop_reason=planner_stop_reason,
                 fresh_source_count=total_fresh_sources,
                 new_evidence_count=total_new_evidence,
-                merged_evidence_count=total_merged_evidence,
+                final_evidence_count=total_merged_evidence,
                 attempted_fresh_source_count=total_attempted_fresh_sources,
                 attempted_new_evidence_count=total_attempted_new_evidence,
             )
+
             self.context.trace.record_pipeline_result(output)
             return output
 

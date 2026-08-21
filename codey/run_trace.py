@@ -687,10 +687,11 @@ class RunTraceRecorder:
             "planner_stop_reason": _safe_trace_code(result.get("planner_stop_reason"), 80),
             "fresh_source_count": _nonnegative_int(result.get("fresh_source_count")),
             "new_evidence_count": _nonnegative_int(result.get("new_evidence_count")),
-            "merged_evidence_count": _nonnegative_int(result.get("merged_evidence_count")),
+            "final_evidence_count": _nonnegative_int(result.get("final_evidence_count")),
             "attempted_fresh_source_count": _nonnegative_int(result.get("attempted_fresh_source_count")),
             "attempted_new_evidence_count": _nonnegative_int(result.get("attempted_new_evidence_count")),
         }
+
 
 
         self.manifest.research_pipeline_runs.append(payload)
