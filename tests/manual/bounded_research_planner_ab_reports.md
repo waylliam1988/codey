@@ -40,6 +40,16 @@ five providers accepted the strict explicit
 evidence item, so the later schema hardening does not invalidate those
 successful replies.
 
+The 2026-08-21 post-production paired checks then exercised the actual
+production evidence-only follow-up prompt and deterministic merge path. DeepSeek
+kept the expected positive signal: score `5 -> 6`, coverage `0.556 -> 0.667`,
+one fresh source/evidence pair, `useful=true`, and only one extra provider send.
+Qwen also added the fresh source/evidence pair and improved score `5 -> 6`, but
+its unsupported-claim rate regressed from `0.333` to `0.750`; the conservative
+gate therefore records `useful=false` for that production-path row. StepFun
+fetched the hidden fresh source, but the run stayed in a protocol/not-answered
+state and the candidate was not selected, so it produced no final material gain.
+
 ## Result Files
 
 - `bounded_research_planner_ab-deepseek-20260820.json`
@@ -62,6 +72,9 @@ successful replies.
 - `bounded_research_planner_ab-qwen-evidenceonly3-paired-widget-20260821.json`
 - `bounded_research_planner_ab-stepfun-evidenceonly3-paired-widget-20260820.json`
 - `bounded_research_planner_ab-glm-evidenceonly3-paired-widget-20260820.json`
+- `bounded_research_planner_ab-deepseek-production-20260821.json`
+- `bounded_research_planner_ab-qwen-production-20260821.json`
+- `bounded_research_planner_ab-stepfun-production-20260821.json`
 
 ## Experiment Timeline
 
@@ -304,6 +317,27 @@ initial ResearchRecord
 
 ## Web Provider Summary
 
+### Post-Production Production Path Checks
+
+| provider | baseline | planner | delta | useful | follow-up | material gain | coverage delta | unsupported delta | send delta | time delta |
+|---|---:|---:|---:|---|---:|---|---:|---:|---:|---:|
+| DeepSeek production | 5 | 6 | +1 | true | 1 | true | +0.111 | 0.000 | +1 | +3.984s |
+| Qwen production | 5 | 6 | +1 | false | 1 | true | +0.111 | +0.417 | +1 | +8.974s |
+| StepFun production | 1 | 1 | 0 | false | 0 | false | 0.000 | 0.000 | +2 | +28.387s |
+
+The production-path rows confirm the harness is no longer measuring the old
+`iteration_context` follow-up controller for rows that reach evidence-only
+follow-up. DeepSeek and Qwen report
+`ab_followup_mode=production_evidence_followup`, fetch
+`https://source-b.test/widget-storage-update`, and merge one new evidence-backed
+source. DeepSeek passes the conservative usefulness gate. Qwen does not, because
+the merged result gained material and coverage but also increased the
+unsupported-claim rate. StepFun fetched the same hidden source in the material
+phase, but `followup_rounds=0`, `planner_stop_reason=candidate_not_selected`,
+and the final record stayed at one source/evidence pair.
+
+### Pre-Integration Evidence-Only3 Probe
+
 | provider | baseline | planner | delta | useful | follow-up | material gain | coverage delta | unsupported delta | send delta | time delta |
 |---|---:|---:|---:|---|---:|---|---:|---:|---:|---:|
 | DeepSeek evidence-only3 | 5 | 6 | +1 | true | 1 | true | 0.000 | -0.333 | +3 | +5.480s |
@@ -312,15 +346,16 @@ initial ResearchRecord
 | GLM evidence-only3 | 1 | 6 | +5 | true | 1 | true | +0.112 | 0.000 | +1 | +40.971s |
 | StepFun evidence-only3 | 1 | 6 | +5 | true | 1 | true | +0.112 | 0.000 | +1 | -4.123s |
 
-Current signal: the design is directionally useful on all five tested web
-providers only after the follow-up role is narrowed to evidence capture and the
-final result is merged deterministically. It is still not ready to enable as a
-generic production behavior from synthetic fixture evidence alone; the next
-gate is a real connector-backed case plus production-design review.
+Pre-integration signal: the design became directionally useful on all five
+tested web providers only after the follow-up role was narrowed to evidence
+capture and the final result was merged deterministically. That was enough to
+merge the narrow production path, but not enough to claim broad real-world
+research benefit; the next gate is a real connector-backed case plus continued
+provider-level unsupported-claim monitoring.
 
-## Production Criteria Before Merge
+## Production Criteria Before Release
 
-Before moving this from A/B harness into production code, run at least:
+Before releasing the production default, run at least:
 
 - MiMo, DeepSeek, and Qwen hidden-material `warehouse_gap` after the fixture is tuned so
   the hidden material represents a true missing limitation.

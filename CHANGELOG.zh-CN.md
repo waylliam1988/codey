@@ -109,6 +109,15 @@
 - 已把五家 evidence-only3 成功 follow-up reply 回放到当前生产
   `run_evidence_followup()`：DeepSeek、MiMo、Qwen、StepFun、GLM 均接受严格显式
   `{"tool":"knowledge_write","args":{...}}` schema，并各写入 1 条新 evidence。
+- 生产合入后的 bounded planner A/B 已补 DeepSeek / Qwen / StepFun 成对行，且
+  DeepSeek、Qwen planner arm 均明确走
+  `ab_followup_mode=production_evidence_followup`。DeepSeek
+  `widget_noop` 从 score `5 -> 6`，新增 1 个 fresh source/evidence pair，
+  coverage `0.556 -> 0.667`，多 1 次 provider send，`useful=true`。Qwen 同样
+  score `5 -> 6` 并新增 1 个 fresh source/evidence pair，但 unsupported claim rate
+  从 `0.333 -> 0.750`，因此保守 usefulness gate 记录为 `useful=false`。StepFun
+  取到了隐藏 fresh source，但最终仍是 protocol/not-answered，candidate 未被选中，
+  score `1 -> 1` / `useful=false`。
 - 深度加固与卫生清理（Evidence-Only Follow-up & Deterministic Record Merge 生产落地）：
   1. 彻底移除 `max_wall_time` 生产 gate 与停止分支，研究行为边界由 query/source/round/cancellation 保证，时间仅作诊断指标。
   2. 强化 `evidence_followup.py`：Prompt note type 修正为 `fact`；强制显式非空 `evidence`（支持 list 与 singleton dict）；URL 白名单严禁内部 `s1/s2` 标签；出现非 `knowledge_write` 工具整轮直接标记 `invalid_tool_called`，且严格只执行 1 个合法的 `knowledge_write`。

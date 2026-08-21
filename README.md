@@ -438,6 +438,14 @@ and a local Gemma4-12B endpoint. The consistent result is that deterministic
 The heavier `deep_core` plan/coverage prompt remains an A/B experiment, not
 default production behavior.
 
+The 0.4.4 bounded follow-up harness now also checks the production
+evidence-only follow-up path. In the post-production `widget_noop` paired run,
+DeepSeek improved from score `5` to `6` with one fresh evidence-backed source;
+Qwen also improved score and material coverage, but the conservative gate kept
+that row non-useful because unsupported claims increased. StepFun fetched the
+fresh material but stayed protocol/not-answered, so it produced no final
+material gain in that production-path row.
+
 MiMo was retested after adding the one-tool Research boundary. A fresh-tab
 `long-official-doc/source_search` run completed in 10 turns, used
 `source_search`, opened the target offset, saved exact evidence, and passed the

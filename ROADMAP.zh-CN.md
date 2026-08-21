@@ -1378,6 +1378,14 @@ executor 用来控制隐藏来源暴露。2026-08-21 的 evidence-only3 trace �
 reply 都符合显式 `{"tool":"knowledge_write","args":{...}}` schema，并各写入 1
 条新 evidence。
 
+生产合入后的 DeepSeek / Qwen / StepFun `widget_noop` 成对复跑继续使用同一生产
+follow-up 路径。DeepSeek 从 score `5 -> 6` 且 `useful=true`；Qwen 也从
+`5 -> 6` 并新增 1 个 source/evidence pair，但 unsupported claim rate 从
+`0.333 -> 0.750`，所以按保守口径为 `useful=false`。StepFun 取到隐藏 fresh
+source，但最终仍是 protocol/not-answered，candidate 未被选中，score `1 -> 1`。
+这说明 0.4.4 的默认路径可以保留，但发布前仍要看真实 connector-backed case 和
+provider 间的 unsupported-claim / protocol 稳定性。
+
 ## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 
 状态：规划。目标是让 Research 可以做可复查的本地分析，而不是只总结网页；

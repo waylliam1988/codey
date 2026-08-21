@@ -370,6 +370,16 @@ item, confirming that the schema hardening itself does not invalidate those
 successful model replies. New live A/B rows now exercise the production
 follow-up prompt directly rather than the older harness-only controller.
 
+The 2026-08-21 post-production `widget_noop` reruns use that production
+follow-up path directly. DeepSeek improved score `5 -> 6`, added one fresh
+source/evidence pair, improved coverage `0.556 -> 0.667`, and stayed
+`useful=true` with one extra provider send. Qwen also improved score `5 -> 6`
+and added the same fresh source/evidence pair, but its unsupported-claim rate
+regressed `0.333 -> 0.750`, so the conservative paired summary correctly keeps
+`useful=false` for that row. StepFun fetched the hidden fresh source during the
+material phase, but the final run stayed protocol/not-answered, selected no
+candidate, and remained `useful=false`.
+
 Use this probe when you want to judge whether 0.4.4 follow-up search is adding
 real value or just extra traffic. The paired summary is the main signal; if
 coverage and unsupported-claim rate barely move while time and traffic grow,

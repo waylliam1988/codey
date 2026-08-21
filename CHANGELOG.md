@@ -109,6 +109,16 @@ This file records Codey's release history. The newest release appears first.
   current production `run_evidence_followup()`: DeepSeek, MiMo, Qwen, StepFun,
   and GLM all accepted the strict explicit `{"tool":"knowledge_write","args":{...}}`
   schema and wrote exactly one new evidence item.
+- Post-production bounded planner A/B now has paired DeepSeek, Qwen, and
+  StepFun rows on `widget_noop`. DeepSeek and Qwen both reached
+  `ab_followup_mode=production_evidence_followup`.
+  DeepSeek moved score `5 -> 6`, added one fresh source/evidence pair, improved
+  coverage `0.556 -> 0.667`, and stayed `useful=true` with one extra provider
+  send. Qwen also moved score `5 -> 6` and added one fresh source/evidence pair,
+  but unsupported-claim rate regressed `0.333 -> 0.750`, so the conservative
+  usefulness gate keeps that production-path row `useful=false`. StepFun fetched
+  the hidden fresh source but stayed protocol/not-answered, selected no
+  candidate, and remained score `1 -> 1` / `useful=false`.
 - Production hardening & code hygiene cleanup for bounded evidence-only follow-up & deterministic merge:
   1. Completely removed `max_wall_time` production gate and stop branch; bounded semantics are enforced solely via queries/sources/rounds/cancellation, treating wall time strictly as a diagnostic metric.
   2. Strengthened `evidence_followup.py`: updated prompt note type to `fact`, strictly enforced explicit non-empty `evidence` items (both list and singleton dict forms), tightened URL whitelisting against internal `s1/s2` IDs, invalidated entire round upon forbidden tool calls (`invalid_tool_called`), and restricted execution to exactly 1 valid `knowledge_write`.

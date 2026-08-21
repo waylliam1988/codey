@@ -63,7 +63,24 @@ production follow-up prompt rather than the older harness-only
 
 Live bounded-planner A/B evidence is recorded under `tests/manual/results/` and
 summarized in `tests/manual/bounded_research_planner_ab_reports.md`. The current
-paired `widget_noop` web-provider results:
+post-production paired `widget_noop` checks exercise
+`ab_followup_mode=production_evidence_followup`:
+
+- DeepSeek production path: score `5 -> 6`, useful, one new
+  evidence-backed source, coverage `0.556 -> 0.667`,
+  unsupported-claim rate unchanged at `0.750`, provider sends `5 -> 6`,
+  elapsed time `+3.984s`.
+- Qwen production path: score `5 -> 6`, one new evidence-backed source,
+  coverage `0.556 -> 0.667`, provider sends `5 -> 6`, elapsed time
+  `+8.974s`, but `followup_usefulness=false` because unsupported-claim rate
+  regressed from `0.333` to `0.750`.
+- StepFun production path: score stayed `1 -> 1`, final source/evidence count
+  stayed `1/1`, provider sends `6 -> 8`, elapsed time `+28.387s`, and
+  `followup_usefulness=false`. The planner material phase fetched hidden source
+  B, but the run stayed protocol/not-answered and stopped at
+  `candidate_not_selected` with no final material gain.
+
+The earlier pre-integration `evidenceonly3` paired web-provider results:
 
 - DeepSeek: score `5 -> 6`, useful, one new evidence-backed source, coverage
   unchanged at `0.556`, unsupported-claim rate `-0.333`, provider sends `+3`.
@@ -93,6 +110,18 @@ python -B tests\manual\bounded_research_planner_ab.py --provider mimo --case wid
 python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-qwen-evidenceonly3-paired-widget-20260821.json
 python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-qwen-evidenceonly3-paired-widget-20260821.json
 # Qwen: score 5 -> 6, useful=true
+
+python -B tests\manual\bounded_research_planner_ab.py --provider deepseek --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-deepseek-production-20260821.json
+python -B tests\manual\bounded_research_planner_ab.py --provider deepseek --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-deepseek-production-20260821.json
+# DeepSeek production path: score 5 -> 6, useful=true
+
+python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-qwen-production-20260821.json
+python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-qwen-production-20260821.json
+# Qwen production path: score 5 -> 6, useful=false due unsupported-rate regression
+
+python -B tests\manual\bounded_research_planner_ab.py --provider stepfun --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-stepfun-production-20260821.json
+python -B tests\manual\bounded_research_planner_ab.py --provider stepfun --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-stepfun-production-20260821.json
+# StepFun production path: score 1 -> 1, useful=false; material fetched, candidate not selected
 ```
 
 ## 0.4.3 Source Connector Boundary + Query Planner Dry Run v1

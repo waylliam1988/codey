@@ -352,6 +352,13 @@ Gemma4-12B endpoint。当前一致结论是：在已经打开的来源内部做�
 `source_search`，已经值得进入生产 Research。更重的 `deep_core`
 plan/coverage prompt 仍只保留在 A/B，不默认进入生产链路。
 
+0.4.4 的 bounded follow-up harness 现在也会检查生产 evidence-only follow-up
+路径。生产合入后的 `widget_noop` 成对复跑里，DeepSeek 从 score `5` 到 `6`，
+并新增 1 个 fresh evidence-backed source；Qwen 也提升了分数和材料覆盖，但因为
+unsupported claim 增加，保守 gate 仍把该 row 判定为 non-useful。StepFun
+取到了 fresh material，但最终仍停在 protocol/not-answered，所以该生产路径 row
+没有形成最终 material gain。
+
 MiMo 在加入 one-tool Research 边界后重新做过实机补测。fresh-tab 的
 `long-official-doc/source_search` 跑满 10 轮并完成：使用了 `source_search`，
 打开目标 offset，保存精确 evidence，并通过 report quality。没有这个边界的早期 MiMo
