@@ -174,10 +174,10 @@ def test_run_evidence_followup_rejects_multiple_tool_calls() -> None:
             )
             # Model attempts to output multiple tool calls
             reply = """```json
-{"tool": "knowledge_write", "type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}
+{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}}
 ```
 ```json
-{"tool": "knowledge_write", "type": "fact", "title": "Fact 2", "body": "Body 2", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 2"}]}
+{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fact 2", "body": "Body 2", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 2"}]}}
 ```"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
@@ -212,9 +212,9 @@ def test_run_evidence_followup_rejects_missing_tool_field() -> None:
                 session_id="session-ev",
                 project="project-ev",
             )
-            # Model returns JSON without explicit "tool" field
+            # Model returns JSON without explicit "tool" field (or with "name" instead)
             reply = """```json
-{"type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}
+{"name": "knowledge_write", "args": {"type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}}
 ```"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
@@ -237,8 +237,44 @@ def test_run_evidence_followup_rejects_missing_tool_field() -> None:
             store.index.close()
 
 
-def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
+def test_run_evidence_followup_rejects_missing_args_field() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-ev",
+                project="project-ev",
+            )
+            # Model returns JSON with tool but flat fields instead of "args" dict
+            reply = """```json
+{"tool": "knowledge_write", "type": "fact", "title": "Fact 1", "body": "Body 1", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Excerpt 1"}]}
+```"""
+            provider = _MockProvider(reply)
+            plan = ResearchPlan(plan_ref="plan:123")
+            material = PlanExecutionResult(
+                fresh_source_urls=("https://example.com/fresh",),
+                previews=("Fresh source preview",),
+            )
 
+            result = run_evidence_followup(
+                provider=provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question="Question?",
+            )
+            assert result.ok is False
+            assert result.stop_reason == "missing_tool_args"
+            assert "requires explicit 'args': {...} dictionary" in result.errors[0]
+        finally:
+            store.index.close()
+
+
+def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
         store = KnowledgeStore(root / "knowledge")
@@ -252,7 +288,7 @@ def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
             )
             # Model attempts to call done or search alongside knowledge_write
             reply = """```json
-{"tool": "web_search", "query": "forbidden search"}
+{"tool": "web_search", "args": {"query": "forbidden search"}}
 ```"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(plan_ref="plan:123")
@@ -273,8 +309,6 @@ def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
             assert "Forbidden tool 'web_search' was called" in result.errors[0]
         finally:
             store.index.close()
-
-
 
 
 def test_run_evidence_followup_extracts_evidence_with_provider() -> None:
@@ -299,7 +333,7 @@ def test_run_evidence_followup_extracts_evidence_with_provider() -> None:
             ))
 
             reply = """```json
-{"tool": "knowledge_write", "type": "fact", "title": "Fresh Fact", "body": "Fact description", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Fresh source body", "claim": "Fresh Fact"}]}
+{"tool": "knowledge_write", "args": {"type": "fact", "title": "Fresh Fact", "body": "Fact description", "sources": ["https://example.com/fresh"], "evidence": [{"source_url": "https://example.com/fresh", "excerpt": "Fresh source body", "claim": "Fresh Fact"}]}}
 ```"""
             provider = _MockProvider(reply)
             plan = ResearchPlan(

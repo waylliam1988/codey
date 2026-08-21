@@ -51,7 +51,7 @@ def build_evidence_followup_prompt(
         "Your ONLY task is to extract factual evidence excerpts from the freshly retrieved material below using `knowledge_write`.",
         "",
         "STRICT RULES:",
-        "1. ONLY call the tool `knowledge_write` (type='fact').",
+        "1. ONLY call the tool `knowledge_write` with explicit `args.type='fact'`.",
         "2. Do NOT attempt to call `done`, `web_search`, `open_url`, or any other tool.",
         "3. Every source in `sources` or `evidence[].source_url` MUST EXACTLY match one of the Allowed Fresh URLs below.",
         "4. NEVER use internal labels like 's1', 's2', or placeholders. Always use the full URL.",
@@ -67,7 +67,7 @@ def build_evidence_followup_prompt(
         "Retrieved Material:",
         *[f"=== MATERIAL {i+1} ===\n{clip(preview, 2000)}" for i, preview in enumerate(material.previews)],
         "",
-        "Output your single `knowledge_write` tool call JSON now.",
+        'Output your single tool call JSON now: {"tool": "knowledge_write", "args": {"type": "fact", "title": "...", "body": "...", "sources": ["..."], "evidence": [{"source_url": "...", "excerpt": "...", "claim": "...", "stance": "supports"}]}}',
     ]
     return clip("\n".join(lines), max(2000, int(max_context_chars or 8000)))
 
@@ -184,7 +184,7 @@ def run_evidence_followup(
             stop_reason="invalid_tool_call_shape",
             errors=("Tool call must be a JSON object",),
         )
-    tool_name = str(first_call.get("tool") or first_call.get("name") or "").strip().lower()
+    tool_name = str(first_call.get("tool") or "").strip().lower()
     if not tool_name:
         return EvidenceFollowupResult(
             ok=False,
@@ -197,13 +197,15 @@ def run_evidence_followup(
             stop_reason="invalid_tool_called",
             errors=(f"Forbidden tool '{tool_name}' was called in evidence-only follow-up",),
         )
-    if "args" in first_call and isinstance(first_call["args"], dict):
-        args = first_call["args"]
-    elif "parameters" in first_call and isinstance(first_call["parameters"], dict):
-        args = first_call["parameters"]
-    else:
-        args = {k: v for k, v in first_call.items() if k not in {"tool", "name"}}
+    if "args" not in first_call or not isinstance(first_call.get("args"), dict):
+        return EvidenceFollowupResult(
+            ok=False,
+            stop_reason="missing_tool_args",
+            errors=("Tool call requires explicit 'args': {...} dictionary",),
+        )
+    args = first_call["args"]
     res = controller.execute_tool_call(tool_name, args)
+
 
     if str(res).startswith("ERROR:"):
         errors.append(clip(res, 200))
