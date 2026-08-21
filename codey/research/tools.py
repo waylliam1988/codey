@@ -543,29 +543,55 @@ class StagedKnowledgeStore:
         return f"linked: {src} -> {dst} ({kind})"
 
     def commit_to(self, target_store: KnowledgeStore, changes: KnowledgeChanges | None = None) -> None:
-        written_files: list[tuple[Path, str | None]] = []
+        saved_before = dict(getattr(changes, "_before", {})) if changes is not None else None
+        saved_after = dict(getattr(changes, "_after_hashes", {})) if changes is not None else None
+        saved_touched = set(getattr(changes, "_touched", ())) if changes is not None else None
+
+        # Track written/modified notes and files for complete rollback:
+        # note_id -> (path, orig_content_or_None, orig_note_or_None)
+        tracked_notes: dict[str, tuple[Path, str | None, KnowledgeNote | None]] = {}
         try:
             for note in self._staged_notes.values():
                 path = target_store.path_for(note)
+                orig_existed = target_store.exists(note.id)
+                orig_note = target_store.read_note(note.id) if orig_existed else None
                 orig_content = path.read_text(encoding="utf-8") if path.is_file() else None
-                written_files.append((path, orig_content))
+                tracked_notes[note.id] = (path, orig_content, orig_note)
                 target_store.write_note(note, changes=changes)
             for src, dst, kind in self._staged_links:
+                src_id = target_store.index.resolve(src) or src
+                if src_id not in tracked_notes:
+                    orig_existed = target_store.exists(src_id)
+                    orig_src_note = target_store.read_note(src_id) if orig_existed else None
+                    if orig_src_note is not None:
+                        src_path = target_store.path_for(orig_src_note)
+                        src_content = src_path.read_text(encoding="utf-8") if src_path.is_file() else None
+                        tracked_notes[src_id] = (src_path, src_content, orig_src_note)
                 target_store.link(src, dst, kind, changes=changes)
             self._staged_notes.clear()
             self._staged_links.clear()
         except Exception:
-            # Atomic rollback: revert all notes written to disk during this commit attempt
-            for path, orig_content in reversed(written_files):
+            # Atomic rollback: revert all notes, index entries, links, and changes
+            for note_id, (path, orig_content, orig_note) in reversed(list(tracked_notes.items())):
                 try:
-                    if orig_content is None:
+                    if orig_note is None:
                         if path.is_file():
                             path.unlink(missing_ok=True)
+                        if hasattr(target_store.index, "remove"):
+                            target_store.index.remove(note_id)
                     else:
-                        path.write_text(orig_content, encoding="utf-8")
+                        if orig_content is not None:
+                            path.write_text(orig_content, encoding="utf-8")
+                        target_store.write_note(orig_note)
                 except Exception:
                     pass
+
+            if changes is not None and saved_before is not None:
+                changes._before = saved_before
+                changes._after_hashes = saved_after or {}
+                changes._touched = saved_touched or set()
             raise
+
 
 
 

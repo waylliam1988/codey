@@ -12,17 +12,18 @@
   `link()` 严格校验两端 note 存在性；仅当候选方案通过评测胜出时才批量持久化提交。
 - Pipeline Staging Commit 事务回滚与异常安全护栏：
   在候选方案胜出提交（`commit_staged`）阶段增加异常保护与原子补偿回滚，若多 note 写入中途抛出磁盘满或底层 IO 错误，
-  自动逆序清理本次已写入磁盘的 note 文件，平稳回退并保留 initial 成功结果，标记 `planner_stop_reason="followup_commit_error"`，
-  彻底消除“半提交脏写”与增强路径拖垮主任务的风险。
+  自动逆序清理本次已写入磁盘的 note 文件、彻底从 SQLite 索引中清除（消除幽灵 index）并完整恢复 `KnowledgeChanges` 快照，
+  平稳回退并保留 initial 成功结果，标记 `planner_stop_reason="followup_commit_error"`，彻底消除“半提交脏写”与增强路径拖垮主任务的风险。
 - 强化确定性图谱合并器（`codey/research/record_merge.py`）：
   对结论（conclusion）、关键证据（evidence）、反证（counter）实现严格的 Evidence-Backed 引用校验与全段落修剪，
-  彻底丢弃未引用或包含未映射悬空编号（如 `[99]`）的 unsupported 幻觉行，仅保留有合法 citable sources 支撑的断言行；
-  按 `(canonical_url, excerpt_hash)` 幂等去重合并新增证据与来源，通过 `done_finalizer` 顺延并重新编号引用，
-  全面同步 `queries`、包含完整 `query/opened/final_url` 的 `search_results`、`notes_created`、`notes_updated`、`links_created`、`counterpoints` 与稳定排序的 `source_urls`。
+  彻底过滤未引用或包含未映射悬空编号（如 `[99]`）的行，按 `(canonical_url, excerpt_hash)` 幂等去重合并新增证据与来源，
+  通过 `done_finalizer` 顺延并重新编号引用，全面同步 `queries`、包含完整 `query/opened/final_url` 的 `search_results`、
+  `notes_created`、`notes_updated`、`links_created`、`counterpoints` 与稳定排序的 `source_urls`。
 - 完善管道可观测性（`task_runner.py` / `run_trace.py`）：
   将 `fresh_source_count`、`new_evidence_count`、`merged_evidence_count` 完整透传到 UI payload 与 `RunTrace` 审计中。
 - 彻底清理 `PlanExecutor` 中 `max_wall_time` 残留死分支，消除已废弃的计时器参数，确保执行边界语义纯粹干净。
 - 将 Research 生命周期编排收归 `codey/research/pipeline.py`：初始
+
 
 
 

@@ -1079,6 +1079,7 @@ def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
         target_store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(root=target_store.root)
         from codey.knowledge.note import KnowledgeNote
         from codey.research.tools import StagedKnowledgeStore
 
@@ -1100,9 +1101,9 @@ def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
 
         target_store.write_note = flaky_write_note
 
-        # Commit fails on the 2nd note and rolls back note-1
+        # Commit fails on the 2nd note and rolls back note-1 completely
         with pytest.raises(OSError, match="Disk full on second note"):
-            staged_store.commit_to(target_store)
+            staged_store.commit_to(target_store, changes=changes)
 
         # Verify disk is 100% clean: note-1 was unlinked during rollback
         note1_path = target_store.path_for(note1)
@@ -1110,6 +1111,17 @@ def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
         assert note1_path.exists() is False
         assert note2_path.exists() is False
         assert len(list(target_store.root.glob("**/*.md"))) == 0
+
+        # Verify SQLite index is 100% clean: zero ghost index entries
+        assert target_store.exists("note-1") is False
+        assert target_store.exists("note-2") is False
+        assert target_store.index.count() == 0
+
+        # Verify KnowledgeChanges is 100% clean: zero false created/updated records
+        assert changes.created == []
+        assert changes.updated == []
+        assert changes.has_changes() is False
+
 
 
 def test_staged_knowledge_store_link_validation() -> None:
