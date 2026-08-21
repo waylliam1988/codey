@@ -1307,12 +1307,13 @@ stop_reason
 - Planner 不能绕过 PermissionProfile / ActionPolicy / URL guard。
 - Planner 不能调用没有 connector contract 的来源。
 - Planner 不能把 Ghost hint 当 evidence。
-- Follow-up 阶段通过内存 Staging（`StagedKnowledgeStore` / `StagedKnowledgeChanges`）彻底隔离副作用；具备完整 read-through 能力；未被选中的补搜结果 100% 零写入主知识库与 changes。
-- Accepted 候选方案在 commit 阶段具备完整异常安全护栏（`followup_commit_error`），磁盘/IO 失败绝不拖垮已成功的初稿结果。
-- 最终 ResearchRecord 由 `record_merge` 确定性合并与重新编号，实现真正的全段落（结论/证据/反证）unsupported claims 丢弃与纯证据图谱投影，同步全量元数据（`queries`、包含完整 `query/opened/final_url` 的 `search_results`、`notes_created`、`notes_updated`、`counterpoints`、稳定排序的 `source_urls`）并透出最新观测指标（`fresh_source_count`、`new_evidence_count`、`merged_evidence_count`）。
+- Follow-up 阶段通过内存 Staging（`StagedKnowledgeStore` / `StagedKnowledgeChanges`）彻底隔离副作用；具备完整 read-through 读穿透与原子提交/失败自动补偿回滚（rollback）能力；未被选中的补搜结果 100% 零写入主知识库与 changes。
+- Accepted 候选方案在 commit 阶段具备完整事务回滚与异常安全护栏（`followup_commit_error`），若多 note 写入中途失败自动逆序清理已落盘文件，绝不产生半提交磁盘残留，绝不拖垮已成功的初稿结果。
+- 最终 ResearchRecord 由 `record_merge` 确定性合并与重新编号，实现严格的全段落（结论/证据/反证）citation 存在性与有效性校验，彻底丢弃未引用或悬空引用（如 `[99]`）的 unsupported 幻觉行，完成纯证据图谱投影，同步全量元数据（`queries`、包含完整 `query/opened/final_url` 的 `search_results`、`notes_created`、`notes_updated`、`counterpoints`、稳定排序的 `source_urls`）并透出最新观测指标（`fresh_source_count`、`new_evidence_count`、`merged_evidence_count`）。
 - Planner 不设 wall-clock 质量 gate，执行时间仅作成本诊断指标；达到查询/来源有界预算必须停止并解释 gap。
 - UI 不新增 planner 面板，不自动弹窗；Run Details 只显示 bounded summary。
 - Run Trace 只记录 plan_ref、counts、stop_reason、gap refs，不保存 raw query transcript。
+
 
 
 

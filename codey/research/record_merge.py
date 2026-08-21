@@ -253,35 +253,59 @@ def _inject_new_evidence_into_sections(
 
     next_num = max(url_to_num.values(), default=0) + 1
 
-    # Prune un-cited or unsupported raw lines from conclusion to keep evidence-backed base
+    # Pre-populate url_to_num and source_lines for all new evidence items so valid_numbers is comprehensive
+    for item in new_evidence:
+        url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
+        if not url:
+            continue
+        if url not in url_to_num:
+            url_to_num[url] = next_num
+            title = ledger.source_title(url).strip() or "Source"
+            source_lines.append(f"[{next_num}] {title} - {url}")
+            next_num += 1
+
+    valid_numbers = set(url_to_num.values())
+
+    def _is_evidence_backed(line: str) -> bool:
+        refs = [int(m) for m in re.findall(r"\[(\d+)\]", line)]
+        if not refs:
+            return False
+        return all(r in valid_numbers for r in refs)
+
+    def _is_valid_counter(line: str) -> bool:
+        refs = [int(m) for m in re.findall(r"\[(\d+)\]", line)]
+        if refs:
+            return all(r in valid_numbers for r in refs)
+        return any(m in line for m in ("未找到", "没有找到", "限制", "持续追踪", "no strong counter", "limitation"))
+
+    # Prune un-cited or unmapped/unsupported raw lines from conclusion
     existing_conclusion_text = updated.get("conclusion", "").strip()
     if existing_conclusion_text:
         for line in existing_conclusion_text.splitlines():
             sline = line.strip()
             if not sline:
                 continue
-            if re.search(r"\[\d+\]", sline):
+            if _is_evidence_backed(sline):
                 conclusion_lines.append(sline)
 
-    # Prune un-cited or unsupported raw lines from initial evidence to keep evidence-backed base
+    # Prune un-cited or unmapped/unsupported raw lines from initial evidence
     existing_evidence_text = updated.get("evidence", "").strip()
     if existing_evidence_text:
         for line in existing_evidence_text.splitlines():
             sline = line.strip()
             if not sline:
                 continue
-            if re.search(r"\[\d+\]", sline):
+            if _is_evidence_backed(sline):
                 evidence_lines.append(sline)
 
-    # Prune un-cited or unsupported raw lines from initial counter
+    # Prune un-cited or unmapped/unsupported raw lines from initial counter
     existing_counter_text = updated.get("counter", "").strip()
     if existing_counter_text:
         for line in existing_counter_text.splitlines():
             sline = line.strip()
             if not sline:
                 continue
-            # Retain lines with citation [num] or valid limitation markers
-            if re.search(r"\[\d+\]", sline) or any(m in sline for m in ("未找到", "没有找到", "限制", "持续追踪")):
+            if _is_valid_counter(sline):
                 counter_lines.append(sline)
 
     for item in new_evidence:
@@ -289,13 +313,8 @@ def _inject_new_evidence_into_sections(
         claim = str(item.claim or "").strip()
         excerpt = str(item.excerpt or "").strip()
         text = claim or excerpt
-        if not text or not url:
+        if not text or not url or url not in url_to_num:
             continue
-        if url not in url_to_num:
-            url_to_num[url] = next_num
-            title = ledger.source_title(url).strip() or "Source"
-            source_lines.append(f"[{next_num}] {title} - {url}")
-            next_num += 1
         num = url_to_num[url]
         line = f"- [{num}] {clip(text, 240)}"
         if item.stance in {"contradicts", "context"}:
@@ -322,6 +341,7 @@ def _inject_new_evidence_into_sections(
     updated["sources"] = "\n".join(source_lines).strip()
 
     return updated
+
 
 
 

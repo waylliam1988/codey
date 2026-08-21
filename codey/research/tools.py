@@ -535,16 +535,38 @@ class StagedKnowledgeStore:
         return self._parent.rel(path) if path.exists() else f"{note.folder}/{note.id}.md"
 
     def link(self, src: str, dst: str, kind: str = "relates", *, changes: KnowledgeChanges | None = None) -> str:
+        if not self.exists(src):
+            return f"ERROR: unknown source note: {src}"
+        if not self.exists(dst):
+            return f"ERROR: unknown target note: {dst}"
         self._staged_links.append((src, dst, kind))
         return f"linked: {src} -> {dst} ({kind})"
 
     def commit_to(self, target_store: KnowledgeStore, changes: KnowledgeChanges | None = None) -> None:
-        for note in self._staged_notes.values():
-            target_store.write_note(note, changes=changes)
-        for src, dst, kind in self._staged_links:
-            target_store.link(src, dst, kind, changes=changes)
-        self._staged_notes.clear()
-        self._staged_links.clear()
+        written_files: list[tuple[Path, str | None]] = []
+        try:
+            for note in self._staged_notes.values():
+                path = target_store.path_for(note)
+                orig_content = path.read_text(encoding="utf-8") if path.is_file() else None
+                written_files.append((path, orig_content))
+                target_store.write_note(note, changes=changes)
+            for src, dst, kind in self._staged_links:
+                target_store.link(src, dst, kind, changes=changes)
+            self._staged_notes.clear()
+            self._staged_links.clear()
+        except Exception:
+            # Atomic rollback: revert all notes written to disk during this commit attempt
+            for path, orig_content in reversed(written_files):
+                try:
+                    if orig_content is None:
+                        if path.is_file():
+                            path.unlink(missing_ok=True)
+                    else:
+                        path.write_text(orig_content, encoding="utf-8")
+                except Exception:
+                    pass
+            raise
+
 
 
 class StagedKnowledgeChanges:

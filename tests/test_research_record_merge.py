@@ -158,16 +158,20 @@ def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
                     "claim": "Claim 1",
                 }],
             })
-            # Initial summary has unsupported overclaim lines across conclusion, evidence, and counter
+            # Initial summary has unsupported overclaim lines across conclusion, evidence, and counter,
+            # including un-cited lines and unmapped/dangling citation numbers like [99]
             initial_summary = (
                 "## 结论\n"
                 "Verified finding [1].\n"
-                "Hallucinated conclusion line with no citation bracket at all.\n\n"
+                "Hallucinated conclusion line with no citation bracket at all.\n"
+                "Dangling conclusion line with unmapped citation [99].\n\n"
                 "## 关键证据\n"
                 "- [1] Claim 1.\n"
-                "- Unsupported hallucinated claim without any citation bracket.\n\n"
+                "- Unsupported hallucinated claim without any citation bracket.\n"
+                "- [99] Dangling evidence line with unmapped citation.\n\n"
                 "## 反证与限制\n"
-                "- Unsupported counter claim with no evidence or marker.\n\n"
+                "- Unsupported counter claim with no evidence or marker.\n"
+                "- [99] Dangling counter claim with unmapped citation.\n\n"
                 "## 来源\n[1] Source 1 - https://example.com/source1"
             )
             initial_finalized = finalize_done_answer(initial_summary, tools.ledger)
@@ -180,7 +184,7 @@ def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
             )
             initial_result = ResearchRunResult(
                 question="What is the truth?",
-                summary=initial_finalized.text,
+                summary=initial_summary,
                 stop_reason="done",
                 turns=1,
                 research_record=initial_record,
@@ -216,12 +220,17 @@ def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
             )
             merged = merge_evidence_patch(initial_result, tools, material)
 
-            # All unsupported hallucinated lines in conclusion/evidence/counter are pruned
+            # All unsupported hallucinated lines in conclusion/evidence/counter (and dangling [99]) are pruned
             assert "Hallucinated conclusion line" not in merged.summary
+            assert "Dangling conclusion line" not in merged.summary
             assert "Unsupported hallucinated claim" not in merged.summary
+            assert "Dangling evidence line" not in merged.summary
             assert "Unsupported counter claim" not in merged.summary
+            assert "Dangling counter claim" not in merged.summary
+            assert "[99]" not in merged.summary
             assert "[1] Source 1" in merged.summary
             assert "[2] Source 2" in merged.summary
+
 
             # Search results preserve full payload structure
             assert len(merged.search_results) == 1

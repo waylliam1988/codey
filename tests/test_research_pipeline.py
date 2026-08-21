@@ -4,6 +4,8 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.research.context import ResearchContext, ResearchPipelineConfig, RunTraceResearchSink
@@ -1071,3 +1073,63 @@ def test_staged_knowledge_store_read_through() -> None:
         read_staged = staged_store.read_note("staged-note")
         assert read_staged is not None
         assert read_staged.title == "Staged Title"
+
+
+def test_staged_knowledge_store_rollback_on_partial_failure() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        target_store = KnowledgeStore(root / "knowledge")
+        from codey.knowledge.note import KnowledgeNote
+        from codey.research.tools import StagedKnowledgeStore
+
+        staged_store = StagedKnowledgeStore(target_store)
+
+        note1 = KnowledgeNote(id="note-1", title="Note 1", body="Body 1", type="fact")
+        note2 = KnowledgeNote(id="note-2", title="Note 2", body="Body 2", type="fact")
+        staged_store.write_note(note1)
+        staged_store.write_note(note2)
+
+        original_write = target_store.write_note
+        call_count = [0]
+
+        def flaky_write_note(note, *, changes=None):
+            call_count[0] += 1
+            if call_count[0] == 2:
+                raise OSError("Disk full on second note")
+            return original_write(note, changes=changes)
+
+        target_store.write_note = flaky_write_note
+
+        # Commit fails on the 2nd note and rolls back note-1
+        with pytest.raises(OSError, match="Disk full on second note"):
+            staged_store.commit_to(target_store)
+
+        # Verify disk is 100% clean: note-1 was unlinked during rollback
+        note1_path = target_store.path_for(note1)
+        note2_path = target_store.path_for(note2)
+        assert note1_path.exists() is False
+        assert note2_path.exists() is False
+        assert len(list(target_store.root.glob("**/*.md"))) == 0
+
+
+def test_staged_knowledge_store_link_validation() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        from codey.knowledge.note import KnowledgeNote
+        from codey.research.tools import StagedKnowledgeStore
+
+        staged_store = StagedKnowledgeStore(store)
+        staged_store.write_note(KnowledgeNote(id="existing-note", title="T", body="B", type="fact"))
+
+        # Link fails on unknown source
+        res1 = staged_store.link("unknown-note", "existing-note")
+        assert "ERROR: unknown source note" in res1
+
+        # Link fails on unknown target
+        res2 = staged_store.link("existing-note", "unknown-note")
+        assert "ERROR: unknown target note" in res2
+
+        # Link succeeds when both exist
+        res3 = staged_store.link("existing-note", "existing-note")
+        assert res3.startswith("linked:")
