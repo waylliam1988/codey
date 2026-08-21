@@ -1,14 +1,14 @@
 # Codey Test Report
 
-## 0.4.4 Bounded Research Planner v1 (implementation draft)
+## 0.4.4 Bounded Research Planner v1
 
 Codey 0.4.4 moves Research orchestration into `ResearchPipeline` and adds the
 first bounded planner execution loop while keeping provider/session/UI
-ownership outside the Research lifecycle. This draft also includes the Qwen
+ownership outside the Research lifecycle. This release also includes the Qwen
 homepage submit-readiness repair that was found while running the 0.4.4 bounded
 planner web-provider A/B.
 
-Production changes under validation:
+Production changes:
 
 - `ResearchPipeline` owns initial research, proof review, planner execution,
   follow-up synthesis, final proof review, and the final Evidence Ledger write.
@@ -29,6 +29,45 @@ Production changes under validation:
   `button.send-button` before its homepage submit handler is hydrated. The wait
   is scoped only to the Qwen home URL and is capped by the same provider
   timeout budget.
+
+Final 0.4.4 release hardening:
+
+- The evidence-only follow-up schema is now strict: `sources` must be a
+  non-empty list of URLs, `evidence` must be a non-empty list of evidence
+  objects, and every evidence item must use explicit `source_url`.
+- The evidence-only path no longer accepts singleton `evidence` objects,
+  scalar `sources`, or `source` as a `source_url` alias.
+- Deterministic merge rebuilds project metadata from the active
+  `ResearchTools.project`, matching modern `basename/digest` project refs
+  without a legacy `project_ref["path"]` shim.
+
+Final 0.4.4 release verification:
+
+```text
+python -B -m py_compile codey\research\evidence_followup.py codey\research\record_merge.py tests\test_research_evidence_followup.py tests\test_research_record_merge.py tests\test_server.py
+# ok
+
+ruff check codey\research\evidence_followup.py codey\research\record_merge.py tests\test_research_evidence_followup.py tests\test_research_record_merge.py tests\test_server.py
+# All checks passed
+
+pytest tests\test_research_evidence_followup.py tests\test_research_record_merge.py tests\test_research_pipeline.py tests\test_research_plan_executor.py tests\test_server.py tests\test_architecture.py -q
+# 209 passed, 1 skipped, 125 subtests passed
+
+python -B tests\manual\bounded_research_planner_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\bounded_research_merge_projection.py --self-test
+# self-test ok
+
+ruff check .
+# All checks passed
+
+git diff --check
+# ok
+
+pytest -q
+# 2270 passed, 9 skipped, 638 subtests passed in 421.18s
+```
 
 Validation during implementation:
 

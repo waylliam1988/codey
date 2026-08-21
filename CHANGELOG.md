@@ -4,7 +4,7 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## 0.4.4 - Bounded Research Planner v1 (implementation draft, unreleased)
+## 0.4.4 - Bounded Research Planner v1
 
 - Implemented memory Staging isolation (`StagedKnowledgeStore` / `StagedKnowledgeChanges`):
   knowledge writes and note links during follow-up are buffered in-memory with full read-through capability and compensating rollback;
@@ -18,11 +18,12 @@ This file records Codey's release history. The newest release appears first.
 - Formalized `KnowledgeChanges.snapshot()` / `restore_snapshot()` as the rollback boundary used by staged commits,
   avoiding private-field restoration while preserving the full in-memory change tracking state.
 - Tightened evidence-only `knowledge_write` to the minimal argument surface:
-  `type`, `title`, `body`, `sources`, and `evidence` are accepted; ordinary write side channels such as `tags`,
-  `relations`, `aliases`, `status`, or custom ids are rejected in follow-up mode.
+  `type`, `title`, `body`, `sources`, and `evidence` are accepted; `sources` must be a non-empty list of URLs,
+  `evidence` must be a non-empty list of evidence objects, each item must use explicit `source_url`, and ordinary
+  write side channels such as `tags`, `relations`, `aliases`, `status`, or custom ids are rejected in follow-up mode.
 - Fixed deterministic merge project metadata preservation:
-  merged records now rebuild `project_ref` from the active `ResearchTools.project` when modern records only carry
-  `basename/digest` project refs and no legacy `path`.
+  merged records rebuild `project_ref` from the active `ResearchTools.project`, matching modern Research records'
+  `basename/digest` project identity without a legacy path shim.
 - Added Staging Commit Exception Guard and Compensating Rollback in ResearchPipeline:
   safely protects `commit_staged` against disk full or IO exceptions by automatically unlinking newly written note files on disk
   (including cleaning up moved folder paths while restoring original files with byte-exact precision without timestamp drift, unified with `content_hash_bytes`),
@@ -154,7 +155,7 @@ This file records Codey's release history. The newest release appears first.
   `0.250` instead of regressing to the older `0.750` row.
 - Production hardening & code hygiene cleanup for bounded evidence-only follow-up & deterministic merge:
   1. Completely removed `max_wall_time` production gate and stop branch; bounded semantics are enforced solely via queries/sources/rounds/cancellation, treating wall time strictly as a diagnostic metric.
-  2. Strengthened `evidence_followup.py`: updated prompt note type to `fact`, strictly enforced explicit non-empty `evidence` items (both list and singleton dict forms), tightened URL whitelisting against internal `s1/s2` IDs, invalidated entire round upon forbidden tool calls (`invalid_tool_called`), and restricted execution to exactly 1 valid `knowledge_write`.
+  2. Strengthened `evidence_followup.py`: updated prompt note type to `fact`, strictly enforced explicit non-empty evidence lists with explicit `source_url`, tightened URL whitelisting against internal `s1/s2` IDs, invalidated entire round upon forbidden tool calls (`invalid_tool_called`), and restricted execution to exactly 1 valid `knowledge_write`.
   3. Introduced staged ledger isolation (`ledger.clone()`) during follow-up iterations: rejected candidate follow-up artifacts cause zero pollution to the primary knowledge store and ledger.
   4. Strengthened `record_merge.py`: aligned idempotent deduplication key on `(canonical_url, excerpt_digest)`, supported non-standard/protocol-stop initial summary recovery and formatting, synchronized all `ResearchRunResult` metadata fields (`source_urls`, `opened_sources`, `sources_read`, `evidence_items`, `citation_map`, `coverage`), and generated a deterministic `synthesis:merge:{digest}` synthesis ID.
   5. Fixed `PlanExecutor` field reference to `tools.ledger.evidence_items`, removed dead `_followup_context` helper, and expanded `ResearchPipelineResult` trace observability metrics (`fresh_source_count`, `new_evidence_count`, `final_evidence_count`).

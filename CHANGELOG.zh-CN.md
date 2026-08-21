@@ -4,7 +4,7 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## 0.4.4 - Bounded Research Planner v1（implementation draft，未 release）
+## 0.4.4 - Bounded Research Planner v1
 
 - 实现 Staging 内存暂存隔离（`StagedKnowledgeStore` / `StagedKnowledgeChanges`）：
   follow-up 阶段笔记写入和关联在内存暂存缓冲中执行，支持完整 read-through 读穿透与补偿回滚（rollback）机制；
@@ -18,11 +18,12 @@
 - 将 `KnowledgeChanges.snapshot()` / `restore_snapshot()` 正式作为 staged commit rollback 边界：
   回滚不再触碰 `KnowledgeChanges` 私有字段，并会恢复完整的内存 change tracking 状态。
 - evidence-only `knowledge_write` 收窄到最小参数面：
-  只接受 `type`、`title`、`body`、`sources`、`evidence`；follow-up 模式下拒绝
-  `tags`、`relations`、`aliases`、`status`、自定义 id 等普通写入侧通道。
+  只接受 `type`、`title`、`body`、`sources`、`evidence`；`sources` 必须是非空 URL list，
+  `evidence` 必须是非空 evidence object list，且每条 evidence 必须显式使用 `source_url`；
+  follow-up 模式下拒绝 `tags`、`relations`、`aliases`、`status`、自定义 id 等普通写入侧通道。
 - 修复 deterministic merge 的 project metadata 保留：
-  现代 `ResearchRecord.project_ref` 只包含 `basename/digest`、没有 legacy `path` 时，合并记录会从当前
-  `ResearchTools.project` 重建 `project_ref`，避免 project metadata 退化为空。
+  合并记录从当前 `ResearchTools.project` 重建 `project_ref`，与现代 Research record 的
+  `basename/digest` project identity 保持一致，不再保留 legacy path shim。
 - Pipeline Staging Commit 补偿回滚与异常安全护栏：
   在候选方案胜出提交（`commit_staged`）阶段增加异常保护与补偿回滚，若多 note 写入中途抛出磁盘满或底层 IO 错误，
   自动逆序清理本次已写入磁盘的 note 文件（针对已有 note 发生路径/folder 移动，彻底删除新路径文件并字节级还原旧路径文件内容与时间戳，统一使用 `content_hash_bytes` 保持算法收口一致）、
@@ -150,7 +151,7 @@
   回退到 `0.750` 的问题。
 - 深度加固与卫生清理（Evidence-Only Follow-up & Deterministic Record Merge 生产落地）：
   1. 彻底移除 `max_wall_time` 生产 gate 与停止分支，研究行为边界由 query/source/round/cancellation 保证，时间仅作诊断指标。
-  2. 强化 `evidence_followup.py`：Prompt note type 修正为 `fact`；强制显式非空 `evidence`（支持 list 与 singleton dict）；URL 白名单严禁内部 `s1/s2` 标签；出现非 `knowledge_write` 工具整轮直接标记 `invalid_tool_called`，且严格只执行 1 个合法的 `knowledge_write`。
+  2. 强化 `evidence_followup.py`：Prompt note type 修正为 `fact`；强制显式非空 evidence list，且每条 evidence 必须显式使用 `source_url`；URL 白名单严禁内部 `s1/s2` 标签；出现非 `knowledge_write` 工具整轮直接标记 `invalid_tool_called`，且严格只执行 1 个合法的 `knowledge_write`。
   3. Follow-up 阶段引入 Staged Ledger（`ledger.clone()`）事务隔离机制：只有在 candidate 胜出被选中时才应用到最终 `best_tools`，未选中的 candidate 零污染主知识库。
   4. 强化 `record_merge.py`：幂等去重键严格对齐 `(canonical_url, excerpt_digest)`；支持非标/协议停止初稿恢复与格式化；全面同步 `ResearchRunResult` 元数据（`source_urls`, `opened_sources`, `sources_read`, `evidence_items`, `citation_map`, `coverage` 等）；生成确定性 `synthesis:merge:{digest}` synthesis_id 并修正 `project_ref`。
   5. 修复 `PlanExecutor` 字段为 `tools.ledger.evidence_items`，删除 `_followup_context` 死代码，扩展 `ResearchPipelineResult` 观测字段（`fresh_source_count`, `new_evidence_count`, `final_evidence_count`）。

@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.3-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.4-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.3`
+版本：`0.4.4`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -365,7 +365,8 @@ staged commit 失败时会恢复触及的 link 边；deterministic merge 复用�
 parser，不再单独维护来源行解析正则。确定性报告装配通过 follow-up 指标表达，不再
 虚增 Research turn 计数。
 follow-up 的 `knowledge_write` 参数面也保持最小化：只接受
-`type/title/body/sources/evidence`；staged rollback 使用公开的
+`type/title/body/sources/evidence`；`sources` 与 `evidence` 都必须是显式非空
+list，evidence item 必须使用 `source_url`；staged rollback 使用公开的
 `KnowledgeChanges` snapshot 边界；合并后的记录会保留当前 project ref，不再丢失
 project metadata。
 

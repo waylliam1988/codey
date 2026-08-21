@@ -98,9 +98,11 @@ class EvidenceFollowupController:
         if note_type != "fact":
             return f"ERROR: Evidence-only follow-up requires type='fact', got '{note_type}'."
         sources = args.get("sources")
-        source_list = [str(s).strip() for s in (sources if isinstance(sources, list) else [sources]) if str(s).strip()]
+        if not isinstance(sources, list):
+            return "ERROR: evidence-only knowledge_write requires sources to be a non-empty list of URLs."
+        source_list = [str(s).strip() for s in sources if str(s).strip()]
         if not source_list:
-            return "ERROR: knowledge_write requires at least one source URL in 'sources'."
+            return "ERROR: evidence-only knowledge_write requires sources to be a non-empty list of URLs."
         for s in source_list:
             if _SOURCE_ID_FORBIDDEN_RE.search(s) and not (s.startswith("http://") or s.startswith("https://")):
                 return f"ERROR: Invalid source reference '{s}'. Internal IDs like s1/s2 are strictly forbidden; use canonical URLs."
@@ -108,14 +110,20 @@ class EvidenceFollowupController:
                 return f"ERROR: Source URL '{s}' is not in the allowed fresh material whitelist."
         evidence_raw = args.get("evidence")
         if not evidence_raw:
-            return "ERROR: knowledge_write in evidence-only mode requires explicit 'evidence' items."
-        evidence_items = evidence_raw if isinstance(evidence_raw, list) else [evidence_raw]
+            return "ERROR: evidence-only knowledge_write requires evidence to be a non-empty list."
+        if not isinstance(evidence_raw, list) or not evidence_raw:
+            return "ERROR: evidence-only knowledge_write requires evidence to be a non-empty list."
+        evidence_items = evidence_raw
         for item in evidence_items:
             if not isinstance(item, dict):
                 return "ERROR: Each evidence item must be a JSON object."
-            ev_src = str(item.get("source_url") or item.get("source") or "").strip()
+            if "source_url" not in item:
+                if "source" in item:
+                    return "ERROR: evidence item requires explicit source_url; 'source' alias is not accepted."
+                return "ERROR: evidence item requires explicit source_url."
+            ev_src = str(item.get("source_url") or "").strip()
             if not ev_src:
-                return "ERROR: Evidence item is missing source_url."
+                return "ERROR: evidence item requires explicit source_url."
             if _SOURCE_ID_FORBIDDEN_RE.search(ev_src) and not (ev_src.startswith("http://") or ev_src.startswith("https://")):
                 return f"ERROR: Invalid evidence source_url '{ev_src}'. Internal IDs like s1/s2 are strictly forbidden."
             if ev_src not in self.allowed_urls:

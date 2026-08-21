@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.3-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.4-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.3`
+Version: `0.4.4`
 
 [Version history](CHANGELOG.md)
 
@@ -453,9 +453,11 @@ edges, and deterministic merge reuses the shared citation parser instead of
 maintaining a separate source-line parser. Deterministic report assembly is
 tracked through follow-up metrics rather than inflating Research turn counts.
 The follow-up `knowledge_write` surface is also intentionally minimal:
-only `type/title/body/sources/evidence` are accepted, staged rollback uses the
-public `KnowledgeChanges` snapshot boundary, and merged records preserve the
-active project ref rather than dropping project metadata.
+only `type/title/body/sources/evidence` are accepted, `sources` and `evidence`
+must both be explicit non-empty lists, evidence items must use `source_url`,
+staged rollback uses the public `KnowledgeChanges` snapshot boundary, and
+merged records preserve the active project ref rather than dropping project
+metadata.
 
 MiMo was retested after adding the one-tool Research boundary. A fresh-tab
 `long-official-doc/source_search` run completed in 10 turns, used

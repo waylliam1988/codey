@@ -419,10 +419,11 @@ SQLite link edges on rollback, deterministic merge shares the report-quality
 citation parser, and non-model merge assembly no longer increments Research
 turn counts.
 The evidence-only write boundary is now even narrower in production: follow-up
-`knowledge_write` accepts only `type/title/body/sources/evidence`, staged
-rollback uses the public `KnowledgeChanges` snapshot API, link snapshot restore
-filters rows to the touched note ids, and deterministic merge preserves project
-metadata for merged records.
+`knowledge_write` accepts only `type/title/body/sources/evidence`, requires
+`sources` and `evidence` to be explicit non-empty lists, rejects `source` as a
+`source_url` alias, staged rollback uses the public `KnowledgeChanges` snapshot
+API, link snapshot restore filters rows to the touched note ids, and
+deterministic merge preserves project metadata for merged records.
 
 Use this probe when you want to judge whether 0.4.4 follow-up search is adding
 real value or just extra traffic. The paired summary is the main signal; if

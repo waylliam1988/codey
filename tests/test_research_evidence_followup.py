@@ -102,9 +102,22 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                 "body": "Body without evidence",
                 "sources": [allowed_url],
             })
-            assert "requires explicit 'evidence' items" in res_no_ev
+            assert "evidence to be a non-empty list" in res_no_ev
 
-            # 6. Singleton dict evidence with unauthorized source_url is blocked
+            # 6. Scalar sources are rejected; sources must be a URL list
+            res_scalar_sources = controller.execute_tool_call("knowledge_write", {
+                "type": "fact",
+                "title": "Scalar Source Claim",
+                "body": "Body",
+                "sources": allowed_url,
+                "evidence": [{
+                    "source_url": allowed_url,
+                    "excerpt": "Fresh source body",
+                }],
+            })
+            assert "sources to be a non-empty list of URLs" in res_scalar_sources
+
+            # 7. Singleton dict evidence is rejected; evidence must be a list
             res_bad_single = controller.execute_tool_call("knowledge_write", {
                 "type": "fact",
                 "title": "Single Item Claim",
@@ -115,9 +128,22 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                     "excerpt": "Fresh source body",
                 },
             })
-            assert "Evidence source_url 'https://example.com/unauthorized' is not in the allowed fresh material whitelist" in res_bad_single
+            assert "evidence to be a non-empty list" in res_bad_single
 
-            # 7. Non-fact note type (e.g. concept) is rejected
+            # 8. Evidence source alias is rejected; source_url must be explicit
+            res_source_alias = controller.execute_tool_call("knowledge_write", {
+                "type": "fact",
+                "title": "Alias Source Claim",
+                "body": "Body",
+                "sources": [allowed_url],
+                "evidence": [{
+                    "source": allowed_url,
+                    "excerpt": "Fresh source body",
+                }],
+            })
+            assert "'source' alias is not accepted" in res_source_alias
+
+            # 9. Non-fact note type (e.g. concept) is rejected
             res_bad_type = controller.execute_tool_call("knowledge_write", {
                 "type": "concept",
                 "title": "Concept Note",
@@ -130,7 +156,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
             })
             assert "requires type='fact', got 'concept'" in res_bad_type
 
-            # 8. Missing explicit type field is rejected
+            # 10. Missing explicit type field is rejected
             res_missing_type = controller.execute_tool_call("knowledge_write", {
                 "title": "Missing Type Note",
                 "body": "Body",
@@ -142,7 +168,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
             })
             assert "requires explicit type='fact'" in res_missing_type
 
-            # 9. Evidence source_url not in note's sources is rejected for provenance integrity
+            # 11. Evidence source_url not in note's sources is rejected for provenance integrity
             tools.sources_read.add("https://example.com/fresh2")
             controller_two = EvidenceFollowupController(tools, [allowed_url, "https://example.com/fresh2"])
             res_mismatch_src = controller_two.execute_tool_call("knowledge_write", {
@@ -157,7 +183,7 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
             })
             assert "must be declared in the note's 'sources' list" in res_mismatch_src
 
-            # 10. Evidence-only mode rejects ordinary knowledge_write side channels
+            # 12. Evidence-only mode rejects ordinary knowledge_write side channels
             res_extra_args = controller.execute_tool_call("knowledge_write", {
                 "type": "fact",
                 "title": "Tagged Claim",
