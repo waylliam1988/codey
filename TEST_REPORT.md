@@ -55,18 +55,34 @@ summarized in `tests/manual/bounded_research_planner_ab_reports.md`. The current
 paired `widget_noop` web-provider results:
 
 - DeepSeek: score `5 -> 6`, useful, one new evidence-backed source, coverage
-  `+0.111`, unsupported-claim rate `-0.083`, provider sends unchanged.
+  unchanged at `0.556`, unsupported-claim rate `-0.333`, provider sends `+3`.
 - MiMo: score `5 -> 6`, useful, one new evidence-backed source, coverage
-  `+0.111`, unsupported-claim rate `-0.300`, provider sends `+2`.
+  `+0.112`, unsupported-claim rate `-0.333`, provider sends `+3`.
 - Qwen: score `5 -> 6`, useful after the homepage readiness fix, one new
-  evidence-backed source, coverage `+0.111`, unsupported-claim rate `-0.083`,
-  provider sends `+2`.
+  evidence-backed source, coverage unchanged at `0.667`, unsupported-claim
+  rate `-0.333`, provider sends `+1`.
 - GLM evidence-only3: score `1 -> 6`, useful, one new evidence-backed source,
   coverage `+0.112`, unsupported-claim rate unchanged at `0.000`, provider
   sends `+1`.
 - StepFun evidence-only3: score `1 -> 6`, useful, one new evidence-backed
   source, coverage `+0.112`, unsupported-claim rate unchanged at `0.000`,
   provider sends `+1`.
+
+2026-08-21 evidence-only3 rerun artifacts:
+
+```text
+python -B tests\manual\bounded_research_planner_ab.py --provider deepseek --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-deepseek-evidenceonly3-paired-widget-20260821.json
+python -B tests\manual\bounded_research_planner_ab.py --provider deepseek --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-deepseek-evidenceonly3-paired-widget-20260821.json
+# DeepSeek: score 5 -> 6, useful=true
+
+python -B tests\manual\bounded_research_planner_ab.py --provider mimo --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-mimo-evidenceonly3-paired-widget-20260821.json
+python -B tests\manual\bounded_research_planner_ab.py --provider mimo --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-mimo-evidenceonly3-paired-widget-20260821.json
+# MiMo: score 5 -> 6, useful=true
+
+python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms baseline --open-if-missing --output tests\manual\results\bounded_research_planner_ab-qwen-evidenceonly3-paired-widget-20260821.json
+python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms planner --open-if-missing --output tests\manual\results\bounded_research_planner_ab-qwen-evidenceonly3-paired-widget-20260821.json
+# Qwen: score 5 -> 6, useful=true
+```
 
 ## 0.4.3 Source Connector Boundary + Query Planner Dry Run v1
 

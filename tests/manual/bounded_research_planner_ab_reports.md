@@ -1,6 +1,6 @@
 # Bounded Research Planner A/B Reports
 
-Generated from live manual results on 2026-08-20.
+Generated from live manual results on 2026-08-20 and 2026-08-21.
 
 This report records the 0.4.4 bounded planner experiments that were run while
 keeping production Research code unchanged. The harness changes live in
@@ -9,7 +9,11 @@ written under `tests/manual/results/`.
 
 ## Decision
 
-Do not enable a production planner behavior from these results alone.
+Proceed with the default production implementation of evidence-only follow-up
+plus deterministic merge for 0.4.4. Do not copy the A/B harness monkeypatches
+into production, and do not ship the older full-report follow-up shape. Before
+release, validate the production implementation with focused tests and at least
+one real connector-backed A/B case.
 
 The live runs show that a planner can add value when three conditions are true:
 
@@ -18,12 +22,12 @@ The live runs show that a planner can add value when three conditions are true:
 3. The final result is merged as a narrow evidence patch, not as a full report
    rewrite.
 
-The strongest current signal is the evidence-only patch-merge probe. StepFun and
-GLM both moved `widget_noop` from score 1 to 6 with one follow-up round, one new
-source, one new evidence item, and no unsupported-claim regression. Earlier runs
-showed that prompt-only follow-up is unstable: models may rewrite too much, cite
-synthetic URLs too broadly, wrap JSON in code fences, or fail to persist new
-evidence before `done`.
+The strongest current signal is the evidence-only patch-merge probe. DeepSeek,
+MiMo, Qwen, StepFun, and GLM all improved `widget_noop` with one follow-up round,
+one new source, one new evidence item, and no unsupported-claim regression.
+Earlier runs showed that prompt-only follow-up is unstable: models may rewrite
+too much, cite synthetic URLs too broadly, wrap JSON in code fences, or fail to
+persist new evidence before `done`.
 
 ## Result Files
 
@@ -42,6 +46,9 @@ evidence before `done`.
 - `bounded_research_planner_ab-qwen-hiddenmaterial2-paired-widget-20260820.json`
 - `bounded_research_planner_ab-glm-hiddenmaterial-paired-widget-20260820.json`
 - `bounded_research_planner_ab-stepfun-hiddenmaterial-paired-widget-20260820.json`
+- `bounded_research_planner_ab-deepseek-evidenceonly3-paired-widget-20260821.json`
+- `bounded_research_planner_ab-mimo-evidenceonly3-paired-widget-20260821.json`
+- `bounded_research_planner_ab-qwen-evidenceonly3-paired-widget-20260821.json`
 - `bounded_research_planner_ab-stepfun-evidenceonly3-paired-widget-20260820.json`
 - `bounded_research_planner_ab-glm-evidenceonly3-paired-widget-20260820.json`
 
@@ -192,6 +199,9 @@ StepFun did not reach planner execution. Both arms ended with score 1 and
 
 Files:
 
+- `bounded_research_planner_ab-deepseek-evidenceonly3-paired-widget-20260821.json`
+- `bounded_research_planner_ab-mimo-evidenceonly3-paired-widget-20260821.json`
+- `bounded_research_planner_ab-qwen-evidenceonly3-paired-widget-20260821.json`
 - `bounded_research_planner_ab-stepfun-evidenceonly3-paired-widget-20260820.json`
 - `bounded_research_planner_ab-glm-evidenceonly3-paired-widget-20260820.json`
 
@@ -208,16 +218,26 @@ The harness was narrowed again:
 
 | provider | baseline | planner | delta | useful | follow-up | sources | evidence | claims | coverage delta | unsupported delta | send delta | time delta |
 |---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| DeepSeek | 5 | 6 | +1 | true | 1 | 1 -> 2 | 1 -> 2 | 3 -> 2 | 0.000 | -0.333 | +3 | +5.480s |
+| MiMo | 5 | 6 | +1 | true | 1 | 1 -> 2 | 1 -> 2 | 3 -> 2 | +0.112 | -0.333 | +3 | +9.637s |
+| Qwen | 5 | 6 | +1 | true | 1 | 1 -> 2 | 1 -> 2 | 3 -> 2 | 0.000 | -0.333 | +1 | +14.630s |
 | StepFun | 1 | 6 | +5 | true | 1 | 1 -> 2 | 1 -> 2 | 0 -> 2 | +0.112 | 0.000 | +1 | -4.123s |
 | GLM | 1 | 6 | +5 | true | 1 | 1 -> 2 | 1 -> 2 | 0 -> 2 | +0.112 | 0.000 | +1 | +40.971s |
 
-Finding: the StepFun failure was not primarily a search/planner problem. It was
-the normal follow-up/report path asking a provider with fragile long JSON
-`done.answer` behavior to keep rewriting the final report. The evidence-only
-probe avoids that failure mode by never asking the follow-up model to produce
-`done`. GLM's earlier overclaim regression was also blocked by deterministic
-merge: unsupported provider-written claims are not carried into the experimental
-final record.
+Finding: the evidence-only shape generalizes across all five tested web
+providers. DeepSeek, MiMo, and Qwen kept their previous hidden-material uplift
+while removing unsupported claims from the merged record. StepFun's earlier
+failure was not primarily a search/planner problem; it was the normal
+follow-up/report path asking a provider with fragile long JSON `done.answer`
+behavior to keep rewriting the final report. The evidence-only probe avoids that
+failure mode by never asking the follow-up model to produce `done`. GLM's earlier
+overclaim regression was also blocked by deterministic merge: unsupported
+provider-written claims are not carried into the experimental final record.
+
+Operational note: the first MiMo planner attempt on 2026-08-21 failed before
+row execution with a stale 9222 CDP connection timeout. Restarting only the
+9222 Edge listener and rerunning the pending planner row succeeded. This is a
+browser-control transient, not a model/planner row failure.
 
 ### Qwen
 
@@ -275,9 +295,9 @@ initial ResearchRecord
 
 | provider | baseline | planner | delta | useful | follow-up | material gain | coverage delta | unsupported delta | send delta | time delta |
 |---|---:|---:|---:|---|---:|---|---:|---:|---:|---:|
-| DeepSeek | 5 | 6 | +1 | true | 1 | true | +0.111 | -0.083 | 0 | +3.568s |
-| MiMo | 5 | 6 | +1 | true | 1 | true | +0.111 | -0.300 | +2 | +54.066s |
-| Qwen | 5 | 6 | +1 | true | 1 | true | +0.111 | -0.083 | +2 | +27.528s |
+| DeepSeek evidence-only3 | 5 | 6 | +1 | true | 1 | true | 0.000 | -0.333 | +3 | +5.480s |
+| MiMo evidence-only3 | 5 | 6 | +1 | true | 1 | true | +0.112 | -0.333 | +3 | +9.637s |
+| Qwen evidence-only3 | 5 | 6 | +1 | true | 1 | true | 0.000 | -0.333 | +1 | +14.630s |
 | GLM evidence-only3 | 1 | 6 | +5 | true | 1 | true | +0.112 | 0.000 | +1 | +40.971s |
 | StepFun evidence-only3 | 1 | 6 | +5 | true | 1 | true | +0.112 | 0.000 | +1 | -4.123s |
 

@@ -63,10 +63,11 @@
 - GLM / StepFun hidden-material paired A/B 已补跑：GLM raw score `1 -> 6`，
   但 unsupported claim rate `0.0 -> 0.4`，按保守 usefulness gate 判定为 false；
   StepFun `1 -> 1`，planner 停在 `initial_stop_reason_protocol`，没有进入 follow-up。
-- GLM / StepFun evidence-only patch-merge A/B 已补跑：两者 `widget_noop` 都从
-  score `1 -> 6`，新增 `source-b` source/evidence 各 1，coverage 均提升 `+0.112`，
-  unsupported claim rate 保持 `0.000` 不回退。StepFun 不再触发长 `done.answer`
-  JSON 转义失败，因为 follow-up model 不再负责最终报告。
+- evidence-only patch-merge A/B 现在已在五个网页 provider 上全部显示
+  `useful=true`：DeepSeek、MiMo、Qwen 的 `widget_noop` 均从 score `5 -> 6`，
+  StepFun、GLM 均从 `1 -> 6`。每个 planner row 都新增 `source-b`
+  source/evidence 各 1，且 unsupported-claim rate 没有回退。StepFun 不再触发长
+  `done.answer` JSON 转义失败，因为 follow-up model 不再负责最终报告。
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 

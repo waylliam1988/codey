@@ -60,12 +60,13 @@ This file records Codey's release history. The newest release appears first.
   unsupported-claim rate, so it is not counted useful by the conservative
   gate. StepFun stayed `1 -> 1` because the initial run stopped at protocol
   before follow-up could execute.
-- Evidence-only patch-merge A/B on 2026-08-20 recovered the GLM and StepFun
-  failure modes without changing production Research code. Both providers moved
-  `widget_noop` from score `1` to `6`, added one fresh source/evidence pair,
-  improved coverage by `+0.112`, and kept unsupported-claim rate flat at
-  `0.000`; StepFun avoided the long `done.answer` JSON failure because the
-  follow-up model never writes the final report.
+- Evidence-only patch-merge A/B now shows useful planner uplift on all five
+  tested web providers without changing production Research code. DeepSeek,
+  MiMo, and Qwen moved `widget_noop` from score `5` to `6`; StepFun and GLM
+  moved from `1` to `6`. Every planner row added one fresh source/evidence pair
+  with no unsupported-claim-rate regression. StepFun avoided the long
+  `done.answer` JSON failure because the follow-up model never writes the final
+  report.
 
 ## 0.4.3 - Source Connector Boundary + Query Planner Dry Run v1
 
