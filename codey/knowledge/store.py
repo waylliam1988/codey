@@ -178,8 +178,12 @@ def _annotate_wikilink(body: str, link_text: str, kind: str) -> str | None:
     return body[: match.start()] + desired + body[match.end() :]
 
 
+def content_hash_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
 def _content_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return content_hash_bytes(text.encode("utf-8"))
 
 
 def _atomic_write_text(path: Path, text: str) -> None:

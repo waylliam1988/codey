@@ -62,6 +62,8 @@ class ResearchPipelineResult:
     fresh_source_count: int = 0
     new_evidence_count: int = 0
     merged_evidence_count: int = 0
+    attempted_fresh_source_count: int = 0
+    attempted_new_evidence_count: int = 0
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -72,7 +74,10 @@ class ResearchPipelineResult:
             "fresh_source_count": max(0, int(self.fresh_source_count or 0)),
             "new_evidence_count": max(0, int(self.new_evidence_count or 0)),
             "merged_evidence_count": max(0, int(self.merged_evidence_count or 0)),
+            "attempted_fresh_source_count": max(0, int(self.attempted_fresh_source_count or 0)),
+            "attempted_new_evidence_count": max(0, int(self.attempted_new_evidence_count or 0)),
         }
+
 
 
 class ResearchPipeline:
@@ -115,6 +120,8 @@ class ResearchPipeline:
             followup_rounds = 0
             total_fresh_sources = 0
             total_new_evidence = 0
+            total_attempted_fresh_sources = 0
+            total_attempted_new_evidence = 0
             total_merged_evidence = len(getattr(best.research_record, "evidence", ())) if getattr(best, "research_record", None) else 0
             planner_stop_reason = self._followup_block_reason(initial, best_review, plan) or "planned"
             if planner_stop_reason == "planned":
@@ -143,6 +150,8 @@ class ResearchPipeline:
                             planner_stop_reason = "followup_execution_error"
                             break
                         planner_stop_reason = material.stop_reason
+                        attempted_sources = len(material.fresh_source_urls) if material.fresh_source_urls else max(0, int(material.fresh_source_count or 0))
+                        total_attempted_fresh_sources += attempted_sources
                         if not material.has_new_material:
                             break
                         try:
@@ -160,6 +169,8 @@ class ResearchPipeline:
                         except Exception:
                             planner_stop_reason = "followup_iteration_error"
                             break
+                        attempted_ev = max(0, int(followup_result.new_evidence_count or 0))
+                        total_attempted_new_evidence += attempted_ev
                         if not followup_result.has_new_evidence:
                             planner_stop_reason = followup_result.stop_reason or "no_evidence_extracted"
                             break
@@ -181,8 +192,8 @@ class ResearchPipeline:
                             best_review = candidate_review
                             current_tools = best_tools
                             followup_rounds = round_index
-                            total_fresh_sources += len(material.fresh_source_urls) if material.fresh_source_urls else max(0, int(material.fresh_source_count or 0))
-                            total_new_evidence += followup_result.new_evidence_count
+                            total_fresh_sources += attempted_sources
+                            total_new_evidence += attempted_ev
                             total_merged_evidence = len(getattr(best.research_record, "evidence", ())) if getattr(best, "research_record", None) else 0
                             planner_stop_reason = "evidence_merged"
                         else:
@@ -219,9 +230,12 @@ class ResearchPipeline:
                 fresh_source_count=total_fresh_sources,
                 new_evidence_count=total_new_evidence,
                 merged_evidence_count=total_merged_evidence,
+                attempted_fresh_source_count=total_attempted_fresh_sources,
+                attempted_new_evidence_count=total_attempted_new_evidence,
             )
             self.context.trace.record_pipeline_result(output)
             return output
+
         finally:
             close = getattr(search, "close", None)
             if callable(close):

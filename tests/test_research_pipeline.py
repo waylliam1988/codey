@@ -1166,3 +1166,128 @@ def test_staged_knowledge_store_link_validation() -> None:
         # Link succeeds when both exist
         res3 = staged_store.link("existing-note", "existing-note")
         assert res3.startswith("linked:")
+
+
+def test_content_hash_bytes_consistency() -> None:
+    from codey.knowledge.store import _content_hash, content_hash_bytes
+
+    text = "Hello Codey Knowledge Vault\nLine 2"
+    raw_bytes = text.encode("utf-8")
+    assert _content_hash(text) == content_hash_bytes(raw_bytes)
+    assert len(content_hash_bytes(raw_bytes)) == 16
+
+
+def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
+    from codey.research.plan_executor import PlanExecutionResult
+
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        ledgers = EvidenceLedgerStore(root / "ledgers")
+        context = ResearchContext(
+            question="What is the latency?",
+            session_id="s-attempt",
+            run_id="r-attempt",
+        )
+        tools = ResearchTools(
+            search=None,
+            store=store,
+            changes=KnowledgeChanges(root=store.root),
+            session_id="s-attempt",
+        )
+
+        initial_result = ResearchRunResult(
+            question="What is the latency?",
+            summary="Initial summary with low confidence [1].",
+            stop_reason="done",
+            turns=1,
+            sources_read=("https://example.com/init",),
+            quality_warnings=("low_confidence",),
+        )
+
+
+        def runner(*, task, max_turns, chat_handoff, search, tools=None, iteration_context=""):
+            return ResearchIterationRun(result=initial_result, tools=tools)
+
+        def evidence_runner(*, tools, plan, material, question, initial_summary="", max_context_chars=8000, should_stop=None):
+            return EvidenceFollowupResult(
+                ok=True,
+                new_evidence_count=2,
+                stop_reason="done",
+            )
+
+
+        pipeline = ResearchPipeline(
+            context=context,
+            run_iteration=lambda **kwargs: runner(**kwargs, tools=tools),
+            search_factory=lambda: None,
+            evidence_followup_runner=evidence_runner,
+            evidence_ledgers=ledgers,
+        )
+
+        # Force review to have gap initially and then reject candidate
+        def reject_candidate(res, require_ledger_record=False):
+            if "Initial" in res.summary:
+                return ResearchProofReview(
+                    ok=False,
+                    answers_question=True,
+                    answer_status="partial",
+                    answer_coverage_score=0.5,
+                    citation_present=True,
+                    citation_locator_verified=True,
+                    support_relation_verified=True,
+                    counterevidence_checked=True,
+                    ledger_record_verified=True,
+                    missing_evidence=("partial_answer",),
+                )
+            # Make candidate score worse so _selects_candidate returns False
+            return ResearchProofReview(
+                ok=False,
+                answers_question=False,
+                answer_status="not_answered",
+                answer_coverage_score=0.1,
+                citation_present=False,
+                citation_locator_verified=False,
+                support_relation_verified=False,
+                counterevidence_checked=False,
+                ledger_record_verified=False,
+            )
+
+
+
+        pipeline._review = reject_candidate
+
+        # Mock executor to return fresh material
+        def mock_executor(plan, staged_tools):
+            return PlanExecutionResult(
+                fresh_source_count=2,
+                fresh_source_urls=("https://example.com/fresh1", "https://example.com/fresh2"),
+                stop_reason="queries_budget_exhausted",
+            )
+
+        from codey.research.query_planner import QueryCandidate
+        pipeline._plan = lambda review: ResearchPlan(
+            plan_ref="p1",
+            query_candidates=(QueryCandidate(query_id="q1", query_preview="query preview"),),
+        )
+
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("codey.research.pipeline.PlanExecutor.execute", lambda self, plan, staged_tools: mock_executor(plan, staged_tools))
+            pipeline_result = pipeline.run()
+
+
+
+        # Followup was attempted but rejected
+        assert pipeline_result.followup_applied is False
+        assert pipeline_result.planner_stop_reason == "candidate_not_selected"
+        # Merged / applied counts are 0
+        assert pipeline_result.fresh_source_count == 0
+        assert pipeline_result.new_evidence_count == 0
+        # Attempted counts are fully observable!
+        assert pipeline_result.attempted_fresh_source_count == 2
+        assert pipeline_result.attempted_new_evidence_count == 2
+        payload = pipeline_result.to_payload()
+        assert payload["attempted_fresh_source_count"] == 2
+        assert payload["attempted_new_evidence_count"] == 2

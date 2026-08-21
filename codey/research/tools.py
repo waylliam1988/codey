@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -10,7 +9,7 @@ from codey import cancellation
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import clean_relations, normalize_concept
 from codey.knowledge.note import NOTE_STATUSES, NOTE_TYPES, KnowledgeNote, is_safe_id
-from codey.knowledge.store import KnowledgeStore
+from codey.knowledge.store import KnowledgeStore, content_hash_bytes
 from codey.research.ledger import ResearchLedger
 from codey.research.pdf_extract import (
     PDF_DEFAULT_PAGES,
@@ -596,7 +595,7 @@ class StagedKnowledgeStore:
                         # Exact index & links restoration to original snapshot
                         if hasattr(target_store, "rel") and hasattr(target_store, "index") and orig_path is not None:
                             rel = target_store.rel(orig_path)
-                            c_hash = hashlib.sha256(orig_bytes).hexdigest()[:16] if orig_bytes is not None else ""
+                            c_hash = content_hash_bytes(orig_bytes) if orig_bytes is not None else ""
                             target_store.index.upsert(orig_note, path=rel, content_hash=c_hash)
                             if hasattr(target_store, "_index_body_links"):
                                 target_store._index_body_links(orig_note)

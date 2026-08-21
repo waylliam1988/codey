@@ -546,8 +546,11 @@ def _research_payload(result, *, pipeline_result: Any | None = None) -> dict:
                 "fresh_source_count": max(0, int(metadata.get("fresh_source_count") or 0)),
                 "new_evidence_count": max(0, int(metadata.get("new_evidence_count") or 0)),
                 "merged_evidence_count": max(0, int(metadata.get("merged_evidence_count") or 0)),
+                "attempted_fresh_source_count": max(0, int(metadata.get("attempted_fresh_source_count") or 0)),
+                "attempted_new_evidence_count": max(0, int(metadata.get("attempted_new_evidence_count") or 0)),
             })
     return payload
+
 
 
 

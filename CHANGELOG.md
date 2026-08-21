@@ -12,18 +12,19 @@ This file records Codey's release history. The newest release appears first.
   `link()` validates endpoint note existence; changes are committed only upon candidate selection.
 - Added Staging Commit Exception Guard and Atomic Rollback in ResearchPipeline:
   safely protects `commit_staged` against disk full or IO exceptions by automatically unlinking any newly written note files on disk
-  (including cleaning up moved folder paths while restoring original files with 100% byte-exact precision without timestamp drift),
+  (including cleaning up moved folder paths while restoring original files with 100% byte-exact precision without timestamp drift, unified with `content_hash_bytes`),
   removing newly created notes from the SQLite index (preventing ghost index entries), and restoring `KnowledgeChanges` snapshots,
   cleanly preserving the initial successful result with `planner_stop_reason="followup_commit_error"` and zero partial residue.
-
+- Improved pipeline observability (`task_runner.py` / `pipeline.py` / `run_trace.py`):
+  surfaced `fresh_source_count`, `new_evidence_count`, and `merged_evidence_count` as well as fully observable `attempted_fresh_source_count`
+  and `attempted_new_evidence_count` regardless of candidate selection, providing complete traffic and cost transparency.
 - Enhanced deterministic graph patch merger (`codey/research/record_merge.py`):
   enforces strict evidence-backed citation verification across all sections (conclusion, evidence, counter), filtering uncited or dangling citations (e.g. `[99]`),
   idempotently merges new evidence and sources based on `(canonical_url, excerpt_hash)`, re-indexes citations with `done_finalizer`,
   and fully synchronizes `queries`, `search_results` with full `query/opened/final_url` shape, `notes_created`, `notes_updated`, `links_created`, `counterpoints`, and stably sorted `source_urls`.
-- Improved pipeline observability (`task_runner.py` / `run_trace.py`):
-  surfaced `fresh_source_count`, `new_evidence_count`, and `merged_evidence_count` into UI payloads and `RunTrace`.
 - Thoroughly removed dead `max_wall_time` branches and unused timer arguments from `PlanExecutor`.
 - Moved Research lifecycle orchestration into `codey/research/pipeline.py`.
+
 
 
 
