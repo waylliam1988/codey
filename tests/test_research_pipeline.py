@@ -913,3 +913,161 @@ def test_pipeline_selection_rejects_unsupported_claim_regression() -> None:
     )
 
     assert _selects_candidate(candidate, candidate_review, current, current_review) is False
+
+
+def test_pipeline_retains_best_when_staging_commit_fails() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        project = root / "project"
+        project.mkdir()
+        store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(root=store.root)
+        search = _PipelineSearch()
+        initial_tools = ResearchTools(search=search, store=store, changes=changes, session_id="session-comm-fail", project="project-comm-fail")
+        trace = _TraceRecorder()
+        initial_record = _record(question="Pipeline question", synthesis_id="initial", project=project)
+        initial = _result(
+            question="Pipeline question",
+            summary="initial summary",
+            stop_reason="done",
+            synthesis_id="initial",
+            record=initial_record,
+            tools=initial_tools,
+        )
+
+        def run_iteration(**_kwargs):
+            return initial
+
+        def fake_followup_runner(*, tools, **_kwargs):
+            from codey.research.source_document import SourceDocument
+            tools.sources_read.add("https://example.com/accepted")
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://example.com/accepted",
+                final_url="https://example.com/accepted",
+                title="Accepted Source",
+                text="Accepted text",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Accepted Claim",
+                "body": "Accepted body",
+                "sources": ["https://example.com/accepted"],
+                "evidence": [{
+                    "source_url": "https://example.com/accepted",
+                    "excerpt": "Accepted text",
+                    "claim": "Accepted Claim",
+                }],
+            })
+            return EvidenceFollowupResult(
+                ok=True,
+                new_evidence_count=1,
+                new_source_urls=("https://example.com/accepted",),
+                stop_reason="written",
+            )
+
+        def fake_review(record, *, question: str = "", evidence_ledger=None, require_ledger_record: bool = False):
+            del question, evidence_ledger
+            return _review(
+                record_id=getattr(record, "record_id", ""),
+                record_digest=getattr(record, "record_digest", ""),
+                ok=False,
+                answer_status="insufficient_evidence",
+                score=0.35,
+                missing=("answer_coverage_gap",),
+            )
+
+        def fake_plan(review, *, max_queries: int, max_sources: int, **_kwargs):
+            return ResearchPlan(
+                plan_ref="research_plan:gap",
+                query_candidates=(QueryCandidate("q:1", "gap query"),),
+                reason_codes=("proof_gap",),
+                max_queries=max_queries,
+                max_sources=max_sources,
+            )
+
+        material = PlanExecutionResult(
+            queries_executed=("gap query",),
+            fresh_source_urls=("https://example.com/accepted",),
+            stop_reason="opened_sources",
+        )
+
+        context = ResearchContext(
+            question="Pipeline question",
+            session_id="session-comm-fail",
+            run_id="run-comm-fail",
+            project="project-comm-fail",
+            max_turns=4,
+            trace=RunTraceResearchSink(trace),
+        )
+
+        from codey.research import pipeline as pipeline_module
+
+        original_review = pipeline_module.review_research_proof
+        original_plan = pipeline_module.build_research_plan
+        original_execute = pipeline_module.PlanExecutor.execute
+        original_selects = pipeline_module._selects_candidate
+        try:
+            pipeline_module.review_research_proof = fake_review
+            pipeline_module.build_research_plan = fake_plan
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: material
+            pipeline_module._selects_candidate = lambda cand, cr, best, br: True
+            # Simulate commit failure in target tools
+            initial_tools.commit_staged = lambda staged: (_ for _ in ()).throw(OSError("Disk full during note commit"))
+            pipeline = ResearchPipeline(
+                context=context,
+                run_iteration=run_iteration,
+                search_factory=lambda: search,
+                evidence_followup_runner=fake_followup_runner,
+                config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
+            )
+            output = pipeline.run()
+        finally:
+            pipeline_module.review_research_proof = original_review
+            pipeline_module.build_research_plan = original_plan
+            pipeline_module.PlanExecutor.execute = original_execute
+            pipeline_module._selects_candidate = original_selects
+
+        # Followup commit failure gracefully preserves the initial successful result
+        assert output.final_result is initial.result
+        assert output.followup_applied is False
+        assert output.planner_stop_reason == "followup_commit_error"
+
+
+def test_staged_knowledge_store_read_through() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        parent_store = KnowledgeStore(root / "knowledge")
+        from codey.knowledge.note import KnowledgeNote
+        from codey.research.tools import StagedKnowledgeStore
+
+        # 1. Note in parent
+        parent_note = KnowledgeNote(
+            id="parent-note",
+            title="Parent Title",
+            body="Parent Body",
+            type="fact",
+        )
+        parent_store.write_note(parent_note)
+
+        staged_store = StagedKnowledgeStore(parent_store)
+
+        # Read through parent note
+        assert staged_store.exists("parent-note") is True
+        read_parent = staged_store.read_note("parent-note")
+        assert read_parent is not None
+        assert read_parent.title == "Parent Title"
+
+        # 2. Note in staging only
+        staged_note = KnowledgeNote(
+            id="staged-note",
+            title="Staged Title",
+            body="Staged Body",
+            type="fact",
+        )
+        staged_store.write_note(staged_note)
+
+        assert staged_store.exists("staged-note") is True
+        assert parent_store.exists("staged-note") is False
+        read_staged = staged_store.read_note("staged-note")
+        assert read_staged is not None
+        assert read_staged.title == "Staged Title"

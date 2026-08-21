@@ -158,12 +158,16 @@ def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
                     "claim": "Claim 1",
                 }],
             })
-            # Initial summary has an unsupported overclaim line with no citations
+            # Initial summary has unsupported overclaim lines across conclusion, evidence, and counter
             initial_summary = (
-                "## 结论\nVerified finding [1].\n\n"
+                "## 结论\n"
+                "Verified finding [1].\n"
+                "Hallucinated conclusion line with no citation bracket at all.\n\n"
                 "## 关键证据\n"
                 "- [1] Claim 1.\n"
                 "- Unsupported hallucinated claim without any citation bracket.\n\n"
+                "## 反证与限制\n"
+                "- Unsupported counter claim with no evidence or marker.\n\n"
                 "## 来源\n[1] Source 1 - https://example.com/source1"
             )
             initial_finalized = finalize_done_answer(initial_summary, tools.ledger)
@@ -184,6 +188,11 @@ def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
 
             # Fresh source
             tools.sources_read.add("https://example.com/source2")
+            tools.ledger.record_search("truth query", [{
+                "title": "Source 2",
+                "url": "https://example.com/source2",
+                "snippet": "Second verified fact snippet.",
+            }])
             tools.ledger.record_open_document(SourceDocument.html(
                 requested_url="https://example.com/source2",
                 final_url="https://example.com/source2",
@@ -201,14 +210,29 @@ def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
                     "claim": "Claim 2",
                 }],
             })
-            material = PlanExecutionResult(fresh_source_urls=("https://example.com/source2",))
+            material = PlanExecutionResult(
+                queries_executed=("truth query",),
+                fresh_source_urls=("https://example.com/source2",),
+            )
             merged = merge_evidence_patch(initial_result, tools, material)
 
+            # All unsupported hallucinated lines in conclusion/evidence/counter are pruned
+            assert "Hallucinated conclusion line" not in merged.summary
             assert "Unsupported hallucinated claim" not in merged.summary
+            assert "Unsupported counter claim" not in merged.summary
             assert "[1] Source 1" in merged.summary
             assert "[2] Source 2" in merged.summary
+
+            # Search results preserve full payload structure
+            assert len(merged.search_results) == 1
+            sr = merged.search_results[0]
+            assert sr["query"] == "truth query"
+            assert sr["url"] == "https://example.com/source2"
+            assert sr["opened"] is True
+            assert sr["final_url"] == "https://example.com/source2"
         finally:
             store.index.close()
+
 
 
 

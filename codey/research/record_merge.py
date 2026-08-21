@@ -98,7 +98,18 @@ def merge_evidence_patch(
         stop_reason="done",
     )
 
-    final_urls = list(ledger.final_url_set())
+    seen_final: set[str] = set()
+    final_urls: list[str] = []
+    for opened in getattr(ledger, "opened_sources", ()):
+        c_url = ledger.canonical_opened_url(opened.final_url or opened.requested_url) or str(opened.final_url or opened.requested_url or "").strip()
+        if c_url and c_url not in seen_final:
+            seen_final.add(c_url)
+            final_urls.append(c_url)
+    for u in sorted(ledger.final_url_set()):
+        if u and u not in seen_final:
+            seen_final.add(u)
+            final_urls.append(u)
+
     opened_list = [item.to_dict() for item in getattr(ledger, "opened_sources", ())]
     evidence_list = [item.to_dict() for item in getattr(ledger, "evidence_items", ())]
     citation_map = [
@@ -115,23 +126,14 @@ def merge_evidence_patch(
         )
     )
 
-    staged_searches = []
-    for s in getattr(ledger, "searches", ()):
-        for r in getattr(s, "results", ()):
-            if hasattr(r, "to_dict"):
-                staged_searches.append(r.to_dict())
-            elif isinstance(r, dict):
-                staged_searches.append(r)
-    merged_search_results = list(initial.search_results or []) + staged_searches
-    seen_sr_keys = set()
-    unique_search_results = []
-    for sr in merged_search_results:
-        sr_url = str(sr.get("url") or "")
-        if sr_url and sr_url in seen_sr_keys:
-            continue
-        if sr_url:
-            seen_sr_keys.add(sr_url)
-        unique_search_results.append(sr)
+    # Use complete search_results_payload shape from ledger
+    ledger_search_results = ledger.search_results_payload()
+    seen_search_keys = {(r.get("query"), r.get("url")) for r in ledger_search_results if isinstance(r, dict)}
+    extra_initial = [
+        r for r in (initial.search_results or [])
+        if isinstance(r, dict) and (r.get("query"), r.get("url")) not in seen_search_keys
+    ]
+    merged_search_results = ledger_search_results + extra_initial
 
     merged_notes_created = list(
         dict.fromkeys(
@@ -172,7 +174,7 @@ def merge_evidence_patch(
         coverage=coverage or initial.coverage,
         quality_warnings=warnings or initial.quality_warnings,
         queries=merged_queries,
-        search_results=unique_search_results,
+        search_results=merged_search_results,
         notes_created=merged_notes_created,
         notes_updated=merged_notes_updated,
         links_created=merged_links_created,
@@ -233,6 +235,7 @@ def _inject_new_evidence_into_sections(
     ledger: ResearchLedger,
 ) -> dict[str, str]:
     updated = dict(sections)
+    conclusion_lines: list[str] = []
     evidence_lines: list[str] = []
     counter_lines: list[str] = []
     source_lines: list[str] = []
@@ -250,6 +253,16 @@ def _inject_new_evidence_into_sections(
 
     next_num = max(url_to_num.values(), default=0) + 1
 
+    # Prune un-cited or unsupported raw lines from conclusion to keep evidence-backed base
+    existing_conclusion_text = updated.get("conclusion", "").strip()
+    if existing_conclusion_text:
+        for line in existing_conclusion_text.splitlines():
+            sline = line.strip()
+            if not sline:
+                continue
+            if re.search(r"\[\d+\]", sline):
+                conclusion_lines.append(sline)
+
     # Prune un-cited or unsupported raw lines from initial evidence to keep evidence-backed base
     existing_evidence_text = updated.get("evidence", "").strip()
     if existing_evidence_text:
@@ -257,9 +270,19 @@ def _inject_new_evidence_into_sections(
             sline = line.strip()
             if not sline:
                 continue
-            # Retain bullet lines that carry a citation bracket [num]
             if re.search(r"\[\d+\]", sline):
                 evidence_lines.append(sline)
+
+    # Prune un-cited or unsupported raw lines from initial counter
+    existing_counter_text = updated.get("counter", "").strip()
+    if existing_counter_text:
+        for line in existing_counter_text.splitlines():
+            sline = line.strip()
+            if not sline:
+                continue
+            # Retain lines with citation [num] or valid limitation markers
+            if re.search(r"\[\d+\]", sline) or any(m in sline for m in ("未找到", "没有找到", "限制", "持续追踪")):
+                counter_lines.append(sline)
 
     for item in new_evidence:
         url = ledger.canonical_opened_url(item.source_url) or str(item.source_url or "").strip()
@@ -280,18 +303,27 @@ def _inject_new_evidence_into_sections(
         else:
             evidence_lines.append(line)
 
-    if evidence_lines:
-        updated["evidence"] = "\n".join(evidence_lines).strip()
+    if not conclusion_lines and evidence_lines:
+        first_ev = evidence_lines[0]
+        match = re.search(r"\[(\d+)\]\s*(.*)", first_ev)
+        if match:
+            c_num, c_text = match.groups()
+            conclusion_lines.append(f"- {c_text} [{c_num}]")
+        else:
+            c_num = next(iter(url_to_num.values()), 1)
+            conclusion_lines.append(f"- Research findings supported by verified sources. [{c_num}]")
+    elif not conclusion_lines and url_to_num:
+        c_num = next(iter(url_to_num.values()), 1)
+        conclusion_lines.append(f"- Research findings supported by verified sources. [{c_num}]")
 
-    if counter_lines:
-        cur = updated.get("counter", "").strip()
-        joined = "\n".join(counter_lines)
-        updated["counter"] = f"{cur}\n{joined}".strip() if cur else joined
-
-    if source_lines:
-        updated["sources"] = "\n".join(source_lines).strip()
+    updated["conclusion"] = "\n".join(conclusion_lines).strip()
+    updated["evidence"] = "\n".join(evidence_lines).strip()
+    updated["counter"] = "\n".join(counter_lines).strip()
+    updated["sources"] = "\n".join(source_lines).strip()
 
     return updated
+
+
 
 
 __all__ = [

@@ -7,15 +7,20 @@
 ## 0.4.4 - Bounded Research Planner v1（implementation draft，未 release）
 
 - 实现真正的 Staging 内存事务隔离（`StagedKnowledgeStore` / `StagedKnowledgeChanges`）：
-  follow-up 阶段笔记写入和关联全部在内存暂存缓冲中执行，候选方案被拒绝时 100% 零写入磁盘主知识库与 changes，
+  follow-up 阶段笔记写入和关联全部在内存暂存缓冲中执行，支持完整 read-through 读穿透；候选方案被拒绝时 100% 零写入磁盘主知识库与 changes，
   主 store、`sources_read`、`created_ids` 零污染；仅当候选方案被评测胜出时才批量持久化提交。
+- Pipeline Staging Commit 异常安全护栏：
+  在候选方案胜出提交（`commit_staged`）阶段增加异常保护，即使发生磁盘满或底层 IO 错误，也会平稳回退并保留 initial 成功结果，
+  标记 `planner_stop_reason="followup_commit_error"`，彻底消除增强路径拖垮主任务的风险。
 - 强化确定性图谱合并器（`codey/research/record_merge.py`）：
-  丢弃未受支持的新断言与未引用的幻觉段落，按 `(canonical_url, excerpt_hash)` 幂等去重合并新增证据与来源，
-  通过 `done_finalizer` 顺延并重新编号引用，全面同步 `queries`、`search_results`、`notes_created`、`notes_updated`、`links_created`、`counterpoints` 等全量元数据。
+  对结论（conclusion）、关键证据（evidence）、反证（counter）实现全段落 unsupported 幻觉行修剪，仅保留有证据支撑的断言行；
+  按 `(canonical_url, excerpt_hash)` 幂等去重合并新增证据与来源，通过 `done_finalizer` 顺延并重新编号引用，
+  全面同步 `queries`、包含完整 `query/opened/final_url` 的 `search_results`、`notes_created`、`notes_updated`、`links_created`、`counterpoints` 与稳定排序的 `source_urls`。
 - 完善管道可观测性（`task_runner.py` / `run_trace.py`）：
   将 `fresh_source_count`、`new_evidence_count`、`merged_evidence_count` 完整透传到 UI payload 与 `RunTrace` 审计中。
 - 彻底清理 `PlanExecutor` 中 `max_wall_time` 残留死分支，消除已废弃的计时器参数，确保执行边界语义纯粹干净。
 - 将 Research 生命周期编排收归 `codey/research/pipeline.py`：初始
+
 
   `ResearchRunner`、proof review、`QueryPlanner`、有界 `PlanExecutor`、
   evidence-only follow-up、确定性 `merge_evidence_patch`、最终 proof review 和 Evidence Ledger 写入由 Pipeline

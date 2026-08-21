@@ -512,6 +512,14 @@ class StagedKnowledgeStore:
     def exists(self, note_id: str) -> bool:
         return note_id in self._staged_notes or self._parent.exists(note_id)
 
+    def get_note(self, note_id: str) -> KnowledgeNote | None:
+        return self.read_note(note_id)
+
+    def read_note(self, note_id: str) -> KnowledgeNote | None:
+        if note_id in self._staged_notes:
+            return self._staged_notes[note_id]
+        return self._parent.read_note(note_id)
+
     def write_note(
         self,
         note: KnowledgeNote,

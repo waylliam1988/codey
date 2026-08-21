@@ -129,11 +129,7 @@ class ResearchPipeline:
                         if self.context.should_stop():
                             planner_stop_reason = "stopped"
                             break
-                        staged_tools = (
-                            current_tools.create_staged()
-                            if hasattr(current_tools, "create_staged")
-                            else current_tools
-                        )
+                        staged_tools = current_tools.create_staged()
 
                         executor = PlanExecutor(
                             config=self.config,
@@ -174,8 +170,13 @@ class ResearchPipeline:
                         )
                         candidate_review = self._review(candidate, require_ledger_record=False)
                         if _selects_candidate(candidate, candidate_review, best, best_review):
-                            if hasattr(best_tools, "commit_staged"):
+                            try:
                                 best_tools.commit_staged(staged_tools)
+                            except cancellation.TaskCancelled:
+                                raise
+                            except Exception:
+                                planner_stop_reason = "followup_commit_error"
+                                break
                             best = candidate
                             best_review = candidate_review
                             current_tools = best_tools

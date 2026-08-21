@@ -7,15 +7,19 @@ This file records Codey's release history. The newest release appears first.
 ## 0.4.4 - Bounded Research Planner v1 (implementation draft, unreleased)
 
 - Implemented true memory Staging isolation (`StagedKnowledgeStore` / `StagedKnowledgeChanges`):
-  knowledge writes and note links during follow-up are buffered in-memory; rejected candidates incur 0 writes to disk store or changes,
+  knowledge writes and note links during follow-up are buffered in-memory with full read-through capability; rejected candidates incur 0 writes to disk store or changes,
   guaranteeing zero pollution for store, `sources_read`, and `created_ids`; changes are safely committed only upon candidate selection.
+- Added Staging Commit Exception Guard in ResearchPipeline:
+  safely protects `commit_staged` against disk full or IO exceptions, cleanly preserving the initial successful result
+  with `planner_stop_reason="followup_commit_error"`.
 - Enhanced deterministic graph patch merger (`codey/research/record_merge.py`):
-  prunes unsupported raw claims and uncited hallucinated paragraphs, idempotently merges new evidence and sources based on `(canonical_url, excerpt_hash)`,
-  re-indexes citations with `done_finalizer`, and fully synchronizes all `queries`, `search_results`, `notes_created`, `notes_updated`, `links_created`, and `counterpoints` metadata.
+  prunes unsupported raw claims across all sections (conclusion, evidence, counter), idempotently merges new evidence and sources based on `(canonical_url, excerpt_hash)`,
+  re-indexes citations with `done_finalizer`, and fully synchronizes `queries`, `search_results` with full `query/opened/final_url` shape, `notes_created`, `notes_updated`, `links_created`, `counterpoints`, and stably sorted `source_urls`.
 - Improved pipeline observability (`task_runner.py` / `run_trace.py`):
   surfaced `fresh_source_count`, `new_evidence_count`, and `merged_evidence_count` into UI payloads and `RunTrace`.
 - Thoroughly removed dead `max_wall_time` branches and unused timer arguments from `PlanExecutor`.
 - Moved Research lifecycle orchestration into `codey/research/pipeline.py`.
+
 
   Initial `ResearchRunner`, proof review, `QueryPlanner`, bounded
   `PlanExecutor`, evidence-only follow-up, deterministic `merge_evidence_patch`, final proof review, and Evidence Ledger
