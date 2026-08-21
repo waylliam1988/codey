@@ -156,6 +156,24 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
                 }],
             })
             assert "must be declared in the note's 'sources' list" in res_mismatch_src
+
+            # 10. Evidence-only mode rejects ordinary knowledge_write side channels
+            res_extra_args = controller.execute_tool_call("knowledge_write", {
+                "type": "fact",
+                "title": "Tagged Claim",
+                "body": "Body",
+                "sources": [allowed_url],
+                "evidence": [{
+                    "source_url": allowed_url,
+                    "excerpt": "Fresh source body",
+                }],
+                "tags": ["research"],
+                "relations": [],
+            })
+            assert "accepts only type/title/body/sources/evidence args" in res_extra_args
+            assert "relations" in res_extra_args
+            assert "tags" in res_extra_args
+            assert len(tools.ledger.evidence_items) == 1
         finally:
             store.index.close()
 

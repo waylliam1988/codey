@@ -13,7 +13,16 @@ This file records Codey's release history. The newest release appears first.
 - Hardened staged note-link semantics and rollback:
   staged links now resolve note titles through the same narrow store resolver used by normal `KnowledgeStore.link()`,
   staged commit snapshots and restores the SQLite link edges touching staged/link endpoint notes on failure,
+  `replace_links_touching()` now filters restore rows to links actually touching the requested note ids,
   and staging-only change tracking is a pure no-op facade rather than a half-used state holder.
+- Formalized `KnowledgeChanges.snapshot()` / `restore_snapshot()` as the rollback boundary used by staged commits,
+  avoiding private-field restoration while preserving the full in-memory change tracking state.
+- Tightened evidence-only `knowledge_write` to the minimal argument surface:
+  `type`, `title`, `body`, `sources`, and `evidence` are accepted; ordinary write side channels such as `tags`,
+  `relations`, `aliases`, `status`, or custom ids are rejected in follow-up mode.
+- Fixed deterministic merge project metadata preservation:
+  merged records now rebuild `project_ref` from the active `ResearchTools.project` when modern records only carry
+  `basename/digest` project refs and no legacy `path`.
 - Added Staging Commit Exception Guard and Compensating Rollback in ResearchPipeline:
   safely protects `commit_staged` against disk full or IO exceptions by automatically unlinking newly written note files on disk
   (including cleaning up moved folder paths while restoring original files with byte-exact precision without timestamp drift, unified with `content_hash_bytes`),

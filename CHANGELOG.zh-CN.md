@@ -13,7 +13,16 @@
 - 加固 staged note-link 语义与回滚：
   staged link 现在通过普通 `KnowledgeStore.link()` 同一层窄 resolver 解析 note 标题；
   staged commit 失败时会快照并恢复所有触及 staged/link endpoint note 的 SQLite link 边；
+  `replace_links_touching()` 会在 API 内过滤 restore rows，只恢复确实触及指定 note ids 的 link；
   staging 阶段的 changes 跟踪收敛为纯 no-op facade，不再保留半使用状态。
+- 将 `KnowledgeChanges.snapshot()` / `restore_snapshot()` 正式作为 staged commit rollback 边界：
+  回滚不再触碰 `KnowledgeChanges` 私有字段，并会恢复完整的内存 change tracking 状态。
+- evidence-only `knowledge_write` 收窄到最小参数面：
+  只接受 `type`、`title`、`body`、`sources`、`evidence`；follow-up 模式下拒绝
+  `tags`、`relations`、`aliases`、`status`、自定义 id 等普通写入侧通道。
+- 修复 deterministic merge 的 project metadata 保留：
+  现代 `ResearchRecord.project_ref` 只包含 `basename/digest`、没有 legacy `path` 时，合并记录会从当前
+  `ResearchTools.project` 重建 `project_ref`，避免 project metadata 退化为空。
 - Pipeline Staging Commit 补偿回滚与异常安全护栏：
   在候选方案胜出提交（`commit_staged`）阶段增加异常保护与补偿回滚，若多 note 写入中途抛出磁盘满或底层 IO 错误，
   自动逆序清理本次已写入磁盘的 note 文件（针对已有 note 发生路径/folder 移动，彻底删除新路径文件并字节级还原旧路径文件内容与时间戳，统一使用 `content_hash_bytes` 保持算法收口一致）、

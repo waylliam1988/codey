@@ -11,6 +11,7 @@ from codey.knowledge import (
     KnowledgeGraphBuilder,
     KnowledgeNote,
     KnowledgeStore,
+    RestoreResult,
     UnifiedResearchGraphBuilder,
 )
 from codey.knowledge.concepts import ConceptGraphBuilder
@@ -95,6 +96,26 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertEqual(result.restored, [f"synthesis/{note.id}.md"])
         self.assertIsNone(missing)
         self.assertEqual(count, 0)
+
+    def test_changes_snapshot_restore_recovers_tracking_state(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            changes = KnowledgeChanges(store.root)
+            baseline_restore = RestoreResult(ok=True, restored=["existing.md"], conflicts=[])
+            changes.last_restore_result = baseline_restore
+            snapshot = changes.snapshot()
+            note = KnowledgeNote.create(type="fact", title="Tracked", body="Body")
+            store.write_note(note, changes=changes)
+
+            self.assertTrue(changes.has_changes())
+            changes.last_restore_result = RestoreResult(ok=False, restored=[], conflicts=["conflict.md"])
+            changes.restore_snapshot(snapshot)
+            store.close()
+
+        self.assertFalse(changes.has_changes())
+        self.assertEqual(changes.created, [])
+        self.assertEqual(changes.updated, [])
+        self.assertEqual(changes.last_restore_result, baseline_restore)
 
     def test_brief_builder_uses_latest_session_synthesis_only(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -191,6 +212,30 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertIn({"src_id": a.id, "dst_id": b.id, "kind": "supports"}, links)
         self.assertIn({"src_id": c.id, "dst_id": a.id, "kind": "contradicts"}, links)
         self.assertEqual(sources, [{"note_id": a.id, "source": "https://example.com/a"}])
+
+    def test_index_replace_links_touching_ignores_unrelated_snapshot_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            a = KnowledgeNote.create(type="fact", title="A", body="A")
+            b = KnowledgeNote.create(type="fact", title="B", body="B")
+            c = KnowledgeNote.create(type="fact", title="C", body="C")
+            d = KnowledgeNote.create(type="fact", title="D", body="D")
+            for note in (a, b, c, d):
+                store.write_note(note)
+            store.link(a.id, b.id, "supports")
+            store.link(c.id, a.id, "contradicts")
+
+            links = store.index.links_touching([a.id])
+            store.index.replace_links_touching(
+                [a.id],
+                links + [{"src_id": d.id, "dst_id": b.id, "kind": "relates"}],
+            )
+            restored_links = store.index.links_touching([a.id])
+            unrelated_links = store.index.links_touching([d.id])
+            store.close()
+
+        self.assertCountEqual(restored_links, links)
+        self.assertEqual(unrelated_links, [])
 
     def test_graph_builder_adds_source_url_and_virtual_counterpoint(self) -> None:
         with tempfile.TemporaryDirectory() as td:

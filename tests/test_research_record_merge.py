@@ -66,6 +66,7 @@ def test_merge_evidence_patch_appends_new_evidence_and_reindexes_citations() -> 
                 ledger=tools.ledger,
                 stop_reason="done",
             )
+            assert "path" not in initial_record.project_ref
             initial_result = ResearchRunResult(
                 question="What are the findings?",
                 summary=initial_finalized.text,
@@ -111,6 +112,7 @@ def test_merge_evidence_patch_appends_new_evidence_and_reindexes_citations() -> 
             assert "[1] Initial Source" in merged_result.summary
             assert "[2] Followup Source" in merged_result.summary
             assert merged_result.research_record is not None
+            assert merged_result.research_record.project_ref == initial_record.project_ref
             assert len(merged_result.research_record.sources) == 2
             assert len(merged_result.research_record.evidence) == 2
             assert merged_result.synthesis_id.startswith("synthesis:merge:")
@@ -231,7 +233,6 @@ def test_merge_evidence_patch_prunes_unsupported_raw_claims() -> None:
             assert "[99]" not in merged.summary
             assert "[1] Source 1" in merged.summary
             assert "[2] Source 2" in merged.summary
-
 
             # Search results preserve full payload structure
             assert len(merged.search_results) == 1

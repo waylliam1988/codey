@@ -364,6 +364,10 @@ unsupported claim 增加，保守 gate 仍把该 row 判定为 non-useful。Step
 staged commit 失败时会恢复触及的 link 边；deterministic merge 复用共享 citation
 parser，不再单独维护来源行解析正则。确定性报告装配通过 follow-up 指标表达，不再
 虚增 Research turn 计数。
+follow-up 的 `knowledge_write` 参数面也保持最小化：只接受
+`type/title/body/sources/evidence`；staged rollback 使用公开的
+`KnowledgeChanges` snapshot 边界；合并后的记录会保留当前 project ref，不再丢失
+project metadata。
 
 MiMo 在加入 one-tool Research 边界后重新做过实机补测。fresh-tab 的
 `long-official-doc/source_search` 跑满 10 轮并完成：使用了 `source_search`，

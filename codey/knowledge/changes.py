@@ -19,6 +19,14 @@ class RestoreResult:
     error: str | None = None
 
 
+@dataclass(frozen=True)
+class KnowledgeChangesSnapshot:
+    before: dict[str, str | None]
+    after_hashes: dict[str, str]
+    touched: frozenset[str]
+    last_restore_result: RestoreResult | None = None
+
+
 @dataclass
 class KnowledgeChanges:
     root: Path
@@ -58,6 +66,20 @@ class KnowledgeChanges:
 
     def has_changes(self) -> bool:
         return bool(self._touched)
+
+    def snapshot(self) -> KnowledgeChangesSnapshot:
+        return KnowledgeChangesSnapshot(
+            before=dict(self._before),
+            after_hashes=dict(self._after_hashes),
+            touched=frozenset(self._touched),
+            last_restore_result=self.last_restore_result,
+        )
+
+    def restore_snapshot(self, snapshot: KnowledgeChangesSnapshot) -> None:
+        self._before = dict(snapshot.before)
+        self._after_hashes = dict(snapshot.after_hashes)
+        self._touched = set(snapshot.touched)
+        self.last_restore_result = snapshot.last_restore_result
 
     def restore_result(self) -> RestoreResult:
         restored: list[str] = []

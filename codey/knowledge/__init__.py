@@ -1,7 +1,7 @@
 """Durable knowledge primitives used by Codey Research and project memory."""
 
 from codey.knowledge.brief import KnowledgeBriefBuilder, ResearchBrief
-from codey.knowledge.changes import KnowledgeChanges, RestoreResult
+from codey.knowledge.changes import KnowledgeChanges, KnowledgeChangesSnapshot, RestoreResult
 from codey.knowledge.concepts import ConceptGraphBuilder
 from codey.knowledge.graph import KnowledgeGraphBuilder, ResearchGraphArtifact
 from codey.knowledge.note import NOTE_TYPES, KnowledgeNote
@@ -13,6 +13,7 @@ __all__ = [
     "ConceptGraphBuilder",
     "KnowledgeBriefBuilder",
     "KnowledgeChanges",
+    "KnowledgeChangesSnapshot",
     "KnowledgeGraphBuilder",
     "KnowledgeNote",
     "KnowledgeStore",

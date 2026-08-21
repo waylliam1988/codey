@@ -560,9 +560,7 @@ class StagedKnowledgeStore:
         return f"linked: {src_id} -> {dst_id} ({kind})"
 
     def commit_to(self, target_store: KnowledgeStore, changes: KnowledgeChanges | None = None) -> None:
-        saved_before = dict(getattr(changes, "_before", {})) if changes is not None else None
-        saved_after = dict(getattr(changes, "_after_hashes", {})) if changes is not None else None
-        saved_touched = set(getattr(changes, "_touched", ())) if changes is not None else None
+        changes_snapshot = changes.snapshot() if changes is not None else None
 
         # Track written/modified notes and files for compensating rollback:
         # note_id -> (new_path, orig_path_or_None, orig_bytes_or_None, orig_note_or_None)
@@ -626,10 +624,8 @@ class StagedKnowledgeStore:
             except Exception as cleanup_exc:
                 cleanup_errors.append(f"links: {cleanup_exc}")
 
-            if changes is not None and saved_before is not None:
-                changes._before = saved_before
-                changes._after_hashes = saved_after or {}
-                changes._touched = saved_touched or set()
+            if changes is not None and changes_snapshot is not None:
+                changes.restore_snapshot(changes_snapshot)
             if cleanup_errors:
                 exc.add_note("staged knowledge rollback cleanup errors: " + "; ".join(cleanup_errors[:6]))
             raise

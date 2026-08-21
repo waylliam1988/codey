@@ -276,16 +276,17 @@ class KnowledgeIndex:
         ids = _unique(note_ids)
         if not ids:
             return
+        id_set = set(ids)
         marks = ",".join("?" * len(ids))
-        rows = [
-            (
-                str(row.get("src_id") or ""),
-                str(row.get("dst_id") or ""),
-                str(row.get("kind") or "relates"),
-            )
-            for row in links
-            if str(row.get("src_id") or "") and str(row.get("dst_id") or "")
-        ]
+        rows: list[tuple[str, str, str]] = []
+        for row in links:
+            src_id = str(row.get("src_id") or "").strip()
+            dst_id = str(row.get("dst_id") or "").strip()
+            if not src_id or not dst_id:
+                continue
+            if src_id not in id_set and dst_id not in id_set:
+                continue
+            rows.append((src_id, dst_id, str(row.get("kind") or "relates")))
         with self._lock:
             c = self._conn
             c.execute(

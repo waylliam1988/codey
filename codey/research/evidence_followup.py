@@ -21,6 +21,7 @@ from codey.research.tools import ResearchTools
 
 
 _SOURCE_ID_FORBIDDEN_RE = re.compile(r"\b(?:s\d+|source_id|result_id|hit_id)\b", re.IGNORECASE)
+_ALLOWED_KNOWLEDGE_WRITE_ARGS = frozenset({"type", "title", "body", "sources", "evidence"})
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,7 @@ def build_evidence_followup_prompt(
         "3. Every source in `sources` or `evidence[].source_url` MUST EXACTLY match one of the Allowed Fresh URLs below.",
         "4. NEVER use internal labels like 's1', 's2', or placeholders. Always use the full URL.",
         "5. You MUST provide explicit evidence items: `evidence: [{'source_url': '...', 'excerpt': '...', 'claim': '...', 'stance': 'supports|contradicts|context'}]`.",
+        "6. Allowed `args` keys are ONLY: type, title, body, sources, evidence.",
         "",
         f"Target Research Question: {clip(question, 300)}",
         f"Initial Report Summary: {clip(initial_summary, 1200)}",
@@ -87,6 +89,9 @@ class EvidenceFollowupController:
         tool_name = str(name or "").strip().lower()
         if tool_name != "knowledge_write":
             return f"ERROR: Tool '{tool_name}' is forbidden in evidence-only follow-up mode. ONLY 'knowledge_write' is allowed."
+        extra_keys = sorted(str(key) for key in args if str(key) not in _ALLOWED_KNOWLEDGE_WRITE_ARGS)
+        if extra_keys:
+            return "ERROR: Evidence-only follow-up accepts only type/title/body/sources/evidence args; forbidden key(s): " + ", ".join(extra_keys)
         if "type" not in args or not str(args.get("type") or "").strip():
             return "ERROR: knowledge_write in evidence-only mode requires explicit type='fact'."
         note_type = str(args.get("type") or "").strip().lower()

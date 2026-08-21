@@ -79,11 +79,7 @@ def merge_evidence_patch(
     except Exception:
         quality_review = None
 
-    project_val = (
-        getattr(initial_record, "project_ref", {}).get("path")
-        if isinstance(getattr(initial_record, "project_ref", None), dict)
-        else getattr(initial_record, "project", "") or getattr(tools, "project", "")
-    )
+    project_val = _merge_project_value(initial_record, tools)
     merge_synthesis_id = f"synthesis:merge:{hashlib.sha256(final_text.encode('utf-8')).hexdigest()[:12]}"
 
     new_record = build_research_record(
@@ -195,6 +191,15 @@ def _blank_sections() -> dict[str, str]:
         "coverage": "",
         "sources": "",
     }
+
+
+def _merge_project_value(initial_record: ResearchRecord | None, tools: ResearchTools) -> str:
+    project_ref = getattr(initial_record, "project_ref", None)
+    if isinstance(project_ref, dict):
+        legacy_path = str(project_ref.get("path") or "").strip()
+        if legacy_path:
+            return legacy_path
+    return str(tools.project or "").strip()
 
 
 def _needs_minimal_evidence_rebuild(

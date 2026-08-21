@@ -203,6 +203,30 @@ extra searches once the fresh-source budget is full, deterministic merge reuses
 the shared citation parser, and non-model merge assembly no longer increments
 Research turn counts.
 
+2026-08-21 evidence-only boundary and merge metadata hardening:
+
+```text
+python -B -m py_compile codey\knowledge\changes.py codey\knowledge\__init__.py codey\knowledge\index.py codey\research\tools.py codey\research\record_merge.py codey\research\evidence_followup.py tests\test_knowledge.py tests\test_research_evidence_followup.py tests\test_research_record_merge.py
+# ok
+
+ruff check codey\knowledge\changes.py codey\knowledge\__init__.py codey\knowledge\index.py codey\research\tools.py codey\research\record_merge.py codey\research\evidence_followup.py tests\test_knowledge.py tests\test_research_evidence_followup.py tests\test_research_record_merge.py
+# All checks passed
+
+pytest tests\test_knowledge.py tests\test_research_evidence_followup.py tests\test_research_record_merge.py tests\test_research_pipeline.py tests\test_research_plan_executor.py tests\test_architecture.py -q
+# 88 passed, 125 subtests passed
+
+pytest -q
+# 2270 passed, 9 skipped, 638 subtests passed in 422.83s
+```
+
+This pass closes the remaining low-risk review items from the evidence-only
+production hardening: `KnowledgeChanges` now exposes a public
+`snapshot()/restore_snapshot()` rollback boundary, link snapshot restore filters
+incoming rows to the touched note ids, evidence-only `knowledge_write` accepts
+only the minimal `type/title/body/sources/evidence` argument set, and deterministic
+merge preserves project metadata when modern `ResearchRecord.project_ref`
+contains only `basename/digest`.
+
 ## 0.4.3 Source Connector Boundary + Query Planner Dry Run v1
 
 Codey 0.4.3 adds the Research source boundary, deterministic planner dry-run,

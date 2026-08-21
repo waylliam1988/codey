@@ -452,6 +452,10 @@ note titles before committing links, failed staged commits restore touched link
 edges, and deterministic merge reuses the shared citation parser instead of
 maintaining a separate source-line parser. Deterministic report assembly is
 tracked through follow-up metrics rather than inflating Research turn counts.
+The follow-up `knowledge_write` surface is also intentionally minimal:
+only `type/title/body/sources/evidence` are accepted, staged rollback uses the
+public `KnowledgeChanges` snapshot boundary, and merged records preserve the
+active project ref rather than dropping project metadata.
 
 MiMo was retested after adding the one-tool Research boundary. A fresh-tab
 `long-official-doc/source_search` run completed in 10 turns, used
