@@ -7,6 +7,7 @@ from pathlib import Path
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.store import KnowledgeStore
 from codey.research.context import ResearchContext, ResearchPipelineConfig, RunTraceResearchSink
+from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
@@ -516,6 +517,8 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
         assert output.followup_rounds == 1
         assert output.final_result is candidate.result
         assert output.planner_stop_reason in {"evidence_merged", "max_followup_rounds"}
+        assert output.fresh_source_count == 1
+        assert output.new_evidence_count == 1
         assert search.closed is True
         assert len(run_calls) == 1
         assert any(name == "record_evidence_ledger_write" for name, *_ in trace.calls)
@@ -525,6 +528,123 @@ def test_pipeline_prefers_better_followup_but_rejects_unsupported_regression() -
         assert len(snapshot.payload["records"]) == 1
         assert "run-pipeline" in ledger_events
         assert "insufficient_evidence" in plan_calls
+
+
+def test_pipeline_staging_isolates_rejected_followup_side_effects() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        project = root / "project"
+        project.mkdir()
+        store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(root=store.root)
+        search = _PipelineSearch()
+        initial_tools = ResearchTools(search=search, store=store, changes=changes, session_id="session-p", project="project-p")
+        trace = _TraceRecorder()
+        initial_record = _record(question="Pipeline question", synthesis_id="initial", project=project)
+        initial = _result(
+            question="Pipeline question",
+            summary="initial summary",
+            stop_reason="done",
+            synthesis_id="initial",
+            record=initial_record,
+            tools=initial_tools,
+        )
+
+        def run_iteration(**_kwargs):
+            return initial
+
+        def fake_followup_runner(*, tools, **_kwargs):
+            # Write to the passed-in (staged) tools ledger
+            from codey.research.source_document import SourceDocument
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://example.com/rejected",
+                final_url="https://example.com/rejected",
+                title="Rejected Source",
+                text="Staged text",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Rejected Claim",
+                "body": "Staged body",
+                "sources": ["https://example.com/rejected"],
+                "evidence": [{
+                    "source_url": "https://example.com/rejected",
+                    "excerpt": "Staged text",
+                    "claim": "Rejected Claim",
+                }],
+            })
+            return EvidenceFollowupResult(
+                ok=True,
+                new_evidence_count=1,
+                new_source_urls=("https://example.com/rejected",),
+                stop_reason="written",
+            )
+
+        def fake_review(record, *, question: str = "", evidence_ledger=None, require_ledger_record: bool = False):
+            del question, evidence_ledger
+            return _review(
+                record_id=getattr(record, "record_id", ""),
+                record_digest=getattr(record, "record_digest", ""),
+                ok=False,
+                answer_status="insufficient_evidence",
+                score=0.35,
+                missing=("answer_coverage_gap",),
+            )
+
+        def fake_plan(review, *, max_queries: int, max_sources: int, **_kwargs):
+            return ResearchPlan(
+                plan_ref="research_plan:gap",
+                query_candidates=(QueryCandidate("q:1", "gap query"),),
+                reason_codes=("proof_gap",),
+                max_queries=max_queries,
+                max_sources=max_sources,
+            )
+
+        material = PlanExecutionResult(
+            queries_executed=("gap query",),
+            fresh_source_urls=("https://example.com/rejected",),
+            stop_reason="opened_sources",
+        )
+
+        context = ResearchContext(
+            question="Pipeline question",
+            session_id="session-p",
+            run_id="run-p",
+            project="project-p",
+            max_turns=4,
+            trace=RunTraceResearchSink(trace),
+        )
+
+        from codey.research import pipeline as pipeline_module
+
+        original_review = pipeline_module.review_research_proof
+        original_plan = pipeline_module.build_research_plan
+        original_execute = pipeline_module.PlanExecutor.execute
+        original_selects = pipeline_module._selects_candidate
+        try:
+            pipeline_module.review_research_proof = fake_review
+            pipeline_module.build_research_plan = fake_plan
+            pipeline_module.PlanExecutor.execute = lambda self, plan, tools: material
+            # Candidate is explicitly rejected
+            pipeline_module._selects_candidate = lambda cand, cr, best, br: False
+            pipeline = ResearchPipeline(
+                context=context,
+                run_iteration=run_iteration,
+                search_factory=lambda: search,
+                evidence_followup_runner=fake_followup_runner,
+                config=ResearchPipelineConfig(enabled=True, max_followup_rounds=1),
+            )
+            output = pipeline.run()
+        finally:
+            pipeline_module.review_research_proof = original_review
+            pipeline_module.build_research_plan = original_plan
+            pipeline_module.PlanExecutor.execute = original_execute
+            pipeline_module._selects_candidate = original_selects
+
+        assert output.final_result is initial.result
+        assert output.planner_stop_reason == "candidate_not_selected"
+        # Initial tools ledger was NOT polluted by the rejected staging run
+        assert len(initial_tools.ledger.evidence_items) == 0
 
 
 def test_pipeline_keeps_initial_result_when_followup_iteration_raises() -> None:
@@ -636,6 +756,7 @@ def test_pipeline_keeps_initial_result_when_followup_iteration_raises() -> None:
         assert output.followup_rounds == 0
         assert output.planner_stop_reason == "followup_iteration_error"
         assert len(run_calls) == 1
+
 
         snapshot = evidence_ledgers.load(session_id="session-pipeline", project="project-pipeline")
         assert snapshot.available is True

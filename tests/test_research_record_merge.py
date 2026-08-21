@@ -112,10 +112,141 @@ def test_merge_evidence_patch_appends_new_evidence_and_reindexes_citations() -> 
             assert merged_result.research_record is not None
             assert len(merged_result.research_record.sources) == 2
             assert len(merged_result.research_record.evidence) == 2
+            assert merged_result.synthesis_id.startswith("synthesis:merge:")
+            assert len(merged_result.source_urls) == 2
+            assert merged_result.sources_read == 2
+            assert len(merged_result.evidence_items) == 2
 
             # 4. Merging again with same inputs is idempotent
             merged_again = merge_evidence_patch(merged_result, tools, material)
             assert merged_again.summary == merged_result.summary
             assert merged_again.research_record.record_digest == merged_result.research_record.record_digest
+        finally:
+            store.index.close()
+
+
+def test_merge_evidence_patch_preserves_same_excerpt_from_different_sources() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-merge2",
+                project="project-merge2",
+            )
+            # Source 1 with quote
+            tools.sources_read.add("https://example.com/src1")
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://example.com/src1",
+                final_url="https://example.com/src1",
+                title="Source 1",
+                text="Identical quote text from official release.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Claim 1",
+                "body": "Body",
+                "sources": ["https://example.com/src1"],
+                "evidence": [{
+                    "source_url": "https://example.com/src1",
+                    "excerpt": "Identical quote text from official release.",
+                    "claim": "Claim 1",
+                }],
+            })
+            initial_summary = "## 结论\nFinding [1].\n\n## 关键证据\n- [1] Finding.\n\n## 来源\n[1] Source 1 - https://example.com/src1"
+            initial_finalized = finalize_done_answer(initial_summary, tools.ledger)
+            initial_record = build_research_record(
+                summary=initial_finalized.text,
+                question="What happened?",
+                session_id="session-merge2",
+                ledger=tools.ledger,
+                stop_reason="done",
+            )
+            initial_result = ResearchRunResult(
+                question="What happened?",
+                summary=initial_finalized.text,
+                stop_reason="done",
+                turns=1,
+                research_record=initial_record,
+            )
+
+            # Source 2 has exact identical excerpt string, but from a different source
+            tools.sources_read.add("https://example.com/src2")
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://example.com/src2",
+                final_url="https://example.com/src2",
+                title="Source 2",
+                text="Identical quote text from official release.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Claim 2",
+                "body": "Body 2",
+                "sources": ["https://example.com/src2"],
+                "evidence": [{
+                    "source_url": "https://example.com/src2",
+                    "excerpt": "Identical quote text from official release.",
+                    "claim": "Claim 2",
+                }],
+            })
+            material = PlanExecutionResult(fresh_source_urls=("https://example.com/src2",))
+
+            merged = merge_evidence_patch(initial_result, tools, material)
+            assert len(merged.research_record.evidence) == 2
+            assert len(merged.research_record.sources) == 2
+            assert "https://example.com/src1" in merged.summary
+            assert "https://example.com/src2" in merged.summary
+        finally:
+            store.index.close()
+
+
+def test_merge_evidence_patch_handles_unparseable_or_protocol_initial_summary() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-merge3",
+                project="project-merge3",
+            )
+            tools.sources_read.add("https://example.com/fresh")
+            tools.ledger.record_open_document(SourceDocument.html(
+                requested_url="https://example.com/fresh",
+                final_url="https://example.com/fresh",
+                title="Fresh Doc",
+                text="Verified recovery fact.",
+            ))
+            tools.knowledge_write({
+                "type": "fact",
+                "title": "Recovery Fact",
+                "body": "Recovery body",
+                "sources": ["https://example.com/fresh"],
+                "evidence": [{
+                    "source_url": "https://example.com/fresh",
+                    "excerpt": "Verified recovery fact.",
+                    "claim": "Recovery Fact",
+                }],
+            })
+            # Initial summary has no markdown headings / is a protocol error
+            initial_result = ResearchRunResult(
+                question="What is the answer?",
+                summary="ERROR: Protocol violation in initial step",
+                stop_reason="protocol_violation",
+                turns=1,
+            )
+            material = PlanExecutionResult(fresh_source_urls=("https://example.com/fresh",))
+
+            merged = merge_evidence_patch(initial_result, tools, material)
+            assert merged.stop_reason == "done"
+            assert "## 结论" in merged.summary
+            assert "## 关键证据" in merged.summary
+            assert "https://example.com/fresh" in merged.summary
+            assert len(merged.research_record.evidence) == 1
         finally:
             store.index.close()

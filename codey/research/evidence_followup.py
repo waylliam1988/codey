@@ -51,11 +51,11 @@ def build_evidence_followup_prompt(
         "Your ONLY task is to extract factual evidence excerpts from the freshly retrieved material below using `knowledge_write`.",
         "",
         "STRICT RULES:",
-        "1. ONLY call the tool `knowledge_write` (type='evidence' or 'fact' or 'source').",
+        "1. ONLY call the tool `knowledge_write` (type='fact' or 'concept').",
         "2. Do NOT attempt to call `done`, `web_search`, `open_url`, or any other tool.",
         "3. Every source in `sources` or `evidence[].source_url` MUST EXACTLY match one of the Allowed Fresh URLs below.",
         "4. NEVER use internal labels like 's1', 's2', or placeholders. Always use the full URL.",
-        "5. Include exact excerpt strings in `evidence: [{'excerpt': '...', 'claim': '...'}]`.",
+        "5. You MUST provide explicit evidence items: `evidence: [{'source_url': '...', 'excerpt': '...', 'claim': '...', 'stance': 'supports|contradicts|context'}]`.",
         "",
         f"Target Research Question: {clip(question, 300)}",
         f"Initial Report Summary: {clip(initial_summary, 1200)}",
@@ -67,7 +67,7 @@ def build_evidence_followup_prompt(
         "Retrieved Material:",
         *[f"=== MATERIAL {i+1} ===\n{clip(preview, 2000)}" for i, preview in enumerate(material.previews)],
         "",
-        "Output your `knowledge_write` tool call JSON now.",
+        "Output your single `knowledge_write` tool call JSON now.",
     ]
     return clip("\n".join(lines), max(2000, int(max_context_chars or 8000)))
 
@@ -96,16 +96,23 @@ class EvidenceFollowupController:
                 return f"ERROR: Invalid source reference '{s}'. Internal IDs like s1/s2 are strictly forbidden; use canonical URLs."
             if s not in self.allowed_urls:
                 return f"ERROR: Source URL '{s}' is not in the allowed fresh material whitelist."
-        evidence_items = args.get("evidence")
-        if isinstance(evidence_items, list):
-            for item in evidence_items:
-                if isinstance(item, dict):
-                    ev_src = str(item.get("source_url") or "").strip()
-                    if ev_src:
-                        if _SOURCE_ID_FORBIDDEN_RE.search(ev_src) and not (ev_src.startswith("http://") or ev_src.startswith("https://")):
-                            return f"ERROR: Invalid evidence source_url '{ev_src}'. Internal IDs are forbidden."
-                        if ev_src not in self.allowed_urls:
-                            return f"ERROR: Evidence source_url '{ev_src}' is not in the allowed fresh material whitelist."
+        evidence_raw = args.get("evidence")
+        if not evidence_raw:
+            return "ERROR: knowledge_write in evidence-only mode requires explicit 'evidence' items."
+        evidence_items = evidence_raw if isinstance(evidence_raw, list) else [evidence_raw]
+        for item in evidence_items:
+            if not isinstance(item, dict):
+                return "ERROR: Each evidence item must be a JSON object."
+            ev_src = str(item.get("source_url") or item.get("source") or "").strip()
+            if not ev_src:
+                return "ERROR: Evidence item is missing source_url."
+            if _SOURCE_ID_FORBIDDEN_RE.search(ev_src) and not (ev_src.startswith("http://") or ev_src.startswith("https://")):
+                return f"ERROR: Invalid evidence source_url '{ev_src}'. Internal IDs like s1/s2 are strictly forbidden."
+            if ev_src not in self.allowed_urls:
+                return f"ERROR: Evidence source_url '{ev_src}' is not in the allowed fresh material whitelist."
+            excerpt = str(item.get("excerpt") or item.get("quote") or "").strip()
+            if not excerpt:
+                return "ERROR: Evidence item requires a non-empty excerpt string."
         return self.tools.knowledge_write(args)
 
 
@@ -157,11 +164,18 @@ def run_evidence_followup(
             stop_reason="no_tool_calls",
             errors=("Model reply contained no structured tool call JSON",),
         )
-    for call in tool_calls[:3]:
-        name = str(call.get("tool") or call.get("name") or call.get("action") or "knowledge_write").strip()
-        args = call.get("args") or call.get("parameters") or call
-        if not isinstance(args, dict):
-            continue
+    for call in tool_calls:
+        tname = str(call.get("tool") or call.get("name") or call.get("action") or "").strip().lower()
+        if tname and tname != "knowledge_write":
+            return EvidenceFollowupResult(
+                ok=False,
+                stop_reason="invalid_tool_called",
+                errors=(f"Forbidden tool '{tname}' was called in evidence-only follow-up",),
+            )
+    first_call = tool_calls[0]
+    name = str(first_call.get("tool") or first_call.get("name") or first_call.get("action") or "knowledge_write").strip()
+    args = first_call.get("args") or first_call.get("parameters") or first_call
+    if isinstance(args, dict):
         res = controller.execute_tool_call(name, args)
         if str(res).startswith("ERROR:"):
             errors.append(clip(res, 200))
@@ -169,7 +183,7 @@ def run_evidence_followup(
             parts = str(res).split("note id=")
             if len(parts) > 1:
                 nid = parts[1].split()[0].strip()
-                if nid and nid not in written_note_ids:
+                if nid:
                     written_note_ids.append(nid)
     final_evidence_count = len(getattr(tools.ledger, "evidence_items", ()))
     new_ev_count = max(0, final_evidence_count - initial_evidence_count)
@@ -181,6 +195,7 @@ def run_evidence_followup(
         stop_reason="written" if (new_ev_count > 0 or written_note_ids) else "no_evidence_extracted",
         errors=tuple(errors[:10]),
     )
+
 
 
 __all__ = [

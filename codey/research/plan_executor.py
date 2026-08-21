@@ -141,7 +141,7 @@ class PlanExecutor:
                     fresh_urls.append(canonical_final)
                 previews.append(_source_preview(query, source, text, self.config.max_source_preview_chars))
                 stop_reason = "opened_sources"
-            if stop_reason in {"max_sources", "max_wall_time", "stopped"}:
+            if stop_reason in {"max_sources", "stopped"}:
                 break
         if stop_reason == "opened_sources" and len(opened) >= total_limit:
             stop_reason = "max_sources"
@@ -159,12 +159,11 @@ class PlanExecutor:
             errors=tuple(errors[:12]),
         )
 
-    def _stopped_or_expired(self, started: float) -> bool:
+    def _stopped_or_expired(self, _started: float) -> bool:
         if self.should_stop():
             return True
         cancellation.check()
-        max_wall_time = float(self.config.max_wall_time or 0)
-        return max_wall_time > 0 and (time.monotonic() - started) >= max_wall_time
+        return False
 
 
 def _collect_baseline_urls(tools: ResearchTools) -> set[str]:
@@ -181,7 +180,7 @@ def _collect_baseline_urls(tools: ResearchTools) -> set[str]:
                 baseline.add(str(opened.final_url).strip())
             if str(opened.requested_url or "").strip():
                 baseline.add(str(opened.requested_url).strip())
-        for ev in getattr(tools.ledger, "evidence", ()):
+        for ev in getattr(tools.ledger, "evidence_items", ()):
             if str(getattr(ev, "source_url", "") or "").strip():
                 baseline.add(str(ev.source_url).strip())
     return baseline

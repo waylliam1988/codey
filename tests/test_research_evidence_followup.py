@@ -94,8 +94,68 @@ def test_evidence_followup_controller_restricts_tools_and_urls() -> None:
             })
             assert res_ok.startswith("saved fact note id=")
             assert len(tools.ledger.evidence_items) == 1
+
+            # 5. Missing explicit evidence is blocked in evidence-only mode
+            res_no_ev = controller.execute_tool_call("knowledge_write", {
+                "type": "fact",
+                "title": "Implicit Claim",
+                "body": "Body without evidence",
+                "sources": [allowed_url],
+            })
+            assert "requires explicit 'evidence' items" in res_no_ev
+
+            # 6. Singleton dict evidence with unauthorized source_url is blocked
+            res_bad_single = controller.execute_tool_call("knowledge_write", {
+                "type": "fact",
+                "title": "Single Item Claim",
+                "body": "Body",
+                "sources": [allowed_url],
+                "evidence": {
+                    "source_url": "https://example.com/unauthorized",
+                    "excerpt": "Fresh source body",
+                },
+            })
+            assert "Evidence source_url 'https://example.com/unauthorized' is not in the allowed fresh material whitelist" in res_bad_single
         finally:
             store.index.close()
+
+
+def test_run_evidence_followup_rejects_forbidden_tool_calls() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        try:
+            tools = ResearchTools(
+                search=_DummySearch(),
+                store=store,
+                changes=KnowledgeChanges(root=store.root),
+                session_id="session-ev",
+                project="project-ev",
+            )
+            # Model attempts to call done or search alongside knowledge_write
+            reply = """```json
+{"tool": "web_search", "query": "forbidden search"}
+```"""
+            provider = _MockProvider(reply)
+            plan = ResearchPlan(plan_ref="plan:123")
+            material = PlanExecutionResult(
+                fresh_source_urls=("https://example.com/fresh",),
+                previews=("Fresh source preview",),
+            )
+
+            result = run_evidence_followup(
+                provider=provider,
+                tools=tools,
+                plan=plan,
+                material=material,
+                question="Question?",
+            )
+            assert result.ok is False
+            assert result.stop_reason == "invalid_tool_called"
+            assert "Forbidden tool 'web_search' was called" in result.errors[0]
+        finally:
+            store.index.close()
+
 
 
 def test_run_evidence_followup_extracts_evidence_with_provider() -> None:

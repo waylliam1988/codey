@@ -7,6 +7,7 @@ ResearchRecord graph objects deterministically.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import replace
 from typing import Sequence
@@ -19,6 +20,7 @@ from codey.research.identity import clip, digest_text as _digest_text
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import (
     ResearchRecord,
+    _source_from_opened,
     build_research_record,
 )
 from codey.research.plan_executor import PlanExecutionResult
@@ -48,7 +50,17 @@ def merge_evidence_patch(
 
     sections = parse_sections(initial.summary)
     if not sections:
-        return initial
+        initial_body = initial.summary.strip()
+        if not initial_body or initial_body.startswith("ERROR:") or "protocol" in str(initial.stop_reason or ""):
+            initial_body = f"Research findings for: {initial.question}"
+        sections = {
+            "conclusion": initial_body,
+            "evidence": "",
+            "counter": "",
+            "quality": "",
+            "coverage": "",
+            "sources": "",
+        }
 
     merged_sections = _inject_new_evidence_into_sections(sections, new_evidence, ledger)
     preliminary_text = render_research_report_sections(merged_sections)
@@ -67,32 +79,53 @@ def merge_evidence_patch(
     except Exception:
         quality_review = None
 
+    project_val = (
+        getattr(initial_record, "project_ref", {}).get("path")
+        if isinstance(getattr(initial_record, "project_ref", None), dict)
+        else getattr(initial_record, "project", "") or getattr(tools, "project", "")
+    )
+    merge_synthesis_id = f"synthesis:merge:{hashlib.sha256(final_text.encode('utf-8')).hexdigest()[:12]}"
+
     new_record = build_research_record(
         summary=final_text,
         question=initial.question,
-        session_id=getattr(initial_record, "session_id", ""),
-        project=getattr(initial_record, "project", ""),
+        session_id=getattr(initial_record, "session_id", "") or getattr(tools, "session_id", ""),
+        project=project_val,
         run_id=getattr(initial_record, "run_id", ""),
         ledger=ledger,
         review=quality_review,
-        synthesis_id=getattr(initial, "synthesis_id", ""),
+        synthesis_id=merge_synthesis_id,
         stop_reason="done",
     )
 
-    all_opened = tuple(
+    final_urls = list(ledger.final_url_set())
+    opened_list = [item.to_dict() for item in getattr(ledger, "opened_sources", ())]
+    evidence_list = [item.to_dict() for item in getattr(ledger, "evidence_items", ())]
+    citation_map = [
         item.to_dict()
-        for item in getattr(ledger, "opened_sources", ())
-    )
+        for item in (getattr(quality_review, "citation_map", ()) or ())
+    ]
+    coverage = getattr(quality_review, "coverage", {}) if quality_review is not None else initial.coverage
+    warnings = list(getattr(quality_review, "warnings", ()) or ())
 
     return replace(
         initial,
         summary=final_text,
         research_record=new_record,
-        opened_sources=all_opened or initial.opened_sources,
+        opened_sources=opened_list or initial.opened_sources,
+        source_urls=final_urls or initial.source_urls,
+        sources_read=len(final_urls) or initial.sources_read,
+        evidence_items=evidence_list or initial.evidence_items,
+        citation_map=citation_map or initial.citation_map,
+        coverage=coverage or initial.coverage,
+        quality_warnings=warnings or initial.quality_warnings,
+        synthesis_id=merge_synthesis_id,
         turns=initial.turns + 1,
         max_turns_used=max(initial.max_turns_used, initial.turns + 1),
         stop_reason="done",
     )
+
+
 
 
 def _find_new_evidence_items(
@@ -100,13 +133,23 @@ def _find_new_evidence_items(
     ledger: ResearchLedger,
     fresh_urls: set[str],
 ) -> list[EvidenceItem]:
-    existing_digests: set[str] = set()
+    existing_pairs: set[tuple[str, str]] = set()
     if initial_record is not None:
+        source_id_to_canonical_url: dict[str, str] = {}
+        for opened in getattr(ledger, "opened_sources", ()):
+            src_obj = _source_from_opened(opened)
+            c_url = ledger.canonical_opened_url(opened.final_url or opened.requested_url)
+            if c_url:
+                source_id_to_canonical_url[src_obj.source_id] = c_url
+
         for ev in getattr(initial_record, "evidence", ()):
-            if getattr(ev, "excerpt_digest", None):
-                existing_digests.add(ev.excerpt_digest)
-            elif getattr(ev, "bounded_excerpt", None):
-                existing_digests.add(_digest_text(ev.bounded_excerpt))
+            s_url = source_id_to_canonical_url.get(ev.source_id, "")
+            dig = str(getattr(ev, "excerpt_digest", "") or _digest_text(getattr(ev, "bounded_excerpt", "") or ""))
+            if dig:
+                if s_url:
+                    existing_pairs.add((s_url, dig))
+                else:
+                    existing_pairs.add(("", dig))
 
     new_items: list[EvidenceItem] = []
     final_urls = ledger.final_url_set()
@@ -120,9 +163,10 @@ def _find_new_evidence_items(
         if fresh_urls and url not in fresh_urls:
             continue
         item_digest = _digest_text(excerpt)
-        if item_digest in existing_digests:
+        pair = (url, item_digest)
+        if pair in existing_pairs or ("", item_digest) in existing_pairs:
             continue
-        existing_digests.add(item_digest)
+        existing_pairs.add(pair)
         new_items.append(item)
     return new_items
 

@@ -116,6 +116,16 @@ class ResearchLedger:
         self._source_texts: dict[str, str] = {}
         self._source_pages: dict[str, dict[int, str]] = {}
 
+    def clone(self) -> ResearchLedger:
+        forked = ResearchLedger()
+        forked.searches = list(self.searches)
+        forked.opened_sources = list(self.opened_sources)
+        forked.evidence_items = list(self.evidence_items)
+        forked.source_searches = [dict(s) for s in self.source_searches]
+        forked._source_texts = dict(self._source_texts)
+        forked._source_pages = {k: dict(v) for k, v in self._source_pages.items()}
+        return forked
+
     def record_search(self, query: str, results: list[dict]) -> None:
         query = " ".join(str(query or "").split())
         if not query:

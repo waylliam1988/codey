@@ -1830,7 +1830,6 @@ def _config_for_arm(arm: str) -> ResearchPipelineConfig:
         max_queries_per_round=3,
         max_sources_per_query=2,
         max_total_sources=6,
-        max_wall_time=0.0,
     )
 
 
@@ -1847,7 +1846,6 @@ def _run_pipeline_with_ab_experiment(
     original_executor = pipeline_module.PlanExecutor
     original_has_actionable_gap = pipeline_module._has_actionable_gap
     original_pipeline_stop_reason = pipeline_module._pipeline_stop_reason
-    original_followup_context = pipeline_module._followup_context
     original_is_followup_eligible_stop = pipeline_module._is_followup_eligible_stop
 
     class _FreshMaterialExecutor(FreshMaterialPlanExecutor):
@@ -1872,7 +1870,6 @@ def _run_pipeline_with_ab_experiment(
         pipeline_module.PlanExecutor = _FreshMaterialExecutor
         pipeline_module._has_actionable_gap = _ab_needs_new_material
         pipeline_module._pipeline_stop_reason = ab_pipeline_stop_reason
-        pipeline_module._followup_context = _ab_followup_context
         pipeline_module._is_followup_eligible_stop = lambda stop_reason: str(stop_reason or "") in {
             "done",
             "max_turns",
@@ -1884,7 +1881,6 @@ def _run_pipeline_with_ab_experiment(
         pipeline_module.PlanExecutor = original_executor
         pipeline_module._has_actionable_gap = original_has_actionable_gap
         pipeline_module._pipeline_stop_reason = original_pipeline_stop_reason
-        pipeline_module._followup_context = original_followup_context
         pipeline_module._is_followup_eligible_stop = original_is_followup_eligible_stop
 
 
@@ -2478,8 +2474,8 @@ def _self_test() -> None:
     assert usefulness["answer_coverage_delta"] == 0.29
     assert usefulness["unsupported_claim_rate_delta"] == -0.06
     assert usefulness["provider_send_delta"] == 2
-    assert _config_for_arm("baseline").max_wall_time == 90.0
-    assert _config_for_arm("planner").max_wall_time == 0.0
+    assert _config_for_arm("baseline").enabled is False
+    assert _config_for_arm("planner").enabled is True
     fixture = FixtureSearchProvider(CASES["widget_noop"])
     assert [item["url"] for item in fixture.search("current primary source evidence")] == [
         "https://source-a.test/widget-storage"

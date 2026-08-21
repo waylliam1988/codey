@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Mapping, Protocol
 
 from codey import cancellation
 from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
-from codey.research.identity import clip
 from codey.research.plan_executor import PlanExecutionResult, PlanExecutor
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
 from codey.research.query_planner import ResearchPlan, build_research_plan
@@ -61,6 +59,9 @@ class ResearchPipelineResult:
     followup_rounds: int = 0
     stop_reason: str = ""
     planner_stop_reason: str = ""
+    fresh_source_count: int = 0
+    new_evidence_count: int = 0
+    merged_evidence_count: int = 0
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -68,6 +69,9 @@ class ResearchPipelineResult:
             "followup_rounds": max(0, min(3, int(self.followup_rounds or 0))),
             "stop_reason": str(self.stop_reason or ""),
             "planner_stop_reason": str(self.planner_stop_reason or ""),
+            "fresh_source_count": max(0, int(self.fresh_source_count or 0)),
+            "new_evidence_count": max(0, int(self.new_evidence_count or 0)),
+            "merged_evidence_count": max(0, int(self.merged_evidence_count or 0)),
         }
 
 
@@ -94,7 +98,6 @@ class ResearchPipeline:
         self.research_changes_sink = research_changes_sink
 
     def run(self) -> ResearchPipelineResult:
-        started = time.monotonic()
         search = self.search_factory()
         try:
             initial_run = self.run_iteration(
@@ -110,7 +113,10 @@ class ResearchPipeline:
             plan = self._plan(best_review)
             self.context.trace.record_plan(plan)
             followup_rounds = 0
-            planner_stop_reason = self._followup_block_reason(initial, best_review, plan, started) or "planned"
+            total_fresh_sources = 0
+            total_new_evidence = 0
+            total_merged_evidence = len(getattr(best.research_record, "evidence", ())) if getattr(best, "research_record", None) else 0
+            planner_stop_reason = self._followup_block_reason(initial, best_review, plan) or "planned"
             if planner_stop_reason == "planned":
                 if best_tools is None:
                     planner_stop_reason = "missing_iteration_tools"
@@ -123,12 +129,18 @@ class ResearchPipeline:
                         if self.context.should_stop():
                             planner_stop_reason = "stopped"
                             break
+                        staged_ledger = current_tools.ledger.clone() if getattr(current_tools, "ledger", None) is not None else None
+                        staged_tools = replace(
+                            current_tools,
+                            ledger=staged_ledger,
+                        ) if staged_ledger is not None else current_tools
+
                         executor = PlanExecutor(
                             config=self.config,
                             should_stop=self.context.should_stop,
                         )
                         try:
-                            material = executor.execute(plan, current_tools)
+                            material = executor.execute(plan, staged_tools)
                         except cancellation.TaskCancelled:
                             raise
                         except Exception:
@@ -139,7 +151,7 @@ class ResearchPipeline:
                             break
                         try:
                             followup_result = self.evidence_followup_runner(
-                                tools=current_tools,
+                                tools=staged_tools,
                                 plan=plan,
                                 material=material,
                                 question=self.context.question,
@@ -157,28 +169,33 @@ class ResearchPipeline:
                             break
                         candidate = merge_evidence_patch(
                             initial=best,
-                            tools=current_tools,
+                            tools=staged_tools,
                             material=material,
                         )
                         candidate_review = self._review(candidate, require_ledger_record=False)
                         if _selects_candidate(candidate, candidate_review, best, best_review):
                             best = candidate
                             best_review = candidate_review
+                            best_tools = staged_tools
+                            current_tools = staged_tools
                             followup_rounds = round_index
+                            total_fresh_sources += len(material.fresh_source_urls) if material.fresh_source_urls else max(0, int(material.fresh_source_count or 0))
+                            total_new_evidence += followup_result.new_evidence_count
+                            total_merged_evidence = len(getattr(best.research_record, "evidence", ())) if getattr(best, "research_record", None) else 0
                             planner_stop_reason = "evidence_merged"
                         else:
                             planner_stop_reason = "candidate_not_selected"
                             break
                         plan = self._plan(best_review)
                         self.context.trace.record_plan(plan)
-                        block_reason = self._followup_block_reason(best, best_review, plan, started)
+                        block_reason = self._followup_block_reason(best, best_review, plan)
                         if block_reason:
                             planner_stop_reason = block_reason
                             break
                     else:
                         if (
                             followup_rounds >= max_rounds
-                            and self._followup_block_reason(best, best_review, plan, started) == ""
+                            and self._followup_block_reason(best, best_review, plan) == ""
                         ):
                             planner_stop_reason = "max_followup_rounds"
 
@@ -197,6 +214,9 @@ class ResearchPipeline:
                 followup_rounds=followup_rounds,
                 stop_reason=best.stop_reason,
                 planner_stop_reason=planner_stop_reason,
+                fresh_source_count=total_fresh_sources,
+                new_evidence_count=total_new_evidence,
+                merged_evidence_count=total_merged_evidence,
             )
             self.context.trace.record_pipeline_result(output)
             return output
@@ -213,7 +233,6 @@ class ResearchPipeline:
         result: ResearchRunResult,
         review: ResearchProofReview | None,
         plan: ResearchPlan,
-        started: float,
     ) -> str:
         if not self.config.enabled:
             return "disabled"
@@ -230,9 +249,6 @@ class ResearchPipeline:
             return "initial_stop_reason_" + _reason_code(reason)
         if self.context.should_stop():
             return "stopped"
-        max_wall_time = float(self.config.max_wall_time or 0)
-        if max_wall_time > 0 and (time.monotonic() - started) >= max_wall_time:
-            return "max_wall_time"
         return ""
 
     def _review(
@@ -410,7 +426,8 @@ def _has_actionable_gap(review: ResearchProofReview | None) -> bool:
 
 
 def _is_followup_eligible_stop(stop_reason: str) -> bool:
-    return str(stop_reason or "") in {"done", "max_turns", "no_progress"}
+    reason = str(stop_reason or "").strip().lower()
+    return reason not in {"stopped", "cancelled", "user_aborted", "timeout"}
 
 
 def _pipeline_stop_reason(
@@ -431,30 +448,6 @@ def _reason_code(value: object) -> str:
     text = str(value or "").strip()
     rendered = "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
     return rendered[:80] or "unknown"
-
-
-def _followup_context(
-    *,
-    question: str,
-    initial: ResearchRunResult,
-    plan: ResearchPlan,
-    material: PlanExecutionResult,
-    limit: int,
-) -> str:
-    lines = [
-        "Follow-up Research synthesis input.",
-        f"question: {clip(question, 240)}",
-        f"initial_stop_reason: {initial.stop_reason}",
-        f"initial_summary: {clip(initial.summary, 1200)}",
-        f"plan_ref: {plan.plan_ref}",
-        "queries_executed:",
-        *[f"- {clip(query, 180)}" for query in material.queries_executed],
-        "opened_material:",
-        *[f"- {clip(preview, 1600)}" for preview in material.previews],
-    ]
-    if material.errors:
-        lines.extend(["bounded_errors:", *[f"- {clip(error, 180)}" for error in material.errors]])
-    return clip("\n".join(lines), max(1000, min(20000, int(limit or 0))))
 
 
 __all__ = [
