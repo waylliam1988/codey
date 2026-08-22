@@ -15,14 +15,23 @@ This file records Codey's release history. The newest release appears first.
   manifest: `verify_event_chain()` reports mixed experiment/run/provider within
   one chain, and a writer refuses to open when existing events carry a
   different identity even if the manifest is missing, corrupt, or replaced.
+- Reader verification surfaces unparseable-line counts (`mid_file`/`tail`) so
+  garbage lines can no longer hide behind otherwise-clean chain verification.
 - Strict JSON durability: non-finite floats are dropped during fact
   sanitization and event lines serialize with `allow_nan=False`, so
   `events.jsonl` never contains NaN/Infinity tokens. Mid-file unparseable lines
   are no longer silently cleaned by writer auto-recovery — appending refuses
   until an explicit `ABJournalReader.recover_tail()`.
-- Provider observation facts flatten nested maps one level
-  (`provider_failure.kind` -> `provider_failure_kind`) so structured failure
-  facts survive as scalars; sensitive parent keys take their whole subtree.
+- Provider observation facts cross the boundary through an explicit allow-list:
+  nested `provider_failure` maps keep only `kind`/`stage`
+  (as `provider_failure_kind` / `provider_failure_stage`); all other nested
+  maps and opaque objects are dropped, so raw provider error messages and page
+  titles cannot re-enter the journal.
+- Harness run ids follow the final provider-specific output name
+  (`output.stem` after all-mode renaming), so resuming `custom-deepseek.json`
+  individually reuses the exact journal identity the all-mode run created.
+- Both harnesses also execute as package modules
+  (`python -m tests.manual.bounded_research_planner_ab`).
 - Harness run ids are now derived from the result file (`output.stem`) instead
   of wall-clock time, so resuming the same output continues the same journal
   identity instead of colliding with the previous manifest. Connector harness

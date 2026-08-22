@@ -88,6 +88,8 @@ def test_corrupt_tail_line_is_recoverable(tmp_path: Path) -> None:
         handle.write('{"seq": 5, "truncated": ')
 
     reader = ABJournalReader(directory)
+    # Verification must surface the corruption, not silently skip it.
+    assert any(p.startswith("unparseable-lines:tail=") for p in reader.verify_hash_chain())
     assert reader.recover_tail() >= 1
     assert reader.verify_hash_chain() == []
     assert ("a", "baseline") in reader.completed_case_keys()
@@ -194,10 +196,14 @@ def test_mid_file_garbage_requires_manual_recovery(tmp_path: Path) -> None:
     lines.insert(2, "{corrupt garbage not json")
     events_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    # Auto-append refuses; recovery is an explicit reader action.
+    # Auto-append refuses; verification surfaces the unparseable line; and
+    # recovery is an explicit reader action.
     with pytest.raises(ValueError, match="manual recovery|unparseable"):
         _writer(directory)
     reader = ABJournalReader(directory)
+    assert any(
+        p.startswith("unparseable-lines:mid_file=1") for p in reader.verify_hash_chain()
+    )
     assert reader.recover_tail() >= 1
     assert reader.verify_hash_chain() == []
     resumed = _writer(directory)

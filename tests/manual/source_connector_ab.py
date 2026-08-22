@@ -22,7 +22,6 @@ from urllib.parse import urlparse
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from codey import provider_controls
 from codey.knowledge.store import KnowledgeStore
@@ -33,7 +32,12 @@ from codey.research.protocols import extract_json_objects
 from codey.research.runner import ResearchRunner
 from codey.providers.registry import connect_provider, provider_ids
 
-from ab_journal import ABJournalIdentityMismatch, ABJournalReader, ABJournalWriter, journal_directory_for
+from tests.manual.ab_journal import (
+    ABJournalIdentityMismatch,
+    ABJournalReader,
+    ABJournalWriter,
+    journal_directory_for,
+)
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
@@ -770,9 +774,12 @@ def main() -> int:
     providers = WEB_PROVIDERS if args.provider == "all" else (args.provider,)
     for provider_id in providers:
         output = args.output or _default_output(provider_id)
-        run_id = output.stem
         if args.provider == "all" and args.output is not None:
             output = args.output.with_name(f"{args.output.stem}-{provider_id}{args.output.suffix}")
+        # run_id follows the FINAL provider-specific output name so that
+        # resuming `custom-deepseek.json` individually reuses the exact
+        # journal identity the all-mode run created.
+        run_id = output.stem
         trace: ABJournalWriter | None = None
         if not args.no_live_trace:
             if args.trace_output is not None:

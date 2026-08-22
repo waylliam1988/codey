@@ -151,13 +151,21 @@ def sanitize_fact_value(value: object) -> tuple[bool, object]:
     return False, None
 
 
+# Nested maps are not flattened generically: that would re-import raw
+# provider error messages and page titles. Only the typed observation
+# vocabulary below may cross the boundary, one scalar level deep.
+_NESTED_ALLOWLIST: dict[str, frozenset[str]] = {
+    "provider_failure": frozenset({"kind", "stage"}),
+}
+
+
 def sanitize_facts(facts: Mapping[str, object] | None) -> dict[str, object]:
     """Project raw provider observations into bounded, safe facts.
 
     Keys must be lowercase snake_case tokens; cookie/DOM/html/webpage-style keys
     are dropped outright so provider page state can never leak through. Nested
-    mappings are flattened one level (``provider_failure.kind`` becomes
-    ``provider_failure_kind``) so structured failure facts survive as scalars.
+    mappings only survive for allow-listed parents (see ``_NESTED_ALLOWLIST``)
+    and flatten to prefixed scalars.
     """
 
     if not isinstance(facts, Mapping):
@@ -187,11 +195,13 @@ def sanitize_facts(facts: Mapping[str, object] | None) -> dict[str, object]:
             # flattened child name must not launder a dropped parent.
             if _key_is_sensitive(name):
                 continue
-            for sub_key in sorted(value, key=str):
+            allowed_subkeys = _NESTED_ALLOWLIST.get(name)
+            if not allowed_subkeys:
+                continue
+            for sub_key in sorted(allowed_subkeys):
                 sub_name = str(sub_key or "").strip()
-                if not sub_name:
-                    continue
-                _admit(f"{name}_{sub_name}", value[sub_key])
+                if sub_name:
+                    _admit(f"{name}_{sub_name}", value.get(sub_key))
             continue
         _admit(name, value)
     return cleaned
@@ -827,7 +837,22 @@ class ABJournalReader:
         return events
 
     def verify_hash_chain(self) -> list[str]:
-        return verify_event_chain(self.events())
+        """Verify linkage/digests/identity AND surface unparseable lines.
+
+        Unparseable lines never enter ``events()``, so without this check a
+        mid-file garbage line would be invisible to verification while still
+        making the writer refuse to open.
+        """
+
+        events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(
+            self.events_path
+        )
+        problems = verify_event_chain(events)
+        if mid_file_invalid:
+            problems.append(f"unparseable-lines:mid_file={mid_file_invalid}")
+        if tail_invalid:
+            problems.append(f"unparseable-lines:tail={tail_invalid}")
+        return problems
 
     def recover_tail(self) -> int:
         """Drop unparseable lines (trailing and mid-file); return the count.

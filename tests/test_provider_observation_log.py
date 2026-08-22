@@ -73,22 +73,35 @@ def test_strings_are_clipped_and_lists_bounded() -> None:
     assert len(cleaned["stages"]) == 8
 
 
-def test_nested_provider_failure_maps_are_flattened() -> None:
+def test_nested_provider_failure_is_allow_listed() -> None:
     cleaned = sanitize_facts({
         "provider_failure": {
             "kind": "timeout",
             "stage": "wait_reply",
-            "dom_state": {"tag": "button"},
-            "page_html": "<div>leak</div>",
+            "message": "raw provider error body should not persist",
+            "title": "page title leak",
+            "observed_at": "2026-08-22T00:00:00Z",
+            "action": "click submit",
         },
     })
 
-    # Structured failure facts survive as flat scalars...
-    assert cleaned["provider_failure_kind"] == "timeout"
-    assert cleaned["provider_failure_stage"] == "wait_reply"
-    # ...while sensitive sub-keys are still filtered by the same rules.
-    assert "provider_failure_dom_state" not in cleaned
-    assert "provider_failure_page_html" not in cleaned
+    # Only the typed observation vocabulary survives the boundary.
+    assert cleaned == {
+        "provider_failure_kind": "timeout",
+        "provider_failure_stage": "wait_reply",
+    }
+
+
+def test_unknown_nested_mappings_are_dropped_entirely() -> None:
+    cleaned = sanitize_facts({
+        "weird": {"nested": "dict"},
+        "page_state": {"typing": True},
+        "also_weird": object(),
+        "fine": False,
+    })
+
+    # Generic nested maps have no allow-list entry: dropped, not flattened.
+    assert cleaned == {"fine": False}
 
 
 def test_nonfinite_floats_are_dropped() -> None:
@@ -105,15 +118,13 @@ def test_nonfinite_floats_are_dropped() -> None:
     assert "ratio" not in cleaned
 
 
-def test_unknown_value_types_flatten_or_drop() -> None:
+def test_opaque_objects_are_dropped() -> None:
     cleaned = sanitize_facts({
-        "weird": {"nested": "dict"},
         "also_weird": object(),
         "fine": False,
     })
 
-    # Plain mappings flatten one level; opaque objects are dropped.
-    assert cleaned == {"fine": False, "weird_nested": "dict"}
+    assert cleaned == {"fine": False}
 
     facts = {f"fact_{index:02}": "y" * 200 for index in range(100)}
     encoded = __import__("json").dumps(sanitize_facts(facts), ensure_ascii=False)

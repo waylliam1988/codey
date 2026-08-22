@@ -13,17 +13,22 @@
 - Journal 身份改由事件本身强制：`verify_event_chain()` 会报告同一链内的
   experiment/run/provider 混写；即使 manifest 缺失、损坏或被替换，writer 打开时
   也会拒绝不同身份追加到既有 chain。
+- Reader 校验现在会显式上报无法解析的行数（`mid_file`/`tail`），
+  垃圾行不能再躲在看似干净的 chain 校验背后。
 - 严格 JSON 持久化：facts 脱敏阶段丢弃非有限浮点，事件行序列化使用
   `allow_nan=False`，`events.jsonl` 不再可能出现 NaN/Infinity；文件中部出现
   无法解析的行时 writer 自动恢复改为拒绝写入，需显式
   `ABJournalReader.recover_tail()`。
-- Provider observation facts 对嵌套 mapping 做一层扁平化
-  （`provider_failure.kind` -> `provider_failure_kind`），结构化失败事实以标量
-  形式保留；敏感父 key 连同整个子树一起丢弃。
-- Harness 的 run_id 改为从结果文件名派生（`output.stem`）而非墙钟时间，
-  断点续跑同一 output 会延续同一 journal 身份，不再与旧 manifest 冲突；
-  修正 connector harness 的 case-start 调用签名，两个 self-test 现在重放完整
-  per-case 事件序列作为回归锁。
+- Provider observation facts 通过显式 allow-list 过界：嵌套
+  `provider_failure` 只保留 `kind`/`stage`
+  （投影为 `provider_failure_kind` / `provider_failure_stage`），
+  其余嵌套 mapping 与不透明对象一律丢弃——raw provider error message 和页面
+  title 不可能重新进入 journal。
+- Harness 的 run_id 跟随最终的 provider 专属结果文件名
+  （all-mode 改名后的 `output.stem`），单独恢复 `custom-deepseek.json` 时会
+  复用 all-mode 运行创建的同一 journal 身份。
+- 两个 harness 现在也可以作为包模块执行：
+  `python -m tests.manual.bounded_research_planner_ab`。
 - 新增 `TranscriptReplayCache`：prompt/reply 默认只存 digest；显式 archive 模式
   才把内容寻址、有大小上限的 transcript 写入 `transcripts/<digest>.json`，
   仅用于 manual replay/scoring。
