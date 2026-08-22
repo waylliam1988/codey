@@ -21,7 +21,14 @@ from typing import Any
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from ab_journal import (
+    ABJournalIdentityMismatch,
+    ABJournalReader,
+    ABJournalWriter,
+    journal_directory_for,
+)
 from codey import provider_controls
 from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import connect_provider, provider_ids
@@ -44,9 +51,6 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
 ARMS = ("baseline", "planner")
 MAX_RESULT_BYTES = 1024 * 1024
-MAX_TRACE_BYTES = 2 * 1024 * 1024
-TRACE_PROMPT_CHARS = 8000
-TRACE_REPLY_CHARS = 8000
 AB_EVIDENCE_ONLY_FOLLOWUP_MODE = "production_evidence_followup"
 
 
@@ -367,177 +371,12 @@ class OutputProviderMismatch(ValueError):
         )
 
 
-class LiveTrace:
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self.started = time.monotonic()
-        self.started_at = _timestamp()
-        self.events: list[dict[str, Any]] = []
-        self._load_existing()
-
-    def _load_existing(self) -> None:
-        if not self.path.exists():
-            return
-        try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return
-        if not isinstance(payload, dict):
-            return
-        if payload.get("probe") != "bounded_research_planner_ab_trace":
-            return
-        started_at = str(payload.get("started_at") or "").strip()
-        events = payload.get("events")
-        if started_at:
-            self.started_at = started_at
-        if isinstance(events, list):
-            self.events = [dict(event) for event in events if isinstance(event, dict)]
-
-    def record(self, event: dict[str, Any]) -> None:
-        payload = dict(event)
-        payload["elapsed_seconds"] = round(time.monotonic() - self.started, 3)
-        self.events.append(payload)
-        self.flush()
-
-    def record_run_start(
-        self,
-        *,
-        run_id: str,
-        provider: str,
-        trace_output: str,
-        cases: tuple[str, ...],
-        arms: tuple[str, ...],
-        max_turns: int,
-    ) -> None:
-        self.record({
-            "event": "run_start",
-            "run_id": run_id,
-            "provider": provider,
-            "trace_output": trace_output,
-            "cases": list(cases),
-            "arms": list(arms),
-            "max_turns": max_turns,
-        })
-
-    def record_case_start(
-        self,
-        *,
-        run_id: str,
-        provider: str,
-        case: str,
-        arm: str,
-        question: str,
-    ) -> None:
-        self.record({
-            "event": "case_start",
-            "run_id": run_id,
-            "provider": provider,
-            "case": case,
-            "arm": arm,
-            "question": _clip(question, 1200),
-        })
-
-    def record_send_start(
-        self,
-        *,
-        run_id: str,
-        provider: str,
-        provider_name: str,
-        case: str,
-        arm: str,
-        turn: int,
-        prompt: str,
-    ) -> None:
-        self.record({
-            "event": "send_start",
-            "run_id": run_id,
-            "provider": provider,
-            "provider_name": provider_name,
-            "case": case,
-            "arm": arm,
-            "turn": turn,
-            "prompt_chars": len(prompt or ""),
-            "prompt": _clip(prompt, TRACE_PROMPT_CHARS),
-        })
-
-    def record_reply(
-        self,
-        *,
-        run_id: str,
-        provider: str,
-        provider_name: str,
-        case: str,
-        arm: str,
-        turn: int,
-        prompt: str,
-        reply: str,
-    ) -> None:
-        self.record({
-            "event": "reply",
-            "run_id": run_id,
-            "provider": provider,
-            "provider_name": provider_name,
-            "case": case,
-            "arm": arm,
-            "turn": turn,
-            "prompt_chars": len(prompt or ""),
-            "reply_chars": len(reply or ""),
-            "prompt": _clip(prompt, TRACE_PROMPT_CHARS),
-            "reply": _clip(reply, TRACE_REPLY_CHARS),
-        })
-
-    def record_case_complete(
-        self,
-        *,
-        run_id: str,
-        provider: str,
-        case: str,
-        arm: str,
-        row: dict[str, Any],
-    ) -> None:
-        self.record({
-            "event": "case_complete",
-            "run_id": run_id,
-            "provider": provider,
-            "case": case,
-            "arm": arm,
-            "ok": bool(row.get("ok")),
-            "score": row.get("score"),
-            "stop_reason": row.get("stop_reason") or row.get("error") or "",
-            "planner_stop_reason": row.get("planner_stop_reason") or "",
-            "followup_rounds": row.get("followup_rounds"),
-            "summary": _clip(row.get("summary_preview") or row.get("error") or "", 1200),
-        })
-
-    def record_run_complete(self, *, run_id: str, provider: str, rows: int) -> None:
-        self.record({
-            "event": "run_complete",
-            "run_id": run_id,
-            "provider": provider,
-            "rows": rows,
-        })
-
-    def flush(self) -> None:
-        payload = {
-            "probe": "bounded_research_planner_ab_trace",
-            "started_at": self.started_at,
-            "updated_at": _timestamp(),
-            "updated_elapsed_seconds": round(time.monotonic() - self.started, 3),
-            "event_count": len(self.events),
-            "events": self.events,
-        }
-        text = json.dumps(payload, ensure_ascii=False, indent=2)
-        if len(text.encode("utf-8")) > MAX_TRACE_BYTES:
-            raise ValueError("bounded planner A/B trace exceeded bounded size")
-        _write_json_atomic(self.path, payload)
-
-
 class TracingProvider:
     def __init__(
         self,
         provider,
         *,
-        trace: LiveTrace | None,
+        trace: ABJournalWriter | None,
         run_id: str,
         provider_id: str,
         provider_name: str,
@@ -573,9 +412,6 @@ class TracingProvider:
         self.prompt_chars += len(text or "")
         if self.trace is not None:
             self.trace.record_send_start(
-                run_id=self.run_id,
-                provider=self.provider_id,
-                provider_name=self.provider_name,
                 case=self.case,
                 arm=self.arm,
                 turn=turn,
@@ -585,16 +421,12 @@ class TracingProvider:
             reply = self.provider.send(text, timeout=timeout)
         except Exception as exc:
             if self.trace is not None:
-                self.trace.record({
-                    "event": "send_error",
-                    "run_id": self.run_id,
-                    "provider": self.provider_id,
-                    "provider_name": self.provider_name,
-                    "case": self.case,
-                    "arm": self.arm,
-                    "turn": turn,
-                    "error": f"{type(exc).__name__}: {exc}",
-                })
+                self.trace.record_send_error(
+                    case=self.case,
+                    arm=self.arm,
+                    turn=turn,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
             raise
         reply_text = str(reply or "")
         self.reply_count += 1
@@ -603,9 +435,6 @@ class TracingProvider:
         self.last_reply = reply_text
         if self.trace is not None:
             self.trace.record_reply(
-                run_id=self.run_id,
-                provider=self.provider_id,
-                provider_name=self.provider_name,
                 case=self.case,
                 arm=self.arm,
                 turn=turn,
@@ -626,7 +455,7 @@ def run_case(
     arm: str,
     max_turns: int,
     run_id: str,
-    trace: LiveTrace | None,
+    trace: ABJournalWriter | None,
 ) -> dict[str, Any]:
     started = time.time()
     model_actions: list[dict[str, Any]] = []
@@ -641,11 +470,9 @@ def run_case(
         iterations: list[ResearchIterationRun] = []
         if trace is not None:
             trace.record_case_start(
-                run_id=run_id,
-                provider=provider_id,
                 case=case.name,
                 arm=arm,
-                question=case.question,
+                question_chars=len(case.question),
             )
         run_provider = TracingProvider(
             provider,
@@ -827,13 +654,7 @@ def run_case(
             }
             row["score"] = _score_row(row)
             if trace is not None:
-                trace.record_case_complete(
-                    run_id=run_id,
-                    provider=provider_id,
-                    case=case.name,
-                    arm=arm,
-                    row=row,
-                )
+                trace.record_case_complete(case=case.name, arm=arm, row=row)
             return row
         except Exception as exc:
             row = {
@@ -854,13 +675,7 @@ def run_case(
                 "info": infos[:16],
             }
             if trace is not None:
-                trace.record_case_complete(
-                    run_id=run_id,
-                    provider=provider_id,
-                    case=case.name,
-                    arm=arm,
-                    row=row,
-                )
+                trace.record_case_complete(case=case.name, arm=arm, row=row)
             return row
         finally:
             store.close()
@@ -1226,13 +1041,13 @@ def run_provider(
     new_chat_timeout: float,
     open_if_missing: bool,
     rerun_failed: bool,
-    trace: LiveTrace | None,
+    trace: ABJournalWriter | None,
     run_id: str,
 ) -> dict[str, Any]:
     payload = _load_or_new_payload(output, provider_id=provider_id, cases=cases, arms=arms)
     _normalize_payload_metadata(payload, provider_id=provider_id, cases=cases, arms=arms)
     if trace is not None:
-        payload["trace_output"] = str(trace.path)
+        payload["trace_output"] = str(trace.directory)
     existing = {
         (str(row.get("case") or ""), str(row.get("arm") or ""))
         for row in payload["rows"]
@@ -1241,26 +1056,24 @@ def run_provider(
     pending = _pending_case_keys(cases=cases, arms=arms, existing=existing)
     if trace is not None:
         trace.record_run_start(
-            run_id=run_id,
-            provider=provider_id,
-            trace_output=str(trace.path),
             cases=tuple(case.name for case in cases),
             arms=arms,
             max_turns=max_turns,
         )
     if not pending:
         if trace is not None:
-            trace.record({
-                "event": "no_pending_rows",
-                "run_id": run_id,
-                "provider": provider_id,
-                "output": str(output),
-                "cases": [case.name for case in cases],
-                "arms": list(arms),
-                "rerun_failed": bool(rerun_failed),
-                "existing_rows": len(payload["rows"]),
-            })
-            trace.record_run_complete(run_id=run_id, provider=provider_id, rows=len(payload["rows"]))
+            trace.append_event(
+                event_type="note",
+                stage="no_pending_rows",
+                facts={
+                    "output": str(output)[:200],
+                    "cases": [case.name for case in cases],
+                    "arms": list(arms),
+                    "rerun_failed": bool(rerun_failed),
+                    "existing_rows": len(payload["rows"]),
+                },
+            )
+            trace.record_run_complete(rows=len(payload["rows"]))
         payload["complete"] = True
         payload["summary"] = summarize(payload["rows"])
         payload["updated_at"] = _timestamp()
@@ -1316,11 +1129,7 @@ def run_provider(
             payload["updated_at"] = _timestamp()
             _write_payload(output, payload)
             if trace is not None:
-                trace.record_run_complete(
-                    run_id=run_id,
-                    provider=provider_id,
-                    rows=len(payload["rows"]),
-                )
+                trace.record_run_complete(rows=len(payload["rows"]))
             return payload
     finally:
         provider_controls.end_task_context()
@@ -1436,9 +1245,7 @@ def _default_output(provider_id: str) -> Path:
 
 
 def _trace_output_path(output: Path) -> Path:
-    if output.suffix:
-        return output.with_name(f"{output.stem}.trace{output.suffix}")
-    return output.with_name(f"{output.name}.trace.json")
+    return journal_directory_for(output)
 
 
 def _timestamp() -> str:
@@ -1697,7 +1504,7 @@ def _self_test() -> None:
     assert material_only["useful"] is False
     assert _expected_terms_present("stable-v2 endpoint", ("stable-v2",))
     assert _trace_output_path(Path("tests/manual/results/bounded_research_planner_ab-deepseek.json")).name == (
-        "bounded_research_planner_ab-deepseek.trace.json"
+        "bounded_research_planner_ab-deepseek.trace"
     )
     assert _pending_case_keys(
         cases=(CASES["warehouse_gap"],),
@@ -1705,44 +1512,51 @@ def _self_test() -> None:
         existing=set(),
     ) == [("warehouse_gap", "baseline")]
     with tempfile.TemporaryDirectory(prefix="codey-bounded-planner-ab-self-") as td:
-        trace = LiveTrace(Path(td) / "trace.json")
-        trace.record_send_start(
+        trace_dir = journal_directory_for(Path(td) / "trace.json")
+        trace = ABJournalWriter(
+            directory=trace_dir,
+            experiment_id="bounded_research_planner_ab",
             run_id="run-self",
             provider="deepseek",
-            provider_name="DeepSeek",
+        )
+        trace.record_send_start(
             case="warehouse_gap",
             arm="baseline",
             turn=1,
             prompt="prompt text",
         )
         trace.record_reply(
-            run_id="run-self",
-            provider="deepseek",
-            provider_name="DeepSeek",
             case="warehouse_gap",
             arm="baseline",
             turn=1,
             prompt="prompt text",
             reply='{"tool":"done","args":{"answer":"ok"}}',
         )
-        payload = json.loads((Path(td) / "trace.json").read_text(encoding="utf-8"))
-        assert payload["probe"] == "bounded_research_planner_ab_trace"
-        assert payload["event_count"] == 2
-        appended_trace = LiveTrace(Path(td) / "trace.json")
-        appended_trace.record_case_complete(
+        trace.close()
+        reader = ABJournalReader(trace_dir)
+        assert [event["event_type"] for event in reader.events()] == ["send_start", "reply"]
+        manifest = json.loads((trace_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["experiment_id"] == "bounded_research_planner_ab"
+        appended_trace = ABJournalWriter(
+            directory=trace_dir,
+            experiment_id="bounded_research_planner_ab",
             run_id="run-self",
             provider="deepseek",
+        )
+        appended_trace.record_case_complete(
             case="warehouse_gap",
             arm="planner",
             row={"ok": True, "score": 1, "stop_reason": "done", "summary_preview": "ok"},
         )
-        appended_payload = json.loads((Path(td) / "trace.json").read_text(encoding="utf-8"))
-        assert appended_payload["event_count"] == 3
-        assert [event["event"] for event in appended_payload["events"]] == [
+        appended_trace.close()
+        reader = ABJournalReader(trace_dir)
+        events = reader.events()
+        assert [event["event_type"] for event in events] == [
             "send_start",
             "reply",
             "case_complete",
         ]
+        assert all(event["previous_digest"].startswith("sha256:") for event in events)
         output = Path(td) / "payload.json"
         output.write_text(
             json.dumps({"probe": "bounded_research_planner_ab", "provider": "qwen", "rows": []}),
@@ -1807,7 +1621,7 @@ def main() -> int:
         output = args.output or _default_output(provider_id)
         if args.provider == "all" and args.output is not None:
             output = args.output.with_name(f"{args.output.stem}-{provider_id}{args.output.suffix}")
-        trace: LiveTrace | None = None
+        trace: ABJournalWriter | None = None
         if not args.no_live_trace:
             if args.trace_output is not None:
                 trace_output = args.trace_output
@@ -1817,7 +1631,16 @@ def main() -> int:
                     )
             else:
                 trace_output = _trace_output_path(output)
-            trace = LiveTrace(trace_output)
+            try:
+                trace = ABJournalWriter(
+                    directory=trace_output,
+                    experiment_id="bounded_research_planner_ab",
+                    run_id=run_id,
+                    provider=provider_id,
+                )
+            except ABJournalIdentityMismatch as exc:
+                print(str(exc), file=sys.stderr)
+                return 2
         try:
             run_provider(
                 provider_id,

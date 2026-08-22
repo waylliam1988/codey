@@ -1547,10 +1547,20 @@ AnalysisRun tool/result contract。若让模型看到新的分析工具结果或
 
 ## 0.4.6 - A/B Observation Journal + Transcript Replay Cache v1
 
-状态：规划。目标是先把 live A/B、provider observation 和可选 transcript
-replay 的事实层收住，避免后续 `research_critic_ab.py`、Ghost continuity A/B、
-longitudinal harness 和 provider adapter debug 继续各自复制 LiveTrace、原子写、
-send/reply 记录和断点续跑逻辑。
+状态：v1 已落地（manual 实验层，未发布）。实际 scope：新增共享
+`tests/manual/ab_journal.py`（ABJournalWriter/ABJournalReader/TranscriptReplayCache、
+hash chain、tail recovery、identity fail-closed、typed observation facts 脱敏），
+并迁移 `bounded_research_planner_ab.py` 与 `source_connector_ab.py` 删除各自的
+LiveTrace/原子写/send-reply 记录；`deep_research_core_ab.py` 的迁移推迟到后续
+harness 版本。落盘结构为 `<stem>.trace/manifest.json + events.jsonl +
+transcripts/<digest>.json`，transcript 默认 digest_only。架构测试锁住：生产层
+（run_trace/research/task_runner/server）不得 import journal，journal 不依赖生产
+编排层，transcript 不能进入 EvidenceLedger/ObjectModel。
+
+原始目标保持不变：先把 live A/B、provider observation 和可选 transcript replay
+的事实层收住，避免后续 critic A/B、Ghost continuity A/B、longitudinal harness 和
+provider adapter debug 继续各自复制 LiveTrace、原子写、send/reply 记录和断点续跑
+逻辑。
 
 这不是生产 RunTrace，也不是 Evidence Ledger。它是手动实验层的 durable journal：
 可以保存 Codey 发给网页模型的 prompt 和网页模型返回的 reply，但 raw transcript

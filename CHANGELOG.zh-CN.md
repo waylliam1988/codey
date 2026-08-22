@@ -4,6 +4,24 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## Unreleased
+
+- 为 manual harness 新增共享 A/B 观测 journal（`tests/manual/ab_journal.py`）：
+  单写者 append-only JSONL 事件流，每行 flush/fsync，带可验证的 sha256 hash chain；
+  中断后尾部损坏可恢复；manifest 按 experiment/run/provider 身份 fail-closed；
+  `completed_case_keys()` 支持断点续跑。
+- 新增 `TranscriptReplayCache`：prompt/reply 默认只存 digest；显式 archive 模式
+  才把内容寻址、有大小上限的 transcript 写入 `transcripts/<digest>.json`，
+  仅用于 manual replay/scoring。
+- Provider observation facts 经 allow-list 脱敏：URL、HTML 片段、cookie/DOM 类
+  key 和 secret 形状的值在持久化前被脱敏或丢弃。
+- `bounded_research_planner_ab.py` 与 `source_connector_ab.py` 迁移到共享 journal，
+  删除各自重复的 LiveTrace 实现；trace 输出变为 `<stem>.trace/` 目录
+  （`manifest.json`、`events.jsonl`、可选 `transcripts/`）。结果 JSON 形状不变，
+  历史结果仍可读取。`deep_research_core_ab.py` 的迁移推迟。
+- 架构测试锁定层边界：生产层（run_trace/research/task_runner/server）不得 import
+  journal；journal 不依赖生产编排层；transcript 不能进入 EvidenceLedger/ObjectModel。
+
 ## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 
 - 新增 `AnalysisRun` 本地命令执行审计投影（`codey/research/analysis_run.py`）：

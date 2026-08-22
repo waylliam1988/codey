@@ -407,6 +407,39 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(module=name):
                 self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
+    def test_ab_journal_is_manual_layer_only(self) -> None:
+        # The A/B journal is manual-experiment tooling: production layers must
+        # not consume it, and it must not depend on production orchestration.
+        journal_path = ROOT / "tests" / "manual" / "ab_journal.py"
+        journal_imports = imported_modules(journal_path)
+        self.assertTrue(
+            {"codey.run_trace", "codey.research.evidence_ledger", "codey.task_runner", "codey.server"}.isdisjoint(
+                journal_imports
+            ),
+            sorted(journal_imports),
+        )
+
+        consumers = [
+            ROOT / "codey" / "run_trace.py",
+            *(ROOT / "codey" / "research").glob("*.py"),
+            ROOT / "codey" / "task_runner.py",
+            ROOT / "codey" / "server.py",
+        ]
+        for path in consumers:
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                imports = imported_modules(path)
+                self.assertNotIn("ab_journal", imports)
+                self.assertNotIn("tests.manual.ab_journal", imports)
+
+    def test_transcript_archive_cannot_become_evidence(self) -> None:
+        # Transcript replay material stays in the manual layer; the evidence
+        # ledger and object model must not know transcripts exist.
+        for name in ("evidence_ledger.py", "object_model.py"):
+            imports = imported_modules(ROOT / "codey" / "research" / name)
+            with self.subTest(module=name):
+                self.assertNotIn("ab_journal", imports)
+                self.assertNotIn("tests.manual.ab_journal", imports)
+
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
         agent_source = (ROOT / "codey" / "agent.py").read_text(encoding="utf-8")
         research_source = (ROOT / "codey" / "research" / "runner.py").read_text(encoding="utf-8")

@@ -1,5 +1,59 @@
 # Codey Test Report
 
+## 0.4.6 A/B Observation Journal + Transcript Replay Cache v1 (in development)
+
+Codey 0.4.6 converges the manual A/B observation layer into one durable
+journal so live harnesses stop duplicating LiveTrace, atomic writes,
+send/reply recording, and resume logic. This is manual-experiment tooling:
+it does not touch production RunTrace, EvidenceLedger, prompts, tool results,
+router, fallback, or permissions.
+
+Production-facing changes: none. Manual-layer changes:
+
+- New `tests/manual/ab_journal.py`: `ABJournalWriter` (single-writer
+  append-only JSONL with flush/fsync and a sha256 hash chain),
+  `ABJournalReader` (`events()`, `verify_hash_chain()`, `recover_tail()`,
+  `completed_case_keys()`), identity fail-closed manifests via
+  `write_json_atomic`, `TranscriptReplayCache` (digest_only default; archive
+  mode stores content-addressed bounded transcripts), and typed observation
+  fact sanitization (URLs/HTML/cookies/secrets redacted or dropped).
+- `bounded_research_planner_ab.py` and `source_connector_ab.py` delete their
+  local LiveTrace classes and write through the shared journal; trace output
+  is now a `<stem>.trace/` directory (`manifest.json` + `events.jsonl` +
+  optional `transcripts/`). Result-JSON shapes are unchanged, so historical
+  results stay readable.
+- Architecture tests lock the boundary: production layers must not import the
+  journal, the journal must not depend on production orchestration, and
+  transcripts cannot reach EvidenceLedger/ObjectModel.
+- `deep_research_core_ab.py` migration deferred to a later harness pass.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_ab_observation_journal.py tests\test_transcript_replay_cache.py tests\test_provider_observation_log.py tests\test_architecture.py -q
+# 40 passed, 174 subtests passed
+
+python -B tests\manual\bounded_research_planner_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\source_connector_ab.py --self-test
+# self-test ok
+
+ruff check codey tests
+# All checks passed!
+
+python -m pytest -q
+# 2343 passed, 690 subtests passed in 387.41s
+```
+
+Durability/recovery coverage: hash-chain verification, corrupt-tail recovery,
+duplicate-seq and mid-file tamper detection, identity mismatch rejection,
+resume from completed case keys, digest-only no-content guarantee, archive
+idempotency and size caps. No live quality A/B is required or claimed: this
+layer cannot change model behavior. A low-traffic live smoke may later verify
+journal capture against real provider tabs, but that is a durability smoke,
+not an effectiveness claim.
+
 ## 0.4.5 AnalysisRun + Reproducibility Capsule v1
 
 Codey 0.4.5 makes local command executions auditable without changing any

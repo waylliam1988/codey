@@ -4,6 +4,30 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## Unreleased
+
+- Added a shared A/B observation journal for manual harnesses
+  (`tests/manual/ab_journal.py`): single-writer append-only JSONL events with
+  flush/fsync and a verifiable sha256 hash chain, tail recovery after
+  interrupted runs, identity fail-closed manifests (one experiment/run/provider
+  per directory), and `completed_case_keys()` resume support.
+- Added `TranscriptReplayCache`: prompt/reply pairs are digest-only by default;
+  explicit archive mode stores content-addressed bounded transcripts under
+  `transcripts/<digest>.json` for manual replay/scoring only.
+- Provider observation facts are sanitized through an allow-list: URLs, HTML
+  fragments, cookie/DOM-style keys, and secret-shaped values are redacted or
+  dropped before persistence.
+- Migrated `bounded_research_planner_ab.py` and `source_connector_ab.py` onto
+  the shared journal and deleted their duplicated LiveTrace implementations;
+  trace output is now a `<stem>.trace/` directory (`manifest.json`,
+  `events.jsonl`, optional `transcripts/`). Result JSON shapes are unchanged,
+  so historical results remain readable. `deep_research_core_ab.py` migration
+  is deferred.
+- Locked the layer boundary in architecture tests: production layers
+  (run_trace/research/task_runner/server) cannot import the journal, the
+  journal cannot depend on production orchestration, and transcripts cannot
+  reach EvidenceLedger/ObjectModel.
+
 ## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 
 - Added `AnalysisRun` projections for audited local command runs (`codey/research/analysis_run.py`):
