@@ -22,13 +22,14 @@ This file records Codey's release history. The newest release appears first.
   `ProofDiagnostic(reason_code, claim_ref, evidence_ref, source_ref,
   relation_ref)` alongside the unchanged hard-failure reason codes, and
   `ResearchProofReview` carries them in a new `diagnostics` field with a
-  `diagnostics_payload()` accessor. Diagnostics are deliberately NOT serialized
-  by `to_payload()` / `to_trace_payload()` and do not affect `proof_ref`, so
+  `diagnostics_payload()` accessor that revalidates refs through Evidence
+  Runtime before emitting them. Diagnostics are deliberately NOT serialized by
+  `to_payload()` / `to_trace_payload()` and do not affect `proof_ref`, so
   existing payload/trace shapes stay byte-identical.
 - Added `codey/research/review_finding.py` (pure projection, no runtime
   imports): stable `ReviewFindingRecord`
   (`finding_id/kind/severity/status/target refs/reason_codes/addressed_by/
-  confirmed_by/message`), `PlannerGap`, and `ReviewFindingEvent`.
+  confirmed_by`), `PlannerGap`, and `ReviewFindingEvent`.
   - `findings_from_proof_review(review, snapshot)` projects diagnostics plus
     record-level warnings into located findings; when a snapshot is supplied,
     refs outside the record graph are dropped instead of being invented.
@@ -54,12 +55,13 @@ This file records Codey's release history. The newest release appears first.
   search behavior is unchanged. Projection failures fail open without touching
   task completion.
 - Run Trace gained two bounded sections: `research_review_findings` (cap 16)
-  and `research_planner_gaps` (cap 16), storing validated refs, kind, severity,
-  status, and bounded reason codes only — no raw claim text, webpage body,
-  stdout/stderr, provider transcript, or free-form messages. Recorder entries
-  are deduplicated by id, invalid shapes are dropped silently, overflow keeps
-  the newest entries and appends truncation warnings. Without findings the
-  manifest shape is unchanged apart from two empty lists.
+  and `research_planner_gaps` (cap 16), storing validated refs, allow-listed
+  `kind`/`gap_kind`, severity, status, and bounded reason codes only — no raw
+  claim text, webpage body, stdout/stderr, provider transcript, or free-form
+  messages. Recorder entries are deduplicated by id, invalid shapes or taxonomy
+  values are dropped silently, overflow keeps the newest entries and appends
+  truncation warnings. Without findings the manifest shape is unchanged apart
+  from two empty lists.
 - Architecture tests now lock Evidence Runtime and ReviewFinding as
   projection-only modules: no browser/provider/tool_runtime/task_runner/server/
   managed_outputs/events/ghost/codey.review/journal imports and no I/O tokens;

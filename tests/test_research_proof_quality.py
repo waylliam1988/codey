@@ -17,7 +17,7 @@ from codey.research.object_model import (
     ResearchSource,
     build_research_record,
 )
-from codey.research.proof_quality import ProofDiagnostic, review_research_proof
+from codey.research.proof_quality import ProofDiagnostic, ResearchProofReview, review_research_proof
 from codey.research.report_quality import review_report_quality
 
 
@@ -395,6 +395,47 @@ def test_diagnostics_are_not_serialized_into_existing_payloads() -> None:
     )
     assert with_diags.proof_ref == clean_review.proof_ref
     assert with_diags.to_payload() == clean_review.to_payload()
+
+
+def test_diagnostics_payload_normalizes_refs_against_runtime_ref_kinds() -> None:
+    review = ResearchProofReview(
+        ok=False,
+        answers_question=False,
+        answer_status="not_answered",
+        answer_coverage_score=0.0,
+        citation_present=False,
+        citation_locator_verified=False,
+        support_relation_verified=False,
+        counterevidence_checked=False,
+        ledger_record_verified=False,
+        diagnostics=(
+            ProofDiagnostic(
+                reason_code="claim_missing_citation",
+                claim_ref="claim:" + "a" * 16,
+                evidence_ref="evidence:nothex",
+                source_ref="https://example.com/raw-source",
+                relation_ref="relation:" + "b" * 16,
+            ),
+        ),
+    )
+
+    assert review.diagnostics_payload() == [{
+        "reason_code": "claim_missing_citation",
+        "claim_ref": "claim:" + "a" * 16,
+        "relation_ref": "relation:" + "b" * 16,
+    }]
+
+    raw_record = _record().to_jsonable()
+    raw_record["claims"][0]["claim_id"] = "claim:nothex"
+    raw_record["claims"][0]["evidence_refs"] = []
+    raw_record["claims"][0]["status"] = "unsupported"
+
+    mapping_review = review_research_proof(raw_record, question="Research helium supply")
+    mapping_payload = mapping_review.diagnostics_payload()
+    serialized = json.dumps(mapping_payload, ensure_ascii=False)
+
+    assert any(item["reason_code"] == "claim_not_evidence_backed" for item in mapping_payload)
+    assert "claim:nothex" not in serialized
 
 
 def test_unsupported_claims_produce_located_diagnostics() -> None:

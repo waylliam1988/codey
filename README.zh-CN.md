@@ -389,14 +389,15 @@ research_plan/analysis_run/artifact/artifact_version/review_finding/planner_gap:
 和有界 `run:` 引用的唯一校验入口，并把 ResearchRecord（连同 proof review、
 analysis runs、artifacts）投影成一份有界读模型快照。Proof review 现在会保留
 定位诊断——reason code 和以前完全一致，但带上了问题发生处的 claim/evidence/
-source/relation refs；既有 payload 保持字节级不变。ReviewFinding Core
-（`research/review_finding.py`)把这些诊断加上记录级 warning 和失败的
-AnalysisRun，投影成稳定的 `ReviewFindingRecord`（unsupported claim /
-citation mismatch / stale source / overreach / missing counterevidence /
-failed analysis support）和确定性 PlannerGap，写入 Run Trace 两个新的有界
-section（`research_review_findings`、`research_planner_gaps`，上限各 16），
-只保存 refs 和 reason codes——不保存 raw claim 文本、网页正文、stdout/stderr
-或 transcript。finding 有一个 append-only 生命周期
+source/relation refs，并由 `diagnostics_payload()` 在输出前再次校验；既有 payload
+保持字节级不变。ReviewFinding Core（`research/review_finding.py`)把这些诊断加上
+记录级 warning 和失败的 AnalysisRun，投影成稳定的 `ReviewFindingRecord`
+（unsupported claim / citation mismatch / stale source / overreach / missing
+counterevidence / failed analysis support）和确定性 PlannerGap，写入 Run Trace
+两个新的有界 section（`research_review_findings`、`research_planner_gaps`，上限各
+16），只保存 allow-listed kind/gap_kind、refs 和 reason codes——不保存 raw claim
+文本、网页正文、stdout/stderr、transcript 或自由文本 message。finding 有一个
+append-only 生命周期
 （`open -> addressed -> confirmed/rejected`），其中 `confirmed` 必须来自固定
 allowlist 里的 verification 事实；模型自称“已修复”不能确认任何东西。这一版
 不改 prompt、不改工具结果、不改 planner 行为、不改报告契约：findings 只是审计

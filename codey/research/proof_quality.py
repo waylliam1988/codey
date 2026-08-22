@@ -29,6 +29,12 @@ MAX_SIGNALS = 8
 MAX_WARNINGS = 12
 MAX_DIAGNOSTICS = 64
 MIN_QUEUE_COVERAGE_SCORE = 0.62
+DIAGNOSTIC_REF_KINDS = (
+    ("claim_ref", "claim"),
+    ("evidence_ref", "evidence"),
+    ("source_ref", "source"),
+    ("relation_ref", "relation"),
+)
 
 
 @dataclass(frozen=True)
@@ -51,8 +57,8 @@ class ProofDiagnostic:
         payload: dict[str, object] = {
             "reason_code": identifier(self.reason_code, 80),
         }
-        for key in ("claim_ref", "evidence_ref", "source_ref", "relation_ref"):
-            value = getattr(self, key)
+        for key, ref_kind in DIAGNOSTIC_REF_KINDS:
+            value = _normalize_runtime_ref(getattr(self, key), kind=ref_kind)
             if value:
                 payload[key] = value
         return payload

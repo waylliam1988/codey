@@ -153,8 +153,6 @@ class ReviewFindingRecord:
             "addressed_by": list(bounded_refs(self.addressed_by, limit=MAX_FINDING_REASONS)),
             "confirmed_by": list(bounded_refs(self.confirmed_by, limit=MAX_FINDING_REASONS)),
         }
-        if self.message:
-            payload["message"] = self.message
         return payload
 
 

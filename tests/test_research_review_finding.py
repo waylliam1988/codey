@@ -348,6 +348,21 @@ def test_apply_finding_events_lifecycle_and_no_ops() -> None:
     assert mixed[1].status == STATUS_ADDRESSED
 
 
+def test_review_finding_payload_omits_raw_message() -> None:
+    finding = ReviewFindingRecord(
+        finding_id="review_finding:" + _stable_hex("message"),
+        kind=FINDING_UNSUPPORTED_CLAIM,
+        severity=SEVERITY_CRITICAL,
+        target_ref=_claim("known"),
+        message="RAW MESSAGE SHOULD NOT BE SAVED",
+    )
+
+    payload = finding.to_payload()
+
+    assert "message" not in payload
+    assert "RAW MESSAGE" not in repr(payload)
+
+
 def test_trace_payloads_keep_refs_only_and_drop_invalid_entries() -> None:
     finding = ReviewFindingRecord(
         finding_id="review_finding:" + _stable_hex("trace"),

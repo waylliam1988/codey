@@ -482,14 +482,16 @@ review_finding/planner_gap:<16hex>` and bounded `run:` refs, and projects a
 ResearchRecord (plus its proof review, analysis runs, and artifacts) into a
 bounded read-model snapshot. Proof review now keeps located diagnostics — the
 same reason codes as before, but with the exact claim/evidence/source/relation
-refs they were observed on; existing payloads stay byte-identical. ReviewFinding
-Core (`research/review_finding.py`) projects those diagnostics plus record-level
+refs they were observed on, revalidated by `diagnostics_payload()` before
+emission; existing payloads stay byte-identical. ReviewFinding Core
+(`research/review_finding.py`) projects those diagnostics plus record-level
 warnings and failed AnalysisRuns into stable `ReviewFindingRecord` entries
 (unsupported claim / citation mismatch / stale source / overreach / missing
 counterevidence / failed analysis support) and deterministic PlannerGaps, both
 written to new bounded Run Trace sections (`research_review_findings`,
-`research_planner_gaps`, caps 16) as refs and reason codes only — no raw claim
-text, webpage body, stdout/stderr, or transcript. Findings can move through an
+`research_planner_gaps`, caps 16) as allow-listed kinds, refs, and reason codes
+only — no raw claim text, webpage body, stdout/stderr, transcript, or free-form
+message. Findings can move through an
 append-only lifecycle (`open -> addressed -> confirmed/rejected`), where
 `confirmed` requires a verification fact from a fixed allowlist; a model saying
 "fixed" cannot confirm anything. This version changes no prompts, no tool

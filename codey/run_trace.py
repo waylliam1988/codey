@@ -21,6 +21,7 @@ from codey.prompt_envelope import is_model_boundary_freshness
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.redaction import looks_sensitive_code, looks_sensitive_signal
+from codey.research.review_finding import FINDING_KINDS, GAP_KINDS
 from codey.research.shape import digest_ref as _digest_ref
 from codey.research.shape import generated_ref as _generated_ref
 from codey.research.shape import safe_connector_id as _safe_connector_id
@@ -942,7 +943,7 @@ class RunTraceRecorder:
                 continue
             finding_id = _generated_ref(raw.get("finding_id"), "review_finding")
             kind = _safe_trace_code(raw.get("kind"), 40)
-            if not finding_id or not kind or finding_id in self._review_finding_keys:
+            if not finding_id or kind not in FINDING_KINDS or finding_id in self._review_finding_keys:
                 continue
             payload: dict[str, object] = {
                 "finding_id": finding_id,
@@ -980,7 +981,7 @@ class RunTraceRecorder:
                 continue
             gap_id = _generated_ref(raw.get("gap_id"), "planner_gap")
             gap_kind = _safe_trace_code(raw.get("gap_kind"), 40)
-            if not gap_id or not gap_kind or gap_id in self._planner_gap_keys:
+            if not gap_id or gap_kind not in GAP_KINDS or gap_id in self._planner_gap_keys:
                 continue
             payload = {
                 "gap_id": gap_id,

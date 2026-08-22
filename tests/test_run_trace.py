@@ -1411,6 +1411,11 @@ class ReviewFindingTraceTests(unittest.TestCase):
                     severity="critical",
                 ),
                 {"finding_id": "not-a-ref", "kind": "unsupported_claim"},
+                {
+                    "finding_id": "review_finding:" + "e" * 16,
+                    "kind": "made_up_finding",
+                    "severity": "critical",
+                },
                 "junk",
                 None,
             ])
@@ -1428,6 +1433,7 @@ class ReviewFindingTraceTests(unittest.TestCase):
             self.assertEqual(entry["target_ref"], "claim:" + "b" * 16)
             self.assertEqual(entry["reason_codes"], ["claim_missing_support_relation"])
             self.assertNotIn("message", entry)
+            self.assertNotIn("made_up_finding", serialized)
             self.assertNotIn("SHOULD_NOT_BE_SAVED", serialized)
 
     def test_review_findings_cap_at_max_with_warning(self) -> None:
@@ -1472,6 +1478,11 @@ class ReviewFindingTraceTests(unittest.TestCase):
                 "gap_id": "planner_gap:short",
                 "gap_kind": "locator_verification",
             }])
+            recorder.record_planner_gaps([{
+                "gap_id": "planner_gap:" + "f" * 16,
+                "gap_kind": "made_up_gap",
+                "target_ref": "claim:" + "b" * 16,
+            }])
             # Duplicate is ignored.
             recorder.record_planner_gaps([{
                 "gap_id": "planner_gap:" + "e" * 16,
@@ -1480,9 +1491,11 @@ class ReviewFindingTraceTests(unittest.TestCase):
             recorder.finish(status="done")
 
             payload = self._payload(store.path_for("session-findings", "run-findings"))
+            serialized = json.dumps(payload, ensure_ascii=False)
             gaps = payload["research_planner_gaps"]
 
             self.assertEqual(len(gaps), 1)
+            self.assertNotIn("made_up_gap", serialized)
             gap = gaps[0]
             self.assertEqual(gap["gap_id"], "planner_gap:" + "e" * 16)
             self.assertEqual(gap["gap_kind"], "followup_search")

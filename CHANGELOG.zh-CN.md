@@ -20,11 +20,12 @@
 - 新增定位诊断：`_review_relations()` 在原有 hard-failure reason code 完全不变的
   基础上，同时产出 `ProofDiagnostic(reason_code, claim_ref, evidence_ref,
   source_ref, relation_ref)`；`ResearchProofReview` 通过新的 `diagnostics`
-  字段和 `diagnostics_payload()` 暴露它们。诊断刻意不进入 `to_payload()` /
-  `to_trace_payload()`，也不影响 `proof_ref`，既有 payload/trace 形状字节级不变。
+  字段和 `diagnostics_payload()` 暴露它们，输出前会再次通过 Evidence Runtime
+  校验 refs。诊断刻意不进入 `to_payload()` / `to_trace_payload()`，也不影响
+  `proof_ref`，既有 payload/trace 形状字节级不变。
 - 新增 `codey/research/review_finding.py`（纯投影模块，无 runtime import）：
   稳定的 `ReviewFindingRecord`（`finding_id/kind/severity/status/target
-  refs/reason_codes/addressed_by/confirmed_by/message`）、`PlannerGap` 和
+  refs/reason_codes/addressed_by/confirmed_by`）、`PlannerGap` 和
   `ReviewFindingEvent`。
   - `findings_from_proof_review(review, snapshot)` 把诊断加记录级 warning 投影成
     定位 finding；提供 snapshot 时，record 图之外的 ref 会被丢弃而不是被发明。
@@ -46,10 +47,11 @@
   PlannerGap -> 只写 trace sink。planner 不消费 gaps，follow-up 搜索行为不变；
   投影失败 fail-open，不影响任务完成。
 - Run Trace 新增两个有界 section：`research_review_findings`（上限 16）和
-  `research_planner_gaps`（上限 16），只保存验证过的 refs、kind、severity、
-  status 和有界 reason codes——不保存 raw claim 文本、网页正文、stdout/stderr、
-  provider transcript 或自由文本 message。recorder 按 id 去重，非法形状静默丢弃，
-  溢出保留最新并追加截断 warning。没有 finding 时 manifest 除两个空列表外形状不变。
+  `research_planner_gaps`（上限 16），只保存验证过的 refs、allow-listed
+  `kind`/`gap_kind`、severity、status 和有界 reason codes——不保存 raw claim
+  文本、网页正文、stdout/stderr、provider transcript 或自由文本 message。recorder
+  按 id 去重，非法形状或 taxonomy 值静默丢弃，溢出保留最新并追加截断 warning。
+  没有 finding 时 manifest 除两个空列表外形状不变。
 - 架构测试现在把 Evidence Runtime 和 ReviewFinding 锁成 projection-only：
   禁止 browser/provider/tool_runtime/task_runner/server/managed_outputs/
   events/ghost/codey.review/journal import 和 I/O token；A/B journal 边界测试
