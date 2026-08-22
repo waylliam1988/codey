@@ -13,7 +13,9 @@ This file records Codey's release history. The newest release appears first.
   and `snapshot_from_research_record()`, which projects a typed or mapping
   ResearchRecord together with its proof review, analysis runs, and artifact
   versions into a bounded `EvidenceRuntimeSnapshot` read model (validated refs,
-  digests, allow-listed answer status, counts; no raw text).
+  digests, allow-listed answer status, counts; no raw text). Typed and mapping
+  proof-review inputs both preserve the proof review's `question_digest` instead
+  of manufacturing a new digest.
   This replaces the per-module copies of the same ref regexes: artifact
   lineage's `is_valid_derived_ref()` now delegates to the shared validator with
   an explicit narrow kind allowlist (`source/evidence/analysis_run/run`), with

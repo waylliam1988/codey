@@ -226,14 +226,13 @@ def snapshot_from_research_record(
         artifact_refs.append(ref)
         if len(artifact_refs) >= MAX_SNAPSHOT_ARTIFACT_VERSIONS:
             break
-    review_payload = _mapping_or_empty(proof_review)
     answer_status = _identifier(payload.get("answer_status"), 40)
     return EvidenceRuntimeSnapshot(
         record_ref=record_ref,
         record_digest=_digest_ref(payload.get("record_digest")),
         answer_status=answer_status if answer_status in _ANSWER_STATUSES else "not_answered",
         proof_ref=_generated_ref(_field(proof_review, "proof_ref"), "research_proof"),
-        question_digest=_digest_ref(review_payload.get("question_digest")),
+        question_digest=_digest_ref(_field(proof_review, "question_digest")),
         source_refs=sources,
         evidence_refs=evidence,
         claim_refs=claims,
@@ -261,10 +260,6 @@ def _field(item: object, name: str) -> object:
     if isinstance(item, Mapping):
         return item.get(name)
     return getattr(item, name, "")
-
-
-def _mapping_or_empty(value: object) -> Mapping[str, object]:
-    return value if isinstance(value, Mapping) else {}
 
 
 def _refs_from_items(value: object, id_key: str, kind: str, limit: int) -> tuple[str, ...]:

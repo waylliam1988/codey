@@ -6,7 +6,8 @@ Codey 0.4.7 gives research facts one shared reference language and an
 audit-only finding chain. New `research/evidence_runtime.py` owns the single
 validator for all `<kind>:<16hex>` runtime refs plus bounded `run:` ids, and
 projects a ResearchRecord (+ proof review, analysis runs, artifacts) into a
-bounded `EvidenceRuntimeSnapshot`. `proof_quality.py` now keeps located
+bounded `EvidenceRuntimeSnapshot` that preserves the proof review's
+`question_digest` for both typed and mapping proof-review inputs. `proof_quality.py` now keeps located
 `ProofDiagnostic` entries (same reason codes as before, plus the exact
 claim/evidence/source/relation refs they were observed on) without changing any
 existing payload byte. New pure-projection `research/review_finding.py`

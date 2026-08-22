@@ -13,7 +13,8 @@
   `snapshot_from_research_record()`——把 typed 或 mapping 的 ResearchRecord 连同
   proof review、analysis runs、artifact versions 投影成有界的
   `EvidenceRuntimeSnapshot` 读模型（只含验证过的 refs、digest、allow-list
-  answer status 和计数，不含 raw 文本）。
+  answer status 和计数，不含 raw 文本）；typed 与 mapping proof review 都会保留
+  原 proof review 的 `question_digest`，不会制造新的 digest。
   这收掉了各模块重复的 ref 正则：artifact lineage 的 `is_valid_derived_ref()`
   改为委托共享 validator，并用显式窄 allowlist（`source/evidence/
   analysis_run/run`）保持接受/拒绝行为完全不变。

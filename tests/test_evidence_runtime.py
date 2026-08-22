@@ -210,7 +210,7 @@ def _proof_review(record: ResearchRecord) -> ResearchProofReview:
         support_relation_verified=True,
         counterevidence_checked=True,
         ledger_record_verified=False,
-        question_digest="sha256:" + _stable_hex("question"),
+        question_digest=_stable_sha("question"),
         missing_evidence=("partial_answer",),
         proof_ref="research_proof:" + _stable_hex("proof"),
         record_id=record.record_id,
@@ -245,7 +245,7 @@ def test_snapshot_projects_typed_record_into_validated_refs() -> None:
     assert snapshot.record_digest == record.record_digest
     assert snapshot.answer_status == "partial"
     assert snapshot.proof_ref.startswith("research_proof:")
-    assert snapshot.question_digest.startswith("sha256:")
+    assert snapshot.question_digest == review.question_digest
     assert snapshot.source_refs == ("source:" + _stable_hex("src"),)
     assert snapshot.evidence_refs == ("evidence:" + _stable_hex("ev"),)
     assert set(snapshot.claim_refs) == {
@@ -275,7 +275,7 @@ def test_snapshot_accepts_mapping_records_and_neighbors() -> None:
         payload,
         proof_review={
             "proof_ref": _proof_review(typed).proof_ref,
-            "question_digest": "sha256:" + _stable_hex("question"),
+            "question_digest": _stable_sha("question"),
         },
         analysis_runs=[_analysis_run().to_payload()],
         artifacts=[artifact.to_payload()],
@@ -284,6 +284,7 @@ def test_snapshot_accepts_mapping_records_and_neighbors() -> None:
     assert snapshot is not None
     assert snapshot.record_ref == typed.record_id
     assert snapshot.proof_ref.startswith("research_proof:")
+    assert snapshot.question_digest == _stable_sha("question")
     assert snapshot.analysis_run_refs == (_analysis_run().analysis_run_id,)
     assert snapshot.artifact_version_refs == (artifact.version_id,)
     assert snapshot.counts()["artifact_versions"] == 1
