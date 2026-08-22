@@ -817,6 +817,9 @@ def main() -> int:
         except OutputProviderMismatch as exc:
             print(str(exc), file=sys.stderr)
             return 2
+        finally:
+            if trace is not None:
+                trace.close()
     return 0
 
 

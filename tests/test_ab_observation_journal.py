@@ -55,6 +55,28 @@ def test_manifest_is_atomic_and_identity_bound(tmp_path: Path) -> None:
         _writer(directory, run_id="run-2")
 
 
+def test_reopened_completed_journal_marks_manifest_running(tmp_path: Path) -> None:
+    directory = journal_directory_for(tmp_path / "result.json")
+    writer = _writer(directory)
+    try:
+        writer.record_run_start(cases=("widget_noop",), arms=("baseline",), max_turns=5)
+        writer.record_run_complete(rows=0)
+    finally:
+        writer.close()
+
+    manifest_path = directory / "manifest.json"
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "done"
+
+    resumed = _writer(directory)
+    try:
+        resumed.record_run_start(cases=("widget_noop",), arms=("planner",), max_turns=5)
+    finally:
+        resumed.close()
+
+    assert json.loads(manifest_path.read_text(encoding="utf-8"))["status"] == "running"
+    assert ABJournalReader(directory).verify_hash_chain() == []
+
+
 def test_events_form_a_verifiable_hash_chain(tmp_path: Path) -> None:
     directory = journal_directory_for(tmp_path / "result.json")
     writer = _writer(directory)
@@ -267,6 +289,27 @@ def test_completed_case_keys_drive_resume(tmp_path: Path) -> None:
         ("widget_noop", "baseline"),
         ("widget_noop", "planner"),
     ]
+
+
+def test_completed_case_keys_requires_verified_journal(tmp_path: Path) -> None:
+    directory = journal_directory_for(tmp_path / "result.json")
+    writer = _writer(directory)
+    try:
+        _simulate_case(writer, case="widget_noop", arm="baseline")
+    finally:
+        writer.close()
+
+    events_path = directory / "events.jsonl"
+    lines = events_path.read_text(encoding="utf-8").splitlines()
+    tampered = json.loads(lines[-1])
+    tampered["case_id"] = "forged_complete"
+    lines[-1] = json.dumps(tampered, ensure_ascii=False, sort_keys=True)
+    events_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    reader = ABJournalReader(directory)
+    assert any(problem.startswith("bad-digest-at-seq:4") for problem in reader.verify_hash_chain())
+    with pytest.raises(ValueError, match="failed journal verification"):
+        reader.completed_case_keys()
 
 
 def test_digest_only_mode_writes_no_transcript_files(tmp_path: Path) -> None:

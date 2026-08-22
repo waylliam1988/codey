@@ -625,6 +625,7 @@ class ABJournalWriter:
 
     def _write_manifest(self) -> None:
         manifest = self._read_manifest()
+        manifest["status"] = "running"
         manifest["updated_at"] = _timestamp()
         manifest["event_count"] = self._last_seq
         manifest["last_event_digest"] = self._last_digest
@@ -836,14 +837,7 @@ class ABJournalReader:
         events, _tail, _mid = read_events_with_tail_recovery(self.events_path)
         return events
 
-    def verify_hash_chain(self) -> list[str]:
-        """Verify linkage/digests/identity AND surface unparseable lines.
-
-        Unparseable lines never enter ``events()``, so without this check a
-        mid-file garbage line would be invisible to verification while still
-        making the writer refuse to open.
-        """
-
+    def _events_with_integrity_problems(self) -> tuple[list[dict[str, Any]], list[str]]:
         events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(
             self.events_path
         )
@@ -852,6 +846,17 @@ class ABJournalReader:
             problems.append(f"unparseable-lines:mid_file={mid_file_invalid}")
         if tail_invalid:
             problems.append(f"unparseable-lines:tail={tail_invalid}")
+        return events, problems
+
+    def verify_hash_chain(self) -> list[str]:
+        """Verify linkage/digests/identity AND surface unparseable lines.
+
+        Unparseable lines never enter ``events()``, so without this check a
+        mid-file garbage line would be invisible to verification while still
+        making the writer refuse to open.
+        """
+
+        _events, problems = self._events_with_integrity_problems()
         return problems
 
     def recover_tail(self) -> int:
@@ -877,8 +882,14 @@ class ABJournalReader:
         return dropped
 
     def completed_case_keys(self) -> list[tuple[str, str]]:
+        events, problems = self._events_with_integrity_problems()
+        if problems:
+            raise ValueError(
+                f"{self.events_path} failed journal verification "
+                f"({problems[:3]}); manual recovery required before resume"
+            )
         keys: list[tuple[str, str]] = []
-        for event in self.events():
+        for event in events:
             if event.get("event_type") != "case_complete":
                 continue
             key = (str(event.get("case_id") or ""), str(event.get("arm") or ""))

@@ -781,7 +781,7 @@ python -B tools/live_smoke.py --provider all --case edit --port 9222 --max-turns
 
 Manual A/B harnesses record provider send/reply observations through a shared
 durable journal (`tests/manual/ab_journal.py`): append-only JSONL events with a
-verifiable hash chain under `<output>.trace/`, digest-only by default, with
+verifiable hash chain under `<output-stem>.trace/`, digest-only by default, with
 optional transcript archival for offline replay. This is developer tooling; it
 does not change agent behavior.
 
