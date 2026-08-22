@@ -381,7 +381,31 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         ]
         for path in paths:
             with self.subTest(path=path.relative_to(ROOT).as_posix()):
-                self.assertNotIn("codey.tool_runtime", imported_modules(path))
+                imports = imported_modules(path)
+                self.assertNotIn("codey.tool_runtime", imports)
+                # managed_outputs sits on the runtime side of the boundary
+                # (it imports tool_runtime), so research/review/ghost modules
+                # must consume normalized metadata dicts instead.
+                self.assertNotIn("codey.managed_outputs", imports)
+
+    def test_analysis_run_projection_stays_pure(self) -> None:
+        analysis_run_imports = imported_modules(ROOT / "codey" / "research" / "analysis_run.py")
+        lineage_imports = imported_modules(ROOT / "codey" / "research" / "artifact_lineage.py")
+        capsule_imports = imported_modules(ROOT / "codey" / "research" / "reproducibility.py")
+        forbidden = {
+            "codey.events",
+            "codey.tool_runtime",
+            "codey.managed_outputs",
+            "codey.task_runner",
+            "codey.server",
+        }
+        for name, imports in (
+            ("analysis_run", analysis_run_imports),
+            ("artifact_lineage", lineage_imports),
+            ("reproducibility", capsule_imports),
+        ):
+            with self.subTest(module=name):
+                self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
         agent_source = (ROOT / "codey" / "agent.py").read_text(encoding="utf-8")

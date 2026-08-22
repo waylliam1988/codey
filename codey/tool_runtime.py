@@ -8,8 +8,10 @@ import os
 import re
 import shlex
 import subprocess
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from codey import cancellation
@@ -177,6 +179,13 @@ class RunCommandRawResult:
     output: str
     ok: bool
     exit_code: int
+    started_at: str = ""
+    finished_at: str = ""
+    duration_ms: int | None = None
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _first_model_line(text: object, limit: int) -> str:
@@ -974,6 +983,8 @@ def run_command_raw(
     env = os.environ.copy()
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     timeout = RUN_SUITE_TIMEOUT_SECONDS if _is_suite_run_command(argv) else RUN_TIMEOUT_SECONDS
+    started_at = _utc_now_iso()
+    started_monotonic = time.monotonic()
     try:
         proc = cancellation.run_process(
             argv,
@@ -990,6 +1001,7 @@ def run_command_raw(
             f"failure): {command}. Re-run a smaller subset or a single test/file to "
             "verify instead of guessing a fix."
         )
+    duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
 
     output_parts = []
     if proc.stdout:
@@ -1002,6 +1014,9 @@ def run_command_raw(
         output=output,
         ok=proc.returncode == 0,
         exit_code=proc.returncode,
+        started_at=started_at,
+        finished_at=_utc_now_iso(),
+        duration_ms=duration_ms,
     )
 
 
@@ -1009,9 +1024,17 @@ def project_run_command_result(root: Path, raw: RunCommandRawResult) -> ToolOutc
     output = prune_dependency_stack_frames(raw.output, root)
     output, truncated = clip_middle(output, RUN_OUTPUT_LIMIT)
     display = f"exit {raw.exit_code}: {raw.command}\n{output}"
+    audit: dict[str, object] = {}
+    if raw.started_at:
+        audit["command_started_at"] = raw.started_at
+    if raw.finished_at:
+        audit["command_finished_at"] = raw.finished_at
+    if raw.duration_ms is not None:
+        audit["command_duration_ms"] = max(0, min(int(raw.duration_ms), 10**9))
     return ToolOutcome(
         display,
         raw.ok,
+        audit=audit,
         exit_code=raw.exit_code,
         truncated=truncated,
     )

@@ -4,6 +4,40 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## Unreleased
+
+- Added `AnalysisRun` projections for audited local command runs (`codey/research/analysis_run.py`):
+  each project `run` tool execution is now projected into a bounded, deterministic record with
+  command digest, sanitized display command, cwd ref, exit code, started/finished timestamps,
+  duration, capture quality, and an allow-listed environment summary digest.
+  No raw stdout/stderr, no script/dependency fingerprints, and no runtime imports: the projection
+  consumes normalized metadata mappings only.
+- Added minimal Artifact lineage (`codey/research/artifact_lineage.py`):
+  Managed Output handles now project into stable content-addressed `artifact:<16hex>` /
+  `artifact_version:<16hex>` refs with sha256, bounded size, pinned `text/plain` mime,
+  origin run id, and producing analysis run. Derived refs validate against the
+  Source/Evidence/AnalysisRun/Run prefix allow-list; malformed digests fail open to no lineage entry.
+- Added Reproducibility Capsule aggregation (`codey/research/reproducibility.py`):
+  one bounded per-run snapshot of analysis runs, captured artifact versions, environment digest,
+  and an honest reproduction status (`no_analysis_runs` / `output_captured` / `output_not_captured`
+  / `failed`) that never claims more than v1 can verify. Capsule snapshots replace by id instead of
+  accumulating stale states.
+- Extended Run Trace with three bounded audit sections:
+  `analysis_runs` (cap 8), `artifact_refs` (cap 16), and `reproducibility_capsules` (cap 8) with
+  generated-ref validation, deduplication, truncation warnings, and no raw output storage.
+- `run_command_raw()` now records audit-only timing (`started_at` / `finished_at` / `duration_ms`);
+  the fields flow through `ToolOutcome.audit` only. The model-visible `model_text`, UI/SSE payload
+  shape, and managed-output footer are byte-identical, locked by characterization tests.
+- Consolidated TaskRunner's duplicated project tool-event branches:
+  project facts recording, checkpoint edit/run tracking, and AnalysisRun projection now share one
+  `_handle_project_tool_event()` seam with unchanged branch conditions, and projection failures
+  fail open without touching task completion.
+- Architecture tests now forbid `codey.managed_outputs` imports from research/review/ghost modules
+  and keep the new projection modules pure (no events/tool_runtime/task_runner/server dependencies).
+- v1 scope note: Research reports do not yet cite `analysis_run:<id>`; the internal support
+  relation is recorded first. Making the citation model-visible would change the report contract
+  and requires a small live A/B in a later version.
+
 ## 0.4.4 - Bounded Research Planner v1
 
 - Implemented memory Staging isolation (`StagedKnowledgeStore` / `StagedKnowledgeChanges`):

@@ -459,6 +459,17 @@ staged rollback uses the public `KnowledgeChanges` snapshot boundary, and
 merged records preserve the active project ref rather than dropping project
 metadata.
 
+In 0.4.5 (in development), local command executions become auditable facts.
+Every project `run` tool execution is projected into a bounded AnalysisRun
+record (command digest, sanitized display command, cwd ref, exit code, timing,
+capture quality, and an allow-listed environment summary digest) plus stable
+content-addressed artifact refs for captured Managed Outputs, and one
+Reproducibility Capsule snapshot per run with an honest reproduction status.
+These live in Run Trace under `analysis_runs`, `artifact_refs`, and
+`reproducibility_capsules`; no raw stdout/stderr is stored, the model-visible
+tool result is byte-identical, and reports do not yet cite `analysis_run:<id>`
+(that report-contract change would require a small live A/B).
+
 MiMo was retested after adding the one-tool Research boundary. A fresh-tab
 `long-official-doc/source_search` run completed in 10 turns, used
 `source_search`, opened the target offset, saved exact evidence, and passed the

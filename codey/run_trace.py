@@ -43,6 +43,9 @@ MAX_RESEARCH_PLANS = 8
 MAX_RESEARCH_PIPELINE_RUNS = 8
 MAX_RESEARCH_CONNECTOR_ERRORS = 8
 MAX_RESEARCH_DONE_COMPILATIONS = 8
+MAX_ANALYSIS_RUNS = 8
+MAX_ARTIFACT_REFS = 16
+MAX_REPRODUCIBILITY_CAPSULES = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 RESEARCH_ANSWER_STATUSES = frozenset({
@@ -191,6 +194,9 @@ class RunTraceManifest:
     research_pipeline_runs: list[dict[str, object]] = field(default_factory=list)
     research_connector_errors: list[dict[str, object]] = field(default_factory=list)
     research_done_compilations: list[dict[str, object]] = field(default_factory=list)
+    analysis_runs: list[dict[str, object]] = field(default_factory=list)
+    artifact_refs: list[dict[str, object]] = field(default_factory=list)
+    reproducibility_capsules: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -237,6 +243,11 @@ class RunTraceManifest:
             ],
             "research_done_compilations": (
                 self.research_done_compilations[:MAX_RESEARCH_DONE_COMPILATIONS]
+            ),
+            "analysis_runs": self.analysis_runs[:MAX_ANALYSIS_RUNS],
+            "artifact_refs": self.artifact_refs[:MAX_ARTIFACT_REFS],
+            "reproducibility_capsules": (
+                self.reproducibility_capsules[:MAX_REPRODUCIBILITY_CAPSULES]
             ),
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
@@ -309,6 +320,9 @@ class RunTraceRecorder:
         self._research_source_keys: set[str] = set()
         self._research_record_keys: set[str] = set()
         self._research_plan_keys: set[str] = set()
+        self._analysis_run_keys: set[str] = set()
+        self._artifact_version_keys: set[str] = set()
+        self._capsule_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
@@ -755,6 +769,140 @@ class RunTraceRecorder:
         if len(self.manifest.research_done_compilations) > MAX_RESEARCH_DONE_COMPILATIONS:
             del self.manifest.research_done_compilations[:-MAX_RESEARCH_DONE_COMPILATIONS]
             self.manifest.warnings.append("research_done_compilations_truncated")
+        self.checkpoint()
+
+    def record_analysis_run(self, record: Mapping[str, object]) -> None:
+        if not isinstance(record, Mapping):
+            return
+        ref = _generated_ref(record.get("analysis_run_id"), "analysis_run")
+        if not ref or ref in self._analysis_run_keys:
+            return
+        cwd_ref = record.get("cwd_ref")
+        payload: dict[str, object] = {
+            "analysis_run_id": ref,
+            "run_id": str(record.get("run_id") or "")[:120],
+            "tool_id": _identifier(record.get("tool_id") or "run", 40) or "run",
+            "command_digest": _digest_ref(record.get("command_digest")),
+            "command_display": str(record.get("command_display") or "")[:500],
+            "cwd_ref": dict(cwd_ref) if isinstance(cwd_ref, Mapping) else {},
+            "exit_code": _int_or_none(record.get("exit_code")),
+            "ok": bool(record.get("ok")),
+            "started_at": str(record.get("started_at") or "")[:40],
+            "finished_at": str(record.get("finished_at") or "")[:40],
+            "duration_ms": _int_or_none(record.get("duration_ms")),
+            "managed_output_handle": str(record.get("managed_output_handle") or "")[:80],
+            "output_sha256": _digest_ref(
+                f"sha256:{record.get('output_sha256')}"
+                if str(record.get("output_sha256") or "")
+                else ""
+            ),
+            "stored_truncated": bool(record.get("stored_truncated")),
+            "capture_quality": _safe_trace_code(record.get("capture_quality"), 40),
+            "reproduction_status": _safe_trace_code(record.get("reproduction_status"), 40),
+            "environment_digest": _digest_ref(record.get("environment_digest")),
+            "warnings": [
+                _safe_trace_code(item, 120)
+                for item in _trace_list_items(record.get("warnings"))
+                if _safe_trace_code(item, 120)
+            ][:MAX_WARNINGS],
+        }
+        self._analysis_run_keys.add(ref)
+        self.manifest.analysis_runs.append(payload)
+        if len(self.manifest.analysis_runs) > MAX_ANALYSIS_RUNS:
+            del self.manifest.analysis_runs[:-MAX_ANALYSIS_RUNS]
+            self.manifest.warnings.append("analysis_runs_truncated")
+        self.checkpoint()
+
+    def record_artifact_refs(self, refs: Iterable[object]) -> None:
+        for item in _trace_list_items(refs):
+            if not isinstance(item, Mapping):
+                continue
+            version_id = _generated_ref(item.get("version_id"), "artifact_version")
+            artifact_id = _generated_ref(item.get("artifact_id"), "artifact")
+            if not version_id or version_id in self._artifact_version_keys:
+                continue
+            derived = [
+                str(ref or "")[:120]
+                for ref in _trace_list_items(item.get("derived_from"))
+                if str(ref or "").strip()
+            ][:8]
+            payload: dict[str, object] = {
+                "artifact_id": artifact_id,
+                "version_id": version_id,
+                "artifact_kind": _identifier(item.get("artifact_kind"), 40),
+                "sha256": _digest_ref(
+                    f"sha256:{item.get('sha256')}"
+                    if str(item.get("sha256") or "")
+                    else ""
+                ),
+                "size": _nonnegative_int(item.get("size")),
+                "mime": str(item.get("mime") or "")[:80],
+                "origin_run_id": str(item.get("origin_run_id") or "")[:120],
+                "produced_by": str(item.get("produced_by") or "")[:120],
+                "stored_truncated": bool(item.get("stored_truncated")),
+                "derived_from": derived,
+                "warnings": [
+                    _safe_trace_code(warning, 120)
+                    for warning in _trace_list_items(item.get("warnings"))
+                    if _safe_trace_code(warning, 120)
+                ][:4],
+            }
+            self._artifact_version_keys.add(version_id)
+            self.manifest.artifact_refs.append(payload)
+        if len(self.manifest.artifact_refs) > MAX_ARTIFACT_REFS:
+            del self.manifest.artifact_refs[:-MAX_ARTIFACT_REFS]
+            self.manifest.warnings.append("artifact_refs_truncated")
+        self.checkpoint()
+
+    def record_reproducibility_capsule(self, capsule: Mapping[str, object]) -> None:
+        if not isinstance(capsule, Mapping):
+            return
+        ref = _generated_ref(capsule.get("capsule_id"), "capsule")
+        if not ref:
+            return
+        payload: dict[str, object] = {
+            "capsule_id": ref,
+            "run_id": str(capsule.get("run_id") or "")[:120],
+            "analysis_run_refs": [
+                analysis_ref
+                for analysis_ref in (
+                    _generated_ref(item, "analysis_run")
+                    for item in _trace_list_items(capsule.get("analysis_run_refs"))
+                )
+                if analysis_ref
+            ][:MAX_ANALYSIS_RUNS],
+            "artifact_refs": [
+                version_ref
+                for version_ref in (
+                    _generated_ref(item, "artifact_version")
+                    for item in _trace_list_items(capsule.get("artifact_refs"))
+                )
+                if version_ref
+            ][:MAX_REPRODUCIBILITY_CAPSULES],
+            "environment_digest": _digest_ref(capsule.get("environment_digest")),
+            "reproduction_status": _safe_trace_code(
+                capsule.get("reproduction_status"), 40
+            ),
+            "warnings": [
+                _safe_trace_code(item, 120)
+                for item in _trace_list_items(capsule.get("warnings"))
+                if _safe_trace_code(item, 120)
+            ][:MAX_WARNINGS],
+        }
+        # Capsules are aggregate snapshots of the same run: replace the stored
+        # snapshot with the newest one instead of accumulating stale states.
+        if ref in self._capsule_keys:
+            self.manifest.reproducibility_capsules = [
+                item
+                for item in self.manifest.reproducibility_capsules
+                if item.get("capsule_id") != ref
+            ]
+        else:
+            self._capsule_keys.add(ref)
+        self.manifest.reproducibility_capsules.append(payload)
+        if len(self.manifest.reproducibility_capsules) > MAX_REPRODUCIBILITY_CAPSULES:
+            del self.manifest.reproducibility_capsules[:-MAX_REPRODUCIBILITY_CAPSULES]
+            self.manifest.warnings.append("reproducibility_capsules_truncated")
         self.checkpoint()
 
     def record_fallback(

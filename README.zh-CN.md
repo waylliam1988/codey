@@ -370,6 +370,15 @@ list，evidence item 必须使用 `source_url`；staged rollback 使用公开的
 `KnowledgeChanges` snapshot 边界；合并后的记录会保留当前 project ref，不再丢失
 project metadata。
 
+0.4.5（开发中）让本地命令执行成为可审计事实。project 模式每次 `run` 工具执行
+都会投影成一条有界 AnalysisRun 记录（command digest、有界显示命令、cwd ref、
+exit code、timing、capture quality、allow-list 环境摘要 digest），已捕获的
+Managed Output 会得到稳定的内容寻址 artifact 引用，每个 run 还有一份带诚实
+reproduction status 的 Reproducibility Capsule 快照。它们存放在 Run Trace 的
+`analysis_runs`、`artifact_refs`、`reproducibility_capsules` 三个有界 section 里；
+不保存 raw stdout/stderr，模型可见工具结果字节级不变，报告也暂不引用
+`analysis_run:<id>`（那个报告契约变更需要后续小型实机 A/B）。
+
 MiMo 在加入 one-tool Research 边界后重新做过实机补测。fresh-tab 的
 `long-official-doc/source_search` 跑满 10 轮并完成：使用了 `source_search`，
 打开目标 offset，保存精确 evidence，并通过 report quality。没有这个边界的早期 MiMo

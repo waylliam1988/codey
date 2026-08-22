@@ -4,6 +4,38 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## Unreleased
+
+- 新增 `AnalysisRun` 本地命令执行审计投影（`codey/research/analysis_run.py`）：
+  project 模式的每次 `run` 工具执行现在会投影成一条有界、确定性的记录，
+  包含 command digest、有界的显示用命令、cwd ref、exit code、started/finished 时间戳、
+  duration、capture quality，以及 allow-list 的环境摘要 digest。
+  不保存 raw stdout/stderr，不做 script/dependency fingerprint，也不 import runtime 层：
+  投影只消费已归一化的 metadata mapping。
+- 新增最小 Artifact lineage（`codey/research/artifact_lineage.py`）：
+  Managed Output handle 现在投影为稳定的内容寻址 `artifact:<16hex>` /
+  `artifact_version:<16hex>` 引用，带 sha256、有界 size、固定 `text/plain` mime、
+  来源 run id 和产出它的 analysis run。derived ref 按 Source/Evidence/AnalysisRun/Run
+  前缀 allow-list 校验；坏 digest fail-open 为不产生 lineage 条目。
+- 新增 Reproducibility Capsule 聚合（`codey/research/reproducibility.py`）：
+  每个 run 一份有界快照，聚合 analysis runs、已捕获 artifact 版本、环境 digest，
+  以及诚实的 reproduction status（`no_analysis_runs` / `output_captured` /
+  `output_not_captured` / `failed`），绝不声称超出 v1 可验证范围。Capsule 快照按 id
+  替换而不是累积陈旧状态。
+- Run Trace 新增三个有界审计 section：`analysis_runs`（cap 8）、`artifact_refs`
+  （cap 16）、`reproducibility_capsules`（cap 8），带 generated-ref 校验、去重、
+  截断 warning，且不保存 raw 输出。
+- `run_command_raw()` 现在记录 audit-only timing（`started_at` / `finished_at` /
+  `duration_ms`）；字段仅通过 `ToolOutcome.audit` 流转。模型可见 `model_text`、
+  UI/SSE payload 形状和 managed output footer 字节级不变，由 characterization 测试锁定。
+- 收束 TaskRunner 中重复的 project tool-event 分支：
+  project facts 记录、checkpoint edit/run 追踪和 AnalysisRun 投影现在共用一个
+  `_handle_project_tool_event()` 缝隙，分支条件不变；投影失败 fail-open，不影响任务完成。
+- 架构测试现在禁止 research/review/ghost 模块 import `codey.managed_outputs`，
+  并保持三个新投影模块纯净（不依赖 events/tool_runtime/task_runner/server）。
+- v1 范围说明：Research 报告暂不引用 `analysis_run:<id>`；先记录内部支撑关系。
+  让引用对模型可见会改变报告契约，需要留到后续版本做小型实机 A/B。
+
 ## 0.4.4 - Bounded Research Planner v1
 
 - 实现 Staging 内存暂存隔离（`StagedKnowledgeStore` / `StagedKnowledgeChanges`）：

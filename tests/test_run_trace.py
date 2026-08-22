@@ -1154,3 +1154,148 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AnalysisRunTraceTests(unittest.TestCase):
+    def _open(self, store: RunTraceStore, *, run_id: str = "run-analysis") -> object:
+        return store.open(
+            run_id=run_id,
+            session_id="session-analysis",
+            project=None,
+            mode_initial="project",
+            provider_initial="deepseek",
+        )
+
+    def _payload(self, path: Path) -> dict:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_analysis_run_trace_is_bounded_deduplicated_and_secret_free(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_analysis_run({
+                "analysis_run_id": "analysis_run:" + "a" * 16,
+                "run_id": "run-analysis",
+                "tool_id": "run",
+                "command_digest": "sha256:" + "b" * 64,
+                "command_display": "pytest -q",
+                "cwd_ref": {"basename": "codey", "digest": "sha256:" + "c" * 64},
+                "exit_code": 0,
+                "ok": True,
+                "started_at": "2026-08-22T08:00:00.000Z",
+                "finished_at": "2026-08-22T08:00:01.500Z",
+                "duration_ms": 1500,
+                "managed_output_handle": "",
+                "output_sha256": "",
+                "stored_truncated": False,
+                "capture_quality": "output_not_captured",
+                "reproduction_status": "output_not_captured",
+                "environment_digest": "sha256:" + "d" * 64,
+                "warnings": ["timing_unavailable"],
+                # Extra runtime-side fields must never reach the trace.
+                "raw_stdout": "SECRET_STDOUT_SHOULD_NOT_BE_SAVED",
+            })
+            # Duplicate ref is ignored.
+            recorder.record_analysis_run({
+                "analysis_run_id": "analysis_run:" + "a" * 16,
+                "command_display": "duplicate",
+            })
+            # Invalid ref shape is ignored.
+            recorder.record_analysis_run({
+                "analysis_run_id": "SECRET_ANALYSIS_RUN_REF",
+                "command_display": "secret",
+            })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-analysis", "run-analysis"))
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(len(payload["analysis_runs"]), 1)
+            entry = payload["analysis_runs"][0]
+            self.assertEqual(entry["analysis_run_id"], "analysis_run:" + "a" * 16)
+            self.assertEqual(entry["command_digest"], "sha256:" + "b" * 64)
+            self.assertEqual(entry["duration_ms"], 1500)
+            self.assertEqual(entry["warnings"], ["timing_unavailable"])
+            self.assertNotIn("raw_stdout", serialized)
+            self.assertNotIn("SECRET", serialized)
+
+    def test_analysis_runs_cap_at_max_with_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            for index in range(10):
+                recorder.record_analysis_run({
+                    "analysis_run_id": "analysis_run:" + f"{index:016x}",
+                    "run_id": "run-analysis",
+                    "command_display": f"cmd {index}",
+                    "command_digest": "sha256:" + f"{index:064x}",
+                    "ok": True,
+                    "capture_quality": "output_not_captured",
+                    "reproduction_status": "output_not_captured",
+                })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-analysis", "run-analysis"))
+            self.assertEqual(len(payload["analysis_runs"]), 8)
+            self.assertEqual(payload["analysis_runs"][-1]["analysis_run_id"], "analysis_run:" + f"{9:016x}")
+            self.assertIn("analysis_runs_truncated", payload["warnings"])
+
+    def test_artifact_refs_dedupe_by_version_and_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_artifact_refs([{
+                "artifact_id": "artifact:" + "1" * 16,
+                "version_id": "artifact_version:" + "2" * 16,
+                "artifact_kind": "managed_output",
+                "sha256": "sha256:" + "3" * 64,
+                "size": 40000,
+                "mime": "text/plain",
+                "origin_run_id": "run-analysis",
+                "produced_by": "analysis_run:" + "4" * 16,
+                "stored_truncated": False,
+                "derived_from": [],
+            }])
+            # Same version id -> ignored.
+            recorder.record_artifact_refs([{
+                "artifact_id": "artifact:" + "1" * 16,
+                "version_id": "artifact_version:" + "2" * 16,
+                "mime": "text/plain",
+            }])
+            # Invalid version id -> ignored.
+            recorder.record_artifact_refs([{"version_id": "NOT_A_REF"}])
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-analysis", "run-analysis"))
+            self.assertEqual(len(payload["artifact_refs"]), 1)
+            self.assertEqual(payload["artifact_refs"][0]["version_id"], "artifact_version:" + "2" * 16)
+
+    def test_capsule_snapshot_replaces_same_capsule_id(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+            capsule_id = "capsule:" + "5" * 16
+
+            recorder.record_reproducibility_capsule({
+                "capsule_id": capsule_id,
+                "run_id": "run-analysis",
+                "analysis_run_refs": ["analysis_run:" + "6" * 16],
+                "reproduction_status": "output_not_captured",
+            })
+            recorder.record_reproducibility_capsule({
+                "capsule_id": capsule_id,
+                "run_id": "run-analysis",
+                "analysis_run_refs": ["analysis_run:" + "6" * 16],
+                "reproduction_status": "failed",
+                "warnings": ["mixed_output_capture"],
+            })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-analysis", "run-analysis"))
+            self.assertEqual(len(payload["reproducibility_capsules"]), 1)
+            snapshot = payload["reproducibility_capsules"][0]
+            self.assertEqual(snapshot["reproduction_status"], "failed")
+            self.assertEqual(snapshot["warnings"], ["mixed_output_capture"])

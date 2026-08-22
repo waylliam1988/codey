@@ -1,5 +1,63 @@
 # Codey Test Report
 
+## 0.4.5 AnalysisRun + Reproducibility Capsule v1 (in development)
+
+Codey 0.4.5 makes local command executions auditable without changing any
+model-visible behavior. Three pure projection modules consume normalized
+metadata mappings; no runtime imports, no raw output storage, and no new model
+tools.
+
+Production changes:
+
+- `codey/research/analysis_run.py`: deterministic AnalysisRunRecord projection
+  (command digest, bounded display command, cwd ref, exit code, timing, capture
+  quality, allow-listed environment summary digest). No script/dependency/git
+  fields in v1; `reproduction_status` only reports captured/not-captured/failed.
+- `codey/research/artifact_lineage.py`: content-addressed
+  `artifact:<16hex>` / `artifact_version:<16hex>` refs projected from Managed
+  Output audit payloads with pinned `text/plain` mime and prefix-validated
+  derived refs.
+- `codey/research/reproducibility.py`: per-run ReproducibilityCapsule snapshot
+  (bounded analysis-run refs, artifact version refs, environment digest,
+  honest aggregate status). Snapshots replace by capsule id.
+- `run_trace.py` gains three bounded sections: `analysis_runs` (cap 8),
+  `artifact_refs` (cap 16), `reproducibility_capsules` (cap 8) with generated-ref
+  validation, deduplication, and truncation warnings.
+- `tool_runtime.run_command_raw()` records audit-only
+  `command_started_at` / `command_finished_at` / `command_duration_ms`; the
+  model-visible `model_text`, UI/SSE payload shape, and managed-output footer are
+  unchanged and locked by characterization tests.
+- TaskRunner's three duplicated project tool-event branches consolidate into one
+  `_handle_project_tool_event()` seam; AnalysisRun projection is the fourth
+  consumer and fails open.
+- Architecture tests now also forbid `codey.managed_outputs` imports from
+  research/review/ghost modules and keep the projection modules free of
+  events/tool_runtime/task_runner/server dependencies.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_run_command_characterization.py tests\test_research_analysis_run.py tests\test_artifact_lineage.py tests\test_reproducibility_capsule.py -q
+# 23 passed
+
+python -m pytest tests\test_run_trace.py tests\test_task_runner_analysis_run.py tests\test_task_runner_run_trace.py -q
+# 43 passed
+
+ruff check codey tests
+# All checks passed!
+
+python -m py_compile codey\tool_runtime.py codey\task_runner.py codey\run_trace.py codey\research\analysis_run.py codey\research\artifact_lineage.py codey\research\reproducibility.py
+# passed
+
+python -m pytest -q
+# 2311 passed, 647 subtests passed in 403.55s
+```
+
+No live provider A/B is required: prompts, tool schemas, model-visible tool
+results, UI/SSE payload shapes, receipts, and permissions are unchanged, so
+provider behavior cannot drift. A small A/B becomes necessary only when reports
+cite `analysis_run:<id>` or a planner auto-triggers local analysis.
+
 ## 0.4.4 Bounded Research Planner v1
 
 Codey 0.4.4 moves Research orchestration into `ResearchPipeline` and adds the

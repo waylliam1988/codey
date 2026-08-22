@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -78,7 +79,13 @@ from codey.run_ledger_projection import (
     load_run_projection,
     receipt_from_projection_if_compatible,
 )
-from codey.run_trace import RunTraceStore
+from codey.run_trace import (
+    MAX_ANALYSIS_RUNS,
+    MAX_ARTIFACT_REFS,
+    RunTraceStore,
+)
+from codey.research.analysis_run import analysis_run_record
+from codey.research.artifact_lineage import artifact_ref_from_managed_output
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.research.connector_search import ConnectorAwareSearchProvider
 from codey.research.context import ResearchContext, RunTraceResearchSink
@@ -87,6 +94,7 @@ from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWr
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline, ResearchPipelineConfig
 from codey.research.proof_quality import proof_review_trace_payload
 from codey.research.query_planner import build_research_plan, research_plan_trace_payload
+from codey.research.reproducibility import build_reproducibility_capsule
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
 from codey.review import has_reviewable_changes
@@ -157,6 +165,8 @@ class _RunWork:
     trace: Any | None = None
     record_agent_events_in_ledger: bool = False
     claimed_work_item: GhostWorkItem | None = None
+    analysis_run_payloads: list[dict[str, object]] = field(default_factory=list)
+    artifact_payloads: list[dict[str, object]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -1381,44 +1391,17 @@ class TaskRunner:
                 del work.recent_events[:self.review_log_lines]
             if (
                 project
-                and self.project_facts is not None
-                and event.kind == "tool"
-                and event.call is not None
-                and event.call.name == "run"
-                and event.outcome is not None
-                and event.outcome.ok
-                and event.outcome.exit_code == 0
-            ):
-                command = str(event.call.args.get("command") or "")
-                try:
-                    self.project_facts.record_success(
-                        project,
-                        str(event.call.args.get("path") or "."),
-                        command,
-                    )
-                except (OSError, ValueError):
-                    pass
-            if (
-                project
                 and event.kind == "tool"
                 and event.call is not None
                 and event.outcome is not None
             ):
-                if event.call.name == "edit" and event.outcome.ok and event.outcome.changed:
-                    rel = str(event.call.args.get("path") or "")
-                    update_checkpoint(lambda store, item: store.record_edit(item, rel))
-                elif event.call.name == "run":
-                    command = str(event.call.args.get("command") or "")
-                    cwd = str(event.call.args.get("path") or ".")
-                    ok = event.outcome.ok and event.outcome.exit_code == 0
-                    update_checkpoint(
-                        lambda store, item: store.record_run(
-                            item,
-                            command=command,
-                            cwd=cwd,
-                            ok=ok,
-                        )
-                    )
+                self._handle_project_tool_event(
+                    event=event,
+                    project=project,
+                    work=work,
+                    run_id=run_id,
+                    update_checkpoint=update_checkpoint,
+                )
 
         def on_shell_request(cwd_rel: str, command: str) -> None:
             if not project:
@@ -3211,6 +3194,123 @@ class TaskRunner:
                 counts=payload.get("counts"),
             )
         )
+
+    def _handle_project_tool_event(
+        self,
+        *,
+        event: RunEvent,
+        project: str,
+        work: _RunWork,
+        run_id: str,
+        update_checkpoint: Callable[
+            [Callable[[WorkCheckpointStore, WorkCheckpoint], WorkCheckpoint]],
+            None,
+        ],
+    ) -> None:
+        call = event.call
+        outcome = event.outcome
+        if call is None or outcome is None:
+            return
+        name = str(call.name or "")
+        if name == "run":
+            command = str(call.args.get("command") or "")
+            cwd = str(call.args.get("path") or ".")
+            ok = bool(outcome.ok and outcome.exit_code == 0)
+            if ok and self.project_facts is not None:
+                try:
+                    self.project_facts.record_success(project, cwd, command)
+                except (OSError, ValueError):
+                    pass
+            update_checkpoint(
+                lambda store, item: store.record_run(
+                    item,
+                    command=command,
+                    cwd=cwd,
+                    ok=ok,
+                )
+            )
+            self._record_analysis_run(
+                work=work,
+                project=project,
+                run_id=run_id,
+                tool_name=name,
+                command=command,
+                cwd=cwd,
+                ok=ok,
+                outcome=outcome,
+            )
+        elif name == "edit" and outcome.ok and outcome.changed:
+            rel = str(call.args.get("path") or "")
+            update_checkpoint(lambda store, item: store.record_edit(item, rel))
+
+    def _record_analysis_run(
+        self,
+        *,
+        work: _RunWork,
+        project: str,
+        run_id: str,
+        tool_name: str,
+        command: str,
+        cwd: str,
+        ok: bool,
+        outcome: Any,
+    ) -> None:
+        """Project one audited run-command execution into the run trace.
+
+        Fail-open by contract: projection or trace failures never affect the
+        running task, its receipt, or the model-visible tool result.
+        """
+
+        trace = work.trace
+        if trace is None or not command:
+            return
+        try:
+            audit = outcome.audit if isinstance(outcome.audit, Mapping) else {}
+            managed = outcome.managed_output()
+            record = analysis_run_record({
+                "run_id": run_id,
+                "tool_id": tool_name or "run",
+                "command": command,
+                "cwd": cwd,
+                "project": project,
+                "exit_code": outcome.exit_code,
+                "ok": ok,
+                "started_at": audit.get("command_started_at"),
+                "finished_at": audit.get("command_finished_at"),
+                "duration_ms": audit.get("command_duration_ms"),
+                "managed_output": dict(managed) if managed else {},
+            })
+            if record is None:
+                return
+            record_payload = record.to_payload()
+            trace.record_analysis_run(record_payload)
+            work.analysis_run_payloads.append(record_payload)
+            if len(work.analysis_run_payloads) > MAX_ANALYSIS_RUNS:
+                del work.analysis_run_payloads[:-MAX_ANALYSIS_RUNS]
+
+            artifact_payload: dict[str, object] | None = None
+            if managed:
+                artifact = artifact_ref_from_managed_output({
+                    **managed,
+                    "origin_run_id": run_id,
+                    "produced_by": record.analysis_run_id,
+                })
+                if artifact is not None:
+                    artifact_payload = artifact.to_payload()
+                    trace.record_artifact_refs([artifact_payload])
+                    work.artifact_payloads.append(artifact_payload)
+                    if len(work.artifact_payloads) > MAX_ARTIFACT_REFS:
+                        del work.artifact_payloads[:-MAX_ARTIFACT_REFS]
+
+            capsule = build_reproducibility_capsule(
+                run_id=run_id,
+                analysis_runs=work.analysis_run_payloads,
+                artifacts=work.artifact_payloads,
+            )
+            if capsule is not None:
+                trace.record_reproducibility_capsule(capsule.to_payload())
+        except Exception:
+            return
 
     def _record_project_memory(
         self,

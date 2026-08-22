@@ -1389,7 +1389,17 @@ provider 间的 unsupported-claim / protocol 稳定性。
 
 ## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 
-状态：规划。目标是让 Research 可以做可复查的本地分析，而不是只总结网页；
+状态：v1 已实现（metadata / projection / local capsule，未发布）。
+本版落地的是执行审计底座：`research/analysis_run.py`、`research/artifact_lineage.py`、
+`research/reproducibility.py` 三个纯投影模块 + Run Trace 三个有界 section +
+TaskRunner 统一的 `_handle_project_tool_event()` 缝隙。字段做了减法：v1 不含
+`script_hash`、`dependency_fingerprint`、git 字段和 `sanitized_argv`（Windows 引号语义
+无法用标准库可靠解析，等真实消费者出现再定义）；`reproduction_status` 只报告
+`output_captured` / `output_not_captured` / `failed`。让 Research 报告引用
+`analysis_run:<id>` 的要求推迟到后续版本——那会改变模型可见报告契约，
+按 A/B 规则需要小型实机验证；v1 只记录内部支撑关系。
+
+原始目标保持不变：让 Research 可以做可复查的本地分析，而不是只总结网页；
 同时让报告、表格、图和分析输出有最小 lineage。
 
 ### 做什么
@@ -1463,6 +1473,10 @@ Research 报告中的分析结论必须引用：
 ```text
 analysis_run:<id>
 ```
+
+v1 范围注记：这条要求推迟到后续版本。v1 只在 Run Trace 中记录内部支撑关系，
+`analysis_run:<id>` 不进入模型可见 prompt / report；让模型写这个引用会改变
+报告契约，按 A/B 规则届时需要小型实机验证。
 
 ### 边界
 
