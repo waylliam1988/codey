@@ -28,11 +28,12 @@
 - `run_command_raw()` 现在记录 audit-only timing（`started_at` / `finished_at` /
   `duration_ms`）；超时命令同样带 timing，因为进程确实启动过。字段仅通过
   `ToolOutcome.audit` 流转。模型可见 `model_text`、UI/SSE payload 形状和 managed
-  output footer 字节级不变，由 characterization 测试锁定。
+  output footer 字节级不变，包括 timeout 的 `ERROR:` 前缀，由 characterization 测试锁定。
 - 按评审意见加固 AnalysisRun 投影：
   - `command_display` 在命中 secret-looking 信号时脱敏（置空并记
     `command_display_redacted` warning），与 ProjectFacts 拒绝持久化此类命令的口径一致；
-    digest 始终是权威事实。
+    digest 始终是权威事实。`RunTrace.record_analysis_run()` 也会在 recorder 边界对直调者
+    重复执行同样的显示命令脱敏。
   - 只有真实执行才成为 AnalysisRun 记录：没有执行 timing 的结果（policy deny、
     cwd 非法、command not found）不进 trace；timeout 作为诚实失败记录。
   - `duration_ms=0` 不再误报 `timing_unavailable`。

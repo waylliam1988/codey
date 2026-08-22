@@ -133,13 +133,21 @@ class ToolOutcome:
         object.__setattr__(self, "audit", audit)
 
     @classmethod
-    def error(cls, message: str, *, error_code: str = "error") -> ToolOutcome:
+    def error(
+        cls,
+        message: str,
+        *,
+        error_code: str = "error",
+        audit: Mapping[str, object] | None = None,
+    ) -> ToolOutcome:
         text = message if message.startswith("ERROR:") else f"ERROR: {message}"
+        audit_payload = dict(audit or {})
+        audit_payload["error_code"] = error_code
         return cls(
             text,
             False,
             presentation={"status": "error", "result": _first_model_line(text, 200)},
-            audit={"error_code": error_code},
+            audit=audit_payload,
             error_code=error_code,
         )
 
@@ -1005,17 +1013,14 @@ def run_command_raw(
         )
         # The process did launch, so this is an execution fact: timing flows
         # through audit so AnalysisRun projection can record it honestly.
-        return ToolOutcome(
+        return ToolOutcome.error(
             message,
-            False,
-            presentation={"status": "error", "result": _first_model_line(message, 200)},
+            error_code="timeout",
             audit={
-                "error_code": "timeout",
                 "command_started_at": started_at,
                 "command_finished_at": finished_at,
                 "command_duration_ms": duration_ms,
             },
-            error_code="timeout",
         )
     duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
 

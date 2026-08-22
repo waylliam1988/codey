@@ -1220,6 +1220,33 @@ class AnalysisRunTraceTests(unittest.TestCase):
             self.assertNotIn("raw_stdout", serialized)
             self.assertNotIn("SECRET", serialized)
 
+    def test_analysis_run_trace_redacts_direct_command_display(self) -> None:
+        secret_command = "pytest --api-key sk-abcdef1234567890abcdef --json"
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_analysis_run({
+                "analysis_run_id": "analysis_run:" + "f" * 16,
+                "run_id": "run-analysis",
+                "tool_id": "run",
+                "command_digest": "sha256:" + "b" * 64,
+                "command_display": secret_command,
+                "ok": False,
+                "capture_quality": "output_not_captured",
+                "reproduction_status": "failed",
+            })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-analysis", "run-analysis"))
+            serialized = json.dumps(payload, ensure_ascii=False)
+            entry = payload["analysis_runs"][0]
+
+            self.assertEqual(entry["command_display"], "")
+            self.assertIn("command_display_redacted", entry["warnings"])
+            self.assertNotIn(secret_command, serialized)
+            self.assertNotIn("sk-abcdef", serialized)
+
     def test_analysis_runs_cap_at_max_with_warning(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)

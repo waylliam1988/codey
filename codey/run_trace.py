@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.prompt_envelope import is_model_boundary_freshness
-from codey.research.redaction import looks_sensitive_code
+from codey.research.redaction import looks_sensitive_code, looks_sensitive_signal
 from codey.research.shape import digest_ref as _digest_ref
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.shape import generated_ref as _generated_ref
@@ -779,12 +779,22 @@ class RunTraceRecorder:
         if not ref or ref in self._analysis_run_keys:
             return
         cwd_ref = record.get("cwd_ref")
+        command_display, command_display_redacted = _analysis_command_display(record.get("command_display"))
+        warnings = [
+            _safe_trace_code(item, 120)
+            for item in _trace_list_items(record.get("warnings"))
+            if _safe_trace_code(item, 120)
+        ][:MAX_WARNINGS]
+        if command_display_redacted and "command_display_redacted" not in warnings:
+            if len(warnings) >= MAX_WARNINGS:
+                warnings = warnings[: MAX_WARNINGS - 1]
+            warnings.append("command_display_redacted")
         payload: dict[str, object] = {
             "analysis_run_id": ref,
             "run_id": str(record.get("run_id") or "")[:120],
             "tool_id": _identifier(record.get("tool_id") or "run", 40) or "run",
             "command_digest": _digest_ref(record.get("command_digest")),
-            "command_display": str(record.get("command_display") or "")[:500],
+            "command_display": command_display,
             "cwd_ref": dict(cwd_ref) if isinstance(cwd_ref, Mapping) else {},
             "exit_code": _int_or_none(record.get("exit_code")),
             "ok": bool(record.get("ok")),
@@ -801,11 +811,7 @@ class RunTraceRecorder:
             "capture_quality": _safe_trace_code(record.get("capture_quality"), 40),
             "reproduction_status": _safe_trace_code(record.get("reproduction_status"), 40),
             "environment_digest": _digest_ref(record.get("environment_digest")),
-            "warnings": [
-                _safe_trace_code(item, 120)
-                for item in _trace_list_items(record.get("warnings"))
-                if _safe_trace_code(item, 120)
-            ][:MAX_WARNINGS],
+            "warnings": warnings[:MAX_WARNINGS],
         }
         self._analysis_run_keys.add(ref)
         self.manifest.analysis_runs.append(payload)
@@ -1071,6 +1077,15 @@ def _safe_trace_code(value: object, limit: int) -> str:
     if looks_sensitive_code(text):
         return ""
     return text
+
+
+def _analysis_command_display(value: object) -> tuple[str, bool]:
+    text = _clip(value, 500)
+    if not text:
+        return "", False
+    if looks_sensitive_signal(text):
+        return "", True
+    return text, False
 
 
 def _trace_list_items(value: object) -> tuple[object, ...]:

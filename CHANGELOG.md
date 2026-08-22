@@ -28,11 +28,12 @@ This file records Codey's release history. The newest release appears first.
 - `run_command_raw()` now records audit-only timing (`started_at` / `finished_at` / `duration_ms`);
   timed-out commands carry timing too because the process did launch. The fields flow through
   `ToolOutcome.audit` only. The model-visible `model_text`, UI/SSE payload shape, and managed-output
-  footer are byte-identical, locked by characterization tests.
+  footer are byte-identical, including the timeout `ERROR:` prefix, locked by characterization tests.
 - Hardened AnalysisRun projection after review:
   - `command_display` is redacted (kept empty with a `command_display_redacted` warning) when the
     command matches secret-looking signals, matching ProjectFacts' refusal to persist such commands;
-    the digest stays authoritative.
+    the digest stays authoritative. `RunTrace.record_analysis_run()` repeats the same display
+    redaction at its recorder boundary for direct callers.
   - Only real executions become AnalysisRun records: outcomes without execution timing (policy
     denial, invalid cwd, command not found) stay out of the trace, while timeouts are recorded as
     honest failures.

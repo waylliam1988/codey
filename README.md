@@ -467,8 +467,10 @@ content-addressed artifact refs for captured Managed Outputs, and one
 Reproducibility Capsule snapshot per run with an honest reproduction status.
 These live in Run Trace under `analysis_runs`, `artifact_refs`, and
 `reproducibility_capsules`; no raw stdout/stderr is stored, the model-visible
-tool result is byte-identical, and reports do not yet cite `analysis_run:<id>`
-(that report-contract change would require a small live A/B).
+tool result is byte-identical (including the timeout `ERROR:` prefix), Run Trace
+reapplies command-display redaction at its recorder boundary, and reports do not
+yet cite `analysis_run:<id>` (that report-contract change would require a small
+live A/B).
 
 MiMo was retested after adding the one-tool Research boundary. A fresh-tab
 `long-official-doc/source_search` run completed in 10 turns, used

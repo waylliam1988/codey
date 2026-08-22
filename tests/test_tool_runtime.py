@@ -485,6 +485,21 @@ class ToolOutcomeTests(unittest.TestCase):
             )
 
         self.assertFalse(outcome.ok)
+        self.assertTrue(
+            outcome.model_text.startswith(
+                f"ERROR: command timed out after {tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s"
+            )
+        )
+        self.assertTrue(
+            outcome.presentation_result(200).startswith(
+                f"ERROR: command timed out after {tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s"
+            )
+        )
+        self.assertEqual(outcome.error_code, "timeout")
+        self.assertEqual(outcome.audit["error_code"], "timeout")
+        self.assertIn("command_started_at", outcome.audit)
+        self.assertIn("command_finished_at", outcome.audit)
+        self.assertIn("command_duration_ms", outcome.audit)
         self.assertIn(f"{tool_runtime.RUN_SUITE_TIMEOUT_SECONDS}s", outcome.model_text)
         self.assertIn("timeout, not a test failure", outcome.model_text)
 
