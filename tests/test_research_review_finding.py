@@ -348,19 +348,8 @@ def test_apply_finding_events_lifecycle_and_no_ops() -> None:
     assert mixed[1].status == STATUS_ADDRESSED
 
 
-def test_review_finding_payload_omits_raw_message() -> None:
-    finding = ReviewFindingRecord(
-        finding_id="review_finding:" + _stable_hex("message"),
-        kind=FINDING_UNSUPPORTED_CLAIM,
-        severity=SEVERITY_CRITICAL,
-        target_ref=_claim("known"),
-        message="RAW MESSAGE SHOULD NOT BE SAVED",
-    )
-
-    payload = finding.to_payload()
-
-    assert "message" not in payload
-    assert "RAW MESSAGE" not in repr(payload)
+def test_review_finding_record_has_no_freeform_message_field() -> None:
+    assert "message" not in ReviewFindingRecord.__dataclass_fields__
 
 
 def test_trace_payloads_keep_refs_only_and_drop_invalid_entries() -> None:
@@ -372,7 +361,6 @@ def test_trace_payloads_keep_refs_only_and_drop_invalid_entries() -> None:
         claim_ref=_claim("known"),
         proof_ref=_proof_ref(),
         reason_codes=("claim_missing_support_relation",),
-        message="RAW MESSAGE SHOULD NOT BE SAVED",
     )
     gaps = [
         PlannerGap(
@@ -385,15 +373,36 @@ def test_trace_payloads_keep_refs_only_and_drop_invalid_entries() -> None:
         PlannerGap(gap_id="planner_gap:zzz", gap_kind="bogus_gap"),
     ]
 
-    finding_payloads = review_finding_trace_payloads([finding, {"finding_id": "nope"}, "junk"])
+    raw_mapping_ref = "review_finding:" + _stable_hex("raw-message")
+    finding_payloads = review_finding_trace_payloads([
+        finding,
+        {"finding_id": "nope"},
+        {
+            "finding_id": raw_mapping_ref,
+            "kind": FINDING_STALE_SOURCE,
+            "severity": "urgent",
+            "status": "model_fixed",
+            "target_ref": _source("known"),
+            "message": "RAW MESSAGE SHOULD NOT BE SAVED",
+        },
+        {
+            "finding_id": "review_finding:" + _stable_hex("bad-kind"),
+            "kind": "made_up_finding",
+        },
+        "junk",
+    ])
     gap_payloads = planner_gap_trace_payloads(gaps)
 
-    assert len(finding_payloads) == 1
+    assert len(finding_payloads) == 2
     payload = finding_payloads[0]
+    raw_payload = finding_payloads[1]
     assert payload["finding_id"] == finding.finding_id
     assert payload["claim_ref"] == finding.claim_ref
-    assert "message" not in payload
-    assert "RAW MESSAGE" not in repr(payload)
+    assert raw_payload["finding_id"] == raw_mapping_ref
+    assert raw_payload["severity"] == SEVERITY_WARNING
+    assert raw_payload["status"] == STATUS_OPEN
+    assert "message" not in raw_payload
+    assert "RAW MESSAGE" not in repr(finding_payloads)
     assert len(gap_payloads) == 1
     assert gap_payloads[0]["finding_refs"] == [finding.finding_id]
     assert gap_payloads[0]["gap_kind"] == "followup_search"

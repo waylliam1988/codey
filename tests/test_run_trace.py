@@ -1396,7 +1396,6 @@ class ReviewFindingTraceTests(unittest.TestCase):
             evidence_ref="evidence:" + "c" * 16,
             proof_ref="research_proof:" + "d" * 16,
             reason_codes=("claim_missing_support_relation",),
-            message="RAW MESSAGE SHOULD_NOT_BE_SAVED",
         )
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
@@ -1415,6 +1414,7 @@ class ReviewFindingTraceTests(unittest.TestCase):
                     "finding_id": "review_finding:" + "e" * 16,
                     "kind": "made_up_finding",
                     "severity": "critical",
+                    "message": "RAW MESSAGE SHOULD_NOT_BE_SAVED",
                 },
                 "junk",
                 None,
@@ -1434,6 +1434,32 @@ class ReviewFindingTraceTests(unittest.TestCase):
             self.assertEqual(entry["reason_codes"], ["claim_missing_support_relation"])
             self.assertNotIn("message", entry)
             self.assertNotIn("made_up_finding", serialized)
+            self.assertNotIn("SHOULD_NOT_BE_SAVED", serialized)
+
+    def test_review_findings_direct_recorder_normalizes_invalid_severity_and_status(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_review_findings([{
+                "finding_id": "review_finding:" + "f" * 16,
+                "kind": "unsupported_claim",
+                "severity": "urgent",
+                "status": "model_fixed",
+                "target_ref": "claim:" + "b" * 16,
+                "message": "RAW MESSAGE SHOULD_NOT_BE_SAVED",
+            }])
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-findings", "run-findings"))
+            serialized = json.dumps(payload, ensure_ascii=False)
+            finding = payload["research_review_findings"][0]
+
+            self.assertEqual(finding["severity"], "warning")
+            self.assertEqual(finding["status"], "open")
+            self.assertNotIn("urgent", serialized)
+            self.assertNotIn("model_fixed", serialized)
+            self.assertNotIn("message", finding)
             self.assertNotIn("SHOULD_NOT_BE_SAVED", serialized)
 
     def test_review_findings_cap_at_max_with_warning(self) -> None:

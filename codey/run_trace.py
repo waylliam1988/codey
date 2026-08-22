@@ -21,7 +21,14 @@ from codey.prompt_envelope import is_model_boundary_freshness
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.redaction import looks_sensitive_code, looks_sensitive_signal
-from codey.research.review_finding import FINDING_KINDS, GAP_KINDS
+from codey.research.review_finding import (
+    FINDING_KINDS,
+    FINDING_SEVERITIES,
+    FINDING_STATUSES,
+    GAP_KINDS,
+    SEVERITY_WARNING,
+    STATUS_OPEN,
+)
 from codey.research.shape import digest_ref as _digest_ref
 from codey.research.shape import generated_ref as _generated_ref
 from codey.research.shape import safe_connector_id as _safe_connector_id
@@ -945,11 +952,13 @@ class RunTraceRecorder:
             kind = _safe_trace_code(raw.get("kind"), 40)
             if not finding_id or kind not in FINDING_KINDS or finding_id in self._review_finding_keys:
                 continue
+            severity = _safe_trace_code(raw.get("severity"), 20)
+            status = _safe_trace_code(raw.get("status"), 20)
             payload: dict[str, object] = {
                 "finding_id": finding_id,
                 "kind": kind,
-                "severity": _safe_trace_code(raw.get("severity"), 20),
-                "status": _safe_trace_code(raw.get("status"), 20),
+                "severity": severity if severity in FINDING_SEVERITIES else SEVERITY_WARNING,
+                "status": status if status in FINDING_STATUSES else STATUS_OPEN,
                 "target_ref": _normalize_runtime_ref(raw.get("target_ref")),
                 "reason_codes": [
                     code

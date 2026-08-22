@@ -134,7 +134,6 @@ class ReviewFindingRecord:
     reason_codes: tuple[str, ...] = ()
     addressed_by: tuple[str, ...] = ()
     confirmed_by: tuple[str, ...] = ()
-    message: str = ""
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
