@@ -526,11 +526,13 @@ bounded planner，让研究自己补洞、验证、收敛，同时保持用户�
 0.4.3 抽 source_connectors.py / query_planner.py dry-run 边界
 0.4.4 抽 ResearchPipeline v1，承接 bounded planner execution
 0.4.5 抽 AnalysisRunStore / Reproducibility Capsule / Artifact metadata 边界
-0.4.6 抽 ReviewFinding / Critic coordinator
-0.4.7 抽 DomainProfileResolver / SourceTrust rules
-0.4.8 抽 TopicContinuityService
-0.4.9 抽 ResearchBrief projection / impact contract
-0.4.10 把 Research runtime 串成可回归 harness
+0.4.6 抽 A/B Observation Journal / Transcript Replay Cache / Provider Observation Log
+0.4.7 抽 Evidence Runtime / ReviewFinding core
+0.4.8 抽 Safe Context Epoch / Capability Boundary
+0.4.9 抽 Research Contract Lite / Verified Completion Gate
+0.4.10 抽 Domain Source Trust / ResearchBrief projection / impact contract
+0.4.11 把 Research runtime 串成可回归 harness 和 comparison benchmark
+0.4.12 抽 TopicContinuityService / Ghost Research Continuity
 ```
 
 `_RunFrame` 的拆分要等真实所有权稳定后再做：
@@ -540,6 +542,7 @@ SessionContext：request/session/conversation/snapshot
 ProviderContext：provider/provider_id/preflight/fallback/supervisor state
 TraceContext：run trace / prompt trace / ledger trace refs
 ResearchContext：record/ledger/proof/plan/critic refs
+EvaluationContext：experiment/journal/transcript/provider-observation refs
 ```
 
 判断规则：如果一个字段只被 ResearchPipeline 使用，就迁到 ResearchContext；
@@ -547,12 +550,12 @@ ResearchContext：record/ledger/proof/plan/critic refs
 
 ### 0.4 A/B 节奏
 
-默认按隔版本设置实机 A/B 候选，避免打扰网页模型流量：
+0.4 后半不再按奇偶版本机械设置 A/B。判断标准是行为边界：
 
 ```text
-实机 A/B 候选：0.4.2 / 0.4.4 / 0.4.6 / 0.4.8 / 0.4.10
-不需要 A/B：0.4.1 / 0.4.3a / 0.4.5 / 0.4.7 / 0.4.9
-需要 connector smoke/A-B：0.4.3b
+改变模型可见 prompt / tool result / Router / provider fallback / permission -> A/B
+只做 schema / projection / ledger / trace / deterministic validator / 文档 / 架构测试 -> 不 A/B
+可选保存 provider prompt/reply transcript -> 只属于实验层，不进入生产 RunTrace/EvidenceLedger
 ```
 
 判断标准：
@@ -567,12 +570,21 @@ ResearchContext：record/ledger/proof/plan/critic refs
 纯 schema / persistence / projection / deterministic validator / 文档 / 架构测试 -> 不 A/B
 ```
 
-如果某个偶数版本最终只做 projection、schema 或 read model，不改变 prompt / tool result /
+如果某个版本最终只做 projection、schema 或 read model，不改变 prompt / tool result /
 model-visible contract，也可以降级为 deterministic parity + local smoke，不强行 A/B。
 
 0.4.2 已启用 queued research/open_question completion gate，改变 queue done 语义，
 所以需要小型 Research/Ghost queue A/B。0.4.4 只要启用自动 bounded follow-up
 search，就必须做 Research A/B。
+
+0.4.6 是后续 A/B 的观测地基，不改变模型行为；它需要 durability / recovery /
+replay smoke，不需要质量对照 A/B。0.4.7 如果只做 deterministic ReviewFinding
+projection，不需要 A/B；一旦启用 model critic、改变 repair prompt 或改变最终报告
+收口，就需要小型 live A/B。0.4.8 只做 context/capability metadata 不需要 A/B；
+任何模型可见 context admission 变化都需要 A/B。0.4.9 如果只做本地 completion
+contract/proof refs，不需要 A/B；改变 queued done 语义或用户可见完成条件时需要
+queue A/B。0.4.10 改 Writer 可见 brief 文案需要 A/B。0.4.12 Ghost continuity
+进入模型可见 prompt 必须 A/B。
 
 ## 0.4.0 - Evidence Kernel / Research Object Model v1
 
@@ -1091,13 +1103,13 @@ PubMed
 
 RSS 不作为 0.4.3 shipped 最小集 blocker。它对 changelog、blog、release feed 和
 政策/安全公告仍然有价值，但现在不是用户最常直接点名的 Research 来源；可以先在
-registry 里声明 optional/unavailable，或顺延到 0.4.11 Connector Pack v1。
+registry 里声明 optional/unavailable，或顺延到 0.5 之后的 Connector Pack v1。
 
 OpenAlex 不放进 0.4.3 最小 fixture set。它更适合后续做 citation graph、
 机构/作者/主题 discovery 和 source metadata enrichment；0.4.3 第一批先用
 PubMed + arXiv 覆盖医学/生命科学和预印本/论文入口。
 
-其余 connector 可以声明 unavailable，或顺延到 0.4.11 Connector Pack v1。
+其余 connector 可以声明 unavailable，或顺延到 0.5 之后的 Connector Pack v1。
 connector registry 从第一版就要能表达这些来源的 search/fetch 能力、rate limit、
 source quality hint 和 failure mode。
 
@@ -1533,30 +1545,213 @@ artifact derived_from 只能引用 Source/Evidence/AnalysisRun/Run
 AnalysisRun tool/result contract。若让模型看到新的分析工具结果或自动执行分析，
 顺延做小型 A/B。
 
-## 0.4.6 - Evidence Critic + Planner Feedback v1
+## 0.4.6 - A/B Observation Journal + Transcript Replay Cache v1
 
-状态：规划。目标是让 Codey 自动检查研究结论，不只检查格式，并把 critic
-finding 转成 planner 可以处理的 gap。
+状态：规划。目标是先把 live A/B、provider observation 和可选 transcript
+replay 的事实层收住，避免后续 `research_critic_ab.py`、Ghost continuity A/B、
+longitudinal harness 和 provider adapter debug 继续各自复制 LiveTrace、原子写、
+send/reply 记录和断点续跑逻辑。
+
+这不是生产 RunTrace，也不是 Evidence Ledger。它是手动实验层的 durable journal：
+可以保存 Codey 发给网页模型的 prompt 和网页模型返回的 reply，但 raw transcript
+必须隔离在可选 TranscriptArchive 中，不能混进 RunTrace、Prompt Envelope、
+Evidence Ledger、ResearchRecord 或 Citation/Evidence refs。
 
 ### 做什么
+
+第一版可以先落在：
+
+```text
+tests/manual/ab_journal.py
+```
+
+如果出现两个以上真实消费者，再迁到：
+
+```text
+codey/evaluation/ab_journal.py
+```
+
+核心对象：
+
+```text
+ABJournalManifest
+ABJournalEvent
+ProviderTurnEvent
+ProviderObservationEvent
+CaseEvent
+ABResultRow
+TranscriptReplayCache
+```
+
+落盘结构：
+
+```text
+tests/manual/results/<run-id>.json
+tests/manual/results/<run-id>.trace/
+  manifest.json
+  events.jsonl
+  transcripts/
+    <content-digest>.json
+```
+
+`manifest.json` 和 snapshot 类状态继续用 `local_store.write_json_atomic()` 的
+temp + fsync + replace。事件流不要每次重写大 JSON；使用 single-writer
+append-only JSONL：
+
+```text
+seq
+ts
+run_id
+experiment_id
+case_id
+arm
+provider
+model
+event_type
+stage
+prompt_digest
+reply_digest
+content_ref
+failure_kind
+facts
+previous_digest
+event_digest
+```
+
+每个 journal path 必须只有一个 writer；如果可能有多进程 harness，就必须用 lock
+或显式 `writer_id` 拒绝并发写。单行 append 后 flush/fsync；读取时允许最后一行
+损坏并截断恢复。这里的语义是 durable append + tail recovery，不承诺跨进程强
+atomic append；hash chain 用来发现断链、重复 append、非尾部篡改和跨 run 混写。
+
+Provider observation 只保存 typed facts：
+
+```text
+send_start
+input_filled
+submit_clicked
+generation_started
+reply_observed
+timeout
+adapter_failure
+case_complete
+```
+
+网页状态来自 `FlowObservation` / `ProviderFailure.kind` / `stage` / bounded facts：
+
+```text
+input_empty
+question_count_increased
+response_count_increased
+typing_true / typing_false
+stop_visible / stop_hidden
+response_stable
+response_nonempty
+response_chars
+profile_hash
+failure_kind
+failure_stage
+```
+
+### Transcript 分层
+
+```yaml
+RunTrace:
+  只存 digest / metadata / refs，不存 raw prompt、完整聊天或网页正文。
+
+Visible UI history:
+  只服务用户看得见的聊天恢复和继续会话。
+
+TranscriptArchive:
+  可选保存 provider prompt / reply 全文，用于 A/B replay、adapter debug 和离线分析。
+```
+
+TranscriptArchive 必须是本地可关闭功能，带大小上限、retention、删除入口、
+digest 索引和 content_ref。旧 transcript 可以作为 prior observation / cache / hint，
+不能成为 evidence、fresh source、citation、ResearchRecord source 或 completion proof。
+
+### 边界
+
+- 不接生产 UI。
+- 不改变模型 prompt、tool result、Router、provider fallback 或权限。
+- 不抓 DOM、Cookie、网页历史、用户在网页上已有的旧聊天或 provider raw error body。
+- 不把 raw transcript 写入 RunTrace / EvidenceLedger / ResearchRecord / PromptEnvelope。
+- 不把 transcript replay 当作 live A/B；改模型可见 prompt 或 tool result 后仍需少量 live A/B。
+- provider 是否出问题靠 typed provider events，不靠聊天正文猜测。
+- transcript 内容默认不进入后续 prompt；需要 replay 时只进入 manual scorer/replay harness。
+
+### 顺手架构优化
+
+```text
+把 bounded_research_planner_ab.py / source_connector_ab.py / deep_research_core_ab.py
+重复的 LiveTrace、原子写、send/reply event、case resume 逻辑收敛到共享 journal
+统一 ABResultRow schema，减少每个 manual harness 自定义字段
+把 provider observation 从临时内存事实投影成 bounded durable observation
+```
+
+### 验证
+
+```text
+events.jsonl hash chain 可验证
+最后一行损坏可以恢复
+重复 seq / 断链 / 跨 run 混写会被拒绝或标 warning
+manifest 原子写不留下半文件
+TranscriptArchive 关闭时只保存 digest/ref
+TranscriptArchive 开启时 raw prompt/reply 不进入 RunTrace/EvidenceLedger
+旧 transcript replay 不能生成 evidence/citation/completion proof
+provider observation 不含 DOM/Cookie/raw webpage body
+manual harness 中断后能从 last completed case resume
+```
+
+### A/B
+
+不需要质量对照 A/B。0.4.6 不改变模型行为，只需要 durability / recovery /
+replay smoke。后续所有 live A/B 默认复用这个 journal。
+
+## 0.4.7 - Evidence Runtime + ReviewFinding Core v1
+
+状态：规划。目标是把 Research、AnalysisRun、Artifact、Review 和 planner gap
+放到同一套证据引用语义里，再在其上建立 ReviewFinding lifecycle。先做
+deterministic projection；model critic 只作为后续 A/B 候选，不默认启用。
+
+### 做什么
+
+新增或收敛 Evidence Runtime projection：
+
+```text
+Source
+Evidence
+Claim
+Assumption
+AnalysisRun
+ArtifactRef
+ReviewFinding
+PlannerGap
+CompletionProof
+```
 
 新增：
 
 ```text
-research/critic.py
+research/review_finding.py
+research/evidence_runtime.py
 ```
 
 输出：
 
 ```text
 ReviewFinding(
+    finding_id
     kind: unsupported_claim / citation_mismatch / stale_source / overreach /
           missing_counterevidence / contradictory_sources / source_conflict /
-          qualified_support
+          failed_analysis_support / qualified_support
     severity
-    status
+    status: open / addressed / confirmed / rejected
     claim_ref
     evidence_ref
+    source_ref
+    analysis_run_ref
+    artifact_ref
+    reason_codes
     addressed_by
     confirmed_by
     message
@@ -1571,6 +1766,7 @@ stale source -> refresh query
 weak source -> stronger source request
 missing counterevidence -> counterevidence search gap
 citation mismatch -> locator verification gap
+failed analysis support -> rerun / replace evidence gap
 ```
 
 Finding lifecycle：
@@ -1581,35 +1777,27 @@ open
   -> confirmed
 ```
 
-`confirmed` 必须来自后续 verification event，来源可以是 deterministic check 或
-reviewer pass，不能来自模型自称“已修复”。
-
-两层检查：
-
-```text
-deterministic gate
-  -> 必须通过的结构性规则
-model critic
-  -> 可选二级模型审查，输出 finding，不能直接放行
-```
+`confirmed` 必须来自后续 verification event，来源可以是 deterministic check、
+successful AnalysisRun、opened-source evidence 或 reviewer pass，不能来自模型自称
+“已修复”。
 
 ### 边界
 
-- critic 只读 Evidence Runtime。
-- critic 不能调用 web_search/open_url。
-- critic 不能覆盖 ActionPolicy 或 PermissionProfile。
-- critic finding 只显示中性摘要，不显示内部 trace dump。
-- 强结论需要 Research loop 记录 counterevidence search；critic 只能指出缺口，不能替代补证据。
-- critic 可以产出 planner gap，但不能自己执行 search/fetch。
-- finding -> planner gap 必须 bounded、可解释、可关闭。
+- Evidence Runtime 不保存 raw prompt、raw webpage body、raw stdout/stderr 或 transcript content。
+- ReviewFinding 只读 Evidence Runtime。
+- deterministic critic 不能调用 web_search/open_url。
+- model critic 默认不进生产链路；启用前必须走 0.4.6 journal A/B。
+- finding 可以产出 planner gap，但不能自己执行 search/fetch。
+- failed AnalysisRun 不能 support claim。
+- TranscriptReplayCache 不能成为 evidence source。
 
 ### 顺手架构优化
 
 ```text
-report_quality.py 逐步从格式检查变成 Evidence Critic 的 deterministic layer
-Research critic / review_coordinator 消费 finding，不再重复解析 Research summary
-新增 ReviewFinding append-only projection，finding 状态变更只追加事件
-抽 CriticCoordinator，ResearchPipeline 只消费 finding refs 和 planner gap refs
+report_quality.py 逐步从格式检查变成 deterministic Evidence Critic layer
+ResearchPipeline 只消费 finding refs 和 planner gap refs
+review_coordinator 消费同一套 ReviewFinding projection，不重复解析 Research summary
+finding 状态变更只追加事件，不原地覆盖旧 finding
 ```
 
 ### 验证
@@ -1621,24 +1809,215 @@ citation number mismatch 被抓出
 过度推断给 overreach warning
 contradictory_sources / source_conflict 被抓出
 counterevidence search 缺失会产生 finding
+failed AnalysisRun 不能支撑 claim
 critic finding 能生成 planner gap refs
-planner gap refs 不含 raw prompt / raw webpage body
+planner gap refs 不含 raw prompt / raw webpage body / transcript
 open finding 不能被模型自称修复直接 confirmed
 model critic 输出坏 JSON fail-closed 到 deterministic result
 ```
 
 ### A/B
 
-需要。critic prompt 和最终 Research 修复行为可能影响模型输出。
+不需要，前提是只做 deterministic projection 和 local finding lifecycle。启用 model
+critic、改变 repair prompt、改变 final report contract 或让 finding 影响模型可见
+输出时，必须做小型 live A/B，并使用 0.4.6 journal。
 
-## 0.4.7 - Domain Profiles + Source Trust Rules v1
+## 0.4.8 - Safe Context Epoch + Capability Boundary v1
 
-状态：规划。目标是让不同研究领域有不同证据标准和来源可信度规则，但不把
-profile UI 推给用户。
+状态：规划。目标是吸收 OpenCode 的 provider-turn 边界和 Pi 的 core 克制：
+上下文变化只在安全 provider turn 边界进入模型；capability registry 只描述内置边界，
+不演变成插件系统或大配置平台。
 
 ### 做什么
 
-扩展 0.3.19 built-in profiles 的研究规则模板：
+新增或收敛：
+
+```text
+ContextSource
+ContextEpoch
+ContextSnapshot
+ContextAdmission
+CapabilityBoundary
+```
+
+每个模型可见 section 必须有：
+
+```text
+stable source key
+purpose
+budget
+source refs
+digest
+admission reason
+epoch id
+```
+
+Context sources：
+
+```text
+Project instructions
+Local context
+Research brief
+Review input
+Ghost continuity
+Skill guidance
+Provider health hint
+```
+
+Capability Registry v1 只声明内置能力事实：
+
+```text
+capability id
+model_visible
+durable_state
+policy_profile
+evidence_producer
+trace_sections
+ui_projection
+enabled_by_default
+```
+
+Pi-style skill/extension boundary：
+
+```text
+skill descriptions 可以进入 guidance
+完整 skill instructions 按需读取
+LSP / MCP / browser / subagent / domain connector 都是 optional capability
+默认不扩大 core tool surface
+```
+
+### 边界
+
+- 不加载第三方代码。
+- 不做插件市场。
+- 不新增 profile/config UI。
+- 不改变用户显式 provider / mode。
+- 不放宽 PermissionProfile。
+- Context source 变化不能唤醒 idle session。
+- Context 只能在 safe provider-turn boundary admission，不能异步插入当前 provider turn。
+- Capability Registry 不是 dispatcher、permission engine 或 Router。
+
+### 顺手架构优化
+
+```text
+PromptEnvelope section metadata 和 RunTrace section metadata 复用 stable source refs
+Local context / Research brief / Review input / Ghost continuity 共享 ContextSource contract
+Capability Matrix 从文档事实变成可测试 registry projection
+```
+
+### 验证
+
+```text
+context source key 稳定且不重复
+context admission 只发生在 provider-turn boundary
+model-visible section 都有 source refs / digest / budget
+capability registry 不加载第三方代码
+capability 不能 relax PermissionProfile
+skill body 不默认进入 prompt
+context snapshot 不保存 raw prompt / raw source body
+```
+
+### A/B
+
+不需要，前提是只做 metadata、trace 和 deterministic admission tests。任何模型可见
+context 拼接、section 文案或 admission 时机改变，都需要小型 A/B。
+
+## 0.4.9 - Research Contract Lite + Verified Completion Gate v1
+
+状态：规划。目标是吸收 OpenScience 的 research contract 思想，但不照搬成
+模型可随意调用的 `research_contract` 工具。Codey 的 contract 是本地 pipeline
+contract，用来决定什么才算完成、阻塞或需要补证据。
+
+### 做什么
+
+新增：
+
+```text
+research/contract.py
+```
+
+Research Contract Lite：
+
+```text
+contract_id
+question_ref
+deliverables
+checks
+limits
+evidence_refs
+analysis_run_refs
+artifact_refs
+review_finding_refs
+planner_gap_refs
+completion_status
+blocked_reason
+proof_ref
+```
+
+Verified Completion Gate：
+
+```text
+Research conclusion -> Evidence / Source / Claim relation
+Experiment conclusion -> AnalysisRun / ArtifactRef
+Coding conclusion -> diff / test / review evidence
+Queued research done -> ResearchProofReview + contract proof refs
+```
+
+契约状态：
+
+```text
+pending
+running
+blocked
+complete
+complete_with_limitations
+failed
+```
+
+### 边界
+
+- 不是模型工具。
+- 不新增 workflow UI。
+- 不替代 ResearchPipeline。
+- 不让模型自己给 completion 盖章。
+- 不保存 raw transcript、raw prompt 或 raw source body。
+- TranscriptReplayCache 可以帮助离线 scorer，但不能成为 contract proof。
+- Contract 不能绕过 ActionPolicy、PermissionProfile 或 Research max rounds。
+
+### 顺手架构优化
+
+```text
+ResearchCompletionGate 只消费 Contract / ProofReview / EvidenceRuntime refs
+Ghost work queue completion 只接受 Contract proof refs，不接受 research:* 字符串
+RunTrace 只记录 bounded contract summary 和 proof_ref
+```
+
+### 验证
+
+```text
+缺 evidence refs 的 strong claim 不能 complete
+failed AnalysisRun 不能 complete experiment check
+unsupported open finding 阻止 clean complete
+complete_with_limitations 必须列出 limitation refs
+contract proof refs 可解析
+contract 不含 raw prompt / transcript / webpage body
+queued research done 不能绕过 contract gate
+```
+
+### A/B
+
+local-only contract/proof refs 不需要 A/B。改变 queued done 语义、用户可见完成条件、
+Research repair prompt 或模型可见 final answer contract 时，需要 queue/live A/B。
+
+## 0.4.10 - Domain Source Trust + Research Brief v2
+
+状态：规划。目标是把不同领域的证据标准、来源可信度和 Research-to-Code handoff
+收束到同一个 refs-only projection 里。Domain rules 不单独做 UI，也不提前变成
+Router/provider fallback。
+
+### 做什么
+
+Domain evidence profiles：
 
 ```text
 general
@@ -1649,7 +2028,7 @@ market
 software_research
 ```
 
-这些 profile 只声明：
+Profile 只声明：
 
 ```text
 source_quality_threshold
@@ -1674,110 +2053,7 @@ forum / social / aggregator
 unknown
 ```
 
-### 边界
-
-- 不新增 profile selector UI。
-- 不覆盖用户选择的 provider / mode。
-- 不放宽 PermissionProfile。
-- 不自动联网 Research。
-- v1 可以由 Research question heuristic 选择建议规则，但 catalog-only 阶段不 enforcement；
-  一旦影响 proof gate、critic 阈值、repair 路径或模型可见结果，就属于行为变化。
-- Source trust 不能直接删除 evidence，只能影响 warning、planner preference 或 proof 阈值。
-- 任何 domain rule 都不能绕过用户显式 Research 入口。
-
-### 顺手架构优化
-
-```text
-builtin_profiles.py 保持 metadata-only
-research/domain_profiles.py 只做 quality rule catalog
-research/source_trust.py 只做 deterministic source trust projection
-capability registry 声明 domain evidence profiles 是 metadata，不是 dispatcher
-抽 DomainProfileResolver，但不接 Router/provider fallback
-```
-
-### 验证
-
-```text
-finance freshness 更严格
-legal primary source preference 更严格
-science citation/source quality 更严格
-planner source_preferences 随 domain rule 变化但 bounded 可解释
-profile 不参与 Router/provider fallback/permission
-profile 不能 relax permissions
-```
-
-### A/B
-
-不需要，前提是只做 catalog / metadata / deterministic validation。
-
-如果启用 enforcement，或影响 proof gate、critic 阈值、repair 路径、tool result
-或模型可见 prompt，需要 eval/live smoke；影响模型输出时再做小型 A/B。
-
-## 0.4.8 - Ghost Research Continuity + Topic Planner v1
-
-状态：规划。目标是让 Codey 可以连续追踪长期研究主题，并把开放问题转成
-topic-level plan，但不让记忆污染事实。
-
-### 做什么
-
-Ghost 提供：
-
-```text
-topic refs
-open question refs
-previous claim refs
-user preference hints
-stale evidence reminders
-topic plan candidates
-```
-
-Research prompt 只接收 bounded continuity：
-
-```text
-This is local context, not evidence. Re-check sources before making factual claims.
-```
-
-### 边界
-
-- `GhostHint != Evidence` 必须是类型和测试边界。
-- Ghost 不能生成 citation。
-- Ghost 不能让 Research 自动联网。
-- Ghost 不能把旧结论当本轮事实。
-- UI 不显示 Ghost / Memory / Work Queue 等内部词。
-- Topic Planner 只能建议“下次该继续研究什么”，不能后台自动联网执行。
-- 旧 claim 进入 planner 时必须带 stale/risk 标记，不能进入 evidence_refs。
-
-### 顺手架构优化
-
-```text
-把 Research Interest Queue 的 open_question refs 映射到 Evidence Runtime question refs
-Ghost work queue completion 只接受 ResearchProofReview 产出的 proof refs
-抽 TopicContinuityService：只产出 topic/open_question/stale refs，不读 raw note body
-ResearchPipeline 消费 bounded continuity refs，不直接读 Ghost store
-```
-
-### 验证
-
-```text
-Ghost hint 不可进入 evidence_refs
-旧 claim 必须重新验证或标 stale
-topic plan candidate 不会自动触发 Research
-Research continuity prompt 不出现 Ghost 内部词
-disable Ghost 后 Research 行为回到 baseline
-```
-
-### A/B
-
-需要。它会改变 Research prompt 的模型可见 continuity。
-
-## 0.4.9 - Research Brief v2
-
-状态：规划。目标是把 proof / planner / critic / evidence 的结果压成更可靠的
-Research 到 Writer 交接。
-
-### 做什么
-
-升级 bounded Research Brief：
+Research Brief v2：
 
 ```text
 claim_refs
@@ -1789,7 +2065,19 @@ open_question_refs
 impact_refs
 proof_review_refs
 planner_gap_refs
-critic_finding_refs
+review_finding_refs
+contract_refs
+```
+
+Research-to-Code Impact Contract：
+
+```text
+affected_files
+implementation_constraints
+test_suggestions
+risk_notes
+out_of_scope_items
+decision_refs
 ```
 
 Writer 看到的是短 handoff，不是 raw vault：
@@ -1802,55 +2090,52 @@ which gaps were checked or deferred
 what files / implementation choices this affects
 ```
 
-新增 Research-to-Code Impact Contract：
-
-```text
-affected_files
-implementation_constraints
-test_suggestions
-risk_notes
-out_of_scope_items
-decision_refs
-```
-
-这个 contract 是 Codey 的差异化优势：Research 不是停在报告里，而是能安全、清楚地
-变成项目实现约束和验证建议。
-
 ### 边界
 
+- 不新增 profile selector UI。
+- 不覆盖用户选择的 provider / mode。
+- 不放宽 PermissionProfile。
+- 不自动联网 Research。
+- Source trust 不能直接删除 evidence，只能影响 warning、planner preference 或 proof 阈值。
 - 不把整个 KnowledgeStore 注入 Writer。
-- 不把网页正文注入 Writer。
-- 不让 Research Brief 授权工具。
-- 不改变 Writer 的权限。
+- 不把网页正文或 transcript 注入 Writer。
+- Research Brief 不能授权工具。
+- unsupported claim 只能进入 uncertainty/risk，不能进入 confirmed constraint。
 
 ### 顺手架构优化
 
 ```text
-knowledge/brief.py 改成消费 Evidence Runtime projection
+builtin_profiles.py 保持 metadata-only
+research/domain_profiles.py 只做 quality rule catalog
+research/source_trust.py 只做 deterministic source trust projection
+knowledge/brief.py 改成消费 Evidence Runtime / Contract refs
 减少从 note body / citation map 反解析的逻辑
 新增 impact projection，不让 Writer 自己从长报告里猜实现约束
-ResearchBrief projection 只消费 refs，不直接读 raw ledger/source body
 ```
 
 ### 验证
 
 ```text
+finance freshness 更严格
+legal primary source preference 更严格
+science citation/source quality 更严格
+planner source_preferences 随 domain rule 变化但 bounded 可解释
+profile 不参与 Router/provider fallback/permission
 brief 有大小上限
-brief 不含 raw webpage/source body
-brief 中 claim/evidence/assumption refs 可解析
-proof_review_refs / planner_gap_refs / critic_finding_refs 可解析
+brief 不含 raw webpage/source body/transcript
+brief 中 refs 可解析
 unsupported claim 不进入 confirmed section
-impact refs 必须来自已验证 supports relation 的 claim / declared assumption with risk_note / analysis_run
-declared assumption 只能进入 uncertainty / risk 区，不能支撑 confirmed implementation constraint
+impact refs 必须来自 verified supports relation / declared assumption with risk_note / AnalysisRun
 test_suggestions 不能授权工具，只能作为 Writer context
 ```
 
 ### A/B
 
-不需要，前提是 v1 只升级 projection，不改变 Writer prompt 文案。若实际改变
-Writer 模型可见 handoff 格式，则顺延做 A/B。
+catalog / metadata / deterministic projection 不需要 A/B。启用 enforcement、改变 proof
+gate/critic 阈值/repair 路径，或改变 Writer 模型可见 handoff 文案时，需要 eval/live
+smoke；影响模型输出时做小型 A/B。
 
-## 0.4.10 - Longitudinal Research Harness + Comparison Benchmark v1
+## 0.4.11 - Longitudinal Research Harness + Comparison Benchmark v1
 
 状态：规划。目标是做出能证明 0.4 价值的真实连续研究 harness，并用固定任务集验证
 Codey 在泛化个人研究工作流上超过 baseline 和 OpenScience-style 对照。
@@ -1868,6 +2153,8 @@ AnalysisRun 可复查
 ResearchProofReview 能解释为什么 done
 ResearchPlan 能解释为什么补搜或停止
 Planner follow-up 不造成 UI interruption
+AB Observation Journal 能 replay scorer / parser / proof review
+TranscriptReplayCache 能节省 deterministic scorer 流量
 ```
 
 新增 Comparison Benchmark：
@@ -1876,6 +2163,27 @@ Planner follow-up 不造成 UI interruption
 Codey vs baseline web model
 Codey vs OpenScience-style fixture suite
 Codey vs real OpenScience manual head-to-head
+```
+
+对照维度：
+
+```text
+Pi dimension:
+  default tool surface 是否变小
+  skill progressive disclosure 是否有效
+
+OpenCode dimension:
+  context admission 是否只发生在 provider-turn boundary
+  tool output 是否有界且可 replay
+  provider/session events 是否可复查
+
+OpenScience dimension:
+  evidence refs 是否 verified
+  provenance graph 是否闭合
+  review finding 是否能 lifecycle closure
+
+Codey dimension:
+  coding / research / analysis / verification 是否进入同一个 evidence loop
 ```
 
 评测维度：
@@ -1917,12 +2225,13 @@ conflicting source 注入测试
 - 不要求自动运行 OpenScience；但发布“surpassed OpenScience”结论前必须做一次
   real OpenScience manual head-to-head。
 - 没有真实 OpenScience run 时，只能标记为 OpenScience-style regression。
-- benchmark 输出只保存 bounded metrics、refs 和摘要，不保存 raw prompt 或网页正文。
+- benchmark 输出只保存 bounded metrics、refs 和摘要；raw prompt/reply 只能进入
+  可选 TranscriptArchive，不能进入 benchmark summary、RunTrace 或 EvidenceLedger。
 
 ### 顺手架构优化
 
 ```text
-把 Research Object Model / Evidence Ledger / Proof Quality / Critic / Ghost Continuity
+把 AB Journal / Evidence Runtime / Contract / Brief / Proof Quality / Critic
 串成一个可回归测试的端到端 read model
 ```
 
@@ -1939,11 +2248,73 @@ Planner unnecessary follow-up rate 低于阈值
 需要宣称超过 baseline / OpenScience 时，必须满足 Superiority Gate
 real OpenScience head-to-head 记录 version/commit/provider/model/task/date/artifact/rubric
 live smoke 输出不含 raw prompt / raw webpage body
+TranscriptArchive 关闭时 live smoke 仍可生成 digest-only metrics
 ```
 
 ### A/B
 
 需要。它验证 0.4 的纵向研究能力和对照评测结果，而不是只验证单点模块。
+
+## 0.4.12 - Ghost Research Continuity + Topic Planner v1
+
+状态：规划。目标是让 Codey 可以连续追踪长期研究主题，并把开放问题转成
+topic-level plan，但不让记忆污染事实。这个版本必须晚于 Safe Context Epoch、
+Research Contract Lite 和 `GhostHint != Evidence` 架构测试。
+
+### 做什么
+
+Ghost 提供：
+
+```text
+topic refs
+open question refs
+previous claim refs
+user preference hints
+stale evidence reminders
+topic plan candidates
+```
+
+Research prompt 只接收 bounded continuity：
+
+```text
+This is local context, not evidence. Re-check sources before making factual claims.
+```
+
+### 边界
+
+- `GhostHint != Evidence` 必须是类型和测试边界。
+- Ghost 不能生成 citation。
+- Ghost 不能让 Research 自动联网。
+- Ghost 不能把旧结论当本轮事实。
+- UI 不显示 Ghost / Memory / Work Queue 等内部词。
+- Topic Planner 只能建议“下次该继续研究什么”，不能后台自动联网执行。
+- 旧 claim 进入 planner 时必须带 stale/risk 标记，不能进入 evidence_refs。
+- Ghost continuity 只能作为 ContextSource，经 Safe Context Epoch admission。
+
+### 顺手架构优化
+
+```text
+把 Research Interest Queue 的 open_question refs 映射到 Evidence Runtime question refs
+Ghost work queue completion 只接受 Contract proof refs
+抽 TopicContinuityService：只产出 topic/open_question/stale refs，不读 raw note body
+ResearchPipeline 消费 bounded continuity refs，不直接读 Ghost store
+```
+
+### 验证
+
+```text
+Ghost hint 不可进入 evidence_refs
+旧 claim 必须重新验证或标 stale
+topic plan candidate 不会自动触发 Research
+Research continuity prompt 不出现 Ghost 内部词
+disable Ghost 后 Research 行为回到 baseline
+Ghost continuity admission 受 Safe Context Epoch 约束
+```
+
+### A/B
+
+需要。它会改变 Research prompt 的模型可见 continuity，必须复用 0.4.6 journal，
+并记录 UI interruption、unsupported claim、stale-source handling 和 follow-up usefulness。
 
 ## 0.5 之后的开放边界
 
@@ -2025,14 +2396,20 @@ tests/test_source_connectors.py
 tests/test_connector_parity_pack.py
 tests/test_research_analysis_run.py
 tests/test_artifact_lineage.py
+tests/test_ab_observation_journal.py
+tests/test_transcript_replay_cache.py
+tests/test_provider_observation_log.py
+tests/test_evidence_runtime.py
 tests/test_research_critic.py
 tests/test_review_finding_lifecycle.py
+tests/test_safe_context_epoch.py
+tests/test_research_contract_lite.py
 tests/test_domain_evidence_profiles.py
-tests/test_ghost_research_continuity.py
 tests/test_research_brief_v2.py
 tests/test_research_to_code_impact.py
 tests/test_longitudinal_research_harness.py
 tests/test_research_comparison_benchmark.py
+tests/test_ghost_research_continuity.py
 ```
 
 ### 架构测试
@@ -2056,6 +2433,11 @@ Capability Registry 不加载第三方代码
 Built-in profile 不能放宽 PermissionProfile
 Run Details 不显示内部术语或 raw prompt
 Research Object Model 不保存 raw webpage body
+A/B Observation Journal 不能被生产 RunTrace import
+TranscriptArchive 不能写入 EvidenceLedger / ResearchRecord
+TranscriptReplayCache 不能成为 Evidence / Citation / CompletionProof
+ProviderObservationLog 不保存 DOM / Cookie / raw webpage body
+AB events hash chain 必须可恢复且能发现非尾部断链
 SearchResult 不能成为 Evidence
 GhostHint 不能成为 Evidence
 Claim 必须绑定 Evidence 或标成 Assumption
@@ -2070,6 +2452,8 @@ Source Connector Registry 不加载第三方代码
 Connector Parity Pack 不新增模型工具面
 Research Proof Quality 不能只认 research:* 字符串
 ReviewFinding confirmed 必须来自后续 verification event
+Research Contract Lite 不能是模型工具
+Safe Context Epoch 必须约束 Ghost continuity admission
 Research-to-Code impact 不能授权工具
 ```
 
@@ -2080,19 +2464,24 @@ Ghost 行为改变仍然需要 A/B。0.3 后半段的经验是：如果只改 tr
 live provider A/B；只有实际改变模型可见 prompt、Router、Research prompt、
 Writer prompt、provider fallback 策略或工具权限时，才需要 provider A/B。
 
-0.4 默认隔版本设置小型实机 A/B 候选：
+0.4 后半改成行为触发式 A/B，不再按奇偶版本默认 live 对照：
 
 ```text
 0.4.0 Evidence Kernel / Research Object Model（已完成；projection-only，不需要 A/B）
 0.4.2 Research Proof Quality Gate
 0.4.4 Bounded Research Planner
-0.4.6 Evidence Critic + Planner Feedback
-0.4.8 Ghost Research Continuity + Topic Planner
-0.4.10 Longitudinal Research Harness + Comparison Benchmark
+0.4.6 A/B Observation Journal（durability / replay smoke，不需要质量对照 A/B）
+0.4.7 Evidence Runtime + ReviewFinding（deterministic-only 不需要 A/B；model critic 需要 A/B）
+0.4.8 Safe Context Epoch（metadata-only 不需要 A/B；改变模型可见 context 需要 A/B）
+0.4.9 Research Contract Lite（local-only 不需要 A/B；改变 completion 语义需要 queue A/B）
+0.4.10 Domain Source Trust + Research Brief（projection-only 不需要 A/B；改变 Writer brief 文案需要 A/B）
+0.4.11 Longitudinal Research Harness + Comparison Benchmark（需要 live/comparison harness）
+0.4.12 Ghost Research Continuity（模型可见 continuity 必须 A/B）
 ```
 
-0.4.1、0.4.3、0.4.5、0.4.7、0.4.9 如果只做 schema、ledger、projection、
-connector boundary、planner dry-run、metadata 或 deterministic validator，不做 live provider A/B。
+0.4.1、0.4.3、0.4.5 以及后续任何只做 schema、ledger、projection、
+connector boundary、planner dry-run、metadata、durable journal 或 deterministic validator
+的版本，不做 live provider A/B。
 
 逐步新增：
 
@@ -2108,7 +2497,13 @@ tests/manual/ghost_affinity_quality_ab.py
 tests/manual/research_proof_quality_ab.py
 tests/manual/bounded_research_planner_ab.py
 tests/manual/research_analysis_run_ab.py
+tests/manual/ab_observation_journal_smoke.py
+tests/manual/transcript_replay_cache_smoke.py
+tests/manual/provider_observation_log_smoke.py
 tests/manual/research_critic_ab.py
+tests/manual/safe_context_epoch_ab.py
+tests/manual/research_contract_completion_ab.py
+tests/manual/research_brief_v2_ab.py
 tests/manual/ghost_research_continuity_ab.py
 tests/manual/longitudinal_research_harness_ab.py
 tests/manual/research_comparison_benchmark_ab.py
@@ -2127,6 +2522,8 @@ side effects
 UI interruption count
 OpenScience version / commit（仅 real head-to-head）
 artifact / rubric source（仅 real head-to-head）
+journal run_id / event_digest chain（live A/B）
+transcript mode: digest_only / archive_enabled
 ```
 
 首版通过阈值方向：
