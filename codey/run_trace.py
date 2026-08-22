@@ -133,6 +133,9 @@ class PromptSectionTrace:
     truncated: bool = False
     freshness: str = ""
     source_refs: tuple[str, ...] = ()
+    epoch_id: str = ""
+    admission_reason: str = ""
+    capability_id: str = ""
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -151,6 +154,12 @@ class PromptSectionTrace:
         refs = _bounded_refs(self.source_refs)
         if refs:
             payload["source_refs"] = list(refs)
+        if self.epoch_id:
+            payload["epoch_id"] = _identifier(self.epoch_id, 80)
+        if self.admission_reason:
+            payload["admission_reason"] = _identifier(self.admission_reason, 80)
+        if self.capability_id:
+            payload["capability_id"] = _identifier(self.capability_id, 80)
         return payload
 
 
@@ -431,6 +440,9 @@ class RunTraceRecorder:
         truncated: bool = False,
         freshness: str = "",
         source_refs: Iterable[object] = (),
+        epoch_id: str = "",
+        admission_reason: str = "",
+        capability_id: str = "",
     ) -> None:
         rendered = str(text or "")
         if not rendered:
@@ -450,8 +462,19 @@ class RunTraceRecorder:
             truncated=bool(truncated),
             freshness=freshness,
             source_refs=refs,
+            epoch_id=_identifier(epoch_id, 80),
+            admission_reason=_identifier(admission_reason, 80),
+            capability_id=_identifier(capability_id, 80),
         )
-        key = (item.name, item.digest, item.purpose, item.freshness, refs, item.model_visible)
+        key = (
+            item.name,
+            item.digest,
+            item.purpose,
+            item.freshness,
+            refs,
+            item.model_visible,
+            item.epoch_id,
+        )
         if key in self._prompt_keys:
             if model_boundary:
                 self.flush()
@@ -483,6 +506,8 @@ class RunTraceRecorder:
                 truncated=bool(getattr(source, "truncated", False)),
                 freshness=str(getattr(source, "freshness", "") or ""),
                 source_refs=refs,
+                capability_id=_identifier(getattr(source, "capability_id", ""), 80),
+                admission_reason=_identifier(getattr(source, "admission_reason", ""), 80),
             )
             key = (
                 item.name,
@@ -491,6 +516,7 @@ class RunTraceRecorder:
                 item.freshness,
                 item.source_refs,
                 item.model_visible,
+                item.epoch_id,
             )
             if key in self._prompt_keys:
                 continue

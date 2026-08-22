@@ -114,6 +114,32 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("affinity", repair_source.casefold())
         self.assertNotIn("codey.ghost", tool_runtime_imports)
 
+    def test_context_epoch_is_projection_only_leaf(self) -> None:
+        # Context Epoch projects admission metadata over already-rendered
+        # sources; it must stay a stdlib-only leaf with no runtime imports
+        # and no I/O of its own.
+        path = ROOT / "codey" / "context_epoch.py"
+        imports = imported_modules(path)
+        source = path.read_text(encoding="utf-8")
+
+        internal_imports = sorted(
+            name for name in imports if name == "codey" or name.startswith("codey.")
+        )
+        self.assertEqual(internal_imports, [])
+        forbidden_source = (
+            "write_text(",
+            "write_json",
+            "open(",
+            "eval(",
+            "exec(",
+            "subprocess",
+            "urllib",
+            "pathlib",
+        )
+        for token in forbidden_source:
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
     def test_prompt_envelope_is_not_a_provider_or_tool_runtime_seam(self) -> None:
         imports = imported_modules(ROOT / "codey" / "prompt_envelope.py")
         forbidden = {
@@ -481,6 +507,40 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(module=name):
                 self.assertNotIn("ab_journal", imports)
                 self.assertNotIn("tests.manual.ab_journal", imports)
+
+    def test_stamped_capability_ids_are_registered_boundaries(self) -> None:
+        # Every capability_id literal stamped onto a prompt section or context
+        # source in production code must name a registered capability.
+        from codey.capabilities import builtin_capability_registry
+
+        registered = set(builtin_capability_registry().ids())
+        stamped: dict[str, set[str]] = {}
+
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                for keyword in node.keywords:
+                    if keyword.arg != "capability_id":
+                        continue
+                    value = keyword.value
+                    if (
+                        isinstance(value, ast.Constant)
+                        and isinstance(value.value, str)
+                        and value.value
+                    ):
+                        stamped.setdefault(
+                            path.relative_to(ROOT).as_posix(), set()
+                        ).add(value.value)
+
+        self.assertTrue(stamped, "expected capability_id stamps in production code")
+        offenders = {
+            path: sorted(ids - registered)
+            for path, ids in stamped.items()
+            if ids - registered
+        }
+        self.assertEqual(offenders, {})
 
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
         agent_source = (ROOT / "codey" / "agent.py").read_text(encoding="utf-8")

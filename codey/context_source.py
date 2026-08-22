@@ -22,6 +22,8 @@ class ContextSource:
     why_included: str
     failure_policy: str = FAILURE_POLICY_OMIT
     heading: str = ""
+    capability_id: str = ""
+    admission_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,8 @@ class RenderedContextSource:
     truncated: bool
     freshness: str
     why_included: str
+    capability_id: str = ""
+    admission_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -73,6 +77,8 @@ def render_context_source(source: ContextSource) -> RenderedContextSource | None
         truncated=truncated,
         freshness=source.freshness,
         why_included=source.why_included,
+        capability_id=source.capability_id,
+        admission_reason=source.admission_reason,
     )
 
 

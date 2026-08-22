@@ -12,10 +12,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from codey import cancellation
+from codey.context_epoch import (
+    PROVIDER_TURN_ADMISSION,
+    PROVIDER_TURN_BOUNDARY,
+    context_epoch_id,
+)
 
 
 DEFAULT_PROMPT_SEPARATOR = "\n\n"
-MODEL_BOUNDARY_FRESHNESS = frozenset(("provider_send",))
+MODEL_BOUNDARY_FRESHNESS = frozenset((PROVIDER_TURN_BOUNDARY,))
 MAX_PROMPT_SOURCE_REFS = 64
 MAX_PROMPT_REF_CHARS = 160
 
@@ -30,6 +35,9 @@ class PromptEnvelopeSection:
     budget: int = 0
     freshness: str = ""
     truncated: bool = False
+    epoch_id: str = ""
+    admission_reason: str = ""
+    capability_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -42,6 +50,9 @@ class RenderedPromptSection:
     budget: int
     freshness: str
     truncated: bool
+    epoch_id: str = ""
+    admission_reason: str = ""
+    capability_id: str = ""
 
     @property
     def rendered_length(self) -> int:
@@ -80,6 +91,9 @@ class PromptEnvelope:
                 budget=max(0, int(section.budget or 0)),
                 freshness=str(section.freshness or ""),
                 truncated=bool(section.truncated),
+                epoch_id=str(section.epoch_id or ""),
+                admission_reason=str(section.admission_reason or ""),
+                capability_id=str(section.capability_id or ""),
             ))
         return RenderedPromptEnvelope(
             text=self.separator.join(section.text for section in rendered),
@@ -134,12 +148,24 @@ class FailOpenPromptTrace:
             )
             purpose = str(getattr(section, "purpose", "") or "")
             model_visible = bool(getattr(section, "model_visible", True))
+            epoch_id = str(getattr(section, "epoch_id", "") or "")
+            admission_reason = str(getattr(section, "admission_reason", "") or "")
+            capability_id = str(getattr(section, "capability_id", "") or "")
         except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
             raise
         except Exception as exc:
             if _is_trace_cancellation(exc):
                 raise
             return
+        # Admission metadata is appended only when present so legacy trace
+        # sinks keep receiving the exact same keyword contract as before.
+        admission_kwargs: dict[str, str] = {}
+        if epoch_id:
+            admission_kwargs["epoch_id"] = epoch_id
+        if admission_reason:
+            admission_kwargs["admission_reason"] = admission_reason
+        if capability_id:
+            admission_kwargs["capability_id"] = capability_id
         self.call(
             "record_prompt_section",
             name,
@@ -150,6 +176,7 @@ class FailOpenPromptTrace:
             source_refs=source_refs,
             purpose=purpose,
             model_visible=model_visible,
+            **admission_kwargs,
         )
 
     def record_envelope(
@@ -167,6 +194,33 @@ class FailOpenPromptTrace:
 
 def is_model_boundary_freshness(value: object) -> bool:
     return str(value or "").strip() in MODEL_BOUNDARY_FRESHNESS
+
+
+def record_provider_send_prompt(
+    trace: Any | None,
+    *,
+    name: str,
+    text: str,
+    purpose: str,
+    source_ref: str,
+    capability_id: str = "",
+) -> None:
+    """Record one outbound prompt at the safe provider-turn boundary.
+
+    This is the single shared projection for "a prompt is about to be sent":
+    it stamps the provider_send freshness, a content-addressed epoch id, and
+    the fixed admission reason. It never changes the prompt text or the send.
+    """
+    FailOpenPromptTrace(trace).record_section(PromptEnvelopeSection(
+        name=name,
+        text=text,
+        purpose=purpose,
+        freshness=PROVIDER_TURN_BOUNDARY,
+        source_refs=(source_ref,),
+        epoch_id=context_epoch_id(text),
+        admission_reason=PROVIDER_TURN_ADMISSION,
+        capability_id=capability_id,
+    ))
 
 
 def _is_trace_cancellation(exc: BaseException) -> bool:

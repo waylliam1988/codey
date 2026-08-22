@@ -1003,6 +1003,97 @@ class RunTraceStoreTests(unittest.TestCase):
                 ["first purpose", "second purpose"],
             )
 
+    def test_prompt_section_records_epoch_admission_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-epoch-meta",
+                session_id="session-epoch-meta",
+                project=None,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+            recorder.record_prompt_section(
+                "coding_outbound_prompt",
+                "prompt body",
+                purpose="coding prompt sent to provider",
+                freshness="provider_send",
+                source_refs=("provider_send:coding",),
+                epoch_id="ctx_epoch:" + "a" * 16,
+                admission_reason="provider_turn_boundary",
+                capability_id="agent_runner",
+            )
+            recorder.record_prompt_section(
+                "prepared_context",
+                "earlier context",
+                freshness="run_start",
+            )
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for("session-epoch-meta", "run-epoch-meta").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+            outbound = payload["prompt_sections"][0]
+            self.assertEqual(outbound["epoch_id"], "ctx_epoch:" + "a" * 16)
+            self.assertEqual(outbound["admission_reason"], "provider_turn_boundary")
+            self.assertEqual(outbound["capability_id"], "agent_runner")
+            prepared = payload["prompt_sections"][1]
+            self.assertNotIn("epoch_id", prepared)
+            self.assertNotIn("admission_reason", prepared)
+            self.assertNotIn("capability_id", prepared)
+
+    def test_prompt_section_dedup_distinguishes_epoch_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-epoch-dedup",
+                session_id="session-epoch-dedup",
+                project=None,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+            for epoch in ("ctx_epoch:" + "0" * 16, "ctx_epoch:" + "1" * 16):
+                recorder.record_prompt_section(
+                    "same_section",
+                    "same text",
+                    freshness="provider_send",
+                    source_refs=("same:ref",),
+                    epoch_id=epoch,
+                )
+            # Same content without an epoch id is still deduplicated against
+            # the empty-epoch bucket only.
+            recorder.record_prompt_section(
+                "same_section",
+                "same text",
+                freshness="provider_send",
+                source_refs=("same:ref",),
+            )
+            recorder.record_prompt_section(
+                "same_section",
+                "same text",
+                freshness="provider_send",
+                source_refs=("same:ref",),
+            )
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for("session-epoch-dedup", "run-epoch-dedup").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+            self.assertEqual(
+                [item.get("epoch_id", "") for item in payload["prompt_sections"]],
+                [
+                    "ctx_epoch:" + "0" * 16,
+                    "ctx_epoch:" + "1" * 16,
+                    "",
+                ],
+            )
+
     def test_delete_session_removes_only_that_session_trace_directory(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
@@ -1078,6 +1169,51 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
         self.assertEqual(rendered.sources[0].budget, 100)
         self.assertEqual(rendered.sources[1].freshness, "after_tool_result")
 
+    def test_context_sources_carry_capability_and_admission_metadata(self) -> None:
+        sources = (
+            ContextSource(
+                key="ghost_directive",
+                loader=lambda: "directive body",
+                budget=100,
+                freshness="run_start",
+                why_included="bounded local confirmed Ghost memory",
+                capability_id="local_context",
+                admission_reason="run_start_assembly",
+            ),
+            ContextSource(
+                key="plain_source",
+                loader=lambda: "plain body",
+                budget=100,
+                freshness="run_start",
+                why_included="no metadata source",
+            ),
+        )
+        rendered = render_context_sources_with_metadata(sources)
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-source-meta",
+                session_id="session-source-meta",
+                project=None,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+            recorder.record_context_sources(rendered.sources)
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for("session-source-meta", "run-source-meta").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+        ghost = payload["prompt_sections"][0]
+        self.assertEqual(ghost["capability_id"], "local_context")
+        self.assertEqual(ghost["admission_reason"], "run_start_assembly")
+        plain = payload["prompt_sections"][1]
+        self.assertNotIn("capability_id", plain)
+        self.assertNotIn("admission_reason", plain)
+
     def test_tool_contract_hashes_are_stable_and_scope_aware(self) -> None:
         coding_full = model_tool_contract_hash()
         coding_readonly = model_tool_contract_hash(
@@ -1150,6 +1286,40 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
             )
 
             self.assertEqual(traced_provider.prompts, baseline_provider.prompts)
+
+    def test_real_agent_run_stamps_epoch_metadata_on_outbound_sections(self) -> None:
+        recorded: list[dict[str, object]] = []
+
+        class _CapturingTrace:
+            def record_prompt_section(self, name, text, **kwargs) -> None:
+                del text
+                recorded.append({"name": name, **kwargs})
+
+            def __getattr__(self, _name):
+                def call(*_args, **_kwargs):
+                    return None
+                return call
+
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            project.mkdir()
+
+            agent.run(
+                _PromptProvider(),
+                project,
+                "Inspect the project",
+                max_turns=1,
+                fresh_chat=False,
+                trace_recorder=_CapturingTrace(),
+            )
+
+        outbound = [item for item in recorded if item["name"] == "coding_outbound_prompt"]
+        self.assertTrue(outbound)
+        first = outbound[0]
+        self.assertEqual(first["freshness"], "provider_send")
+        self.assertTrue(str(first["epoch_id"]).startswith("ctx_epoch:"))
+        self.assertEqual(first["admission_reason"], "provider_turn_boundary")
+        self.assertEqual(first["capability_id"], "agent_runner")
 
 
 if __name__ == "__main__":

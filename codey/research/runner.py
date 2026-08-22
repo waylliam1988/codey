@@ -15,6 +15,7 @@ from codey.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelope,
     PromptEnvelopeSection,
+    record_provider_send_prompt,
 )
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import normalize_concept
@@ -150,6 +151,7 @@ class ResearchRunner:
         self.project = project
         self.run_id = run_id
         self.permission_profile = profile_for_name(permission_profile).name
+        self.trace_recorder = trace_recorder
         self.prompt_trace = FailOpenPromptTrace(trace_recorder)
         self.chat_handoff = (chat_handoff or "").strip()
         self.iteration_context = (iteration_context or "").strip()
@@ -496,13 +498,14 @@ class ResearchRunner:
     def _send_provider(self, message: str) -> str:
         try:
             cancellation.check()
-            self.prompt_trace.record_section(PromptEnvelopeSection(
+            record_provider_send_prompt(
+                self.trace_recorder,
                 name="research_outbound_prompt",
                 text=message,
                 purpose="research prompt sent to provider",
-                freshness="provider_send",
-                source_refs=("provider_send:research",),
-            ))
+                source_ref="provider_send:research",
+                capability_id="research_runner",
+            )
             if getattr(self.provider, "thread_safe_send", False):
                 reply = self._send_provider_cancellable(message)
             else:

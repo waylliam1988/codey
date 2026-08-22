@@ -1,5 +1,88 @@
 # Codey Test Report
 
+## 0.4.8 Safe Context Epoch + Capability Boundary v1
+
+Codey 0.4.8 makes provider-turn context admission auditable without changing
+any model-visible byte. New `codey/context_epoch.py` is a stdlib-only leaf
+projecting rendered sources into bounded admission records
+(`ContextAdmission` / `ContextEpoch` / `ContextSnapshot`) with content-addressed
+`ctx_epoch:<16hex>` epoch ids over outbound prompt bytes. The shared
+ContextSource contract and prompt envelope sections now carry optional
+`capability_id` / `admission_reason` / `epoch_id` metadata; a single shared
+`record_provider_send_prompt()` replaces nine hand-written provider-send trace
+blocks across agent/server/task_runner/research-runner/consensus. Run Trace's
+prompt sections serialize the new fields only when set, and the dedup key
+gains the epoch id so re-admissions stay visible while repeats stay collapsed.
+Capability Registry v1 completed its roadmap field set (`trace_sections`,
+`context_sources`, `evidence_producer`, `enabled_by_default`) with allowlist
+validation, registered the 0.4.7 evidence/finding modules plus
+`context_epoch` and `consensus_advisors`, and filled factual ownership for
+existing specs.
+
+Production-facing behavior changes: none. Prompt text, context ordering,
+budgets, router/fallback/permission behavior, planner behavior, tool results,
+report contracts, and UI payloads are unchanged. Per the roadmap A/B rule,
+metadata-only projection requires no live A/B; that becomes mandatory when
+findings or gaps start influencing prompts, planner behavior, or report
+contracts (using the 0.4.6 journal).
+
+Refactor debt paid: nine duplicated provider-send trace constructions
+converged into one helper (~90 lines of repetition removed); agent.py's nine
+run-start ContextSource constructions unified behind one local factory;
+RunTrace prompt-section payload construction keeps its old shape via
+set-only serialization instead of growing unconditional fields.
+
+Characterization locks added:
+
+- `record_provider_send_prompt()` stamps freshness/epoch/admission/capability
+  and is fail-open except for cancellation; epoch ids are content-addressed
+  (same bytes -> same epoch, different bytes -> different epoch).
+- Sections recorded without admission metadata keep the exact legacy trace
+  keyword contract (no `epoch_id`/`admission_reason`/`capability_id` kwargs,
+  no payload keys).
+- Real agent run regression lock: the recorded `coding_outbound_prompt`
+  section must carry `provider_send` freshness, a `ctx_epoch:` id, the fixed
+  admission reason, and `capability_id="agent_runner"` (this caught a
+  double-wrapped trace sink that silently dropped sections during
+  development).
+- RunTrace dedup distinguishes epoch ids; identical no-epoch repeats still
+  collapse; manifest shape without new metadata is unchanged.
+- Capability registry: stable sorted ids + fingerprint lock updated;
+  unknown trace sections / context sources are rejected at construction;
+  all built-ins are enabled-by-default, non-third-party, non-overriding;
+  evidence producers are exactly research_object_model and
+  research_review_finding.
+- Architecture: `context_epoch.py` imports nothing from codey and contains
+  no I/O tokens; every `capability_id=` literal stamped anywhere under
+  `codey/` must name a registered capability.
+
+Validation during implementation:
+
+```text
+python -m pytest tests/test_context_epoch.py tests/test_context_source.py tests/test_prompt_envelope.py tests/test_run_trace.py tests/test_capabilities.py tests/test_architecture.py -q
+# 133 passed, 190 subtests passed
+
+python -m pytest tests/test_agent.py tests/test_research.py tests/test_server.py tests/test_task_runner_run_trace.py tests/test_consensus.py tests/test_review.py tests/test_review_coordinator.py -q
+# 467 passed, 7 subtests passed (after fixing the double-wrap catch)
+
+python -m ruff check codey tests
+# All checks passed!
+
+python -m pytest -q
+# 2426 passed, 706 subtests passed in 395.65s
+```
+
+Coverage highlights: epoch id determinism and collision behavior, source-ref
+normalization, admission payload bounds and empty-field omission, snapshot
+projection from duck-typed rendered sources including caps and empty-source
+skips, envelope render passthrough of the three metadata fields, legacy
+keyword-contract preservation, provider-send helper stamping and fail-open
+behavior, content-addressed epoch equality/inequality, real-run metadata
+landing on recorded sections, trace payload set-only serialization, dedup
+semantics with and without epochs, context-source metadata passthrough,
+registry allowlist rejections, fingerprint stability, and the two new
+architecture boundary locks.
+
 ## 0.4.7 Evidence Runtime + ReviewFinding Core v1
 
 Codey 0.4.7 gives research facts one shared reference language and an

@@ -70,7 +70,7 @@ from codey.ghost.work_queue import GhostWorkQueueStore
 from codey.knowledge.concepts import ConceptGraphBuilder
 from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.unified_graph import UnifiedResearchGraphBuilder
-from codey.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
+from codey.prompt_envelope import FailOpenPromptTrace, record_provider_send_prompt
 from codey.research.advisors import EvidencePack, run_research_advisors
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.providers import (
@@ -258,24 +258,26 @@ def _run_review_attempt(
         )
         trace = FailOpenPromptTrace(trace_recorder)
         trace.call("record_permission_profile", "reviewer", phase="review")
-        trace.record_section(PromptEnvelopeSection(
+        record_provider_send_prompt(
+            trace_recorder,
             name="review_prompt",
             text=prompt,
             purpose="review prompt sent to provider",
-            freshness="provider_send",
-            source_refs=("provider_send:review",),
-        ))
+            source_ref="provider_send:review",
+            capability_id="review_runner",
+        )
         with provider_controls.suppress_assistance():
             reply = reviewer.send(prompt, timeout=REVIEW_TIMEOUT)
 
             def send_repair_prompt(repair: str) -> str:
-                trace.record_section(PromptEnvelopeSection(
+                record_provider_send_prompt(
+                    trace_recorder,
                     name="review_repair_prompt",
                     text=repair,
                     purpose="review repair prompt sent to provider",
-                    freshness="provider_send",
-                    source_refs=("provider_send:review_repair",),
-                ))
+                    source_ref="provider_send:review_repair",
+                    capability_id="review_runner",
+                )
                 return reviewer.send(repair, timeout=REVIEW_TIMEOUT)
 
             review = parse_review_with_repair(

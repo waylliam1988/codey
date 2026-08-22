@@ -17,7 +17,7 @@ from codey import cancellation, provider_controls
 from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
 from codey.handoff import ConversationSnapshot
 from codey.models import ToolCall, ToolResult
-from codey.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
+from codey.prompt_envelope import record_provider_send_prompt
 from codey.protocols import JsonToolCodec
 from codey.references import find_reference_hints
 from codey.tool_runtime import (
@@ -205,13 +205,14 @@ def _trace_model_prompt(
     purpose: str,
     source_ref: str,
 ) -> None:
-    FailOpenPromptTrace(trace_recorder).record_section(PromptEnvelopeSection(
+    record_provider_send_prompt(
+        trace_recorder,
         name=name,
         text=text,
         purpose=purpose,
-        freshness="provider_send",
-        source_refs=(source_ref,),
-    ))
+        source_ref=source_ref,
+        capability_id="consensus_advisors",
+    )
 
 
 def _provider_send_ref(kind: str, provider_id: str = "") -> str:

@@ -72,7 +72,11 @@ from codey.providers import PROVIDER_LABELS
 from codey.provider_capabilities import rank_providers
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.provider_supervisor import run_half_open_canary
-from codey.prompt_envelope import FailOpenPromptTrace, PromptEnvelopeSection
+from codey.prompt_envelope import (
+    FailOpenPromptTrace,
+    PromptEnvelopeSection,
+    record_provider_send_prompt,
+)
 from codey.receipt import build_task_receipt
 from codey.run_ledger import RunLedgerStore, RunLedgerWriter
 from codey.run_ledger_projection import (
@@ -2072,13 +2076,13 @@ class TaskRunner:
         if consulted is not None:
             reply = consulted.answer
         else:
-            trace.record_section(PromptEnvelopeSection(
+            record_provider_send_prompt(
+                frame.trace,
                 name="chat_outbound_prompt",
                 text=prompt,
                 purpose="chat prompt sent to provider",
-                freshness="provider_send",
-                source_refs=("provider_send:chat",),
-            ))
+                source_ref="provider_send:chat",
+            )
             reply = frame.provider.send(prompt)
         if frame.fresh_chat:
             frame.conversation.begin_window(frame.provider_id, "chat")

@@ -4,6 +4,65 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.8 - Safe Context Epoch + Capability Boundary v1
+
+- Added `codey/context_epoch.py`: a pure stdlib-leaf projection over model
+  visible context facts — `ContextEpoch` / `ContextAdmission` /
+  `ContextSnapshot` read models, content-addressed `ctx_epoch:<16hex>` epoch
+  ids derived from the outbound prompt bytes, stable `context_source_ref()`
+  normalization, and `snapshot_from_rendered_sources()` which projects
+  rendered sources into bounded admission records (digests, chars, budgets,
+  refs only). The module performs no I/O and imports nothing from codey;
+  an architecture test locks it as a projection-only leaf.
+- Extended the shared ContextSource contract: `ContextSource` /
+  `RenderedContextSource` now carry optional `capability_id` and
+  `admission_reason` metadata (default empty). Rendering order, clipping,
+  failure policy, and rendered text are unchanged byte-for-byte; agent.py's
+  nine run-start sources are stamped via one small `intro_source()` factory
+  instead of repeating every field nine times.
+- Prompt envelope sections carry the same three optional fields
+  (`epoch_id` / `admission_reason` / `capability_id`) through render and the
+  fail-open trace sink. Metadata keywords are appended to trace calls only
+  when present, so legacy trace sinks keep receiving the exact same keyword
+  contract as before.
+- Added one shared `record_provider_send_prompt()` projection and deleted the
+  nine hand-written copies of the same provider-send block across
+  `agent.py` (3), `server.py` (2), `task_runner.py` (1),
+  `research/runner.py` (1), and `consensus.py` (delegating
+  `_trace_model_prompt`). Every outbound prompt section is now stamped at a
+  single place with the provider_send freshness, a content-addressed epoch
+  id, and the fixed `provider_turn_boundary` admission reason. Prompt text,
+  send order, and provider behavior are unchanged; parity stays locked by
+  the existing byte-for-byte agent prompt test plus a new real-run test that
+  also asserts the epoch metadata actually lands on the recorded section
+  (this caught a double-wrapped trace sink during development).
+- Run Trace: `PromptSectionTrace` gained optional `epoch_id`,
+  `admission_reason`, and `capability_id` fields, serialized only when set —
+  without them the manifest payload shape is unchanged. The prompt-section
+  dedup key now includes the epoch id, so identical content re-admitted at a
+  later boundary is still recorded while unchanged repeats stay deduplicated.
+  `record_context_sources()` passes capability/admission metadata through.
+- Capability Registry v1 completed its roadmap field set: specs now declare
+  `trace_sections`, `context_sources`, `evidence_producer`, and
+  `enabled_by_default`, validated against new `KNOWN_TRACE_SECTIONS` /
+  `KNOWN_CONTEXT_SOURCES` allowlists at construction time. Registered the
+  0.4.7 modules (`research_evidence_runtime`,
+  `research_review_finding`) plus this version's boundaries (`context_epoch`,
+  `consensus_advisors`) and filled factual ownership for existing specs:
+  agent_runner owns eight coding context sources, local_context owns
+  ghost_directive/ghost_continuity, policy_guard writes policy_decisions,
+  and the object-model/ledger/proof-quality/query-planner/finding specs name
+  the dedicated trace sections their projections produce. A new architecture
+  test locks every `capability_id` literal stamped anywhere in production
+  code to a registered capability.
+- Scope notes: no prompt wording change, no context ordering or budget
+  change, no router/fallback/permission change, no planner or finding
+  behavior change, no plugin loader, no skill system, no config UI, no new
+  model-visible capability. Metadata and trace projections only, so per the
+  roadmap A/B rule this version needs no live A/B; that becomes mandatory
+  the moment findings or gaps start influencing prompts, planner behavior,
+  or report contracts.
+
 ## 0.4.7 - Evidence Runtime + ReviewFinding Core v1
 
 - Added `codey/research/evidence_runtime.py`: one deterministic validator for

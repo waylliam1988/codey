@@ -55,6 +55,7 @@ from codey.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelope,
     PromptEnvelopeSection,
+    record_provider_send_prompt,
 )
 from codey.tool_definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
@@ -791,78 +792,88 @@ def run(
             if factual_handoff
             else request
         )
+
+        def intro_source(
+            key: str,
+            loader: Callable[[], str],
+            budget: int,
+            why_included: str,
+            *,
+            heading: str = "",
+            capability_id: str = "agent_runner",
+        ) -> ContextSource:
+            return ContextSource(
+                key=key,
+                loader=loader,
+                budget=budget,
+                freshness="run_start",
+                why_included=why_included,
+                heading=heading,
+                capability_id=capability_id,
+                admission_reason="run_start_assembly",
+            )
+
         sources = []
         if include_ghost_directive:
-            sources.append(
-                ContextSource(
-                    key="ghost_directive",
-                    loader=lambda: ghost_directive,
-                    budget=GHOST_DIRECTIVE_CONTEXT_BUDGET,
-                    freshness="run_start",
-                    why_included="bounded local confirmed Ghost memory",
-                )
-            )
-            sources.append(
-                ContextSource(
-                    key="ghost_continuity",
-                    loader=lambda: ghost_continuity,
-                    budget=GHOST_CONTINUITY_CONTEXT_BUDGET,
-                    freshness="run_start",
-                    why_included="bounded local continuity projection",
-                )
-            )
+            sources.append(intro_source(
+                "ghost_directive",
+                lambda: ghost_directive,
+                GHOST_DIRECTIVE_CONTEXT_BUDGET,
+                "bounded local confirmed Ghost memory",
+                capability_id="local_context",
+            ))
+            sources.append(intro_source(
+                "ghost_continuity",
+                lambda: ghost_continuity,
+                GHOST_CONTINUITY_CONTEXT_BUDGET,
+                "bounded local continuity projection",
+                capability_id="local_context",
+            ))
         sources.extend((
-            ContextSource(
-                key="project_instructions",
-                loader=lambda: format_project_instructions(project_instructions),
-                budget=PROJECT_INSTRUCTIONS_CONTEXT_BUDGET,
-                freshness="run_start",
-                why_included="project instruction files from the project root",
+            intro_source(
+                "project_instructions",
+                lambda: format_project_instructions(project_instructions),
+                PROJECT_INSTRUCTIONS_CONTEXT_BUDGET,
+                "project instruction files from the project root",
                 heading="Project instructions:",
             ),
-            ContextSource(
-                key="verified_facts",
-                loader=lambda: project_facts,
-                budget=VERIFIED_FACTS_CONTEXT_BUDGET,
-                freshness="run_start",
-                why_included="successful local checks recorded for this project",
+            intro_source(
+                "verified_facts",
+                lambda: project_facts,
+                VERIFIED_FACTS_CONTEXT_BUDGET,
+                "successful local checks recorded for this project",
                 heading="Verified project facts from successful local runs:",
             ),
-            ContextSource(
-                key="research_brief",
-                loader=lambda: research_context,
-                budget=RESEARCH_CONTEXT_BUDGET,
-                freshness="run_start",
-                why_included="bounded research brief from the current chat",
+            intro_source(
+                "research_brief",
+                lambda: research_context,
+                RESEARCH_CONTEXT_BUDGET,
+                "bounded research brief from the current chat",
             ),
-            ContextSource(
-                key="project_map",
-                loader=lambda: project_map,
-                budget=PROJECT_MAP_CONTEXT_BUDGET,
-                freshness="run_start",
-                why_included="bounded local project map prepared before writing",
+            intro_source(
+                "project_map",
+                lambda: project_map,
+                PROJECT_MAP_CONTEXT_BUDGET,
+                "bounded local project map prepared before writing",
             ),
-            ContextSource(
-                key="project_config_warnings",
-                loader=lambda: project_config_warnings,
-                budget=PROJECT_CONFIG_WARNINGS_CONTEXT_BUDGET,
-                freshness="run_start",
-                why_included="bounded project-local config warnings",
+            intro_source(
+                "project_config_warnings",
+                lambda: project_config_warnings,
+                PROJECT_CONFIG_WARNINGS_CONTEXT_BUDGET,
+                "bounded project-local config warnings",
                 heading="Project config warnings:",
             ),
-            ContextSource(
-                key="work_checkpoint",
-                loader=lambda: work_checkpoint,
-                budget=WORK_CHECKPOINT_CONTEXT_BUDGET,
-                freshness="run_start",
-                why_included="bounded local checkpoint from a previous project run",
+            intro_source(
+                "work_checkpoint",
+                lambda: work_checkpoint,
+                WORK_CHECKPOINT_CONTEXT_BUDGET,
+                "bounded local checkpoint from a previous project run",
             ),
-            ContextSource(
-                key="initial_listing",
-                loader=lambda: tool_fns.list_directory(project, ".").model_text,
-                budget=INITIAL_LISTING_CONTEXT_BUDGET,
-                freshness="run_start",
-                why_included="current top-level project listing",
+            intro_source(
+                "initial_listing",
+                lambda: tool_fns.list_directory(project, ".").model_text,
+                INITIAL_LISTING_CONTEXT_BUDGET,
+                "current top-level project listing",
                 heading="Initial listing:",
             ),
         ))
@@ -930,13 +941,14 @@ def run(
                     include_ghost_directive=include_ghost_directive,
                 )
                 opened_fresh_chat = True
-        trace.record_section(PromptEnvelopeSection(
+        record_provider_send_prompt(
+            trace_recorder,
             name="coding_outbound_prompt",
             text=prompt,
             purpose="coding prompt sent to provider",
-            freshness="provider_send",
-            source_refs=("provider_send:coding",),
-        ))
+            source_ref="provider_send:coding",
+            capability_id="agent_runner",
+        )
         reply_text = provider.send(prompt)
         if conversation is not None:
             if opened_fresh_chat:
@@ -1004,6 +1016,8 @@ def run(
                     budget=CODING_CURRENT_CONTEXT_BUDGET,
                     freshness="after_tool_result",
                     why_included="current read, edit, and verification facts",
+                    capability_id="agent_runner",
+                    admission_reason="after_tool_result",
                 ),
             )
         )
@@ -1016,13 +1030,14 @@ def run(
     if fresh_chat:
         opened_fresh_chat = open_fresh_chat()
         intro = project_intro(user_task, handoff)
-        trace.record_section(PromptEnvelopeSection(
+        record_provider_send_prompt(
+            trace_recorder,
             name="coding_outbound_prompt",
             text=intro,
             purpose="coding prompt sent to provider",
-            freshness="provider_send",
-            source_refs=("provider_send:coding",),
-        ))
+            source_ref="provider_send:coding",
+            capability_id="agent_runner",
+        )
         reply = provider.send(intro)
         if conversation is not None:
             if opened_fresh_chat:
@@ -1036,13 +1051,14 @@ def run(
         reply = send_prompt(followup, restart_request=user_task)
     else:
         intro = project_intro(user_task)
-        trace.record_section(PromptEnvelopeSection(
+        record_provider_send_prompt(
+            trace_recorder,
             name="coding_outbound_prompt",
             text=intro,
             purpose="coding prompt sent to provider",
-            freshness="provider_send",
-            source_refs=("provider_send:coding",),
-        ))
+            source_ref="provider_send:coding",
+            capability_id="agent_runner",
+        )
         reply = provider.send(intro)
     report_reply(1, reply)
 

@@ -11,6 +11,8 @@ from codey.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelope,
     PromptEnvelopeSection,
+    is_model_boundary_freshness,
+    record_provider_send_prompt,
 )
 from codey.research.controller import controller_system_prompt
 from codey.research.runner import ResearchRunner
@@ -198,6 +200,120 @@ class PromptEnvelopeTests(unittest.TestCase):
                 raise AssertionError("should not inspect sections without trace")
 
         FailOpenPromptTrace(None).record_section(_BadSection())
+
+    def test_record_provider_send_prompt_stamps_epoch_metadata(self) -> None:
+        trace = _Trace()
+
+        record_provider_send_prompt(
+            trace,
+            name="coding_outbound_prompt",
+            text="outbound prompt body",
+            purpose="coding prompt sent to provider",
+            source_ref="provider_send:coding",
+            capability_id="agent_runner",
+        )
+
+        recorded = trace.sections[0]
+        self.assertEqual(recorded["name"], "coding_outbound_prompt")
+        self.assertEqual(recorded["text"], "outbound prompt body")
+        self.assertEqual(recorded["freshness"], "provider_send")
+        self.assertEqual(recorded["source_refs"], ("provider_send:coding",))
+        self.assertTrue(recorded["epoch_id"].startswith("ctx_epoch:"))
+        self.assertEqual(recorded["admission_reason"], "provider_turn_boundary")
+        self.assertEqual(recorded["capability_id"], "agent_runner")
+
+    def test_record_provider_send_prompt_epoch_is_content_addressed(self) -> None:
+        first: list[dict[str, object]] = []
+        second: list[dict[str, object]] = []
+
+        def capture(store: list[dict[str, object]]):
+            class _Sink:
+                def record_prompt_section(self, _name, _text, **kwargs) -> None:
+                    store.append(kwargs)
+
+            return _Sink()
+
+        record_provider_send_prompt(
+            capture(first),
+            name="section",
+            text="same bytes",
+            purpose="p",
+            source_ref="provider_send:x",
+        )
+        record_provider_send_prompt(
+            capture(second),
+            name="section",
+            text="same bytes",
+            purpose="p",
+            source_ref="provider_send:x",
+        )
+        record_provider_send_prompt(
+            capture(second),
+            name="section",
+            text="different bytes",
+            purpose="p",
+            source_ref="provider_send:x",
+        )
+
+        self.assertEqual(first[0]["epoch_id"], second[0]["epoch_id"])
+        self.assertNotEqual(second[0]["epoch_id"], second[1]["epoch_id"])
+
+    def test_record_provider_send_prompt_is_fail_open(self) -> None:
+        record_provider_send_prompt(
+            _BrokenTrace(),
+            name="review_prompt",
+            text="body",
+            purpose="review prompt sent to provider",
+            source_ref="provider_send:review",
+        )
+
+        with self.assertRaises(cancellation.TaskCancelled):
+            record_provider_send_prompt(
+                _StoppingTrace(),
+                name="review_prompt",
+                text="body",
+                purpose="review prompt sent to provider",
+                source_ref="provider_send:review",
+            )
+
+    def test_sections_without_admission_metadata_keep_legacy_trace_contract(self) -> None:
+        trace = _Trace()
+
+        FailOpenPromptTrace(trace).record_section(PromptEnvelopeSection(
+            name="legacy_section",
+            text="body",
+            purpose="prepared earlier",
+            freshness="run_start",
+            source_refs=("local:ref",),
+        ))
+
+        recorded = trace.sections[0]
+        self.assertNotIn("epoch_id", recorded)
+        self.assertNotIn("admission_reason", recorded)
+        self.assertNotIn("capability_id", recorded)
+
+    def test_rendered_sections_carry_epoch_metadata_through_envelope(self) -> None:
+        rendered = PromptEnvelope((
+            PromptEnvelopeSection(
+                "research_outbound_prompt",
+                "prompt body",
+                purpose="research prompt sent to provider",
+                freshness="provider_send",
+                source_refs=("provider_send:research",),
+                epoch_id="ctx_epoch:" + "a" * 16,
+                admission_reason="provider_turn_boundary",
+                capability_id="research_runner",
+            ),
+        )).render()
+
+        section = rendered.sections[0]
+        self.assertEqual(section.epoch_id, "ctx_epoch:" + "a" * 16)
+        self.assertEqual(section.admission_reason, "provider_turn_boundary")
+        self.assertEqual(section.capability_id, "research_runner")
+
+    def test_model_boundary_freshness_tracks_provider_turn_constant(self) -> None:
+        self.assertTrue(is_model_boundary_freshness("provider_send"))
+        self.assertFalse(is_model_boundary_freshness("run_start"))
 
     def test_research_intro_envelope_preserves_existing_join_shape(self) -> None:
         with tempfile.TemporaryDirectory() as td:

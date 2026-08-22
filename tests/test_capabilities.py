@@ -6,7 +6,9 @@ import unittest
 from codey.capabilities import (
     CapabilityRegistry,
     CapabilitySpec,
+    KNOWN_CONTEXT_SOURCES,
     KNOWN_DURABLE_STATES,
+    KNOWN_TRACE_SECTIONS,
     KNOWN_UI_SURFACES,
     builtin_capability_registry,
 )
@@ -17,6 +19,8 @@ EXPECTED_BUILTIN_IDS = (
     "agent_runner",
     "builtin_profiles",
     "changes_presenter",
+    "consensus_advisors",
+    "context_epoch",
     "local_context",
     "policy_guard",
     "prompt_envelope",
@@ -24,9 +28,11 @@ EXPECTED_BUILTIN_IDS = (
     "provider_factory",
     "research_connector_search",
     "research_evidence_ledger",
+    "research_evidence_runtime",
     "research_object_model",
     "research_proof_quality",
     "research_query_planner",
+    "research_review_finding",
     "research_runner",
     "research_source_connectors",
     "review_runner",
@@ -36,7 +42,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "65727720e9fe5956c90a8ab2897eaf21280671dafaae811d34111821dc238dd0"
+    "b3e487d06aa4cc05ca1825f65458a13b5289def83501c2a73ea8c338c04b22f2"
 )
 
 
@@ -200,6 +206,116 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertFalse(spec.model_visible)
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.ui_surface, ())
+        self.assertEqual(spec.trace_sections, ("research_plans",))
+
+    def test_context_epoch_declares_safe_provider_turn_boundary(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("context_epoch")
+
+        self.assertEqual(
+            spec.provides,
+            ("safe_provider_turn_boundary", "context_admission_projection"),
+        )
+        self.assertEqual(spec.consumes, ("prompt_envelope", "run_trace"))
+        self.assertEqual(spec.trace_sections, ("prompt_sections",))
+        self.assertEqual(spec.owner_module, "codey.context_epoch")
+        self.assertFalse(spec.model_visible)
+        self.assertFalse(spec.evidence_producer)
+
+    def test_research_evidence_runtime_is_ref_validation_boundary(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_evidence_runtime")
+
+        self.assertEqual(
+            spec.provides,
+            ("runtime_ref_validation", "evidence_snapshot_projection"),
+        )
+        self.assertEqual(spec.consumes, ("research_object_model",))
+        self.assertEqual(spec.durable_state, ())
+        self.assertEqual(spec.owner_module, "codey.research.evidence_runtime")
+        self.assertFalse(spec.model_visible)
+        self.assertFalse(spec.evidence_producer)
+        self.assertEqual(spec.trace_sections, ())
+
+    def test_research_review_finding_declares_finding_trace_sections(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_review_finding")
+
+        self.assertEqual(
+            spec.provides,
+            ("review_finding_lifecycle", "planner_gap_projection"),
+        )
+        self.assertEqual(spec.consumes, ("research_evidence_runtime", "run_trace"))
+        self.assertEqual(
+            spec.trace_sections,
+            ("research_review_findings", "research_planner_gaps"),
+        )
+        self.assertTrue(spec.evidence_producer)
+        self.assertEqual(spec.durable_state, ("run_trace",))
+        self.assertEqual(spec.owner_module, "codey.research.review_finding")
+
+    def test_consensus_advisors_is_model_visible_consultation_boundary(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("consensus_advisors")
+
+        self.assertEqual(spec.provides, ("multi_advisor_consultation",))
+        self.assertEqual(spec.consumes, ("prompt_envelope", "run_trace"))
+        self.assertTrue(spec.model_visible)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.ui_surface, ())
+        self.assertEqual(spec.durable_state, ())
+
+    def test_local_context_owns_ghost_context_sources(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("local_context")
+
+        self.assertEqual(spec.context_sources, ("ghost_directive", "ghost_continuity"))
+
+    def test_agent_runner_owns_coding_context_sources(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("agent_runner")
+
+        self.assertEqual(
+            spec.context_sources,
+            (
+                "project_instructions",
+                "verified_facts",
+                "research_brief",
+                "project_map",
+                "project_config_warnings",
+                "work_checkpoint",
+                "initial_listing",
+                "coding_current_context",
+            ),
+        )
+
+    def test_builtin_capabilities_are_enabled_by_default(self) -> None:
+        registry = builtin_capability_registry()
+
+        self.assertTrue(all(spec.enabled_by_default for spec in registry.all()))
+        self.assertTrue(all(
+            set(spec.trace_sections).issubset(KNOWN_TRACE_SECTIONS)
+            for spec in registry.all()
+        ))
+        self.assertTrue(all(
+            set(spec.context_sources).issubset(KNOWN_CONTEXT_SOURCES)
+            for spec in registry.all()
+        ))
+
+    def test_evidence_producers_are_explicit(self) -> None:
+        registry = builtin_capability_registry()
+
+        producers = tuple(
+            spec.id for spec in registry.all() if spec.evidence_producer
+        )
+
+        self.assertEqual(producers, ("research_object_model", "research_review_finding"))
 
     def test_state_and_task_runner_carry_registry_without_dispatch(self) -> None:
         from codey import server
@@ -316,6 +432,17 @@ class CapabilityRegistryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "override user choices"):
             CapabilityRegistry((
                 CapabilitySpec("bad", ("bad_boundary",), can_override_user_choice=True),
+            ))
+
+    def test_validation_rejects_unknown_trace_section_and_context_source(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown trace section"):
+            CapabilityRegistry((
+                CapabilitySpec("bad", ("bad_boundary",), trace_sections=("ghost_sections",)),
+            ))
+
+        with self.assertRaisesRegex(ValueError, "unknown context source"):
+            CapabilityRegistry((
+                CapabilitySpec("bad", ("bad_boundary",), context_sources=("mystery_source",)),
             ))
 
     def test_validation_rejects_non_snake_case_ids(self) -> None:

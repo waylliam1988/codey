@@ -36,6 +36,39 @@ KNOWN_DURABLE_STATES = frozenset({
     "change_snapshots",
     "research_evidence_ledger",
 })
+# Dedicated RunTrace manifest sections a capability's projection may own.
+KNOWN_TRACE_SECTIONS = frozenset({
+    "prompt_sections",
+    "local_context_refs",
+    "research_note_ids",
+    "research_source_refs",
+    "research_records",
+    "research_evidence_ledgers",
+    "research_proof_reviews",
+    "research_plans",
+    "research_pipeline_runs",
+    "research_connector_errors",
+    "research_done_compilations",
+    "analysis_runs",
+    "artifact_refs",
+    "reproducibility_capsules",
+    "research_review_findings",
+    "research_planner_gaps",
+    "policy_decisions",
+})
+# Stable context source keys admitted through the shared ContextSource contract.
+KNOWN_CONTEXT_SOURCES = frozenset({
+    "ghost_directive",
+    "ghost_continuity",
+    "project_instructions",
+    "verified_facts",
+    "research_brief",
+    "project_map",
+    "project_config_warnings",
+    "work_checkpoint",
+    "initial_listing",
+    "coding_current_context",
+})
 MODEL_VISIBLE_REQUIRED_CONSUMES = frozenset(("prompt_envelope", "run_trace"))
 POLICY_REQUIRED_CONSUMES = frozenset(("policy_guard",))
 
@@ -53,6 +86,10 @@ class CapabilitySpec:
     owner_module: str = ""
     third_party: bool = False
     can_override_user_choice: bool = False
+    trace_sections: tuple[str, ...] = ()
+    context_sources: tuple[str, ...] = ()
+    evidence_producer: bool = False
+    enabled_by_default: bool = True
 
     def to_jsonable(self) -> dict[str, object]:
         return {
@@ -67,6 +104,10 @@ class CapabilitySpec:
             "owner_module": self.owner_module,
             "third_party": bool(self.third_party),
             "can_override_user_choice": bool(self.can_override_user_choice),
+            "trace_sections": list(self.trace_sections),
+            "context_sources": list(self.context_sources),
+            "evidence_producer": bool(self.evidence_producer),
+            "enabled_by_default": bool(self.enabled_by_default),
         }
 
 
@@ -125,6 +166,12 @@ class CapabilityRegistry:
             unknown_states = set(spec.durable_state) - KNOWN_DURABLE_STATES
             if unknown_states:
                 raise ValueError(f"capability {spec.id} declares unknown durable state")
+            unknown_sections = set(spec.trace_sections) - KNOWN_TRACE_SECTIONS
+            if unknown_sections:
+                raise ValueError(f"capability {spec.id} declares unknown trace section")
+            unknown_sources = set(spec.context_sources) - KNOWN_CONTEXT_SOURCES
+            if unknown_sources:
+                raise ValueError(f"capability {spec.id} declares unknown context source")
             unknown_profiles = set(spec.permission_profiles) - set(PERMISSION_PROFILES)
             if unknown_profiles:
                 raise ValueError(f"capability {spec.id} declares unknown permission profile")
@@ -152,6 +199,17 @@ def builtin_capability_registry() -> CapabilityRegistry:
             requires_policy=True,
             permission_profiles=("coding_writer",),
             owner_module="codey.agent",
+            trace_sections=("prompt_sections",),
+            context_sources=(
+                "project_instructions",
+                "verified_facts",
+                "research_brief",
+                "project_map",
+                "project_config_warnings",
+                "work_checkpoint",
+                "initial_listing",
+                "coding_current_context",
+            ),
         ),
         CapabilitySpec(
             id="builtin_profiles",
@@ -166,6 +224,21 @@ def builtin_capability_registry() -> CapabilityRegistry:
             owner_module="codey.changes",
         ),
         CapabilitySpec(
+            id="consensus_advisors",
+            provides=("multi_advisor_consultation",),
+            consumes=("prompt_envelope", "run_trace"),
+            model_visible=True,
+            owner_module="codey.consensus",
+            trace_sections=("prompt_sections",),
+        ),
+        CapabilitySpec(
+            id="context_epoch",
+            provides=("safe_provider_turn_boundary", "context_admission_projection"),
+            consumes=("prompt_envelope", "run_trace"),
+            trace_sections=("prompt_sections",),
+            owner_module="codey.context_epoch",
+        ),
+        CapabilitySpec(
             id="local_context",
             provides=("bounded_local_context", "ghost_continuity_context"),
             consumes=("policy_guard", "prompt_envelope", "run_trace"),
@@ -174,11 +247,14 @@ def builtin_capability_registry() -> CapabilityRegistry:
             ui_surface=("local_context_drawer",),
             durable_state=("local_context",),
             owner_module="codey.ghost",
+            trace_sections=("local_context_refs",),
+            context_sources=("ghost_directive", "ghost_continuity"),
         ),
         CapabilitySpec(
             id="policy_guard",
             provides=("permission_profile_boundary", "action_policy_boundary"),
             owner_module="codey.action_policy",
+            trace_sections=("policy_decisions",),
         ),
         CapabilitySpec(
             id="prompt_envelope",
@@ -229,6 +305,8 @@ def builtin_capability_registry() -> CapabilityRegistry:
             provides=("research_object_projection", "claim_evidence_projection"),
             consumes=("research_runner", "run_trace"),
             durable_state=("run_trace",),
+            evidence_producer=True,
+            trace_sections=("research_records",),
             owner_module="codey.research.object_model",
         ),
         CapabilitySpec(
@@ -236,13 +314,30 @@ def builtin_capability_registry() -> CapabilityRegistry:
             provides=("durable_evidence_read_model", "evidence_locator_index"),
             consumes=("research_object_model", "run_trace"),
             durable_state=("research_evidence_ledger", "run_trace"),
+            trace_sections=("research_evidence_ledgers",),
             owner_module="codey.research.evidence_ledger",
+        ),
+        CapabilitySpec(
+            id="research_evidence_runtime",
+            provides=("runtime_ref_validation", "evidence_snapshot_projection"),
+            consumes=("research_object_model",),
+            owner_module="codey.research.evidence_runtime",
+        ),
+        CapabilitySpec(
+            id="research_review_finding",
+            provides=("review_finding_lifecycle", "planner_gap_projection"),
+            consumes=("research_evidence_runtime", "run_trace"),
+            durable_state=("run_trace",),
+            evidence_producer=True,
+            trace_sections=("research_review_findings", "research_planner_gaps"),
+            owner_module="codey.research.review_finding",
         ),
         CapabilitySpec(
             id="research_proof_quality",
             provides=("research_completion_gate", "planner_signals_v0"),
             consumes=("research_object_model", "research_evidence_ledger", "run_trace"),
             durable_state=("run_trace",),
+            trace_sections=("research_proof_reviews",),
             owner_module="codey.research.proof_quality",
         ),
         CapabilitySpec(
@@ -250,6 +345,7 @@ def builtin_capability_registry() -> CapabilityRegistry:
             provides=("research_plan_dry_run",),
             consumes=("research_proof_quality", "research_source_connectors", "run_trace"),
             durable_state=("run_trace",),
+            trace_sections=("research_plans",),
             owner_module="codey.research.query_planner",
         ),
         CapabilitySpec(
@@ -313,7 +409,9 @@ def _identifier(value: object) -> str:
 __all__ = [
     "CapabilityRegistry",
     "CapabilitySpec",
+    "KNOWN_CONTEXT_SOURCES",
     "KNOWN_DURABLE_STATES",
+    "KNOWN_TRACE_SECTIONS",
     "KNOWN_UI_SURFACES",
     "builtin_capability_registry",
 ]
