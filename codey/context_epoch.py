@@ -2,13 +2,17 @@
 
 A context epoch groups the context that entered one provider turn: every
 model-visible section admitted at a safe provider-turn boundary shares one
-content-addressed ``epoch id``, so an auditor can reconstruct exactly which
-sources were visible together without storing any of their bodies.
+content-addressed ``epoch id`` (the sha256 prefix of the exact outbound
+bytes), so an auditor can reconstruct which sources were visible together.
+The id identifies turn *content*, not a numbered provider call: identical
+re-sends intentionally share the same epoch and stay deduplicated in the
+trace, while any byte difference yields a new epoch.
 
 This module owns nothing: it performs no I/O, never calls models, never holds
 state between turns, and never imports runtime layers. It projects already
 rendered sources into bounded admission records that contain digests, sizes,
-budgets, and refs only.
+budgets, and refs only. Sources without content or without a usable key fail
+closed: they project to nothing instead of inventing refs.
 """
 
 from __future__ import annotations
@@ -26,15 +30,22 @@ MAX_ADMISSION_CHARS = 1_000_000
 
 
 def context_epoch_id(value: object) -> str:
-    """Return a stable content-addressed epoch ref for one outbound prompt."""
+    """Return the stable content-addressed epoch ref for one outbound prompt."""
     text = str(value or "")
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
     return f"{EPOCH_REF_PREFIX}{digest}"
 
 
 def context_source_ref(key: object) -> str:
-    """Return the stable source ref for one named context source key."""
-    return SOURCE_REF_PREFIX + _identifier(key, 80)
+    """Return the stable source ref for one named context source key.
+
+    Empty or unusable keys produce an empty ref so callers can skip the
+    source instead of emitting an incomplete ``context_source:`` ref.
+    """
+    identifier = _identifier(key, 80)
+    if not identifier or not identifier.strip("_"):
+        return ""
+    return SOURCE_REF_PREFIX + identifier
 
 
 @dataclass(frozen=True)
@@ -98,38 +109,58 @@ class ContextSnapshot:
         }
 
 
+def admission_from_rendered_source(
+    rendered_source: object,
+    *,
+    admission_reason: str = "",
+) -> ContextAdmission | None:
+    """Project one rendered context source into a bounded admission record.
+
+    This is the single shared projection for "one source became part of a
+    model-visible turn"; the snapshot builder and RunTrace's context-source
+    rows both consume it so production and tests share one ref/digest
+    vocabulary. Sources without text or without a usable key project to
+    nothing (fail closed) instead of inventing refs.
+    """
+    text = str(getattr(rendered_source, "text", "") or "")
+    if not text:
+        return None
+    key = getattr(rendered_source, "key", "")
+    source_ref = context_source_ref(key)
+    if not source_ref:
+        return None
+    reason = (
+        str(getattr(rendered_source, "admission_reason", "") or "")
+        or admission_reason
+    )
+    return ContextAdmission(
+        source_key=_identifier(key, 80),
+        source_ref=source_ref,
+        capability_id=_identifier(getattr(rendered_source, "capability_id", ""), 80),
+        admission_reason=_identifier(reason, 80),
+        budget=max(0, int(getattr(rendered_source, "budget", 0) or 0)),
+        chars=len(text),
+        truncated=bool(getattr(rendered_source, "truncated", False)),
+        digest="sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest(),
+    )
+
+
 def snapshot_from_rendered_sources(
     rendered_sources: Iterable[object],
     *,
     epoch_id: str,
     admission_reason: str = "",
 ) -> ContextSnapshot:
-    """Project rendered context sources into a bounded admission snapshot.
-
-    Rendered sources are duck-typed (key/text/budget/truncated/freshness plus
-    optional capability_id/admission_reason) so this stays decoupled from the
-    concrete dataclass while rejecting anything without content.
-    """
+    """Project rendered context sources into a bounded admission snapshot."""
     admissions: list[ContextAdmission] = []
     for source in rendered_sources:
-        text = str(getattr(source, "text", "") or "")
-        if not text:
-            continue
-        key = getattr(source, "key", "") or "context_source"
-        reason = (
-            str(getattr(source, "admission_reason", "") or "")
-            or admission_reason
+        admission = admission_from_rendered_source(
+            source,
+            admission_reason=admission_reason,
         )
-        admissions.append(ContextAdmission(
-            source_key=_identifier(key, 80),
-            source_ref=context_source_ref(key),
-            capability_id=_identifier(getattr(source, "capability_id", ""), 80),
-            admission_reason=_identifier(reason, 80),
-            budget=max(0, int(getattr(source, "budget", 0) or 0)),
-            chars=len(text),
-            truncated=bool(getattr(source, "truncated", False)),
-            digest="sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest(),
-        ))
+        if admission is None:
+            continue
+        admissions.append(admission)
         if len(admissions) >= MAX_SNAPSHOT_SOURCES:
             break
     return ContextSnapshot(

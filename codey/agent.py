@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -23,6 +23,7 @@ from codey.action_policy import (
     evaluate_action,
 )
 from codey.coding_context import CodingContext, render_coding_context
+from codey.context_epoch import context_epoch_id
 from codey.context_source import (
     ContextSource,
     render_context_sources_with_metadata,
@@ -882,7 +883,6 @@ def run(
             for source in sources
             if allows_context_source(profile, source.key)
         )
-        trace.call("record_context_sources", rendered_context.sources)
         context = rendered_context.text
         context_block = f"{context}\n\n" if context else ""
         request_context = (
@@ -915,7 +915,17 @@ def run(
                 truncated=any(source.truncated for source in rendered_context.sources),
             ),
         )).render()
-        trace.record_envelope(rendered)
+        # One content-addressed epoch binds every row of this turn together:
+        # the assembled sections, the admitted sources, and the outbound
+        # prompt recorded later through record_provider_send_prompt().
+        epoch = context_epoch_id(rendered.text)
+        for section in rendered.sections:
+            trace.record_section(replace(section, epoch_id=epoch))
+        trace.call(
+            "record_context_sources",
+            rendered_context.sources,
+            epoch_id=epoch,
+        )
         return rendered.text
 
     def send_prompt(

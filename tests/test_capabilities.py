@@ -19,6 +19,7 @@ EXPECTED_BUILTIN_IDS = (
     "agent_runner",
     "builtin_profiles",
     "changes_presenter",
+    "chat_runner",
     "consensus_advisors",
     "context_epoch",
     "local_context",
@@ -42,7 +43,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "b3e487d06aa4cc05ca1825f65458a13b5289def83501c2a73ea8c338c04b22f2"
+    "c80af23e61600c551b58037232e69fce2b3e21c29554c29a6c3202d26d0cf26c"
 )
 
 
@@ -256,6 +257,18 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertTrue(spec.evidence_producer)
         self.assertEqual(spec.durable_state, ("run_trace",))
         self.assertEqual(spec.owner_module, "codey.research.review_finding")
+
+    def test_chat_runner_declares_chat_prompt_boundary(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("chat_runner")
+
+        self.assertEqual(spec.provides, ("chat_prompt_boundary",))
+        self.assertEqual(spec.consumes, ("prompt_envelope", "run_trace"))
+        self.assertTrue(spec.model_visible)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.owner_module, "codey.task_runner")
+        self.assertEqual(spec.trace_sections, ("prompt_sections",))
 
     def test_consensus_advisors_is_model_visible_consultation_boundary(self) -> None:
         registry = builtin_capability_registry()

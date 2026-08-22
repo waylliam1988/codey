@@ -224,6 +224,14 @@ def builtin_capability_registry() -> CapabilityRegistry:
             owner_module="codey.changes",
         ),
         CapabilitySpec(
+            id="chat_runner",
+            provides=("chat_prompt_boundary",),
+            consumes=("prompt_envelope", "run_trace"),
+            model_visible=True,
+            owner_module="codey.task_runner",
+            trace_sections=("prompt_sections",),
+        ),
+        CapabilitySpec(
             id="consensus_advisors",
             provides=("multi_advisor_consultation",),
             consumes=("prompt_envelope", "run_trace"),

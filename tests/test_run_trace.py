@@ -1214,6 +1214,111 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
         self.assertNotIn("capability_id", plain)
         self.assertNotIn("admission_reason", plain)
 
+    def test_context_source_rows_bind_to_supplied_epoch(self) -> None:
+        epoch = "ctx_epoch:" + "e" * 16
+        rendered = render_context_sources_with_metadata((
+            ContextSource(
+                key="project_map",
+                loader=lambda: "map body",
+                budget=100,
+                freshness="run_start",
+                why_included="bounded local project map",
+                capability_id="agent_runner",
+            ),
+        ))
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-source-epoch",
+                session_id="session-source-epoch",
+                project=None,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+            recorder.record_context_sources(
+                rendered.sources,
+                epoch_id=epoch,
+                admission_reason="provider_turn_boundary",
+            )
+            recorder.record_prompt_section(
+                "coding_outbound_prompt",
+                "full prompt bytes",
+                freshness="provider_send",
+                source_refs=("provider_send:coding",),
+                epoch_id=epoch,
+                admission_reason="provider_turn_boundary",
+                capability_id="agent_runner",
+            )
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for("session-source-epoch", "run-source-epoch").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+        epochs = [item.get("epoch_id") for item in payload["prompt_sections"]]
+        self.assertEqual(epochs, [epoch, epoch])
+
+    def test_context_source_admission_reason_precedence_and_fail_closed_key(self) -> None:
+        sources = (
+            ContextSource(
+                key="with_own_reason",
+                loader=lambda: "body one",
+                budget=100,
+                freshness="run_start",
+                why_included="keeps its own reason",
+                admission_reason="run_start_assembly",
+            ),
+            ContextSource(
+                key="fallback_reason",
+                loader=lambda: "body two",
+                budget=100,
+                freshness="run_start",
+                why_included="uses the caller fallback",
+            ),
+            ContextSource(
+                key="///",
+                loader=lambda: "unusable key body",
+                budget=100,
+                freshness="run_start",
+                why_included="must be skipped entirely",
+            ),
+        )
+        rendered = render_context_sources_with_metadata(sources)
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id="run-reason-precedence",
+                session_id="session-reason-precedence",
+                project=None,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+            recorder.record_context_sources(
+                rendered.sources,
+                admission_reason="caller_fallback",
+            )
+            recorder.finish(status="done")
+
+            payload = json.loads(
+                store.path_for(
+                    "session-reason-precedence",
+                    "run-reason-precedence",
+                ).read_text(encoding="utf-8")
+            )
+
+        names = [item["name"] for item in payload["prompt_sections"]]
+        self.assertEqual(names, ["with_own_reason", "fallback_reason"])
+        self.assertEqual(
+            payload["prompt_sections"][0]["admission_reason"],
+            "run_start_assembly",
+        )
+        self.assertEqual(
+            payload["prompt_sections"][1]["admission_reason"],
+            "caller_fallback",
+        )
+
     def test_tool_contract_hashes_are_stable_and_scope_aware(self) -> None:
         coding_full = model_tool_contract_hash()
         coding_readonly = model_tool_contract_hash(
@@ -1295,6 +1400,15 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
                 del text
                 recorded.append({"name": name, **kwargs})
 
+            def record_context_sources(self, sources, **kwargs) -> None:
+                del kwargs
+                for source in sources:
+                    recorded.append({
+                        "name": getattr(source, "key", ""),
+                        "freshness": getattr(source, "freshness", ""),
+                        "context_source_row": True,
+                    })
+
             def __getattr__(self, _name):
                 def call(*_args, **_kwargs):
                     return None
@@ -1320,6 +1434,87 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
         self.assertTrue(str(first["epoch_id"]).startswith("ctx_epoch:"))
         self.assertEqual(first["admission_reason"], "provider_turn_boundary")
         self.assertEqual(first["capability_id"], "agent_runner")
+
+    def test_real_agent_run_binds_turn_rows_to_one_content_epoch(self) -> None:
+        # Provenance contract: the assembled sections, the admitted context
+        # sources, and the outbound prompt of one provider turn all share the
+        # same content-addressed epoch id.
+        recorded: list[dict[str, object]] = []
+        sent_prompts: list[str] = []
+
+        class _EchoProvider:
+            name = "Echo"
+
+            def new_chat(self) -> None:
+                return None
+
+            def send(self, text: str) -> str:
+                sent_prompts.append(text)
+                return '{"tool":"done","args":{"summary":"ok"}}'
+
+        class _CapturingTrace:
+            def record_prompt_section(self, name, text, **kwargs) -> None:
+                del text
+                recorded.append({"name": name, **kwargs})
+
+            def record_context_sources(self, sources, **kwargs) -> None:
+                epoch = kwargs.get("epoch_id", "")
+                admission_reason = kwargs.get("admission_reason", "")
+                for source in sources:
+                    recorded.append({
+                        "name": f"context_source:{getattr(source, 'key', '')}",
+                        "freshness": getattr(source, "freshness", ""),
+                        "capability_id": getattr(source, "capability_id", ""),
+                        "admission_reason": (
+                            getattr(source, "admission_reason", "") or admission_reason
+                        ),
+                        "epoch_id": epoch,
+                    })
+
+            def __getattr__(self, _name):
+                def call(*_args, **_kwargs):
+                    return None
+                return call
+
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td) / "project"
+            project.mkdir()
+            (project / "README.md").write_text("hello\n", encoding="utf-8")
+
+            agent.run(
+                _EchoProvider(),
+                project,
+                "Inspect the project",
+                max_turns=1,
+                fresh_chat=False,
+                trace_recorder=_CapturingTrace(),
+            )
+
+        from codey.context_epoch import context_epoch_id
+
+        expected_epoch = context_epoch_id(sent_prompts[0])
+        context_rows = [
+            item for item in recorded if item["name"].startswith("context_source:")
+        ]
+        # agent.py also records a few "prepared input" rows before assembly;
+        # every row that carries an epoch stamp belongs to the single composed
+        # turn of this run and must share its content-addressed epoch.
+        stamped = [item for item in recorded if "epoch_id" in item]
+        stamped_names = {item["name"] for item in stamped}
+
+        self.assertTrue(stamped)
+        self.assertTrue(context_rows)
+        for row in stamped:
+            self.assertEqual(row["epoch_id"], expected_epoch, row["name"])
+        for name in (
+            "coding_system_prompt",
+            "coding_request_context",
+            "coding_outbound_prompt",
+        ):
+            self.assertIn(name, stamped_names)
+        for row in context_rows:
+            self.assertEqual(row["epoch_id"], expected_epoch, row["name"])
+        self.assertTrue(all(row.get("capability_id") for row in context_rows))
 
 
 if __name__ == "__main__":

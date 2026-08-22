@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping
 from urllib.parse import urlparse
 
 from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
+from codey.context_epoch import admission_from_rendered_source
 from codey.prompt_envelope import is_model_boundary_freshness
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
@@ -349,7 +350,9 @@ class RunTraceRecorder:
         self.manifest = manifest
         self.disabled = False
         self._dirty_updates = 0
-        self._prompt_keys: set[tuple[str, str, str, str, tuple[str, ...], bool]] = set()
+        self._prompt_keys: set[
+            tuple[str, str, str, str, tuple[str, ...], bool, str]
+        ] = set()
         self._local_context_keys: set[tuple[str, str, str]] = set()
         self._research_note_keys: set[str] = set()
         self._research_source_keys: set[str] = set()
@@ -489,25 +492,43 @@ class RunTraceRecorder:
         else:
             self.checkpoint()
 
-    def record_context_sources(self, sources: Iterable[Any]) -> None:
+    def record_context_sources(
+        self,
+        sources: Iterable[Any],
+        *,
+        epoch_id: str = "",
+        admission_reason: str = "",
+    ) -> None:
+        """Record rendered context sources as bounded prompt-section rows.
+
+        Rows are projected through the shared ContextEpoch admission
+        projection, so trace rows and snapshots share one ref/digest
+        vocabulary. When epoch_id is supplied (the outbound prompt's
+        content-addressed epoch), each row is bound to that provider turn;
+        the per-source admission_reason wins over the caller's fallback.
+        """
+        normalized_epoch = _identifier(epoch_id, 80)
         changed = False
         for source in sources:
-            text = str(getattr(source, "text", "") or "")
-            if not text:
+            admission = admission_from_rendered_source(
+                source,
+                admission_reason=admission_reason,
+            )
+            if admission is None:
                 continue
-            refs = (f"context_source:{_identifier(getattr(source, 'key', ''), 80)}",)
             item = PromptSectionTrace(
-                name=str(getattr(source, "key", "") or "context_source"),
-                digest=digest_text(text),
-                chars=len(text),
+                name=admission.source_key,
+                digest=admission.digest,
+                chars=admission.chars,
                 purpose=str(getattr(source, "why_included", "") or ""),
                 model_visible=True,
-                budget=max(0, int(getattr(source, "budget", 0) or 0)),
-                truncated=bool(getattr(source, "truncated", False)),
+                budget=admission.budget,
+                truncated=admission.truncated,
                 freshness=str(getattr(source, "freshness", "") or ""),
-                source_refs=refs,
-                capability_id=_identifier(getattr(source, "capability_id", ""), 80),
-                admission_reason=_identifier(getattr(source, "admission_reason", ""), 80),
+                source_refs=(admission.source_ref,),
+                epoch_id=normalized_epoch,
+                admission_reason=admission.admission_reason,
+                capability_id=admission.capability_id,
             )
             key = (
                 item.name,

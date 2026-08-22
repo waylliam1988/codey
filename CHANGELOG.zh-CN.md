@@ -10,9 +10,20 @@
   codey 模块、无 I/O，架构测试锁定）——`ContextEpoch` / `ContextAdmission`
   / `ContextSnapshot` 有界读模型、对外发 prompt 字节做 sha256 的
   content-addressed `ctx_epoch:<16hex>` epoch id、稳定的
-  `context_source_ref()` 归一化，以及把已渲染 source 投影成有界 admission
-  记录的 `snapshot_from_rendered_sources()`。只保存 digest/chars/budget/
-  refs/capability_id/admission_reason，绝不保存 raw prompt 或 source body。
+  `context_source_ref()` 归一化，以及单一共享 admission 投影
+  `admission_from_rendered_source()`：snapshot 构建器和 RunTrace 的
+  context source 行都走它，生产和测试共享同一套 ref/digest 词汇表。
+  只保存 digest/chars/budget/refs/capability_id/admission_reason，绝不保存
+  raw prompt 或 source body。空 key 或不可用 key fail closed：不产生 ref、
+  整行跳过，不会输出残缺的 `context_source:` 条目。
+- Provenance 闭环：`agent.project_intro()` 先渲染出最终 prompt 并计算其
+  content-addressed epoch，然后把该 turn 的每一行都绑到同一个 epoch 上——
+  组装的 envelope sections、每条被准入的 context source 行（经新的
+  `record_context_sources(..., epoch_id=...)` 绑定）、以及之后经
+  `record_provider_send_prompt()` 记录的外发 prompt。真实 run 测试锁定该
+  契约：同一 turn 的 sections、sources 与外发行共享同一个 `ctx_epoch:` id。
+  epoch id 标识的是 turn *内容*，不是编号的 provider 调用：相同字节的重复
+  发送按设计共享同一 id 并在 trace 中去重；任何字节差异都会产生新 epoch。
 - 共享 ContextSource 契约扩展：`ContextSource` /
   `RenderedContextSource` 新增可选 `capability_id` 与 `admission_reason`
   （默认空）。渲染顺序、预算裁剪、failure policy 与输出文本逐字节不变；
@@ -26,27 +37,29 @@
   provider-send 块：`agent.py`×3、`server.py`×2、`task_runner.py`×1、
   research runner×1、consensus.py（`_trace_model_prompt` 委托）。现在每条
   外发 prompt 的 trace 都在同一个地方盖上 provider_send freshness、
-  content-addressed epoch id 和固定的 `provider_turn_boundary` admission
-  reason。prompt 文本、发送顺序与 provider 行为不变；除既有 byte-for-byte
-  parity 测试外，新增真实 run 回归锁同时断言元数据确实落到记录的 section
-  上（这条测试在开发期间真的抓到过一个双重包装导致静默丢 trace 的问题）。
+  content-addressed epoch id（支持显式 `epoch_id=` 覆盖，调用方可传入已算好
+  的 epoch）和固定的 `provider_turn_boundary` admission reason。prompt 文本、
+  发送顺序与 provider 行为不变；除既有 byte-for-byte parity 测试外，新增的
+  真实 run 元数据测试同时断言元数据确实落到记录的行上（这些测试在开发期间
+  真的抓到过一个双重包装导致静默丢 trace 的问题）。
 - Run Trace：`PromptSectionTrace` 新增可选 `epoch_id` / `admission_reason`
   / `capability_id`，有值才序列化——没有新元数据时 manifest payload 形状
-  不变。prompt section 的 dedup key 纳入 epoch id：同一内容在更晚边界重新
-  进入模型仍会被记录，而完全相同的重复依旧去重。
-  `record_context_sources()` 会透传 context source 的 capability/admission
-  元数据。
+  不变。prompt section 的 dedup key 纳入 epoch id：完全相同的重复照旧折叠，
+  任何内容差异都会产生新 epoch 和新行。`record_context_sources()` 经共享
+  admission 投影生成行并绑定到给定 epoch；source 自带的 admission_reason
+  优先于调用方的 fallback 参数。
 - Capability Registry v1 补全 roadmap 字段集：spec 现在声明
   `trace_sections`、`context_sources`、`evidence_producer`、
   `enabled_by_default`，并在构造时按新增的 `KNOWN_TRACE_SECTIONS` /
   `KNOWN_CONTEXT_SOURCES` allowlist 校验。补登记 0.4.7 模块
   （`research_evidence_runtime`、`research_review_finding`）与本版边界
-  （`context_epoch`、`consensus_advisors`），并为既有 spec 补事实归属：
-  agent_runner 拥有八个 coding context sources，local_context 拥有
-  ghost_directive/ghost_continuity，policy_guard 写 policy_decisions，
+  （`context_epoch`、`chat_runner`、`consensus_advisors`），并为既有 spec
+  补事实归属：agent_runner 拥有八个 coding context sources，local_context
+  拥有 ghost_directive/ghost_continuity，policy_guard 写 policy_decisions，
   object model/ledger/proof quality/query planner/finding 各自声明其投影
-  落入的专用 trace section。新增架构测试：生产代码中出现的每个
-  `capability_id=` 字面量都必须是注册能力 id。
+  落入的专用 trace section。chat 模式的外发 prompt 现在带
+  `capability_id="chat_runner"`，不再是无主 provenance。新增架构测试：
+  生产代码中出现的每个 `capability_id=` 字面量都必须是注册能力 id。
 - 范围注记：不改 prompt 措辞、不改 context 顺序或预算、不改
   Router/fallback/权限、不让 finding/gap 影响 planner 行为、无插件加载器、
   无 skill 系统、无配置 UI、无新增模型可见能力。纯 metadata/trace 投影，

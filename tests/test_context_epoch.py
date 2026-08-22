@@ -12,6 +12,7 @@ from codey.context_epoch import (
     ContextAdmission,
     ContextEpoch,
     ContextSnapshot,
+    admission_from_rendered_source,
     context_epoch_id,
     context_source_ref,
     snapshot_from_rendered_sources,
@@ -58,6 +59,11 @@ class ContextSourceRefTests(unittest.TestCase):
             context_source_ref("bad key with spaces"),
             f"{SOURCE_REF_PREFIX}bad_key_with_spaces",
         )
+
+    def test_empty_or_unusable_key_fails_closed(self) -> None:
+        self.assertEqual(context_source_ref(""), "")
+        self.assertEqual(context_source_ref(None), "")
+        self.assertEqual(context_source_ref("///"), "")
 
 
 class ContextAdmissionTests(unittest.TestCase):
@@ -112,6 +118,27 @@ class ContextAdmissionTests(unittest.TestCase):
 
 
 class SnapshotProjectionTests(unittest.TestCase):
+    def test_admission_projection_skips_empty_text_and_unusable_keys(self) -> None:
+        self.assertIsNone(admission_from_rendered_source(_admission_input("key", "")))
+        self.assertIsNone(admission_from_rendered_source(_admission_input("", "body")))
+        self.assertIsNone(admission_from_rendered_source(None))
+
+    def test_admission_projection_is_the_single_shared_vocabulary(self) -> None:
+        source = _admission_input(
+            "research_brief",
+            "brief body",
+            capability_id="agent_runner",
+            admission_reason="run_start_assembly",
+        )
+
+        direct = admission_from_rendered_source(source)
+        via_snapshot = snapshot_from_rendered_sources(
+            (source,),
+            epoch_id="ctx_epoch:" + "2" * 16,
+        ).admissions[0]
+
+        self.assertEqual(direct, via_snapshot)
+
     def test_snapshot_from_rendered_sources_projects_admissions(self) -> None:
         sources = (
             _admission_input(
@@ -143,7 +170,10 @@ class SnapshotProjectionTests(unittest.TestCase):
 
     def test_snapshot_skips_empty_sources_and_caps_size(self) -> None:
         sources = [
-            _admission_input(f"source_{index}", "" if index == 3 else f"body {index}")
+            _admission_input(
+                "" if index == 5 else f"source_{index}",
+                "" if index == 3 else f"body {index}",
+            )
             for index in range(MAX_SNAPSHOT_SOURCES + 8)
         ]
 
@@ -154,6 +184,9 @@ class SnapshotProjectionTests(unittest.TestCase):
 
         self.assertLessEqual(len(snapshot.admissions), MAX_SNAPSHOT_SOURCES)
         self.assertTrue(all(item.source_key != "source_3" for item in snapshot.admissions))
+        self.assertTrue(
+            all(item.source_ref != SOURCE_REF_PREFIX for item in snapshot.admissions)
+        )
 
     def test_snapshot_falls_back_to_default_admission_reason(self) -> None:
         snapshot = snapshot_from_rendered_sources(

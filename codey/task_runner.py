@@ -2082,6 +2082,7 @@ class TaskRunner:
                 text=prompt,
                 purpose="chat prompt sent to provider",
                 source_ref="provider_send:chat",
+                capability_id="chat_runner",
             )
             reply = frame.provider.send(prompt)
         if frame.fresh_chat:

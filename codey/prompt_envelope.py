@@ -204,12 +204,15 @@ def record_provider_send_prompt(
     purpose: str,
     source_ref: str,
     capability_id: str = "",
+    epoch_id: str = "",
 ) -> None:
     """Record one outbound prompt at the safe provider-turn boundary.
 
     This is the single shared projection for "a prompt is about to be sent":
-    it stamps the provider_send freshness, a content-addressed epoch id, and
-    the fixed admission reason. It never changes the prompt text or the send.
+    it stamps the provider_send freshness, a content-addressed epoch id
+    (overridable so a caller can share an epoch computed for the same bytes),
+    and the fixed admission reason. It never changes the prompt text or the
+    send.
     """
     FailOpenPromptTrace(trace).record_section(PromptEnvelopeSection(
         name=name,
@@ -217,7 +220,7 @@ def record_provider_send_prompt(
         purpose=purpose,
         freshness=PROVIDER_TURN_BOUNDARY,
         source_refs=(source_ref,),
-        epoch_id=context_epoch_id(text),
+        epoch_id=epoch_id or context_epoch_id(text),
         admission_reason=PROVIDER_TURN_ADMISSION,
         capability_id=capability_id,
     ))

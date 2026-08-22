@@ -10,10 +10,24 @@ This file records Codey's release history. The newest release appears first.
   visible context facts — `ContextEpoch` / `ContextAdmission` /
   `ContextSnapshot` read models, content-addressed `ctx_epoch:<16hex>` epoch
   ids derived from the outbound prompt bytes, stable `context_source_ref()`
-  normalization, and `snapshot_from_rendered_sources()` which projects
-  rendered sources into bounded admission records (digests, chars, budgets,
-  refs only). The module performs no I/O and imports nothing from codey;
-  an architecture test locks it as a projection-only leaf.
+  normalization, and one shared admission projection
+  (`admission_from_rendered_source()`) consumed by both
+  `snapshot_from_rendered_sources()` and RunTrace's context-source rows, so
+  production and tests share a single ref/digest vocabulary. The module
+  performs no I/O and imports nothing from codey; an architecture test locks
+  it as a projection-only leaf. Empty or unusable source keys fail closed:
+  they produce no ref and the source is skipped instead of emitting an
+  incomplete `context_source:` entry.
+- Provenance closure: `agent.project_intro()` renders the final prompt first,
+  derives its content-addressed epoch, then stamps every row of that turn —
+  the assembled envelope sections, each admitted context-source row (via the
+  new `record_context_sources(..., epoch_id=...)` binding), and the outbound
+  prompt recorded through `record_provider_send_prompt()` — with the same
+  epoch id. A real-run test locks the contract: sections, sources, and the
+  outbound prompt of one turn share one `ctx_epoch:` id. Epoch ids identify
+  turn *content*, not numbered provider calls: identical re-sends share the
+  id by design and stay deduplicated in the trace, while any byte difference
+  yields a new epoch.
 - Extended the shared ContextSource contract: `ContextSource` /
   `RenderedContextSource` now carry optional `capability_id` and
   `admission_reason` metadata (default empty). Rendering order, clipping,
@@ -31,30 +45,33 @@ This file records Codey's release history. The newest release appears first.
   `research/runner.py` (1), and `consensus.py` (delegating
   `_trace_model_prompt`). Every outbound prompt section is now stamped at a
   single place with the provider_send freshness, a content-addressed epoch
-  id, and the fixed `provider_turn_boundary` admission reason. Prompt text,
-  send order, and provider behavior are unchanged; parity stays locked by
-  the existing byte-for-byte agent prompt test plus a new real-run test that
-  also asserts the epoch metadata actually lands on the recorded section
-  (this caught a double-wrapped trace sink during development).
+  id (an explicit `epoch_id=` override lets callers share an already-computed
+  epoch), and the fixed `provider_turn_boundary` admission reason. Prompt
+  text, send order, and provider behavior are unchanged; parity stays locked
+  by the existing byte-for-byte agent prompt test plus the real-run metadata
+  tests (these caught a double-wrapped trace sink during development).
 - Run Trace: `PromptSectionTrace` gained optional `epoch_id`,
   `admission_reason`, and `capability_id` fields, serialized only when set —
   without them the manifest payload shape is unchanged. The prompt-section
-  dedup key now includes the epoch id, so identical content re-admitted at a
-  later boundary is still recorded while unchanged repeats stay deduplicated.
-  `record_context_sources()` passes capability/admission metadata through.
+  dedup key now includes the epoch id: unchanged repeats collapse exactly as
+  before, and any content change produces a new epoch and a new row.
+  `record_context_sources()` projects rows through the shared admission
+  projection and binds them to a supplied epoch; per-source admission
+  reasons win over the caller's fallback argument.
 - Capability Registry v1 completed its roadmap field set: specs now declare
   `trace_sections`, `context_sources`, `evidence_producer`, and
   `enabled_by_default`, validated against new `KNOWN_TRACE_SECTIONS` /
   `KNOWN_CONTEXT_SOURCES` allowlists at construction time. Registered the
   0.4.7 modules (`research_evidence_runtime`,
   `research_review_finding`) plus this version's boundaries (`context_epoch`,
-  `consensus_advisors`) and filled factual ownership for existing specs:
-  agent_runner owns eight coding context sources, local_context owns
-  ghost_directive/ghost_continuity, policy_guard writes policy_decisions,
-  and the object-model/ledger/proof-quality/query-planner/finding specs name
-  the dedicated trace sections their projections produce. A new architecture
-  test locks every `capability_id` literal stamped anywhere in production
-  code to a registered capability.
+  `chat_runner`, `consensus_advisors`) and filled factual ownership for
+  existing specs: agent_runner owns eight coding context sources,
+  local_context owns ghost_directive/ghost_continuity, policy_guard writes
+  policy_decisions, and the object-model/ledger/proof-quality/query-planner/
+  finding specs name the dedicated trace sections their projections produce.
+  Chat-mode outbound prompts carry `capability_id="chat_runner"` instead of
+  anonymous provenance. A new architecture test locks every `capability_id`
+  literal stamped anywhere in production code to a registered capability.
 - Scope notes: no prompt wording change, no context ordering or budget
   change, no router/fallback/permission change, no planner or finding
   behavior change, no plugin loader, no skill system, no config UI, no new

@@ -258,6 +258,20 @@ class PromptEnvelopeTests(unittest.TestCase):
         self.assertEqual(first[0]["epoch_id"], second[0]["epoch_id"])
         self.assertNotEqual(second[0]["epoch_id"], second[1]["epoch_id"])
 
+    def test_record_provider_send_prompt_accepts_explicit_epoch(self) -> None:
+        trace = _Trace()
+
+        record_provider_send_prompt(
+            trace,
+            name="coding_outbound_prompt",
+            text="outbound body",
+            purpose="p",
+            source_ref="provider_send:coding",
+            epoch_id="ctx_epoch:" + "f" * 16,
+        )
+
+        self.assertEqual(trace.sections[0]["epoch_id"], "ctx_epoch:" + "f" * 16)
+
     def test_record_provider_send_prompt_is_fail_open(self) -> None:
         record_provider_send_prompt(
             _BrokenTrace(),
