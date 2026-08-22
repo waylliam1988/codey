@@ -22,32 +22,28 @@ This file records Codey's release history. The newest release appears first.
   `events.jsonl` never contains NaN/Infinity tokens. Mid-file unparseable lines
   are no longer silently cleaned by writer auto-recovery — appending refuses
   until an explicit `ABJournalReader.recover_tail()`.
-- Provider observation facts cross the boundary through an explicit allow-list:
-  nested `provider_failure` maps keep only `kind`/`stage`
-  (as `provider_failure_kind` / `provider_failure_stage`); all other nested
-  maps and opaque objects are dropped, so raw provider error messages and page
-  titles cannot re-enter the journal.
+- Provider observation facts cross the boundary through one allow-list:
+  URLs, HTML fragments, cookie/DOM-style keys, secret-shaped values, opaque
+  objects, and generic nested maps are redacted or dropped; nested
+  `provider_failure` keeps only `kind`/`stage`
+  (as `provider_failure_kind` / `provider_failure_stage`), so raw provider
+  error messages and page titles cannot re-enter the journal.
 - Harness run ids follow the final provider-specific output name
-  (`output.stem` after all-mode renaming), so resuming `custom-deepseek.json`
-  individually reuses the exact journal identity the all-mode run created.
-- Both harnesses also execute as package modules
-  (`python -m tests.manual.bounded_research_planner_ab`).
-- Harness run ids are now derived from the result file (`output.stem`) instead
-  of wall-clock time, so resuming the same output continues the same journal
-  identity instead of colliding with the previous manifest. Connector harness
-  case-start calls were fixed to the new signature and both self-tests replay
-  the full per-case event sequence as a regression lock.
+  (`output.stem` after all-mode renaming) instead of wall-clock time, so
+  resuming any result file — including per-provider files renamed in all-mode —
+  continues the same journal identity instead of colliding with the previous
+  manifest.
 - Added `TranscriptReplayCache`: prompt/reply pairs are digest-only by default;
   explicit archive mode stores content-addressed bounded transcripts under
   `transcripts/<digest>.json` for manual replay/scoring only.
-- Provider observation facts are sanitized through an allow-list: URLs, HTML
-  fragments, cookie/DOM-style keys, and secret-shaped values are redacted or
-  dropped before persistence.
 - Migrated `bounded_research_planner_ab.py` and `source_connector_ab.py` onto
   the shared journal and deleted their duplicated LiveTrace implementations;
   trace output is now a `<stem>.trace/` directory (`manifest.json`,
   `events.jsonl`, optional `transcripts/`). Result JSON shapes are unchanged,
-  so historical results remain readable. `deep_research_core_ab.py` migration
+  so historical results remain readable. Connector case-start calls were fixed
+  to the new signature and both self-tests replay the full per-case event
+  sequence as a regression lock; both harnesses also execute as package modules
+  (`python -m tests.manual.<harness>`). `deep_research_core_ab.py` migration
   is deferred.
 - Locked the layer boundary in architecture tests: production layers
   (run_trace/research/task_runner/server) cannot import the journal, the

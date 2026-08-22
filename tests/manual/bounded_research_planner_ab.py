@@ -4,7 +4,9 @@ The baseline arm runs the production ResearchPipeline with follow-up disabled.
 The planner arm enables one bounded follow-up round. Both arms use the same
 production ResearchRunner and deterministic fixture search provider, while the
 web-model provider is live. Progress is written atomically after each row, and
-an optional trace file records every provider send/reply pair.
+an optional durable observation journal (`<stem>.trace/`) records every
+provider send/reply pair as hash-chained JSONL events with digest-only
+transcripts by default.
 """
 
 from __future__ import annotations

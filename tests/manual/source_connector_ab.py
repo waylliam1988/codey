@@ -4,8 +4,9 @@ The probe runs the production ResearchRunner against live web providers. The
 baseline arm uses the browser search provider directly; the connector arm wraps
 it with ConnectorAwareSearchProvider. Progress is written atomically after each
 case/arm row so missing samples can be resumed without rerunning completed
-provider traffic. An optional trace file records each prompt/reply pair
-atomically so repeated done attempts can be replayed later.
+provider traffic. An optional durable observation journal (`<stem>.trace/`)
+records each prompt/reply pair as hash-chained JSONL events with digest-only
+transcripts by default, so repeated done attempts can be replayed later.
 """
 
 from __future__ import annotations
