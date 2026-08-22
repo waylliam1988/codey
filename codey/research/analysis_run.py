@@ -25,6 +25,7 @@ from codey.research.identity import (
     path_ref,
     stable_ref,
 )
+from codey.research.redaction import looks_sensitive_signal
 
 ANALYSIS_RUN_REF_PREFIX = "analysis_run:"
 CAPTURE_OUTPUT_CAPTURED = "output_captured"
@@ -140,7 +141,7 @@ def analysis_run_record(data: Mapping[str, object]) -> AnalysisRunRecord | None:
     finished_at = clip(data.get("finished_at"), 40)
     duration_ms = _bounded_duration(data.get("duration_ms"))
     ok = bool(data.get("ok"))
-    if ok and not duration_ms:
+    if ok and duration_ms is None:
         warnings.append("timing_unavailable")
 
     managed = _managed_output_view(data.get("managed_output"))
@@ -149,6 +150,15 @@ def analysis_run_record(data: Mapping[str, object]) -> AnalysisRunRecord | None:
     captured = bool(handle and output_sha256)
     if handle and not output_sha256:
         warnings.append("managed_output_sha_invalid")
+
+    # The display command is a convenience, never a provenance fact: the
+    # digest above is authoritative. Secret-looking commands keep only their
+    # digest, matching ProjectFacts' refusal to persist such commands.
+    if looks_sensitive_signal(command):
+        warnings.append("command_display_redacted")
+        command_display = ""
+    else:
+        command_display = clip(command, MAX_COMMAND_DISPLAY_CHARS)
 
     exit_code = _optional_int(data.get("exit_code"))
     record = AnalysisRunRecord(
@@ -161,7 +171,7 @@ def analysis_run_record(data: Mapping[str, object]) -> AnalysisRunRecord | None:
         run_id=clip(data.get("run_id"), 120),
         tool_id=clip(data.get("tool_id") or "run", 40),
         command_digest=digest_text(command),
-        command_display=clip(command, MAX_COMMAND_DISPLAY_CHARS),
+        command_display=command_display,
         cwd_ref=path_ref(str(data.get("cwd") or "."), project=str(data.get("project") or "")),
         exit_code=exit_code,
         ok=ok,

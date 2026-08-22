@@ -24,9 +24,21 @@ Production changes:
   `artifact_refs` (cap 16), `reproducibility_capsules` (cap 8) with generated-ref
   validation, deduplication, and truncation warnings.
 - `tool_runtime.run_command_raw()` records audit-only
-  `command_started_at` / `command_finished_at` / `command_duration_ms`; the
-  model-visible `model_text`, UI/SSE payload shape, and managed-output footer are
-  unchanged and locked by characterization tests.
+  `command_started_at` / `command_finished_at` / `command_duration_ms`; timed-out
+  commands carry timing too (the process did launch). The model-visible
+  `model_text`, UI/SSE payload shape, and managed-output footer are unchanged and
+  locked by characterization tests.
+- Review hardening:
+  - `command_display` is redacted for secret-looking commands (digest stays
+    authoritative), matching ProjectFacts' existing refusal.
+  - Only real executions project into AnalysisRun: outcomes without execution
+    timing (policy deny, invalid cwd, command not found) stay out; timeouts are
+    recorded as honest failures.
+  - Managed Output audit payloads pass through `stored_truncated`.
+  - Derived lineage refs require exact shapes (`source/evidence/analysis_run`
+    as 16-hex, `run` as bounded id); URLs fail closed.
+  - Candidate selection now uses an explicit `ResearchCandidateScore` dataclass;
+    unsupported-claim regression stays a pre-score hard constraint.
 - TaskRunner's three duplicated project tool-event branches consolidate into one
   `_handle_project_tool_event()` seam; AnalysisRun projection is the fourth
   consumer and fails open.
@@ -38,19 +50,22 @@ Validation during implementation:
 
 ```text
 python -m pytest tests\test_run_command_characterization.py tests\test_research_analysis_run.py tests\test_artifact_lineage.py tests\test_reproducibility_capsule.py -q
-# 23 passed
+# 26 passed
 
 python -m pytest tests\test_run_trace.py tests\test_task_runner_analysis_run.py tests\test_task_runner_run_trace.py -q
-# 43 passed
+# 48 passed
+
+python -m pytest tests\test_research_pipeline.py tests\test_tool_runtime.py tests\test_managed_outputs.py tests\test_events.py -q
+# 142 passed, 16 subtests passed
 
 ruff check codey tests
 # All checks passed!
 
-python -m py_compile codey\tool_runtime.py codey\task_runner.py codey\run_trace.py codey\research\analysis_run.py codey\research\artifact_lineage.py codey\research\reproducibility.py
+python -m py_compile codey\tool_runtime.py codey\task_runner.py codey\run_trace.py codey\models.py codey\managed_outputs.py codey\research\analysis_run.py codey\research\artifact_lineage.py codey\research\reproducibility.py codey\research\pipeline.py
 # passed
 
 python -m pytest -q
-# 2311 passed, 647 subtests passed in 403.55s
+# 2319 passed, 647 subtests passed in 409.29s
 ```
 
 No live provider A/B is required: prompts, tool schemas, model-visible tool
@@ -577,7 +592,7 @@ python -m ruff check codey/research/report_quality.py codey/research/done_finali
 # All checks passed!
 
 python -m pytest tests/test_research.py -k "source_id or no_citable or duplicate_source_numbers or done_finalizer or provenance"
-# 34 passed, 88 deselected
+# 26 passed, 88 deselected
 
 python -m pytest tests/test_run_trace.py -k "done_compilation or connector_errors"
 # 2 passed

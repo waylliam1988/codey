@@ -63,21 +63,32 @@ def test_artifact_ref_filters_invalid_derived_refs() -> None:
     artifact = artifact_ref_from_managed_output(_base_input(
         derived_from=[
             "analysis_run:0123456789abcdef",
-            "source:https://example.com/page",
+            "source:abcdef0123456789",
+            "run:pipeline-run-1",
             "garbage-without-prefix",
             "claim:not-allowed-prefix",
+            "source:https://example.com/page",
         ],
     ))
 
     assert artifact is not None
     assert artifact.derived_from == (
         "analysis_run:0123456789abcdef",
-        "source:https://example.com/page",
+        "source:abcdef0123456789",
+        "run:pipeline-run-1",
     )
 
 
-def test_is_valid_derived_ref_prefix_allowlist() -> None:
-    assert is_valid_derived_ref("run:abc")
-    assert is_valid_derived_ref("evidence:e_1")
+def test_is_valid_derived_ref_requires_exact_shapes() -> None:
+    # Generated research refs must be 16-hex.
+    assert is_valid_derived_ref("analysis_run:0123456789abcdef")
+    assert is_valid_derived_ref("evidence:fedcba9876543210")
+    assert not is_valid_derived_ref("source:https://example.com/page")
+    assert not is_valid_derived_ref("analysis_run:xyz")
+    # Runtime run ids are bounded identifier tokens.
+    assert is_valid_derived_ref("run:pipeline-run-1")
+    assert not is_valid_derived_ref("run:")
+    assert not is_valid_derived_ref("run:bad id with spaces")
+    # Unknown prefixes and free text fail closed.
     assert not is_valid_derived_ref("claim:x")
     assert not is_valid_derived_ref("")

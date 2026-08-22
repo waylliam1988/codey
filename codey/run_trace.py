@@ -20,6 +20,7 @@ from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.prompt_envelope import is_model_boundary_freshness
 from codey.research.redaction import looks_sensitive_code
 from codey.research.shape import digest_ref as _digest_ref
+from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.shape import generated_ref as _generated_ref
 from codey.research.shape import safe_connector_id as _safe_connector_id
 
@@ -824,7 +825,7 @@ class RunTraceRecorder:
             derived = [
                 str(ref or "")[:120]
                 for ref in _trace_list_items(item.get("derived_from"))
-                if str(ref or "").strip()
+                if is_valid_derived_ref(ref)
             ][:8]
             payload: dict[str, object] = {
                 "artifact_id": artifact_id,

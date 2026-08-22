@@ -26,8 +26,28 @@ This file records Codey's release history. The newest release appears first.
   `analysis_runs` (cap 8), `artifact_refs` (cap 16), and `reproducibility_capsules` (cap 8) with
   generated-ref validation, deduplication, truncation warnings, and no raw output storage.
 - `run_command_raw()` now records audit-only timing (`started_at` / `finished_at` / `duration_ms`);
-  the fields flow through `ToolOutcome.audit` only. The model-visible `model_text`, UI/SSE payload
-  shape, and managed-output footer are byte-identical, locked by characterization tests.
+  timed-out commands carry timing too because the process did launch. The fields flow through
+  `ToolOutcome.audit` only. The model-visible `model_text`, UI/SSE payload shape, and managed-output
+  footer are byte-identical, locked by characterization tests.
+- Hardened AnalysisRun projection after review:
+  - `command_display` is redacted (kept empty with a `command_display_redacted` warning) when the
+    command matches secret-looking signals, matching ProjectFacts' refusal to persist such commands;
+    the digest stays authoritative.
+  - Only real executions become AnalysisRun records: outcomes without execution timing (policy
+    denial, invalid cwd, command not found) stay out of the trace, while timeouts are recorded as
+    honest failures.
+  - `duration_ms=0` no longer reports `timing_unavailable`.
+- Managed Output audit payloads now carry `stored_truncated`, so artifact lineage knows when the
+  locally stored output itself was secondarily truncated (`normalized_managed_output()` passes it
+  through).
+- Derived lineage refs are shape-checked instead of prefix-checked:
+  `source/evidence/analysis_run:<16hex>` plus `run:<bounded-id>`; URLs and free text fail closed,
+  enforced in both the projection module and `run_trace.record_artifact_refs()`.
+- Replaced the lexicographic tuple ranking in candidate selection with an explicit
+  `ResearchCandidateScore` dataclass whose field order documents the priority order
+  (proof-complete dominance, stop quality, question alignment before coverage, verification
+  booleans, fewer missing gaps). Unsupported-claim regression remains a hard constraint checked
+  before any score comparison.
 - Consolidated TaskRunner's duplicated project tool-event branches:
   project facts recording, checkpoint edit/run tracking, and AnalysisRun projection now share one
   `_handle_project_tool_event()` seam with unchanged branch conditions, and projection failures

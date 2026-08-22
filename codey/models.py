@@ -64,6 +64,7 @@ def normalized_managed_output(value: object) -> dict[str, object]:
         "original_bytes": _nonnegative_int(value.get("original_bytes")),
         "stored_bytes": _nonnegative_int(value.get("stored_bytes")),
         "sha256": _managed_output_sha256(value.get("sha256")),
+        "stored_truncated": bool(value.get("stored_truncated")),
     }
 
 

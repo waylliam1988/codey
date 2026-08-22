@@ -1402,6 +1402,12 @@ TaskRunner 统一的 `_handle_project_tool_event()` 缝隙。字段做了减法�
 原始目标保持不变：让 Research 可以做可复查的本地分析，而不是只总结网页；
 同时让报告、表格、图和分析输出有最小 lineage。
 
+评审加固：`command_display` 对 secret-looking 命令脱敏（digest 仍为权威事实）；
+只有带执行 timing 的真实执行才投影成 AnalysisRun（policy deny / cwd 非法 /
+command not found 不进 trace，timeout 记为诚实失败）；managed output audit
+透传 `stored_truncated`；derived ref 收紧为形状校验；候选选择的字典序 tuple
+排序替换为显式 `ResearchCandidateScore` dataclass。
+
 ### 做什么
 
 新增：

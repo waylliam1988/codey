@@ -996,10 +996,26 @@ def run_command_raw(
     except FileNotFoundError:
         return ToolOutcome.error(f"command not found: {argv[0]}")
     except subprocess.TimeoutExpired:
-        return ToolOutcome.error(
+        finished_at = _utc_now_iso()
+        duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
+        message = (
             f"command timed out after {timeout}s (this is a timeout, not a test "
             f"failure): {command}. Re-run a smaller subset or a single test/file to "
             "verify instead of guessing a fix."
+        )
+        # The process did launch, so this is an execution fact: timing flows
+        # through audit so AnalysisRun projection can record it honestly.
+        return ToolOutcome(
+            message,
+            False,
+            presentation={"status": "error", "result": _first_model_line(message, 200)},
+            audit={
+                "error_code": "timeout",
+                "command_started_at": started_at,
+                "command_finished_at": finished_at,
+                "command_duration_ms": duration_ms,
+            },
+            error_code="timeout",
         )
     duration_ms = max(0, int((time.monotonic() - started_monotonic) * 1000))
 

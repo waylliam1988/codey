@@ -176,6 +176,7 @@ def run_command_with_managed_output(
         "original_bytes": ref.original_bytes,
         "stored_bytes": ref.stored_bytes,
         "sha256": ref.sha256,
+        "stored_truncated": ref.stored_truncated,
     }
     return ToolOutcome(
         projected.model_text,

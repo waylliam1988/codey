@@ -159,6 +159,88 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
             self.assertEqual(checkpoints, [("snake.py", "", True)])
             self.assertEqual(recorder.manifest.analysis_runs, [])
 
+    def test_non_execution_outcomes_are_not_projected(self) -> None:
+        """Policy deny / bad cwd / command-not-found outcomes carry no timing.
+
+        They must stay out of the execution audit: the roadmap records
+        existing executions, not attempts.
+        """
+
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            runner = self._runner(state)
+            recorder = state.run_traces.open(
+                run_id="run-denied",
+                session_id="session-analysis",
+                project=None,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+            work = _RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
+            checkpoints: list[tuple[str, str, str, bool]] = []
+
+            denied = ToolOutcome(
+                "ERROR: this command is not allowed by policy",
+                False,
+                audit={"error_code": "policy_denied"},
+                error_code="policy_denied",
+            )
+            runner._handle_project_tool_event(
+                event=_run_event(denied),
+                project=str(td),
+                work=work,
+                run_id="run-denied",
+                update_checkpoint=self._checkpoint_recorder(checkpoints),
+            )
+            recorder.finish(status="done")
+
+            payload = recorder.manifest.to_payload()
+            self.assertEqual(payload["analysis_runs"], [])
+            self.assertEqual(payload["artifact_refs"], [])
+            self.assertEqual(payload["reproducibility_capsules"], [])
+            # The checkpoint still tracks the attempt exactly as before.
+            self.assertEqual(checkpoints, [("pytest -q", ".", False)])
+
+    def test_timed_out_execution_is_recorded_as_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            state = server.State(td)
+            runner = self._runner(state)
+            recorder = state.run_traces.open(
+                run_id="run-timeout",
+                session_id="session-analysis",
+                project=None,
+                mode_initial="project",
+                provider_initial="deepseek",
+            )
+            work = _RunWork(recent_events=[], evidence=ExecutionEvidence(), trace=recorder)
+
+            timed_out = ToolOutcome(
+                "command timed out after 30s (this is a timeout, not a test failure)",
+                False,
+                audit={
+                    "error_code": "timeout",
+                    "command_started_at": "2026-08-22T08:00:00.000Z",
+                    "command_finished_at": "2026-08-22T08:00:30.000Z",
+                    "command_duration_ms": 30000,
+                },
+                error_code="timeout",
+            )
+            runner._handle_project_tool_event(
+                event=_run_event(timed_out),
+                project=str(td),
+                work=work,
+                run_id="run-timeout",
+                update_checkpoint=self._checkpoint_recorder([]),
+            )
+            recorder.finish(status="done")
+
+            payload = recorder.manifest.to_payload()
+            self.assertEqual(len(payload["analysis_runs"]), 1)
+            entry = payload["analysis_runs"][0]
+            self.assertEqual(entry["reproduction_status"], "failed")
+            self.assertEqual(entry["exit_code"], None)
+            self.assertEqual(entry["duration_ms"], 30000)
+
     def test_trace_failures_fail_open(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             state = server.State(td)

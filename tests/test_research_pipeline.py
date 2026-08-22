@@ -952,6 +952,88 @@ def test_pipeline_selection_accepts_minimal_evidence_candidate_after_protocol_no
     assert _selects_candidate(candidate, candidate_review, current, current_review) is True
 
 
+def test_pipeline_selection_proof_complete_dominates_partial_status() -> None:
+    current = ResearchRunResult("question", "partial report", "done", 3)
+    candidate = ResearchRunResult("question", "complete report", "done", 4)
+    current_review = _review(
+        record_id="research_record:" + "1" * 16,
+        record_digest="sha256:" + "1" * 64,
+        ok=False,
+        answer_status="answered",
+        score=0.9,
+        missing=(),
+    )
+    candidate_review = _review(
+        record_id="research_record:" + "2" * 16,
+        record_digest="sha256:" + "2" * 64,
+        ok=True,
+        answer_status="answered",
+        score=1.0,
+        missing=(),
+    )
+
+    assert _selects_candidate(candidate, candidate_review, current, current_review) is True
+    # And the reverse direction must not trade a proof-complete result away.
+    assert _selects_candidate(current, current_review, candidate, candidate_review) is False
+
+
+def test_pipeline_selection_question_alignment_outranks_coverage() -> None:
+    from dataclasses import replace as dc_replace
+
+    current = ResearchRunResult("question", "off-target but broad", "done", 3)
+    candidate = ResearchRunResult("question", "on-target but narrow", "done", 4)
+    current_review = dc_replace(
+        _review(
+            record_id="research_record:" + "1" * 16,
+            record_digest="sha256:" + "1" * 64,
+            ok=False,
+            answer_status="partial",
+            score=0.9,
+            missing=("answer_coverage_gap",),
+        ),
+        answers_question=False,
+    )
+    candidate_review = dc_replace(
+        _review(
+            record_id="research_record:" + "2" * 16,
+            record_digest="sha256:" + "2" * 64,
+            ok=False,
+            answer_status="partial",
+            score=0.1,
+            missing=("answer_coverage_gap",),
+        ),
+    )
+
+    assert _selects_candidate(candidate, candidate_review, current, current_review) is True
+
+
+def test_research_candidate_score_missing_evidence_negated_in_sort_key() -> None:
+    from codey.research.pipeline import ResearchCandidateScore
+
+    fewer = ResearchCandidateScore(
+        proof_rank=0.0,
+        stop_rank=1.0,
+        answers_question=False,
+        coverage=0.0,
+        citation_locator_verified=False,
+        support_relation_verified=False,
+        counterevidence_checked=False,
+        missing_evidence_count=1,
+    )
+    more = ResearchCandidateScore(
+        proof_rank=0.0,
+        stop_rank=1.0,
+        answers_question=False,
+        coverage=0.0,
+        citation_locator_verified=False,
+        support_relation_verified=False,
+        counterevidence_checked=False,
+        missing_evidence_count=3,
+    )
+
+    assert fewer.sort_key() > more.sort_key()
+
+
 def test_pipeline_retains_best_when_staging_commit_fails() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

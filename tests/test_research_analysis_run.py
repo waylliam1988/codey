@@ -9,6 +9,7 @@ from codey.research.analysis_run import (
     analysis_run_record,
     environment_summary_digest,
 )
+from codey.research.identity import digest_text
 
 _REF_RE = re.compile(r"^analysis_run:[0-9a-f]{16}$")
 
@@ -85,6 +86,34 @@ def test_analysis_run_record_flags_missing_timing() -> None:
 
     assert record is not None
     assert record.warnings == ("timing_unavailable",)
+
+
+def test_analysis_run_record_zero_duration_is_not_missing_timing() -> None:
+    record = analysis_run_record(_base_input(duration_ms=0))
+
+    assert record is not None
+    assert record.duration_ms == 0
+    assert record.warnings == ()
+
+
+def test_analysis_run_record_redacts_sensitive_command_display() -> None:
+    secret_command = "pytest --api-key sk-abcdef123456 --json"
+    record = analysis_run_record(_base_input(command=secret_command))
+
+    assert record is not None
+    # The digest stays authoritative; the display must not persist secrets.
+    assert record.command_digest == digest_text(secret_command)
+    assert record.command_display == ""
+    assert "command_display_redacted" in record.warnings
+
+
+def test_analysis_run_record_keeps_clean_display() -> None:
+    clean_command = "pytest -q tests/test_demo.py"
+    record = analysis_run_record(_base_input(command=clean_command))
+
+    assert record is not None
+    assert record.command_display == clean_command
+    assert "command_display_redacted" not in record.warnings
 
 
 def test_analysis_run_record_rejects_empty_command_and_bad_types() -> None:

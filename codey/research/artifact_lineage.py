@@ -18,16 +18,21 @@ ARTIFACT_REF_PREFIX = "artifact:"
 ARTIFACT_VERSION_REF_PREFIX = "artifact_version:"
 ARTIFACT_KIND_MANAGED_OUTPUT = "managed_output"
 ARTIFACT_MIME_TEXT = "text/plain"
-MAX_DERIVED_REFS = 8
 MAX_SIZE_BYTES = 10**12
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ALLOWED_DERIVED_PREFIXES = (
-    "source:",
-    "evidence:",
-    "analysis_run:",
-    "run:",
-)
+_HEX16_RE = re.compile(r"^[0-9a-f]{16}$")
+_BOUNDED_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
+# Derived refs are shape-checked, not prefix-checked: a URL or free text must
+# never masquerade as a lineage ref. ``run`` keeps its bounded runtime id
+# shape; generated research refs are 16-hex.
+_DERIVED_SHAPES: dict[str, re.Pattern[str]] = {
+    "source": _HEX16_RE,
+    "evidence": _HEX16_RE,
+    "analysis_run": _HEX16_RE,
+    "run": _BOUNDED_ID_RE,
+}
+MAX_DERIVED_REFS = 8
 
 
 @dataclass(frozen=True)
@@ -61,10 +66,19 @@ class ArtifactRef:
 
 
 def is_valid_derived_ref(value: object) -> bool:
-    """Derived refs may only point at Source/Evidence/AnalysisRun/Run facts."""
+    """Derived refs may only point at Source/Evidence/AnalysisRun/Run facts.
+
+    Each prefix carries an exact value shape: generated research refs are
+    16-hex, runtime run ids are bounded identifier tokens. URLs and free text
+    fail closed.
+    """
 
     text = str(value or "").strip()
-    return text.startswith(_ALLOWED_DERIVED_PREFIXES) and len(text) <= 120
+    if len(text) > 120 or ":" not in text:
+        return False
+    prefix, _, suffix = text.partition(":")
+    shape = _DERIVED_SHAPES.get(prefix)
+    return shape is not None and shape.fullmatch(suffix) is not None
 
 
 def _clean_sha256(value: object) -> str:

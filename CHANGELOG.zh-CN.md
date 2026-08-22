@@ -26,8 +26,25 @@
   （cap 16）、`reproducibility_capsules`（cap 8），带 generated-ref 校验、去重、
   截断 warning，且不保存 raw 输出。
 - `run_command_raw()` 现在记录 audit-only timing（`started_at` / `finished_at` /
-  `duration_ms`）；字段仅通过 `ToolOutcome.audit` 流转。模型可见 `model_text`、
-  UI/SSE payload 形状和 managed output footer 字节级不变，由 characterization 测试锁定。
+  `duration_ms`）；超时命令同样带 timing，因为进程确实启动过。字段仅通过
+  `ToolOutcome.audit` 流转。模型可见 `model_text`、UI/SSE payload 形状和 managed
+  output footer 字节级不变，由 characterization 测试锁定。
+- 按评审意见加固 AnalysisRun 投影：
+  - `command_display` 在命中 secret-looking 信号时脱敏（置空并记
+    `command_display_redacted` warning），与 ProjectFacts 拒绝持久化此类命令的口径一致；
+    digest 始终是权威事实。
+  - 只有真实执行才成为 AnalysisRun 记录：没有执行 timing 的结果（policy deny、
+    cwd 非法、command not found）不进 trace；timeout 作为诚实失败记录。
+  - `duration_ms=0` 不再误报 `timing_unavailable`。
+- Managed Output audit payload 现在携带 `stored_truncated`
+  （`normalized_managed_output()` 透传），artifact lineage 因此能知道本地保存的输出
+  本身是否被二次截断。
+- derived lineage ref 从前缀校验收紧为形状校验：
+  `source/evidence/analysis_run:<16hex>` 加 `run:<有界 id>`；URL 和自由文本 fail closed，
+  投影模块和 `run_trace.record_artifact_refs()` 双侧生效。
+- 候选选择中的字典序 tuple 排序替换为显式 `ResearchCandidateScore` dataclass，
+  字段顺序即优先级顺序（proof-complete 支配、停止质量、先对题后覆盖、验证布尔位、
+  missing 更少）。unsupported-claim 回归仍是打分前的硬约束。
 - 收束 TaskRunner 中重复的 project tool-event 分支：
   project facts 记录、checkpoint edit/run 追踪和 AnalysisRun 投影现在共用一个
   `_handle_project_tool_event()` 缝隙，分支条件不变；投影失败 fail-open，不影响任务完成。

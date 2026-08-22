@@ -348,6 +348,51 @@ class ResearchPipeline:
             return 0
 
 
+@dataclass(frozen=True)
+class ResearchCandidateScore:
+    """Explicit lexicographic ranking for follow-up candidate selection.
+
+    Field order IS the priority order, decided top-down:
+
+    1. ``proof_rank`` — a proof-complete result dominates every partial
+       answer status; otherwise the deterministic answer-status rank applies.
+    2. ``stop_rank`` — a clean ``done`` beats budget stops beats abnormal
+       stops.
+    3. ``answers_question`` — question alignment before evidence volume.
+    4. ``coverage`` — bounded answer-coverage score.
+    5-7. Verification booleans: citation locator, support relation,
+       counterevidence.
+    8. ``missing_evidence_count`` — fewer unsupported gaps wins ties; negated
+       inside :meth:`sort_key`.
+
+    Hard safety (unsupported-claim regression) is NOT part of the score: it is
+    a separate dominance constraint checked before comparison in
+    :func:`_selects_candidate`, so no score weight can ever buy back an
+    unsupported regression.
+    """
+
+    proof_rank: float
+    stop_rank: float
+    answers_question: bool
+    coverage: float
+    citation_locator_verified: bool
+    support_relation_verified: bool
+    counterevidence_checked: bool
+    missing_evidence_count: int
+
+    def sort_key(self) -> tuple[float, float, int, float, int, int, int, int]:
+        return (
+            self.proof_rank,
+            self.stop_rank,
+            int(self.answers_question),
+            self.coverage,
+            int(self.citation_locator_verified),
+            int(self.support_relation_verified),
+            int(self.counterevidence_checked),
+            -self.missing_evidence_count,
+        )
+
+
 def _selects_candidate(
     candidate: ResearchRunResult,
     candidate_review: ResearchProofReview | None,
@@ -358,28 +403,37 @@ def _selects_candidate(
         return False
     if candidate_review is None:
         return False
-    current_score = _review_score(current, current_review)
-    candidate_score = _review_score(candidate, candidate_review)
     if _unsupported_regression(candidate_review, current_review):
         return False
-    return candidate_score > current_score
+    candidate_score = _candidate_score(candidate, candidate_review)
+    current_score = _candidate_score(current, current_review)
+    return candidate_score.sort_key() > current_score.sort_key()
 
 
-def _review_score(
+def _candidate_score(
     result: ResearchRunResult,
     review: ResearchProofReview | None,
-) -> tuple[float, ...]:
+) -> ResearchCandidateScore:
     if review is None:
-        return (0.0, _stop_score(result.stop_reason), 0.0, 0.0, 0.0, 0.0)
-    return (
-        4.0 if review.ok else float(_answer_status_rank(review.answer_status)),
-        _stop_score(result.stop_reason),
-        1.0 if review.answers_question else 0.0,
-        _bounded_score(review.answer_coverage_score),
-        1.0 if review.citation_locator_verified else 0.0,
-        1.0 if review.support_relation_verified else 0.0,
-        1.0 if review.counterevidence_checked else 0.0,
-        -float(len(review.missing_evidence)),
+        return ResearchCandidateScore(
+            proof_rank=0.0,
+            stop_rank=_stop_score(result.stop_reason),
+            answers_question=False,
+            coverage=0.0,
+            citation_locator_verified=False,
+            support_relation_verified=False,
+            counterevidence_checked=False,
+            missing_evidence_count=0,
+        )
+    return ResearchCandidateScore(
+        proof_rank=4.0 if review.ok else float(_answer_status_rank(review.answer_status)),
+        stop_rank=_stop_score(result.stop_reason),
+        answers_question=bool(review.answers_question),
+        coverage=_bounded_score(review.answer_coverage_score),
+        citation_locator_verified=bool(review.citation_locator_verified),
+        support_relation_verified=bool(review.support_relation_verified),
+        counterevidence_checked=bool(review.counterevidence_checked),
+        missing_evidence_count=len(review.missing_evidence),
     )
 
 

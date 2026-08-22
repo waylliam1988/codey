@@ -3266,6 +3266,12 @@ class TaskRunner:
             return
         try:
             audit = outcome.audit if isinstance(outcome.audit, Mapping) else {}
+            # Only real executions become AnalysisRun records. Policy denials,
+            # invalid cwd, and command-not-found outcomes carry no timing and
+            # must stay out of the execution audit (roadmap: record existing
+            # executions, not attempts).
+            if not audit.get("command_started_at"):
+                return
             managed = outcome.managed_output()
             record = analysis_run_record({
                 "run_id": run_id,
