@@ -1547,13 +1547,15 @@ AnalysisRun tool/result contract。若让模型看到新的分析工具结果或
 
 ## 0.4.6 - A/B Observation Journal + Transcript Replay Cache v1
 
-状态：v1 已落地（manual 实验层，未发布）。实际 scope：新增共享
+状态：已完成（0.4.6，manual 实验层）。实际 scope：新增共享
 `tests/manual/ab_journal.py`（ABJournalWriter/ABJournalReader/TranscriptReplayCache、
-hash chain、tail recovery、identity fail-closed、typed observation facts 脱敏），
+hash chain、tail recovery、identity fail-closed、按 event type 的 typed observation
+facts schema），
 并迁移 `bounded_research_planner_ab.py` 与 `source_connector_ab.py` 删除各自的
 LiveTrace/原子写/send-reply 记录；`deep_research_core_ab.py` 的迁移推迟到后续
 harness 版本。落盘结构为 `<stem>.trace/manifest.json + events.jsonl +
-transcripts/<digest>.json`，transcript 默认 digest_only。架构测试锁住：生产层
+transcripts/<digest>.json`，transcript 默认 digest_only；archive 模式有显式
+delete/prune helper。架构测试锁住：生产层
 （run_trace/research/task_runner/server）不得 import journal，journal 不依赖生产
 编排层，transcript 不能进入 EvidenceLedger/ObjectModel。
 
@@ -1569,7 +1571,7 @@ Evidence Ledger、ResearchRecord 或 Citation/Evidence refs。
 
 ### 做什么
 
-第一版可以先落在：
+第一版已落在：
 
 ```text
 tests/manual/ab_journal.py
@@ -1676,7 +1678,8 @@ TranscriptArchive:
 ```
 
 TranscriptArchive 必须是本地可关闭功能，带大小上限、retention、删除入口、
-digest 索引和 content_ref。旧 transcript 可以作为 prior observation / cache / hint，
+digest 索引和 content_ref。0.4.6 已提供显式 `delete_transcript()` 和
+`prune_transcripts()`，不做后台自动保留策略。旧 transcript 可以作为 prior observation / cache / hint，
 不能成为 evidence、fresh source、citation、ResearchRecord source 或 completion proof。
 
 ### 边界
@@ -1709,6 +1712,7 @@ TranscriptArchive 关闭时只保存 digest/ref
 TranscriptArchive 开启时 raw prompt/reply 不进入 RunTrace/EvidenceLedger
 旧 transcript replay 不能生成 evidence/citation/completion proof
 provider observation 不含 DOM/Cookie/raw webpage body
+未知 provider observation fact 字段 fail closed，不能靠 value heuristic 过界
 manual harness 中断后能从 last completed case resume
 ```
 

@@ -55,29 +55,12 @@ MAX_FACTS_BYTES = 8 * 1024
 
 _URL_RE = re.compile(r"(?i)^[a-z][a-z0-9+.-]*://|^www\.")
 _HTML_RE = re.compile(r"(?i)<\s*(html|body|div|script|textarea|input)\b")
-_FACT_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,48}$")
 _SECRET_VALUE_RE = re.compile(
     r"(?i)(api[-_]?key|authorization|bearer\s|passwd|password|secret)"
 )
 _SECRET_TOKEN_SHAPE_RE = re.compile(r"\b(?:sk|ghp|github_pat)-?[A-Za-z0-9_-]{16,}\b")
-# Key names are split into word parts so dom_snapshot / page_html / raw_stdout
-# all match their marker even though underscore is a word character.
-_SENSITIVE_KEY_PARTS = frozenset({
-    "cookie",
-    "dom",
-    "html",
-    "webpage",
-    "page_body",
-    "body",
-    "raw",
-    "stdout",
-    "stderr",
-})
-
-
-def _key_is_sensitive(name: str) -> bool:
-    parts = set(re.split(r"[^a-z0-9]+", name.lower()))
-    return bool(parts & _SENSITIVE_KEY_PARTS)
+_TRANSCRIPT_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_TRANSCRIPT_FILE_RE = re.compile(r"^[0-9a-f]{64}\.json$")
 
 
 class ABJournalIdentityMismatch(ValueError):
@@ -151,31 +134,61 @@ def sanitize_fact_value(value: object) -> tuple[bool, object]:
     return False, None
 
 
-# Nested maps are not flattened generically: that would re-import raw
-# provider error messages and page titles. Only the typed observation
-# vocabulary below may cross the boundary, one scalar level deep.
-_NESTED_ALLOWLIST: dict[str, frozenset[str]] = {
-    "provider_failure": frozenset({"kind", "stage"}),
+_PROVIDER_OBSERVATION_FACTS = frozenset({
+    "input_empty",
+    "question_count_increased",
+    "response_count_increased",
+    "typing_true",
+    "typing_false",
+    "stop_visible",
+    "stop_hidden",
+    "response_stable",
+    "response_nonempty",
+    "response_chars",
+    "profile_hash",
+    "failure_kind",
+    "failure_stage",
+    "elapsed_ms",
+})
+
+_FACT_ALLOWLIST_BY_EVENT: dict[str, frozenset[str]] = {
+    "run_start": frozenset({"cases", "arms", "max_turns"}),
+    "case_start": frozenset({"question_chars"}),
+    "send_start": frozenset(),
+    "reply": frozenset(),
+    "send_error": frozenset({"error_class", "provider_failure"}),
+    "timeout": _PROVIDER_OBSERVATION_FACTS,
+    "adapter_failure": _PROVIDER_OBSERVATION_FACTS,
+    "provider_mismatch": frozenset({"output", "expected_provider", "found_provider"}),
+    "case_complete": frozenset({"ok", "stop_reason", "turns", "score"}),
+    "run_complete": frozenset({"rows"}),
+    "note": frozenset({"output", "cases", "arms", "rerun_failed", "existing_rows"}),
+}
+
+_NESTED_FACT_ALLOWLIST_BY_EVENT: dict[str, dict[str, frozenset[str]]] = {
+    "send_error": {"provider_failure": frozenset({"kind", "stage"})},
 }
 
 
-def sanitize_facts(facts: Mapping[str, object] | None) -> dict[str, object]:
+def sanitize_facts(event_type: str, facts: Mapping[str, object] | None) -> dict[str, object]:
     """Project raw provider observations into bounded, safe facts.
 
-    Keys must be lowercase snake_case tokens; cookie/DOM/html/webpage-style keys
-    are dropped outright so provider page state can never leak through. Nested
-    mappings only survive for allow-listed parents (see ``_NESTED_ALLOWLIST``)
-    and flatten to prefixed scalars.
+    Event facts are fail-closed: each event type has an explicit schema, nested
+    mappings only survive for typed parents, and the value sanitizer is a second
+    guard against URLs, HTML fragments, cookie-ish values, and secret-shaped
+    strings.
     """
 
     if not isinstance(facts, Mapping):
         return {}
+    allowed_names = _FACT_ALLOWLIST_BY_EVENT.get(str(event_type or ""), frozenset())
+    nested_allowed = _NESTED_FACT_ALLOWLIST_BY_EVENT.get(str(event_type or ""), {})
     cleaned: dict[str, object] = {}
     encoded_size = 0
 
-    def _admit(name: str, value: object) -> None:
+    def _admit(name: str, value: object, *, typed_nested: bool = False) -> None:
         nonlocal encoded_size
-        if not _FACT_KEY_RE.fullmatch(name) or _key_is_sensitive(name):
+        if not typed_nested and name not in allowed_names:
             return
         allowed, safe_value = sanitize_fact_value(value)
         if not allowed:
@@ -189,19 +202,17 @@ def sanitize_facts(facts: Mapping[str, object] | None) -> dict[str, object]:
 
     for key in sorted(facts, key=str):
         name = str(key or "").strip()
+        if name not in allowed_names:
+            continue
         value = facts[key]
         if isinstance(value, Mapping):
-            # Sensitive parent keys take their whole subtree with them; a
-            # flattened child name must not launder a dropped parent.
-            if _key_is_sensitive(name):
-                continue
-            allowed_subkeys = _NESTED_ALLOWLIST.get(name)
+            allowed_subkeys = nested_allowed.get(name)
             if not allowed_subkeys:
                 continue
             for sub_key in sorted(allowed_subkeys):
                 sub_name = str(sub_key or "").strip()
                 if sub_name:
-                    _admit(f"{name}_{sub_name}", value.get(sub_key))
+                    _admit(f"{name}_{sub_name}", value.get(sub_key), typed_nested=True)
             continue
         _admit(name, value)
     return cleaned
@@ -230,9 +241,11 @@ class TranscriptReplayCache:
 
     ``digest_only`` never writes raw content. ``archive`` stores one bounded
     JSON document per unique prompt/reply pair under ``transcripts/<digest>.json``
-    and is idempotent per content digest. Archived transcripts are manual-layer
-    material only: they must never flow into RunTrace, EvidenceLedger,
-    ResearchRecord, citations, or completion proofs.
+    and is idempotent per content digest. Explicit delete/prune helpers are the
+    retention boundary; no background process keeps raw transcript material.
+    Archived transcripts are manual-layer material only: they must never flow
+    into RunTrace, EvidenceLedger, ResearchRecord, citations, or completion
+    proofs.
     """
 
     def __init__(
@@ -287,7 +300,74 @@ class TranscriptReplayCache:
         )
 
     def _transcript_path(self, digest: str) -> Path:
+        if not _TRANSCRIPT_DIGEST_RE.fullmatch(digest):
+            raise ValueError("invalid transcript digest")
         return self.directory / "transcripts" / f"{digest.removeprefix('sha256:')}.json"
+
+    def delete_transcript(self, ref_or_digest: TranscriptRef | str) -> bool:
+        """Delete one archived transcript by digest or TranscriptRef."""
+
+        digest = (
+            ref_or_digest.content_digest
+            if isinstance(ref_or_digest, TranscriptRef)
+            else str(ref_or_digest or "")
+        )
+        target = self._transcript_path(digest)
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            return False
+        return True
+
+    def prune_transcripts(
+        self,
+        *,
+        max_files: int | None = None,
+        max_total_bytes: int | None = None,
+    ) -> int:
+        """Delete oldest archived transcripts until count/byte budgets fit."""
+
+        if max_files is None and max_total_bytes is None:
+            raise ValueError("max_files or max_total_bytes is required")
+        if max_files is not None and max_files < 0:
+            raise ValueError("max_files must be non-negative")
+        if max_total_bytes is not None and max_total_bytes < 0:
+            raise ValueError("max_total_bytes must be non-negative")
+
+        entries: list[tuple[Path, float, int]] = []
+        root = self.directory / "transcripts"
+        if not root.is_dir():
+            return 0
+        for path in root.glob("*.json"):
+            if not _TRANSCRIPT_FILE_RE.fullmatch(path.name):
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            if path.is_file():
+                entries.append((path, stat.st_mtime, stat.st_size))
+
+        entries.sort(key=lambda item: (item[1], item[0].name), reverse=True)
+        kept: set[Path] = set()
+        kept_bytes = 0
+        for index, (path, _mtime, size) in enumerate(entries):
+            fits_count = max_files is None or index < max_files
+            fits_bytes = max_total_bytes is None or kept_bytes + size <= max_total_bytes
+            if fits_count and fits_bytes:
+                kept.add(path)
+                kept_bytes += size
+
+        deleted = 0
+        for path, _mtime, _size in entries:
+            if path in kept:
+                continue
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                continue
+            deleted += 1
+        return deleted
 
 
 @dataclass(frozen=True)
@@ -562,9 +642,9 @@ class ABJournalWriter:
     ) -> ABJournalEvent:
         if event_type not in EVENT_TYPES:
             raise ValueError(f"unknown journal event type: {event_type}")
-        safe_facts = sanitize_facts(facts)
+        safe_facts = sanitize_facts(event_type, facts)
         if turn is not None:
-            safe_facts = {"turn": turn, **safe_facts}
+            safe_facts = {"turn": max(0, int(turn)), **safe_facts}
 
         prompt_text = str(prompt or "")
         reply_text = str(reply or "")
@@ -733,7 +813,7 @@ class ABJournalWriter:
         facts: dict[str, object] = {"error_class": str(error).split(":", 1)[0][:80]}
         if provider_failure:
             # Flattened one level by sanitize_facts, so kind/stage survive as
-            # provider_failure_kind / provider_failure_style scalars.
+            # provider_failure_kind / provider_failure_stage scalars.
             facts["provider_failure"] = dict(provider_failure)
         self._append_event(
             event_type="send_error",

@@ -4,7 +4,7 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## Unreleased
+## 0.4.6 - A/B Observation Journal + Transcript Replay Cache v1
 
 - Added a shared A/B observation journal for manual harnesses
   (`tests/manual/ab_journal.py`): single-writer append-only JSONL events with
@@ -22,10 +22,11 @@ This file records Codey's release history. The newest release appears first.
   `events.jsonl` never contains NaN/Infinity tokens. Mid-file unparseable lines
   are no longer silently cleaned by writer auto-recovery — appending refuses
   until an explicit `ABJournalReader.recover_tail()`.
-- Provider observation facts cross the boundary through one allow-list:
-  URLs, HTML fragments, cookie/DOM-style keys, secret-shaped values, opaque
-  objects, and generic nested maps are redacted or dropped; nested
-  `provider_failure` keeps only `kind`/`stage`
+- Provider observation facts cross the boundary through per-event typed
+  schemas: unknown fact names such as `page_text`, `response_text`, and
+  `cookies` are dropped before value sanitization. URL/HTML/cookie-ish values,
+  secret-shaped values, opaque objects, and generic nested maps are redacted or
+  dropped; nested `provider_failure` keeps only `kind`/`stage`
   (as `provider_failure_kind` / `provider_failure_stage`), so raw provider
   error messages and page titles cannot re-enter the journal.
 - Harness run ids follow the final provider-specific output name
@@ -35,7 +36,8 @@ This file records Codey's release history. The newest release appears first.
   manifest.
 - Added `TranscriptReplayCache`: prompt/reply pairs are digest-only by default;
   explicit archive mode stores content-addressed bounded transcripts under
-  `transcripts/<digest>.json` for manual replay/scoring only.
+  `transcripts/<digest>.json` for manual replay/scoring only, with explicit
+  `delete_transcript()` and `prune_transcripts()` retention helpers.
 - Migrated `bounded_research_planner_ab.py` and `source_connector_ab.py` onto
   the shared journal and deleted their duplicated LiveTrace implementations;
   trace output is now a `<stem>.trace/` directory (`manifest.json`,

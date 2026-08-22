@@ -1,6 +1,6 @@
 # Codey Test Report
 
-## 0.4.6 A/B Observation Journal + Transcript Replay Cache v1 (in development)
+## 0.4.6 A/B Observation Journal + Transcript Replay Cache v1
 
 Codey 0.4.6 converges the manual A/B observation layer into one durable
 journal so live harnesses stop duplicating LiveTrace, atomic writes,
@@ -15,8 +15,9 @@ Production-facing changes: none. Manual-layer changes:
   `ABJournalReader` (`events()`, `verify_hash_chain()`, `recover_tail()`,
   `completed_case_keys()`), identity fail-closed manifests via
   `write_json_atomic`, `TranscriptReplayCache` (digest_only default; archive
-  mode stores content-addressed bounded transcripts), and typed observation
-  fact sanitization (URLs/HTML/cookies/secrets redacted or dropped).
+  mode stores content-addressed bounded transcripts with explicit delete/prune
+  helpers), and per-event typed observation fact schemas (unknown fields
+  dropped; URLs/HTML/cookies/secrets redacted or dropped as a second guard).
 - `bounded_research_planner_ab.py` and `source_connector_ab.py` delete their
   local LiveTrace classes and write through the shared journal; trace output
   is now a `<stem>.trace/` directory (`manifest.json` + `events.jsonl` +
@@ -30,8 +31,8 @@ Production-facing changes: none. Manual-layer changes:
 Validation during implementation:
 
 ```text
-python -m pytest tests\test_ab_observation_journal.py tests\test_transcript_replay_cache.py tests\test_provider_observation_log.py tests\test_architecture.py -q
-# 47 passed, 174 subtests passed
+python -m pytest tests\test_ab_observation_journal.py tests\test_transcript_replay_cache.py tests\test_provider_observation_log.py tests\test_manual_ab_cli_lifecycle.py tests\test_architecture.py -q
+# 57 passed, 174 subtests passed
 
 python -B tests\manual\bounded_research_planner_ab.py --self-test
 # self-test ok
@@ -39,11 +40,11 @@ python -B tests\manual\bounded_research_planner_ab.py --self-test
 python -B tests\manual\source_connector_ab.py --self-test
 # self-test ok
 
-ruff check codey tests
+python -m ruff check .
 # All checks passed!
 
 python -m pytest -q
-# 2350 passed, 690 subtests passed in 396.54s
+# 2351 passed, 9 skipped, 690 subtests passed in 431.48s
 ```
 
 - Review hardening (second pass):
@@ -63,11 +64,17 @@ python -m pytest -q
   - Reader verification surfaces unparseable-line counts instead of silently
     skipping them; provider failure maps are allow-listed to kind/stage only;
     harnesses also work via `python -m tests.manual.<harness>`.
+  - Final release hardening: `completed_case_keys()` verifies journal integrity
+    before resume; reopened completed manifests move back to `running` during
+    active writes; harness CLIs close their journal writer in `finally`.
+    Observation facts now use strict per-event schemas, and archive mode has
+    explicit transcript delete/prune helpers.
 
 Durability/recovery coverage: hash-chain verification, corrupt-tail recovery,
 duplicate-seq and mid-file tamper detection, identity mismatch rejection
 (with and without manifest), unparseable-line visibility, resume from completed
-case keys, digest-only no-content guarantee, archive idempotency and size caps.
+case keys, digest-only no-content guarantee, archive idempotency, delete/prune,
+and size caps.
 No live quality A/B is required or claimed: this layer cannot change model
 behavior. A low-traffic live smoke may later verify journal capture against
 real provider tabs, but that is a durability smoke, not an effectiveness claim.

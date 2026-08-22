@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.5-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.6-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.5`
+版本：`0.4.6`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -646,6 +646,11 @@ python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
 ```powershell
 python -B tools/live_smoke.py --provider all --case edit --port 9222 --max-turns 10 --json
 ```
+
+Manual A/B harness 现在通过共享 durable journal（`tests/manual/ab_journal.py`）
+记录 provider send/reply 观测：`<output-stem>.trace/` 下的 append-only
+JSONL 事件带可验证 hash chain，默认只存 digest；可选 transcript archive
+只用于离线 replay，并带显式 delete/prune helper。这是开发者工具，不改变 agent 行为。
 
 显式 MoA 贪吃蛇 flow 放在 `tests/` 下，因为它是真实 smoke 测试，不是通用工具。它会把断点和耗时日志写到目标项目自己的 `.codey/smoke/moa-snake-flow` 目录：
 

@@ -4,7 +4,7 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## Unreleased
+## 0.4.6 - A/B Observation Journal + Transcript Replay Cache v1
 
 - 为 manual harness 新增共享 A/B 观测 journal（`tests/manual/ab_journal.py`）：
   单写者 append-only JSONL 事件流，每行 flush/fsync，带可验证的 sha256 hash chain；
@@ -19,17 +19,20 @@
   `allow_nan=False`，`events.jsonl` 不再可能出现 NaN/Infinity；文件中部出现
   无法解析的行时 writer 自动恢复改为拒绝写入，需显式
   `ABJournalReader.recover_tail()`。
-- Provider observation facts 通过一个 allow-list 过界：URL、HTML 片段、
-  cookie/DOM 类 key、secret 形状的值、不透明对象与一般嵌套 mapping 一律
-  脱敏或丢弃；只有嵌套 `provider_failure` 保留 `kind`/`stage`
-  （投影为 `provider_failure_kind` / `provider_failure_stage`）——raw provider
-  error message 和页面 title 不可能重新进入 journal。
+- Provider observation facts 通过按 event type 明确声明的 typed schema 过界：
+  `page_text`、`response_text`、`cookies` 这类未知字段在 value sanitization
+  前就会被丢弃。URL、HTML 片段、cookie-ish 值、secret 形状的值、不透明对象与
+  一般嵌套 mapping 一律脱敏或丢弃；只有嵌套 `provider_failure` 保留
+  `kind`/`stage`（投影为 `provider_failure_kind` /
+  `provider_failure_stage`）——raw provider error message 和页面 title
+  不可能重新进入 journal。
 - Harness 的 run_id 跟随最终的 provider 专属结果文件名
   （all-mode 改名后的 `output.stem`），单独恢复 `custom-deepseek.json` 时会
   复用 all-mode 运行创建的同一 journal 身份。
 - 新增 `TranscriptReplayCache`：prompt/reply 默认只存 digest；显式 archive 模式
   才把内容寻址、有大小上限的 transcript 写入 `transcripts/<digest>.json`，
-  仅用于 manual replay/scoring。
+  仅用于 manual replay/scoring，并提供显式 `delete_transcript()` 和
+  `prune_transcripts()` retention helper。
 - `bounded_research_planner_ab.py` 与 `source_connector_ab.py` 迁移到共享 journal，
   删除各自重复的 LiveTrace 实现；trace 输出变为 `<stem>.trace/` 目录
   （`manifest.json`、`events.jsonl`、可选 `transcripts/`）。结果 JSON 形状不变，

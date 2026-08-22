@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,61 @@ def test_archive_mode_is_idempotent_per_content(tmp_path: Path) -> None:
     assert first.path != third.path
     transcripts = list((tmp_path / "transcripts").glob("*.json"))
     assert len(transcripts) == 2
+
+
+def test_archive_mode_can_delete_one_transcript_by_ref_or_digest(tmp_path: Path) -> None:
+    cache = TranscriptReplayCache(tmp_path, mode=TRANSCRIPT_MODE_ARCHIVE)
+    first = cache.ref_for(prompt="p1", reply="r1", archive=True)
+    second = cache.ref_for(prompt="p2", reply="r2", archive=True)
+
+    assert cache.delete_transcript(first)
+    assert not (tmp_path / first.path).exists()
+    assert (tmp_path / second.path).is_file()
+    assert not cache.delete_transcript(first.content_digest)
+
+
+def test_archive_mode_rejects_invalid_delete_digest(tmp_path: Path) -> None:
+    cache = TranscriptReplayCache(tmp_path, mode=TRANSCRIPT_MODE_ARCHIVE)
+
+    with pytest.raises(ValueError, match="invalid transcript digest"):
+        cache.delete_transcript("transcripts/not-a-digest.json")
+
+
+def test_archive_mode_prunes_oldest_transcripts_by_count(tmp_path: Path) -> None:
+    cache = TranscriptReplayCache(tmp_path, mode=TRANSCRIPT_MODE_ARCHIVE)
+    refs = [
+        cache.ref_for(prompt=f"p{index}", reply=f"r{index}", archive=True)
+        for index in range(3)
+    ]
+    for index, ref in enumerate(refs):
+        os.utime(tmp_path / ref.path, (100 + index, 100 + index))
+
+    assert cache.prune_transcripts(max_files=1) == 2
+
+    assert not (tmp_path / refs[0].path).exists()
+    assert not (tmp_path / refs[1].path).exists()
+    assert (tmp_path / refs[2].path).is_file()
+
+
+def test_archive_mode_prunes_to_total_byte_budget(tmp_path: Path) -> None:
+    cache = TranscriptReplayCache(tmp_path, mode=TRANSCRIPT_MODE_ARCHIVE)
+    first = cache.ref_for(prompt="p1", reply="r1", archive=True)
+    second = cache.ref_for(prompt="p2", reply="r2", archive=True)
+    os.utime(tmp_path / first.path, (100, 100))
+    os.utime(tmp_path / second.path, (200, 200))
+    newest_size = (tmp_path / second.path).stat().st_size
+
+    assert cache.prune_transcripts(max_total_bytes=newest_size) == 1
+
+    assert not (tmp_path / first.path).exists()
+    assert (tmp_path / second.path).is_file()
+
+
+def test_archive_prune_requires_a_retention_budget(tmp_path: Path) -> None:
+    cache = TranscriptReplayCache(tmp_path, mode=TRANSCRIPT_MODE_ARCHIVE)
+
+    with pytest.raises(ValueError, match="max_files or max_total_bytes"):
+        cache.prune_transcripts()
 
 
 def test_oversized_transcript_is_rejected(tmp_path: Path) -> None:
