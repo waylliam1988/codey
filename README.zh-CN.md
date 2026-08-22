@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.6-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.7-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.6`
+版本：`0.4.7`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -381,6 +381,26 @@ reproduction status 的 Reproducibility Capsule 快照。它们存放在 Run Tra
 command display 脱敏，artifact ref 必须同时有合法的 `artifact:<16hex>` 与
 `artifact_version:<16hex>` id，报告也暂不引用 `analysis_run:<id>`（那个报告契约
 变更需要后续小型实机 A/B）。
+
+0.4.7 给研究事实统一了一套 ref 语言，并补上一条只做审计的 finding 链。
+Evidence Runtime（`research/evidence_runtime.py`）现在是
+`source/evidence/claim/assumption/relation/research_record/research_proof/
+research_plan/analysis_run/artifact/artifact_version/review_finding/planner_gap:<16hex>`
+和有界 `run:` 引用的唯一校验入口，并把 ResearchRecord（连同 proof review、
+analysis runs、artifacts）投影成一份有界读模型快照。Proof review 现在会保留
+定位诊断——reason code 和以前完全一致，但带上了问题发生处的 claim/evidence/
+source/relation refs；既有 payload 保持字节级不变。ReviewFinding Core
+（`research/review_finding.py`)把这些诊断加上记录级 warning 和失败的
+AnalysisRun，投影成稳定的 `ReviewFindingRecord`（unsupported claim /
+citation mismatch / stale source / overreach / missing counterevidence /
+failed analysis support）和确定性 PlannerGap，写入 Run Trace 两个新的有界
+section（`research_review_findings`、`research_planner_gaps`，上限各 16），
+只保存 refs 和 reason codes——不保存 raw claim 文本、网页正文、stdout/stderr
+或 transcript。finding 有一个 append-only 生命周期
+（`open -> addressed -> confirmed/rejected`），其中 `confirmed` 必须来自固定
+allowlist 里的 verification 事实；模型自称“已修复”不能确认任何东西。这一版
+不改 prompt、不改工具结果、不改 planner 行为、不改报告契约：findings 只是审计
+读模型，所以在有消费者真正用它们改变行为之前，按 roadmap 不需要实机 A/B。
 
 MiMo 在加入 one-tool Research 边界后重新做过实机补测。fresh-tab 的
 `long-official-doc/source_search` 跑满 10 轮并完成：使用了 `source_search`，

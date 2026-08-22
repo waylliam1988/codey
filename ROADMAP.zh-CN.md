@@ -1723,7 +1723,19 @@ replay smoke。后续所有 live A/B 默认复用这个 journal。
 
 ## 0.4.7 - Evidence Runtime + ReviewFinding Core v1
 
-状态：规划。目标是把 Research、AnalysisRun、Artifact、Review 和 planner gap
+状态：已落地（0.4.7，deterministic projection + bounded trace）。实际 scope：
+新增 `research/evidence_runtime.py`（全部 runtime ref 的统一校验入口 +
+EvidenceRuntimeSnapshot 读模型）和 `research/review_finding.py`
+（ReviewFindingRecord / PlannerGap / append-only finding lifecycle）；
+`proof_quality.py` 在 hard-failure reason code 不变的基础上新增带 refs 的
+ProofDiagnostic；Run Trace 新增 `research_review_findings` /
+`research_planner_gaps` 两个有界 section（cap 16，只存 refs 和 reason codes）；
+ResearchPipeline 只在 final proof review 后投影一次并写 trace，planner 行为、
+prompt、tool result、报告契约全部不变。artifact lineage 的 derived ref 校验
+委托共享 validator（行为不变），收掉一处真实重复。model critic 未启用，
+按 A/B 规则本版不需要实机验证。
+
+原始目标保持不变：把 Research、AnalysisRun、Artifact、Review 和 planner gap
 放到同一套证据引用语义里，再在其上建立 ReviewFinding lifecycle。先做
 deterministic projection；model critic 只作为后续 A/B 候选，不默认启用。
 

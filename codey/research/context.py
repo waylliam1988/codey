@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Mapping, Protocol
+from typing import Callable, Iterable, Mapping, Protocol
 
 from codey.prompt_envelope import FailOpenPromptTrace
 from codey.research.evidence_ledger import EvidenceLedgerWriteResult
 from codey.research.proof_quality import ResearchProofReview, proof_review_trace_payload
 from codey.research.query_planner import ResearchPlan, research_plan_trace_payload
+from codey.research.review_finding import (
+    planner_gap_trace_payloads,
+    review_finding_trace_payloads,
+)
 
 
 class ResearchTraceSink(Protocol):
@@ -27,6 +31,12 @@ class ResearchTraceSink(Protocol):
     def record_evidence_ledger_write(self, result: EvidenceLedgerWriteResult | object | None) -> None:
         ...
 
+    def record_review_findings(self, findings: Iterable[object] | None) -> None:
+        ...
+
+    def record_planner_gaps(self, gaps: Iterable[object] | None) -> None:
+        ...
+
 
 class NullResearchTraceSink:
     def record_result(self, result: object) -> None:
@@ -43,6 +53,12 @@ class NullResearchTraceSink:
 
     def record_evidence_ledger_write(self, result: EvidenceLedgerWriteResult | object | None) -> None:
         del result
+
+    def record_review_findings(self, findings: Iterable[object] | None) -> None:
+        del findings
+
+    def record_planner_gaps(self, gaps: Iterable[object] | None) -> None:
+        del gaps
 
 
 class RunTraceResearchSink:
@@ -100,6 +116,20 @@ class RunTraceResearchSink:
         if not callable(to_trace_payload):
             return
         self._sink.call("record_evidence_ledger_write", to_trace_payload())
+
+    def record_review_findings(self, findings: Iterable[object] | None) -> None:
+        payloads = review_finding_trace_payloads(findings or ())
+        if not payloads:
+            return
+        self._sink.call("record_review_findings", payloads)
+        self._sink.call("flush")
+
+    def record_planner_gaps(self, gaps: Iterable[object] | None) -> None:
+        payloads = planner_gap_trace_payloads(gaps or ())
+        if not payloads:
+            return
+        self._sink.call("record_planner_gaps", payloads)
+        self._sink.call("flush")
 
 
 @dataclass(frozen=True)

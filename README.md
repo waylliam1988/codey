@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.6-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.7-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.6`
+Version: `0.4.7`
 
 [Version history](CHANGELOG.md)
 
@@ -473,6 +473,29 @@ reapplies command-display redaction at its recorder boundary, artifact refs are
 accepted only with both valid `artifact:<16hex>` and `artifact_version:<16hex>`
 ids, and reports do not yet cite `analysis_run:<id>` (that report-contract
 change would require a small live A/B).
+
+In 0.4.7, research facts gain one shared reference language and an audit-only
+finding chain. Evidence Runtime (`research/evidence_runtime.py`) owns the single
+validator for `source/evidence/claim/assumption/relation/research_record/
+research_proof/research_plan/analysis_run/artifact/artifact_version/
+review_finding/planner_gap:<16hex>` and bounded `run:` refs, and projects a
+ResearchRecord (plus its proof review, analysis runs, and artifacts) into a
+bounded read-model snapshot. Proof review now keeps located diagnostics — the
+same reason codes as before, but with the exact claim/evidence/source/relation
+refs they were observed on; existing payloads stay byte-identical. ReviewFinding
+Core (`research/review_finding.py`) projects those diagnostics plus record-level
+warnings and failed AnalysisRuns into stable `ReviewFindingRecord` entries
+(unsupported claim / citation mismatch / stale source / overreach / missing
+counterevidence / failed analysis support) and deterministic PlannerGaps, both
+written to new bounded Run Trace sections (`research_review_findings`,
+`research_planner_gaps`, caps 16) as refs and reason codes only — no raw claim
+text, webpage body, stdout/stderr, or transcript. Findings can move through an
+append-only lifecycle (`open -> addressed -> confirmed/rejected`), where
+`confirmed` requires a verification fact from a fixed allowlist; a model saying
+"fixed" cannot confirm anything. This version changes no prompts, no tool
+results, no planner behavior, and no report contract: findings are audit read
+models, so per the roadmap no live A/B is required until something starts
+consuming them behaviorally.
 
 MiMo was retested after adding the one-tool Research boundary. A fresh-tab
 `long-official-doc/source_search` run completed in 10 turns, used

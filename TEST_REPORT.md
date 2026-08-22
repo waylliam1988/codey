@@ -1,5 +1,72 @@
 # Codey Test Report
 
+## 0.4.7 Evidence Runtime + ReviewFinding Core v1
+
+Codey 0.4.7 gives research facts one shared reference language and an
+audit-only finding chain. New `research/evidence_runtime.py` owns the single
+validator for all `<kind>:<16hex>` runtime refs plus bounded `run:` ids, and
+projects a ResearchRecord (+ proof review, analysis runs, artifacts) into a
+bounded `EvidenceRuntimeSnapshot`. `proof_quality.py` now keeps located
+`ProofDiagnostic` entries (same reason codes as before, plus the exact
+claim/evidence/source/relation refs they were observed on) without changing any
+existing payload byte. New pure-projection `research/review_finding.py`
+projects diagnostics, record-level warnings, and failed AnalysisRuns into
+stable `ReviewFindingRecord` entries and deterministic `PlannerGap` read models,
+with an append-only lifecycle where `confirmed` requires a verification fact
+from a fixed allowlist (model self-reports fail closed). Run Trace gains two
+bounded sections (`research_review_findings`, `research_planner_gaps`, cap 16)
+storing refs and reason codes only. ResearchPipeline projects findings once,
+after the final proof review, into the trace sink only; the planner never
+consumes them.
+
+Production-facing behavior changes: none. No prompt, tool result, router,
+fallback, permission, report contract, or UI changes. Per the roadmap A/B rule,
+deterministic projection with no model-visible change requires no live A/B;
+that becomes mandatory only when findings start influencing prompts, planner
+behavior, or the report contract (using the 0.4.6 journal).
+
+Refactor debt paid: artifact lineage's derived-ref shape validation now
+delegates to the shared Evidence Runtime validator with an explicit narrow kind
+allowlist — accept/reject behavior preserved exactly (locked by existing
+artifact lineage tests), removing a real duplicated-regex copy instead of
+adding a decorative layer.
+
+Characterization locks added:
+
+- `ResearchProofReview.to_payload()` / trace payload keys are unchanged and do
+  not serialize diagnostics; `proof_ref` is independent of attached diagnostics.
+- Existing proof-review, planner, pipeline, run-trace, review parser, and
+  completion-gate tests pass unmodified in their original assertions.
+- Without findings, the Run Trace manifest keeps its old shape apart from two
+  empty lists.
+- Architecture tests lock both new modules as projection-only: no
+  browser/provider/tool_runtime/task_runner/server/managed_outputs/events/
+  ghost/codey.review/ab_journal imports and no I/O tokens.
+
+Validation during implementation:
+
+```text
+python -m pytest tests\test_evidence_runtime.py tests\test_research_review_finding.py tests\test_research_proof_quality.py tests\test_research_pipeline.py tests\test_run_trace.py tests\test_architecture.py -q
+# 114 passed, 180 subtests passed
+
+python -m ruff check codey tests
+# All checks passed!
+
+python -m pytest -q
+# 2392 passed, 698 subtests passed in 398.13s
+```
+
+Coverage highlights: ref validator accept/reject matrix for every kind
+(including URLs, free text, wrong-length and uppercase hex, >120-char values),
+narrow-kind restriction semantics, snapshot projection from typed records and
+raw mappings, neighbor caps, fail-closed anchoring, diagnostic dedupe and
+payload exclusion, finding severity/status defaults in trace payloads,
+trace-section caps with truncation warnings, invalid-entry dropping, secret and
+free-text non-persistence, lifecycle transitions including rejected
+confirmations and no-op events, gap mapping per finding kind with dedupe and
+limits, and pipeline wiring order (proof review -> findings -> gaps -> final
+plan) with follow-up execution still frozen.
+
 ## 0.4.6 A/B Observation Journal + Transcript Replay Cache v1
 
 Codey 0.4.6 converges the manual A/B observation layer into one durable

@@ -18,9 +18,10 @@ from urllib.parse import urlparse
 
 from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.prompt_envelope import is_model_boundary_freshness
+from codey.research.artifact_lineage import is_valid_derived_ref
+from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.redaction import looks_sensitive_code, looks_sensitive_signal
 from codey.research.shape import digest_ref as _digest_ref
-from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.shape import generated_ref as _generated_ref
 from codey.research.shape import safe_connector_id as _safe_connector_id
 
@@ -48,8 +49,19 @@ MAX_ANALYSIS_RUNS = 8
 MAX_ARTIFACT_REFS = 16
 MAX_REPRODUCIBILITY_CAPSULES = 8
 MAX_CAPSULE_ARTIFACT_REFS = 8
+MAX_REVIEW_FINDINGS = 16
+MAX_PLANNER_GAPS = 16
+MAX_GAP_FINDING_REFS = 4
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
+REVIEW_FINDING_REF_KINDS: dict[str, str] = {
+    "claim_ref": "claim",
+    "evidence_ref": "evidence",
+    "source_ref": "source",
+    "analysis_run_ref": "analysis_run",
+    "artifact_ref": "artifact_version",
+    "proof_ref": "research_proof",
+}
 RESEARCH_ANSWER_STATUSES = frozenset({
     "answered",
     "partial",
@@ -199,6 +211,8 @@ class RunTraceManifest:
     analysis_runs: list[dict[str, object]] = field(default_factory=list)
     artifact_refs: list[dict[str, object]] = field(default_factory=list)
     reproducibility_capsules: list[dict[str, object]] = field(default_factory=list)
+    research_review_findings: list[dict[str, object]] = field(default_factory=list)
+    research_planner_gaps: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -251,6 +265,8 @@ class RunTraceManifest:
             "reproducibility_capsules": (
                 self.reproducibility_capsules[:MAX_REPRODUCIBILITY_CAPSULES]
             ),
+            "research_review_findings": self.research_review_findings[:MAX_REVIEW_FINDINGS],
+            "research_planner_gaps": self.research_planner_gaps[:MAX_PLANNER_GAPS],
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
             "policy_decisions": self.policy_decisions[:MAX_POLICY_DECISIONS],
@@ -325,6 +341,8 @@ class RunTraceRecorder:
         self._analysis_run_keys: set[str] = set()
         self._artifact_version_keys: set[str] = set()
         self._capsule_keys: set[str] = set()
+        self._review_finding_keys: set[str] = set()
+        self._planner_gap_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
@@ -915,6 +933,84 @@ class RunTraceRecorder:
             del self.manifest.reproducibility_capsules[:-MAX_REPRODUCIBILITY_CAPSULES]
             self.manifest.warnings.append("reproducibility_capsules_truncated")
         self.checkpoint()
+
+    def record_review_findings(self, findings: Iterable[object]) -> None:
+        changed = False
+        for item in _trace_list_items(findings):
+            raw = item.to_payload() if callable(getattr(item, "to_payload", None)) else item
+            if not isinstance(raw, Mapping):
+                continue
+            finding_id = _generated_ref(raw.get("finding_id"), "review_finding")
+            kind = _safe_trace_code(raw.get("kind"), 40)
+            if not finding_id or not kind or finding_id in self._review_finding_keys:
+                continue
+            payload: dict[str, object] = {
+                "finding_id": finding_id,
+                "kind": kind,
+                "severity": _safe_trace_code(raw.get("severity"), 20),
+                "status": _safe_trace_code(raw.get("status"), 20),
+                "target_ref": _normalize_runtime_ref(raw.get("target_ref")),
+                "reason_codes": [
+                    code
+                    for code in (
+                        _safe_trace_code(value, 80)
+                        for value in _trace_list_items(raw.get("reason_codes"))
+                    )
+                    if code
+                ][:MAX_WARNINGS],
+            }
+            for key, ref_kind in REVIEW_FINDING_REF_KINDS.items():
+                ref = _normalize_runtime_ref(raw.get(key), kind=ref_kind)
+                if ref:
+                    payload[key] = ref
+            self._review_finding_keys.add(finding_id)
+            self.manifest.research_review_findings.append(payload)
+            changed = True
+        if changed:
+            if len(self.manifest.research_review_findings) > MAX_REVIEW_FINDINGS:
+                del self.manifest.research_review_findings[:-MAX_REVIEW_FINDINGS]
+                self.manifest.warnings.append("research_review_findings_truncated")
+            self.checkpoint()
+
+    def record_planner_gaps(self, gaps: Iterable[object]) -> None:
+        changed = False
+        for item in _trace_list_items(gaps):
+            raw = item.to_payload() if callable(getattr(item, "to_payload", None)) else item
+            if not isinstance(raw, Mapping):
+                continue
+            gap_id = _generated_ref(raw.get("gap_id"), "planner_gap")
+            gap_kind = _safe_trace_code(raw.get("gap_kind"), 40)
+            if not gap_id or not gap_kind or gap_id in self._planner_gap_keys:
+                continue
+            payload = {
+                "gap_id": gap_id,
+                "gap_kind": gap_kind,
+                "target_ref": _normalize_runtime_ref(raw.get("target_ref")),
+                "reason_codes": [
+                    code
+                    for code in (
+                        _safe_trace_code(value, 80)
+                        for value in _trace_list_items(raw.get("reason_codes"))
+                    )
+                    if code
+                ][:MAX_WARNINGS],
+                "finding_refs": [
+                    ref
+                    for ref in (
+                        _normalize_runtime_ref(value, kind="review_finding")
+                        for value in _trace_list_items(raw.get("finding_refs"))
+                    )
+                    if ref
+                ][:MAX_GAP_FINDING_REFS],
+            }
+            self._planner_gap_keys.add(gap_id)
+            self.manifest.research_planner_gaps.append(payload)
+            changed = True
+        if changed:
+            if len(self.manifest.research_planner_gaps) > MAX_PLANNER_GAPS:
+                del self.manifest.research_planner_gaps[:-MAX_PLANNER_GAPS]
+                self.manifest.warnings.append("research_planner_gaps_truncated")
+            self.checkpoint()
 
     def record_fallback(
         self,

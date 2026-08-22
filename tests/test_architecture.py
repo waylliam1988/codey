@@ -407,6 +407,48 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(module=name):
                 self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
+    def test_evidence_runtime_and_review_finding_are_projection_only(self) -> None:
+        # Evidence Runtime and ReviewFinding explain facts that already exist;
+        # they must not reach execution layers, providers, the A/B journal, or
+        # the code review parser they intentionally do not migrate.
+        paths = (
+            ROOT / "codey" / "research" / "evidence_runtime.py",
+            ROOT / "codey" / "research" / "review_finding.py",
+        )
+        forbidden = {
+            "codey.browser",
+            "codey.deepseek",
+            "codey.qwen",
+            "codey.stepfun",
+            "codey.glm",
+            "codey.providers",
+            "codey.provider_controls",
+            "codey.tool_runtime",
+            "codey.managed_outputs",
+            "codey.server",
+            "codey.task_runner",
+            "codey.ghost",
+            "codey.review",
+            "ab_journal",
+            "tests.manual.ab_journal",
+            "importlib",
+            "pkgutil",
+            "subprocess",
+        }
+        forbidden_source = (
+            "eval(",
+            "exec(",
+            "write_text(",
+            "write_json",
+        )
+        for path in paths:
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                imports = imported_modules(path)
+                self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+                source = path.read_text(encoding="utf-8")
+                for token in forbidden_source:
+                    self.assertNotIn(token, source)
+
     def test_ab_journal_is_manual_layer_only(self) -> None:
         # The A/B journal is manual-experiment tooling: production layers must
         # not consume it, and it must not depend on production orchestration.

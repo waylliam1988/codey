@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from dataclasses import replace
 from pathlib import Path
@@ -25,6 +26,11 @@ from codey.research.tools import ResearchTools
 class _TraceRecorder:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple, dict]] = []
+
+    def __getattr__(self, name: str):
+        def call(*args, **kwargs) -> None:
+            self.calls.append((name, args, kwargs))
+        return call
 
     def record_permission_profile(self, *args, **kwargs) -> None:
         self.calls.append(("record_permission_profile", args, kwargs))
@@ -1464,3 +1470,100 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
         assert recorded_pipeline_results[0].final_evidence_count == 0
         assert recorded_pipeline_results[0].attempted_fresh_source_count == 2
         assert recorded_pipeline_results[0].attempted_new_evidence_count == 2
+
+
+def test_pipeline_projects_final_review_findings_and_gaps_to_trace_only() -> None:
+    """0.4.7 characterization: findings/gaps are audit read models.
+
+    The final proof review is projected into located ReviewFindingRecords and
+    PlannerGaps and recorded through the trace sink only; planner behavior
+    (follow-up execution) stays frozen.
+    """
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        store = KnowledgeStore(root / "knowledge")
+        changes = KnowledgeChanges(root=store.root)
+        search = _PipelineSearch()
+        tools = ResearchTools(
+            search=search,
+            store=store,
+            changes=changes,
+            session_id="session-findings",
+            project="project-findings",
+        )
+        trace = _TraceRecorder()
+        record = _record(question="Pipeline question", synthesis_id="initial", project=root / "project")
+        conclusion = next(claim for claim in record.claims if claim.claim_section == "conclusion")
+        broken = replace(
+            record,
+            claims=tuple(
+                replace(conclusion, evidence_refs=(), status="unsupported", citation_numbers=())
+                if claim.claim_id == conclusion.claim_id
+                else claim
+                for claim in record.claims
+            ),
+        )
+        result = _result(
+            question="Pipeline question",
+            summary="initial summary",
+            stop_reason="done",
+            synthesis_id="initial",
+            record=broken,
+            tools=tools,
+        )
+
+        def run_iteration(**_kwargs):
+            return result
+
+        context = ResearchContext(
+            question="Pipeline question",
+            session_id="session-findings",
+            run_id="run-findings",
+            project="project-findings",
+            proof_question="Pipeline question",
+            max_turns=4,
+            should_stop=lambda: False,
+            trace=RunTraceResearchSink(trace),
+        )
+
+        pipeline = ResearchPipeline(
+            context=context,
+            run_iteration=run_iteration,
+            search_factory=lambda: search,
+            config=ResearchPipelineConfig(enabled=True, max_followup_rounds=0),
+        )
+        output = pipeline.run()
+
+        # Research behavior itself is untouched.
+        assert output.followup_applied is False
+        assert output.final_result is result.result
+        assert search.closed is True
+
+        names = [name for name, *_ in trace.calls]
+        assert "record_research_proof_review" in names
+
+        finding_calls = [call for call in trace.calls if call[0] == "record_review_findings"]
+        assert len(finding_calls) == 1
+        payloads = finding_calls[0][1][0]
+        kinds = {payload["kind"] for payload in payloads}
+        assert "unsupported_claim" in kinds
+        unsupported = next(payload for payload in payloads if payload["kind"] == "unsupported_claim")
+        assert unsupported["claim_ref"] == conclusion.claim_id
+        assert unsupported["severity"] == "critical"
+        assert all(payload["finding_id"].startswith("review_finding:") for payload in payloads)
+        serialized = json.dumps(payloads, ensure_ascii=False)
+        assert "claim_text" not in serialized
+        assert conclusion.claim_text not in serialized
+
+        gap_calls = [call for call in trace.calls if call[0] == "record_planner_gaps"]
+        assert len(gap_calls) == 1
+        gap_payloads = gap_calls[0][1][0]
+        gap_kinds = {gap["gap_kind"] for gap in gap_payloads}
+        assert {"followup_search", "locator_verification"} <= gap_kinds
+        assert all(gap["gap_id"].startswith("planner_gap:") for gap in gap_payloads)
+
+        # Findings are recorded after the proof review and before the final plan.
+        idx_review = names.index("record_research_proof_review")
+        idx_findings = names.index("record_review_findings")
+        idx_plan_after = max(i for i, name in enumerate(names) if name == "record_research_plan")
+        assert idx_review < idx_findings < idx_plan_after

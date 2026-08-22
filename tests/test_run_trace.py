@@ -1369,3 +1369,134 @@ class AnalysisRunTraceTests(unittest.TestCase):
             snapshot = payload["reproducibility_capsules"][0]
             self.assertEqual(len(snapshot["artifact_refs"]), 8)
             self.assertEqual(snapshot["artifact_refs"][-1], "artifact_version:" + f"{7:016x}")
+
+
+class ReviewFindingTraceTests(unittest.TestCase):
+    def _open(self, store: RunTraceStore, *, run_id: str = "run-findings") -> object:
+        return store.open(
+            run_id=run_id,
+            session_id="session-findings",
+            project=None,
+            mode_initial="research",
+            provider_initial="deepseek",
+        )
+
+    def _payload(self, path: Path) -> dict:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_review_findings_trace_is_ref_only_deduplicated_and_secret_free(self) -> None:
+        from codey.research.review_finding import ReviewFindingRecord
+
+        finding = ReviewFindingRecord(
+            finding_id="review_finding:" + "a" * 16,
+            kind="unsupported_claim",
+            severity="critical",
+            target_ref="claim:" + "b" * 16,
+            claim_ref="claim:" + "b" * 16,
+            evidence_ref="evidence:" + "c" * 16,
+            proof_ref="research_proof:" + "d" * 16,
+            reason_codes=("claim_missing_support_relation",),
+            message="RAW MESSAGE SHOULD_NOT_BE_SAVED",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_review_findings([finding])
+            # Duplicate id is ignored; malformed entries are ignored.
+            recorder.record_review_findings([
+                ReviewFindingRecord(
+                    finding_id="review_finding:" + "a" * 16,
+                    kind="unsupported_claim",
+                    severity="critical",
+                ),
+                {"finding_id": "not-a-ref", "kind": "unsupported_claim"},
+                "junk",
+                None,
+            ])
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-findings", "run-findings"))
+            serialized = json.dumps(payload, ensure_ascii=False)
+
+            self.assertEqual(len(payload["research_review_findings"]), 1)
+            entry = payload["research_review_findings"][0]
+            self.assertEqual(entry["finding_id"], "review_finding:" + "a" * 16)
+            self.assertEqual(entry["kind"], "unsupported_claim")
+            self.assertEqual(entry["severity"], "critical")
+            self.assertEqual(entry["status"], "open")
+            self.assertEqual(entry["target_ref"], "claim:" + "b" * 16)
+            self.assertEqual(entry["reason_codes"], ["claim_missing_support_relation"])
+            self.assertNotIn("message", entry)
+            self.assertNotIn("SHOULD_NOT_BE_SAVED", serialized)
+
+    def test_review_findings_cap_at_max_with_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            for index in range(20):
+                recorder.record_review_findings([{
+                    "finding_id": "review_finding:" + f"{index:016x}",
+                    "kind": "stale_source",
+                    "severity": "warning",
+                    "status": "open",
+                    "target_ref": "source:" + f"{index:016x}",
+                    "reason_codes": ["sources_stale_or_undated"],
+                }])
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-findings", "run-findings"))
+            findings = payload["research_review_findings"]
+            self.assertEqual(len(findings), 16)
+            self.assertEqual(findings[-1]["finding_id"], "review_finding:" + f"{19:016x}")
+            self.assertIn("research_review_findings_truncated", payload["warnings"])
+
+    def test_planner_gaps_trace_keeps_valid_refs_and_drops_the_rest(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_planner_gaps([{
+                "gap_id": "planner_gap:" + "e" * 16,
+                "gap_kind": "followup_search",
+                "target_ref": "claim:" + "b" * 16,
+                "reason_codes": ["claim_missing_support_relation"],
+                "finding_refs": [
+                    "review_finding:" + "a" * 16,
+                    "https://evil.example/not-a-ref",
+                    "junk",
+                ],
+            }])
+            recorder.record_planner_gaps([{
+                "gap_id": "planner_gap:short",
+                "gap_kind": "locator_verification",
+            }])
+            # Duplicate is ignored.
+            recorder.record_planner_gaps([{
+                "gap_id": "planner_gap:" + "e" * 16,
+                "gap_kind": "rerun_analysis",
+            }])
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-findings", "run-findings"))
+            gaps = payload["research_planner_gaps"]
+
+            self.assertEqual(len(gaps), 1)
+            gap = gaps[0]
+            self.assertEqual(gap["gap_id"], "planner_gap:" + "e" * 16)
+            self.assertEqual(gap["gap_kind"], "followup_search")
+            self.assertEqual(gap["target_ref"], "claim:" + "b" * 16)
+            self.assertEqual(gap["finding_refs"], ["review_finding:" + "a" * 16])
+
+    def test_manifest_without_findings_keeps_empty_sections_and_old_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store, run_id="run-plain")
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-findings", "run-plain"))
+
+            self.assertEqual(payload["research_review_findings"], [])
+            self.assertEqual(payload["research_planner_gaps"], [])
+            self.assertNotIn("research_review_findings_truncated", payload["warnings"])

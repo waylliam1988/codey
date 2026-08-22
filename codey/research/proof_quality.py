@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import Mapping
 
+from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.identity import (
     bounded_refs,
     clip,
@@ -26,7 +27,44 @@ from codey.research.redaction import looks_sensitive_signal
 MAX_GAPS = 12
 MAX_SIGNALS = 8
 MAX_WARNINGS = 12
+MAX_DIAGNOSTICS = 64
 MIN_QUEUE_COVERAGE_SCORE = 0.62
+
+
+@dataclass(frozen=True)
+class ProofDiagnostic:
+    """One located proof problem with the refs needed to act on it.
+
+    Reason codes stay the single source of truth for meaning; the extra fields
+    only record where the problem was observed, so downstream projections can
+    point at the exact claim/evidence/source/relation instead of re-walking
+    the relation graph.
+    """
+
+    reason_code: str
+    claim_ref: str = ""
+    evidence_ref: str = ""
+    source_ref: str = ""
+    relation_ref: str = ""
+
+    def to_payload(self) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "reason_code": identifier(self.reason_code, 80),
+        }
+        for key in ("claim_ref", "evidence_ref", "source_ref", "relation_ref"):
+            value = getattr(self, key)
+            if value:
+                payload[key] = value
+        return payload
+
+    def _key(self) -> tuple[str, str, str, str, str]:
+        return (
+            self.reason_code,
+            self.claim_ref,
+            self.evidence_ref,
+            self.source_ref,
+            self.relation_ref,
+        )
 
 
 @dataclass(frozen=True)
@@ -82,6 +120,9 @@ class ResearchProofReview:
     proof_ref: str = ""
     record_id: str = ""
     record_digest: str = ""
+    # Not serialized by to_payload(): existing payload/trace shapes stay
+    # byte-identical. Consume via diagnostics_payload() or the attribute.
+    diagnostics: tuple[ProofDiagnostic, ...] = ()
 
     def to_payload(self) -> dict[str, object]:
         return {
@@ -113,6 +154,9 @@ class ResearchProofReview:
 
     def to_trace_payload(self) -> dict[str, object]:
         return proof_review_trace_payload(self)
+
+    def diagnostics_payload(self) -> list[dict[str, object]]:
+        return [item.to_payload() for item in self.diagnostics[:MAX_DIAGNOSTICS]]
 
 
 def review_research_proof(
@@ -224,6 +268,7 @@ def review_research_proof(
         missing_evidence=tuple(missing),
         record_id=record_id,
         record_digest=record_digest,
+        diagnostics=_dedupe_diagnostics(relation_review["diagnostics"]),
     )
 
 
@@ -266,6 +311,24 @@ class _CoverageResult:
     score: float
     gaps: tuple[CoverageGap, ...]
     unmatched_terms: tuple[str, ...]
+
+
+def _dedupe_diagnostics(diagnostics: object) -> tuple[ProofDiagnostic, ...]:
+    if not isinstance(diagnostics, (list, tuple)):
+        return ()
+    seen: set[tuple[str, str, str, str, str]] = set()
+    rows: list[ProofDiagnostic] = []
+    for item in diagnostics:
+        if not isinstance(item, ProofDiagnostic):
+            continue
+        key = item._key()
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(item)
+        if len(rows) >= MAX_DIAGNOSTICS:
+            break
+    return tuple(rows)
 
 
 def _review(**kwargs: object) -> ResearchProofReview:
@@ -369,23 +432,58 @@ def _review_relations(
     supported_claim_ids: set[str] = set()
     counter_checked = False
     hard: list[str] = []
+    diagnostics: list[ProofDiagnostic] = []
+
+    def add_hard(
+        reason_code: str,
+        *,
+        claim_ref: str = "",
+        evidence_ref: str = "",
+        source_ref: str = "",
+        relation_ref: str = "",
+    ) -> None:
+        hard.append(reason_code)
+        diagnostics.append(ProofDiagnostic(
+            reason_code=reason_code,
+            claim_ref=claim_ref if claim_ref in claims else "",
+            evidence_ref=evidence_ref if evidence_ref in evidence else "",
+            source_ref=source_ref if source_ref in sources else "",
+            relation_ref=_normalize_runtime_ref(relation_ref, kind="relation"),
+        ))
+
     for relation in relations:
         kind = identifier(relation.get("relation_kind"), 40)
         from_ref = identifier(relation.get("from_ref"), 80)
         to_ref = identifier(relation.get("to_ref"), 80)
+        relation_id = identifier(relation.get("relation_id"), 80)
         if from_ref not in claims:
-            hard.append("relation_missing_claim")
+            add_hard("relation_missing_claim", relation_ref=relation_id)
             continue
         if kind == "supports":
             ev = evidence.get(to_ref)
             if ev is None:
-                hard.append("support_relation_missing_evidence")
+                add_hard(
+                    "support_relation_missing_evidence",
+                    claim_ref=from_ref,
+                    relation_ref=relation_id,
+                )
                 continue
             if identifier(ev.get("stance"), 40) != "supports":
-                hard.append("support_relation_wrong_stance")
+                add_hard(
+                    "support_relation_wrong_stance",
+                    claim_ref=from_ref,
+                    evidence_ref=to_ref,
+                    relation_ref=relation_id,
+                )
                 continue
             if not _evidence_locator_ok(ev, source_ids):
-                hard.append("support_relation_bad_locator")
+                add_hard(
+                    "support_relation_bad_locator",
+                    claim_ref=from_ref,
+                    evidence_ref=to_ref,
+                    source_ref=identifier(ev.get("source_id"), 80),
+                    relation_ref=relation_id,
+                )
                 continue
             support_by_claim.setdefault(from_ref, set()).add(to_ref)
         elif kind in {"refutes", "limits"}:
@@ -394,11 +492,16 @@ def _review_relations(
                 if _evidence_locator_ok(ev, source_ids):
                     counter_checked = True
                 else:
-                    hard.append("counter_relation_bad_locator")
+                    add_hard(
+                        "counter_relation_bad_locator",
+                        evidence_ref=to_ref,
+                        source_ref=identifier(ev.get("source_id"), 80),
+                        relation_ref=relation_id,
+                    )
             elif to_ref in assumption_ids:
                 counter_checked = True
             else:
-                hard.append("counter_relation_missing_target")
+                add_hard("counter_relation_missing_target", relation_ref=relation_id)
 
     citation_present = False
     required_claims = 0
@@ -414,28 +517,28 @@ def _review_relations(
         missing_evidence_refs = evidence_refs - evidence_ids
         missing_assumption_refs = assumption_refs - assumption_ids
         if missing_evidence_refs:
-            hard.append("claim_missing_evidence_ref")
+            add_hard("claim_missing_evidence_ref", claim_ref=claim_id)
         if missing_assumption_refs:
-            hard.append("claim_missing_assumption_ref")
+            add_hard("claim_missing_assumption_ref", claim_ref=claim_id)
         if section in {"conclusion", "evidence"}:
             required_claims += 1
             if not citations:
-                hard.append("claim_missing_citation")
+                add_hard("claim_missing_citation", claim_ref=claim_id)
             if status == "assumption":
-                hard.append("assumption_used_as_answer")
+                add_hard("assumption_used_as_answer", claim_ref=claim_id)
             if status != "evidence_backed":
-                hard.append("claim_not_evidence_backed")
+                add_hard("claim_not_evidence_backed", claim_ref=claim_id)
             if not evidence_refs:
-                hard.append("claim_missing_evidence_ref")
+                add_hard("claim_missing_evidence_ref", claim_ref=claim_id)
             support_refs = support_by_claim.get(claim_id, set())
             claim_support_refs = support_refs & evidence_refs
             if support_refs and not claim_support_refs:
-                hard.append("support_relation_not_claim_evidence")
+                add_hard("support_relation_not_claim_evidence", claim_ref=claim_id)
             if status == "evidence_backed" and claim_support_refs:
                 supported_required += 1
                 supported_claim_ids.add(claim_id)
             else:
-                hard.append("claim_missing_support_relation")
+                add_hard("claim_missing_support_relation", claim_ref=claim_id)
         if section == "counter" and (status == "assumption" or assumption_refs):
             counter_checked = True
 
@@ -457,6 +560,7 @@ def _review_relations(
         "supported_claim_ids": frozenset(supported_claim_ids),
         "hard_failures": tuple(dict.fromkeys(hard)),
         "missing_evidence": tuple(),
+        "diagnostics": tuple(diagnostics),
     }
 
 
@@ -767,8 +871,10 @@ _STRONG_CLAIM_RE = re.compile(
 
 __all__ = [
     "CoverageGap",
+    "MAX_DIAGNOSTICS",
     "MIN_QUEUE_COVERAGE_SCORE",
     "PlannerSignal",
+    "ProofDiagnostic",
     "ResearchProofReview",
     "proof_ref_for_review",
     "proof_review_trace_payload",

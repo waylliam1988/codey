@@ -4,6 +4,61 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.7 - Evidence Runtime + ReviewFinding Core v1
+
+- 新增 `codey/research/evidence_runtime.py`：所有 research runtime ref 的唯一
+  确定性校验入口（`source/evidence/claim/assumption/relation/research_record/
+  research_proof/research_plan/analysis_run/artifact/artifact_version/
+  review_finding/planner_gap:<16hex>` 加上有界 `run:` id），以及
+  `snapshot_from_research_record()`——把 typed 或 mapping 的 ResearchRecord 连同
+  proof review、analysis runs、artifact versions 投影成有界的
+  `EvidenceRuntimeSnapshot` 读模型（只含验证过的 refs、digest、allow-list
+  answer status 和计数，不含 raw 文本）。
+  这收掉了各模块重复的 ref 正则：artifact lineage 的 `is_valid_derived_ref()`
+  改为委托共享 validator，并用显式窄 allowlist（`source/evidence/
+  analysis_run/run`）保持接受/拒绝行为完全不变。
+- 新增定位诊断：`_review_relations()` 在原有 hard-failure reason code 完全不变的
+  基础上，同时产出 `ProofDiagnostic(reason_code, claim_ref, evidence_ref,
+  source_ref, relation_ref)`；`ResearchProofReview` 通过新的 `diagnostics`
+  字段和 `diagnostics_payload()` 暴露它们。诊断刻意不进入 `to_payload()` /
+  `to_trace_payload()`，也不影响 `proof_ref`，既有 payload/trace 形状字节级不变。
+- 新增 `codey/research/review_finding.py`（纯投影模块，无 runtime import）：
+  稳定的 `ReviewFindingRecord`（`finding_id/kind/severity/status/target
+  refs/reason_codes/addressed_by/confirmed_by/message`）、`PlannerGap` 和
+  `ReviewFindingEvent`。
+  - `findings_from_proof_review(review, snapshot)` 把诊断加记录级 warning 投影成
+    定位 finding；提供 snapshot 时，record 图之外的 ref 会被丢弃而不是被发明。
+    kinds：`unsupported_claim` / `citation_mismatch` / `stale_source` /
+    `overreach` / `missing_counterevidence`（另有 `failed_analysis_support`
+    生产者 `failed_analysis_findings`；`contradictory_sources`、
+    `source_conflict`、`qualified_support` 在真实生产者出现前只保留枚举值）。
+  - `planner_gaps_from_findings()` 把可行动的 finding 映射为 gap kind
+    （`followup_search` / `locator_verification` / `counterevidence_search` /
+    `refresh_query` / `rerun_analysis`），是确定性的读模型，自己不排程任何事。
+  - `apply_finding_events()` 实现 append-only 生命周期：
+    `open -> addressed -> confirmed/rejected`。`confirmed` 要求 `verified_by`
+    来自固定 allowlist（`deterministic_check`、`analysis_run`、
+    `opened_source_evidence`、`reviewer_pass`）；模型自称“已修复”fail-closed。
+  - 刻意不迁移 `codey.review.ReviewFinding` parser 对象；接入 code review
+    finding 要等真实消费者出现。
+- ResearchPipeline 现在只在 final proof review 之后做一次 finding 投影：
+  final review -> EvidenceRuntimeSnapshot -> ReviewFindingRecord ->
+  PlannerGap -> 只写 trace sink。planner 不消费 gaps，follow-up 搜索行为不变；
+  投影失败 fail-open，不影响任务完成。
+- Run Trace 新增两个有界 section：`research_review_findings`（上限 16）和
+  `research_planner_gaps`（上限 16），只保存验证过的 refs、kind、severity、
+  status 和有界 reason codes——不保存 raw claim 文本、网页正文、stdout/stderr、
+  provider transcript 或自由文本 message。recorder 按 id 去重，非法形状静默丢弃，
+  溢出保留最新并追加截断 warning。没有 finding 时 manifest 除两个空列表外形状不变。
+- 架构测试现在把 Evidence Runtime 和 ReviewFinding 锁成 projection-only：
+  禁止 browser/provider/tool_runtime/task_runner/server/managed_outputs/
+  events/ghost/codey.review/journal import 和 I/O token；A/B journal 边界测试
+  本来就 glob 全部 research 模块（含新模块）。
+- 范围注记：无 model critic、无 prompt 变更、无工具结果变更、无 UI、无报告契约
+  变更、无 graph database、无新增模型可见能力。纯 deterministic projection，
+  按 roadmap 不需要实机 A/B；一旦 findings 开始影响 prompt、planner 行为或报告
+  契约，就必须先走 0.4.6 journal 的小型 live A/B。
+
 ## 0.4.6 - A/B Observation Journal + Transcript Replay Cache v1
 
 - 为 manual harness 新增共享 A/B 观测 journal（`tests/manual/ab_journal.py`）：

@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from typing import Mapping
 
+from codey.research.evidence_runtime import is_valid_runtime_ref
 from codey.research.identity import clip, stable_ref
 
 ARTIFACT_REF_PREFIX = "artifact:"
@@ -21,17 +22,11 @@ ARTIFACT_MIME_TEXT = "text/plain"
 MAX_SIZE_BYTES = 10**12
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_HEX16_RE = re.compile(r"^[0-9a-f]{16}$")
-_BOUNDED_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
-# Derived refs are shape-checked, not prefix-checked: a URL or free text must
-# never masquerade as a lineage ref. ``run`` keeps its bounded runtime id
-# shape; generated research refs are 16-hex.
-_DERIVED_SHAPES: dict[str, re.Pattern[str]] = {
-    "source": _HEX16_RE,
-    "evidence": _HEX16_RE,
-    "analysis_run": _HEX16_RE,
-    "run": _BOUNDED_ID_RE,
-}
+# Derived refs may only point at Source/Evidence/AnalysisRun/Run facts. The
+# value shapes are owned by evidence_runtime's single ref validator; this
+# module only keeps the narrow lineage-specific kind allowlist so URLs and
+# free text can never masquerade as a lineage ref.
+_DERIVED_REF_KINDS = ("source", "evidence", "analysis_run", "run")
 MAX_DERIVED_REFS = 8
 
 
@@ -68,17 +63,11 @@ class ArtifactRef:
 def is_valid_derived_ref(value: object) -> bool:
     """Derived refs may only point at Source/Evidence/AnalysisRun/Run facts.
 
-    Each prefix carries an exact value shape: generated research refs are
-    16-hex, runtime run ids are bounded identifier tokens. URLs and free text
-    fail closed.
+    Generated research refs are 16-hex, runtime run ids are bounded identifier
+    tokens; URLs and free text fail closed.
     """
 
-    text = str(value or "").strip()
-    if len(text) > 120 or ":" not in text:
-        return False
-    prefix, _, suffix = text.partition(":")
-    shape = _DERIVED_SHAPES.get(prefix)
-    return shape is not None and shape.fullmatch(suffix) is not None
+    return is_valid_runtime_ref(value, kinds=_DERIVED_REF_KINDS)
 
 
 def _clean_sha256(value: object) -> str:

@@ -4,6 +4,73 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.7 - Evidence Runtime + ReviewFinding Core v1
+
+- Added `codey/research/evidence_runtime.py`: one deterministic validator for
+  every research runtime ref (`source/evidence/claim/assumption/relation/
+  research_record/research_proof/research_plan/analysis_run/artifact/
+  artifact_version/review_finding/planner_gap:<16hex>` plus bounded `run:` ids)
+  and `snapshot_from_research_record()`, which projects a typed or mapping
+  ResearchRecord together with its proof review, analysis runs, and artifact
+  versions into a bounded `EvidenceRuntimeSnapshot` read model (validated refs,
+  digests, allow-listed answer status, counts; no raw text).
+  This replaces the per-module copies of the same ref regexes: artifact
+  lineage's `is_valid_derived_ref()` now delegates to the shared validator with
+  an explicit narrow kind allowlist (`source/evidence/analysis_run/run`), with
+  accept/reject behavior preserved exactly.
+- Added located proof diagnostics: `_review_relations()` now also emits
+  `ProofDiagnostic(reason_code, claim_ref, evidence_ref, source_ref,
+  relation_ref)` alongside the unchanged hard-failure reason codes, and
+  `ResearchProofReview` carries them in a new `diagnostics` field with a
+  `diagnostics_payload()` accessor. Diagnostics are deliberately NOT serialized
+  by `to_payload()` / `to_trace_payload()` and do not affect `proof_ref`, so
+  existing payload/trace shapes stay byte-identical.
+- Added `codey/research/review_finding.py` (pure projection, no runtime
+  imports): stable `ReviewFindingRecord`
+  (`finding_id/kind/severity/status/target refs/reason_codes/addressed_by/
+  confirmed_by/message`), `PlannerGap`, and `ReviewFindingEvent`.
+  - `findings_from_proof_review(review, snapshot)` projects diagnostics plus
+    record-level warnings into located findings; when a snapshot is supplied,
+    refs outside the record graph are dropped instead of being invented.
+    Kinds: `unsupported_claim` / `citation_mismatch` / `stale_source` /
+    `overreach` / `missing_counterevidence` (+ enum-only
+    `failed_analysis_support` producer via `failed_analysis_findings`,
+    `contradictory_sources`, `source_conflict`, `qualified_support` reserved
+    until real producers exist).
+  - `planner_gaps_from_findings()` maps actionable findings to gap kinds
+    (`followup_search` / `locator_verification` / `counterevidence_search` /
+    `refresh_query` / `rerun_analysis`) as deterministic read models that plan
+    nothing by themselves.
+  - `apply_finding_events()` implements the append-only lifecycle:
+    `open -> addressed -> confirmed/rejected`. `confirmed` requires
+    `verified_by` from a fixed allowlist (`deterministic_check`,
+    `analysis_run`, `opened_source_evidence`, `reviewer_pass`); model
+    self-reports fail closed.
+  - The existing `codey.review.ReviewFinding` parser object is intentionally
+    not migrated; integrating code review findings waits for a real consumer.
+- ResearchPipeline now projects findings once, after the final proof review:
+  final review -> EvidenceRuntimeSnapshot -> ReviewFindingRecords ->
+  PlannerGaps -> trace sink only. The planner does not consume gaps; follow-up
+  search behavior is unchanged. Projection failures fail open without touching
+  task completion.
+- Run Trace gained two bounded sections: `research_review_findings` (cap 16)
+  and `research_planner_gaps` (cap 16), storing validated refs, kind, severity,
+  status, and bounded reason codes only — no raw claim text, webpage body,
+  stdout/stderr, provider transcript, or free-form messages. Recorder entries
+  are deduplicated by id, invalid shapes are dropped silently, overflow keeps
+  the newest entries and appends truncation warnings. Without findings the
+  manifest shape is unchanged apart from two empty lists.
+- Architecture tests now lock Evidence Runtime and ReviewFinding as
+  projection-only modules: no browser/provider/tool_runtime/task_runner/server/
+  managed_outputs/events/ghost/codey.review/journal imports and no I/O tokens;
+  the A/B journal boundary tests already cover all research modules including
+  the new ones.
+- Scope notes: no model critic, no prompt changes, no tool result changes, no
+  UI, no report contract change, no graph database, no new model-visible
+  capability. Deterministic projection only, so per the roadmap no live A/B is
+  required; A/B becomes mandatory when findings start influencing prompts,
+  planner behavior, or the report contract.
+
 ## 0.4.6 - A/B Observation Journal + Transcript Replay Cache v1
 
 - Added a shared A/B observation journal for manual harnesses

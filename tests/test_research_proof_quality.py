@@ -17,7 +17,7 @@ from codey.research.object_model import (
     ResearchSource,
     build_research_record,
 )
-from codey.research.proof_quality import review_research_proof
+from codey.research.proof_quality import ProofDiagnostic, review_research_proof
 from codey.research.report_quality import review_report_quality
 
 
@@ -374,3 +374,122 @@ def test_assumption_claim_does_not_count_as_supported_answer() -> None:
 
     assert review.ok is False
     assert "assumption_used_as_answer" in review.missing_evidence
+
+
+def test_diagnostics_are_not_serialized_into_existing_payloads() -> None:
+    record = _record()
+
+    clean_review = review_research_proof(record, question="Research helium supply")
+    assert clean_review.ok is True
+    assert clean_review.diagnostics == ()
+    serialized = json.dumps(clean_review.to_payload())
+    trace = clean_review.to_trace_payload()
+    assert "diagnostics" not in serialized
+    assert "diagnostics" not in json.dumps(trace)
+
+    # The proof ref must stay independent of diagnostics: same record facts,
+    # same payload, with or without located diagnostics attached.
+    with_diags = replace(
+        clean_review,
+        diagnostics=(ProofDiagnostic(reason_code="claim_not_evidence_backed"),),
+    )
+    assert with_diags.proof_ref == clean_review.proof_ref
+    assert with_diags.to_payload() == clean_review.to_payload()
+
+
+def test_unsupported_claims_produce_located_diagnostics() -> None:
+    summary = _report(
+        conclusion=(
+            "Helium supply depends on gas processing. [1]\n"
+            "- Helium prices will double next month. [1]"
+        )
+    )
+    record = _record(question="Research helium price outlook", summary=summary)
+
+    review = review_research_proof(
+        record,
+        question="Research helium price outlook",
+        evidence_ledger=None,
+        require_ledger_record=False,
+    )
+
+    assert review.ok is False
+    located = [
+        diag
+        for diag in review.diagnostics_payload()
+        if diag["reason_code"] == "claim_missing_support_relation"
+    ]
+    assert located, review.diagnostics_payload()
+    for diag in located:
+        assert str(diag["claim_ref"]).startswith("claim:")
+    # Diagnostics only point at refs the record actually contains.
+    known_refs = {claim.claim_id for claim in record.claims}
+    assert all(str(diag["claim_ref"]) in known_refs for diag in review.diagnostics_payload())
+
+
+def test_missing_relation_evidence_keeps_claim_and_relation_refs() -> None:
+    source = ResearchSource(
+        source_id="source:0000000000000001",
+        final_url_ref={"url_digest": "sha256:" + "1" * 64, "host": "example.com"},
+        title_digest="sha256:" + "2" * 64,
+        content_hash="1" * 16,
+        quality={"level": "primary", "kind": "official", "freshness": "fresh"},
+    )
+    evidence = ResearchEvidence(
+        evidence_id="evidence:0000000000000002",
+        source_id=source.source_id,
+        excerpt_digest="sha256:" + "3" * 64,
+        bounded_excerpt="Some excerpt.",
+        locator=EvidenceLocator(kind="html", source_id=source.source_id, char_start=0, char_end=10),
+        stance="supports",
+        claim_text_digest="sha256:" + "4" * 64,
+    )
+    claim = ResearchClaim(
+        claim_id="claim:0000000000000003",
+        claim_text="Conclusion without matching evidence relation target.",
+        claim_section="conclusion",
+        citation_numbers=(1,),
+        evidence_refs=(evidence.evidence_id,),
+        status="evidence_backed",
+    )
+    dangling_relation = ResearchClaimRelation(
+        relation_id="relation:0000000000000004",
+        relation_kind="supports",
+        from_ref=claim.claim_id,
+        to_ref="evidence:ffffffffffffffff",
+        citation_numbers=(1,),
+    )
+    record = ResearchRecord(
+        record_id="research_record:" + "a" * 16,
+        record_digest="sha256:" + "a" * 64,
+        question=ResearchQuestion(
+            question_id="question:" + "b" * 16,
+            question_text_digest="sha256:" + "b" * 64,
+            chars=10,
+        ),
+        answer_status="partial",
+        sources=(source,),
+        evidence=(evidence,),
+        claims=(claim,),
+        relations=(dangling_relation,),
+        unsupported_claim_count=0,
+        stop_reason="done",
+    )
+
+    review = review_research_proof(
+        record,
+        question="Research helium",
+        evidence_ledger=None,
+        require_ledger_record=False,
+    )
+
+    codes = {diag["reason_code"]: diag for diag in review.diagnostics_payload()}
+    support_missing = codes.get("support_relation_missing_evidence")
+    assert support_missing is not None
+    # The dangling relation keeps its claim anchor and its own relation ref,
+    # but never invents an evidence ref for the missing target.
+    assert support_missing["claim_ref"] == claim.claim_id
+    assert support_missing["relation_ref"] == dangling_relation.relation_id
+    assert "evidence_ref" not in support_missing
+    assert codes["claim_missing_support_relation"]["claim_ref"] == claim.claim_id
+    assert len(review.diagnostics_payload()) == 2
