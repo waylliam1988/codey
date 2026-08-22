@@ -202,11 +202,9 @@ def run_case(
         try:
             if trace is not None:
                 trace.record_case_start(
-                    run_id=run_id,
-                    provider=provider_id,
                     case=case.name,
                     arm=arm,
-                    question=case.question,
+                    question_chars=len(case.question),
                 )
             run_provider = provider
             if trace is not None:
@@ -687,12 +685,48 @@ def _self_test() -> None:
             run_id="run-self",
             provider="deepseek",
         )
-        trace.append_event(event_type="note", stage="probe", facts={"ok": True})
+        # Exercise the exact event sequence run_case/TracingProvider emit so
+        # signature drift in the harness call sites cannot come back silently.
+        trace.record_run_start(cases=("pubmed",), arms=("baseline",), max_turns=24)
+        trace.record_case_start(case="pubmed", arm="baseline", question_chars=42)
+        trace.record_send_start(case="pubmed", arm="baseline", turn=1, prompt="probe prompt")
+        trace.record_send_error(
+            case="pubmed",
+            arm="baseline",
+            turn=1,
+            error="TimeoutError: wait timed out",
+            provider_failure={"kind": "timeout", "stage": "wait_reply"},
+        )
+        trace.record_reply(
+            case="pubmed",
+            arm="baseline",
+            turn=2,
+            prompt="probe prompt 2",
+            reply='{"tool":"done","args":{"summary":"ok"}}',
+        )
+        trace.record_case_complete(
+            case="pubmed",
+            arm="baseline",
+            row={"ok": True, "score": 9, "stop_reason": "done", "turns": 4},
+        )
+        trace.record_run_complete(rows=1)
         trace.close()
         reader = ABJournalReader(trace_dir)
         events = reader.events()
-        assert [event["event_type"] for event in events] == ["note"]
+        assert [event["event_type"] for event in events] == [
+            "run_start",
+            "case_start",
+            "send_start",
+            "send_error",
+            "reply",
+            "case_complete",
+            "run_complete",
+        ]
         assert reader.verify_hash_chain() == []
+        assert reader.completed_case_keys() == [("pubmed", "baseline")]
+        send_error = events[3]
+        assert send_error["facts"]["provider_failure_kind"] == "timeout"
+        assert send_error["facts"]["provider_failure_stage"] == "wait_reply"
         manifest = json.loads((trace_dir / "manifest.json").read_text(encoding="utf-8"))
         assert manifest["experiment_id"] == "source_connector_ab"
         output = Path(td) / "payload.json"
@@ -716,13 +750,13 @@ def main() -> int:
     parser.add_argument("--arms", default="baseline,connector")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--trace-output", type=Path, default=None, help="trace path; default is next to output with a .trace.json suffix")
+    parser.add_argument("--trace-output", type=Path, default=None, help="journal directory; default is <output-stem>.trace/ next to the result file")
     parser.add_argument("--max-turns", type=int, default=24)
     parser.add_argument("--send-timeout", type=float, default=120)
     parser.add_argument("--new-chat-timeout", type=float, default=60)
     parser.add_argument("--open-if-missing", action="store_true")
     parser.add_argument("--rerun-failed", action="store_true")
-    parser.add_argument("--no-live-trace", action="store_true", help="disable incremental atomic trace writes")
+    parser.add_argument("--no-live-trace", action="store_true", help="disable the durable JSONL observation journal")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -734,9 +768,9 @@ def main() -> int:
     selected_cases = tuple(CASES[name] for name in _parse_names(args.case, CASES, "case"))
     selected_arms = _parse_names([args.arms], ARMS, "arm")
     providers = WEB_PROVIDERS if args.provider == "all" else (args.provider,)
-    run_id = f"source-connector-ab-{int(time.time())}"
     for provider_id in providers:
         output = args.output or _default_output(provider_id)
+        run_id = output.stem
         if args.provider == "all" and args.output is not None:
             output = args.output.with_name(f"{args.output.stem}-{provider_id}{args.output.suffix}")
         trace: ABJournalWriter | None = None

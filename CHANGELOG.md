@@ -11,6 +11,23 @@ This file records Codey's release history. The newest release appears first.
   flush/fsync and a verifiable sha256 hash chain, tail recovery after
   interrupted runs, identity fail-closed manifests (one experiment/run/provider
   per directory), and `completed_case_keys()` resume support.
+- Journal identity is enforced from the events themselves, not only from the
+  manifest: `verify_event_chain()` reports mixed experiment/run/provider within
+  one chain, and a writer refuses to open when existing events carry a
+  different identity even if the manifest is missing, corrupt, or replaced.
+- Strict JSON durability: non-finite floats are dropped during fact
+  sanitization and event lines serialize with `allow_nan=False`, so
+  `events.jsonl` never contains NaN/Infinity tokens. Mid-file unparseable lines
+  are no longer silently cleaned by writer auto-recovery — appending refuses
+  until an explicit `ABJournalReader.recover_tail()`.
+- Provider observation facts flatten nested maps one level
+  (`provider_failure.kind` -> `provider_failure_kind`) so structured failure
+  facts survive as scalars; sensitive parent keys take their whole subtree.
+- Harness run ids are now derived from the result file (`output.stem`) instead
+  of wall-clock time, so resuming the same output continues the same journal
+  identity instead of colliding with the previous manifest. Connector harness
+  case-start calls were fixed to the new signature and both self-tests replay
+  the full per-case event sequence as a regression lock.
 - Added `TranscriptReplayCache`: prompt/reply pairs are digest-only by default;
   explicit archive mode stores content-addressed bounded transcripts under
   `transcripts/<digest>.json` for manual replay/scoring only.

@@ -10,6 +10,20 @@
   单写者 append-only JSONL 事件流，每行 flush/fsync，带可验证的 sha256 hash chain；
   中断后尾部损坏可恢复；manifest 按 experiment/run/provider 身份 fail-closed；
   `completed_case_keys()` 支持断点续跑。
+- Journal 身份改由事件本身强制：`verify_event_chain()` 会报告同一链内的
+  experiment/run/provider 混写；即使 manifest 缺失、损坏或被替换，writer 打开时
+  也会拒绝不同身份追加到既有 chain。
+- 严格 JSON 持久化：facts 脱敏阶段丢弃非有限浮点，事件行序列化使用
+  `allow_nan=False`，`events.jsonl` 不再可能出现 NaN/Infinity；文件中部出现
+  无法解析的行时 writer 自动恢复改为拒绝写入，需显式
+  `ABJournalReader.recover_tail()`。
+- Provider observation facts 对嵌套 mapping 做一层扁平化
+  （`provider_failure.kind` -> `provider_failure_kind`），结构化失败事实以标量
+  形式保留；敏感父 key 连同整个子树一起丢弃。
+- Harness 的 run_id 改为从结果文件名派生（`output.stem`）而非墙钟时间，
+  断点续跑同一 output 会延续同一 journal 身份，不再与旧 manifest 冲突；
+  修正 connector harness 的 case-start 调用签名，两个 self-test 现在重放完整
+  per-case 事件序列作为回归锁。
 - 新增 `TranscriptReplayCache`：prompt/reply 默认只存 digest；显式 archive 模式
   才把内容寻址、有大小上限的 transcript 写入 `transcripts/<digest>.json`，
   仅用于 manual replay/scoring。

@@ -73,13 +73,47 @@ def test_strings_are_clipped_and_lists_bounded() -> None:
     assert len(cleaned["stages"]) == 8
 
 
-def test_unknown_value_types_are_dropped_and_byte_budget_holds() -> None:
+def test_nested_provider_failure_maps_are_flattened() -> None:
+    cleaned = sanitize_facts({
+        "provider_failure": {
+            "kind": "timeout",
+            "stage": "wait_reply",
+            "dom_state": {"tag": "button"},
+            "page_html": "<div>leak</div>",
+        },
+    })
+
+    # Structured failure facts survive as flat scalars...
+    assert cleaned["provider_failure_kind"] == "timeout"
+    assert cleaned["provider_failure_stage"] == "wait_reply"
+    # ...while sensitive sub-keys are still filtered by the same rules.
+    assert "provider_failure_dom_state" not in cleaned
+    assert "provider_failure_page_html" not in cleaned
+
+
+def test_nonfinite_floats_are_dropped() -> None:
+    import math
+
+    cleaned = sanitize_facts({
+        "elapsed_ms": float("inf"),
+        "ratio": float("nan"),
+        "ok_ms": 12.5,
+    })
+
+    assert math.isfinite(cleaned["ok_ms"])
+    assert "elapsed_ms" not in cleaned
+    assert "ratio" not in cleaned
+
+
+def test_unknown_value_types_flatten_or_drop() -> None:
     cleaned = sanitize_facts({
         "weird": {"nested": "dict"},
         "also_weird": object(),
         "fine": False,
     })
-    assert cleaned == {"fine": False}
+
+    # Plain mappings flatten one level; opaque objects are dropped.
+    assert cleaned == {"fine": False, "weird_nested": "dict"}
 
     facts = {f"fact_{index:02}": "y" * 200 for index in range(100)}
     encoded = __import__("json").dumps(sanitize_facts(facts), ensure_ascii=False)

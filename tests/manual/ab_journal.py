@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import time
@@ -54,12 +55,29 @@ MAX_FACTS_BYTES = 8 * 1024
 
 _URL_RE = re.compile(r"(?i)^[a-z][a-z0-9+.-]*://|^www\.")
 _HTML_RE = re.compile(r"(?i)<\s*(html|body|div|script|textarea|input)\b")
-_SENSITIVE_KEY_RE = re.compile(r"(?i)(cookie|\bdom\b|html|webpage|page_body|raw_body|stdout|stderr)")
 _FACT_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,48}$")
 _SECRET_VALUE_RE = re.compile(
     r"(?i)(api[-_]?key|authorization|bearer\s|passwd|password|secret)"
 )
 _SECRET_TOKEN_SHAPE_RE = re.compile(r"\b(?:sk|ghp|github_pat)-?[A-Za-z0-9_-]{16,}\b")
+# Key names are split into word parts so dom_snapshot / page_html / raw_stdout
+# all match their marker even though underscore is a word character.
+_SENSITIVE_KEY_PARTS = frozenset({
+    "cookie",
+    "dom",
+    "html",
+    "webpage",
+    "page_body",
+    "body",
+    "raw",
+    "stdout",
+    "stderr",
+})
+
+
+def _key_is_sensitive(name: str) -> bool:
+    parts = set(re.split(r"[^a-z0-9]+", name.lower()))
+    return bool(parts & _SENSITIVE_KEY_PARTS)
 
 
 class ABJournalIdentityMismatch(ValueError):
@@ -109,6 +127,10 @@ def sanitize_fact_value(value: object) -> tuple[bool, object]:
     if isinstance(value, int):
         return True, max(-(10**15), min(10**15, value))
     if isinstance(value, float):
+        # Non-finite floats would serialize as NaN/Infinity, which is not
+        # standard JSON and breaks third-party replay parsers.
+        if not math.isfinite(value):
+            return False, None
         return True, round(value, 6)
     if isinstance(value, str):
         text = " ".join(str(value or "").split())[:MAX_FACT_VALUE_CHARS]
@@ -133,26 +155,45 @@ def sanitize_facts(facts: Mapping[str, object] | None) -> dict[str, object]:
     """Project raw provider observations into bounded, safe facts.
 
     Keys must be lowercase snake_case tokens; cookie/DOM/html/webpage-style keys
-    are dropped outright so provider page state can never leak through.
+    are dropped outright so provider page state can never leak through. Nested
+    mappings are flattened one level (``provider_failure.kind`` becomes
+    ``provider_failure_kind``) so structured failure facts survive as scalars.
     """
 
     if not isinstance(facts, Mapping):
         return {}
     cleaned: dict[str, object] = {}
     encoded_size = 0
-    for key in sorted(facts, key=str):
-        name = str(key or "").strip()
-        if not _FACT_KEY_RE.fullmatch(name) or _SENSITIVE_KEY_RE.search(name):
-            continue
-        allowed, value = sanitize_fact_value(facts[key])
+
+    def _admit(name: str, value: object) -> None:
+        nonlocal encoded_size
+        if not _FACT_KEY_RE.fullmatch(name) or _key_is_sensitive(name):
+            return
+        allowed, safe_value = sanitize_fact_value(value)
         if not allowed:
-            continue
-        candidate = json.dumps({name: value}, ensure_ascii=False, default=str)
+            return
+        candidate = json.dumps({name: safe_value}, ensure_ascii=False, default=str)
         size = len(candidate.encode("utf-8"))
         if encoded_size + size > MAX_FACTS_BYTES:
-            break
+            return
         encoded_size += size
-        cleaned[name] = value
+        cleaned[name] = safe_value
+
+    for key in sorted(facts, key=str):
+        name = str(key or "").strip()
+        value = facts[key]
+        if isinstance(value, Mapping):
+            # Sensitive parent keys take their whole subtree with them; a
+            # flattened child name must not launder a dropped parent.
+            if _key_is_sensitive(name):
+                continue
+            for sub_key in sorted(value, key=str):
+                sub_name = str(sub_key or "").strip()
+                if not sub_name:
+                    continue
+                _admit(f"{name}_{sub_name}", value[sub_key])
+            continue
+        _admit(name, value)
     return cleaned
 
 
@@ -309,10 +350,17 @@ def event_chain_digest(payload: Mapping[str, object]) -> str:
 
 
 def verify_event_chain(events: Iterable[Mapping[str, object]]) -> list[str]:
-    """Return human-readable integrity problems for an event sequence."""
+    """Return human-readable integrity problems for an event sequence.
+
+    Beyond linkage and digests this enforces identity constancy: one journal
+    belongs to exactly one (experiment_id, run_id, provider) triple, so any
+    cross-run or cross-provider mixing is reported even when every individual
+    event digest is internally consistent.
+    """
 
     problems: list[str] = []
     previous = GENESIS_DIGEST
+    identity: tuple[object, object, object] | None = None
     seen_seqs: set[int] = set()
     expected_seq = 1
     for event in events:
@@ -326,6 +374,15 @@ def verify_event_chain(events: Iterable[Mapping[str, object]]) -> list[str]:
         if seq != expected_seq:
             problems.append(f"seq-gap:{seq}-expected-{expected_seq}")
         expected_seq = seq + 1
+        current_identity = (
+            event.get("experiment_id"),
+            event.get("run_id"),
+            event.get("provider"),
+        )
+        if identity is None:
+            identity = current_identity
+        elif current_identity != identity:
+            problems.append(f"mixed-identity-at-seq:{seq}")
         if str(event.get("previous_digest") or "") != previous:
             problems.append(f"broken-chain-at-seq:{seq}")
         recomputed = event_chain_digest(event)
@@ -335,17 +392,23 @@ def verify_event_chain(events: Iterable[Mapping[str, object]]) -> list[str]:
     return problems
 
 
-def read_events_with_tail_recovery(path: Path) -> tuple[list[dict[str, Any]], int]:
-    """Read JSONL events, dropping only unusable trailing lines.
+def read_events_with_tail_recovery(path: Path) -> tuple[list[dict[str, Any]], int, int]:
+    """Read JSONL events with explicit corruption accounting.
 
-    Returns ``(events, dropped_lines)``. This matches durable-append semantics:
-    a crash can leave an unparseable partial final line, which is recovered.
-    Mid-file corruption stays in the returned list so
-    :func:`verify_event_chain` can report it instead of hiding it.
+    Returns ``(events, tail_invalid, mid_file_invalid)``.
+
+    - ``tail_invalid``: unparseable consecutive lines at the end of the file
+      (the durable-append crash case). Safe to auto-recover.
+    - ``mid_file_invalid``: unparseable lines before the tail. These are NOT
+      silently cleaned; the caller must surface them (the writer refuses to
+      append, :meth:`ABJournalReader.recover_tail` cleans explicitly).
+
+    Parsed-but-tampered lines always stay in ``events`` so
+    :func:`verify_event_chain` can report digest or chain breakage.
     """
 
     if not path.is_file():
-        return [], 0
+        return [], 0, 0
     lines = [
         stripped
         for stripped in path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -362,9 +425,10 @@ def read_events_with_tail_recovery(path: Path) -> tuple[list[dict[str, Any]], in
     usable_to = len(parsed)
     while usable_to > 0 and parsed[usable_to - 1] is None:
         usable_to -= 1
-    dropped = sum(1 for item in parsed if item is None)
+    tail_invalid = len(parsed) - usable_to
+    mid_file_invalid = sum(1 for item in parsed[:usable_to] if item is None)
     events = [item for item in parsed[:usable_to] if item is not None]
-    return events, dropped
+    return events, tail_invalid, mid_file_invalid
 
 
 class ABJournalWriter:
@@ -391,20 +455,45 @@ class ABJournalWriter:
         if not self.experiment_id or not self.run_id or not self.provider:
             raise ValueError("experiment_id, run_id, and provider are required")
 
-        events, dropped = read_events_with_tail_recovery(self.events_path)
+        events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(
+            self.events_path
+        )
         problems = verify_event_chain(events)
         if problems:
             raise ValueError(
                 f"{self.events_path} failed journal verification "
                 f"({problems[:3]}); manual recovery required before writing"
             )
+        if mid_file_invalid:
+            raise ValueError(
+                f"{self.events_path} has {mid_file_invalid} unparseable line(s) "
+                "before the tail; run ABJournalReader.recover_tail() manually "
+                "after inspecting the file"
+            )
+
+        # Identity is enforced from the events themselves, not only from the
+        # manifest: a missing/replaced manifest cannot smuggle another
+        # experiment/run/provider onto this chain.
+        if events:
+            first = events[0]
+            found = (
+                str(first.get("experiment_id") or ""),
+                str(first.get("run_id") or ""),
+                str(first.get("provider") or ""),
+            )
+            expected = (self.experiment_id, self.run_id, self.provider)
+            if found != expected:
+                raise ABJournalIdentityMismatch(
+                    f"{self.directory} belongs to experiment/run/provider {found}; "
+                    f"refusing to write {expected}"
+                )
         self._last_seq = int(events[-1].get("seq")) if events else 0
         self._last_digest = (
             str(events[-1].get("event_digest")) if events else GENESIS_DIGEST
         )
-        if dropped:
-            # Only unparseable trailing lines survive as "dropped" once the
-            # chain above verified, so rewriting them away is safe.
+        if tail_invalid:
+            # Only trailing unparseable lines reach here once the chain above
+            # verified and no mid-file corruption exists.
             self.rewrite_recovered(events)
 
         self._load_or_reject_manifest()
@@ -496,7 +585,9 @@ class ABJournalWriter:
             "previous_digest": self._last_digest,
         }
         payload["event_digest"] = event_chain_digest(payload)
-        line = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        # allow_nan=False guarantees events.jsonl stays strict, standard JSON
+        # that third-party replay parsers can consume.
+        line = json.dumps(payload, ensure_ascii=False, sort_keys=True, allow_nan=False)
         self._handle.write(line + "\n")
         self._handle.flush()
         os.fsync(self._handle.fileno())
@@ -630,6 +721,8 @@ class ABJournalWriter:
     ) -> None:
         facts: dict[str, object] = {"error_class": str(error).split(":", 1)[0][:80]}
         if provider_failure:
+            # Flattened one level by sanitize_facts, so kind/stage survive as
+            # provider_failure_kind / provider_failure_style scalars.
             facts["provider_failure"] = dict(provider_failure)
         self._append_event(
             event_type="send_error",
@@ -730,16 +823,24 @@ class ABJournalReader:
         return payload if isinstance(payload, dict) else {}
 
     def events(self) -> list[dict[str, Any]]:
-        events, _dropped = read_events_with_tail_recovery(self.events_path)
+        events, _tail, _mid = read_events_with_tail_recovery(self.events_path)
         return events
 
     def verify_hash_chain(self) -> list[str]:
         return verify_event_chain(self.events())
 
     def recover_tail(self) -> int:
-        """Drop corrupt/unusable trailing lines; return the dropped count."""
+        """Drop unparseable lines (trailing and mid-file); return the count.
 
-        events, dropped = read_events_with_tail_recovery(self.events_path)
+        This is the explicit manual-recovery entry point. It removes only
+        unparseable lines; parsed-but-tampered events stay and keep failing
+        :meth:`verify_hash_chain` until investigated.
+        """
+
+        events, tail_invalid, mid_file_invalid = read_events_with_tail_recovery(
+            self.events_path
+        )
+        dropped = tail_invalid + mid_file_invalid
         if dropped and self.events_path.is_file():
             temporary = self.events_path.with_name(f".{self.events_path.name}.recover")
             with temporary.open("w", encoding="utf-8") as handle:

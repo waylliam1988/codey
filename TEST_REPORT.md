@@ -31,7 +31,7 @@ Validation during implementation:
 
 ```text
 python -m pytest tests\test_ab_observation_journal.py tests\test_transcript_replay_cache.py tests\test_provider_observation_log.py tests\test_architecture.py -q
-# 40 passed, 174 subtests passed
+# 46 passed, 174 subtests passed
 
 python -B tests\manual\bounded_research_planner_ab.py --self-test
 # self-test ok
@@ -43,16 +43,31 @@ ruff check codey tests
 # All checks passed!
 
 python -m pytest -q
-# 2343 passed, 690 subtests passed in 387.41s
+# 2349 passed, 690 subtests passed in 379.58s
 ```
 
+- Review hardening (second pass):
+  - Journal identity is enforced from events, not just the manifest: mixed
+    experiment/run/provider inside one chain is reported, and a writer refuses
+    to open a chain bound to another identity even when the manifest was
+    deleted or replaced.
+  - Resume stability: harness run ids derive from `output.stem`, so resuming
+    the same result file continues the same journal instead of colliding.
+  - Connector case-start call fixed to the new signature; both self-tests now
+    replay the full per-case event sequence as a regression lock.
+  - Strict JSON: non-finite floats dropped in sanitization plus
+    `allow_nan=False` on event serialization; mid-file unparseable lines make
+    the writer refuse until an explicit `recover_tail()`.
+  - Provider failure maps flatten one level so kind/stage survive as scalars;
+    sensitive parent keys drop their whole subtree.
+
 Durability/recovery coverage: hash-chain verification, corrupt-tail recovery,
-duplicate-seq and mid-file tamper detection, identity mismatch rejection,
-resume from completed case keys, digest-only no-content guarantee, archive
-idempotency and size caps. No live quality A/B is required or claimed: this
-layer cannot change model behavior. A low-traffic live smoke may later verify
-journal capture against real provider tabs, but that is a durability smoke,
-not an effectiveness claim.
+duplicate-seq and mid-file tamper detection, identity mismatch rejection
+(with and without manifest), resume from completed case keys, digest-only
+no-content guarantee, archive idempotency and size caps. No live quality A/B
+is required or claimed: this layer cannot change model behavior. A low-traffic
+live smoke may later verify journal capture against real provider tabs, but
+that is a durability smoke, not an effectiveness claim.
 
 ## 0.4.5 AnalysisRun + Reproducibility Capsule v1
 

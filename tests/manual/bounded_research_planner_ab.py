@@ -1598,13 +1598,13 @@ def main() -> int:
     parser.add_argument("--arms", default="baseline,planner")
     parser.add_argument("--port", type=int, default=9222)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--trace-output", type=Path, default=None, help="trace path; default is next to output with a .trace.json suffix")
+    parser.add_argument("--trace-output", type=Path, default=None, help="journal directory; default is <output-stem>.trace/ next to the result file")
     parser.add_argument("--max-turns", type=int, default=14)
     parser.add_argument("--send-timeout", type=float, default=120)
     parser.add_argument("--new-chat-timeout", type=float, default=60)
     parser.add_argument("--open-if-missing", action="store_true")
     parser.add_argument("--rerun-failed", action="store_true")
-    parser.add_argument("--no-live-trace", action="store_true", help="disable incremental atomic trace writes")
+    parser.add_argument("--no-live-trace", action="store_true", help="disable the durable JSONL observation journal")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -1616,9 +1616,9 @@ def main() -> int:
     selected_cases = tuple(CASES[name] for name in _parse_names(args.case, CASES, "case"))
     selected_arms = _parse_names([args.arms], ARMS, "arm")
     providers = WEB_PROVIDERS if args.provider == "all" else (args.provider,)
-    run_id = f"bounded-research-planner-ab-{int(time.time())}"
     for provider_id in providers:
         output = args.output or _default_output(provider_id)
+        run_id = output.stem
         if args.provider == "all" and args.output is not None:
             output = args.output.with_name(f"{args.output.stem}-{provider_id}{args.output.suffix}")
         trace: ABJournalWriter | None = None

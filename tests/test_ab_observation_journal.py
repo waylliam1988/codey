@@ -124,6 +124,109 @@ def test_mid_file_tampering_stays_visible(tmp_path: Path) -> None:
         _writer(directory)
 
 
+def test_identity_is_enforced_from_events_without_manifest(tmp_path: Path) -> None:
+    """Deleting the manifest must not allow another run onto the same chain."""
+
+    directory = journal_directory_for(tmp_path / "result.json")
+    writer = _writer(directory)
+    try:
+        _simulate_case(writer, case="a", arm="baseline")
+    finally:
+        writer.close()
+    (directory / "manifest.json").unlink()
+
+    # The events themselves carry experiment/run/provider, so the reopened
+    # writer detects the mismatch even without any manifest to read.
+    with pytest.raises(ABJournalIdentityMismatch):
+        _writer(directory, run_id="run-2")
+
+
+def test_verify_detects_mixed_identity_across_events(tmp_path: Path) -> None:
+    from tests.manual.ab_journal import (
+        GENESIS_DIGEST,
+        event_chain_digest,
+        verify_event_chain,
+    )
+
+    def _event(seq: int, previous: str, run_id: str) -> dict:
+        payload = {
+            "seq": seq,
+            "ts": "2026-08-22T00:00:00Z",
+            "run_id": run_id,
+            "experiment_id": "exp",
+            "case_id": "c",
+            "arm": "baseline",
+            "provider": "deepseek",
+            "model": "",
+            "event_type": "note",
+            "stage": "probe",
+            "prompt_digest": "",
+            "reply_digest": "",
+            "content_ref": {},
+            "failure_kind": "",
+            "facts": {},
+            "previous_digest": previous,
+        }
+        payload["event_digest"] = event_chain_digest(payload)
+        return payload
+
+    events = [
+        _event(1, GENESIS_DIGEST, "run-1"),
+        # Chain linkage is correct, but the run identity changed mid-file.
+        _event(2, events_last := _event(1, GENESIS_DIGEST, "run-1")["event_digest"], "run-2"),
+    ]
+    del events_last
+
+    problems = verify_event_chain(events)
+    assert any(problem.startswith("mixed-identity-at-seq:2") for problem in problems)
+
+
+def test_mid_file_garbage_requires_manual_recovery(tmp_path: Path) -> None:
+    directory = journal_directory_for(tmp_path / "result.json")
+    writer = _writer(directory)
+    try:
+        writer.record_run_start(cases=("a",), arms=("baseline",), max_turns=5)
+        _simulate_case(writer, case="a", arm="baseline")
+    finally:
+        writer.close()
+    events_path = directory / "events.jsonl"
+    lines = events_path.read_text(encoding="utf-8").splitlines()
+    lines.insert(2, "{corrupt garbage not json")
+    events_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    # Auto-append refuses; recovery is an explicit reader action.
+    with pytest.raises(ValueError, match="manual recovery|unparseable"):
+        _writer(directory)
+    reader = ABJournalReader(directory)
+    assert reader.recover_tail() >= 1
+    assert reader.verify_hash_chain() == []
+    resumed = _writer(directory)
+    try:
+        resumed.record_run_complete(rows=1)
+    finally:
+        resumed.close()
+    assert ABJournalReader(directory).verify_hash_chain() == []
+
+
+def test_nonfinite_score_never_reaches_strict_json(tmp_path: Path) -> None:
+    directory = journal_directory_for(tmp_path / "result.json")
+    writer = _writer(directory)
+    try:
+        writer.record_case_complete(
+            case="a",
+            arm="baseline",
+            row={"ok": True, "score": float("inf"), "stop_reason": "done"},
+        )
+    finally:
+        writer.close()
+
+    raw = (directory / "events.jsonl").read_text(encoding="utf-8")
+    assert "Infinity" not in raw
+    assert "NaN" not in raw
+    event = ABJournalReader(directory).events()[-1]
+    assert "score" not in event["facts"]
+
+
 def test_duplicate_seq_is_detected(tmp_path: Path) -> None:
     directory = journal_directory_for(tmp_path / "result.json")
     writer = _writer(directory)
