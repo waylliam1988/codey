@@ -15,6 +15,8 @@ _CAPSULE_RE = re.compile(r"^capsule:[0-9a-f]{16}$")
 def _analysis_payload(**overrides: object) -> dict[str, object]:
     record = analysis_run_record({
         "run_id": "run-1",
+        "tool_id": overrides.pop("tool_id", "1:0"),
+        "tool_name": overrides.pop("tool_name", "run"),
         "command": overrides.pop("command", "pytest -q"),
         "cwd": ".",
         "project": "E:/codey",

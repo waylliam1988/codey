@@ -3216,6 +3216,11 @@ class TaskRunner:
             command = str(call.args.get("command") or "")
             cwd = str(call.args.get("path") or ".")
             ok = bool(outcome.ok and outcome.exit_code == 0)
+            try:
+                tool_index = int(event.metadata.get("tool_index") or 0)
+            except (TypeError, ValueError):
+                tool_index = 0
+            tool_id = f"{event.turn}:{max(0, tool_index)}"
             if ok and self.project_facts is not None:
                 try:
                     self.project_facts.record_success(project, cwd, command)
@@ -3233,6 +3238,7 @@ class TaskRunner:
                 work=work,
                 project=project,
                 run_id=run_id,
+                tool_id=tool_id,
                 tool_name=name,
                 command=command,
                 cwd=cwd,
@@ -3249,6 +3255,7 @@ class TaskRunner:
         work: _RunWork,
         project: str,
         run_id: str,
+        tool_id: str,
         tool_name: str,
         command: str,
         cwd: str,
@@ -3275,7 +3282,8 @@ class TaskRunner:
             managed = outcome.managed_output()
             record = analysis_run_record({
                 "run_id": run_id,
-                "tool_id": tool_name or "run",
+                "tool_id": tool_id,
+                "tool_name": tool_name,
                 "command": command,
                 "cwd": cwd,
                 "project": project,

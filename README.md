@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.4-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.5-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.4`
+Version: `0.4.5`
 
 [Version history](CHANGELOG.md)
 
@@ -459,18 +459,20 @@ staged rollback uses the public `KnowledgeChanges` snapshot boundary, and
 merged records preserve the active project ref rather than dropping project
 metadata.
 
-In 0.4.5 (in development), local command executions become auditable facts.
+In 0.4.5, local command executions become auditable facts.
 Every project `run` tool execution is projected into a bounded AnalysisRun
-record (command digest, sanitized display command, cwd ref, exit code, timing,
-capture quality, and an allow-listed environment summary digest) plus stable
-content-addressed artifact refs for captured Managed Outputs, and one
+record (UI/runtime `tool_id`, `tool_name`, command digest, sanitized display
+command, cwd ref, exit code, timing, capture quality, and an allow-listed
+environment summary digest) plus stable content-addressed artifact refs for
+captured Managed Outputs, and one
 Reproducibility Capsule snapshot per run with an honest reproduction status.
 These live in Run Trace under `analysis_runs`, `artifact_refs`, and
 `reproducibility_capsules`; no raw stdout/stderr is stored, the model-visible
 tool result is byte-identical (including the timeout `ERROR:` prefix), Run Trace
-reapplies command-display redaction at its recorder boundary, and reports do not
-yet cite `analysis_run:<id>` (that report-contract change would require a small
-live A/B).
+reapplies command-display redaction at its recorder boundary, artifact refs are
+accepted only with both valid `artifact:<16hex>` and `artifact_version:<16hex>`
+ids, and reports do not yet cite `analysis_run:<id>` (that report-contract
+change would require a small live A/B).
 
 MiMo was retested after adding the one-tool Research boundary. A fresh-tab
 `long-official-doc/source_search` run completed in 10 turns, used

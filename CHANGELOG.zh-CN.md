@@ -4,7 +4,7 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## Unreleased
+## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 
 - 新增 `AnalysisRun` 本地命令执行审计投影（`codey/research/analysis_run.py`）：
   project 模式的每次 `run` 工具执行现在会投影成一条有界、确定性的记录，
@@ -30,6 +30,8 @@
   `ToolOutcome.audit` 流转。模型可见 `model_text`、UI/SSE payload 形状和 managed
   output footer 字节级不变，包括 timeout 的 `ERROR:` 前缀，由 characterization 测试锁定。
 - 按评审意见加固 AnalysisRun 投影：
+  - `tool_id` 现在记录实际 UI/runtime tool instance id（`turn:index`），
+    `tool_name` 单独记录 `run`，trace entry 可以直接对齐 UI payload。
   - `command_display` 在命中 secret-looking 信号时脱敏（置空并记
     `command_display_redacted` warning），与 ProjectFacts 拒绝持久化此类命令的口径一致；
     digest 始终是权威事实。`RunTrace.record_analysis_run()` 也会在 recorder 边界对直调者
@@ -42,7 +44,8 @@
   本身是否被二次截断。
 - derived lineage ref 从前缀校验收紧为形状校验：
   `source/evidence/analysis_run:<16hex>` 加 `run:<有界 id>`；URL 和自由文本 fail closed，
-  投影模块和 `run_trace.record_artifact_refs()` 双侧生效。
+  投影模块和 `run_trace.record_artifact_refs()` 双侧生效。投影层只接受 list/tuple 形状的
+  `derived_from`，recorder 也要求 `artifact_id` 与 `version_id` 都合法才记录 lineage。
 - 候选选择中的字典序 tuple 排序替换为显式 `ResearchCandidateScore` dataclass，
   字段顺序即优先级顺序（proof-complete 支配、停止质量、先对题后覆盖、验证布尔位、
   missing 更少）。unsupported-claim 回归仍是打分前的硬约束。

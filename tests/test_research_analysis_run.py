@@ -17,7 +17,8 @@ _REF_RE = re.compile(r"^analysis_run:[0-9a-f]{16}$")
 def _base_input(**overrides: object) -> dict[str, object]:
     data: dict[str, object] = {
         "run_id": "run-1",
-        "tool_id": "run",
+        "tool_id": "1:0",
+        "tool_name": "run",
         "command": "pytest -q tests/test_demo.py",
         "cwd": ".",
         "project": "E:/codey",
@@ -37,6 +38,8 @@ def test_analysis_run_record_projects_bounded_facts() -> None:
 
     assert record is not None
     assert _REF_RE.fullmatch(record.analysis_run_id)
+    assert record.tool_id == "1:0"
+    assert record.tool_name == "run"
     assert record.command_digest.startswith("sha256:")
     assert record.command_display == "pytest -q tests/test_demo.py"
     assert record.cwd_ref["basename"] == "codey" or record.cwd_ref["basename"]
@@ -51,6 +54,8 @@ def test_analysis_run_record_projects_bounded_facts() -> None:
 
     payload = record.to_payload()
     assert payload["analysis_run_id"] == record.analysis_run_id
+    assert payload["tool_id"] == "1:0"
+    assert payload["tool_name"] == "run"
     assert isinstance(payload["cwd_ref"], dict)
 
 
@@ -118,6 +123,8 @@ def test_analysis_run_record_keeps_clean_display() -> None:
 
 def test_analysis_run_record_rejects_empty_command_and_bad_types() -> None:
     assert analysis_run_record(_base_input(command="   ")) is None
+    assert analysis_run_record(_base_input(tool_id="run")) is None
+    assert analysis_run_record(_base_input(tool_name="")) is None
     assert analysis_run_record("not-a-mapping") is None  # type: ignore[arg-type]
 
 

@@ -4,7 +4,7 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## Unreleased
+## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 
 - Added `AnalysisRun` projections for audited local command runs (`codey/research/analysis_run.py`):
   each project `run` tool execution is now projected into a bounded, deterministic record with
@@ -30,6 +30,9 @@ This file records Codey's release history. The newest release appears first.
   `ToolOutcome.audit` only. The model-visible `model_text`, UI/SSE payload shape, and managed-output
   footer are byte-identical, including the timeout `ERROR:` prefix, locked by characterization tests.
 - Hardened AnalysisRun projection after review:
+  - `tool_id` now records the actual UI/runtime tool instance id (`turn:index`) and
+    `tool_name` separately records `run`, so trace entries line up with UI payloads without
+    overloading one field.
   - `command_display` is redacted (kept empty with a `command_display_redacted` warning) when the
     command matches secret-looking signals, matching ProjectFacts' refusal to persist such commands;
     the digest stays authoritative. `RunTrace.record_analysis_run()` repeats the same display
@@ -43,7 +46,9 @@ This file records Codey's release history. The newest release appears first.
   through).
 - Derived lineage refs are shape-checked instead of prefix-checked:
   `source/evidence/analysis_run:<16hex>` plus `run:<bounded-id>`; URLs and free text fail closed,
-  enforced in both the projection module and `run_trace.record_artifact_refs()`.
+  enforced in both the projection module and `run_trace.record_artifact_refs()`. The projection now
+  accepts `derived_from` only as a list/tuple, and the recorder requires both valid `artifact_id` and
+  `version_id` before storing artifact lineage.
 - Replaced the lexicographic tuple ranking in candidate selection with an explicit
   `ResearchCandidateScore` dataclass whose field order documents the priority order
   (proof-complete dominance, stop quality, question alignment before coverage, verification

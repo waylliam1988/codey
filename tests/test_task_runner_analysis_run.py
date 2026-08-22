@@ -34,11 +34,12 @@ def _outcome(
     )
 
 
-def _run_event(outcome: ToolOutcome, *, name: str = "run") -> RunEvent:
+def _run_event(outcome: ToolOutcome, *, name: str = "run", index: int = 2) -> RunEvent:
     return RunEvent.tool_finished(
         turn=1,
         call=ToolCall(name=name, args={"command": "pytest -q", "path": "."}),
         outcome=outcome,
+        index=index,
     )
 
 
@@ -75,7 +76,8 @@ class AnalysisRunIntegrationTests(unittest.TestCase):
             payload = recorder.manifest.to_payload()
             self.assertEqual(len(payload["analysis_runs"]), 1)
             entry = payload["analysis_runs"][0]
-            self.assertEqual(entry["tool_id"], "run")
+            self.assertEqual(entry["tool_id"], "1:2")
+            self.assertEqual(entry["tool_name"], "run")
             self.assertEqual(entry["exit_code"], 0)
             self.assertTrue(entry["ok"])
             self.assertEqual(entry["capture_quality"], "output_captured")

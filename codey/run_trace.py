@@ -47,6 +47,7 @@ MAX_RESEARCH_DONE_COMPILATIONS = 8
 MAX_ANALYSIS_RUNS = 8
 MAX_ARTIFACT_REFS = 16
 MAX_REPRODUCIBILITY_CAPSULES = 8
+MAX_CAPSULE_ARTIFACT_REFS = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 RESEARCH_ANSWER_STATUSES = frozenset({
@@ -776,7 +777,9 @@ class RunTraceRecorder:
         if not isinstance(record, Mapping):
             return
         ref = _generated_ref(record.get("analysis_run_id"), "analysis_run")
-        if not ref or ref in self._analysis_run_keys:
+        tool_id = _tool_instance_id(record.get("tool_id"))
+        tool_name = _identifier(record.get("tool_name"), 40)
+        if not ref or ref in self._analysis_run_keys or not tool_id or not tool_name:
             return
         cwd_ref = record.get("cwd_ref")
         command_display, command_display_redacted = _analysis_command_display(record.get("command_display"))
@@ -792,7 +795,8 @@ class RunTraceRecorder:
         payload: dict[str, object] = {
             "analysis_run_id": ref,
             "run_id": str(record.get("run_id") or "")[:120],
-            "tool_id": _identifier(record.get("tool_id") or "run", 40) or "run",
+            "tool_id": tool_id,
+            "tool_name": tool_name,
             "command_digest": _digest_ref(record.get("command_digest")),
             "command_display": command_display,
             "cwd_ref": dict(cwd_ref) if isinstance(cwd_ref, Mapping) else {},
@@ -826,7 +830,7 @@ class RunTraceRecorder:
                 continue
             version_id = _generated_ref(item.get("version_id"), "artifact_version")
             artifact_id = _generated_ref(item.get("artifact_id"), "artifact")
-            if not version_id or version_id in self._artifact_version_keys:
+            if not artifact_id or not version_id or version_id in self._artifact_version_keys:
                 continue
             derived = [
                 str(ref or "")[:120]
@@ -885,7 +889,7 @@ class RunTraceRecorder:
                     for item in _trace_list_items(capsule.get("artifact_refs"))
                 )
                 if version_ref
-            ][:MAX_REPRODUCIBILITY_CAPSULES],
+            ][:MAX_CAPSULE_ARTIFACT_REFS],
             "environment_digest": _digest_ref(capsule.get("environment_digest")),
             "reproduction_status": _safe_trace_code(
                 capsule.get("reproduction_status"), 40
@@ -1168,6 +1172,12 @@ def _clip(value: object, limit: int = MAX_TEXT_CHARS) -> str:
 def _identifier(value: object, limit: int = MAX_TEXT_CHARS) -> str:
     text = _clip(value, limit)
     return "".join(char if char.isalnum() or char in "._:-" else "_" for char in text)
+
+
+def _tool_instance_id(value: object) -> str:
+    text = _identifier(value, 40)
+    turn, sep, index = text.partition(":")
+    return text if sep and turn.isdigit() and index.isdigit() else ""
 
 
 def _bounded_refs(values: Iterable[object], *, limit: int = MAX_REFS) -> tuple[str, ...]:

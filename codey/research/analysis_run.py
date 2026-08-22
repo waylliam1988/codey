@@ -37,6 +37,7 @@ MAX_WARNINGS = 8
 _MAX_DURATION_MS = 10**9
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_TOOL_INSTANCE_RE = re.compile(r"^\d+:\d+$")
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class AnalysisRunRecord:
     analysis_run_id: str
     run_id: str
     tool_id: str
+    tool_name: str
     command_digest: str
     command_display: str
     cwd_ref: dict[str, object]
@@ -65,6 +67,7 @@ class AnalysisRunRecord:
             "analysis_run_id": self.analysis_run_id,
             "run_id": self.run_id,
             "tool_id": self.tool_id,
+            "tool_name": self.tool_name,
             "command_digest": self.command_digest,
             "command_display": self.command_display,
             "cwd_ref": dict(self.cwd_ref),
@@ -113,6 +116,11 @@ def _managed_output_view(value: object) -> Mapping[str, object]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _tool_instance_id(value: object) -> str:
+    text = clip(value, 40)
+    return text if _TOOL_INSTANCE_RE.fullmatch(text) else ""
+
+
 def environment_summary_digest() -> str:
     """Digest of a minimal allow-listed environment summary."""
 
@@ -134,6 +142,10 @@ def analysis_run_record(data: Mapping[str, object]) -> AnalysisRunRecord | None:
         return None
     command = str(data.get("command") or "").strip()
     if not command:
+        return None
+    tool_id = _tool_instance_id(data.get("tool_id"))
+    tool_name = clip(data.get("tool_name"), 40)
+    if not tool_id or not tool_name:
         return None
 
     warnings: list[str] = []
@@ -165,11 +177,13 @@ def analysis_run_record(data: Mapping[str, object]) -> AnalysisRunRecord | None:
         analysis_run_id=stable_ref(
             ANALYSIS_RUN_REF_PREFIX.removesuffix(":"),
             digest_text(command),
+            tool_id,
             started_at,
             exit_code,
         ),
         run_id=clip(data.get("run_id"), 120),
-        tool_id=clip(data.get("tool_id") or "run", 40),
+        tool_id=tool_id,
+        tool_name=tool_name,
         command_digest=digest_text(command),
         command_display=command_display,
         cwd_ref=path_ref(str(data.get("cwd") or "."), project=str(data.get("project") or "")),

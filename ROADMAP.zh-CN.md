@@ -1389,7 +1389,7 @@ provider 间的 unsupported-claim / protocol 稳定性。
 
 ## 0.4.5 - AnalysisRun + Reproducibility Capsule v1
 
-状态：v1 已实现（metadata / projection / local capsule，未发布）。
+状态：已完成（0.4.5，metadata / projection / local capsule）。
 本版落地的是执行审计底座：`research/analysis_run.py`、`research/artifact_lineage.py`、
 `research/reproducibility.py` 三个纯投影模块 + Run Trace 三个有界 section +
 TaskRunner 统一的 `_handle_project_tool_event()` 缝隙。字段做了减法：v1 不含
@@ -1405,8 +1405,10 @@ TaskRunner 统一的 `_handle_project_tool_event()` 缝隙。字段做了减法�
 评审加固：`command_display` 对 secret-looking 命令脱敏（digest 仍为权威事实）；
 只有带执行 timing 的真实执行才投影成 AnalysisRun（policy deny / cwd 非法 /
 command not found 不进 trace，timeout 记为诚实失败）；managed output audit
-透传 `stored_truncated`；derived ref 收紧为形状校验；候选选择的字典序 tuple
-排序替换为显式 `ResearchCandidateScore` dataclass。
+透传 `stored_truncated`；`tool_id` 收紧为 UI/runtime instance id（`turn:index`），
+`tool_name` 单独保留工具名；derived ref 收紧为形状校验，`derived_from` 只接受
+list/tuple，artifact lineage 记录必须同时有合法 `artifact_id` 与 `version_id`；
+候选选择的字典序 tuple 排序替换为显式 `ResearchCandidateScore` dataclass。
 
 ### 做什么
 
@@ -1422,7 +1424,9 @@ research/artifact_lineage.py
 
 ```text
 analysis_run_id
-tool / command
+tool_id
+tool_name
+command
 cwd_ref
 input_refs
 output_refs

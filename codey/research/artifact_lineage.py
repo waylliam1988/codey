@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, Mapping
+from typing import Mapping
 
 from codey.research.identity import clip, stable_ref
 
@@ -116,12 +116,13 @@ def artifact_ref_from_managed_output(data: Mapping[str, object]) -> ArtifactRef 
         warnings.append("stored_output_truncated")
     derived_raw = data.get("derived_from")
     derived: list[str] = []
-    for item in (derived_raw if isinstance(derived_raw, Iterable) else ()):  # type: ignore[arg-type]
-        ref = str(item or "").strip()
-        if is_valid_derived_ref(ref):
-            derived.append(ref)
-        if len(derived) >= MAX_DERIVED_REFS:
-            break
+    if isinstance(derived_raw, (list, tuple)):
+        for item in derived_raw:
+            ref = str(item or "").strip()
+            if is_valid_derived_ref(ref):
+                derived.append(ref)
+            if len(derived) >= MAX_DERIVED_REFS:
+                break
     return ArtifactRef(
         artifact_id=stable_ref(ARTIFACT_REF_PREFIX.removesuffix(":"), sha256),
         version_id=stable_ref(

@@ -1177,7 +1177,8 @@ class AnalysisRunTraceTests(unittest.TestCase):
             recorder.record_analysis_run({
                 "analysis_run_id": "analysis_run:" + "a" * 16,
                 "run_id": "run-analysis",
-                "tool_id": "run",
+                "tool_id": "1:0",
+                "tool_name": "run",
                 "command_digest": "sha256:" + "b" * 64,
                 "command_display": "pytest -q",
                 "cwd_ref": {"basename": "codey", "digest": "sha256:" + "c" * 64},
@@ -1206,6 +1207,15 @@ class AnalysisRunTraceTests(unittest.TestCase):
                 "analysis_run_id": "SECRET_ANALYSIS_RUN_REF",
                 "command_display": "secret",
             })
+            # Invalid tool instance id is ignored.
+            recorder.record_analysis_run({
+                "analysis_run_id": "analysis_run:" + "e" * 16,
+                "run_id": "run-analysis",
+                "tool_id": "run",
+                "tool_name": "run",
+                "command_digest": "sha256:" + "b" * 64,
+                "command_display": "pytest -q",
+            })
             recorder.finish(status="done")
 
             payload = self._payload(store.path_for("session-analysis", "run-analysis"))
@@ -1214,6 +1224,8 @@ class AnalysisRunTraceTests(unittest.TestCase):
             self.assertEqual(len(payload["analysis_runs"]), 1)
             entry = payload["analysis_runs"][0]
             self.assertEqual(entry["analysis_run_id"], "analysis_run:" + "a" * 16)
+            self.assertEqual(entry["tool_id"], "1:0")
+            self.assertEqual(entry["tool_name"], "run")
             self.assertEqual(entry["command_digest"], "sha256:" + "b" * 64)
             self.assertEqual(entry["duration_ms"], 1500)
             self.assertEqual(entry["warnings"], ["timing_unavailable"])
@@ -1229,7 +1241,8 @@ class AnalysisRunTraceTests(unittest.TestCase):
             recorder.record_analysis_run({
                 "analysis_run_id": "analysis_run:" + "f" * 16,
                 "run_id": "run-analysis",
-                "tool_id": "run",
+                "tool_id": "1:0",
+                "tool_name": "run",
                 "command_digest": "sha256:" + "b" * 64,
                 "command_display": secret_command,
                 "ok": False,
@@ -1256,6 +1269,8 @@ class AnalysisRunTraceTests(unittest.TestCase):
                 recorder.record_analysis_run({
                     "analysis_run_id": "analysis_run:" + f"{index:016x}",
                     "run_id": "run-analysis",
+                    "tool_id": f"1:{index}",
+                    "tool_name": "run",
                     "command_display": f"cmd {index}",
                     "command_digest": "sha256:" + f"{index:064x}",
                     "ok": True,
@@ -1294,6 +1309,12 @@ class AnalysisRunTraceTests(unittest.TestCase):
             }])
             # Invalid version id -> ignored.
             recorder.record_artifact_refs([{"version_id": "NOT_A_REF"}])
+            # Invalid artifact id -> ignored even when version id is valid.
+            recorder.record_artifact_refs([{
+                "artifact_id": "",
+                "version_id": "artifact_version:" + "8" * 16,
+                "mime": "text/plain",
+            }])
             recorder.finish(status="done")
 
             payload = self._payload(store.path_for("session-analysis", "run-analysis"))
@@ -1326,3 +1347,25 @@ class AnalysisRunTraceTests(unittest.TestCase):
             snapshot = payload["reproducibility_capsules"][0]
             self.assertEqual(snapshot["reproduction_status"], "failed")
             self.assertEqual(snapshot["warnings"], ["mixed_output_capture"])
+
+    def test_capsule_artifact_refs_are_bounded_independently(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_reproducibility_capsule({
+                "capsule_id": "capsule:" + "9" * 16,
+                "run_id": "run-analysis",
+                "analysis_run_refs": ["analysis_run:" + "6" * 16],
+                "artifact_refs": [
+                    "artifact_version:" + f"{index:016x}"
+                    for index in range(10)
+                ],
+                "reproduction_status": "output_captured",
+            })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-analysis", "run-analysis"))
+            snapshot = payload["reproducibility_capsules"][0]
+            self.assertEqual(len(snapshot["artifact_refs"]), 8)
+            self.assertEqual(snapshot["artifact_refs"][-1], "artifact_version:" + f"{7:016x}")

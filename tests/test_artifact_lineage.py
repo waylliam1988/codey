@@ -79,6 +79,25 @@ def test_artifact_ref_filters_invalid_derived_refs() -> None:
     )
 
 
+def test_artifact_ref_only_accepts_sequence_derived_refs() -> None:
+    string_ref = artifact_ref_from_managed_output(_base_input(
+        derived_from="analysis_run:0123456789abcdef",
+    ))
+    mapping_ref = artifact_ref_from_managed_output(_base_input(
+        derived_from={"ref": "analysis_run:0123456789abcdef"},
+    ))
+    tuple_ref = artifact_ref_from_managed_output(_base_input(
+        derived_from=("analysis_run:0123456789abcdef",),
+    ))
+
+    assert string_ref is not None
+    assert mapping_ref is not None
+    assert tuple_ref is not None
+    assert string_ref.derived_from == ()
+    assert mapping_ref.derived_from == ()
+    assert tuple_ref.derived_from == ("analysis_run:0123456789abcdef",)
+
+
 def test_is_valid_derived_ref_requires_exact_shapes() -> None:
     # Generated research refs must be 16-hex.
     assert is_valid_derived_ref("analysis_run:0123456789abcdef")

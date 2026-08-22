@@ -1,6 +1,6 @@
 # Codey Test Report
 
-## 0.4.5 AnalysisRun + Reproducibility Capsule v1 (in development)
+## 0.4.5 AnalysisRun + Reproducibility Capsule v1
 
 Codey 0.4.5 makes local command executions auditable without changing any
 model-visible behavior. Three pure projection modules consume normalized
@@ -10,12 +10,13 @@ tools.
 Production changes:
 
 - `codey/research/analysis_run.py`: deterministic AnalysisRunRecord projection
-  (command digest, bounded display command, cwd ref, exit code, timing, capture
-  quality, allow-listed environment summary digest). No script/dependency/git
-  fields in v1; `reproduction_status` only reports captured/not-captured/failed.
+  (UI/runtime `tool_id`, `tool_name`, command digest, bounded display command,
+  cwd ref, exit code, timing, capture quality, allow-listed environment summary
+  digest). No script/dependency/git fields in v1; `reproduction_status` only
+  reports captured/not-captured/failed.
 - `codey/research/artifact_lineage.py`: content-addressed
   `artifact:<16hex>` / `artifact_version:<16hex>` refs projected from Managed
-  Output audit payloads with pinned `text/plain` mime and prefix-validated
+  Output audit payloads with pinned `text/plain` mime and shape-validated
   derived refs.
 - `codey/research/reproducibility.py`: per-run ReproducibilityCapsule snapshot
   (bounded analysis-run refs, artifact version refs, environment digest,
@@ -31,12 +32,15 @@ Production changes:
 - Review hardening:
   - `command_display` is redacted for secret-looking commands (digest stays
     authoritative), matching ProjectFacts' existing refusal.
+  - AnalysisRun `tool_id` is the tool instance id (`turn:index`); `tool_name`
+    remains the tool kind (`run`).
   - Only real executions project into AnalysisRun: outcomes without execution
     timing (policy deny, invalid cwd, command not found) stay out; timeouts are
     recorded as honest failures.
   - Managed Output audit payloads pass through `stored_truncated`.
   - Derived lineage refs require exact shapes (`source/evidence/analysis_run`
-    as 16-hex, `run` as bounded id); URLs fail closed.
+    as 16-hex, `run` as bounded id); URLs fail closed, `derived_from` must be a
+    list/tuple, and artifact lineage records require both artifact and version ids.
   - Candidate selection now uses an explicit `ResearchCandidateScore` dataclass;
     unsupported-claim regression stays a pre-score hard constraint.
 - TaskRunner's three duplicated project tool-event branches consolidate into one
@@ -49,23 +53,20 @@ Production changes:
 Validation during implementation:
 
 ```text
-python -m pytest tests\test_run_command_characterization.py tests\test_research_analysis_run.py tests\test_artifact_lineage.py tests\test_reproducibility_capsule.py -q
-# 26 passed
+python -B -m py_compile codey\research\analysis_run.py codey\research\artifact_lineage.py codey\research\reproducibility.py codey\run_trace.py codey\task_runner.py
+# passed
 
-python -m pytest tests\test_run_trace.py tests\test_task_runner_analysis_run.py tests\test_task_runner_run_trace.py -q
-# 48 passed
-
-python -m pytest tests\test_research_pipeline.py tests\test_tool_runtime.py tests\test_managed_outputs.py tests\test_events.py -q
-# 142 passed, 16 subtests passed
-
-ruff check codey tests
+python -m ruff check codey tests
 # All checks passed!
 
-python -m py_compile codey\tool_runtime.py codey\task_runner.py codey\run_trace.py codey\models.py codey\managed_outputs.py codey\research\analysis_run.py codey\research\artifact_lineage.py codey\research\reproducibility.py codey\research\pipeline.py
+python -B -m pytest tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs tests\test_research_analysis_run.py tests\test_artifact_lineage.py tests\test_reproducibility_capsule.py tests\test_run_trace.py tests\test_task_runner_analysis_run.py tests\test_architecture.py -q -p no:cacheprovider
+# 82 passed, 131 subtests passed
+
+git diff --check
 # passed
 
 python -m pytest -q
-# 2319 passed, 647 subtests passed in 409.29s
+# 2313 passed, 9 skipped, 647 subtests passed in 417.43s
 ```
 
 No live provider A/B is required: prompts, tool schemas, model-visible tool

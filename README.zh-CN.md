@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.4-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.5-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.4`
+版本：`0.4.5`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -370,14 +370,17 @@ list，evidence item 必须使用 `source_url`；staged rollback 使用公开的
 `KnowledgeChanges` snapshot 边界；合并后的记录会保留当前 project ref，不再丢失
 project metadata。
 
-0.4.5（开发中）让本地命令执行成为可审计事实。project 模式每次 `run` 工具执行
-都会投影成一条有界 AnalysisRun 记录（command digest、有界显示命令、cwd ref、
-exit code、timing、capture quality、allow-list 环境摘要 digest），已捕获的
-Managed Output 会得到稳定的内容寻址 artifact 引用，每个 run 还有一份带诚实
+0.4.5 让本地命令执行成为可审计事实。project 模式每次 `run` 工具执行
+都会投影成一条有界 AnalysisRun 记录（UI/runtime `tool_id`、`tool_name`、
+command digest、有界显示命令、cwd ref、exit code、timing、capture quality、
+allow-list 环境摘要 digest），已捕获的 Managed Output 会得到稳定的内容寻址
+artifact 引用，每个 run 还有一份带诚实
 reproduction status 的 Reproducibility Capsule 快照。它们存放在 Run Trace 的
 `analysis_runs`、`artifact_refs`、`reproducibility_capsules` 三个有界 section 里；
-不保存 raw stdout/stderr，模型可见工具结果字节级不变，报告也暂不引用
-`analysis_run:<id>`（那个报告契约变更需要后续小型实机 A/B）。
+不保存 raw stdout/stderr，模型可见工具结果字节级不变，Run Trace 边界会重做
+command display 脱敏，artifact ref 必须同时有合法的 `artifact:<16hex>` 与
+`artifact_version:<16hex>` id，报告也暂不引用 `analysis_run:<id>`（那个报告契约
+变更需要后续小型实机 A/B）。
 
 MiMo 在加入 one-tool Research 边界后重新做过实机补测。fresh-tab 的
 `long-official-doc/source_search` 跑满 10 轮并完成：使用了 `source_search`，
