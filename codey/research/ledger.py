@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from codey.research.source_document import SourceDocument
+from codey.research import source_domains
 
 MAX_SNIPPET_CHARS = 360
 MAX_CLAIM_CHARS = 260
@@ -470,20 +471,22 @@ def now_iso() -> str:
 
 def classify_source_quality(url: str, text: str = "") -> SourceQuality:
     parsed = urlparse(str(url or ""))
-    host = (parsed.hostname or "").lower().removeprefix("www.")
+    host = source_domains.strip_www(parsed.hostname)
     path = (parsed.path or "").lower()
     group = _independent_group(host)
     kind = "web"
     level = "secondary"
-    if host.endswith(".gov") or ".gov." in host:
+    if source_domains.is_government_host(host):
+        # Strong trust is granted only by registered-suffix host shapes;
+        # lookalikes (sec.gov.evil.example) stay plain web/secondary.
         kind = "official"
         level = "primary"
-    elif host.endswith(".edu") or ".edu." in host:
+    elif source_domains.is_education_host(host):
         kind = "data"
         level = "primary"
-    elif any(marker in host for marker in ("reuters", "apnews", "bbc", "news", "nytimes", "wsj")):
+    elif source_domains.matches_any(host, source_domains.NEWS_HOSTS):
         kind = "media"
-    elif any(marker in host for marker in ("blog", "medium", "substack")):
+    elif source_domains.matches_any(host, source_domains.BLOG_HOSTS):
         kind = "blog"
     elif any(marker in path for marker in ("data", "dataset", "statistics", "report", "download")):
         kind = "data"

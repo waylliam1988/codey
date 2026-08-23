@@ -69,19 +69,33 @@ scripted-provider self-test (`--self-test`) runs the full two-arm flow
 offline; builders/scorers/gate/schedule/journal-wiring have unit tests with
 no provider traffic.
 
-Source-trust hardening round two: government/education strong trust moved
-from substring tests (`.gov.` in host) to an explicit registered-suffix
-table (gov/mil plus compound ccTLD shapes like gov.au/gov.uk/gouv.fr/gc.ca/
-go.jp, edu/ac.uk), so `sec.gov.evil.example`-style lookalikes cannot inherit
-tier-3 trust; locked by lookalike and compound-suffix tests alongside the
-existing forum/social/news exact-match cases.
+Source-trust hardening round two, closed end to end: the host-domain tables
+(gov/mil suffix shapes with compound ccTLDs, edu/ac.uk, news, blog, forum,
+social, preprint, peer-reviewed, repo, filing, standard) moved into one
+stdlib-data leaf `codey/research/source_domains.py` consumed by BOTH the
+capture-time classifier (`ledger.classify_source_quality`) and the trust
+projection, so the old substring rules in the ledger can no longer stamp a
+lookalike URL (`sec.gov.evil.example`) as official upstream of the suffix
+table. Defense in depth at the projection: declared quality kinds may only
+assign middle/weak classes -- strong classes derive from the host shape
+alone, and a forged official/data stamp now degrades to unknown instead of
+tier-3. Locked by per-layer lookalike tests plus an end-to-end
+classify->project test; compound suffixes (gov.au/gov.uk/edu.cn/ac.uk)
+verified still matching. Note: the real-Edge UI e2e is timing-sensitive
+under full-suite load and flaked once (passed in isolation and in the
+final full-suite rerun); no research/knowledge path touches it.
+
+Gate matrix completeness: `_gate_verdict` additionally requires every
+(case, repeat) pair to have exactly one baseline and one projection row
+(`matrix_complete` criterion), so unbalanced runs such as 2 baseline vs 1
+projection fail the gate instead of hiding a regression behind totals.
 
 Verification:
 
 ```text
 python -m pytest tests/test_domain_profiles.py tests/test_source_trust.py
-  tests/test_brief_projection.py ... targeted suite: 469 passed, 244 subtests
-python -m pytest tests                full suite: 2554 passed, 758 subtests
+  tests/test_brief_projection.py ... targeted suite: 318 passed, 231 subtests
+python -m pytest tests                full suite: 2561 passed, 761 subtests
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean

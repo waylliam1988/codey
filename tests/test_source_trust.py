@@ -100,6 +100,58 @@ class ClassificationTests(unittest.TestCase):
                 else:
                     self.assertIn(expected, classes)
 
+    def test_ledger_quality_classifier_matches_projection_rules(self) -> None:
+        # The capture-time classifier (ledger.classify_source_quality) and the
+        # projection share one domain-table owner; a lookalike URL must never
+        # get an official/data stamp that would later bypass the suffix table.
+        from codey.research.ledger import classify_source_quality
+
+        lookalike = classify_source_quality("https://sec.gov.evil.example/")
+        self.assertEqual(lookalike.level, "secondary")
+        self.assertEqual(lookalike.kind, "web")
+
+        edu_lookalike = classify_source_quality("https://mit.edu.phishing.example/x")
+        self.assertEqual(edu_lookalike.level, "secondary")
+
+        real_gov = classify_source_quality("https://www.treasury.gov/report")
+        self.assertEqual(real_gov.level, "primary")
+        self.assertEqual(real_gov.kind, "official")
+
+        cc_gov = classify_source_quality("https://australia.gov.au/")
+        self.assertEqual(cc_gov.level, "primary")
+        self.assertEqual(cc_gov.kind, "official")
+
+        real_edu = classify_source_quality("https://tsinghua.edu.cn/news")
+        self.assertEqual(real_edu.level, "primary")
+        self.assertEqual(real_edu.kind, "data")
+
+    def test_end_to_end_lookalike_url_projects_weak_not_strong(self) -> None:
+        # Full path: classify -> SourceQuality -> projection input.
+        from codey.research.ledger import classify_source_quality
+
+        quality = classify_source_quality("https://sec.gov.evil.example/")
+        source = {
+            "source_id": "source:" + "9" * 16,
+            "host": "sec.gov.evil.example",
+            "content_kind": "html",
+            "quality": {
+                "level": quality.level,
+                "kind": quality.kind,
+                "freshness": quality.freshness,
+            },
+        }
+
+        projection = project_source_trust(source)
+
+        self.assertNotEqual(projection.tier, TIER_STRONG)
+        self.assertNotIn("official", projection.classes)
+        # Defense in depth: even a forged official stamp cannot grant trust.
+        forged = dict(source)
+        forged["quality"] = {"level": "primary", "kind": "official", "freshness": "fresh"}
+        forged_projection = project_source_trust(forged)
+        self.assertNotEqual(forged_projection.tier, TIER_STRONG)
+        self.assertNotIn("official", forged_projection.classes)
+
     def test_sec_host_yields_filing_plus_official(self) -> None:
         projection = project_source_trust(_source("sec.gov", level="primary", kind="official"))
 
@@ -152,12 +204,23 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(unknown.tier, TIER_WEAK)
         self.assertIn("weak_source_class", unknown.warnings)
 
-    def test_level_only_sources_use_primary_secondary(self) -> None:
-        primary = project_source_trust(_source("institute.example", level="primary"))
+    def test_declared_level_alone_never_grants_strong_class(self) -> None:
+        # A tampered or stale quality stamp cannot vouch trust upward: only
+        # the host's registered shape can produce a strong class.
+        claimed_primary = project_source_trust(
+            _source("institute.example", level="primary", kind="official", suffix="1" * 16)
+        )
         secondary = project_source_trust(_source("institute.example", level="secondary"))
+        nothing = project_source_trust({"source_id": "source:" + "2" * 16, "host": "institute.example"})
 
-        self.assertEqual(primary.source_class, "primary")
+        self.assertNotIn("official", claimed_primary.classes)
+        self.assertNotIn("primary", claimed_primary.classes)
+        # An unverifiable strong claim degrades all the way to unknown
+        # instead of borrowing middle-tier credibility.
+        self.assertEqual(claimed_primary.source_class, "unknown")
+        self.assertEqual(claimed_primary.tier, TIER_WEAK)
         self.assertEqual(secondary.source_class, "secondary")
+        self.assertEqual(nothing.source_class, "unknown")
 
     def test_invalid_source_without_ref_returns_none(self) -> None:
         self.assertIsNone(project_source_trust({"host": "example.com"}))

@@ -91,7 +91,10 @@ This file records Codey's release history. The newest release appears first.
   gate verdict: it fails when the projection arm regresses on any gate
   metric (success, key-conclusion retention, trap misuse, independent
   verification pass) or any row errored -- a crash-free run with bad
-  results is a failure, not a pass. By default every prompt/reply exchange
+  results is a failure, not a pass. The run matrix itself is part of the
+  gate: every (case, repeat) pair must have exactly one baseline and one
+  projection row, so unbalanced or truncated runs cannot hide a regression.
+  By default every prompt/reply exchange
   is recorded into a hash-chained `ABJournalWriter` journal with full
   transcript archiving (`transcripts/<digest>.json`) for offline replay;
   `--no-live-trace` disables it. Transcripts stay manual-layer material and
@@ -108,13 +111,19 @@ This file records Codey's release history. The newest release appears first.
   with their own gates. Capability metadata mirrors module ownership:
   `domain_evidence_profiles` / `research_source_trust` /
   `research_brief_projection` are three separate boundaries.
-- Source-trust host matching hardened: government/education trust now
-  matches an explicit registered-suffix table (`gov`, `mil`, compound
-  ccTLD shapes like `gov.au` / `gov.uk` / `gouv.fr` / `gc.ca` / `go.jp`,
-  `edu`, `ac.uk`, ...) instead of substring tests, so attacker-owned
-  lookalikes such as `sec.gov.evil.example` or `mit.edu.phishing.example`
-  can no longer inherit tier-3 trust; forum/social/news domains already
-  matched exactly-or-suffix. Locked by lookalike and compound-suffix tests.
+- Source-trust host matching hardened end to end. The domain tables (gov/mil
+  suffix shapes incl. compound ccTLDs, edu/ac.uk, news, blog, forum, social,
+  preprint, peer-reviewed, repo, filing, standard) moved into one stdlib-data
+  leaf, `codey/research/source_domains.py`, consumed by both the capture-time
+  quality classifier (`ledger.classify_source_quality`) and the trust
+  projection -- the two layers can no longer drift apart, so a lookalike URL
+  such as `sec.gov.evil.example` gets a plain web/secondary stamp at capture
+  time instead of an official one that would bypass the suffix table later.
+  Defense in depth at the projection: declared `quality` kinds may only ever
+  assign middle/weak classes; strong classes derive from the host's
+  registered shape alone, so even a forged official/data stamp projects to
+  unknown rather than tier-3 trust. Locked by lookalike tests on both layers
+  plus an end-to-end classify->project test.
 
 
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1

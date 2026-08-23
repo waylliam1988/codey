@@ -124,6 +124,7 @@ def _row(arm: str, **overrides: object) -> dict:
     row = {
         "case": "discount-before-tax",
         "arm": arm,
+        "repeat": 1,
         "success": True,
         "key_conclusion_applied": True,
         "trap_misused": False,
@@ -140,6 +141,20 @@ def test_gate_verdict_passes_when_projection_matches_baseline() -> None:
 
     assert verdict["ok"] is True
     assert all(verdict["criteria"].values())
+
+
+def test_gate_verdict_passes_for_full_interleaved_matrix() -> None:
+    rows = [
+        _row("baseline", repeat=1),
+        _row("projection", repeat=1),
+        _row("projection", repeat=2),
+        _row("baseline", repeat=2),
+    ]
+
+    verdict = probe._gate_verdict(rows, repeats=2)
+
+    assert verdict["ok"] is True
+    assert verdict["criteria"]["matrix_complete"] is True
 
 
 def test_gate_verdict_fails_when_projection_regresses_or_trap_fires() -> None:
@@ -168,6 +183,43 @@ def test_gate_verdict_fails_when_projection_regresses_or_trap_fires() -> None:
     empty = probe._gate_verdict([])
     assert empty["ok"] is False
     assert empty["criteria"]["arms_populated"] is False
+
+
+def test_gate_verdict_rejects_unbalanced_arms() -> None:
+    # 2 baseline vs 1 projection: metric totals could hide a regression, so
+    # the run matrix itself must fail the gate.
+    unbalanced = probe._gate_verdict([
+        _row("baseline"),
+        _row("baseline", repeat=2),
+        _row("projection"),
+    ])
+
+    assert unbalanced["ok"] is False
+    assert unbalanced["criteria"]["matrix_complete"] is False
+
+
+def test_gate_verdict_rejects_duplicate_pair_rows() -> None:
+    duplicated = probe._gate_verdict([
+        _row("baseline"),
+        _row("projection"),
+        _row("projection"),
+    ])
+
+    assert duplicated["ok"] is False
+    assert duplicated["criteria"]["matrix_complete"] is False
+
+
+def test_gate_verdict_rejects_missing_repeat() -> None:
+    missing_repeat = probe._gate_verdict(
+        [
+            _row("baseline", repeat=1),
+            _row("projection", repeat=1),
+        ],
+        repeats=2,
+    )
+
+    assert missing_repeat["ok"] is False
+    assert missing_repeat["criteria"]["matrix_complete"] is False
 
 
 def test_tracing_provider_journals_send_reply_and_transcript(tmp_path) -> None:

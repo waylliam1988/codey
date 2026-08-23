@@ -497,11 +497,23 @@ def _arm_schedule(repeats: int) -> list[tuple[str, int]]:
     return out
 
 
-def _gate_verdict(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _gate_verdict(
+    rows: list[dict[str, Any]],
+    *,
+    repeats: int = 1,
+    cases: tuple[str, ...] = ("discount-before-tax",),
+) -> dict[str, Any]:
     """Release-gate verdict: the projection arm must not regress on any gate
-    metric vs the baseline arm, and every scheduled row must have completed.
+    metric vs the baseline arm, and the run matrix must be complete -- every
+    (case, repeat) pair has exactly one baseline and one projection row and
+    nothing errored.
     """
 
+    repeat_count = max(1, int(repeats))
+    expected_keys = {
+        (case, index + 1) for case in cases for index in range(repeat_count)
+    }
+    expected_per_arm = len(expected_keys)
     base_rows = [
         row for row in rows if row.get("arm") == "baseline" and "error" not in row
     ]
@@ -510,12 +522,27 @@ def _gate_verdict(rows: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     error_rows = [row for row in rows if "error" in row]
 
+    def pair_counts(arm_rows: list[dict[str, Any]]) -> dict[tuple[str, int], int]:
+        counts: dict[tuple[str, int], int] = {}
+        for row in arm_rows:
+            key = (str(row.get("case") or ""), int(row.get("repeat") or 0))
+            counts[key] = counts.get(key, 0) + 1
+        return counts
+
+    base_pairs = pair_counts(base_rows)
+    proj_pairs = pair_counts(proj_rows)
+
     def total(rs: list[dict[str, Any]], key: str) -> int:
         return sum(1 for row in rs if row.get(key))
 
     criteria = {
         "arms_populated": bool(base_rows) and bool(proj_rows),
         "no_error_rows": not error_rows,
+        "matrix_complete": (
+            len(rows) == expected_per_arm * len(ARMS)
+            and all(base_pairs.get(key, 0) == 1 for key in expected_keys)
+            and all(proj_pairs.get(key, 0) == 1 for key in expected_keys)
+        ),
         "success_not_worse": (
             total(proj_rows, "success") >= total(base_rows, "success")
         ),
@@ -634,7 +661,11 @@ def run_live(
                 payload["summary"] = _summarize(payload["rows"])
                 _atomic_write_json(output, payload)
                 print(json.dumps(row, ensure_ascii=False), flush=True)
-        verdict = _gate_verdict(payload["rows"])
+        verdict = _gate_verdict(
+            payload["rows"],
+            repeats=max(1, int(repeats)),
+            cases=tuple(case.name for case in CASES),
+        )
         payload["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         payload["summary"] = _summarize(payload["rows"])
         payload["gate"] = verdict

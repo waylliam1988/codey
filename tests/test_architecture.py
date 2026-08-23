@@ -399,6 +399,30 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     sorted(forbidden_imports & imports),
                 )
 
+    def test_source_domains_is_a_stdlib_data_leaf(self) -> None:
+        # The shared host-domain tables have exactly one owner and no
+        # behavior: both the capture-time classifier and the trust
+        # projection consume them, so they must stay import-cycle-free.
+        path = ROOT / "codey" / "research" / "source_domains.py"
+        imports = imported_modules(path)
+
+        self.assertEqual(
+            [name for name in imports if name == "codey" or name.startswith("codey.")],
+            [],
+        )
+        source = path.read_text(encoding="utf-8")
+        for token in (
+            "write_text(",
+            "write_json",
+            "open(",
+            "eval(",
+            "exec(",
+            "subprocess",
+            "urllib",
+            "urlparse",
+        ):
+            self.assertNotIn(token, source)
+
     def test_research_review_and_local_context_do_not_import_tool_runtime(self) -> None:
         paths = [
             *(ROOT / "codey" / "research").glob("*.py"),

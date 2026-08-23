@@ -19,6 +19,7 @@ from typing import Iterable, Mapping
 
 from codey.refs import clip as _clip
 from codey.refs import identifier as _identifier
+from codey.research import source_domains
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 
 
@@ -68,94 +69,16 @@ MAX_PROJECTIONS = 24
 MAX_SOURCE_CLASSES = 3
 FRESHNESS_VALUES = frozenset({"fresh", "stale", "undated"})
 
-_PREPRINT_HOSTS = ("arxiv.org", "biorxiv.org", "medrxiv.org", "ssrn.com")
-_PEER_REVIEWED_HOSTS = (
-    "pubmed.ncbi.nlm.nih.gov",
-    "ncbi.nlm.nih.gov",
-    "doi.org",
-    "ieeexplore.ieee.org",
-    "sciencedirect.com",
-    "link.springer.com",
-    "nature.com",
-    "science.org",
-    "dl.acm.org",
-    "jmlr.org",
-    "plos.org",
-    "frontiersin.org",
-)
-_REPO_HOSTS = ("github.com", "gitlab.com", "bitbucket.org")
-_FILING_HOSTS = ("sec.gov", "finra.org", "edi.gov")
-_STANDARD_HOSTS = ("iso.org", "ieee.org", "ietf.org", "ansi.org", "w3.org", "itu.int")
-# Government/education trust must match registered public-suffix shapes only.
-# Substring tests like ".gov." in host would let attacker-owned lookalikes
-# (e.g. sec.gov.evil.example) inherit tier-3 trust, which is far more
-# dangerous than missing an exotic ccTLD. Compound suffixes stay finite and
-# stable; unknown ones simply do not get free trust.
-_GOV_SUFFIXES = (
-    "gov",
-    "mil",
-    "gov.au",
-    "gov.br",
-    "gov.cn",
-    "gov.in",
-    "gov.uk",
-    "gov.za",
-    "gouv.fr",
-    "gc.ca",
-    "go.jp",
-    "go.id",
-)
-_EDU_SUFFIXES = (
-    "edu",
-    "edu.au",
-    "edu.cn",
-    "edu.hk",
-    "ac.uk",
-)
-_NEWS_HOSTS = (
-    "apnews.com",
-    "ap.org",
-    "bbc.co.uk",
-    "bbc.com",
-    "bloomberg.com",
-    "cnbc.com",
-    "ft.com",
-    "nytimes.com",
-    "reuters.com",
-    "theguardian.com",
-    "wsj.com",
-)
-_FORUM_HOSTS = (
-    "news.ycombinator.com",
-    "quora.com",
-    "reddit.com",
-    "stackoverflow.com",
-    "stackexchange.com",
-    "v2ex.com",
-    "zhihu.com",
-)
-_SOCIAL_HOSTS = (
-    "facebook.com",
-    "linkedin.com",
-    "weibo.com",
-    "x.com",
-    "twitter.com",
-)
-
+# Declared quality kinds may only ever assign MIDDLE or WEAK classes. Strong
+# classes (official/dataset/primary/filing/standard/peer_reviewed) are derived
+# from the host's registered shape alone, so a tampered or stale ``quality``
+# stamp can never grant trust upward.
 _KIND_CLASSES = {
-    "official": "official",
-    "data": "dataset",
     "media": "news",
     "blog": "secondary",
     "forum": "forum",
     "social": "social",
 }
-
-
-def _host_is(host: str, domain: str) -> bool:
-    """Exact or dot-suffix domain match; never a substring test."""
-
-    return host == domain or host.endswith("." + domain)
 
 
 @dataclass(frozen=True)
@@ -330,35 +253,35 @@ def _classify(*, host: str, kind: str, level: str) -> tuple[str, ...]:
         if token and token not in classes and len(classes) < MAX_SOURCE_CLASSES:
             classes.append(token)
 
-    if host:
-        lowered = host.lower()
-        if any(_host_is(lowered, item) for item in _PREPRINT_HOSTS):
+    lowered = source_domains.strip_www(host)
+    if lowered:
+        if source_domains.matches_any(lowered, source_domains.PREPRINT_HOSTS):
             add("preprint")
-        if any(_host_is(lowered, item) for item in _PEER_REVIEWED_HOSTS):
+        if source_domains.matches_any(lowered, source_domains.PEER_REVIEWED_HOSTS):
             add("peer_reviewed")
-        if any(_host_is(lowered, item) for item in _REPO_HOSTS):
+        if source_domains.matches_any(lowered, source_domains.REPO_HOSTS):
             add("repository")
-        if any(_host_is(lowered, item) for item in _STANDARD_HOSTS):
+        if source_domains.matches_any(lowered, source_domains.STANDARD_HOSTS):
             add("standard")
-        if any(_host_is(lowered, item) for item in _FILING_HOSTS):
+        if source_domains.matches_any(lowered, source_domains.FILING_HOSTS):
             add("filing")
-        if any(_host_is(lowered, item) for item in _GOV_SUFFIXES):
+        if source_domains.is_government_host(lowered):
             add("official")
-        elif any(_host_is(lowered, item) for item in _EDU_SUFFIXES):
+        elif source_domains.is_education_host(lowered):
             add("primary")
-        if any(_host_is(lowered, item) for item in _FORUM_HOSTS):
+        if source_domains.matches_any(lowered, source_domains.FORUM_HOSTS):
             add("forum")
-        elif any(_host_is(lowered, item) for item in _SOCIAL_HOSTS):
+        elif source_domains.matches_any(lowered, source_domains.SOCIAL_HOSTS):
             add("social")
-        elif any(_host_is(lowered, item) for item in _NEWS_HOSTS):
+        elif source_domains.matches_any(lowered, source_domains.NEWS_HOSTS):
             add("news")
     mapped = _KIND_CLASSES.get(kind, "")
     if mapped:
         add(mapped)
     if not classes:
-        if level == "primary":
-            add("primary")
-        elif level == "secondary":
+        # Level alone can only ever vouch for its own class; it never grants
+        # a strong class the host did not corroborate.
+        if level == "secondary":
             add("secondary")
         else:
             add("unknown")

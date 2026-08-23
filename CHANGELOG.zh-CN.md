@@ -72,7 +72,9 @@
   两臂顺序按 repeat 交错，消除会话热身/顺序偏差。进程退出码即 gate 判定：
   projection 臂在任一 gate 指标（success、关键结论保留、陷阱 claim 误用、
   独立验证通过）上回退，或任何 row 出错，都判失败——"跑完没崩但结果差"
-  是 gate 失败而不是通过。默认每次 prompt/reply 交互写入哈希链
+  是 gate 失败而不是通过。run matrix 本身也是 gate 的一部分：每个
+  (case, repeat) 组合必须恰好有一条 baseline 和一条 projection row，
+  不均衡或被截断的 run 无法掩盖回退。默认每次 prompt/reply 交互写入哈希链
   `ABJournalWriter` journal 并完整归档（`transcripts/<digest>.json`）供
   离线复盘；`--no-live-trace` 可关闭。transcript 仅属 manual 层材料，
   绝不进入 RunTrace/EvidenceLedger/生产证据链。scripted-provider
@@ -85,12 +87,16 @@
   这些消费方带着各自门槛上线之前，没有任何用户可见行为变化。能力元数据
   与模块归属一一对应：`domain_evidence_profiles` / `research_source_trust`
   / `research_brief_projection` 是三个独立边界。
-- source-trust 域名匹配加固：政府/教育强信任改为显式注册后缀表
-  （`gov`、`mil` 及 `gov.au`/`gov.uk`/`gouv.fr`/`gc.ca`/`go.jp` 等 compound
-  ccTLD 形态、`edu`、`ac.uk`...），不再使用子串测试——攻击者控制的仿冒域
-  （如 `sec.gov.evil.example`、`mit.edu.phishing.example`）无法再继承
-  tier-3 信任；forum/social/news 域名此前已改为 exact-or-suffix。
-  lookalike 与 compound-suffix 测试锁定。
+- source-trust 域名匹配端到端加固。域名表（gov/mil 后缀形态含 compound
+  ccTLD、edu/ac.uk、news、blog、forum、social、preprint、peer-reviewed、
+  repo、filing、standard）收进唯一的 stdlib 数据 leaf
+  `codey/research/source_domains.py`，捕获期质量分类器
+  （`ledger.classify_source_quality`）与信任投影共同消费——两层不再可能
+  各自漂移，仿冒 URL（如 `sec.gov.evil.example`）在捕获时就只拿到普通
+  web/secondary 戳，而不是先盖上 official 再绕过后缀表。投影侧再加纵深
+  防御：声明的 `quality` kind 永远只能授予 middle/weak class；强 class 只
+  由 host 的注册形态推导，即使被伪造 official/data 戳也投影成 unknown 而
+  非 tier-3 信任。两层 lookalike 测试 + classify->project 端到端测试锁定。
 
 
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1
