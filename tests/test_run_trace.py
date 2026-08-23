@@ -2127,6 +2127,70 @@ class CompletionProofTraceTests(unittest.TestCase):
             self.assertEqual(proof["checks"][0]["status"], "fail")
             self.assertNotIn("exploded", serialized)
 
+    def test_completion_proof_satisfied_is_derived_from_status(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "1" * 16,
+                "contract_id": "completion_contract:" + "2" * 16,
+                "domain": "coding",
+                "status": "failed",
+                "satisfied": True,
+            })
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "3" * 16,
+                "contract_id": "completion_contract:" + "4" * 16,
+                "domain": "coding",
+                "status": "complete_with_limitations",
+                "satisfied": True,
+                "limitation_refs": ["verification_not_locally_observed"],
+            })
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "5" * 16,
+                "contract_id": "completion_contract:" + "6" * 16,
+                "domain": "coding",
+                "status": "complete",
+                "satisfied": False,
+            })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-completion", "run-completion"))
+            proofs = payload["completion_proofs"]
+            by_status = {row["status"]: row for row in proofs}
+
+            self.assertFalse(by_status["failed"]["satisfied"])
+            self.assertFalse(by_status["complete_with_limitations"]["satisfied"])
+            self.assertTrue(by_status["complete"]["satisfied"])
+
+    def test_completion_proof_check_cap_matches_contract_cap(self) -> None:
+        from codey.completion_contract import MAX_COMPLETION_CHECKS
+
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "7" * 16,
+                "contract_id": "completion_contract:" + "8" * 16,
+                "domain": "coding",
+                "status": "complete",
+                "satisfied": True,
+                "checks": [
+                    {"check_id": f"check_{index}", "status": "pass"}
+                    for index in range(MAX_COMPLETION_CHECKS + 2)
+                ],
+            })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-completion", "run-completion"))
+            proofs = payload["completion_proofs"]
+
+            self.assertEqual(len(proofs), 1)
+            self.assertEqual(len(proofs[0]["checks"]), MAX_COMPLETION_CHECKS)
+            self.assertEqual(proofs[0]["checks"][-1]["check_id"], f"check_{MAX_COMPLETION_CHECKS - 1}")
+
     def test_completion_proofs_cap_at_max_with_warning(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)

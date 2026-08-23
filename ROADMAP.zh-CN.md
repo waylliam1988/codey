@@ -1984,11 +1984,14 @@ context 拼接、section 文案或 admission 时机改变，都需要小型 A/B�
 
 状态：已落地。0.4.9 按"验证而不是扩充"的思路实现：contract 是纯投影，
 不是模型工具，也不是 CompletionManager。共享原语在 `codey/completion_contract.py`
-（stdlib leaf，只复用 `research/identity` 的有界身份 helpers）：
+（纯投影 leaf，只复用 `codey/refs.py` / `codey/redaction.py` 的领域中立
+有界身份 helpers）：
 `CompletionContract` / `CompletionCheck` / `CompletionProof`，硬门槛派生
 （fail -> failed；required-but-not-run -> blocked；pass + limitations ->
-complete_with_limitations；否则 complete），satisfied proof 永远不携带
-blocked_reason，junk 输入 fail closed。research 侧投影在
+complete_with_limitations；否则 complete）。v1 只有 clean `complete` 才是
+`satisfied=True`；`complete_with_limitations` 必须保留为非 satisfied 的受限完成，
+避免后续 enforcement 把"未完全验证"误当成 clean proof。satisfied proof
+永远不携带 blocked_reason，junk 输入 fail closed。research 侧投影在
 `codey/research/contract.py`：ReviewFinding 的 open critical finding 会阻止
 clean complete（结构性等价：critical finding 都是 hard proof failure 的投影，
 因此 queued research 的完成结果与 0.4.8 完全一致，不需要 A/B）。
@@ -2080,7 +2083,12 @@ analysis_run_refs 只引用决定性命令（覆盖 selected candidate 且决定
 contract_id 哈希覆盖全部 refs 组（finding/analysis/artifact/external），
   proof_id 由 contract_id 派生、trace 按 proof_id 去重，content-address 必须完整
 capabilities 登记 metadata-only completion_contract（model_visible=False）
-RunTrace 新增 bounded completion_proofs section（cap 8，refs-only）
+ResearchCompletionGate 产生的 research CompletionProof 会写入 RunTrace completion_proofs，
+  成功和 blocked 路径都可审计，不只把 proof_refs 写回 queue item
+RunTrace 新增 bounded completion_proofs section（proof row cap 8，per-proof check cap
+  与 CompletionContract 共用 MAX_COMPLETION_CHECKS=12，refs-only）
+RunTrace 不信任 raw satisfied；satisfied 只能由 status 派生，避免
+  status=failed/satisfied=true 这类不一致 payload 污染 trace
 ```
 
 ### 验证（v1 已测）
@@ -2090,10 +2098,15 @@ RunTrace 新增 bounded completion_proofs section（cap 8，refs-only）
 failed AnalysisRun 不能 complete experiment check（projection 就绪，producer 待接）
 unsupported open finding 阻止 clean complete
 complete_with_limitations 必须列出 limitation refs
+complete_with_limitations 不是 satisfied；未来消费者必须以 status == complete
+  判断 clean completion，不能把 satisfied 当作"足够完成"的宽松别名
 contract proof refs 可解析（completion_contract:/completion_proof: 16hex）
 contract 不含 raw prompt / transcript / webpage body
 queued research done 不能绕过 contract gate（gate 行为与 0.4.8 等价）
+queued research completion proof 成功/失败都写入 completion_proofs
 satisfied proof 永远不携带 blocked_reason
+RunTrace 从 status 派生 satisfied，忽略 raw mapping 里的 satisfied
+CompletionContract 与 RunTrace 的 per-proof check cap 保持一致
 coding docs-only change 不要求 code test（not_applicable + docs_only_change）
 read/search 型 tool event 不会把未跑验证误记成失败（unobserved 三态锁定）
 unobserved + checks_passed=False 只能 blocked，不能 failed（False 可能是默认值）
@@ -2437,9 +2450,13 @@ Tool execution
 必须先完成：
 
 ```text
-0.4.9 shadow proof 三态准确：fresh_pass / fresh_fail / not_run_or_stale
+0.4.9 shadow proof 三态准确：fresh_pass / fresh_fail / unobserved
 CompletionProof id 覆盖所有 proof refs，避免 content-addressed proof 漂移
 coding proof 能引用相关 AnalysisRun / artifact refs
+Receipt verification provenance 减债：在 enforcement 前把 legacy
+  `checks_passed` 继承逻辑拆成显式来源字段（例如 fresh_pass / fresh_fail /
+  inherited_pass / unverified 与 local_run / checkpoint / none），冷启动不保留
+  无意义兼容；旧的 inherited pass 不能被当作本轮 clean verification fact
 0.4.11 harness 能衡量 False Completion Rate
 ```
 
@@ -2451,9 +2468,9 @@ Verified Completion Enforcement：
 
 ```text
 模型尝试 done
-  -> CompletionProof.satisfied == true
+  -> CompletionProof.status == complete
       -> 允许 done
-  -> failed / blocked / stale verification
+  -> complete_with_limitations / failed / blocked / stale verification
       -> 不立刻宣布完成
       -> 生成 bounded repair context
 ```
@@ -2507,6 +2524,8 @@ stale verification 不能 clean complete
 fresh failed AnalysisRun 阻止 done，并进入 repair context
 fresh passed relevant check 允许 done
 docs-only change 仍可 complete_with_limitations
+complete_with_limitations 不等价 clean complete；是否允许用户可见 done 必须在
+  A/B treatment 中显式定义
 resolved finding 不进入 repair context
 repair context 不含 raw stdout/stderr/prompt/transcript/source body
 prompt 变化只发生在明确 A/B treatment 中

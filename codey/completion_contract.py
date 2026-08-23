@@ -15,7 +15,7 @@ Status derivation is a hard gate, not a score:
 
 - any failed check            -> ``failed`` (reason from the first failure)
 - any required-but-unrun check -> ``blocked`` (reason from the first gap)
-- otherwise, with limitations  -> ``complete_with_limitations``
+- otherwise, with limitations  -> ``complete_with_limitations`` (not satisfied)
 - otherwise                    -> ``complete``
 """
 
@@ -55,7 +55,6 @@ COMPLETION_STATUSES = frozenset(
 COMPLETION_SATISFIED_STATUSES = frozenset(
     {
         COMPLETION_COMPLETE,
-        COMPLETION_COMPLETE_WITH_LIMITATIONS,
     }
 )
 
@@ -282,19 +281,21 @@ def completion_proof_payload(proof: CompletionProof | None) -> dict[str, object]
 
     if proof is None:
         return {}
+    status = identifier(proof.status, 40)
+    satisfied = status in COMPLETION_SATISFIED_STATUSES
     payload: dict[str, object] = {
         "proof_id": proof.proof_id,
         "contract_id": proof.contract_id,
         "domain": identifier(proof.domain, 20),
-        "status": identifier(proof.status, 40),
-        "satisfied": bool(proof.satisfied),
+        "status": status,
+        "satisfied": satisfied,
         "checks": [row.to_payload() for row in proof.checks[:MAX_COMPLETION_CHECKS]],
     }
     if proof.subject_ref:
         payload["subject_ref"] = identifier(proof.subject_ref, 160)
     # A satisfied proof never carries a blocked_reason: coherence of the two
     # fields is guaranteed here, not left to callers.
-    if proof.blocked_reason and not proof.satisfied:
+    if proof.blocked_reason and not satisfied:
         payload["blocked_reason"] = identifier(proof.blocked_reason, 120)
     if proof.reason_codes:
         payload["reason_codes"] = list(bounded_refs(proof.reason_codes, limit=MAX_COMPLETION_REASONS))
@@ -350,7 +351,7 @@ def _proof_from_payload(payload: dict[str, object]) -> CompletionProof | None:
             domain=str(payload.get("domain") or ""),
             subject_ref=str(payload.get("subject_ref") or ""),
             status=str(payload.get("status") or ""),
-            satisfied=bool(payload.get("satisfied")),
+            satisfied=identifier(payload.get("status"), 40) in COMPLETION_SATISFIED_STATUSES,
             blocked_reason=str(payload.get("blocked_reason") or ""),
             reason_codes=tuple(str(item) for item in payload.get("reason_codes", ()) or ()),
             checks=checks,

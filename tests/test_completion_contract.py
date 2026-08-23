@@ -97,8 +97,10 @@ def test_complete_with_limitations_requires_limitation_refs() -> None:
     proof_plain = project_completion_proof(plain)
 
     assert proof_limited.status == COMPLETION_COMPLETE_WITH_LIMITATIONS
+    assert proof_limited.satisfied is False
     assert proof_limited.limitation_refs == ("docs_only_change",)
     assert proof_plain.status == COMPLETION_COMPLETE
+    assert proof_plain.satisfied is True
 
 
 def test_empty_checks_fail_closed_to_blocked() -> None:
@@ -238,6 +240,38 @@ def test_proof_trace_payload_is_refs_only_and_json_serializable() -> None:
     for row in payload["checks"]:
         assert set(row) <= {"check_id", "status", "reason_code"}
     assert isinstance(serialized, str)
+
+
+def test_trace_payload_derives_satisfied_from_status() -> None:
+    failed_payload = completion_proof_trace_payload({
+        "proof_id": "completion_proof:" + "a" * 16,
+        "contract_id": "completion_contract:" + "b" * 16,
+        "domain": "coding",
+        "status": COMPLETION_FAILED,
+        "satisfied": True,
+        "checks": [completion_check("relevant_verification", CHECK_FAIL).to_payload()],
+    })
+    limited_payload = completion_proof_trace_payload({
+        "proof_id": "completion_proof:" + "c" * 16,
+        "contract_id": "completion_contract:" + "d" * 16,
+        "domain": "coding",
+        "status": COMPLETION_COMPLETE_WITH_LIMITATIONS,
+        "satisfied": True,
+        "checks": [completion_check("relevant_verification", CHECK_PASS).to_payload()],
+        "limitation_refs": ("verification_not_locally_observed",),
+    })
+    complete_payload = completion_proof_trace_payload({
+        "proof_id": "completion_proof:" + "e" * 16,
+        "contract_id": "completion_contract:" + "f" * 16,
+        "domain": "coding",
+        "status": COMPLETION_COMPLETE,
+        "satisfied": False,
+        "checks": [completion_check("relevant_verification", CHECK_PASS).to_payload()],
+    })
+
+    assert failed_payload["satisfied"] is False
+    assert limited_payload["satisfied"] is False
+    assert complete_payload["satisfied"] is True
 
 
 def test_proof_trace_payload_handles_junk_input() -> None:

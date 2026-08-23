@@ -214,6 +214,13 @@ def _seed_review_item(state: server.State, project: Path) -> str:
     return item.id
 
 
+def _last_trace_payload(state: server.State) -> dict[str, object]:
+    assert state.run_traces is not None
+    run_id = str(state.last_terminal_event["run_id"])
+    path = state.run_traces.path_for("s1", run_id)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def test_strict_continue_consumes_research_item_before_router() -> None:
     with tempfile.TemporaryDirectory() as td:
         state = server.State(td)
@@ -242,6 +249,7 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
             runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
+        trace_payload = _last_trace_payload(state)
 
     router_factory.assert_not_called()
     assert runner._run_research_iteration.call_count == 1
@@ -250,6 +258,14 @@ def test_strict_continue_consumes_research_item_before_router() -> None:
     assert item.status == "done"
     assert any(ref.startswith("research_proof:") for ref in item.proof_refs)
     assert "research:note-result" in item.proof_refs
+    completion_proofs = trace_payload["completion_proofs"]
+    assert len(completion_proofs) == 1
+    assert completion_proofs[0]["domain"] == "research"
+    assert completion_proofs[0]["status"] == "complete"
+    assert completion_proofs[0]["satisfied"] is True
+    assert "research:note-result" in completion_proofs[0]["external_refs"]
+    assert any(ref.startswith("research_proof:") for ref in completion_proofs[0]["external_refs"])
+    assert all(row["status"] == "pass" for row in completion_proofs[0]["checks"])
 
 
 def test_strict_continue_blocks_research_item_without_research_record() -> None:
@@ -273,13 +289,7 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
             runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
-        assert state.run_traces is not None
-        trace_payload = json.loads(
-            state.run_traces.path_for(
-                "s1",
-                str(state.last_terminal_event["run_id"]),
-            ).read_text(encoding="utf-8")
-        )
+        trace_payload = _last_trace_payload(state)
 
     router_factory.assert_not_called()
     assert runner._run_research_iteration.call_count == 1
@@ -298,6 +308,17 @@ def test_strict_continue_blocks_research_item_without_research_record() -> None:
     assert "record_id" not in proof_reviews[0]
     assert "record_digest" not in proof_reviews[0]
     assert "missing_research_record" in proof_reviews[0]["reason_codes"]
+    completion_proofs = trace_payload["completion_proofs"]
+    assert len(completion_proofs) == 1
+    assert completion_proofs[0]["domain"] == "research"
+    assert completion_proofs[0]["status"] == "failed"
+    assert completion_proofs[0]["satisfied"] is False
+    assert completion_proofs[0]["blocked_reason"] == "research_proof_missing_research_record"
+    assert completion_proofs[0]["checks"][0] == {
+        "check_id": "research_proof_review",
+        "status": "fail",
+        "reason_code": "research_proof_missing_research_record",
+    }
 
 
 def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_trace() -> None:
@@ -328,13 +349,7 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
             runner.run(TaskRequest("s1", None, "继续", 8, False, "deepseek"))
             state.wait_for_ghost_sleep(timeout=2)
         item = state.ghost_work_queue.list_items()[0]
-        assert state.run_traces is not None
-        trace_payload = json.loads(
-            state.run_traces.path_for(
-                "s1",
-                str(state.last_terminal_event["run_id"]),
-            ).read_text(encoding="utf-8")
-        )
+        trace_payload = _last_trace_payload(state)
 
     router_factory.assert_not_called()
     assert runner._run_research_iteration.call_count == 1
@@ -348,6 +363,12 @@ def test_strict_continue_blocks_partial_research_item_without_duplicate_proof_tr
     assert "record_id" in proof_reviews[0]
     assert "record_digest" in proof_reviews[0]
     assert "partial_answer" in proof_reviews[0]["reason_codes"]
+    completion_proofs = trace_payload["completion_proofs"]
+    assert len(completion_proofs) == 1
+    assert completion_proofs[0]["domain"] == "research"
+    assert completion_proofs[0]["status"] == "failed"
+    assert completion_proofs[0]["satisfied"] is False
+    assert completion_proofs[0]["blocked_reason"] == "research_proof_partial_answer"
 
 
 def test_non_strict_continue_does_not_consume_queue_and_uses_router() -> None:

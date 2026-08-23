@@ -854,6 +854,7 @@ def test_docs_only_done_run_completes_with_limitations() -> None:
         proof = proofs[0]
         assert proof["domain"] == "coding"
         assert proof["status"] == "complete_with_limitations"
+        assert proof["satisfied"] is False
         assert proof["limitation_refs"] == ["docs_only_change"]
         assert proof["checks"] == [{
             "check_id": "relevant_verification",

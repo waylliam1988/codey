@@ -7,12 +7,15 @@ behavior. New `codey/completion_contract.py` is the domain-neutral pure core:
 `CompletionContract` / `CompletionCheck` / `CompletionProof` carry statuses,
 reason codes, and bounded refs only, and status derivation is a hard gate
 (failed check -> failed; required-but-unrun -> blocked; pass + limitations ->
-complete_with_limitations; otherwise complete) with no scoring. The primitive
-owns its own coherence: a satisfied proof never carries a blocked_reason,
-junk input without valid ids fails closed to an empty projection, and empty
-checks cannot become a contract. v1 deliberately has no separate Requirement
-object -- requirements and checks are 1:1 at this stage, so a parallel list
-would only duplicate state. New `codey/research/contract.py` projects a
+complete_with_limitations; otherwise complete) with no scoring. Only clean
+`status == "complete"` is satisfied; `complete_with_limitations` remains an
+audited but non-satisfied outcome so future enforcement cannot mistake
+limited or unobserved verification for a clean proof. The primitive owns its
+own coherence: a satisfied proof never carries a blocked_reason, junk input
+without valid ids fails closed to an empty projection, and empty checks cannot
+become a contract. v1 deliberately has no separate Requirement object --
+requirements and checks are 1:1 at this stage, so a parallel list would only
+duplicate state. New `codey/research/contract.py` projects a
 `ResearchProofReview` plus derived ReviewFindings into the shared shapes;
 open critical findings now block a clean complete, which is provably
 behavior-equivalent for queued research (every critical finding kind is a
@@ -21,13 +24,17 @@ critical reason table). The queue gate's observable contract stayed byte
 identical -- same actions, blocked_reason strings, and proof_refs assembly --
 while its stringly `_blocked_reason()` / `_safe_run_ref()` semantics moved
 into the projection as the single owner, and `ResearchCompletionDecision`
-gained an optional `proof` field.
+gained an optional `proof` field. Queued research completion now records that
+proof into RunTrace on both complete and blocked paths; the queue item still
+receives the same proof_refs as before.
 
-RunTrace gained a bounded `completion_proofs` section (cap 8): refs,
-statuses, check summaries, and reason codes only; finding/analysis/artifact
-refs validate against runtime ref kinds, unknown domains/statuses/check rows
-fail closed, truncation appends a warning, satisfied proofs drop
-blocked_reason even when callers supply one, and payloads never contain raw
+RunTrace gained a bounded `completion_proofs` section (proof-row cap 8;
+per-proof check cap shared with `CompletionContract.MAX_COMPLETION_CHECKS`):
+refs, statuses, check summaries, and reason codes only;
+finding/analysis/artifact refs validate against runtime ref kinds, unknown
+domains/statuses/check rows fail closed, proof-row truncation appends a
+warning, satisfied proofs drop blocked_reason even when callers supply one,
+raw mappings cannot override `satisfied`, and payloads never contain raw
 prompts, transcripts, or output bodies.
 
 Coding got a trace-only shadow completion proof projected from existing local
@@ -97,7 +104,8 @@ Characterization locks added:
   previously completing item.
 - Hard-gate derivation table: fail/not_run/not_applicable/limitations paths,
   deterministic content-addressed `completion_contract:` / `completion_proof:`
-  ids, dedup+cap of check rows, refs-only payload key allowlist.
+  ids, dedup+shared cap of check rows, refs-only payload key allowlist, and
+  `complete_with_limitations` as non-satisfied.
 - Total content-addressing: changing any single ref group (evidence,
   limitations, findings, analysis runs, artifacts, external) changes the
   contract_id; identical inputs stay stable.
@@ -112,21 +120,27 @@ Characterization locks added:
   latest run wins per (command, cwd); unobserved cites nothing; redacted
   commands cite nothing.
 - Trace section: valid rows kept, malformed rows dropped, duplicate proof ids
-  ignored, cap-8 truncation warning, object/payload/mapping inputs all
-  accepted, sanitized codes replace prose (`junk row` -> `junk_row`).
+  ignored, proof-row cap-8 truncation warning, per-proof check rows share the
+  contract cap, raw `satisfied` values are ignored, object/payload/mapping
+  inputs all accepted, sanitized codes replace prose (`junk row` ->
+  `junk_row`).
 - Real-run shadow proofs: code change without candidates or observed events ->
   blocked(no_matching_verification_command) with ledger/receipt external refs;
   docs-only change -> complete_with_limitations(docs_only_change); unchanged
   or interrupted runs record no proofs; secrets never reach the payload.
+- Queued research integration: complete and blocked research work items both
+  write one research-domain CompletionProof into `completion_proofs`, while
+  preserving the existing queue item status, blocked_reason, and proof_refs.
 - Neutral leaves: `codey/refs.py` and `codey/redaction.py` import nothing
   from codey and contain no I/O tokens; no module imports a research path to
   speak the shared ref dialect.
 
-Verification sequence: targeted py_compile + compileall + ruff (lint/format)
-on changed files; targeted pytest across contract/gate/trace/architecture/
-capabilities/task-runner/work-queue/pipeline/server/evidence/object-model/
-identity/source-connector suites (481 passed, 191 subtests); then one
-full-suite run: 2475 passed, 709 subtests passed, zero failures.
+Verification sequence: targeted `py_compile` for changed runtime files,
+`compileall -q codey tests`, `ruff check codey tests`, `git diff --check`,
+targeted pytest across contract/gate/trace/architecture/capabilities/
+task-runner/work-queue suites (172 passed, 191 subtests); then one full-suite
+run with repository-local `--basetemp`: 2469 passed, 9 skipped, 709 subtests
+passed, zero failures.
 
 ## 0.4.8 Safe Context Epoch + Capability Boundary v1
 

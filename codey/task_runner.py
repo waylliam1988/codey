@@ -630,6 +630,13 @@ def _record_coding_completion_trace(
             project=project,
         ),
     )
+    _record_completion_proof_trace(trace, proof)
+
+
+def _record_completion_proof_trace(
+    trace: Any | None,
+    proof: object,
+) -> None:
     if proof is None:
         return
     sink = FailOpenPromptTrace(trace)
@@ -1290,6 +1297,7 @@ class TaskRunner:
                         session_id=frame.request.session_id,
                         project=frame.project_text,
                     )
+                    _record_completion_proof_trace(frame.trace, decision.proof)
                     if decision.complete:
                         store.complete_item(
                             item.id,

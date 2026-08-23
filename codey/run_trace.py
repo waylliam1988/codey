@@ -19,8 +19,10 @@ from urllib.parse import urlparse
 from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.completion_contract import (
     CHECK_STATUSES as _COMPLETION_CHECK_STATUSES,
+    COMPLETION_SATISFIED_STATUSES as _COMPLETION_SATISFIED_STATUSES,
     COMPLETION_DOMAINS as _COMPLETION_TRACE_DOMAINS,
     COMPLETION_STATUSES as _COMPLETION_TRACE_STATUSES,
+    MAX_COMPLETION_CHECKS as _MAX_COMPLETION_CHECKS,
 )
 from codey.context_epoch import admission_from_rendered_source
 from codey.prompt_envelope import is_model_boundary_freshness
@@ -67,7 +69,7 @@ MAX_REVIEW_FINDINGS = 16
 MAX_PLANNER_GAPS = 16
 MAX_GAP_FINDING_REFS = 4
 MAX_COMPLETION_PROOFS = 8
-MAX_COMPLETION_CHECK_ROWS = 8
+MAX_COMPLETION_CHECK_ROWS = _MAX_COMPLETION_CHECKS
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 REVIEW_FINDING_REF_KINDS: dict[str, str] = {
@@ -1097,12 +1099,13 @@ class RunTraceRecorder:
             or status not in _COMPLETION_TRACE_STATUSES
         ):
             return
+        satisfied = status in _COMPLETION_SATISFIED_STATUSES
         payload: dict[str, object] = {
             "proof_id": proof_id,
             "contract_id": contract_id,
             "domain": domain,
             "status": status,
-            "satisfied": bool(raw.get("satisfied")),
+            "satisfied": satisfied,
         }
         check_rows: list[dict[str, object]] = []
         for item in _trace_list_items(raw.get("checks")):
@@ -1119,7 +1122,7 @@ class RunTraceRecorder:
             check_rows.append(row)
         payload["checks"] = check_rows
         blocked_reason = _safe_trace_code(raw.get("blocked_reason"), 120)
-        if blocked_reason and not payload["satisfied"]:
+        if blocked_reason and not satisfied:
             payload["blocked_reason"] = blocked_reason
         reason_codes = [
             code

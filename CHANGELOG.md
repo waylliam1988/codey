@@ -31,11 +31,20 @@ This file records Codey's release history. The newest release appears first.
   as the domain-neutral run-ref sanitizer shared by research and coding
   proofs. `ResearchCompletionDecision` gains an optional `proof` field for
   trace recording.
-- RunTrace gained a bounded `completion_proofs` section (cap 8): refs,
-  statuses, check summaries, and reason codes only. finding/analysis/artifact
-  refs validate against runtime ref kinds, unknown domains/statuses/check
-  rows fail closed, truncation appends a warning. Payloads never contain raw
+- RunTrace gained a bounded `completion_proofs` section (proof-row cap 8;
+  per-proof check cap shared with `CompletionContract` at
+  `MAX_COMPLETION_CHECKS`): refs, statuses, check summaries, and reason
+  codes only. finding/analysis/artifact refs validate against runtime ref
+  kinds, unknown domains/statuses/check rows fail closed, proof-row
+  truncation appends a warning, and raw `satisfied` mappings are ignored in
+  favor of deriving coherence from `status`. Payloads never contain raw
   prompts, transcripts, or output bodies.
+- Research queued completion now persists the generated `CompletionProof`
+  into RunTrace on both complete and blocked paths, instead of only writing
+  `proof_refs` back to the queue item. `complete_with_limitations` is no
+  longer globally satisfied: only clean `status == "complete"` yields
+  `satisfied=True`, so future enforcement cannot accidentally treat a
+  limited or unobserved verification as a clean completion proof.
 - Coding-side shadow completion proof: after a done project run ends, the
   proof is projected from existing local facts (changed files, selected
   verification candidate, post-edit check outcomes, executed AnalysisRun
@@ -81,7 +90,10 @@ This file records Codey's release history. The newest release appears first.
 - Real debt reduction in `task_runner`: the `select_verification_candidate` +
   `check_covers_selected_candidate` evaluation now happens in exactly one
   place shared by the receipt decision and the shadow proof instead of being
-  computed twice.
+  computed twice. The roadmap now tracks the remaining receipt verification
+  provenance debt explicitly: before completion proof enforcement, the legacy
+  `checks_passed` inheritance path should be split into explicit provenance
+  fields instead of preserved as cold-start compatibility.
 - Capability registry adds metadata-only `completion_contract`
   (model_visible=False, trace_sections=("completion_proofs",)); architecture
   tests lock both new modules as projection-only (no runtime imports, no I/O

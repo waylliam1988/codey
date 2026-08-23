@@ -26,10 +26,18 @@
   统一维护，`safe_run_ref()` 上移到 completion_contract.py 作为 research 与
   coding proof 共享的领域中立 run-ref 清洗器。`ResearchCompletionDecision`
   新增可选 `proof` 字段供 trace 记录。
-- RunTrace 新增 bounded `completion_proofs` section（cap 8）：只存
-  refs/status/check summary/reason codes，finding/analysis/artifact refs
-  按 runtime ref 校验，未知 domain/status/check 行 fail closed 丢弃，
-  截断写 warning。payload 不含任何 raw prompt / transcript / 输出正文。
+- RunTrace 新增 bounded `completion_proofs` section（proof row cap 8；
+  每个 proof 的 check cap 与 `CompletionContract` 共用
+  `MAX_COMPLETION_CHECKS`）：只存 refs/status/check summary/reason codes，
+  finding/analysis/artifact refs 按 runtime ref 校验，未知
+  domain/status/check 行 fail closed 丢弃，proof row 截断写 warning，并且
+  不信任 raw mapping 里的 `satisfied`，统一从 `status` 派生一致性。
+  payload 不含任何 raw prompt / transcript / 输出正文。
+- queued research completion 现在会把生成的 `CompletionProof` 在成功和
+  blocked 两条路径都写进 RunTrace，不再只是把 `proof_refs` 写回 queue item。
+  `complete_with_limitations` 不再全局视为 satisfied：只有 clean
+  `status == "complete"` 才产生 `satisfied=True`，避免未来 enforcement 把
+  受限完成或未本地观察的验证误当成 clean completion proof。
 - Coding 侧 shadow completion proof：project run 结束后从既有本地事实
   （changed files、selected verification candidate、latest edit 后的 check
   结果、实际执行过的 AnalysisRun 记录）投影 proof 并写入 trace。本地验证
@@ -62,7 +70,10 @@
   contract_id（proof_id 由它派生、RunTrace 按 proof_id 去重）。
 - `task_runner` 顺手减债：`select_verification_candidate` +
   `check_covers_selected_candidate` 的求值收敛为单一位置，receipt 判定与
-  shadow proof 共用同一份事实，不再各算一遍。
+  shadow proof 共用同一份事实，不再各算一遍。roadmap 也把剩余的 receipt
+  verification provenance 债务列为后续项：在 completion proof enforcement
+  前，应把 legacy `checks_passed` 继承路径拆成显式 provenance 字段，而不是
+  作为冷启动兼容继续保留。
 - Capability registry 新增 metadata-only `completion_contract`
   （model_visible=False，trace_sections=("completion_proofs",)）；架构测试
   锁定两个新模块为 projection-only（禁运行时 import、禁 I/O token）。
