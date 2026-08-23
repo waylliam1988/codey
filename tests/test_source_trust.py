@@ -68,6 +68,38 @@ class ClassificationTests(unittest.TestCase):
         self.assertIn("official", gov.classes)
         self.assertEqual(gov.tier, TIER_STRONG)
 
+    def test_gov_edu_lookalikes_do_not_inherit_strong_trust(self) -> None:
+        lookalikes = [
+            _source("sec.gov.evil.example", suffix="1" * 16),
+            _source("nasa.gov.mitm.example", suffix="2" * 16),
+            _source("mit.edu.phishing.example", suffix="3" * 16),
+        ]
+
+        for source in lookalikes:
+            with self.subTest(host=source["host"]):
+                projection = project_source_trust(source)
+                self.assertNotIn("official", projection.classes)
+                self.assertNotIn("primary", projection.classes)
+                self.assertNotEqual(projection.tier, TIER_STRONG)
+
+    def test_compound_gov_edu_suffixes_still_match(self) -> None:
+        cases = [
+            ("australia.gov.au", "official"),
+            ("sub.treasury.gov", "official"),
+            ("mod.uk", None),  # not in the table: no free trust
+            ("tsinghua.edu.cn", "primary"),
+            ("ox.ac.uk", "primary"),
+        ]
+        for index, (host, expected) in enumerate(cases):
+            with self.subTest(host=host):
+                source = _source(host, level="secondary", kind="web", suffix=f"{index + 1:016x}")
+                classes = project_source_trust(source).classes
+                if expected is None:
+                    self.assertNotIn("official", classes)
+                    self.assertNotIn("primary", classes)
+                else:
+                    self.assertIn(expected, classes)
+
     def test_sec_host_yields_filing_plus_official(self) -> None:
         projection = project_source_trust(_source("sec.gov", level="primary", kind="official"))
 

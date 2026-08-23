@@ -55,18 +55,33 @@ by tests + trace recording with no user-visible behavior yet.
 Release gate tooling: `tests/manual/research_to_code_ab.py` is the dedicated
 two-arm live A/B for Writer-visible handoff changes (baseline 0.4.9-style
 render vs structured projection render; same fixture, task, synthesis note).
-Deterministic scoring covers key-conclusion retention, misuse of an injected
-unsupported trap claim, excerpt/related-id noise, independent verification,
-and protocol hygiene. A scripted-provider self-test (`--self-test`) runs the
-full two-arm flow offline and its builders/scorers have unit tests with no
-provider traffic.
+Arm order interleaves per repeat to cancel order bias. The process exit code
+is the gate verdict: any projection-arm regression (success, key-conclusion
+retention, trap misuse, verification pass) or errored row fails the gate --
+a clean crash-free run with bad results does not pass. By default every
+prompt/reply exchange is journaled through a hash-chained `ABJournalWriter`
+with full transcript archiving (`transcripts/<digest>.json`) for offline
+replay; `--no-live-trace` disables journaling. Transcripts stay manual-layer
+only and never enter production evidence. Deterministic scoring covers
+key-conclusion retention, misuse of an injected unsupported trap claim,
+excerpt/related-id noise, independent verification, and protocol hygiene. A
+scripted-provider self-test (`--self-test`) runs the full two-arm flow
+offline; builders/scorers/gate/schedule/journal-wiring have unit tests with
+no provider traffic.
+
+Source-trust hardening round two: government/education strong trust moved
+from substring tests (`.gov.` in host) to an explicit registered-suffix
+table (gov/mil plus compound ccTLD shapes like gov.au/gov.uk/gouv.fr/gc.ca/
+go.jp, edu/ac.uk), so `sec.gov.evil.example`-style lookalikes cannot inherit
+tier-3 trust; locked by lookalike and compound-suffix tests alongside the
+existing forum/social/news exact-match cases.
 
 Verification:
 
 ```text
 python -m pytest tests/test_domain_profiles.py tests/test_source_trust.py
-  tests/test_brief_projection.py ... targeted suite: 449 passed, 236 subtests
-python -m pytest tests                full suite: 2547 passed, 750 subtests
+  tests/test_brief_projection.py ... targeted suite: 469 passed, 244 subtests
+python -m pytest tests                full suite: 2554 passed, 758 subtests
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean
@@ -76,14 +91,16 @@ New/updated coverage: six atomic profiles and strictness directions locked;
 unknown-label fallback; merge cap + truncation warning; order-insensitive
 merged values; classification of preprint/peer-reviewed/repository/filing/
 gov/news/blog/forum/social hosts and kinds; substring-lookalike hosts do not
-classify weak; invalid sources return None; below-floor evaluation warns
-without deleting rows; legacy aggregate warnings reproduced exactly;
-refs-only brief payload (no raw url/body/transcript); unsupported-claim
-demotion; escape-path rejection; handoff render bounded and labeled; trace
-sections keep valid rows, drop junk, dedupe, truncate; default planner plans
-byte-identical without profile; knowledge/research import isolation in a
-clean interpreter; report_sections stdlib-leaf purity; three-way capability
-ownership split; A/B harness self-test plus builder/scorer unit tests.
+classify weak and gov/edu lookalikes do not inherit tier-3 trust while
+compound suffixes still match; invalid sources return None; below-floor
+evaluation warns without deleting rows; legacy aggregate warnings reproduced
+exactly; refs-only brief payload (no raw url/body/transcript);
+unsupported-claim demotion; escape-path rejection; handoff render bounded
+and labeled; trace sections keep valid rows, drop junk, dedupe, truncate;
+default planner plans byte-identical without profile; knowledge/research
+import isolation in a clean interpreter; report_sections stdlib-leaf purity;
+three-way capability ownership split; A/B harness self-test plus
+builder/scorer/gate-verdict/arm-schedule/journal-wiring unit tests.
 
 ## 0.4.9 Research Contract Lite + Verified Completion Gate v1
 

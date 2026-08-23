@@ -1,11 +1,21 @@
-"""Live A/B probe for the Research-to-Code handoff (Research Brief).
+"""Release-gate live A/B for the Research-to-Code handoff (Research Brief).
 
 Compares the 0.4.9-style research brief (markdown sections re-parsed locally,
-plus the raw "Synthesis excerpt") against the 0.4.10 refs-aware structured
-brief. Both arms receive the same underlying synthesis note content, the
-same fixture project, and the same Writer task; only the rendered handoff
-differs. This is the release gate the roadmap requires for changing
-Writer-visible research context text.
+plus the raw "Synthesis excerpt") against the structured brief. Both arms
+receive the same underlying synthesis note content, the same fixture project,
+and the same Writer task; only the rendered handoff differs.
+
+Gate semantics: arm order interleaves per repeat to cancel warm-session bias;
+the process exits non-zero when the projection arm regresses on any gate
+metric (success / key-conclusion retention / trap misuse / verification
+pass) or any row errored -- a clean crash-free run with bad results is a
+gate failure, not a pass.
+
+Trace semantics: by default every prompt/reply exchange is recorded into a
+hash-chained ABJournalWriter journal and archived under
+``transcripts/<digest>.json`` for offline replay and Codey improvement.
+``--no-live-trace`` disables it entirely; transcripts are manual-layer
+material only and never enter RunTrace/EvidenceLedger/production evidence.
 """
 
 from __future__ import annotations
@@ -31,6 +41,11 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.text_budget import clip_middle
+from tests.manual.ab_journal import (
+    ABJournalWriter,
+    TranscriptReplayCache,
+    TRANSCRIPT_MODE_ARCHIVE,
+)
 
 
 ARMS = ("baseline", "projection")
@@ -277,12 +292,35 @@ def _protocol_errors(events: list[RunEvent]) -> int:
     )
 
 
-class CountingProvider:
-    def __init__(self, provider, *, timeout: float, new_chat_timeout: float) -> None:
+class TracingProvider:
+    """Provider wrapper that counts traffic and journals every exchange.
+
+    With a journal, each send is fsync-recorded before the request and the
+    full prompt/reply pair is archived immediately after the reply (manual
+    layer only: transcripts never flow into RunTrace/EvidenceLedger). With
+    ``journal=None`` it degrades to a plain counting provider, which is what
+    the scripted self-test uses.
+    """
+
+    def __init__(
+        self,
+        provider,
+        *,
+        timeout: float,
+        new_chat_timeout: float,
+        journal: ABJournalWriter | None = None,
+        case: str = "",
+        arm: str = "",
+    ) -> None:
         self.provider = provider
-        self.timeout = timeout
-        self.new_chat_timeout = new_chat_timeout
+        self.timeout = max(1.0, float(timeout))
+        self.new_chat_timeout = max(1.0, float(new_chat_timeout))
+        self.journal = journal
+        self.case = case
+        self.arm = arm
+        self.send_index = 0
         self.prompts: list[str] = []
+        self.replies: list[str] = []
         self.name = getattr(provider, "name", "provider")
         self.id = getattr(provider, "id", "")
 
@@ -290,8 +328,31 @@ class CountingProvider:
         return self.provider.new_chat(timeout=timeout or self.new_chat_timeout)
 
     def send(self, text: str, timeout: float | None = None) -> str:
-        self.prompts.append(text)
-        return self.provider.send(text, timeout=timeout or self.timeout)
+        prompt = str(text or "")
+        self.send_index += 1
+        turn = self.send_index
+        if self.journal is not None:
+            self.journal.record_send_start(
+                case=self.case, arm=self.arm, turn=turn, prompt=prompt
+            )
+        try:
+            reply = str(self.provider.send(prompt, timeout=timeout or self.timeout))
+        except Exception as exc:
+            if self.journal is not None:
+                self.journal.record_send_error(
+                    case=self.case,
+                    arm=self.arm,
+                    turn=turn,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+            raise
+        self.prompts.append(prompt)
+        self.replies.append(reply)
+        if self.journal is not None:
+            self.journal.record_reply(
+                case=self.case, arm=self.arm, turn=turn, prompt=prompt, reply=reply
+            )
+        return reply
 
     def close(self) -> None:
         self.provider.close()
@@ -426,6 +487,53 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
+def _arm_schedule(repeats: int) -> list[tuple[str, int]]:
+    """Interleave arm order per repeat to cancel warm-session/order bias."""
+
+    out: list[tuple[str, int]] = []
+    for repeat_index in range(max(1, int(repeats))):
+        order = ARMS if repeat_index % 2 == 0 else tuple(reversed(ARMS))
+        out.extend((arm, repeat_index + 1) for arm in order)
+    return out
+
+
+def _gate_verdict(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Release-gate verdict: the projection arm must not regress on any gate
+    metric vs the baseline arm, and every scheduled row must have completed.
+    """
+
+    base_rows = [
+        row for row in rows if row.get("arm") == "baseline" and "error" not in row
+    ]
+    proj_rows = [
+        row for row in rows if row.get("arm") == "projection" and "error" not in row
+    ]
+    error_rows = [row for row in rows if "error" in row]
+
+    def total(rs: list[dict[str, Any]], key: str) -> int:
+        return sum(1 for row in rs if row.get(key))
+
+    criteria = {
+        "arms_populated": bool(base_rows) and bool(proj_rows),
+        "no_error_rows": not error_rows,
+        "success_not_worse": (
+            total(proj_rows, "success") >= total(base_rows, "success")
+        ),
+        "key_conclusion_not_worse": (
+            total(proj_rows, "key_conclusion_applied")
+            >= total(base_rows, "key_conclusion_applied")
+        ),
+        "trap_misuse_not_worse": (
+            total(proj_rows, "trap_misused") <= total(base_rows, "trap_misused")
+        ),
+        "check_pass_not_worse": (
+            total(proj_rows, "independent_check_passed")
+            >= total(base_rows, "independent_check_passed")
+        ),
+    }
+    return {"ok": all(criteria.values()), "criteria": criteria}
+
+
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -448,6 +556,8 @@ def run_live(
     max_turns: int,
     output: Path,
     keep_open: bool,
+    trace_output: Path | None = None,
+    no_live_trace: bool = False,
 ) -> int:
     payload: dict[str, Any] = {
         "probe": "research_to_code_ab",
@@ -455,55 +565,92 @@ def run_live(
         "started_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "cases": [case.name for case in CASES],
         "arms": list(ARMS),
-        "repeats_per_arm": repeats,
+        "repeats_per_arm": max(1, int(repeats)),
+        "arm_order_note": "interleaved per repeat to cancel order bias",
         "rows": [],
         "summary": {},
     }
     _atomic_write_json(output, payload)
     briefs = _arm_briefs()
-    provider_controls.begin_task_context(f"research-to-code-ab:{provider_id}")
-    provider_obj = None
-    try:
-        provider_obj = CountingProvider(
-            connect_provider(provider_id, port=port),
-            timeout=timeout,
-            new_chat_timeout=new_chat_timeout,
+    schedule = _arm_schedule(repeats)
+
+    journal: ABJournalWriter | None = None
+    if not no_live_trace:
+        journal_dir = trace_output or output.parent / f"{output.stem}-journal"
+        stamp = time.strftime("%Y%m%dT%H%M%S")
+        # Archive mode stores the full prompt/reply pairs under
+        # transcripts/<digest>.json for offline replay; digest-only would
+        # make the gate unreviewable.
+        journal = ABJournalWriter(
+            directory=journal_dir,
+            experiment_id="research_to_code_ab",
+            run_id=f"{provider_id}-{stamp}",
+            provider=provider_id,
+            transcript_cache=TranscriptReplayCache(
+                journal_dir, mode=TRANSCRIPT_MODE_ARCHIVE
+            ),
         )
+        journal.record_run_start(
+            cases=tuple(case.name for case in CASES),
+            arms=ARMS,
+            max_turns=max_turns,
+        )
+
+    provider_controls.begin_task_context(f"research-to-code-ab:{provider_id}")
+    raw_provider = None
+    try:
+        raw_provider = connect_provider(provider_id, port=port)
         for case in CASES:
-            for arm in ARMS:
-                for index in range(max(1, int(repeats))):
-                    try:
-                        row = _run_arm(
-                            provider_obj,
-                            case,
-                            arm,
-                            max_turns=max_turns,
-                            briefs=briefs,
-                        )
-                        row["repeat"] = index + 1
-                    except Exception as exc:
-                        row = {
-                            "case": case.name,
-                            "arm": arm,
-                            "repeat": index + 1,
-                            "error": f"{type(exc).__name__}: {exc}",
-                        }
-                    payload["rows"].append(row)
-                    payload["summary"] = _summarize(payload["rows"])
-                    _atomic_write_json(output, payload)
-                    print(json.dumps(row, ensure_ascii=False), flush=True)
+            for arm, repeat_index in schedule:
+                tracing = TracingProvider(
+                    raw_provider,
+                    timeout=timeout,
+                    new_chat_timeout=new_chat_timeout,
+                    journal=journal,
+                    case=case.name,
+                    arm=arm,
+                )
+                try:
+                    row = _run_arm(tracing, case, arm, max_turns=max_turns, briefs=briefs)
+                except Exception as exc:
+                    row = {
+                        "case": case.name,
+                        "arm": arm,
+                        "repeat": repeat_index,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                row["repeat"] = repeat_index
+                payload["rows"].append(row)
+                if journal is not None:
+                    journal.record_case_complete(
+                        case=case.name,
+                        arm=arm,
+                        row={
+                            "ok": bool(row.get("success")),
+                            "stop_reason": str(row.get("stop_reason") or ""),
+                            "turns": row.get("turns"),
+                        },
+                    )
+                payload["summary"] = _summarize(payload["rows"])
+                _atomic_write_json(output, payload)
+                print(json.dumps(row, ensure_ascii=False), flush=True)
+        verdict = _gate_verdict(payload["rows"])
         payload["finished_at"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         payload["summary"] = _summarize(payload["rows"])
+        payload["gate"] = verdict
         _atomic_write_json(output, payload)
         print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
+        print(json.dumps(verdict, ensure_ascii=False, indent=2))
         print(f"report: {output}")
-        return 0 if all("error" not in row for row in payload["rows"]) else 1
+        return 0 if verdict["ok"] else 1
     finally:
         try:
-            if provider_obj is not None and not keep_open:
-                provider_obj.close()
+            if raw_provider is not None and not keep_open:
+                raw_provider.close()
         finally:
             provider_controls.end_task_context()
+            if journal is not None:
+                journal.close()
 
 
 def _self_test() -> None:
@@ -561,7 +708,10 @@ def _self_test() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Live A/B: 0.4.9-style vs structured Research Brief handoff."
+        description=(
+            "Release-gate A/B: 0.4.9-style vs structured Research Brief "
+            "handoff. Exit code reflects the gate verdict, not just crashes."
+        )
     )
     parser.add_argument("--provider", choices=provider_ids(), default=DEFAULT_PROVIDER_ID)
     parser.add_argument("--port", type=int, default=9222)
@@ -570,6 +720,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--max-turns", type=int, default=12)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--trace-output",
+        type=Path,
+        help="Journal directory for the hash-chained prompt/reply trace.",
+    )
+    parser.add_argument(
+        "--no-live-trace",
+        action="store_true",
+        help="Disable journaling (no transcript material is written).",
+    )
     parser.add_argument("--keep-open", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
@@ -586,6 +746,8 @@ def main(argv: list[str] | None = None) -> int:
         max_turns=args.max_turns,
         output=output,
         keep_open=args.keep_open,
+        trace_output=args.trace_output,
+        no_live_trace=args.no_live_trace,
     )
 
 

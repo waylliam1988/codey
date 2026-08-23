@@ -2144,8 +2144,10 @@ trace 消费；生产路径尚不应用 profile。Writer 可见 handoff 文案�
 共享 `report_sections` 解析的结构化短摘要（raw excerpt 与 related-id 移除、
 长行截断不丢弃），启用该文案的 release 必须先跑专用 live A/B：
 `tests/manual/research_to_code_ab.py`（baseline=0.4.9 风格渲染 vs
-projection=结构化渲染，确定性评分含 unsupported 陷阱 claim 误用检测）。
-profile 参与 planner 偏好、以及任何 enforcement 仍需各自 A/B 后再启用。
+projection=结构化渲染，确定性评分含 unsupported 陷阱 claim 误用检测；
+退出码即 gate 判定；默认哈希链 journal + transcript 归档可复盘，
+两臂顺序按 repeat 交错）。profile 参与 planner 偏好、以及任何
+enforcement 仍需各自 A/B 后再启用。
 
 原规划目标：把不同领域的证据标准、来源可信度和 Research-to-Code handoff
 收束到同一个 refs-only projection 里。Domain rules 不单独做 UI，也不提前变成

@@ -86,6 +86,32 @@ _PEER_REVIEWED_HOSTS = (
 _REPO_HOSTS = ("github.com", "gitlab.com", "bitbucket.org")
 _FILING_HOSTS = ("sec.gov", "finra.org", "edi.gov")
 _STANDARD_HOSTS = ("iso.org", "ieee.org", "ietf.org", "ansi.org", "w3.org", "itu.int")
+# Government/education trust must match registered public-suffix shapes only.
+# Substring tests like ".gov." in host would let attacker-owned lookalikes
+# (e.g. sec.gov.evil.example) inherit tier-3 trust, which is far more
+# dangerous than missing an exotic ccTLD. Compound suffixes stay finite and
+# stable; unknown ones simply do not get free trust.
+_GOV_SUFFIXES = (
+    "gov",
+    "mil",
+    "gov.au",
+    "gov.br",
+    "gov.cn",
+    "gov.in",
+    "gov.uk",
+    "gov.za",
+    "gouv.fr",
+    "gc.ca",
+    "go.jp",
+    "go.id",
+)
+_EDU_SUFFIXES = (
+    "edu",
+    "edu.au",
+    "edu.cn",
+    "edu.hk",
+    "ac.uk",
+)
 _NEWS_HOSTS = (
     "apnews.com",
     "ap.org",
@@ -316,9 +342,9 @@ def _classify(*, host: str, kind: str, level: str) -> tuple[str, ...]:
             add("standard")
         if any(_host_is(lowered, item) for item in _FILING_HOSTS):
             add("filing")
-        if lowered.endswith(".gov") or ".gov." in lowered or lowered.endswith(".mil"):
+        if any(_host_is(lowered, item) for item in _GOV_SUFFIXES):
             add("official")
-        elif lowered.endswith(".edu") or ".edu." in lowered:
+        elif any(_host_is(lowered, item) for item in _EDU_SUFFIXES):
             add("primary")
         if any(_host_is(lowered, item) for item in _FORUM_HOSTS):
             add("forum")

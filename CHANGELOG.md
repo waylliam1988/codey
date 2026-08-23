@@ -86,11 +86,18 @@ This file records Codey's release history. The newest release appears first.
 - Added `tests/manual/research_to_code_ab.py`, the roadmap's release-gate
   probe for Writer-visible handoff changes: two arms (0.4.9-style baseline
   render vs structured projection render), same fixture project, same
-  synthesis note content, same Writer task; deterministic scoring per arm
-  covers key-conclusion retention, misuse of an injected unsupported trap
-  claim, raw-excerpt/related-id noise, independent verification pass, and
-  protocol hygiene. A scripted-provider self-test keeps the whole harness
-  runnable offline (`--self-test`), and its scoring/builders are covered by
+  synthesis note content, same Writer task. Arm order interleaves per
+  repeat to cancel warm-session/order bias. The process exit code IS the
+  gate verdict: it fails when the projection arm regresses on any gate
+  metric (success, key-conclusion retention, trap misuse, independent
+  verification pass) or any row errored -- a crash-free run with bad
+  results is a failure, not a pass. By default every prompt/reply exchange
+  is recorded into a hash-chained `ABJournalWriter` journal with full
+  transcript archiving (`transcripts/<digest>.json`) for offline replay;
+  `--no-live-trace` disables it. Transcripts stay manual-layer material and
+  never enter RunTrace/EvidenceLedger/production evidence. A
+  scripted-provider self-test keeps the whole harness runnable offline
+  (`--self-test`), and its scoring/builders/gate/schedule are covered by
   unit tests without any provider traffic.
 - Groundwork status: `resolve_profile`, `evaluate_against_profile`,
   `ResearchImpactContract`, and `render_handoff` are deterministic APIs
@@ -101,6 +108,13 @@ This file records Codey's release history. The newest release appears first.
   with their own gates. Capability metadata mirrors module ownership:
   `domain_evidence_profiles` / `research_source_trust` /
   `research_brief_projection` are three separate boundaries.
+- Source-trust host matching hardened: government/education trust now
+  matches an explicit registered-suffix table (`gov`, `mil`, compound
+  ccTLD shapes like `gov.au` / `gov.uk` / `gouv.fr` / `gc.ca` / `go.jp`,
+  `edu`, `ac.uk`, ...) instead of substring tests, so attacker-owned
+  lookalikes such as `sec.gov.evil.example` or `mit.edu.phishing.example`
+  can no longer inherit tier-3 trust; forum/social/news domains already
+  matched exactly-or-suffix. Locked by lookalike and compound-suffix tests.
 
 
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1

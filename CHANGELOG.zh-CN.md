@@ -68,11 +68,16 @@
   research context 文案，因此发布启用前必须先跑专用 live A/B（见下）。
 - 新增 `tests/manual/research_to_code_ab.py`：roadmap 要求的 Writer 可见
   handoff 变更发布门槛探针。两臂（0.4.9 风格 baseline 渲染 vs 结构化投影
-  渲染）、同一 fixture 项目、同一 synthesis note 内容、同一 Writer 任务；
-  每臂确定性评分覆盖：关键结论保留、注入的 unsupported 陷阱 claim 是否被
-  误用、raw excerpt/related-id 噪音、独立验证是否通过、协议卫生。
-  scripted-provider self-test 让整个 harness 离线可跑（`--self-test`），
-  评分/构建逻辑另有不消耗任何 provider 流量的单元测试。
+  渲染）、同一 fixture 项目、同一 synthesis note 内容、同一 Writer 任务。
+  两臂顺序按 repeat 交错，消除会话热身/顺序偏差。进程退出码即 gate 判定：
+  projection 臂在任一 gate 指标（success、关键结论保留、陷阱 claim 误用、
+  独立验证通过）上回退，或任何 row 出错，都判失败——"跑完没崩但结果差"
+  是 gate 失败而不是通过。默认每次 prompt/reply 交互写入哈希链
+  `ABJournalWriter` journal 并完整归档（`transcripts/<digest>.json`）供
+  离线复盘；`--no-live-trace` 可关闭。transcript 仅属 manual 层材料，
+  绝不进入 RunTrace/EvidenceLedger/生产证据链。scripted-provider
+  self-test 让整个 harness 离线可跑（`--self-test`），评分/构建/gate/
+  交错调度另有不消耗 provider 流量的单元测试。
 - Groundwork 边界声明：`resolve_profile`、`evaluate_against_profile`、
   `ResearchImpactContract`、`render_handoff` 目前只被测试和 trace 记录消费，
   是确定性 API 地基。生产路径尚不选择或应用 evidence profile（按设计不做
@@ -80,6 +85,12 @@
   这些消费方带着各自门槛上线之前，没有任何用户可见行为变化。能力元数据
   与模块归属一一对应：`domain_evidence_profiles` / `research_source_trust`
   / `research_brief_projection` 是三个独立边界。
+- source-trust 域名匹配加固：政府/教育强信任改为显式注册后缀表
+  （`gov`、`mil` 及 `gov.au`/`gov.uk`/`gouv.fr`/`gc.ca`/`go.jp` 等 compound
+  ccTLD 形态、`edu`、`ac.uk`...），不再使用子串测试——攻击者控制的仿冒域
+  （如 `sec.gov.evil.example`、`mit.edu.phishing.example`）无法再继承
+  tier-3 信任；forum/social/news 域名此前已改为 exact-or-suffix。
+  lookalike 与 compound-suffix 测试锁定。
 
 
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1
