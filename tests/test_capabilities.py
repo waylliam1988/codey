@@ -24,11 +24,13 @@ EXPECTED_BUILTIN_IDS = (
     "consensus_advisors",
     "context_epoch",
     "conversation_handoff",
+    "domain_evidence_profiles",
     "local_context",
     "policy_guard",
     "prompt_envelope",
     "provider_capability_registry",
     "provider_factory",
+    "research_brief_projection",
     "research_connector_search",
     "research_evidence_ledger",
     "research_evidence_runtime",
@@ -46,7 +48,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "82fb175a9abd16425876079afbd446760144a544072d8b07dc45a300c6034fb2"
+    "1fd5c610c17f2bf0da76125582d5122e2a54c4c03883ec557fafbb2fdf949b72"
 )
 
 
@@ -211,6 +213,46 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.ui_surface, ())
         self.assertEqual(spec.trace_sections, ("research_plans",))
+
+    def test_domain_evidence_profiles_is_pure_data_boundary(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("domain_evidence_profiles")
+
+        self.assertEqual(spec.provides, ("evidence_profile_projection",))
+        self.assertEqual(spec.consumes, ())
+        self.assertEqual(spec.durable_state, ())
+        self.assertEqual(spec.trace_sections, ())
+        self.assertEqual(spec.owner_module, "codey.research.domain_profiles")
+        self.assertFalse(spec.model_visible)
+        self.assertFalse(spec.evidence_producer)
+
+    def test_research_source_trust_owns_only_trust_projection(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_source_trust")
+
+        self.assertEqual(spec.provides, ("source_trust_projection",))
+        self.assertEqual(spec.consumes, ("research_object_model", "run_trace"))
+        self.assertEqual(spec.durable_state, ("run_trace",))
+        self.assertEqual(spec.trace_sections, ("research_source_trust",))
+        self.assertEqual(spec.owner_module, "codey.research.source_trust")
+        self.assertFalse(spec.model_visible)
+
+    def test_research_brief_projection_owns_handoff_projection(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_brief_projection")
+
+        self.assertEqual(
+            spec.provides,
+            ("research_brief_projection", "research_impact_contract"),
+        )
+        self.assertEqual(spec.consumes, ("research_evidence_runtime", "run_trace"))
+        self.assertEqual(spec.durable_state, ("run_trace",))
+        self.assertEqual(spec.trace_sections, ("research_brief_projections",))
+        self.assertEqual(spec.owner_module, "codey.research.brief_projection")
+        self.assertFalse(spec.model_visible)
 
     def test_completion_contract_is_metadata_only_projection_boundary(self) -> None:
         registry = builtin_capability_registry()

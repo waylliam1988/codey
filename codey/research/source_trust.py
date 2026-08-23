@@ -86,17 +86,35 @@ _PEER_REVIEWED_HOSTS = (
 _REPO_HOSTS = ("github.com", "gitlab.com", "bitbucket.org")
 _FILING_HOSTS = ("sec.gov", "finra.org", "edi.gov")
 _STANDARD_HOSTS = ("iso.org", "ieee.org", "ietf.org", "ansi.org", "w3.org", "itu.int")
-_NEWS_HOST_MARKERS = ("reuters", "apnews", "bbc", "bloomberg", "nytimes", "wsj", "ft.com", "news")
+_NEWS_HOSTS = (
+    "apnews.com",
+    "ap.org",
+    "bbc.co.uk",
+    "bbc.com",
+    "bloomberg.com",
+    "cnbc.com",
+    "ft.com",
+    "nytimes.com",
+    "reuters.com",
+    "theguardian.com",
+    "wsj.com",
+)
 _FORUM_HOSTS = (
+    "news.ycombinator.com",
+    "quora.com",
     "reddit.com",
     "stackoverflow.com",
     "stackexchange.com",
-    "quora.com",
-    "zhihu.com",
     "v2ex.com",
-    "news.ycombinator.com",
+    "zhihu.com",
 )
-_SOCIAL_HOSTS = ("twitter.com", "x.com", "facebook.com", "weibo.com", "linkedin.com")
+_SOCIAL_HOSTS = (
+    "facebook.com",
+    "linkedin.com",
+    "weibo.com",
+    "x.com",
+    "twitter.com",
+)
 
 _KIND_CLASSES = {
     "official": "official",
@@ -106,6 +124,12 @@ _KIND_CLASSES = {
     "forum": "forum",
     "social": "social",
 }
+
+
+def _host_is(host: str, domain: str) -> bool:
+    """Exact or dot-suffix domain match; never a substring test."""
+
+    return host == domain or host.endswith("." + domain)
 
 
 @dataclass(frozen=True)
@@ -282,25 +306,25 @@ def _classify(*, host: str, kind: str, level: str) -> tuple[str, ...]:
 
     if host:
         lowered = host.lower()
-        if any(lowered == item or lowered.endswith("." + item) for item in _PREPRINT_HOSTS):
+        if any(_host_is(lowered, item) for item in _PREPRINT_HOSTS):
             add("preprint")
-        if any(lowered == item or lowered.endswith("." + item) for item in _PEER_REVIEWED_HOSTS):
+        if any(_host_is(lowered, item) for item in _PEER_REVIEWED_HOSTS):
             add("peer_reviewed")
-        if any(lowered == item or lowered.endswith("." + item) for item in _REPO_HOSTS):
+        if any(_host_is(lowered, item) for item in _REPO_HOSTS):
             add("repository")
-        if any(lowered == item or lowered.endswith("." + item) for item in _STANDARD_HOSTS):
+        if any(_host_is(lowered, item) for item in _STANDARD_HOSTS):
             add("standard")
-        if any(lowered == item or lowered.endswith("." + item) for item in _FILING_HOSTS):
+        if any(_host_is(lowered, item) for item in _FILING_HOSTS):
             add("filing")
         if lowered.endswith(".gov") or ".gov." in lowered or lowered.endswith(".mil"):
             add("official")
         elif lowered.endswith(".edu") or ".edu." in lowered:
             add("primary")
-        if any(marker in lowered for marker in _FORUM_HOSTS):
+        if any(_host_is(lowered, item) for item in _FORUM_HOSTS):
             add("forum")
-        elif any(marker in lowered for marker in _SOCIAL_HOSTS):
+        elif any(_host_is(lowered, item) for item in _SOCIAL_HOSTS):
             add("social")
-        elif any(marker in lowered for marker in _NEWS_HOST_MARKERS):
+        elif any(_host_is(lowered, item) for item in _NEWS_HOSTS):
             add("news")
     mapped = _KIND_CLASSES.get(kind, "")
     if mapped:

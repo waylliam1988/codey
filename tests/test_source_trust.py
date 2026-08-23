@@ -85,6 +85,29 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(forum.source_class, "forum")
         self.assertEqual(social.source_class, "social")
 
+    def test_host_substring_lookalikes_do_not_classify_as_weak(self) -> None:
+        lookalikes = [
+            _source("notreddit.com", suffix="1" * 16),
+            _source("reddit.com.evil.example", suffix="2" * 16),
+            _source("facebook-community.example", suffix="3" * 16),
+            _source("protwitter.org", suffix="4" * 16),
+        ]
+
+        for source in lookalikes:
+            with self.subTest(host=source["host"]):
+                projection = project_source_trust(source)
+                self.assertNotIn(
+                    projection.source_class,
+                    {"forum", "social"},
+                )
+
+    def test_news_domains_match_by_domain_not_substring(self) -> None:
+        real = project_source_trust(_source("business.reuters.com", suffix="1" * 16))
+        fake = project_source_trust(_source("reuters-watch.example", suffix="2" * 16))
+
+        self.assertEqual(real.source_class, "news")
+        self.assertNotEqual(fake.source_class, "news")
+
     def test_weak_class_carries_warning_and_unknown_falls_open(self) -> None:
         weak = project_source_trust(_source("4chan.org", kind="social"))
         unknown = project_source_trust({

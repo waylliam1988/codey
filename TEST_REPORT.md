@@ -40,16 +40,33 @@ preferences (score 0.92, explicit reason codes, unknown kinds warn), while
 callers passing no profile get plans byte-identical to 0.4.9.
 
 Debt reduction: `knowledge/brief.py` dropped its local heading scanner and
-now projects note bodies through the shared `parse_sections`; the unbounded
-raw-report excerpt and related-note id noise no longer enter the Writer
-handoff (release-gating live smoke / small A/B documented per roadmap).
+now projects note bodies through the new neutral leaf `codey/report_sections.py`
+(single parser owner for both report review and the handoff). An
+import-isolation test locks that importing the brief never loads the eager
+research package. The unbounded raw-report excerpt and related-note id noise
+no longer enter the Writer handoff, long section lines are clipped instead of
+silently dropped, host classification matches domains exactly/suffix-only (no
+substring false positives like "notreddit.com"), capability metadata was
+split to mirror module ownership (`domain_evidence_profiles` /
+`research_source_trust` / `research_brief_projection`), and changelog/roadmap
+wording now states explicitly that profile APIs are groundwork consumed only
+by tests + trace recording with no user-visible behavior yet.
+
+Release gate tooling: `tests/manual/research_to_code_ab.py` is the dedicated
+two-arm live A/B for Writer-visible handoff changes (baseline 0.4.9-style
+render vs structured projection render; same fixture, task, synthesis note).
+Deterministic scoring covers key-conclusion retention, misuse of an injected
+unsupported trap claim, excerpt/related-id noise, independent verification,
+and protocol hygiene. A scripted-provider self-test (`--self-test`) runs the
+full two-arm flow offline and its builders/scorers have unit tests with no
+provider traffic.
 
 Verification:
 
 ```text
 python -m pytest tests/test_domain_profiles.py tests/test_source_trust.py
-  tests/test_brief_projection.py ... targeted suite: 303 passed, 214 subtests
-python -m pytest tests                full suite: 2536 passed, 735 subtests
+  tests/test_brief_projection.py ... targeted suite: 449 passed, 236 subtests
+python -m pytest tests                full suite: 2547 passed, 750 subtests
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean
@@ -58,13 +75,15 @@ git diff --check                      clean
 New/updated coverage: six atomic profiles and strictness directions locked;
 unknown-label fallback; merge cap + truncation warning; order-insensitive
 merged values; classification of preprint/peer-reviewed/repository/filing/
-gov/news/blog/forum/social hosts and kinds; invalid sources return None;
-below-floor evaluation warns without deleting rows; legacy aggregate
-warnings reproduced exactly; refs-only brief payload (no raw url/body/
-transcript); unsupported-claim demotion; escape-path rejection; handoff
-render bounded and labeled; trace sections keep valid rows, drop junk,
-dedupe, truncate; default planner plans byte-identical without profile;
-capability registry id list and fingerprint updated.
+gov/news/blog/forum/social hosts and kinds; substring-lookalike hosts do not
+classify weak; invalid sources return None; below-floor evaluation warns
+without deleting rows; legacy aggregate warnings reproduced exactly;
+refs-only brief payload (no raw url/body/transcript); unsupported-claim
+demotion; escape-path rejection; handoff render bounded and labeled; trace
+sections keep valid rows, drop junk, dedupe, truncate; default planner plans
+byte-identical without profile; knowledge/research import isolation in a
+clean interpreter; report_sections stdlib-leaf purity; three-way capability
+ownership split; A/B harness self-test plus builder/scorer unit tests.
 
 ## 0.4.9 Research Contract Lite + Verified Completion Gate v1
 

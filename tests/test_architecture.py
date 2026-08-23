@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -618,26 +620,64 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 for token in forbidden_source:
                     self.assertNotIn(token, source)
 
-    def test_knowledge_brief_consumes_shared_parser_not_runtime_layers(self) -> None:
-        # The brief may reuse the report section parser (pure function) but
-        # must never import research runtime layers or providers.
-        path = ROOT / "codey" / "knowledge" / "brief.py"
+    def test_knowledge_never_imports_the_research_package(self) -> None:
+        # Knowledge is a lower layer than Research: its Writer handoff consumes
+        # the neutral section parser (codey.report_sections) instead of
+        # reaching upward into codey.research, whose package __init__ eagerly
+        # loads the runner/browser/pipeline stack.
+        for path in sorted((ROOT / "codey" / "knowledge").glob("*.py")):
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                imports = imported_modules(path)
+                research_imports = {
+                    name for name in imports if name.startswith("codey.research")
+                }
+                self.assertEqual(sorted(research_imports), [])
+
+    def test_knowledge_brief_import_does_not_load_research_runtime(self) -> None:
+        # Import-level isolation, checked in a clean interpreter: importing
+        # the brief must not transitively load any research runtime module.
+        script = (
+            "import sys\n"
+            "import codey.knowledge.brief\n"
+            "loaded = [name for name in sys.modules if name.startswith('codey.research')]\n"
+            "assert loaded == [], loaded\n"
+            "print('isolated')\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            cwd=ROOT,
+            timeout=120,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            f"stdout={completed.stdout} stderr={completed.stderr}",
+        )
+        self.assertIn("isolated", completed.stdout)
+
+    def test_report_sections_is_a_stdlib_leaf(self) -> None:
+        # The shared section parser is domain-neutral: no codey imports and
+        # no I/O, so both research and knowledge layers can own one parser.
+        path = ROOT / "codey" / "report_sections.py"
         imports = imported_modules(path)
 
-        allowed_research = {"codey.research.report_quality"}
-        research_imports = {
-            name for name in imports if name.startswith("codey.research")
-        }
-        self.assertTrue(research_imports.issubset(allowed_research), sorted(research_imports))
-        forbidden = {
-            "codey.providers",
-            "codey.tool_runtime",
-            "codey.server",
-            "codey.task_runner",
-            "codey.research.runner",
-            "codey.research.tools",
-        }
-        self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+        self.assertEqual(
+            [name for name in imports if name == "codey" or name.startswith("codey.")],
+            [],
+        )
+        source = path.read_text(encoding="utf-8")
+        for token in (
+            "write_text(",
+            "write_json",
+            "open(",
+            "eval(",
+            "exec(",
+            "subprocess",
+            "urllib",
+        ):
+            self.assertNotIn(token, source)
 
     def test_ab_journal_is_manual_layer_only(self) -> None:
         # The A/B journal is manual-experiment tooling: production layers must

@@ -58,13 +58,28 @@
   `domain_profile_kind_unavailable` reason 而不是猜测。不传 profile 的
   调用方拿到的 plan 与 0.4.9 逐字节一致，proof-ok 短路依旧完全忽略偏好。
 - `knowledge/brief.py` 减债：删除本地 heading 扫描解析器
-  （`_extract_section_lines` / `_extract_sources_section`），brief 改用与
-  report quality review 相同的 `parse_sections` 投影 note body——报告结构
-  从此只有一个 owner。无界的 raw 报告摘录（"Synthesis excerpt"，最多
-  3600 字符 note 正文）不再进入 Writer handoff，related-note id 噪音也从
-  handoff 移除；剩余每一行都来自具名 section。这会改变 Writer 可见的
-  research context 文案，因此发布启用前需先过 roadmap 的 live smoke /
-  小型 A/B 门槛。
+  （`_extract_section_lines` / `_extract_sources_section`），brief 改用
+  `codey/report_sections.py`——一个中立的 stdlib-only leaf，同时也是 report
+  quality review 的 section 解析唯一 owner；knowledge 层不再向上依赖会级联
+  加载 runner/browser/pipeline 的 research 包（由导入隔离测试锁定）。无界的
+  raw 报告摘录（"Synthesis excerpt"，最多 3600 字符 note 正文）不再进入
+  Writer handoff，related-note id 噪音也从 handoff 移除；剩余每一行都来自
+  具名 section，超长行一律截断、绝不静默丢弃。这会改变 Writer 可见的
+  research context 文案，因此发布启用前必须先跑专用 live A/B（见下）。
+- 新增 `tests/manual/research_to_code_ab.py`：roadmap 要求的 Writer 可见
+  handoff 变更发布门槛探针。两臂（0.4.9 风格 baseline 渲染 vs 结构化投影
+  渲染）、同一 fixture 项目、同一 synthesis note 内容、同一 Writer 任务；
+  每臂确定性评分覆盖：关键结论保留、注入的 unsupported 陷阱 claim 是否被
+  误用、raw excerpt/related-id 噪音、独立验证是否通过、协议卫生。
+  scripted-provider self-test 让整个 harness 离线可跑（`--self-test`），
+  评分/构建逻辑另有不消耗任何 provider 流量的单元测试。
+- Groundwork 边界声明：`resolve_profile`、`evaluate_against_profile`、
+  `ResearchImpactContract`、`render_handoff` 目前只被测试和 trace 记录消费，
+  是确定性 API 地基。生产路径尚不选择或应用 evidence profile（按设计不做
+  关键词/领域推断）；planner 只有在调用方显式传入时才感知 profile；在
+  这些消费方带着各自门槛上线之前，没有任何用户可见行为变化。能力元数据
+  与模块归属一一对应：`domain_evidence_profiles` / `research_source_trust`
+  / `research_brief_projection` 是三个独立边界。
 
 
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1

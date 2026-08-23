@@ -16,6 +16,7 @@ from codey.research.done_finalizer import (
     finalize_done_answer,
     render_research_report_sections,
 )
+from codey.report_sections import parse_sections
 from codey.refs import clip, digest_text as _digest_text
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import (
@@ -27,7 +28,6 @@ from codey.research.plan_executor import PlanExecutionResult
 from codey.research.report_quality import (
     ReportQualityReview,
     parse_citation_rows,
-    parse_sections,
     review_report_quality,
 )
 from codey.research.runner import ResearchRunResult

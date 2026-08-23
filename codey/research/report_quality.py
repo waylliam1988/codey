@@ -15,8 +15,13 @@ from codey.research.citation_scanner import (
 )
 from codey.research.ledger import ResearchLedger
 from codey.research.provenance import provenance_problem
+from codey.report_sections import (
+    heading_key as _heading_key,
+    missing_required_sections as _missing_required_sections,
+    parse_sections,
+    section_title,
+)
 
-_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
 _SOURCE_LINE_RE = re.compile(
     r"^\s*(?:[-*]\s*)?\[(\d+)\]\s*(.*?)\s*(?:-|–|—)\s*(https?://\S+)\s*$"
 )
@@ -32,24 +37,6 @@ _SOURCE_NUMBERED_URL_RE = re.compile(
 _SOURCE_NUMBERED_URL_FIRST_RE = re.compile(
     r"^\s*(?:[-*]\s*)?(\d+)[\.)、]\s*(https?://\S+)\s*(?:[-–—]\s*(.*?))?\s*$"
 )
-_HEADING_NUMBER_RE = re.compile(
-    r"^(?:"
-    r"\d+(?:\.\d+)*"
-    r"|[一二三四五六七八九十百千万]+"
-    r"|[ivxlcdm]+"
-    r")\s*[\.\)、)）:：、-]\s*",
-    re.IGNORECASE,
-)
-
-SECTION_ALIASES: dict[str, tuple[str, ...]] = {
-    "conclusion": ("结论", "关键结论", "conclusion", "key conclusions"),
-    "evidence": ("关键证据", "evidence", "key evidence"),
-    "counter": ("反证与限制", "反证", "限制", "counter-evidence", "counter", "limitations"),
-    "source_quality": ("来源质量", "source quality", "source assessment"),
-    "coverage": ("搜索覆盖", "research coverage", "search coverage", "coverage"),
-    "sources": ("来源", "sources", "references"),
-}
-REQUIRED_SECTIONS = ("conclusion", "evidence", "counter", "source_quality", "coverage", "sources")
 
 
 @dataclass(frozen=True)
@@ -138,10 +125,6 @@ def review_report_quality(
         counterpoints=tuple(_section_lines(sections["counter"])),
         sections=sections,
     )
-
-
-def _missing_required_sections(sections: Mapping[str, str]) -> list[str]:
-    return [label for label in REQUIRED_SECTIONS if not sections.get(label, "").strip()]
 
 
 def _missing_required_sections_review(missing: list[str]) -> ReportQualityReview:
@@ -339,20 +322,6 @@ def _source_quality_warnings(
     if citations and all(str(item.quality.get("freshness") or "") == "undated" for item in citations):
         warnings.append("all cited sources look undated")
     return warnings
-
-
-def parse_sections(text: str) -> dict[str, str]:
-    sections: dict[str, list[str]] = {}
-    current = ""
-    for line in str(text or "").splitlines():
-        key = _heading_key(line)
-        if key:
-            current = key
-            sections.setdefault(current, [])
-            continue
-        if current:
-            sections.setdefault(current, []).append(line)
-    return {key: "\n".join(value).strip() for key, value in sections.items()}
 
 
 def parse_citation_rows(sources_section: str, ledger: ResearchLedger | None = None) -> list[Citation]:
@@ -578,45 +547,6 @@ _INSUFFICIENT_EVIDENCE_MARKERS = (
 
 def _normalized_body(value: str) -> str:
     return re.sub(r"\s+", " ", str(value or "").lower())
-
-
-def _heading_key(line: str) -> str:
-    stripped = str(line or "").strip()
-    match = _HEADING_RE.match(stripped)
-    if match:
-        title = match.group(1)
-    else:
-        title = stripped.rstrip(":：")
-    title = _normalize_heading(title)
-    if not title:
-        return ""
-    for key in ("source_quality", "conclusion", "evidence", "counter", "coverage", "sources"):
-        if title in {_normalize_heading(item) for item in SECTION_ALIASES[key]}:
-            return key
-    return ""
-
-
-def _normalize_heading(value: str) -> str:
-    text = str(value or "").strip().strip("#").strip()
-    text = text.strip("*_`[]() ")
-    while True:
-        next_text = _HEADING_NUMBER_RE.sub("", text).strip()
-        if next_text == text:
-            break
-        text = next_text
-    text = text.rstrip(":：").strip()
-    return re.sub(r"\s+", " ", text).lower()
-
-
-def section_title(key: str) -> str:
-    return {
-        "conclusion": "结论",
-        "evidence": "关键证据",
-        "counter": "反证与限制",
-        "source_quality": "来源质量",
-        "coverage": "搜索覆盖",
-        "sources": "来源",
-    }.get(key, key)
 
 
 def _says_no_strong_counter(text: str) -> bool:

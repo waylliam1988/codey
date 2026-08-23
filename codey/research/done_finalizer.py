@@ -11,6 +11,7 @@ from codey.research.citation_scanner import (
     source_id_ref_items,
     source_id_refs,
 )
+from codey.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 from codey.research import report_quality
 from codey.research.ledger import ResearchLedger
 
@@ -40,7 +41,7 @@ def finalize_done_answer(
     """
 
     text = str(answer or "")
-    sections = report_quality.parse_sections(text)
+    sections = parse_sections(text)
     if not sections:
         return FinalizedAnswer(text, reason="no_report_sections")
     citable_urls = _citable_urls(ledger)
@@ -80,7 +81,7 @@ def finalize_done_answer(
         )
 
     compiled_bodies: dict[str, str] = {}
-    for key in report_quality.REQUIRED_SECTIONS:
+    for key in REQUIRED_SECTIONS:
         if key == "sources":
             continue
         body = sections.get(key, "")
@@ -173,7 +174,7 @@ def _old_source_numbers(
 def _numeric_ref_numbers(sections: Mapping[str, str]) -> tuple[int, ...]:
     refs: list[int] = []
     seen: set[int] = set()
-    for key in report_quality.REQUIRED_SECTIONS:
+    for key in REQUIRED_SECTIONS:
         if key == "sources":
             continue
         for item in citation_ref_items(sections.get(key, "")):
@@ -279,11 +280,11 @@ def _source_title(ledger: ResearchLedger, url: str) -> str:
 
 def _render_report(sections: dict[str, str]) -> str:
     parts: list[str] = []
-    for key in report_quality.REQUIRED_SECTIONS:
+    for key in REQUIRED_SECTIONS:
         body = str(sections.get(key) or "").strip()
         if not body and key != "sources":
             continue
-        parts.append(f"## {report_quality.section_title(key)}\n{body}".rstrip())
+        parts.append(f"## {section_title(key)}\n{body}".rstrip())
     return "\n\n".join(parts).strip()
 
 

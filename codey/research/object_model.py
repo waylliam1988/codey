@@ -34,7 +34,8 @@ from codey.research.identity import (
     project_ref,
     sanitize_research_url_ref,
 )
-from codey.research.report_quality import ReportQualityReview, citation_ref_items, parse_sections
+from codey.report_sections import parse_sections
+from codey.research.report_quality import ReportQualityReview, citation_ref_items
 
 
 MAX_RECORD_SOURCES = 24

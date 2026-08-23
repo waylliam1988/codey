@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from codey.knowledge.store import KnowledgeStore
-from codey.research.report_quality import parse_sections
+from codey.report_sections import parse_sections
+from codey.refs import clip as _clip
 from codey.text_budget import clip_middle
 
 
@@ -119,8 +120,10 @@ def _section_lines(
             continue
         if strip_bullets and stripped.startswith(("- ", "* ")):
             stripped = stripped[2:].strip()
-        if len(stripped) > MAX_ITEM_CHARS:
-            continue
+        # Long lines are clipped, never dropped: with the raw excerpt gone
+        # from the handoff, silently losing a long conclusion would hide
+        # exactly the content the writer needs.
+        stripped = _clip(stripped, MAX_ITEM_CHARS)
         if stripped.casefold() not in {row.casefold() for row in out}:
             out.append(stripped)
         if len(out) >= max(0, int(limit)):

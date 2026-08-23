@@ -2137,9 +2137,15 @@ source-trust 警告规则收编为单一实现；`research/brief_projection.py` 
 refs-only brief 投影 + Research-to-Code impact contract（unsupported claim
 只能进 risk_notes）；RunTrace 新增 `research_source_trust` /
 `research_brief_projections` 有界 section。planner 只新增可选
-evidence_profile 参数（默认行为 byte-identical）。Writer 可见 handoff 文案的
-切换、profile 参与 planner 偏好、以及任何 enforcement 仍需按 roadmap 做
-live smoke / A/B 后再启用。
+evidence_profile 参数（默认行为 byte-identical）。
+
+Groundwork 边界：profiles/impact contract/render_handoff 目前只有测试和
+trace 消费；生产路径尚不应用 profile。Writer 可见 handoff 文案已切换为
+共享 `report_sections` 解析的结构化短摘要（raw excerpt 与 related-id 移除、
+长行截断不丢弃），启用该文案的 release 必须先跑专用 live A/B：
+`tests/manual/research_to_code_ab.py`（baseline=0.4.9 风格渲染 vs
+projection=结构化渲染，确定性评分含 unsupported 陷阱 claim 误用检测）。
+profile 参与 planner 偏好、以及任何 enforcement 仍需各自 A/B 后再启用。
 
 原规划目标：把不同领域的证据标准、来源可信度和 Research-to-Code handoff
 收束到同一个 refs-only projection 里。Domain rules 不单独做 UI，也不提前变成

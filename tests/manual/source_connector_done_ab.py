@@ -31,6 +31,11 @@ from codey import provider_controls
 from codey.knowledge.store import KnowledgeStore
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
+from codey.report_sections import (
+    REQUIRED_SECTIONS,
+    parse_sections,
+    section_title,
+)
 from codey.research import report_quality as report_quality_module
 from codey.research import runner as runner_module
 from codey.research.ledger import ResearchLedger
@@ -119,7 +124,7 @@ def _batched_quality_review(original: Callable[..., Any]) -> Callable[..., Any]:
         return report_quality_module.ReportQualityReview(
             False,
             message,
-            sections=report_quality_module.parse_sections(summary),
+            sections=parse_sections(summary),
         )
 
     return wrapped
@@ -133,13 +138,13 @@ def _quality_blockers(
     search_result_urls: set[str],
     fallback: str,
 ) -> list[str]:
-    sections = report_quality_module.parse_sections(summary)
+    sections = parse_sections(summary)
     blockers: list[str] = []
-    missing = [key for key in report_quality_module.REQUIRED_SECTIONS if not sections.get(key, "").strip()]
+    missing = [key for key in REQUIRED_SECTIONS if not sections.get(key, "").strip()]
     if missing:
         blockers.append(
             "missing required section(s): "
-            + ", ".join(report_quality_module.section_title(item) for item in missing)
+            + ", ".join(section_title(item) for item in missing)
         )
         return blockers
     strict_problem = report_quality_module.provenance_problem(

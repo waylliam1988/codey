@@ -267,6 +267,11 @@ def builtin_capability_registry() -> CapabilityRegistry:
             owner_module="codey.context_epoch",
         ),
         CapabilitySpec(
+            id="domain_evidence_profiles",
+            provides=("evidence_profile_projection",),
+            owner_module="codey.research.domain_profiles",
+        ),
+        CapabilitySpec(
             id="local_context",
             provides=("bounded_local_context", "ghost_continuity_context"),
             consumes=("policy_guard", "prompt_envelope", "run_trace"),
@@ -377,19 +382,19 @@ def builtin_capability_registry() -> CapabilityRegistry:
             owner_module="codey.research.query_planner",
         ),
         CapabilitySpec(
-            id="research_source_trust",
-            provides=(
-                "evidence_profile_projection",
-                "source_trust_projection",
-                "research_brief_projection",
-            ),
-            consumes=(
-                "research_evidence_runtime",
-                "research_object_model",
-                "run_trace",
-            ),
+            id="research_brief_projection",
+            provides=("research_brief_projection", "research_impact_contract"),
+            consumes=("research_evidence_runtime", "run_trace"),
             durable_state=("run_trace",),
-            trace_sections=("research_brief_projections", "research_source_trust"),
+            trace_sections=("research_brief_projections",),
+            owner_module="codey.research.brief_projection",
+        ),
+        CapabilitySpec(
+            id="research_source_trust",
+            provides=("source_trust_projection",),
+            consumes=("research_object_model", "run_trace"),
+            durable_state=("run_trace",),
+            trace_sections=("research_source_trust",),
             owner_module="codey.research.source_trust",
         ),
         CapabilitySpec(

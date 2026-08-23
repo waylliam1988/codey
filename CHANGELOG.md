@@ -73,13 +73,34 @@ This file records Codey's release history. The newest release appears first.
   preferences entirely.
 - Debt reduction in `knowledge/brief.py`: the local heading-scanning parser
   (`_extract_section_lines` / `_extract_sources_section`) is gone; the
-  brief now projects note bodies through the same `parse_sections` used by
-  report quality review, so report structure has exactly one owner. The
-  unbounded raw-report excerpt ("Synthesis excerpt", up to 3600 chars of
-  note body) no longer enters the Writer handoff, and related-note id noise
-  was dropped from it; every remaining line comes from a named section.
-  This changes Writer-visible research context text, so enabling it in a
-  release requires the roadmap's live smoke / small A/B gate first.
+  brief now projects note bodies through `codey/report_sections.py`, a
+  neutral stdlib-only leaf that also owns section parsing for report
+  quality review -- one parser, and the knowledge layer no longer reaches
+  upward into the eager research package (locked by an import-isolation
+  test). The unbounded raw-report excerpt ("Synthesis excerpt", up to 3600
+  chars of note body) no longer enters the Writer handoff, and related-note
+  id noise was dropped from it; every remaining line comes from a named
+  section, and long lines are clipped instead of silently dropped. This
+  changes Writer-visible research context text, so enabling it in a release
+  requires running the dedicated live A/B first (see below).
+- Added `tests/manual/research_to_code_ab.py`, the roadmap's release-gate
+  probe for Writer-visible handoff changes: two arms (0.4.9-style baseline
+  render vs structured projection render), same fixture project, same
+  synthesis note content, same Writer task; deterministic scoring per arm
+  covers key-conclusion retention, misuse of an injected unsupported trap
+  claim, raw-excerpt/related-id noise, independent verification pass, and
+  protocol hygiene. A scripted-provider self-test keeps the whole harness
+  runnable offline (`--self-test`), and its scoring/builders are covered by
+  unit tests without any provider traffic.
+- Groundwork status: `resolve_profile`, `evaluate_against_profile`,
+  `ResearchImpactContract`, and `render_handoff` are deterministic APIs
+  consumed by tests and trace recording only. Production paths do not
+  select or apply evidence profiles yet (no keyword/domain inference by
+  design), the planner ignores profiles unless a caller passes one
+  explicitly, and nothing user-visible changes until those consumers ship
+  with their own gates. Capability metadata mirrors module ownership:
+  `domain_evidence_profiles` / `research_source_trust` /
+  `research_brief_projection` are three separate boundaries.
 
 
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1
