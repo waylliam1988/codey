@@ -265,6 +265,12 @@ def _classify(*, host: str, kind: str, level: str) -> tuple[str, ...]:
             add("standard")
         if source_domains.matches_any(lowered, source_domains.FILING_HOSTS):
             add("filing")
+        if source_domains.matches_any(lowered, source_domains.STANDARD_HOSTS):
+            add("standard")
+        if source_domains.matches_any(lowered, source_domains.DATASET_HOSTS):
+            # Host-backed dataset repositories are the only path into the
+            # strong dataset class; a declared data kind never grants it.
+            add("dataset")
         if source_domains.is_government_host(lowered):
             add("official")
         elif source_domains.is_education_host(lowered):

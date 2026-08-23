@@ -88,8 +88,8 @@
   与模块归属一一对应：`domain_evidence_profiles` / `research_source_trust`
   / `research_brief_projection` 是三个独立边界。
 - source-trust 域名匹配端到端加固。域名表（gov/mil 后缀形态含 compound
-  ccTLD、edu/ac.uk、news、blog、forum、social、preprint、peer-reviewed、
-  repo、filing、standard）收进唯一的 stdlib 数据 leaf
+  ccTLD、edu/ac.uk、dataset 数据仓库、news、blog、forum、social、preprint、
+  peer-reviewed、repo、filing、standard）收进唯一的 stdlib 数据 leaf
   `codey/research/source_domains.py`，捕获期质量分类器
   （`ledger.classify_source_quality`）与信任投影共同消费——两层不再可能
   各自漂移，仿冒 URL（如 `sec.gov.evil.example`）在捕获时就只拿到普通
@@ -97,6 +97,17 @@
   防御：声明的 `quality` kind 永远只能授予 middle/weak class；强 class 只
   由 host 的注册形态推导，即使被伪造 official/data 戳也投影成 unknown 而
   非 tier-3 信任。两层 lookalike 测试 + classify->project 端到端测试锁定。
+- 畸形 hostname 全链路 fail closed。共享的 hostname 形态谓词
+  （`refs.is_valid_hostname`：禁止空 label、连续点、裸单 label、非法字符）
+  同时把守信任表（`.gov` / `evil..gov` / `.edu` 永远无法匹配后缀）和
+  research URL 守卫：`check_fetch_url("https://.gov/x")` 在所有路径上返回
+  denial reason "invalid URL host"，而不是让 resolver 的 UnicodeError
+  中断 plan 预检。
+- 强 `dataset` class 重新由 host 背书且可达：注册数据仓库（data.gov、
+  data.nasa.gov、data.europa.eu、zenodo.org、figshare.com、kaggle.com、
+  archive.ics.uci.edu）投影为 tier-3 dataset；单独声明的 data kind 仍然
+  铸不出该 class——science/finance/market profile 偏好重新有真实语义，
+  且不重开伪造漏洞。
 
 
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1

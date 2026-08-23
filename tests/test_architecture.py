@@ -403,12 +403,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # The shared host-domain tables have exactly one owner and no
         # behavior: both the capture-time classifier and the trust
         # projection consume them, so they must stay import-cycle-free.
+        # codey.refs is the one allowed import (the shared stdlib hostname
+        # shape predicate); no other codey module, no I/O.
         path = ROOT / "codey" / "research" / "source_domains.py"
         imports = imported_modules(path)
 
         self.assertEqual(
-            [name for name in imports if name == "codey" or name.startswith("codey.")],
-            [],
+            sorted(name for name in imports if name == "codey" or name.startswith("codey.")),
+            ["codey.refs"],
         )
         source = path.read_text(encoding="utf-8")
         for token in (

@@ -212,6 +212,29 @@ class ActionPolicyTests(unittest.TestCase):
             "invalid URL port",
         )
 
+    def test_research_url_guard_fails_closed_on_malformed_hostnames(self) -> None:
+        # Malformed hosts used to escape as UnicodeError from the resolver;
+        # they must return a denial reason on every path, with or without
+        # DNS resolution.
+        for url in (
+            "https://.gov/x",
+            "https://evil..gov/x",
+            "https://.edu/",
+            "https://under_score.example/x",
+        ):
+            for resolve in (True, False):
+                with self.subTest(url=url, resolve=resolve):
+                    reason = research_url_denial_reason(url, resolve=resolve)
+                    self.assertEqual(reason, "invalid URL host")
+
+    def test_research_url_guard_still_allows_well_formed_hosts(self) -> None:
+        self.assertIsNone(
+            research_url_denial_reason("https://example.com/doc", resolve=False)
+        )
+        self.assertIsNone(
+            research_url_denial_reason("https://sec.gov/report", resolve=False)
+        )
+
     def test_research_url_guard_rejects_local_targets(self) -> None:
         decision = evaluate_action(ActionSubject(
             "research_url",

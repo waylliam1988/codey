@@ -15,6 +15,8 @@ do not get free trust.
 
 from __future__ import annotations
 
+from codey.refs import is_valid_hostname as _is_valid_hostname
+
 
 GOV_SUFFIXES = (
     "gov",
@@ -55,6 +57,15 @@ PEER_REVIEWED_HOSTS = (
 REPO_HOSTS = ("github.com", "gitlab.com", "bitbucket.org")
 FILING_HOSTS = ("sec.gov", "finra.org", "edi.gov")
 STANDARD_HOSTS = ("iso.org", "ieee.org", "ietf.org", "ansi.org", "w3.org", "itu.int")
+DATASET_HOSTS = (
+    "data.gov",
+    "data.nasa.gov",
+    "data.europa.eu",
+    "zenodo.org",
+    "figshare.com",
+    "kaggle.com",
+    "archive.ics.uci.edu",
+)
 NEWS_HOSTS = (
     "apnews.com",
     "ap.org",
@@ -98,8 +109,15 @@ def host_matches(host: str, domain: str) -> bool:
 
 
 def matches_any(host: str, domains) -> bool:
+    """Fail-closed domain match.
+
+    Malformed hostnames (empty labels, doubled dots, single labels, bad
+    characters) never match any table, so garbage input can neither inherit
+    trust nor crash a suffix comparison.
+    """
+
     lowered = strip_www(host)
-    if not lowered:
+    if not lowered or not _is_valid_hostname(lowered):
         return False
     return any(host_matches(lowered, str(domain).lower()) for domain in domains)
 
@@ -114,6 +132,7 @@ def is_education_host(host: str) -> bool:
 
 __all__ = [
     "BLOG_HOSTS",
+    "DATASET_HOSTS",
     "EDU_SUFFIXES",
     "FILING_HOSTS",
     "FORUM_HOSTS",

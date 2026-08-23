@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from codey.permission_profiles import PermissionProfile, profile_for_name
+from codey.refs import is_valid_hostname
 
 
 DECISION_ALLOW = "allow"
@@ -598,12 +599,18 @@ def research_url_denial_reason(url: str, *, resolve: bool = True) -> str | None:
         ip = None
     if ip is not None:
         return "refusing to open a non-public address" if _ip_is_blocked(ip) else None
+    if not is_valid_hostname(host):
+        # Malformed hostnames (empty labels, doubled dots, bad characters)
+        # are denied here instead of escaping as resolver errors downstream.
+        return "invalid URL host"
     port = port or (443 if parsed.scheme == "https" else 80)
     if not resolve:
         return None
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except OSError:
+    except (OSError, UnicodeError) as exc:
+        if isinstance(exc, UnicodeError):
+            return "invalid URL host"
         return "could not resolve host"
     for info in infos:
         address = info[4][0].split("%")[0]

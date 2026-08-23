@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Iterable
 
 
@@ -58,6 +59,27 @@ def bounded_refs(values: Iterable[object], *, limit: int = DEFAULT_REF_LIMIT) ->
     return tuple(refs)
 
 
+_HOSTNAME_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def is_valid_hostname(value: object) -> bool:
+    """True when the text is a well-formed DNS hostname.
+
+    Fail-closed predicate for trust decisions: empty labels (``.gov``),
+    doubled dots (``evil..gov``), leading/trailing hyphens, bare single
+    labels, and oversized names are all invalid, so no suffix table can be
+    talked into matching them.
+    """
+
+    lowered = normalize_text(value).lower()
+    if not lowered or len(lowered) > 253 or "_" in lowered:
+        return False
+    labels = lowered.split(".")
+    if len(labels) < 2:
+        return False
+    return all(_HOSTNAME_LABEL_RE.match(label) for label in labels)
+
+
 def digest_text(value: object) -> str:
     return "sha256:" + hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
 
@@ -92,6 +114,7 @@ __all__ = [
     "digest_ref",
     "digest_text",
     "identifier",
+    "is_valid_hostname",
     "nonnegative_int",
     "normalize_text",
     "stable_ref",

@@ -70,14 +70,14 @@ offline; builders/scorers/gate/schedule/journal-wiring have unit tests with
 no provider traffic.
 
 Source-trust hardening round two, closed end to end: the host-domain tables
-(gov/mil suffix shapes with compound ccTLDs, edu/ac.uk, news, blog, forum,
-social, preprint, peer-reviewed, repo, filing, standard) moved into one
-stdlib-data leaf `codey/research/source_domains.py` consumed by BOTH the
-capture-time classifier (`ledger.classify_source_quality`) and the trust
-projection, so the old substring rules in the ledger can no longer stamp a
-lookalike URL (`sec.gov.evil.example`) as official upstream of the suffix
-table. Defense in depth at the projection: declared quality kinds may only
-assign middle/weak classes -- strong classes derive from the host shape
+(gov/mil suffix shapes with compound ccTLDs, edu/ac.uk, dataset repositories,
+news, blog, forum, social, preprint, peer-reviewed, repo, filing, standard)
+moved into one stdlib-data leaf `codey/research/source_domains.py` consumed
+by BOTH the capture-time classifier (`ledger.classify_source_quality`) and
+the trust projection, so the old substring rules in the ledger can no longer
+stamp a lookalike URL (`sec.gov.evil.example`) as official upstream of the
+suffix table. Defense in depth at the projection: declared quality kinds may
+only assign middle/weak classes -- strong classes derive from the host shape
 alone, and a forged official/data stamp now degrades to unknown instead of
 tier-3. Locked by per-layer lookalike tests plus an end-to-end
 classify->project test; compound suffixes (gov.au/gov.uk/edu.cn/ac.uk)
@@ -85,6 +85,15 @@ verified still matching. Note: the real-Edge UI e2e is timing-sensitive
 under full-suite load and flaked once (passed in isolation and in the
 final full-suite rerun); no research/knowledge path touches it.
 
+Malformed-hostname fail-closure round three: the shared shape predicate
+`refs.is_valid_hostname` (no empty labels / doubled dots / bare single
+labels, RFC label characters) gates both the trust tables and the research
+URL guard. `.gov`, `evil..gov`, `.edu` can no longer match any suffix table,
+and `check_fetch_url("https://.gov/x")` returns "invalid URL host" on all
+paths instead of escaping a resolver UnicodeError into plan preflight. The
+strong `dataset` class is reachable again via registered data repositories
+(data.gov/data.nasa.gov/data.europa.eu/zenodo.org/figshare.com/kaggle.com/
+archive.ics.uci.edu) while declared data kinds alone still cannot mint it.
 Gate matrix completeness: `_gate_verdict` additionally requires every
 (case, repeat) pair to have exactly one baseline and one projection row
 (`matrix_complete` criterion), so unbalanced runs such as 2 baseline vs 1
@@ -94,8 +103,8 @@ Verification:
 
 ```text
 python -m pytest tests/test_domain_profiles.py tests/test_source_trust.py
-  tests/test_brief_projection.py ... targeted suite: 318 passed, 231 subtests
-python -m pytest tests                full suite: 2561 passed, 761 subtests
+  tests/test_brief_projection.py ... targeted suite: 421 passed, 22+ subtests
+python -m pytest tests                full suite: 2565 passed, 777 subtests
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean

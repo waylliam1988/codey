@@ -112,18 +112,31 @@ This file records Codey's release history. The newest release appears first.
   `domain_evidence_profiles` / `research_source_trust` /
   `research_brief_projection` are three separate boundaries.
 - Source-trust host matching hardened end to end. The domain tables (gov/mil
-  suffix shapes incl. compound ccTLDs, edu/ac.uk, news, blog, forum, social,
-  preprint, peer-reviewed, repo, filing, standard) moved into one stdlib-data
-  leaf, `codey/research/source_domains.py`, consumed by both the capture-time
-  quality classifier (`ledger.classify_source_quality`) and the trust
-  projection -- the two layers can no longer drift apart, so a lookalike URL
-  such as `sec.gov.evil.example` gets a plain web/secondary stamp at capture
-  time instead of an official one that would bypass the suffix table later.
-  Defense in depth at the projection: declared `quality` kinds may only ever
-  assign middle/weak classes; strong classes derive from the host's
-  registered shape alone, so even a forged official/data stamp projects to
-  unknown rather than tier-3 trust. Locked by lookalike tests on both layers
-  plus an end-to-end classify->project test.
+  suffix shapes incl. compound ccTLDs, edu/ac.uk, dataset repositories, news,
+  blog, forum, social, preprint, peer-reviewed, repo, filing, standard) moved
+  into one stdlib-data leaf, `codey/research/source_domains.py`, consumed by
+  both the capture-time quality classifier (`ledger.classify_source_quality`)
+  and the trust projection -- the two layers can no longer drift apart, so a
+  lookalike URL such as `sec.gov.evil.example` gets a plain web/secondary
+  stamp at capture time instead of an official one that would bypass the
+  suffix table later. Defense in depth at the projection: declared `quality`
+  kinds may only ever assign middle/weak classes; strong classes derive from
+  the host's registered shape alone, so even a forged official/data stamp
+  projects to unknown rather than tier-3 trust. Locked by lookalike tests on
+  both layers plus an end-to-end classify->project test.
+- Malformed hostnames fail closed everywhere. The shared hostname-shape
+  predicate (`refs.is_valid_hostname`: no empty labels, no doubled dots, no
+  bare single labels, RFC label characters only) now gates both the trust
+  tables (`.gov` / `evil..gov` / `.edu` can never match a suffix) and the
+  research URL guard: `check_fetch_url("https://.gov/x")` returns the denial
+  reason "invalid URL host" on every path instead of escaping as a resolver
+  UnicodeError that could abort plan preflight mid-run.
+- The strong `dataset` class is host-backed and reachable again: registered
+  data repositories (data.gov, data.nasa.gov, data.europa.eu, zenodo.org,
+  figshare.com, kaggle.com, archive.ics.uci.edu) project to tier-3 dataset,
+  while a declared data kind alone still cannot mint the class -- keeping
+  the science/finance/market profile preferences meaningful without
+  reopening the forgery hole.
 
 
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1

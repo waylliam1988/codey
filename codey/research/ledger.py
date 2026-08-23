@@ -484,6 +484,9 @@ def classify_source_quality(url: str, text: str = "") -> SourceQuality:
     elif source_domains.is_education_host(host):
         kind = "data"
         level = "primary"
+    elif source_domains.matches_any(host, source_domains.DATASET_HOSTS):
+        kind = "data"
+        level = "primary"
     elif source_domains.matches_any(host, source_domains.NEWS_HOSTS):
         kind = "media"
     elif source_domains.matches_any(host, source_domains.BLOG_HOSTS):

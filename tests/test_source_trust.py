@@ -125,6 +125,13 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(real_edu.level, "primary")
         self.assertEqual(real_edu.kind, "data")
 
+        dataset_repo = classify_source_quality("https://zenodo.org/record/1")
+        self.assertEqual(dataset_repo.level, "primary")
+        self.assertEqual(dataset_repo.kind, "data")
+
+        gov_lookalike_path = classify_source_quality("https://.gov/x")
+        self.assertEqual(gov_lookalike_path.level, "secondary")
+
     def test_end_to_end_lookalike_url_projects_weak_not_strong(self) -> None:
         # Full path: classify -> SourceQuality -> projection input.
         from codey.research.ledger import classify_source_quality
@@ -157,6 +164,52 @@ class ClassificationTests(unittest.TestCase):
 
         self.assertEqual(projection.source_class, "filing")
         self.assertEqual(projection.classes, ("filing", "official"))
+
+    def test_malformed_hostnames_never_inherit_trust(self) -> None:
+        # Suffix matching must be anchored to well-formed DNS names: empty
+        # labels, doubled dots, single labels, and bad characters are
+        # fail-closed instead of being talked into a trust table.
+        malformed = [
+            ".gov",
+            ".edu",
+            "evil..gov",
+            "gov",
+            "-gov",
+            "gov-",
+            "under_score.gov",
+            "sec.gov..com",
+        ]
+        for index, host in enumerate(malformed):
+            with self.subTest(host=host):
+                source = _source(
+                    host,
+                    level="primary",
+                    kind="official",
+                    suffix=f"{index + 1:016x}",
+                )
+                projection = project_source_trust(source)
+                self.assertNotIn("official", projection.classes)
+                self.assertNotIn("primary", projection.classes)
+                self.assertNotIn("dataset", projection.classes)
+                self.assertEqual(projection.tier, TIER_WEAK)
+
+    def test_dataset_class_is_host_backed_and_reachable(self) -> None:
+        dataset = project_source_trust(
+            _source("zenodo.org", level="secondary", kind="web", suffix="1" * 16)
+        )
+        nested = project_source_trust(
+            _source("data.nasa.gov", level="secondary", kind="web", suffix="2" * 16)
+        )
+        declared_only = project_source_trust(
+            _source("not-a-repo.example", level="primary", kind="data", suffix="3" * 16)
+        )
+
+        self.assertIn("dataset", dataset.classes)
+        self.assertEqual(dataset.tier, TIER_STRONG)
+        self.assertIn("dataset", nested.classes)
+        # A declared data kind alone still cannot mint the strong class.
+        self.assertNotIn("dataset", declared_only.classes)
+        self.assertNotEqual(declared_only.tier, TIER_STRONG)
 
     def test_kind_mapping_media_blog_forum_social(self) -> None:
         news = project_source_trust(_source("example.com", kind="media"))
