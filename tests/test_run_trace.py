@@ -1366,6 +1366,93 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
         self.assertEqual(payload["runtime_tool_contract_hash"], runtime_hash)
         self.assertIn({"hash": runtime_hash, "surface": "runtime", "phase": "research"}, payload["tool_contracts"])
 
+    def test_followup_context_rows_bind_to_their_own_turn_epoch(self) -> None:
+        # Tool-result turns assemble coding_current_context before the send;
+        # its rows must bind to the epoch of the prompt that actually leaves,
+        # not to some earlier prepared text.
+        sent: list[str] = []
+        rows: list[dict[str, object]] = []
+
+        class _ScriptedProvider:
+            name = "Scripted"
+
+            def __init__(self, replies: tuple[str, ...]) -> None:
+                self.replies = list(replies)
+
+            def new_chat(self) -> None:
+                return None
+
+            def send(self, text: str) -> str:
+                sent.append(text)
+                return self.replies.pop(0)
+
+        class _CapturingTrace:
+            def record_prompt_section(self, name, text, **kwargs) -> None:
+                del text
+                rows.append({"kind": "section", "name": name, **kwargs})
+
+            def record_context_sources(self, sources, **kwargs) -> None:
+                for source in sources:
+                    rows.append({
+                        "kind": "context",
+                        "name": getattr(source, "key", ""),
+                        "epoch_id": kwargs.get("epoch_id", ""),
+                        "admission_reason": (
+                            getattr(source, "admission_reason", "")
+                            or kwargs.get("admission_reason", "")
+                        ),
+                    })
+
+            def __getattr__(self, _name):
+                def call(*_args, **_kwargs):
+                    return None
+                return call
+
+        provider = _ScriptedProvider((
+            '{"tool":"read_file","args":{"path":"app.py"}}',
+            '{"tool":"done","args":{"summary":"read app.py"}}',
+        ))
+        with tempfile.TemporaryDirectory() as td:
+            project = Path(td)
+            (project / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+
+            result = agent.run(
+                provider,
+                project,
+                "Read app.py",
+                on_event=lambda _event: None,
+                fresh_chat=False,
+                trace_recorder=_CapturingTrace(),
+            )
+
+        from codey.context_epoch import context_epoch_id
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(len(sent), 2)
+        first_epoch = context_epoch_id(sent[0])
+        second_epoch = context_epoch_id(sent[1])
+        self.assertNotEqual(first_epoch, second_epoch)
+
+        outbound_rows = [
+            row
+            for row in rows
+            if row["kind"] == "section" and row["name"] == "coding_outbound_prompt"
+        ]
+        self.assertEqual(
+            [row["epoch_id"] for row in outbound_rows],
+            [first_epoch, second_epoch],
+        )
+
+        followup_context = [
+            row
+            for row in rows
+            if row["kind"] == "context" and row["name"] == "coding_current_context"
+        ]
+        self.assertTrue(followup_context)
+        for row in followup_context:
+            self.assertEqual(row["epoch_id"], second_epoch)
+            self.assertEqual(row["admission_reason"], "after_tool_result")
+
     def test_agent_trace_recorder_preserves_prompt_bytes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             project = Path(td) / "project"

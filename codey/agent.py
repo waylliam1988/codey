@@ -23,9 +23,10 @@ from codey.action_policy import (
     evaluate_action,
 )
 from codey.coding_context import CodingContext, render_coding_context
-from codey.context_epoch import context_epoch_id
+from codey.context_epoch import context_epoch_id, context_source_ref
 from codey.context_source import (
     ContextSource,
+    RenderedContextSource,
     render_context_sources_with_metadata,
 )
 from codey.events import RunEvent, print_run_event
@@ -906,10 +907,7 @@ def run(
                 source_refs=(
                     "project:workspace",
                     "request:user_task",
-                    *(
-                        f"context_source:{source.key}"
-                        for source in rendered_context.sources
-                    ),
+                    *(context_source_ref(source.key) for source in rendered_context.sources),
                 ),
                 budget=sum(source.budget for source in rendered_context.sources),
                 truncated=any(source.truncated for source in rendered_context.sources),
@@ -928,6 +926,26 @@ def run(
         )
         return rendered.text
 
+    # Context-source rows prepared for a follow-up turn (for example
+    # coding_current_context) are bound to their provider turn only when that
+    # exact prompt is actually sent. A successful rollover replaces the prompt
+    # with a fresh intro that records its own rows, so stale prepared rows are
+    # discarded instead of being attributed to a prompt that never leaves.
+    pending_context_rows: list[RenderedContextSource] = []
+
+    def bind_pending_context_rows(prompt_text: str) -> None:
+        if not pending_context_rows:
+            return
+        trace.call(
+            "record_context_sources",
+            pending_context_rows,
+            epoch_id=context_epoch_id(prompt_text),
+        )
+        pending_context_rows.clear()
+
+    def discard_pending_context_rows() -> None:
+        pending_context_rows.clear()
+
     def send_prompt(
         prompt: str,
         *,
@@ -938,6 +956,7 @@ def run(
         if conversation is not None and conversation.needs_rollover(prompt):
             factual_handoff = conversation.prepare_model_handoff(provider.send)
             if open_fresh_chat():
+                discard_pending_context_rows()
                 trace.record_section(PromptEnvelopeSection(
                     name="conversation_handoff",
                     text=factual_handoff,
@@ -951,6 +970,8 @@ def run(
                     include_ghost_directive=include_ghost_directive,
                 )
                 opened_fresh_chat = True
+        if not opened_fresh_chat:
+            bind_pending_context_rows(prompt)
         record_provider_send_prompt(
             trace_recorder,
             name="coding_outbound_prompt",
@@ -1031,10 +1052,13 @@ def run(
                 ),
             )
         )
-        trace.call("record_context_sources", rendered_context.sources)
         context = rendered_context.text
         if not context:
             return prompt
+        # Prepared, not yet admitted: the rows bind to the outbound epoch at
+        # send time (bind_pending_context_rows), because tool-result prompts
+        # can still be replaced wholesale by a conversation rollover.
+        pending_context_rows.extend(rendered_context.sources)
         return f"{prompt}\n\n{context}"
 
     if fresh_chat:

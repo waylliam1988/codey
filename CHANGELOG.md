@@ -18,16 +18,24 @@ This file records Codey's release history. The newest release appears first.
   it as a projection-only leaf. Empty or unusable source keys fail closed:
   they produce no ref and the source is skipped instead of emitting an
   incomplete `context_source:` entry.
-- Provenance closure: `agent.project_intro()` renders the final prompt first,
-  derives its content-addressed epoch, then stamps every row of that turn —
-  the assembled envelope sections, each admitted context-source row (via the
-  new `record_context_sources(..., epoch_id=...)` binding), and the outbound
-  prompt recorded through `record_provider_send_prompt()` — with the same
-  epoch id. A real-run test locks the contract: sections, sources, and the
-  outbound prompt of one turn share one `ctx_epoch:` id. Epoch ids identify
-  turn *content*, not numbered provider calls: identical re-sends share the
-  id by design and stay deduplicated in the trace, while any byte difference
-  yields a new epoch.
+- Provenance closure: every model-visible row of a coding run is bound to
+  the content-addressed epoch of the prompt that actually leaves.
+  `agent.project_intro()` renders the final prompt first and stamps its
+  sections, admitted context-source rows (via the new
+  `record_context_sources(..., epoch_id=...)` binding), and the outbound
+  prompt recorded through `record_provider_send_prompt()` with the same
+  epoch id. Follow-up tool-result turns prepare `coding_current_context`
+  rows without an epoch and bind them at send time; when a conversation
+  rollover replaces the prompt with a fresh intro, the stale prepared rows
+  are discarded instead of being attributed to a prompt that never leaves.
+  Real-run tests lock the contract for both the intro turn and a follow-up
+  tool-result turn. Chat-mode sends carry `capability_id="chat_runner"`
+  with their own payload regression, and `coding_request_context` source
+  refs are built through the shared `context_source_ref()` helper so
+  production keeps one ref vocabulary. Epoch ids identify turn *content*,
+  not numbered provider calls: identical re-sends share the id by design
+  and stay deduplicated in the trace, while any byte difference yields a
+  new epoch.
 - Extended the shared ContextSource contract: `ContextSource` /
   `RenderedContextSource` now carry optional `capability_id` and
   `admission_reason` metadata (default empty). Rendering order, clipping,

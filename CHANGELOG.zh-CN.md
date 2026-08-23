@@ -16,14 +16,20 @@
   只保存 digest/chars/budget/refs/capability_id/admission_reason，绝不保存
   raw prompt 或 source body。空 key 或不可用 key fail closed：不产生 ref、
   整行跳过，不会输出残缺的 `context_source:` 条目。
-- Provenance 闭环：`agent.project_intro()` 先渲染出最终 prompt 并计算其
-  content-addressed epoch，然后把该 turn 的每一行都绑到同一个 epoch 上——
-  组装的 envelope sections、每条被准入的 context source 行（经新的
-  `record_context_sources(..., epoch_id=...)` 绑定）、以及之后经
-  `record_provider_send_prompt()` 记录的外发 prompt。真实 run 测试锁定该
-  契约：同一 turn 的 sections、sources 与外发行共享同一个 `ctx_epoch:` id。
-  epoch id 标识的是 turn *内容*，不是编号的 provider 调用：相同字节的重复
-  发送按设计共享同一 id 并在 trace 中去重；任何字节差异都会产生新 epoch。
+- Provenance 闭环：coding run 里每一条模型可见的行都绑定到真正发出的那个
+  prompt 的 content-addressed epoch。`agent.project_intro()` 先渲染最终
+  prompt，然后把它的 envelope sections、被准入的 context source 行（经新的
+  `record_context_sources(..., epoch_id=...)` 绑定）与之后经
+  `record_provider_send_prompt()` 记录的外发 prompt 盖上同一个 epoch id。
+  工具结果轮的 `coding_current_context` 行先以"prepared、无 epoch"状态挂起，
+  在发送时才绑定；若 conversation rollover 把 prompt 整体替换成新 intro，
+  过期的 prepared 行会被丢弃，而不是算在一条从未发出的 prompt 头上。真实
+  run 测试同时锁定 intro 轮与工具结果轮两条路径。chat 模式外发带
+  `capability_id="chat_runner"` 并有独立的 payload 回归；
+  `coding_request_context` 的 source refs 改经共享 `context_source_ref()`
+  构造，生产代码保持单一 ref 词汇表。epoch id 标识的是 turn *内容*，不是
+  编号的 provider 调用：相同字节的重复发送按设计共享同一 id 并在 trace 中
+  去重；任何字节差异都会产生新 epoch。
 - 共享 ContextSource 契约扩展：`ContextSource` /
   `RenderedContextSource` 新增可选 `capability_id` 与 `admission_reason`
   （默认空）。渲染顺序、预算裁剪、failure policy 与输出文本逐字节不变；

@@ -1864,18 +1864,19 @@ runner / consensus 共 9 处重复的 provider-send trace 记录收敛为一个�
 自动盖上 provider_send freshness、epoch id 和固定 admission reason。
 provenance 闭环：project_intro 先渲染最终 prompt 算出 epoch，再把该 turn 的
 envelope sections、context source 行（`record_context_sources(...,
-epoch_id=...)`）和外发 prompt 绑到同一个 `ctx_epoch:` id 上。epoch id 标识
-turn 内容而非编号调用：相同字节重复发送共享 id 并去重，字节差异产生新
-epoch。Run Trace 的 `PromptSectionTrace` 增加可选 epoch / admission /
+epoch_id=...)`）和外发 prompt 绑到同一个 `ctx_epoch:` id 上；工具结果轮的
+coding_current_context 行延迟到发送时绑定，rollover 整体替换 prompt 时丢弃
+未发送的 prepared 行。chat 外发 prompt 带 `chat_runner` provenance。
+epoch id 标识 turn 内容而非编号调用：相同字节重复发送共享 id 并去重，字节
+差异产生新 epoch。Run Trace 的 `PromptSectionTrace` 增加可选 epoch / admission /
 capability 字段，只在有值时序列化，其余 manifest 形状不变。Capability
 Registry v1 补全 roadmap 字段（`trace_sections` / `context_sources` /
 `evidence_producer` / `enabled_by_default`），补登记 0.4.7 的
 `research_evidence_runtime` / `research_review_finding` 与本版的
 `context_epoch` / `chat_runner` / `consensus_advisors`，并给 agent_runner /
-local_context / policy_guard 等补事实归属；chat 外发 prompt 带
-`chat_runner` provenance；架构测试锁定生产代码里出现的每个 capability_id
-引用都必须是注册能力。model critic、planner 消费 finding、插件系统、skill
-加载全部未做。按 A/B 规则本版不需要实机验证。
+local_context / policy_guard 等补事实归属；架构测试锁定生产代码里出现的
+每个 capability_id 引用都必须是注册能力。model critic、planner 消费
+finding、插件系统、skill 加载全部未做。按 A/B 规则本版不需要实机验证。
 
 原始目标保持不变：吸收 OpenCode 的 provider-turn 边界和 Pi 的 core 克制：
 上下文变化只在安全 provider turn 边界进入模型；capability registry 只描述

@@ -580,6 +580,41 @@ def test_chat_consensus_inputs_are_traced_by_digest_only() -> None:
         assert secret_task not in serialized
 
 
+def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
+    # Non-consensus chat sends go straight through the runner's own prompt
+    # boundary; their outbound row must name the capability that owns it.
+    with tempfile.TemporaryDirectory() as td:
+        state = server.State(Path(td) / "state")
+        consensus = mock.Mock(return_value=None)
+
+        with mock.patch.object(state, "get_provider", return_value=_Provider()):
+            runner = _runner(state, run_consensus=consensus)
+            runner.run(TaskRequest(
+                "session-chat-provenance",
+                None,
+                "plain question",
+                4,
+                False,
+                "deepseek",
+                intent="chat",
+            ))
+            state.wait_for_ghost_sleep(timeout=2)
+
+        run_id = state.last_terminal_event["run_id"]
+        payload = _trace_payload(state, "session-chat-provenance", run_id)
+        outbound = next(
+            item
+            for item in payload["prompt_sections"]
+            if item["name"] == "chat_outbound_prompt"
+        )
+
+        assert outbound["freshness"] == "provider_send"
+        assert outbound["capability_id"] == "chat_runner"
+        assert outbound["admission_reason"] == "provider_turn_boundary"
+        assert outbound["epoch_id"].startswith("ctx_epoch:")
+        assert outbound["source_refs"] == ["provider_send:chat"]
+
+
 def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)

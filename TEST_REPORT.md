@@ -9,22 +9,24 @@ projecting rendered sources into bounded admission records
 `ctx_epoch:<16hex>` epoch ids over outbound prompt bytes; one shared
 projection (`admission_from_rendered_source()`) feeds both snapshots and
 RunTrace context-source rows, and empty/unusable source keys fail closed.
-The provenance loop is closed: `agent.project_intro()` derives the epoch from
-the final rendered prompt and stamps the envelope sections, every admitted
-context-source row (`record_context_sources(..., epoch_id=...)`), and the
-outbound prompt row with the same id — one turn, one `ctx_epoch:`. Epoch ids
-identify turn content, not numbered provider calls: identical re-sends share
-the id and stay deduplicated by design; any byte difference yields a new
-epoch. The shared ContextSource contract and prompt envelope sections carry
-optional `capability_id` / `admission_reason` / `epoch_id`; a single shared
+The provenance loop is closed for whole coding runs: intro turns stamp their
+sections, admitted source rows, and the outbound prompt with one epoch id,
+while follow-up tool-result turns prepare `coding_current_context` rows
+without an epoch and bind them to their own turn at send time (a rollover
+discards prepared rows whose prompt never leaves). Epoch ids identify turn
+content, not numbered provider calls: identical re-sends share the id and
+stay deduplicated by design; any byte difference yields a new epoch. The
+shared ContextSource contract and prompt envelope sections carry optional
+`capability_id` / `admission_reason` / `epoch_id`; a single shared
 `record_provider_send_prompt()` replaces nine hand-written provider-send
 trace blocks across agent/server/task_runner/research-runner/consensus, and
-chat-mode sends carry `capability_id="chat_runner"`. Run Trace serializes
-the new fields only when set. Capability Registry v1 completed its roadmap
-field set (`trace_sections`, `context_sources`, `evidence_producer`,
-`enabled_by_default`) with allowlist validation, registered the 0.4.7
-evidence/finding modules plus `context_epoch`, `chat_runner`, and
-`consensus_advisors`, and filled factual ownership for existing specs.
+chat-mode sends carry `capability_id="chat_runner"` with a payload
+regression. Run Trace serializes the new fields only when set. Capability
+Registry v1 completed its roadmap field set (`trace_sections`,
+`context_sources`, `evidence_producer`, `enabled_by_default`) with allowlist
+validation, registered the 0.4.7 evidence/finding modules plus
+`context_epoch`, `chat_runner`, and `consensus_advisors`, and filled factual
+ownership for existing specs.
 
 Production-facing behavior changes: none. Prompt text, context ordering,
 budgets, router/fallback/permission behavior, planner behavior, tool results,
@@ -42,14 +44,20 @@ old shape via set-only serialization.
 
 Characterization locks added:
 
-- Provenance closure (real agent run): every stamped row of one turn —
+- Provenance closure (real agent runs): the intro turn stamps
   coding_system_prompt, coding_request_context, coding_outbound_prompt, and
-  all context-source rows — shares the exact `ctx_epoch:` id derived from the
-  outbound prompt bytes; prepared-input rows without epochs are unaffected.
+  all context-source rows with one `ctx_epoch:` id derived from the outbound
+  bytes; a follow-up tool-result turn binds its `coding_current_context` row
+  to the epoch of the prompt that actually leaves (distinct from turn one's
+  epoch); prepared-input rows without epochs are unaffected.
 - `record_provider_send_prompt()` stamps freshness/epoch/admission/capability,
   accepts an explicit `epoch_id=` override, and is fail-open except for
   cancellation; epoch ids are content-addressed (same bytes -> same epoch,
   different bytes -> different epoch).
+- Chat provenance payload lock: a non-consensus chat run records
+  chat_outbound_prompt with `provider_send` freshness,
+  `capability_id="chat_runner"`, the fixed admission reason, a
+  content-addressed epoch, and the `provider_send:chat` source ref.
 - Sections recorded without admission metadata keep the exact legacy trace
   keyword contract (no `epoch_id`/`admission_reason`/`capability_id` kwargs,
   no payload keys).
@@ -74,17 +82,17 @@ Characterization locks added:
 Validation during implementation:
 
 ```text
-python -m pytest tests/test_context_epoch.py tests/test_context_source.py tests/test_prompt_envelope.py tests/test_run_trace.py tests/test_capabilities.py tests/test_architecture.py -q
-# 133 passed, 190 subtests passed
+python -m pytest tests/test_context_epoch.py tests/test_context_source.py tests/test_prompt_envelope.py tests/test_run_trace.py tests/test_capabilities.py tests/test_architecture.py tests/test_task_runner_run_trace.py -q
+# 153 passed, 190 subtests passed
 
 python -m pytest tests/test_agent.py tests/test_research.py tests/test_server.py tests/test_task_runner_run_trace.py tests/test_consensus.py tests/test_review.py tests/test_review_coordinator.py -q
-# 467 passed, 7 subtests passed (after fixing the double-wrap catch)
+# 468 passed, 7 subtests passed
 
 python -m ruff check codey tests
 # All checks passed!
 
 python -m pytest -q
-# 2434 passed, 706 subtests passed in 386.11s
+# 2436 passed, 706 subtests passed in 412.31s
 ```
 
 Coverage highlights: epoch id determinism and content addressing, explicit
