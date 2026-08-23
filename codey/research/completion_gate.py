@@ -1,4 +1,12 @@
-"""Research completion gate for local queued work items."""
+"""Research completion gate for local queued work items.
+
+The gate's observable contract is unchanged: queued research items complete
+only when a durable proof review passes, and every decision carries the same
+action/blocked_reason/proof_refs values as before. Since 0.4.9 the decision
+also carries the shared ``CompletionProof`` projection so runs can audit why
+an item completed or stayed blocked without re-deriving evidence semantics
+inside the queue layer.
+"""
 
 from __future__ import annotations
 
@@ -6,10 +14,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
+from codey.completion_contract import CompletionProof, project_completion_proof
+from codey.research.contract import (
+    build_research_completion_contract,
+    research_blocked_reason,
+    research_external_refs,
+)
 from codey.research.evidence_ledger import EvidenceLedgerStore
-from codey.research.identity import bounded_refs, digest_text, identifier
+from codey.research.identity import identifier
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
-from codey.research.redaction import looks_sensitive_signal
 
 
 RESEARCH_QUEUE_KINDS = frozenset({"research", "open_question"})
@@ -21,6 +34,7 @@ class ResearchCompletionDecision:
     proof_refs: tuple[str, ...] = ()
     blocked_reason: str = ""
     review: ResearchProofReview | None = None
+    proof: CompletionProof | None = None
 
     @property
     def complete(self) -> bool:
@@ -57,12 +71,12 @@ class ResearchCompletionGate:
                 blocked_reason=identifier(
                     (event or {}).get("stop_reason") if isinstance(event, Mapping) else "",
                     80,
-                ) or "run_not_done",
+                )
+                or "run_not_done",
             )
         record = getattr(research_result, "research_record", None)
         question = (
-            str(getattr(item, "title", "") or "").strip()
-            or str(getattr(research_result, "question", "") or "").strip()
+            str(getattr(item, "title", "") or "").strip() or str(getattr(research_result, "question", "") or "").strip()
         )
         ledger_payload: Mapping[str, object] | None = None
         if self.evidence_ledgers is not None:
@@ -86,56 +100,30 @@ class ResearchCompletionGate:
                 evidence_ledger=None,
                 require_ledger_record=True,
             )
+        proof = project_completion_proof(
+            build_research_completion_contract(
+                review=review,
+                event=event,
+                research_result=research_result,
+            )
+        )
         if not review.ok:
             return ResearchCompletionDecision(
                 "block",
-                blocked_reason=_blocked_reason(review),
+                blocked_reason=research_blocked_reason(review),
                 review=review,
+                proof=proof,
             )
         return ResearchCompletionDecision(
             "complete",
-            proof_refs=_proof_refs(
+            proof_refs=research_external_refs(
                 event=event,
                 research_result=research_result,
-                proof_ref=review.proof_ref,
+                review=review,
             ),
             review=review,
+            proof=proof,
         )
-
-
-def _blocked_reason(review: ResearchProofReview) -> str:
-    if review.missing_evidence:
-        return identifier(f"research_proof_{review.missing_evidence[0]}", 120)
-    if not review.answers_question:
-        return "research_proof_answer_coverage_gap"
-    return "research_proof_failed"
-
-
-def _proof_refs(
-    *,
-    event: Mapping[str, object],
-    research_result: Any,
-    proof_ref: str,
-) -> tuple[str, ...]:
-    refs: list[str] = []
-    run_ref = _safe_run_ref(event.get("run_id"))
-    if run_ref:
-        refs.append(f"ledger:{run_ref}")
-    synthesis_id = identifier(getattr(research_result, "synthesis_id", ""), 120)
-    if synthesis_id:
-        refs.append(f"research:{synthesis_id}")
-    if proof_ref:
-        refs.append(proof_ref)
-    return bounded_refs(refs, limit=12)
-
-
-def _safe_run_ref(value: object) -> str:
-    text = identifier(value, 120)
-    if not text:
-        return ""
-    if looks_sensitive_signal(text):
-        return digest_text(text).removeprefix("sha256:")[:16]
-    return text
 
 
 __all__ = [

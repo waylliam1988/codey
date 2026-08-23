@@ -20,6 +20,7 @@ EXPECTED_BUILTIN_IDS = (
     "builtin_profiles",
     "changes_presenter",
     "chat_runner",
+    "completion_contract",
     "consensus_advisors",
     "context_epoch",
     "conversation_handoff",
@@ -44,7 +45,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "b5fccad6bb5c274020978862a0c4a537242dec47bbc5d87de4d1bd149cb96eb8"
+    "49ea65cd5979c3d512d3177982cb08266aa22a7f4c80571d040009ec9e3f070b"
 )
 
 
@@ -210,6 +211,28 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(spec.ui_surface, ())
         self.assertEqual(spec.trace_sections, ("research_plans",))
 
+    def test_completion_contract_is_metadata_only_projection_boundary(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("completion_contract")
+
+        self.assertEqual(
+            spec.provides,
+            ("completion_contract_projection", "completion_proof_trace"),
+        )
+        self.assertEqual(
+            spec.consumes,
+            ("research_proof_quality", "research_review_finding", "run_trace"),
+        )
+        self.assertEqual(spec.durable_state, ("run_trace",))
+        self.assertEqual(spec.trace_sections, ("completion_proofs",))
+        self.assertEqual(spec.owner_module, "codey.completion_contract")
+        self.assertFalse(spec.model_visible)
+        self.assertTrue(spec.evidence_producer)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.ui_surface, ())
+        self.assertEqual(spec.context_sources, ())
+
     def test_context_epoch_declares_safe_provider_turn_boundary(self) -> None:
         registry = builtin_capability_registry()
 
@@ -344,7 +367,10 @@ class CapabilityRegistryTests(unittest.TestCase):
             spec.id for spec in registry.all() if spec.evidence_producer
         )
 
-        self.assertEqual(producers, ("research_object_model", "research_review_finding"))
+        self.assertEqual(
+            producers,
+            ("completion_contract", "research_object_model", "research_review_finding"),
+        )
 
     def test_state_and_task_runner_carry_registry_without_dispatch(self) -> None:
         from codey import server

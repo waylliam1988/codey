@@ -1990,4 +1990,201 @@ class ReviewFindingTraceTests(unittest.TestCase):
 
             self.assertEqual(payload["research_review_findings"], [])
             self.assertEqual(payload["research_planner_gaps"], [])
+            self.assertEqual(payload["completion_proofs"], [])
             self.assertNotIn("research_review_findings_truncated", payload["warnings"])
+
+
+class CompletionProofTraceTests(unittest.TestCase):
+    def _open(self, store: RunTraceStore, *, run_id: str = "run-completion") -> object:
+        return store.open(
+            run_id=run_id,
+            session_id="session-completion",
+            project=None,
+            mode_initial="project",
+            provider_initial="deepseek",
+        )
+
+    def _payload(self, path: Path) -> dict:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_completion_proofs_keep_valid_rows_and_drop_the_rest(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "a" * 16,
+                "contract_id": "completion_contract:" + "b" * 16,
+                "domain": "coding",
+                "status": "complete",
+                "satisfied": True,
+                "subject_ref": "run:" + "c" * 16,
+                "blocked_reason": "SHOULD_NOT_APPEAR_ON_COMPLETE",
+                "checks": [{
+                    "check_id": "relevant_verification",
+                    "status": "pass",
+                    "reason_code": "",
+                }],
+                "evidence_refs": ["ledger:run-completion"],
+                "limitation_refs": ["docs_only_change"],
+                "finding_refs": [
+                    "review_finding:" + "d" * 16,
+                    "https://evil.example/not-a-ref",
+                    "junk",
+                ],
+                "analysis_run_refs": ["analysis_run:" + "e" * 16],
+                "artifact_refs": ["artifact_version:" + "f" * 16],
+                "external_refs": ["receipt:run-completion"],
+            })
+            # Malformed rows fail closed: bad refs, unknown domain/status, junk.
+            recorder.record_completion_proof({"proof_id": "not-a-ref"})
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "1" * 16,
+                "contract_id": "completion_contract:" + "2" * 16,
+                "domain": "chatting",
+                "status": "complete",
+                "satisfied": True,
+            })
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "3" * 16,
+                "contract_id": "completion_contract:" + "4" * 16,
+                "domain": "coding",
+                "status": "model_says_done",
+                "satisfied": True,
+            })
+            # Duplicate proof id is ignored.
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "a" * 16,
+                "contract_id": "completion_contract:" + "b" * 16,
+                "domain": "coding",
+                "status": "complete",
+                "satisfied": True,
+            })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-completion", "run-completion"))
+            serialized = json.dumps(payload, ensure_ascii=False)
+            proofs = payload["completion_proofs"]
+
+            self.assertEqual(len(proofs), 1)
+            proof = proofs[0]
+            self.assertEqual(proof["proof_id"], "completion_proof:" + "a" * 16)
+            self.assertEqual(proof["contract_id"], "completion_contract:" + "b" * 16)
+            self.assertEqual(proof["domain"], "coding")
+            self.assertEqual(proof["status"], "complete")
+            self.assertTrue(proof["satisfied"])
+            # Satisfied proofs never carry a blocked_reason, whatever the
+            # caller stuffed into the raw mapping.
+            self.assertNotIn("blocked_reason", proof)
+            self.assertEqual(proof["subject_ref"], "run:" + "c" * 16)
+            self.assertEqual(proof["checks"], [{
+                "check_id": "relevant_verification",
+                "status": "pass",
+            }])
+            self.assertEqual(proof["evidence_refs"], ["ledger:run-completion"])
+            self.assertEqual(proof["limitation_refs"], ["docs_only_change"])
+            self.assertEqual(proof["finding_refs"], ["review_finding:" + "d" * 16])
+            self.assertEqual(proof["analysis_run_refs"], ["analysis_run:" + "e" * 16])
+            self.assertEqual(proof["artifact_refs"], ["artifact_version:" + "f" * 16])
+            self.assertEqual(proof["external_refs"], ["receipt:run-completion"])
+            self.assertNotIn("evil.example", serialized)
+            self.assertNotIn("chatting", serialized)
+            self.assertNotIn("model_says_done", serialized)
+
+    def test_blocked_proof_keeps_reason_codes_and_failed_check_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "9" * 16,
+                "contract_id": "completion_contract:" + "8" * 16,
+                "domain": "research",
+                "status": "failed",
+                "satisfied": False,
+                "blocked_reason": "relevant_verification_failed",
+                "reason_codes": ["relevant_verification_failed", "junk row"],
+                "checks": [
+                    {"check_id": "relevant_verification", "status": "fail",
+                     "reason_code": "relevant_verification_failed"},
+                    {"check_id": "made_up", "status": "exploded"},
+                ],
+            })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-completion", "run-completion"))
+            serialized = json.dumps(payload, ensure_ascii=False)
+            proofs = payload["completion_proofs"]
+
+            self.assertEqual(len(proofs), 1)
+            proof = proofs[0]
+            self.assertEqual(proof["status"], "failed")
+            self.assertFalse(proof["satisfied"])
+            self.assertEqual(proof["blocked_reason"], "relevant_verification_failed")
+            # Reason codes are sanitized to trace codes; prose is not kept.
+            self.assertEqual(proof["reason_codes"], ["relevant_verification_failed", "junk_row"])
+            self.assertEqual(len(proof["checks"]), 1)
+            self.assertEqual(proof["checks"][0]["status"], "fail")
+            self.assertNotIn("exploded", serialized)
+
+    def test_completion_proofs_cap_at_max_with_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            for index in range(12):
+                recorder.record_completion_proof({
+                    "proof_id": "completion_proof:" + f"{index:016x}",
+                    "contract_id": "completion_contract:" + f"{index:016x}",
+                    "domain": "coding",
+                    "status": "complete",
+                    "satisfied": True,
+                })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-completion", "run-completion"))
+            proofs = payload["completion_proofs"]
+            self.assertEqual(len(proofs), 8)
+            self.assertEqual(proofs[-1]["proof_id"], "completion_proof:" + f"{11:016x}")
+            self.assertIn("completion_proofs_truncated", payload["warnings"])
+
+    def test_recorder_accepts_completion_proof_objects(self) -> None:
+        from codey.completion_contract import (
+            CompletionCheck,
+            CompletionContract,
+            CompletionProof,
+        )
+
+        contract = CompletionContract(
+            contract_id="completion_contract:" + "a" * 16,
+            domain="coding",
+            subject_ref="run:x",
+            checks=(CompletionCheck("relevant_verification", "pass"),),
+        )
+        proof = CompletionProof(
+            proof_id="completion_proof:" + "b" * 16,
+            contract_id=contract.contract_id,
+            domain="coding",
+            subject_ref="run:x",
+            status="complete",
+            satisfied=True,
+            blocked_reason="",
+            reason_codes=(),
+            checks=contract.checks,
+            evidence_refs=(),
+            limitation_refs=(),
+            finding_refs=(),
+            analysis_run_refs=(),
+            artifact_refs=(),
+            external_refs=(),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+            recorder.record_completion_proof(proof)
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-completion", "run-completion"))
+            proofs = payload["completion_proofs"]
+            self.assertEqual(len(proofs), 1)
+            self.assertEqual(proofs[0]["proof_id"], "completion_proof:" + "b" * 16)

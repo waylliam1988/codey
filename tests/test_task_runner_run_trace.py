@@ -767,3 +767,112 @@ def test_forget_conversation_deletes_session_run_traces() -> None:
         state.forget_conversation("session-forget")
 
         assert not path.exists()
+
+
+def _run_project_task(state: server.State, project: Path, session_id: str, task: str, changes: dict) -> dict:
+    with mock.patch.object(state, "get_provider", return_value=_Provider()):
+        runner = _runner(
+            state,
+            collect_changes=mock.Mock(return_value=changes),
+        )
+        runner.run(TaskRequest(
+            session_id,
+            str(project),
+            task,
+            4,
+            False,
+            "deepseek",
+            intent="project",
+        ))
+        state.wait_for_ghost_sleep(timeout=2)
+    run_id = state.last_terminal_event["run_id"]
+    return _trace_payload(state, session_id, run_id)
+
+
+def test_done_project_run_records_shadow_completion_proof_for_code_change() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        project = Path(td) / "project"
+        (project / "src").mkdir(parents=True)
+        state = server.State(Path(td) / "state")
+
+        payload = _run_project_task(
+            state,
+            project,
+            "session-completion-code",
+            "Change the module",
+            {
+                "ok": True,
+                "changed_count": 1,
+                "files": [{"path": "src/mod.py", "status": "modified"}],
+                "diff": "",
+                "mode": "git",
+            },
+        )
+
+        proofs = payload["completion_proofs"]
+        assert len(proofs) == 1
+        proof = proofs[0]
+        assert proof["domain"] == "coding"
+        # No verification candidate covers the change and no tool events were
+        # observed locally: the honest shadow status is blocked.
+        assert proof["status"] == "blocked"
+        assert proof["satisfied"] is False
+        assert proof["checks"] == [{
+            "check_id": "relevant_verification",
+            "status": "not_run",
+            "reason_code": "no_matching_verification_command",
+        }]
+        assert any(ref.startswith("ledger:") for ref in proof["external_refs"])
+        assert any(ref.startswith("receipt:") for ref in proof["external_refs"])
+        serialized = json.dumps(payload, ensure_ascii=False)
+        assert "SECRET" not in serialized
+
+
+def test_docs_only_done_run_completes_with_limitations() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        project = Path(td) / "project"
+        project.mkdir()
+        state = server.State(Path(td) / "state")
+
+        payload = _run_project_task(
+            state,
+            project,
+            "session-completion-docs",
+            "Update the readme",
+            {
+                "ok": True,
+                "changed_count": 1,
+                "files": [{"path": "README.md", "status": "modified"}],
+                "diff": "",
+                "mode": "git",
+            },
+        )
+
+        proofs = payload["completion_proofs"]
+        assert len(proofs) == 1
+        proof = proofs[0]
+        assert proof["domain"] == "coding"
+        assert proof["status"] == "complete_with_limitations"
+        assert proof["limitation_refs"] == ["docs_only_change"]
+        assert proof["checks"] == [{
+            "check_id": "relevant_verification",
+            "status": "not_applicable",
+            "reason_code": "docs_only_change",
+        }]
+
+
+def test_unchanged_or_interrupted_runs_record_no_completion_proofs() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        project = Path(td) / "project"
+        project.mkdir()
+        state = server.State(Path(td) / "state")
+
+        payload = _run_project_task(
+            state,
+            project,
+            "session-completion-empty",
+            "Answer a question",
+            {"ok": True, "changed_count": 0, "files": [], "diff": "", "mode": "git"},
+        )
+
+        assert payload["completion_proofs"] == []

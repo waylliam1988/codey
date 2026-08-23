@@ -433,6 +433,55 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(module=name):
                 self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
+    def test_completion_contract_modules_are_projection_only(self) -> None:
+        # The completion contract is the Verified Completion Gate's pure core:
+        # it derives proofs from facts handed to it, and must never reach
+        # execution layers, providers, I/O, or model-visible surfaces. The
+        # queue gate itself stays under the existing research import-boundary
+        # test above.
+        paths = (
+            ROOT / "codey" / "completion_contract.py",
+            ROOT / "codey" / "research" / "contract.py",
+        )
+        forbidden_imports = {
+            "codey.browser",
+            "codey.deepseek",
+            "codey.qwen",
+            "codey.stepfun",
+            "codey.glm",
+            "codey.providers",
+            "codey.provider_controls",
+            "codey.tool_runtime",
+            "codey.managed_outputs",
+            "codey.events",
+            "codey.server",
+            "codey.task_runner",
+            "codey.ghost",
+            "codey.review",
+            "importlib",
+            "pkgutil",
+            "subprocess",
+            "urllib",
+        }
+        forbidden_source = (
+            "eval(",
+            "exec(",
+            "write_text(",
+            "write_json",
+            "open(",
+            "pathlib",
+        )
+        for path in paths:
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                imports = imported_modules(path)
+                self.assertTrue(
+                    forbidden_imports.isdisjoint(imports),
+                    sorted(forbidden_imports & imports),
+                )
+                source = path.read_text(encoding="utf-8")
+                for token in forbidden_source:
+                    self.assertNotIn(token, source)
+
     def test_evidence_runtime_and_review_finding_are_projection_only(self) -> None:
         # Evidence Runtime and ReviewFinding explain facts that already exist;
         # they must not reach execution layers, providers, the A/B journal, or

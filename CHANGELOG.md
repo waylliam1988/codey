@@ -4,6 +4,54 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.9 - Research Contract Lite + Verified Completion Gate v1
+
+- Added `codey/completion_contract.py`, the domain-neutral pure projection
+  core of the Verified Completion Gate. `CompletionContract` /
+  `CompletionCheck` / `CompletionProof` carry only statuses, reason codes,
+  and bounded refs; status derivation is a hard gate (any failed check ->
+  failed, required-but-unrun -> blocked, pass + limitations ->
+  complete_with_limitations, otherwise complete) with no scoring. Coherence
+  is owned by the primitive itself: a satisfied proof never carries a
+  blocked_reason, junk input without valid ids fails closed to an empty
+  projection, and empty checks cannot become a contract. v1 deliberately has
+  no separate Requirement object -- requirements and checks are 1:1 at this
+  stage, and parallel lists would just duplicate state.
+- Added `codey/research/contract.py`: projects a `ResearchProofReview` plus
+  its derived ReviewFindings into the shared contract/proof shapes. Open
+  critical findings block a clean complete; because every critical finding
+  kind is a projection of a hard proof-review failure, a passing review can
+  never produce one, so queued research outcomes are item-for-item identical
+  to 0.4.8 (no A/B required).
+- Converged `research/completion_gate.py`: the observable contract is byte
+  identical (same actions, blocked_reason strings, and proof_refs assembly),
+  while internally it now consumes the contract projection; the stringly
+  `_blocked_reason()` / `_safe_run_ref()` evidence semantics moved into
+  research/contract.py as the single owner. `ResearchCompletionDecision`
+  gains an optional `proof` field for trace recording.
+- RunTrace gained a bounded `completion_proofs` section (cap 8): refs,
+  statuses, check summaries, and reason codes only. finding/analysis/artifact
+  refs validate against runtime ref kinds, unknown domains/statuses/check
+  rows fail closed, truncation appends a warning. Payloads never contain raw
+  prompts, transcripts, or output bodies.
+- Coding-side shadow completion proof: after a project run ends, the proof is
+  projected from existing local facts (changed files, selected verification
+  candidate, locally observed post-edit checks) into the trace. Docs-only
+  changes yield complete_with_limitations(docs_only_change); no matching
+  verification command yields blocked(no_matching_verification_command);
+  without locally observed verification facts the best possible outcome is
+  complete_with_limitations(verification_not_locally_observed) -- a model
+  claiming "tests pass" is never local proof. done/receipt/prompt/SSE are
+  unchanged.
+- Real debt reduction in `task_runner`: the `select_verification_candidate` +
+  `check_covers_selected_candidate` evaluation now happens in exactly one
+  place shared by the receipt decision and the shadow proof instead of being
+  computed twice.
+- Capability registry adds metadata-only `completion_contract`
+  (model_visible=False, trace_sections=("completion_proofs",)); architecture
+  tests lock both new modules as projection-only (no runtime imports, no I/O
+  tokens).
+
 ## 0.4.8 - Safe Context Epoch + Capability Boundary v1
 
 - Added `codey/context_epoch.py`: a pure stdlib-leaf projection over model

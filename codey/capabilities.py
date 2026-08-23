@@ -54,6 +54,7 @@ KNOWN_TRACE_SECTIONS = frozenset({
     "reproducibility_capsules",
     "research_review_findings",
     "research_planner_gaps",
+    "completion_proofs",
     "policy_decisions",
 })
 # Stable context source keys admitted through the shared ContextSource contract.
@@ -230,6 +231,15 @@ def builtin_capability_registry() -> CapabilityRegistry:
             model_visible=True,
             owner_module="codey.task_runner",
             trace_sections=("prompt_sections",),
+        ),
+        CapabilitySpec(
+            id="completion_contract",
+            provides=("completion_contract_projection", "completion_proof_trace"),
+            consumes=("research_proof_quality", "research_review_finding", "run_trace"),
+            durable_state=("run_trace",),
+            evidence_producer=True,
+            trace_sections=("completion_proofs",),
+            owner_module="codey.completion_contract",
         ),
         CapabilitySpec(
             id="consensus_advisors",

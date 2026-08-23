@@ -1,5 +1,83 @@
 # Codey Test Report
 
+## 0.4.9 Research Contract Lite + Verified Completion Gate v1
+
+Codey 0.4.9 makes completion claims auditable without changing any completion
+behavior. New `codey/completion_contract.py` is the domain-neutral pure core:
+`CompletionContract` / `CompletionCheck` / `CompletionProof` carry statuses,
+reason codes, and bounded refs only, and status derivation is a hard gate
+(failed check -> failed; required-but-unrun -> blocked; pass + limitations ->
+complete_with_limitations; otherwise complete) with no scoring. The primitive
+owns its own coherence: a satisfied proof never carries a blocked_reason,
+junk input without valid ids fails closed to an empty projection, and empty
+checks cannot become a contract. v1 deliberately has no separate Requirement
+object -- requirements and checks are 1:1 at this stage, so a parallel list
+would only duplicate state. New `codey/research/contract.py` projects a
+`ResearchProofReview` plus derived ReviewFindings into the shared shapes;
+open critical findings now block a clean complete, which is provably
+behavior-equivalent for queued research (every critical finding kind is a
+projection of a hard proof-review failure, locked by tests over the whole
+critical reason table). The queue gate's observable contract stayed byte
+identical -- same actions, blocked_reason strings, and proof_refs assembly --
+while its stringly `_blocked_reason()` / `_safe_run_ref()` semantics moved
+into the projection as the single owner, and `ResearchCompletionDecision`
+gained an optional `proof` field.
+
+RunTrace gained a bounded `completion_proofs` section (cap 8): refs,
+statuses, check summaries, and reason codes only; finding/analysis/artifact
+refs validate against runtime ref kinds, unknown domains/statuses/check rows
+fail closed, truncation appends a warning, satisfied proofs drop
+blocked_reason even when callers supply one, and payloads never contain raw
+prompts, transcripts, or output bodies. Coding got a trace-only shadow
+completion proof projected from existing local facts after a done project run:
+docs-only changes yield complete_with_limitations(docs_only_change); no
+matching verification command yields blocked(no_matching_verification_command);
+without locally observed verification facts the ceiling is
+complete_with_limitations(verification_not_locally_observed) -- a model
+claiming "tests pass" is never local proof. Capability registry adds
+metadata-only `completion_contract` (model_visible=False), and architecture
+tests lock both new modules as projection-only.
+
+Production-facing behavior changes: none. Queued research done/block
+decisions, receipt semantics, prompts, planner behavior, tool results, and
+UI/SSE payloads are unchanged. Per the roadmap A/B rule: local-only
+contract/proof refs plus shadow proofs need no A/B; that becomes mandatory
+only when proofs start blocking done, feeding repair loops, or changing
+user-visible completion conditions (measured via the 0.4.6 journal against
+False Completion Rate).
+
+Refactor debt paid: the gate's stringly evidence semantics moved into the
+research contract projection; task_runner's
+`select_verification_candidate` + `check_covers_selected_candidate`
+evaluation converged to one place shared by the receipt decision and the
+shadow proof instead of being computed twice.
+
+Characterization locks added:
+
+- Gate parity: existing queued-research tests keep asserting the exact legacy
+  blocked_reason strings (`research_proof_missing_research_record`,
+  `research_proof_missing_evidence_ledger_record`, coverage gap) while
+  decisions now also carry the proof projection.
+- Structural equivalence: every critical diagnostic reason maps to an open
+  critical finding and a non-satisfied proof; ok reviews project zero open
+  critical findings, so adding the blocking-findings check cannot flip any
+  previously completing item.
+- Hard-gate derivation table: fail/not_run/not_applicable/limitations paths,
+  deterministic content-addressed `completion_contract:` / `completion_proof:`
+  ids, dedup+cap of check rows, refs-only payload key allowlist.
+- Trace section: valid rows kept, malformed rows dropped, duplicate proof ids
+  ignored, cap-8 truncation warning, object/payload/mapping inputs all
+  accepted, sanitized codes replace prose (`junk row` -> `junk_row`).
+- Real-run shadow proofs: code change without candidates or observed events ->
+  blocked(no_matching_verification_command) with ledger/receipt external refs;
+  docs-only change -> complete_with_limitations(docs_only_change); unchanged
+  or interrupted runs record no proofs; secrets never reach the payload.
+
+Verification sequence: targeted py_compile + ruff (lint/format) on changed
+files; targeted pytest across contract/gate/trace/architecture/capabilities/
+task-runner/work-queue/pipeline/server suites (392 passed, 192 subtests);
+then one full-suite run: 2467 passed, 711 subtests passed, zero failures.
+
 ## 0.4.8 Safe Context Epoch + Capability Boundary v1
 
 Codey 0.4.8 makes provider-turn context admission auditable without changing

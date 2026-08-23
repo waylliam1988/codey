@@ -1981,43 +1981,62 @@ context 拼接、section 文案或 admission 时机改变，都需要小型 A/B�
 
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1
 
-状态：规划。目标是吸收 OpenScience 的 research contract 思想，但不照搬成
-模型可随意调用的 `research_contract` 工具。Codey 的 contract 是本地 pipeline
-contract，用来决定什么才算完成、阻塞或需要补证据。
+状态：已落地。0.4.9 按"验证而不是扩充"的思路实现：contract 是纯投影，
+不是模型工具，也不是 CompletionManager。共享原语在 `codey/completion_contract.py`
+（stdlib leaf，只复用 `research/identity` 的有界身份 helpers）：
+`CompletionContract` / `CompletionCheck` / `CompletionProof`，硬门槛派生
+（fail -> failed；required-but-not-run -> blocked；pass + limitations ->
+complete_with_limitations；否则 complete），satisfied proof 永远不携带
+blocked_reason，junk 输入 fail closed。research 侧投影在
+`codey/research/contract.py`：ReviewFinding 的 open critical finding 会阻止
+clean complete（结构性等价：critical finding 都是 hard proof failure 的投影，
+因此 queued research 的完成结果与 0.4.8 完全一致，不需要 A/B）。
 
 ### 做什么
 
 新增：
 
 ```text
-research/contract.py
+completion_contract.py      共享原语（domain-neutral 纯投影）
+research/contract.py        research contract 投影
 ```
 
-Research Contract Lite：
+CompletionContract（v1 落地字段；v1 不设独立 Requirement 对象，
+requirement 与 check 恒为 1:1，两个平行列表是重复状态）：
 
 ```text
 contract_id
-question_ref
-deliverables
-checks
-limits
+domain                      coding / research / experiment
+subject_ref
+checks[]                    check_id + status(pass/fail/not_run/not_applicable) + reason_code
 evidence_refs
+limitation_refs
+finding_refs
 analysis_run_refs
 artifact_refs
-review_finding_refs
-planner_gap_refs
-completion_status
-blocked_reason
-proof_ref
+external_refs               ledger:/receipt:/diff:/research:/research_proof:
 ```
 
-Verified Completion Gate：
+CompletionProof（失败、blocked、受限也落 proof，status 决定是否 satisfied）：
 
 ```text
+proof_id
+contract_id
+status
+satisfied
+blocked_reason              仅在未 satisfied 时存在
+reason_codes
+checks summary
+refs only
+```
+
+Verified Completion Gate（v1 落地范围）：
+
+```text
+Queued research done -> ResearchProofReview -> contract proof refs（外部行为不变）
+Coding done + changed files -> shadow completion proof（trace-only，不改 done/receipt/prompt）
 Research conclusion -> Evidence / Source / Claim relation
-Experiment conclusion -> AnalysisRun / ArtifactRef
-Coding conclusion -> diff / test / review evidence
-Queued research done -> ResearchProofReview + contract proof refs
+Experiment conclusion -> AnalysisRun / ArtifactRef（producer 仍缺，proof 留位）
 ```
 
 契约状态：
@@ -2027,7 +2046,7 @@ pending
 running
 blocked
 complete
-complete_with_limitations
+complete_with_limitations    必须携带 limitation_refs
 failed
 ```
 
@@ -2036,7 +2055,9 @@ failed
 - 不是模型工具。
 - 不新增 workflow UI。
 - 不替代 ResearchPipeline。
-- 不让模型自己给 completion 盖章。
+- 不让模型自己给 completion 盖章；coding 侧"未本地观察到验证事实"最多
+  complete_with_limitations（verification_not_locally_observed），不能凭模型
+  自述 clean complete。
 - 不保存 raw transcript、raw prompt 或 raw source body。
 - TranscriptReplayCache 可以帮助离线 scorer，但不能成为 contract proof。
 - Contract 不能绕过 ActionPolicy、PermissionProfile 或 Research max rounds。
@@ -2044,27 +2065,32 @@ failed
 ### 顺手架构优化
 
 ```text
-ResearchCompletionGate 只消费 Contract / ProofReview / EvidenceRuntime refs
-Ghost work queue completion 只接受 Contract proof refs，不接受 research:* 字符串
-RunTrace 只记录 bounded contract summary 和 proof_ref
-```
+completion_gate 的 _blocked_reason/_safe_run_ref 字符串语义移入 research/contract.py 投影
+task_runner 的 select_verification_candidate + check_covers_selected_candidate 收敛为单一求值点，
+  receipt 判定与 shadow proof 共用同一份事实
+capabilities 登记 metadata-only completion_contract（model_visible=False）
+RunTrace 新增 bounded completion_proofs section（cap 8，refs-only）
 
-### 验证
+### 验证（v1 已测）
 
 ```text
 缺 evidence refs 的 strong claim 不能 complete
-failed AnalysisRun 不能 complete experiment check
+failed AnalysisRun 不能 complete experiment check（projection 就绪，producer 待接）
 unsupported open finding 阻止 clean complete
 complete_with_limitations 必须列出 limitation refs
-contract proof refs 可解析
+contract proof refs 可解析（completion_contract:/completion_proof: 16hex）
 contract 不含 raw prompt / transcript / webpage body
-queued research done 不能绕过 contract gate
+queued research done 不能绕过 contract gate（gate 行为与 0.4.8 等价）
+satisfied proof 永远不携带 blocked_reason
+coding docs-only change 不要求 code test（not_applicable + docs_only_change）
 ```
 
 ### A/B
 
-local-only contract/proof refs 不需要 A/B。改变 queued done 语义、用户可见完成条件、
-Research repair prompt 或模型可见 final answer contract 时，需要 queue/live A/B。
+local-only contract/proof refs、shadow coding proof、trace-only section 都不需要 A/B：
+prompt、planner、done/receipt 语义全部不变。后续让 proof 阻止 done、把 completion
+failure 自动回给模型 repair、或改变 queued done / 用户可见完成条件时，必须先用
+0.4.6 journal 做 queue/live A/B，核心指标看 False Completion Rate。
 
 ## 0.4.10 - Domain Source Trust + Research Brief v2
 

@@ -17,6 +17,11 @@ from typing import Any, Iterable, Mapping
 from urllib.parse import urlparse
 
 from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
+from codey.completion_contract import (
+    CHECK_STATUSES as _COMPLETION_CHECK_STATUSES,
+    COMPLETION_DOMAINS as _COMPLETION_TRACE_DOMAINS,
+    COMPLETION_STATUSES as _COMPLETION_TRACE_STATUSES,
+)
 from codey.context_epoch import admission_from_rendered_source
 from codey.prompt_envelope import is_model_boundary_freshness
 from codey.research.artifact_lineage import is_valid_derived_ref
@@ -61,6 +66,8 @@ MAX_CAPSULE_ARTIFACT_REFS = 8
 MAX_REVIEW_FINDINGS = 16
 MAX_PLANNER_GAPS = 16
 MAX_GAP_FINDING_REFS = 4
+MAX_COMPLETION_PROOFS = 8
+MAX_COMPLETION_CHECK_ROWS = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 REVIEW_FINDING_REF_KINDS: dict[str, str] = {
@@ -231,6 +238,7 @@ class RunTraceManifest:
     reproducibility_capsules: list[dict[str, object]] = field(default_factory=list)
     research_review_findings: list[dict[str, object]] = field(default_factory=list)
     research_planner_gaps: list[dict[str, object]] = field(default_factory=list)
+    completion_proofs: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -285,6 +293,7 @@ class RunTraceManifest:
             ),
             "research_review_findings": self.research_review_findings[:MAX_REVIEW_FINDINGS],
             "research_planner_gaps": self.research_planner_gaps[:MAX_PLANNER_GAPS],
+            "completion_proofs": self.completion_proofs[:MAX_COMPLETION_PROOFS],
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
             "policy_decisions": self.policy_decisions[:MAX_POLICY_DECISIONS],
@@ -363,6 +372,7 @@ class RunTraceRecorder:
         self._capsule_keys: set[str] = set()
         self._review_finding_keys: set[str] = set()
         self._planner_gap_keys: set[str] = set()
+        self._completion_proof_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
@@ -1068,6 +1078,101 @@ class RunTraceRecorder:
                 del self.manifest.research_planner_gaps[:-MAX_PLANNER_GAPS]
                 self.manifest.warnings.append("research_planner_gaps_truncated")
             self.checkpoint()
+
+    def record_completion_proof(self, proof: Any) -> None:
+        """Record one bounded completion proof (refs and statuses only)."""
+
+        raw = proof.to_payload() if callable(getattr(proof, "to_payload", None)) else proof
+        if not isinstance(raw, Mapping):
+            return
+        proof_id = _generated_ref(raw.get("proof_id"), "completion_proof")
+        contract_id = _generated_ref(raw.get("contract_id"), "completion_contract")
+        domain = _safe_trace_code(raw.get("domain"), 20)
+        status = _safe_trace_code(raw.get("status"), 40)
+        if (
+            not proof_id
+            or not contract_id
+            or proof_id in self._completion_proof_keys
+            or domain not in _COMPLETION_TRACE_DOMAINS
+            or status not in _COMPLETION_TRACE_STATUSES
+        ):
+            return
+        payload: dict[str, object] = {
+            "proof_id": proof_id,
+            "contract_id": contract_id,
+            "domain": domain,
+            "status": status,
+            "satisfied": bool(raw.get("satisfied")),
+        }
+        check_rows: list[dict[str, object]] = []
+        for item in _trace_list_items(raw.get("checks")):
+            if not isinstance(item, Mapping) or len(check_rows) >= MAX_COMPLETION_CHECK_ROWS:
+                continue
+            check_id = _safe_trace_code(item.get("check_id"), 80)
+            check_status = _safe_trace_code(item.get("status"), 20)
+            if not check_id or check_status not in _COMPLETION_CHECK_STATUSES:
+                continue
+            row: dict[str, object] = {"check_id": check_id, "status": check_status}
+            reason_code = _safe_trace_code(item.get("reason_code"), 120)
+            if reason_code:
+                row["reason_code"] = reason_code
+            check_rows.append(row)
+        payload["checks"] = check_rows
+        blocked_reason = _safe_trace_code(raw.get("blocked_reason"), 120)
+        if blocked_reason and not payload["satisfied"]:
+            payload["blocked_reason"] = blocked_reason
+        reason_codes = [
+            code
+            for code in (
+                _safe_trace_code(value, 80)
+                for value in _trace_list_items(raw.get("reason_codes"))
+            )
+            if code
+        ][:MAX_WARNINGS]
+        if reason_codes:
+            payload["reason_codes"] = reason_codes
+        # subject_ref is an opaque bounded token (run:/ledger:/research:...),
+        # not necessarily a runtime ref kind, so it gets code sanitation
+        # instead of ref-kind validation.
+        subject_ref = _safe_trace_code(raw.get("subject_ref"), 160)
+        if subject_ref:
+            payload["subject_ref"] = subject_ref
+        payload["finding_refs"] = [
+            ref
+            for ref in (
+                _normalize_runtime_ref(value, kind="review_finding")
+                for value in _trace_list_items(raw.get("finding_refs"))
+            )
+            if ref
+        ][:MAX_GAP_FINDING_REFS]
+        payload["analysis_run_refs"] = [
+            ref
+            for ref in (
+                _normalize_runtime_ref(value, kind="analysis_run")
+                for value in _trace_list_items(raw.get("analysis_run_refs"))
+            )
+            if ref
+        ][:MAX_ANALYSIS_RUNS]
+        payload["artifact_refs"] = [
+            ref
+            for ref in (
+                _normalize_runtime_ref(value, kind="artifact_version")
+                for value in _trace_list_items(raw.get("artifact_refs"))
+            )
+            if ref
+        ][:MAX_CAPSULE_ARTIFACT_REFS]
+        for key in ("evidence_refs", "limitation_refs", "external_refs"):
+            refs = [
+                _safe_trace_code(value, 160)
+                for value in _trace_list_items(raw.get(key))
+            ]
+            payload[key] = [ref for ref in refs if ref][:MAX_GAP_FINDING_REFS]
+        self._completion_proof_keys.add(proof_id)
+        self.manifest.completion_proofs.append(payload)
+        if len(self.manifest.completion_proofs) > MAX_COMPLETION_PROOFS:
+            del self.manifest.completion_proofs[:-MAX_COMPLETION_PROOFS]
+            self.manifest.warnings.append("completion_proofs_truncated")
+        self.checkpoint()
 
     def record_fallback(
         self,

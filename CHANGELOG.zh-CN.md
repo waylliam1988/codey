@@ -4,6 +4,45 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.9 - Research Contract Lite + Verified Completion Gate v1
+
+- 新增 `codey/completion_contract.py`：Verified Completion Gate 的领域无关
+  纯投影核心。`CompletionContract` / `CompletionCheck` / `CompletionProof`
+  只承载状态、reason code 和有界 refs；硬门槛派生（任一 check fail ->
+  failed，必跑未跑 -> blocked，pass + limitations ->
+  complete_with_limitations，否则 complete），不做打分。一致性由原语自身
+  保证：satisfied proof 永远不携带 blocked_reason；无有效 id 的 junk 输入
+  fail closed 为空投影；空 checks 拒绝成 contract。v1 刻意不设独立
+  Requirement 对象——requirement 与 check 在此阶段恒为 1:1，平行列表只是
+  重复状态。
+- 新增 `codey/research/contract.py`：把 `ResearchProofReview` 与其派生的
+  ReviewFinding 投影成共享 contract/proof 形状。open critical finding 会
+  阻止 clean complete；由于 critical finding 都是 hard proof failure 的
+  投影，通过 proof review 的记录不可能产生 critical open finding，queued
+  research 的完成结果与 0.4.8 逐项等价（不需要 A/B）。
+- 收敛 `research/completion_gate.py`：对外契约逐字节不变（action、
+  blocked_reason 字符串、proof_refs 组装全部保持），内部改为消费 contract
+  投影；`_blocked_reason()` / `_safe_run_ref()` 这类 stringly 证据语义移入
+  research/contract.py 统一维护。`ResearchCompletionDecision` 新增可选
+  `proof` 字段供 trace 记录。
+- RunTrace 新增 bounded `completion_proofs` section（cap 8）：只存
+  refs/status/check summary/reason codes，finding/analysis/artifact refs
+  按 runtime ref 校验，未知 domain/status/check 行 fail closed 丢弃，
+  截断写 warning。payload 不含任何 raw prompt / transcript / 输出正文。
+- Coding 侧 shadow completion proof：project run 结束后从既有本地事实
+  （changed files、selected verification candidate、latest edit 后的本地
+  observed checks）投影 proof 并写入 trace。docs-only change 得到
+  complete_with_limitations(docs_only_change)；无匹配验证命令得到
+  blocked(no_matching_verification_command)；未本地观察到验证事实最多
+  complete_with_limitations(verification_not_locally_observed)，模型自述
+  "测试通过"永远不能成为本地证明。done/receipt/prompt/SSE 全部不变。
+- `task_runner` 顺手减债：`select_verification_candidate` +
+  `check_covers_selected_candidate` 的求值收敛为单一位置，receipt 判定与
+  shadow proof 共用同一份事实，不再各算一遍。
+- Capability registry 新增 metadata-only `completion_contract`
+  （model_visible=False，trace_sections=("completion_proofs",)）；架构测试
+  锁定两个新模块为 projection-only（禁运行时 import、禁 I/O token）。
+
 ## 0.4.8 - Safe Context Epoch + Capability Boundary v1
 
 - 新增 `codey/context_epoch.py`：纯 stdlib leaf 投影模块（不 import 任何
