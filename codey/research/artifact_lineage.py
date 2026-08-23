@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from codey.research.evidence_runtime import is_valid_runtime_ref
-from codey.research.identity import clip, stable_ref
+from codey.refs import clip, stable_ref
 
 ARTIFACT_REF_PREFIX = "artifact:"
 ARTIFACT_VERSION_REF_PREFIX = "artifact_version:"

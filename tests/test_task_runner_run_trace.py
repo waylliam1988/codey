@@ -942,7 +942,10 @@ def test_verification_state_is_tri_state_not_event_count() -> None:
 
 
 def test_proof_maps_unobserved_to_limitation_instead_of_failure() -> None:
-    from codey.completion_contract import COMPLETION_COMPLETE_WITH_LIMITATIONS
+    from codey.completion_contract import (
+        COMPLETION_BLOCKED,
+        COMPLETION_COMPLETE_WITH_LIMITATIONS,
+    )
     from codey.task_runner import (
         VERIFICATION_UNOBSERVED,
         _coding_completion_proof,
@@ -961,9 +964,11 @@ def test_proof_maps_unobserved_to_limitation_instead_of_failure() -> None:
     assert proof.status == COMPLETION_COMPLETE_WITH_LIMITATIONS
     assert proof.limitation_refs == ("verification_not_locally_observed",)
 
-    # The agent reporting failure without local observation stays honest:
-    # the claim itself is the fact, and it is a failing one.
-    failed = _coding_completion_proof(
+    # A falsy reported value is not a failure fact: RunResult.checks_passed
+    # starts as False and is reset by edits, so "no local observation" can
+    # only block ("could not verify"), never claim a verification happened
+    # and failed.
+    ambiguous = _coding_completion_proof(
         run_id="run-tri",
         stop_reason="done",
         task_changed=True,
@@ -972,44 +977,107 @@ def test_proof_maps_unobserved_to_limitation_instead_of_failure() -> None:
         verification_state=VERIFICATION_UNOBSERVED,
         checks_passed=False,
     )
-    assert failed is not None
-    assert failed.status == "failed"
-    assert failed.blocked_reason == "reported_verification_failed"
+    assert ambiguous is not None
+    assert ambiguous.status == COMPLETION_BLOCKED
+    assert ambiguous.satisfied is False
+    assert ambiguous.blocked_reason == "verification_not_locally_observed"
+    assert ambiguous.checks[0].status == "not_run"
+    assert ambiguous.checks[0].reason_code == "verification_not_locally_observed"
 
 
-def test_analysis_run_refs_attach_to_matching_commands_only() -> None:
+def test_analysis_run_refs_attach_to_decisive_commands_with_cwd() -> None:
+    from codey.research.identity import path_ref
     from codey.task_runner import _matching_analysis_run_refs
 
+    project = "E:/repo"
     analysis_runs = [
         {
             "analysis_run_id": "analysis_run:" + "a" * 16,
             "command_display": "pytest -q",
+            "cwd_ref": path_ref(".", project=project),
             "ok": True,
         },
         {
             "analysis_run_id": "analysis_run:" + "b" * 16,
-            "command_display": "ruff check .",
+            "command_display": "pytest -q",
+            # Same command, sibling package: must never be cited for root.
+            "cwd_ref": path_ref("packages/b", project=project),
             "ok": False,
         },
-        {"analysis_run_id": "analysis_run:" + "c" * 16, "command_display": ""},
+        {
+            "analysis_run_id": "analysis_run:" + "c" * 16,
+            "command_display": "ruff check .",
+            "cwd_ref": path_ref("packages/b", project=project),
+            "ok": False,
+        },
+        {"analysis_run_id": "analysis_run:" + "d" * 16, "command_display": ""},
+        {"analysis_run_id": "not-a-ref", "command_display": "pytest -q"},
         "junk",
     ]
+
     refs = _matching_analysis_run_refs(
         analysis_runs,
-        ["pytest -q", "mypy src", "pytest -q"],
+        [("pytest -q", ".")],
+        project=project,
     )
     assert refs == ("analysis_run:" + "a" * 16,)
 
-    # Later payloads win: the newest run of the same command is cited.
+    # Same command under the other package cites the sibling's own run.
+    assert _matching_analysis_run_refs(
+        analysis_runs,
+        [("pytest -q", "packages/b")],
+        project=project,
+    ) == ("analysis_run:" + "b" * 16,)
+
+    # Later payloads win for the same (command, cwd).
     newer = [*analysis_runs, {
-        "analysis_run_id": "analysis_run:" + "d" * 16,
+        "analysis_run_id": "analysis_run:" + "e" * 16,
         "command_display": "pytest -q",
+        "cwd_ref": path_ref(".", project=project),
         "ok": True,
     }]
-    assert _matching_analysis_run_refs(newer, ["pytest -q"]) == ("analysis_run:" + "d" * 16,)
+    assert _matching_analysis_run_refs(newer, [("pytest -q", ".")], project=project) == (
+        "analysis_run:" + "e" * 16,
+    )
+
+    assert _matching_analysis_run_refs(analysis_runs, [], project=project) == ()
+    assert _matching_analysis_run_refs([], [("pytest -q", ".")], project=project) == ()
+
+
+def test_proof_only_cites_decisive_commands_not_every_executed_one() -> None:
+    from codey.task_runner import _relevant_verification_pairs
+
+    files = ("src/mod.py",)
+    selected = _selected()
+    evidence = _StubEvidence(
+        successful=[
+            _check("ruff check ."),
+            _check("pytest -q"),
+            _check("pytest -q", "packages/b"),
+        ],
+        failed=[],
+        observed_tool_events=4,
+    )
+    # Only checks covering the selected candidate are decisive: a passing
+    # run of the same command in a sibling package is real history but not
+    # this proof's fact.
+    pairs = _relevant_verification_pairs("fresh_pass", selected, evidence, files)
+    assert pairs == (("pytest -q", "."),)
+
+    failing = _StubEvidence(
+        successful=[_check("ruff check .")],
+        failed=[_check("pytest -q")],
+        observed_tool_events=5,
+    )
+    assert _relevant_verification_pairs("fresh_fail", selected, failing, files) == (
+        ("pytest -q", "."),
+    )
+    assert _relevant_verification_pairs("unobserved", selected, evidence, files) == ()
+    assert _relevant_verification_pairs("fresh_pass", None, evidence, files) == ()
 
 
 def test_fresh_fail_proof_cites_the_failed_command_analysis_run() -> None:
+    from codey.research.identity import path_ref
     from codey.task_runner import (
         _record_coding_completion_trace,
     )
@@ -1026,18 +1094,22 @@ def test_fresh_fail_proof_cites_the_failed_command_analysis_run() -> None:
         def flush(self) -> None:
             return None
 
+    project = "E:/repo"
     evidence = _StubEvidence(
-        successful=[_check("ruff check .")],
+        successful=[_check("ruff check .", "packages/a")],
         failed=[_check("pytest -q")],
         observed_tool_events=5,
     )
     analysis_runs = [{
         "analysis_run_id": "analysis_run:" + "b" * 16,
         "command_display": "pytest -q",
+        "cwd_ref": path_ref(".", project=project),
         "ok": False,
     }, {
         "analysis_run_id": "analysis_run:" + "a" * 16,
         "command_display": "ruff check .",
+        # The passing ruff run is not decisive for a fresh-fail state.
+        "cwd_ref": path_ref("packages/a", project=project),
         "ok": True,
     }]
     sink = _SinkTrace()
@@ -1051,6 +1123,7 @@ def test_fresh_fail_proof_cites_the_failed_command_analysis_run() -> None:
         evidence=evidence,
         reported_checks_passed=True,
         analysis_runs=analysis_runs,
+        project=project,
     )
 
     recorded = sink.proofs
@@ -1058,8 +1131,5 @@ def test_fresh_fail_proof_cites_the_failed_command_analysis_run() -> None:
     proof = recorded[0]
     assert proof["status"] == "failed"
     assert proof["blocked_reason"] == "relevant_verification_failed"
-    # Provenance points at the actual command runs, not just a verdict.
-    assert sorted(proof["analysis_run_refs"]) == [
-        "analysis_run:" + "a" * 16,
-        "analysis_run:" + "b" * 16,
-    ]
+    # Provenance cites the decisive failing command's own run, nothing else.
+    assert proof["analysis_run_refs"] == ["analysis_run:" + "b" * 16]

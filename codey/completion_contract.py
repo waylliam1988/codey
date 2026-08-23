@@ -24,8 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from codey.research.identity import bounded_refs, digest_text, identifier, stable_ref
-from codey.research.redaction import looks_sensitive_signal
+from codey.refs import bounded_refs, digest_text, identifier, stable_ref
+from codey.redaction import looks_sensitive_signal
 
 
 COMPLETION_CONTRACT_PREFIX = "completion_contract"

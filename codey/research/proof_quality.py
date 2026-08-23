@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
-from codey.research.identity import (
+from codey.refs import (
     bounded_refs,
     clip,
     digest_json,
@@ -21,7 +21,7 @@ from codey.research.identity import (
 )
 from codey.research.object_model import ResearchRecord
 from codey.research.shape import digest_ref as _digest_ref
-from codey.research.redaction import looks_sensitive_signal
+from codey.redaction import looks_sensitive_signal
 
 
 MAX_GAPS = 12

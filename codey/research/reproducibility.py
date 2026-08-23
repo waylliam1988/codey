@@ -15,7 +15,7 @@ from codey.research.analysis_run import (
     CAPTURE_OUTPUT_CAPTURED,
     REPRODUCTION_FAILED,
 )
-from codey.research.identity import stable_ref
+from codey.refs import stable_ref
 
 CAPSULE_REF_PREFIX = "capsule:"
 CAPSULE_STATUS_NO_RUNS = "no_analysis_runs"

@@ -18,8 +18,8 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
-from codey.research.identity import digest_ref as _digest_ref
-from codey.research.identity import identifier as _identifier
+from codey.refs import digest_ref as _digest_ref
+from codey.refs import identifier as _identifier
 from codey.research.object_model import (
     MAX_RECORD_ASSUMPTIONS,
     MAX_RECORD_CLAIMS,

@@ -21,7 +21,7 @@ from codey.research.contract import (
     research_external_refs,
 )
 from codey.research.evidence_ledger import EvidenceLedgerStore
-from codey.research.identity import identifier
+from codey.refs import identifier
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
 
 

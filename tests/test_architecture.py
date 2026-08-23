@@ -386,7 +386,6 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             ROOT / "codey" / "research" / "connector_domains.py",
             ROOT / "codey" / "research" / "query_planner.py",
             ROOT / "codey" / "research" / "connector_search.py",
-            ROOT / "codey" / "research" / "redaction.py",
             ROOT / "codey" / "research" / "plan_executor.py",
             ROOT / "codey" / "research" / "evidence_followup.py",
             ROOT / "codey" / "research" / "record_merge.py",
@@ -432,6 +431,32 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         ):
             with self.subTest(module=name):
                 self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+
+    def test_refs_and_redaction_are_stdlib_leaves(self) -> None:
+        # The bounded ref vocabulary and redaction predicates are the shared
+        # dialect of every refs-only read model (coding, research, future
+        # experiment domains). They stay domain-neutral stdlib leaves so no
+        # projection has to reach into another domain's namespace to speak.
+        for name in ("refs.py", "redaction.py"):
+            path = ROOT / "codey" / name
+            with self.subTest(module=name):
+                imports = imported_modules(path)
+                self.assertEqual(
+                    [item for item in imports if item == "codey" or item.startswith("codey.")],
+                    [],
+                )
+                source = path.read_text(encoding="utf-8")
+                for token in (
+                    "write_text(",
+                    "write_json",
+                    "open(",
+                    "eval(",
+                    "exec(",
+                    "subprocess",
+                    "urllib",
+                    "pathlib",
+                ):
+                    self.assertNotIn(token, source)
 
     def test_completion_contract_modules_are_projection_only(self) -> None:
         # The completion contract is the Verified Completion Gate's pure core:

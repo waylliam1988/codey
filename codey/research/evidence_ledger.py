@@ -9,16 +9,16 @@ from pathlib import Path
 from typing import Mapping
 
 from codey.local_store import read_json, session_key, write_json_atomic
-from codey.research.identity import (
+from codey.refs import (
     bounded_refs,
     clip,
     digest_ref,
     digest_text,
     identifier,
     nonnegative_int,
-    project_ref,
     stable_ref,
 )
+from codey.research.identity import project_ref
 from codey.research.object_model import (
     ANSWER_STATUSES,
     CLAIM_RELATION_KINDS,

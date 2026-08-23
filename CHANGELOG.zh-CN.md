@@ -35,19 +35,31 @@
   结果、实际执行过的 AnalysisRun 记录）投影 proof 并写入 trace。本地验证
   新鲜度是显式三态——fresh_pass / fresh_fail / unobserved——read/search 也
   是 tool event，但绝不会被误记成"验证失败"；没跑或 stale 一律记为
-  unobserved。agent 自己上报的 checks 在 receipt 本地覆写之前捕获，proof
-  永远不会把覆写值当成模型的自述。unobserved 但模型报绿最多得到
-  complete_with_limitations(verification_not_locally_observed)；docs-only
-  change 得到 complete_with_limitations(docs_only_change)；无匹配验证命令得
-  到 blocked(no_matching_verification_command)；本地观察到相关 check 失败则
-  failed 并附上对应 AnalysisRun ref。模型自述"测试通过"永远不能成为本地证
-  明。done/receipt/prompt/SSE 全部不变。
+  unobserved。unobserved 对 agent 自报的两个方向都保持诚实：报绿最多得到
+  complete_with_limitations(verification_not_locally_observed)；而假值只
+  会 blocked——`RunResult.checks_passed` 初始就是 False 且会被 edit 重置，
+  缺少本地观察时绝不能升格成"验证过且失败"，failed 只保留给本地真实观察
+  到的覆盖性失败。agent 自己上报的 checks 在 receipt 本地覆写之前捕获，
+  proof 永远不会把覆写值当成模型的自述；docs-only change 得到
+  complete_with_limitations(docs_only_change)；无匹配验证命令得到
+  blocked(no_matching_verification_command)。模型自述"测试通过"永远不能成
+  为本地证明。done/receipt/prompt/SSE 全部不变。
+- Completion proof 引用 provenance 而不只是结论：analysis_run_refs 只挂
+  决定性检查实际执行过的那次 run——fresh_pass 引用它通过的、fresh_fail 引
+  用它失败的、unobserved 什么都不引。匹配通过 AnalysisRun 投影同源的
+  project-relative path digest 做 cwd-aware 判定，monorepo 里同一命令在两
+  个 package 下各引各的，绝不会串到兄弟目录；被 redact 的命令只在
+  analysis_runs section 里保留 digest 溯源。
+- 共享有界 ref 词表移出 research 命名空间，落成两个领域中立的 stdlib
+  leaf：`codey/refs.py`（clip / identifier / bounded_refs / 各类 digest /
+  stable_ref）与 `codey/redaction.py`（secret marker/shape/code 谓词）；
+  `research/identity.py` 只留 URL/project/path 这些 research 特有 helper，
+  基础词表改从 `codey/refs` 导入。不留兼容 shim：所有 importer 全部更新。
+  架构测试锁定两个新 leaf 纯 stdlib，coding/research/未来 experiment 投影
+  共用同一方言而无需跨域 import。
 - Contract id 覆盖全部 payload 字段：finding/analysis-run/artifact/external
   refs 与 checks、limitations 一起进入哈希，任何一组 refs 不同都不会共享
-  contract_id（proof_id 由它派生、RunTrace 按 proof_id 去重）。coding proof
-  通过命令匹配引用真实执行过的 `analysis_run_refs`，闭合"哪次命令证明了
-  它"的 provenance 环；被 redact 的命令只在 analysis_runs section 里保留
-  digest 溯源。
+  contract_id（proof_id 由它派生、RunTrace 按 proof_id 去重）。
 - `task_runner` 顺手减债：`select_verification_candidate` +
   `check_covers_selected_candidate` 的求值收敛为单一位置，receipt 判定与
   shadow proof 共用同一份事实，不再各算一遍。

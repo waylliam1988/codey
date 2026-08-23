@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from codey.research.redaction import looks_sensitive_signal
+from codey.redaction import looks_sensitive_signal
 
 
 _SNAKE_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")

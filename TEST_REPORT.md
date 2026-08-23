@@ -34,29 +34,39 @@ Coding got a trace-only shadow completion proof projected from existing local
 facts after a done project run, with local verification freshness expressed as
 an explicit tri-state -- fresh_pass / fresh_fail / unobserved. Reads and
 searches are tool events too, so a session that edited and browsed without
-running a relevant check is recorded as unobserved (limitation
-`verification_not_locally_observed` when the agent reported green), never as
-a fake `relevant_verification_failed`; only a locally observed covering check
-that actually failed after the latest edit yields failed, and that proof cites
-the executed command's AnalysisRun ref (matched by latest `command_display`,
-redacted commands keep digest-only provenance). The agent's own reported
-checks are captured before the receipt's local override so the proof never
-mistakes the override for a model claim. Docs-only changes yield
-complete_with_limitations(docs_only_change); no matching verification command
-yields blocked(no_matching_verification_command); a model claiming "tests
-pass" is never local proof. Receipt semantics stay byte-identical -- the
-tri-state sharpens the proof read model only; changing the receipt override
-is user-visible behavior and belongs behind an A/B.
+running a relevant check is recorded as unobserved, never as a fake failure;
+and unobserved stays honest in both directions of the agent's report: a
+reported-green ceiling is complete_with_limitations(
+verification_not_locally_observed), while a falsy reported value only blocks,
+because `RunResult.checks_passed` starts as `False` and is reset by edits --
+an absent local observation can never be promoted to "verified bad". Failed
+is reserved for locally observed covering checks that actually failed after
+the latest edit, and that proof cites the executed command's own AnalysisRun
+ref. Provenance is decisive and cwd-aware: only commands covering the
+selected candidate and determining the state are cited (fresh-pass cites its
+passing run, fresh-fail its failing run, unobserved cites nothing), matched
+through the same project-relative path digest the AnalysisRun projection
+uses, so identical commands under sibling packages never cross-cite; redacted
+commands keep digest-only provenance in the analysis_runs section. The
+agent's own reported checks are captured before the receipt's local override
+so the proof never mistakes the override for a model claim. Docs-only changes
+yield complete_with_limitations(docs_only_change); no matching verification
+command yields blocked(no_matching_verification_command); a model claiming
+"tests pass" is never local proof. Receipt semantics stay byte-identical --
+the tri-state sharpens the proof read model only; changing the receipt
+override is user-visible behavior and belongs behind an A/B.
 
+The shared bounded-ref vocabulary moved out of the research namespace into two
+domain-neutral stdlib leaves -- `codey/refs.py` (clip / identifier /
+bounded_refs / digests / stable_ref) and `codey/redaction.py` (secret
+marker/shape/code predicates) -- with `research/identity.py` slimmed to its
+research-specific URL/project/path helpers, every importer updated, no shims.
 Contract ids are content-addressed over every payload field: finding,
 analysis-run, artifact, and external refs hash alongside checks and
 limitations, so differing references can never collapse into one deduplicated
 trace row. Capability registry adds metadata-only `completion_contract`
-(model_visible=False), architecture tests lock both new modules as
-projection-only, and the domain-neutral `safe_run_ref()` sanitizer lives in
-completion_contract.py shared by research and coding proofs (no dead reserved
-constants: the unused `NO_COMPLETION_CHECKS_REASON` was deleted rather than
-wired into speculative paths).
+(model_visible=False), architecture tests lock both completion modules as
+projection-only and both new leaves as stdlib-only.
 
 Production-facing behavior changes: none. Queued research done/block
 decisions, receipt semantics, prompts, planner behavior, tool results, and
@@ -68,8 +78,10 @@ False Completion Rate).
 
 Refactor debt paid: the gate's stringly evidence semantics moved into the
 research contract projection; `safe_run_ref()` moved up to the shared
-completion_contract module instead of a research-named helper feeding coding
-proofs; task_runner's `select_verification_candidate` +
+completion_contract module; the generic ref/redaction vocabulary left the
+research namespace entirely (`codey/refs.py`, `codey/redaction.py`,
+`research/identity.py` slimmed, all importers updated, no shims);
+task_runner's `select_verification_candidate` +
 `check_covers_selected_candidate` evaluation converged to one place shared by
 the receipt decision and the shadow proof instead of being computed twice.
 
@@ -90,11 +102,15 @@ Characterization locks added:
   limitations, findings, analysis runs, artifacts, external) changes the
   contract_id; identical inputs stay stable.
 - Tri-state verification: reads/searches-only sessions are unobserved (not
-  failures), covering failed checks win over passing ones, unobserved +
-  reported-green is complete_with_limitations, unobserved + reported-failed
-  stays an honest failure, fresh-fail proofs cite the failed command's
-  AnalysisRun ref (latest run wins per command; redacted commands cite
-  nothing).
+  failures); unobserved + reported-green is complete_with_limitations;
+  unobserved + falsy report is blocked(verification_not_locally_observed),
+  never failed (the flag defaults False and resets on edits); covering
+  failed checks win over passing ones.
+- Decisive cwd-aware provenance: fresh-pass/fresh-fail proofs cite only
+  commands covering the selected candidate, matched through project-relative
+  path digests -- sibling-package runs of identical commands never cross-cite;
+  latest run wins per (command, cwd); unobserved cites nothing; redacted
+  commands cite nothing.
 - Trace section: valid rows kept, malformed rows dropped, duplicate proof ids
   ignored, cap-8 truncation warning, object/payload/mapping inputs all
   accepted, sanitized codes replace prose (`junk row` -> `junk_row`).
@@ -102,11 +118,15 @@ Characterization locks added:
   blocked(no_matching_verification_command) with ledger/receipt external refs;
   docs-only change -> complete_with_limitations(docs_only_change); unchanged
   or interrupted runs record no proofs; secrets never reach the payload.
+- Neutral leaves: `codey/refs.py` and `codey/redaction.py` import nothing
+  from codey and contain no I/O tokens; no module imports a research path to
+  speak the shared ref dialect.
 
-Verification sequence: targeted py_compile + ruff (lint/format) on changed
-files; targeted pytest across contract/gate/trace/architecture/capabilities/
-task-runner/work-queue/pipeline/server suites (398 passed, 192 subtests);
-then one full-suite run: 2473 passed, 711 subtests passed, zero failures.
+Verification sequence: targeted py_compile + compileall + ruff (lint/format)
+on changed files; targeted pytest across contract/gate/trace/architecture/
+capabilities/task-runner/work-queue/pipeline/server/evidence/object-model/
+identity/source-connector suites (481 passed, 191 subtests); then one
+full-suite run: 2475 passed, 709 subtests passed, zero failures.
 
 ## 0.4.8 Safe Context Epoch + Capability Boundary v1
 

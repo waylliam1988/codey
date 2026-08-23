@@ -18,14 +18,14 @@ import sys
 from dataclasses import dataclass
 from typing import Mapping
 
-from codey.research.identity import (
+from codey.refs import (
     clip,
     digest_json,
     digest_text,
-    path_ref,
     stable_ref,
 )
-from codey.research.redaction import looks_sensitive_signal
+from codey.redaction import looks_sensitive_signal
+from codey.research.identity import path_ref
 
 ANALYSIS_RUN_REF_PREFIX = "analysis_run:"
 CAPTURE_OUTPUT_CAPTURED = "output_captured"

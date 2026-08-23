@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from codey.research.identity import digest_text
-from codey.research.redaction import (
+from codey.refs import digest_text
+from codey.redaction import (
     looks_secret_marker,
     looks_secret_shape,
     looks_sensitive_signal,

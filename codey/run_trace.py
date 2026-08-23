@@ -26,7 +26,7 @@ from codey.context_epoch import admission_from_rendered_source
 from codey.prompt_envelope import is_model_boundary_freshness
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
-from codey.research.redaction import looks_sensitive_code, looks_sensitive_signal
+from codey.redaction import looks_sensitive_code, looks_sensitive_signal
 from codey.research.review_finding import (
     FINDING_KINDS,
     FINDING_SEVERITIES,

@@ -1,4 +1,9 @@
-"""Shared small redaction predicates for Research metadata boundaries."""
+"""Shared small redaction predicates for metadata boundaries.
+
+Pure stdlib: these predicates decide whether a piece of text looks like a
+secret marker or secret shape, so audit payloads can keep reason codes while
+dropping anything secret-looking. Nothing here is research-specific.
+"""
 
 from __future__ import annotations
 

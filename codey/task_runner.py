@@ -428,9 +428,11 @@ def _coding_completion_checks(
 ) -> tuple[CompletionCheck, ...]:
     """Project local coding facts into completion checks.
 
-    The model's own claim ("tests pass") never satisfies a check by itself:
-    without a locally observed fresh result there is nothing to verify, so
-    the run can at most complete with an explicit limitation.
+    The model's own claim never satisfies a check by itself, and a falsy
+    reported value is not a failure fact either: ``RunResult.checks_passed``
+    starts as ``False`` and is reset by edits, so without a locally observed
+    fresh result the honest projection is "could not verify" (not_run), not
+    "verified bad" (fail). Failure is reserved for observed failures.
     """
 
     if files and all(is_document_path(str(item)) for item in files):
@@ -466,40 +468,92 @@ def _coding_completion_checks(
     else:
         row = completion_check(
             CODING_CHECK_RELEVANT_VERIFICATION,
-            CHECK_FAIL,
-            "reported_verification_failed",
+            CHECK_NOT_RUN,
+            LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED,
         )
     return (row,) if row else ()
 
 
-def _matching_analysis_run_refs(
-    analysis_runs: object,
-    commands: object,
-) -> tuple[str, ...]:
-    """Latest analysis-run ref per executed command (display == command).
+def _relevant_verification_pairs(
+    verification_state: str,
+    selected_check: object,
+    evidence: ExecutionEvidence,
+    files: tuple[str, ...],
+) -> tuple[tuple[str, str], ...]:
+    """The check commands that actually decided the verification state.
 
-    Redacted commands carry no display text and therefore no ref; their
-    digest-only provenance stays in the analysis_runs trace section.
+    Provenance cites decisive facts only: a fresh-pass proof cites covering
+    passing commands, a fresh-fail proof cites covering failing commands,
+    and an unobserved state cites nothing -- unrelated executed commands
+    stay out of the proof.
     """
 
-    wanted = [
-        command
-        for command in dict.fromkeys(str(item).strip() for item in commands or ())
-        if command
-    ]
+    if selected_check is None:
+        return ()
+    if verification_state == VERIFICATION_FRESH_FAIL:
+        items = evidence.failed_checks_after_edit
+    elif verification_state == VERIFICATION_FRESH_PASS:
+        items = evidence.successful_checks
+    else:
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for item in items:
+        if not check_covers_selected_candidate(selected_check, item.command, item.cwd, files):
+            continue
+        pair = (item.command, item.cwd)
+        if pair not in pairs:
+            pairs.append(pair)
+    return tuple(pairs)
+
+
+def _analysis_run_cwd_digest(cwd: object, project: object) -> str:
+    from codey.research.identity import path_ref
+
+    return str(path_ref(str(cwd or "."), project=project).get("digest") or "")
+
+
+def _matching_analysis_run_refs(
+    analysis_runs: object,
+    pairs: tuple[tuple[str, str], ...],
+    project: object = None,
+) -> tuple[str, ...]:
+    """Latest analysis-run ref per decisive (command, cwd) pair.
+
+    Matching is cwd-aware via the same project-relative path digest the
+    AnalysisRun projection uses, so the same command run under two packages
+    of a monorepo cites its own execution, never a sibling's. Redacted
+    commands carry no display text and therefore no ref; their digest-only
+    provenance stays in the analysis_runs trace section.
+    """
+
+    wanted: dict[tuple[str, str], None] = {}
+    for command, cwd in dict.fromkeys(pairs or ()):
+        text = str(command or "").strip()
+        if not text:
+            continue
+        wanted[(text, _analysis_run_cwd_digest(cwd, project))] = None
     if not wanted:
         return ()
-    by_command: dict[str, str] = {}
+    by_pair: dict[tuple[str, str], str] = {}
     for row in analysis_runs or ():
         if not isinstance(row, Mapping):
             continue
         display = str(row.get("command_display") or "")
         ref = normalize_runtime_ref(row.get("analysis_run_id"), kind="analysis_run")
-        if display and ref:
-            by_command[display] = ref
+        cwd_ref = row.get("cwd_ref")
+        digest = (
+            str(cwd_ref.get("digest") or "")
+            if isinstance(cwd_ref, Mapping)
+            else ""
+        )
+        if not display or not ref or not digest:
+            continue
+        key = (display, digest)
+        if key in wanted:
+            by_pair[key] = ref
     refs: list[str] = []
-    for command in wanted:
-        ref = by_command.get(command)
+    for key in wanted:
+        ref = by_pair.get(key)
         if ref and ref not in refs:
             refs.append(ref)
     return tuple(refs)
@@ -559,21 +613,21 @@ def _record_coding_completion_trace(
     evidence: ExecutionEvidence,
     reported_checks_passed: bool,
     analysis_runs: object = (),
+    project: object = None,
 ) -> None:
+    verification_state = _coding_verification_state(selected_check, evidence, files)
     proof = _coding_completion_proof(
         run_id=run_id,
         stop_reason=stop_reason,
         task_changed=task_changed,
         files=files,
         selected_check_present=selected_check is not None,
-        verification_state=_coding_verification_state(selected_check, evidence, files),
+        verification_state=verification_state,
         checks_passed=reported_checks_passed,
         analysis_run_refs=_matching_analysis_run_refs(
             analysis_runs,
-            [item.command for item in (
-                *evidence.successful_checks,
-                *evidence.failed_checks_after_edit,
-            )],
+            _relevant_verification_pairs(verification_state, selected_check, evidence, files),
+            project=project,
         ),
     )
     if proof is None:
@@ -3198,6 +3252,7 @@ class TaskRunner:
             evidence=work.evidence,
             reported_checks_passed=reported_checks_passed,
             analysis_runs=work.analysis_run_payloads,
+            project=project,
         )
         facts_write_required = (
             self.project_facts is not None

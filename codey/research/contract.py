@@ -25,7 +25,7 @@ from codey.completion_contract import (
     completion_check,
     safe_run_ref,
 )
-from codey.research.identity import bounded_refs, identifier
+from codey.refs import bounded_refs, identifier
 from codey.research.proof_quality import ResearchProofReview, proof_ref_for_review
 from codey.research.review_finding import (
     SEVERITY_CRITICAL,

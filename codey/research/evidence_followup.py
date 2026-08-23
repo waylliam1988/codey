@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from codey import cancellation
-from codey.research.identity import clip
+from codey.refs import clip
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.protocols import extract_json_objects
 from codey.research.query_planner import ResearchPlan

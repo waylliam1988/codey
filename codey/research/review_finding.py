@@ -21,7 +21,7 @@ from codey.research.evidence_runtime import (
     EvidenceRuntimeSnapshot,
     normalize_runtime_ref,
 )
-from codey.research.identity import bounded_refs, identifier, stable_ref
+from codey.refs import bounded_refs, identifier, stable_ref
 from codey.research.proof_quality import MAX_DIAGNOSTICS, ProofDiagnostic, ResearchProofReview
 from codey.research.shape import generated_ref as _generated_ref
 

@@ -2068,12 +2068,17 @@ failed
 ```text
 completion_gate 的 _blocked_reason 字符串语义移入 research/contract.py 投影
 safe_run_ref 上移到 completion_contract.py（research/coding 共享一个 run-ref 清洗器）
+通用 ref 词表正式中立化：codey/refs.py + codey/redaction.py 两个 stdlib leaf，
+  research/identity.py 只留 URL/project/path 特有 helper，全部 importer 更新、无 shim
 task_runner 的 select_verification_candidate + check_covers_selected_candidate 收敛为单一求值点，
   receipt 判定与 shadow proof 共用同一份事实；proof 另用三态 fresh_pass/fresh_fail/unobserved
   表达本地验证新鲜度，receipt 的既有覆写语义保持不变（改它属于需要 A/B 的行为变化）
+unobserved 永不升格成 failed：checks_passed 假值可能是默认/被 edit 重置，
+  只能 blocked(verification_not_locally_observed)；failed 保留给真实观察到的失败
+analysis_run_refs 只引用决定性命令（覆盖 selected candidate 且决定状态的那次），
+  并用与 AnalysisRun 投影同源的 project-relative path digest 做 cwd-aware 匹配
 contract_id 哈希覆盖全部 refs 组（finding/analysis/artifact/external），
   proof_id 由 contract_id 派生、trace 按 proof_id 去重，content-address 必须完整
-coding proof 引用实际执行的 analysis_run_refs（按 command_display 匹配最新一次）
 capabilities 登记 metadata-only completion_contract（model_visible=False）
 RunTrace 新增 bounded completion_proofs section（cap 8，refs-only）
 ```
@@ -2091,8 +2096,10 @@ queued research done 不能绕过 contract gate（gate 行为与 0.4.8 等价）
 satisfied proof 永远不携带 blocked_reason
 coding docs-only change 不要求 code test（not_applicable + docs_only_change）
 read/search 型 tool event 不会把未跑验证误记成失败（unobserved 三态锁定）
+unobserved + checks_passed=False 只能 blocked，不能 failed（False 可能是默认值）
+fresh_fail proof 只携带决定性失败命令自己的 AnalysisRun ref（cwd 不同不串引）
 任何 refs 组不同 => 不同 contract_id/proof_id（全字段 content-address 锁定）
-fresh_fail proof 携带对应 AnalysisRun ref
+refs.py / redaction.py 是纯 stdlib leaf（架构测试锁定）
 ```
 
 ### A/B

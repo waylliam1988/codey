@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from codey.research.connector_domains import preferred_connector_ids
-from codey.research.identity import (
+from codey.refs import (
     bounded_refs,
     clip,
     digest_text,
@@ -19,7 +19,7 @@ from codey.research.identity import (
     stable_ref,
 )
 from codey.research.proof_quality import ResearchProofReview
-from codey.research.redaction import looks_sensitive_code, looks_sensitive_signal
+from codey.redaction import looks_sensitive_code, looks_sensitive_signal
 from codey.research.shape import (
     connector_id as _connector_id,
     digest_ref as _digest_ref,

@@ -23,16 +23,18 @@ from codey.research.connector_domains import (
     LOCAL_CONNECTOR_TERMS,
     MEDICAL_CONNECTOR_TERMS,
 )
-from codey.research.identity import (
+from codey.refs import (
     bounded_refs,
     clip,
     digest_text,
     identifier,
-    path_ref,
-    sanitize_research_url_ref,
     stable_ref,
 )
-from codey.research.redaction import (
+from codey.research.identity import (
+    path_ref,
+    sanitize_research_url_ref,
+)
+from codey.redaction import (
     SECRET_MARKER_RE,
     SECRET_SHAPE_RE,
     looks_sensitive_code,
