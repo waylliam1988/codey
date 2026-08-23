@@ -29,10 +29,14 @@ This file records Codey's release history. The newest release appears first.
   rollover replaces the prompt with a fresh intro, the stale prepared rows
   are discarded instead of being attributed to a prompt that never leaves.
   Real-run tests lock the contract for both the intro turn and a follow-up
-  tool-result turn. Chat-mode sends carry `capability_id="chat_runner"`
-  with their own payload regression, and `coding_request_context` source
-  refs are built through the shared `context_source_ref()` helper so
-  production keeps one ref vocabulary. Epoch ids identify turn *content*,
+  tool-result turn. The existing internal rollover summary prompt is also
+  recorded as a digest-only `conversation_handoff_summary_prompt`
+  provider-send row with `capability_id="conversation_handoff"`, so it is no
+  longer a hidden model-visible send. Chat-mode sends carry
+  `capability_id="chat_runner"` with their own payload regression, and
+  `coding_request_context` source refs are built through the shared
+  `context_source_ref()` helper so production keeps one ref vocabulary.
+  Epoch ids identify turn *content*,
   not numbered provider calls: identical re-sends share the id by design
   and stay deduplicated in the trace, while any byte difference yields a
   new epoch.
@@ -55,9 +59,11 @@ This file records Codey's release history. The newest release appears first.
   single place with the provider_send freshness, a content-addressed epoch
   id (an explicit `epoch_id=` override lets callers share an already-computed
   epoch), and the fixed `provider_turn_boundary` admission reason. Prompt
-  text, send order, and provider behavior are unchanged; parity stays locked
-  by the existing byte-for-byte agent prompt test plus the real-run metadata
-  tests (these caught a double-wrapped trace sink during development).
+  text, send order, and provider behavior are unchanged; the same helper now
+  wraps the two existing conversation handoff summary sends in `agent.py` and
+  `task_runner.py`. Parity stays locked by the existing byte-for-byte agent
+  prompt test plus the real-run metadata tests (these caught a double-wrapped
+  trace sink during development).
 - Run Trace: `PromptSectionTrace` gained optional `epoch_id`,
   `admission_reason`, and `capability_id` fields, serialized only when set —
   without them the manifest payload shape is unchanged. The prompt-section
@@ -72,14 +78,16 @@ This file records Codey's release history. The newest release appears first.
   `KNOWN_CONTEXT_SOURCES` allowlists at construction time. Registered the
   0.4.7 modules (`research_evidence_runtime`,
   `research_review_finding`) plus this version's boundaries (`context_epoch`,
-  `chat_runner`, `consensus_advisors`) and filled factual ownership for
-  existing specs: agent_runner owns eight coding context sources,
+  `conversation_handoff`, `chat_runner`, `consensus_advisors`) and filled
+  factual ownership for existing specs: agent_runner owns eight coding context sources,
   local_context owns ghost_directive/ghost_continuity, policy_guard writes
   policy_decisions, and the object-model/ledger/proof-quality/query-planner/
   finding specs name the dedicated trace sections their projections produce.
-  Chat-mode outbound prompts carry `capability_id="chat_runner"` instead of
-  anonymous provenance. A new architecture test locks every `capability_id`
-  literal stamped anywhere in production code to a registered capability.
+  Chat-mode outbound prompts carry `capability_id="chat_runner"` and
+  rollover summary prompts carry `capability_id="conversation_handoff"`
+  instead of anonymous provenance. A new architecture test locks every
+  `capability_id` literal stamped anywhere in production code to a registered
+  capability.
 - Scope notes: no prompt wording change, no context ordering or budget
   change, no router/fallback/permission change, no planner or finding
   behavior change, no plugin loader, no skill system, no config UI, no new

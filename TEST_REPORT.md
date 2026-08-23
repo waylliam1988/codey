@@ -21,12 +21,16 @@ shared ContextSource contract and prompt envelope sections carry optional
 `record_provider_send_prompt()` replaces nine hand-written provider-send
 trace blocks across agent/server/task_runner/research-runner/consensus, and
 chat-mode sends carry `capability_id="chat_runner"` with a payload
-regression. Run Trace serializes the new fields only when set. Capability
-Registry v1 completed its roadmap field set (`trace_sections`,
-`context_sources`, `evidence_producer`, `enabled_by_default`) with allowlist
-validation, registered the 0.4.7 evidence/finding modules plus
-`context_epoch`, `chat_runner`, and `consensus_advisors`, and filled factual
-ownership for existing specs.
+regression. Existing conversation rollover summary prompts are now recorded
+through the same digest-only provider-send path as
+`conversation_handoff_summary_prompt`, so the hidden summary call has epoch and
+capability provenance without storing raw text. Run Trace serializes the new
+fields only when set. Capability Registry v1 completed its roadmap field set
+(`trace_sections`, `context_sources`, `evidence_producer`,
+`enabled_by_default`) with allowlist validation, registered the 0.4.7
+evidence/finding modules plus `context_epoch`, `conversation_handoff`,
+`chat_runner`, and `consensus_advisors`, and filled factual ownership for
+existing specs.
 
 Production-facing behavior changes: none. Prompt text, context ordering,
 budgets, router/fallback/permission behavior, planner behavior, tool results,
@@ -58,6 +62,11 @@ Characterization locks added:
   chat_outbound_prompt with `provider_send` freshness,
   `capability_id="chat_runner"`, the fixed admission reason, a
   content-addressed epoch, and the `provider_send:chat` source ref.
+- Rollover summary prompts are traced as
+  `conversation_handoff_summary_prompt` with provider_send freshness,
+  `ctx_epoch:` id, `capability_id="conversation_handoff"`, and the
+  `provider_send:conversation_handoff_summary` source ref in both direct agent
+  rollover and TaskRunner rollover paths.
 - Sections recorded without admission metadata keep the exact legacy trace
   keyword contract (no `epoch_id`/`admission_reason`/`capability_id` kwargs,
   no payload keys).
@@ -74,7 +83,8 @@ Characterization locks added:
   unknown trace sections / context sources are rejected at construction;
   all built-ins are enabled-by-default, non-third-party, non-overriding;
   evidence producers are exactly research_object_model and
-  research_review_finding; chat_runner declares the chat prompt boundary.
+  research_review_finding; chat_runner declares the chat prompt boundary, and
+  conversation_handoff declares the internal summary prompt boundary.
 - Architecture: `context_epoch.py` imports nothing from codey and contains
   no I/O tokens; every `capability_id=` literal stamped anywhere under
   `codey/` must name a registered capability.
@@ -83,16 +93,16 @@ Validation during implementation:
 
 ```text
 python -m pytest tests/test_context_epoch.py tests/test_context_source.py tests/test_prompt_envelope.py tests/test_run_trace.py tests/test_capabilities.py tests/test_architecture.py tests/test_task_runner_run_trace.py -q
-# 153 passed, 190 subtests passed
+# 155 passed, 190 subtests passed
 
 python -m pytest tests/test_agent.py tests/test_research.py tests/test_server.py tests/test_task_runner_run_trace.py tests/test_consensus.py tests/test_review.py tests/test_review_coordinator.py -q
-# 468 passed, 7 subtests passed
+# 465 passed, 4 skipped, 7 subtests passed
 
 python -m ruff check codey tests
 # All checks passed!
 
-python -m pytest -q
-# 2436 passed, 706 subtests passed in 412.31s
+python -m pytest -q --basetemp=.pytest-tmp
+# 2429 passed, 9 skipped, 706 subtests passed in 375.24s
 ```
 
 Coverage highlights: epoch id determinism and content addressing, explicit

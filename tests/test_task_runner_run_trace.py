@@ -7,7 +7,9 @@ from unittest import mock
 
 from codey import server
 from codey.consensus import ConsensusResult
+from codey.handoff import ConversationSnapshot, render_summary_prompt
 from codey.agent import RunResult
+from codey.run_trace import digest_text
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun
@@ -613,6 +615,56 @@ def test_chat_outbound_prompt_carries_chat_runner_provenance() -> None:
         assert outbound["admission_reason"] == "provider_turn_boundary"
         assert outbound["epoch_id"].startswith("ctx_epoch:")
         assert outbound["source_refs"] == ["provider_send:chat"]
+
+
+def test_conversation_handoff_summary_prompt_is_traced_on_rollover() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        state = server.State(Path(td) / "state")
+        session_id = "session-handoff-summary-trace"
+        provider = _Provider(reply='{"current_state":"Keep the plan"}')
+        conversation = state.conversation_for(session_id)
+        snapshot = ConversationSnapshot(
+            mode="chat",
+            goal="Keep the existing chat plan",
+            provider_id="deepseek",
+        )
+        conversation.begin_window("deepseek", "chat")
+        conversation.update_snapshot(snapshot)
+        conversation.used_tokens = conversation.soft_limit
+        state.set_provider_session("deepseek", session_id)
+
+        with mock.patch.object(state, "get_provider", return_value=provider):
+            runner = _runner(state, run_consensus=mock.Mock(return_value=None))
+            runner.run(TaskRequest(
+                session_id,
+                None,
+                "continue with the plan",
+                4,
+                False,
+                "deepseek",
+                intent="chat",
+            ))
+            state.wait_for_ghost_sleep(timeout=2)
+
+        run_id = state.last_terminal_event["run_id"]
+        payload = _trace_payload(state, session_id, run_id)
+        handoff = next(
+            item
+            for item in payload["prompt_sections"]
+            if item["name"] == "conversation_handoff_summary_prompt"
+        )
+
+        assert provider.prompts[0] == render_summary_prompt(snapshot)
+        assert handoff["freshness"] == "provider_send"
+        assert handoff["capability_id"] == "conversation_handoff"
+        assert handoff["admission_reason"] == "provider_turn_boundary"
+        assert handoff["epoch_id"].startswith("ctx_epoch:")
+        assert handoff["source_refs"] == ["provider_send:conversation_handoff_summary"]
+        assert handoff["digest"] == digest_text(provider.prompts[0])
+        assert "Return only one compact JSON object" not in json.dumps(
+            payload,
+            ensure_ascii=False,
+        )
 
 
 def test_project_audit_inputs_are_prepared_metadata_not_model_boundary() -> None:

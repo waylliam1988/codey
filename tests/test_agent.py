@@ -1578,6 +1578,20 @@ class RunLoopTests(unittest.TestCase):
         )
         done = '{"tool":"done","args":{"summary":"continued"}}'
         provider = FakeProvider(summary, done)
+        recorded: list[dict[str, object]] = []
+
+        class _CapturingTrace:
+            def record_prompt_section(self, name, text, **kwargs) -> None:
+                recorded.append({"name": name, "text": text, **kwargs})
+
+            def record_context_sources(self, *_args, **_kwargs) -> None:
+                return None
+
+            def __getattr__(self, _name):
+                def call(*_args, **_kwargs):
+                    return None
+                return call
+
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
             context = ConversationContext(hard_limit=200)
@@ -1600,6 +1614,7 @@ class RunLoopTests(unittest.TestCase):
                 fresh_chat=False,
                 conversation=context,
                 provider_id="deepseek",
+                trace_recorder=_CapturingTrace(),
             )
 
         self.assertEqual(result.stop_reason, "done")
@@ -1608,6 +1623,25 @@ class RunLoopTests(unittest.TestCase):
         self.assertIn("Factual handoff", provider.sent[1])
         self.assertIn("Finish the original feature", provider.sent[1])
         self.assertIn("Add the final test", provider.sent[1])
+        handoff_rows = [
+            item
+            for item in recorded
+            if item["name"] == "conversation_handoff_summary_prompt"
+        ]
+        self.assertEqual(len(handoff_rows), 1)
+        handoff_row = handoff_rows[0]
+        self.assertEqual(handoff_row["text"], provider.sent[0])
+        self.assertEqual(handoff_row["freshness"], "provider_send")
+        self.assertTrue(str(handoff_row["epoch_id"]).startswith("ctx_epoch:"))
+        self.assertEqual(
+            handoff_row["admission_reason"],
+            "provider_turn_boundary",
+        )
+        self.assertEqual(handoff_row["capability_id"], "conversation_handoff")
+        self.assertEqual(
+            handoff_row["source_refs"],
+            ("provider_send:conversation_handoff_summary",),
+        )
 
     def test_noop_edit_does_not_require_fresh_verification(self) -> None:
         edit = (

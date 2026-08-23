@@ -24,8 +24,11 @@
   工具结果轮的 `coding_current_context` 行先以"prepared、无 epoch"状态挂起，
   在发送时才绑定；若 conversation rollover 把 prompt 整体替换成新 intro，
   过期的 prepared 行会被丢弃，而不是算在一条从未发出的 prompt 头上。真实
-  run 测试同时锁定 intro 轮与工具结果轮两条路径。chat 模式外发带
-  `capability_id="chat_runner"` 并有独立的 payload 回归；
+  run 测试同时锁定 intro 轮与工具结果轮两条路径。既有 conversation
+  rollover 内部 summary prompt 也会作为 digest-only
+  `conversation_handoff_summary_prompt` provider-send 行记录，并带
+  `capability_id="conversation_handoff"`，不再是隐藏的模型可见发送。chat
+  模式外发带 `capability_id="chat_runner"` 并有独立的 payload 回归；
   `coding_request_context` 的 source refs 改经共享 `context_source_ref()`
   构造，生产代码保持单一 ref 词汇表。epoch id 标识的是 turn *内容*，不是
   编号的 provider 调用：相同字节的重复发送按设计共享同一 id 并在 trace 中
@@ -45,9 +48,10 @@
   外发 prompt 的 trace 都在同一个地方盖上 provider_send freshness、
   content-addressed epoch id（支持显式 `epoch_id=` 覆盖，调用方可传入已算好
   的 epoch）和固定的 `provider_turn_boundary` admission reason。prompt 文本、
-  发送顺序与 provider 行为不变；除既有 byte-for-byte parity 测试外，新增的
-  真实 run 元数据测试同时断言元数据确实落到记录的行上（这些测试在开发期间
-  真的抓到过一个双重包装导致静默丢 trace 的问题）。
+  发送顺序与 provider 行为不变；同一个 helper 现在也包住 `agent.py` 与
+  `task_runner.py` 里既有的 conversation handoff summary send。除既有
+  byte-for-byte parity 测试外，新增的真实 run 元数据测试同时断言元数据确实落到
+  记录的行上（这些测试在开发期间真的抓到过一个双重包装导致静默丢 trace 的问题）。
 - Run Trace：`PromptSectionTrace` 新增可选 `epoch_id` / `admission_reason`
   / `capability_id`，有值才序列化——没有新元数据时 manifest payload 形状
   不变。prompt section 的 dedup key 纳入 epoch id：完全相同的重复照旧折叠，
@@ -59,12 +63,14 @@
   `enabled_by_default`，并在构造时按新增的 `KNOWN_TRACE_SECTIONS` /
   `KNOWN_CONTEXT_SOURCES` allowlist 校验。补登记 0.4.7 模块
   （`research_evidence_runtime`、`research_review_finding`）与本版边界
-  （`context_epoch`、`chat_runner`、`consensus_advisors`），并为既有 spec
-  补事实归属：agent_runner 拥有八个 coding context sources，local_context
+  （`context_epoch`、`conversation_handoff`、`chat_runner`、
+  `consensus_advisors`），并为既有 spec 补事实归属：agent_runner 拥有八个
+  coding context sources，local_context
   拥有 ghost_directive/ghost_continuity，policy_guard 写 policy_decisions，
   object model/ledger/proof quality/query planner/finding 各自声明其投影
   落入的专用 trace section。chat 模式的外发 prompt 现在带
-  `capability_id="chat_runner"`，不再是无主 provenance。新增架构测试：
+  `capability_id="chat_runner"`，rollover summary prompt 带
+  `capability_id="conversation_handoff"`，不再是无主 provenance。新增架构测试：
   生产代码中出现的每个 `capability_id=` 字面量都必须是注册能力 id。
 - 范围注记：不改 prompt 措辞、不改 context 顺序或预算、不改
   Router/fallback/权限、不让 finding/gap 影响 planner 行为、无插件加载器、

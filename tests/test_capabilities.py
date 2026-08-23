@@ -22,6 +22,7 @@ EXPECTED_BUILTIN_IDS = (
     "chat_runner",
     "consensus_advisors",
     "context_epoch",
+    "conversation_handoff",
     "local_context",
     "policy_guard",
     "prompt_envelope",
@@ -43,7 +44,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "c80af23e61600c551b58037232e69fce2b3e21c29554c29a6c3202d26d0cf26c"
+    "b5fccad6bb5c274020978862a0c4a537242dec47bbc5d87de4d1bd149cb96eb8"
 )
 
 
@@ -281,6 +282,21 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.ui_surface, ())
         self.assertEqual(spec.durable_state, ())
+
+    def test_conversation_handoff_declares_summary_prompt_boundary(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("conversation_handoff")
+
+        self.assertEqual(
+            spec.provides,
+            ("conversation_handoff_summary_prompt_boundary",),
+        )
+        self.assertEqual(spec.consumes, ("prompt_envelope", "run_trace"))
+        self.assertTrue(spec.model_visible)
+        self.assertFalse(spec.requires_policy)
+        self.assertEqual(spec.owner_module, "codey.handoff")
+        self.assertEqual(spec.trace_sections, ("prompt_sections",))
 
     def test_local_context_owns_ghost_context_sources(self) -> None:
         registry = builtin_capability_registry()

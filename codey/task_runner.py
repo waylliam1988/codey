@@ -1692,7 +1692,18 @@ class TaskRunner:
                 next_prompt=task,
             )
             if fresh_chat and can_summarize_current_chat:
-                handoff = conversation.prepare_model_handoff(provider.send)
+                def send_handoff_summary(summary_prompt: str) -> str:
+                    record_provider_send_prompt(
+                        trace,
+                        name="conversation_handoff_summary_prompt",
+                        text=summary_prompt,
+                        purpose="conversation handoff summary prompt sent to provider",
+                        source_ref="provider_send:conversation_handoff_summary",
+                        capability_id="conversation_handoff",
+                    )
+                    return provider.send(summary_prompt)
+
+                handoff = conversation.prepare_model_handoff(send_handoff_summary)
             prior_snapshot = conversation.snapshot
             recovered_owner_prompt = ""
             visible_excerpt = ""

@@ -954,7 +954,18 @@ def run(
     ) -> str:
         opened_fresh_chat = False
         if conversation is not None and conversation.needs_rollover(prompt):
-            factual_handoff = conversation.prepare_model_handoff(provider.send)
+            def send_handoff_summary(summary_prompt: str) -> str:
+                record_provider_send_prompt(
+                    trace_recorder,
+                    name="conversation_handoff_summary_prompt",
+                    text=summary_prompt,
+                    purpose="conversation handoff summary prompt sent to provider",
+                    source_ref="provider_send:conversation_handoff_summary",
+                    capability_id="conversation_handoff",
+                )
+                return provider.send(summary_prompt)
+
+            factual_handoff = conversation.prepare_model_handoff(send_handoff_summary)
             if open_fresh_chat():
                 discard_pending_context_rows()
                 trace.record_section(PromptEnvelopeSection(

@@ -36,7 +36,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 - **按需审计本地上下文**：从 topbar `...` 菜单打开 `Local context`，可以检查、
   导出、删除、重置或禁用有界本地状态；它不新增常驻 sidebar，也不打断任务流。
 - **安静追踪模型输入组成**：每次 run 可以保存有界 prompt envelope manifest，
-  用 digest 和 source refs 审计模型看到了哪些 section，但不保存 raw prompt。
+  用 digest、source refs 和 context epoch 审计模型看到了哪些 section，但不保存 raw prompt。
 - **内部能力边界明确**：Codey 会维护一份只读的内置能力地图，登记 policy、
   模型可见输入和本地状态边界；它不暴露插件系统，也不改变任务行为。
 - **工具结果按受众分层**：本地工具现在通过一份干净契约返回给模型看的有界文本、
@@ -759,6 +759,7 @@ codey/
   permission_profiles.py    内部工具/上下文 permission profile
   action_policy.py          本地动作 allow/ask/deny 单调 guard
   context_source.py         命名且有边界的 prompt 上下文装配
+  context_epoch.py          provider-turn 上下文 admission refs 和 digest
   prompt_envelope.py        prompt section envelope 和 fail-open trace sink
   tool_runtime.py           本地工具和结构化执行结果
   execution_evidence.py     有边界的内存执行证据账本

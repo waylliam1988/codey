@@ -39,8 +39,8 @@ Version: `0.4.8`
   `...` menu to inspect, export, delete, reset, or disable bounded local state
   without adding a persistent sidebar or interrupting the task flow.
 - **Trace model input composition quietly**: each run can keep a bounded local
-  prompt envelope manifest, so model-visible sections are auditable by digest
-  and source refs without saving raw prompts.
+  prompt envelope manifest, so model-visible sections are auditable by digest,
+  source refs, and context epochs without saving raw prompts.
 - **Keep internal capability boundaries explicit**: Codey keeps a read-only map
   of built-in capabilities and their policy/model-visible/state boundaries
   without exposing a plugin system or changing task behavior.
@@ -899,6 +899,7 @@ codey/
   permission_profiles.py    internal tool/context permission profiles
   action_policy.py          monotonic local action allow/ask/deny guards
   context_source.py         named bounded prompt context assembly
+  context_epoch.py          provider-turn context admission refs and digests
   prompt_envelope.py        prompt section envelopes and fail-open trace sink
   tool_runtime.py           local tools and structured outcomes
   execution_evidence.py     bounded in-memory execution fact ledger

@@ -240,6 +240,14 @@ def builtin_capability_registry() -> CapabilityRegistry:
             trace_sections=("prompt_sections",),
         ),
         CapabilitySpec(
+            id="conversation_handoff",
+            provides=("conversation_handoff_summary_prompt_boundary",),
+            consumes=("prompt_envelope", "run_trace"),
+            model_visible=True,
+            owner_module="codey.handoff",
+            trace_sections=("prompt_sections",),
+        ),
+        CapabilitySpec(
             id="context_epoch",
             provides=("safe_provider_turn_boundary", "context_admission_projection"),
             consumes=("prompt_envelope", "run_trace"),
