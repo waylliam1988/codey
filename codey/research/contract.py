@@ -23,10 +23,10 @@ from codey.completion_contract import (
     CompletionContract,
     build_completion_contract,
     completion_check,
+    safe_run_ref,
 )
-from codey.research.identity import bounded_refs, digest_text, identifier
+from codey.research.identity import bounded_refs, identifier
 from codey.research.proof_quality import ResearchProofReview, proof_ref_for_review
-from codey.research.redaction import looks_sensitive_signal
 from codey.research.review_finding import (
     SEVERITY_CRITICAL,
     STATUS_OPEN,
@@ -134,17 +134,6 @@ def research_subject_ref(research_result: object = None, event: object = None) -
     if run_ref:
         return f"ledger:{run_ref}"
     return DOMAIN
-
-
-def safe_run_ref(value: object) -> str:
-    """Run ids become bounded refs; secret-looking ones keep only a digest."""
-
-    text = identifier(value, 120)
-    if not text:
-        return ""
-    if looks_sensitive_signal(text):
-        return digest_text(text).removeprefix("sha256:")[:16]
-    return text
 
 
 def research_external_refs(

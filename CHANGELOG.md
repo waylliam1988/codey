@@ -26,23 +26,39 @@ This file records Codey's release history. The newest release appears first.
 - Converged `research/completion_gate.py`: the observable contract is byte
   identical (same actions, blocked_reason strings, and proof_refs assembly),
   while internally it now consumes the contract projection; the stringly
-  `_blocked_reason()` / `_safe_run_ref()` evidence semantics moved into
-  research/contract.py as the single owner. `ResearchCompletionDecision`
-  gains an optional `proof` field for trace recording.
+  `_blocked_reason()` evidence semantics moved into research/contract.py as
+  the single owner, and `safe_run_ref()` moved up into completion_contract.py
+  as the domain-neutral run-ref sanitizer shared by research and coding
+  proofs. `ResearchCompletionDecision` gains an optional `proof` field for
+  trace recording.
 - RunTrace gained a bounded `completion_proofs` section (cap 8): refs,
   statuses, check summaries, and reason codes only. finding/analysis/artifact
   refs validate against runtime ref kinds, unknown domains/statuses/check
   rows fail closed, truncation appends a warning. Payloads never contain raw
   prompts, transcripts, or output bodies.
-- Coding-side shadow completion proof: after a project run ends, the proof is
-  projected from existing local facts (changed files, selected verification
-  candidate, locally observed post-edit checks) into the trace. Docs-only
+- Coding-side shadow completion proof: after a done project run ends, the
+  proof is projected from existing local facts (changed files, selected
+  verification candidate, post-edit check outcomes, executed AnalysisRun
+  records) into the trace. Local verification freshness is an explicit
+  tri-state -- fresh_pass / fresh_fail / unobserved -- so reads and searches
+  (which are tool events too) can never masquerade as a failed verification,
+  and a stale or missing run is recorded as unobserved rather than as a
+  failure; the agent's own reported checks are captured before the receipt's
+  local override so the proof never mistakes the override for a claim.
+  Unobserved-but-reported-green yields
+  complete_with_limitations(verification_not_locally_observed); docs-only
   changes yield complete_with_limitations(docs_only_change); no matching
-  verification command yields blocked(no_matching_verification_command);
-  without locally observed verification facts the best possible outcome is
-  complete_with_limitations(verification_not_locally_observed) -- a model
-  claiming "tests pass" is never local proof. done/receipt/prompt/SSE are
-  unchanged.
+  verification command yields blocked(no_matching_verification_command); a
+  locally observed failing relevant check yields failed with its AnalysisRun
+  ref attached. A model claiming "tests pass" is never local proof.
+  done/receipt/prompt/SSE are unchanged.
+- Contract ids are content-addressed over every payload field: finding,
+  analysis-run, artifact, and external refs are hashed alongside checks and
+  limitations, so two contracts that differ in any carried reference can
+  never share a contract_id (proofs derive their id from it and RunTrace
+  dedupes by proof id). Coding proofs cite the actual executed commands via
+  matched `analysis_run_refs`, closing the "which run proved it" loop;
+  redacted commands keep digest-only provenance in the analysis_runs section.
 - Real debt reduction in `task_runner`: the `select_verification_candidate` +
   `check_covers_selected_candidate` evaluation now happens in exactly one
   place shared by the receipt decision and the shadow proof instead of being

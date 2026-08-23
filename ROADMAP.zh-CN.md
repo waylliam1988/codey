@@ -533,6 +533,7 @@ bounded planner，让研究自己补洞、验证、收敛，同时保持用户�
 0.4.10 抽 Domain Source Trust / ResearchBrief projection / impact contract
 0.4.11 把 Research runtime 串成可回归 harness 和 comparison benchmark
 0.4.12 抽 TopicContinuityService / Ghost Research Continuity
+0.4.13 抽 Verified Completion Enforcement / Repair Context Admission
 ```
 
 `_RunFrame` 的拆分要等真实所有权稳定后再做：
@@ -2065,11 +2066,17 @@ failed
 ### 顺手架构优化
 
 ```text
-completion_gate 的 _blocked_reason/_safe_run_ref 字符串语义移入 research/contract.py 投影
+completion_gate 的 _blocked_reason 字符串语义移入 research/contract.py 投影
+safe_run_ref 上移到 completion_contract.py（research/coding 共享一个 run-ref 清洗器）
 task_runner 的 select_verification_candidate + check_covers_selected_candidate 收敛为单一求值点，
-  receipt 判定与 shadow proof 共用同一份事实
+  receipt 判定与 shadow proof 共用同一份事实；proof 另用三态 fresh_pass/fresh_fail/unobserved
+  表达本地验证新鲜度，receipt 的既有覆写语义保持不变（改它属于需要 A/B 的行为变化）
+contract_id 哈希覆盖全部 refs 组（finding/analysis/artifact/external），
+  proof_id 由 contract_id 派生、trace 按 proof_id 去重，content-address 必须完整
+coding proof 引用实际执行的 analysis_run_refs（按 command_display 匹配最新一次）
 capabilities 登记 metadata-only completion_contract（model_visible=False）
 RunTrace 新增 bounded completion_proofs section（cap 8，refs-only）
+```
 
 ### 验证（v1 已测）
 
@@ -2083,6 +2090,9 @@ contract 不含 raw prompt / transcript / webpage body
 queued research done 不能绕过 contract gate（gate 行为与 0.4.8 等价）
 satisfied proof 永远不携带 blocked_reason
 coding docs-only change 不要求 code test（not_applicable + docs_only_change）
+read/search 型 tool event 不会把未跑验证误记成失败（unobserved 三态锁定）
+任何 refs 组不同 => 不同 contract_id/proof_id（全字段 content-address 锁定）
+fresh_fail proof 携带对应 AnalysisRun ref
 ```
 
 ### A/B
@@ -2399,6 +2409,125 @@ Ghost continuity admission 受 Safe Context Epoch 约束
 需要。它会改变 Research prompt 的模型可见 continuity，必须复用 0.4.6 journal，
 并记录 UI interruption、unsupported claim、stale-source handling 和 follow-up usefulness。
 
+## 0.4.13 - Verified Completion Enforcement + Repair Context Admission v1
+
+状态：规划。目标是在 0.4.9 的 shadow completion proof 和 0.4.11 的 harness
+证据足够稳定之后，才让 completion proof 第一次影响 coding 行为：阻止明显
+未验证的 `done`，并把最小的失败事实作为下一轮 repair context admission。
+
+这不是新工具、新 critic 或新 repair framework。它只把已经存在的本地事实闭环起来：
+
+```text
+Tool execution
+  -> Verification facts / AnalysisRun
+  -> CompletionCheck
+  -> CompletionProof
+  -> done enforcement or repair context admission
+```
+
+### 前置条件
+
+必须先完成：
+
+```text
+0.4.9 shadow proof 三态准确：fresh_pass / fresh_fail / not_run_or_stale
+CompletionProof id 覆盖所有 proof refs，避免 content-addressed proof 漂移
+coding proof 能引用相关 AnalysisRun / artifact refs
+0.4.11 harness 能衡量 False Completion Rate
+```
+
+如果这些条件不满足，本版本只能继续保持 trace-only。
+
+### 做什么
+
+Verified Completion Enforcement：
+
+```text
+模型尝试 done
+  -> CompletionProof.satisfied == true
+      -> 允许 done
+  -> failed / blocked / stale verification
+      -> 不立刻宣布完成
+      -> 生成 bounded repair context
+```
+
+Repair Context Admission：
+
+```text
+admit:
+  current failed check summary
+  relevant AnalysisRun ref and bounded command status
+  fresh blocking ReviewFinding refs
+  current CompletionProof reason_codes
+
+reject:
+  resolved findings
+  stale epoch facts
+  unrelated research evidence
+  raw stdout/stderr
+  raw prompt/reply
+  full diff/source body
+```
+
+上下文进入模型时仍走 0.4.8 的 ContextAdmission / ContextEpoch / PromptEnvelope
+边界；不能新增独立 ContextManager、CompletionManager 或 RepairManager。
+
+### 边界
+
+- 不新增工具。
+- 不新增 model critic。
+- 不新增自动多轮 repair scheduler。
+- 不让模型自证 completion。
+- 不把所有 ReviewFinding 变成 ContextSource。
+- 不把 CompletionProof 变成评分器。
+- 不保存 raw prompt、raw transcript、raw stdout/stderr、raw diff 或 raw source body。
+- repair context 只能解释失败事实，不能替模型决定修复方案。
+
+### 顺手架构优化
+
+```text
+把 coding completion proof 的 verification 分类从 task_runner.py 抽成纯函数
+CompletionProof / RunTrace 共用同一套 proof-ref identity helper
+把 run_ref sanitizer 从 research/contract.py 移到 domain-neutral projection helper
+repair context admission 复用 ContextSource / ContextEpoch，不新增 framework
+```
+
+### 验证
+
+```text
+模型说 tests passed 不能通过 enforcement
+stale verification 不能 clean complete
+fresh failed AnalysisRun 阻止 done，并进入 repair context
+fresh passed relevant check 允许 done
+docs-only change 仍可 complete_with_limitations
+resolved finding 不进入 repair context
+repair context 不含 raw stdout/stderr/prompt/transcript/source body
+prompt 变化只发生在明确 A/B treatment 中
+```
+
+### A/B
+
+需要。它会改变用户可见 `done` 行为，并把 completion failure 重新送回模型。
+必须复用 0.4.6 journal 做 control/treatment，对照：
+
+```text
+control: 旧 done 行为
+treatment: Verified Completion Enforcement + repair context admission
+```
+
+核心指标：
+
+```text
+False Completion Rate
+task success
+repair count
+verification success
+time to completion
+token usage
+latency
+user interruption count
+```
+
 ## 0.5 之后的开放边界
 
 0.4 先把 Evidence Research Runtime 做扎实。有限插件化应该放在 0.5 之后再考虑。
@@ -2560,6 +2689,7 @@ Writer prompt、provider fallback 策略或工具权限时，才需要 provider 
 0.4.10 Domain Source Trust + Research Brief（projection-only 不需要 A/B；改变 Writer brief 文案需要 A/B）
 0.4.11 Longitudinal Research Harness + Comparison Benchmark（需要 live/comparison harness）
 0.4.12 Ghost Research Continuity（模型可见 continuity 必须 A/B）
+0.4.13 Verified Completion Enforcement（阻止 done / repair context admission 必须 A/B）
 ```
 
 0.4.1、0.4.3、0.4.5 以及后续任何只做 schema、ledger、projection、

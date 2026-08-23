@@ -24,7 +24,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from codey.research.identity import bounded_refs, identifier, stable_ref
+from codey.research.identity import bounded_refs, digest_text, identifier, stable_ref
+from codey.research.redaction import looks_sensitive_signal
 
 
 COMPLETION_CONTRACT_PREFIX = "completion_contract"
@@ -67,7 +68,21 @@ CHECK_STATUSES = frozenset({CHECK_PASS, CHECK_FAIL, CHECK_NOT_RUN, CHECK_NOT_APP
 MAX_COMPLETION_CHECKS = 12
 MAX_COMPLETION_REASONS = 8
 MAX_COMPLETION_REFS = 12
-NO_COMPLETION_CHECKS_REASON = "no_completion_checks"
+
+
+def safe_run_ref(value: object) -> str:
+    """Run ids become bounded refs; secret-looking ones keep only a digest.
+
+    Domain-neutral on purpose: research queue proofs and coding shadow proofs
+    share one run-ref vocabulary instead of each growing its own sanitizer.
+    """
+
+    text = identifier(value, 120)
+    if not text:
+        return ""
+    if looks_sensitive_signal(text):
+        return digest_text(text).removeprefix("sha256:")[:16]
+    return text
 
 
 @dataclass(frozen=True)
@@ -185,6 +200,11 @@ def build_completion_contract(
     artifacts = bounded_refs(artifact_refs, limit=MAX_COMPLETION_REFS)
     external = bounded_refs(external_refs, limit=MAX_COMPLETION_REFS)
     return CompletionContract(
+        # The id covers every payload field: two contracts with different
+        # finding/analysis/artifact/external refs must never share a
+        # contract_id, because proofs derive their id from it and RunTrace
+        # dedupes by proof id. Content-addressing is only honest if it is
+        # total.
         contract_id=stable_ref(
             COMPLETION_CONTRACT_PREFIX,
             dom,
@@ -192,6 +212,10 @@ def build_completion_contract(
             tuple(row.to_payload() for row in rows),
             evidence,
             limitations,
+            findings,
+            analysis,
+            artifacts,
+            external,
         ),
         domain=dom,
         subject_ref=subject,
@@ -364,7 +388,6 @@ __all__ = [
     "MAX_COMPLETION_CHECKS",
     "MAX_COMPLETION_REASONS",
     "MAX_COMPLETION_REFS",
-    "NO_COMPLETION_CHECKS_REASON",
     "CompletionCheck",
     "CompletionContract",
     "CompletionProof",
@@ -373,4 +396,5 @@ __all__ = [
     "completion_proof_payload",
     "completion_proof_trace_payload",
     "project_completion_proof",
+    "safe_run_ref",
 ]

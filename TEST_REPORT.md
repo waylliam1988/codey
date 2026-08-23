@@ -28,15 +28,35 @@ statuses, check summaries, and reason codes only; finding/analysis/artifact
 refs validate against runtime ref kinds, unknown domains/statuses/check rows
 fail closed, truncation appends a warning, satisfied proofs drop
 blocked_reason even when callers supply one, and payloads never contain raw
-prompts, transcripts, or output bodies. Coding got a trace-only shadow
-completion proof projected from existing local facts after a done project run:
-docs-only changes yield complete_with_limitations(docs_only_change); no
-matching verification command yields blocked(no_matching_verification_command);
-without locally observed verification facts the ceiling is
-complete_with_limitations(verification_not_locally_observed) -- a model
-claiming "tests pass" is never local proof. Capability registry adds
-metadata-only `completion_contract` (model_visible=False), and architecture
-tests lock both new modules as projection-only.
+prompts, transcripts, or output bodies.
+
+Coding got a trace-only shadow completion proof projected from existing local
+facts after a done project run, with local verification freshness expressed as
+an explicit tri-state -- fresh_pass / fresh_fail / unobserved. Reads and
+searches are tool events too, so a session that edited and browsed without
+running a relevant check is recorded as unobserved (limitation
+`verification_not_locally_observed` when the agent reported green), never as
+a fake `relevant_verification_failed`; only a locally observed covering check
+that actually failed after the latest edit yields failed, and that proof cites
+the executed command's AnalysisRun ref (matched by latest `command_display`,
+redacted commands keep digest-only provenance). The agent's own reported
+checks are captured before the receipt's local override so the proof never
+mistakes the override for a model claim. Docs-only changes yield
+complete_with_limitations(docs_only_change); no matching verification command
+yields blocked(no_matching_verification_command); a model claiming "tests
+pass" is never local proof. Receipt semantics stay byte-identical -- the
+tri-state sharpens the proof read model only; changing the receipt override
+is user-visible behavior and belongs behind an A/B.
+
+Contract ids are content-addressed over every payload field: finding,
+analysis-run, artifact, and external refs hash alongside checks and
+limitations, so differing references can never collapse into one deduplicated
+trace row. Capability registry adds metadata-only `completion_contract`
+(model_visible=False), architecture tests lock both new modules as
+projection-only, and the domain-neutral `safe_run_ref()` sanitizer lives in
+completion_contract.py shared by research and coding proofs (no dead reserved
+constants: the unused `NO_COMPLETION_CHECKS_REASON` was deleted rather than
+wired into speculative paths).
 
 Production-facing behavior changes: none. Queued research done/block
 decisions, receipt semantics, prompts, planner behavior, tool results, and
@@ -47,10 +67,11 @@ user-visible completion conditions (measured via the 0.4.6 journal against
 False Completion Rate).
 
 Refactor debt paid: the gate's stringly evidence semantics moved into the
-research contract projection; task_runner's
-`select_verification_candidate` + `check_covers_selected_candidate`
-evaluation converged to one place shared by the receipt decision and the
-shadow proof instead of being computed twice.
+research contract projection; `safe_run_ref()` moved up to the shared
+completion_contract module instead of a research-named helper feeding coding
+proofs; task_runner's `select_verification_candidate` +
+`check_covers_selected_candidate` evaluation converged to one place shared by
+the receipt decision and the shadow proof instead of being computed twice.
 
 Characterization locks added:
 
@@ -65,6 +86,15 @@ Characterization locks added:
 - Hard-gate derivation table: fail/not_run/not_applicable/limitations paths,
   deterministic content-addressed `completion_contract:` / `completion_proof:`
   ids, dedup+cap of check rows, refs-only payload key allowlist.
+- Total content-addressing: changing any single ref group (evidence,
+  limitations, findings, analysis runs, artifacts, external) changes the
+  contract_id; identical inputs stay stable.
+- Tri-state verification: reads/searches-only sessions are unobserved (not
+  failures), covering failed checks win over passing ones, unobserved +
+  reported-green is complete_with_limitations, unobserved + reported-failed
+  stays an honest failure, fresh-fail proofs cite the failed command's
+  AnalysisRun ref (latest run wins per command; redacted commands cite
+  nothing).
 - Trace section: valid rows kept, malformed rows dropped, duplicate proof ids
   ignored, cap-8 truncation warning, object/payload/mapping inputs all
   accepted, sanitized codes replace prose (`junk row` -> `junk_row`).
@@ -75,8 +105,8 @@ Characterization locks added:
 
 Verification sequence: targeted py_compile + ruff (lint/format) on changed
 files; targeted pytest across contract/gate/trace/architecture/capabilities/
-task-runner/work-queue/pipeline/server suites (392 passed, 192 subtests);
-then one full-suite run: 2467 passed, 711 subtests passed, zero failures.
+task-runner/work-queue/pipeline/server suites (398 passed, 192 subtests);
+then one full-suite run: 2473 passed, 711 subtests passed, zero failures.
 
 ## 0.4.8 Safe Context Epoch + Capability Boundary v1
 

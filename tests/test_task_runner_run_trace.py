@@ -824,6 +824,7 @@ def test_done_project_run_records_shadow_completion_proof_for_code_change() -> N
         }]
         assert any(ref.startswith("ledger:") for ref in proof["external_refs"])
         assert any(ref.startswith("receipt:") for ref in proof["external_refs"])
+        assert proof["analysis_run_refs"] == []
         serialized = json.dumps(payload, ensure_ascii=False)
         assert "SECRET" not in serialized
 
@@ -876,3 +877,189 @@ def test_unchanged_or_interrupted_runs_record_no_completion_proofs() -> None:
         )
 
         assert payload["completion_proofs"] == []
+
+
+class _StubEvidence:
+    """Minimal stand-in exposing only the facts the proof projection reads."""
+
+    def __init__(
+        self,
+        successful=(),
+        failed=(),
+        observed_tool_events: int = 0,
+    ) -> None:
+        self.successful_checks = list(successful)
+        self.failed_checks_after_edit = list(failed)
+        self.observed_tool_events = observed_tool_events
+
+
+def _check(command: str, cwd: str = "."):
+    from codey.execution_evidence import CheckEvidence
+
+    return CheckEvidence(command, cwd)
+
+
+def _selected():
+    from codey.verification_policy import VerificationCandidate
+
+    return VerificationCandidate("pytest -q", ".", "successful run")
+
+
+def test_verification_state_is_tri_state_not_event_count() -> None:
+    from codey.task_runner import (
+        VERIFICATION_FRESH_FAIL,
+        VERIFICATION_FRESH_PASS,
+        VERIFICATION_UNOBSERVED,
+        _coding_verification_state,
+    )
+
+    files = ("src/mod.py",)
+    selected = _selected()
+    # Reads and searches are tool events too: they never make verification
+    # fresh, and they must not turn into a fake failure either.
+    assert _coding_verification_state(selected, _StubEvidence(observed_tool_events=7), files) == (
+        VERIFICATION_UNOBSERVED
+    )
+    assert _coding_verification_state(None, _StubEvidence(observed_tool_events=7), files) == (
+        VERIFICATION_UNOBSERVED
+    )
+    # A covering check that passed after the latest edit is fresh.
+    assert _coding_verification_state(
+        selected,
+        _StubEvidence(successful=[_check("pytest -q")], observed_tool_events=3),
+        files,
+    ) == VERIFICATION_FRESH_PASS
+    # A covering check that failed wins over any passing one.
+    assert _coding_verification_state(
+        selected,
+        _StubEvidence(
+            successful=[_check("ruff check .")],
+            failed=[_check("pytest -q")],
+            observed_tool_events=4,
+        ),
+        files,
+    ) == VERIFICATION_FRESH_FAIL
+
+
+def test_proof_maps_unobserved_to_limitation_instead_of_failure() -> None:
+    from codey.completion_contract import COMPLETION_COMPLETE_WITH_LIMITATIONS
+    from codey.task_runner import (
+        VERIFICATION_UNOBSERVED,
+        _coding_completion_proof,
+    )
+
+    proof = _coding_completion_proof(
+        run_id="run-tri",
+        stop_reason="done",
+        task_changed=True,
+        files=("src/mod.py",),
+        selected_check_present=True,
+        verification_state=VERIFICATION_UNOBSERVED,
+        checks_passed=True,
+    )
+    assert proof is not None
+    assert proof.status == COMPLETION_COMPLETE_WITH_LIMITATIONS
+    assert proof.limitation_refs == ("verification_not_locally_observed",)
+
+    # The agent reporting failure without local observation stays honest:
+    # the claim itself is the fact, and it is a failing one.
+    failed = _coding_completion_proof(
+        run_id="run-tri",
+        stop_reason="done",
+        task_changed=True,
+        files=("src/mod.py",),
+        selected_check_present=True,
+        verification_state=VERIFICATION_UNOBSERVED,
+        checks_passed=False,
+    )
+    assert failed is not None
+    assert failed.status == "failed"
+    assert failed.blocked_reason == "reported_verification_failed"
+
+
+def test_analysis_run_refs_attach_to_matching_commands_only() -> None:
+    from codey.task_runner import _matching_analysis_run_refs
+
+    analysis_runs = [
+        {
+            "analysis_run_id": "analysis_run:" + "a" * 16,
+            "command_display": "pytest -q",
+            "ok": True,
+        },
+        {
+            "analysis_run_id": "analysis_run:" + "b" * 16,
+            "command_display": "ruff check .",
+            "ok": False,
+        },
+        {"analysis_run_id": "analysis_run:" + "c" * 16, "command_display": ""},
+        "junk",
+    ]
+    refs = _matching_analysis_run_refs(
+        analysis_runs,
+        ["pytest -q", "mypy src", "pytest -q"],
+    )
+    assert refs == ("analysis_run:" + "a" * 16,)
+
+    # Later payloads win: the newest run of the same command is cited.
+    newer = [*analysis_runs, {
+        "analysis_run_id": "analysis_run:" + "d" * 16,
+        "command_display": "pytest -q",
+        "ok": True,
+    }]
+    assert _matching_analysis_run_refs(newer, ["pytest -q"]) == ("analysis_run:" + "d" * 16,)
+
+
+def test_fresh_fail_proof_cites_the_failed_command_analysis_run() -> None:
+    from codey.task_runner import (
+        _record_coding_completion_trace,
+    )
+
+    class _SinkTrace:
+        """Mimics RunTraceRecorder's dynamic dispatch surface."""
+
+        def __init__(self) -> None:
+            self.proofs: list[dict] = []
+
+        def record_completion_proof(self, payload) -> None:
+            self.proofs.append(payload)
+
+        def flush(self) -> None:
+            return None
+
+    evidence = _StubEvidence(
+        successful=[_check("ruff check .")],
+        failed=[_check("pytest -q")],
+        observed_tool_events=5,
+    )
+    analysis_runs = [{
+        "analysis_run_id": "analysis_run:" + "b" * 16,
+        "command_display": "pytest -q",
+        "ok": False,
+    }, {
+        "analysis_run_id": "analysis_run:" + "a" * 16,
+        "command_display": "ruff check .",
+        "ok": True,
+    }]
+    sink = _SinkTrace()
+    _record_coding_completion_trace(
+        sink,
+        run_id="run-fresh-fail",
+        stop_reason="done",
+        task_changed=True,
+        files=("src/mod.py",),
+        selected_check=_selected(),
+        evidence=evidence,
+        reported_checks_passed=True,
+        analysis_runs=analysis_runs,
+    )
+
+    recorded = sink.proofs
+    assert len(recorded) == 1
+    proof = recorded[0]
+    assert proof["status"] == "failed"
+    assert proof["blocked_reason"] == "relevant_verification_failed"
+    # Provenance points at the actual command runs, not just a verdict.
+    assert sorted(proof["analysis_run_refs"]) == [
+        "analysis_run:" + "a" * 16,
+        "analysis_run:" + "b" * 16,
+    ]

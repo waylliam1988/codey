@@ -140,6 +140,51 @@ def test_contract_ids_are_deterministic_and_content_addressed() -> None:
     assert len(proofs) == 1
 
 
+def test_contract_id_covers_every_ref_group() -> None:
+    # Proofs derive their id from the contract id and RunTrace dedupes by
+    # proof id: if any payload ref group were excluded from the hash, two
+    # provably different proofs could collapse into one row.
+    base = {
+        "evidence_refs": (),
+        "limitation_refs": (),
+        "finding_refs": (),
+        "analysis_run_refs": (),
+        "artifact_refs": (),
+        "external_refs": (),
+    }
+    reference = _contract(
+        [completion_check("a", CHECK_PASS)],
+        **base,
+    )
+    variants = [
+        dict(base, evidence_refs=("ledger:r1",)),
+        dict(base, limitation_refs=("docs_only_change",)),
+        dict(base, finding_refs=("review_finding:" + "a" * 16,)),
+        dict(base, analysis_run_refs=("analysis_run:" + "b" * 16,)),
+        dict(base, artifact_refs=("artifact_version:" + "c" * 16,)),
+        dict(base, external_refs=("receipt:r1",)),
+    ]
+    assert reference is not None
+    ids = {reference.contract_id}
+    for kwargs in variants:
+        contract = _contract([completion_check("a", CHECK_PASS)], **kwargs)
+        assert contract is not None
+        assert contract.contract_id != reference.contract_id, kwargs
+        ids.add(contract.contract_id)
+    assert len(ids) == len(variants) + 1
+
+
+def test_safe_run_ref_is_domain_neutral_and_redacts_secrets() -> None:
+    from codey.completion_contract import safe_run_ref
+
+    assert safe_run_ref("") == ""
+    assert safe_run_ref("run-123") == "run-123"
+    secret = safe_run_ref("token=SECRET_VALUE_123")
+    assert "SECRET" not in secret
+    assert len(secret) == 16
+    assert all(char in "0123456789abcdef" for char in secret)
+
+
 def test_duplicate_check_rows_are_deduplicated_and_capped() -> None:
     rows = [
         completion_check(f"check_{index}", CHECK_PASS)

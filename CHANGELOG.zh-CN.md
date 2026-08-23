@@ -22,20 +22,32 @@
   research 的完成结果与 0.4.8 逐项等价（不需要 A/B）。
 - 收敛 `research/completion_gate.py`：对外契约逐字节不变（action、
   blocked_reason 字符串、proof_refs 组装全部保持），内部改为消费 contract
-  投影；`_blocked_reason()` / `_safe_run_ref()` 这类 stringly 证据语义移入
-  research/contract.py 统一维护。`ResearchCompletionDecision` 新增可选
-  `proof` 字段供 trace 记录。
+  投影；`_blocked_reason()` 这类 stringly 证据语义移入 research/contract.py
+  统一维护，`safe_run_ref()` 上移到 completion_contract.py 作为 research 与
+  coding proof 共享的领域中立 run-ref 清洗器。`ResearchCompletionDecision`
+  新增可选 `proof` 字段供 trace 记录。
 - RunTrace 新增 bounded `completion_proofs` section（cap 8）：只存
   refs/status/check summary/reason codes，finding/analysis/artifact refs
   按 runtime ref 校验，未知 domain/status/check 行 fail closed 丢弃，
   截断写 warning。payload 不含任何 raw prompt / transcript / 输出正文。
 - Coding 侧 shadow completion proof：project run 结束后从既有本地事实
-  （changed files、selected verification candidate、latest edit 后的本地
-  observed checks）投影 proof 并写入 trace。docs-only change 得到
-  complete_with_limitations(docs_only_change)；无匹配验证命令得到
-  blocked(no_matching_verification_command)；未本地观察到验证事实最多
-  complete_with_limitations(verification_not_locally_observed)，模型自述
-  "测试通过"永远不能成为本地证明。done/receipt/prompt/SSE 全部不变。
+  （changed files、selected verification candidate、latest edit 后的 check
+  结果、实际执行过的 AnalysisRun 记录）投影 proof 并写入 trace。本地验证
+  新鲜度是显式三态——fresh_pass / fresh_fail / unobserved——read/search 也
+  是 tool event，但绝不会被误记成"验证失败"；没跑或 stale 一律记为
+  unobserved。agent 自己上报的 checks 在 receipt 本地覆写之前捕获，proof
+  永远不会把覆写值当成模型的自述。unobserved 但模型报绿最多得到
+  complete_with_limitations(verification_not_locally_observed)；docs-only
+  change 得到 complete_with_limitations(docs_only_change)；无匹配验证命令得
+  到 blocked(no_matching_verification_command)；本地观察到相关 check 失败则
+  failed 并附上对应 AnalysisRun ref。模型自述"测试通过"永远不能成为本地证
+  明。done/receipt/prompt/SSE 全部不变。
+- Contract id 覆盖全部 payload 字段：finding/analysis-run/artifact/external
+  refs 与 checks、limitations 一起进入哈希，任何一组 refs 不同都不会共享
+  contract_id（proof_id 由它派生、RunTrace 按 proof_id 去重）。coding proof
+  通过命令匹配引用真实执行过的 `analysis_run_refs`，闭合"哪次命令证明了
+  它"的 provenance 环；被 redact 的命令只在 analysis_runs section 里保留
+  digest 溯源。
 - `task_runner` 顺手减债：`select_verification_candidate` +
   `check_covers_selected_candidate` 的求值收敛为单一位置，receipt 判定与
   shadow proof 共用同一份事实，不再各算一遍。

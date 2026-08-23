@@ -33,6 +33,7 @@ from codey.completion_contract import (
     completion_check,
     completion_proof_trace_payload,
     project_completion_proof,
+    safe_run_ref,
 )
 from codey.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.execution_evidence import ExecutionEvidence
@@ -104,7 +105,7 @@ from codey.research.analysis_run import analysis_run_record
 from codey.research.artifact_lineage import artifact_ref_from_managed_output
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.research.connector_search import ConnectorAwareSearchProvider
-from codey.research.contract import safe_run_ref
+from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.evidence_followup import run_evidence_followup
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
@@ -384,20 +385,52 @@ CODING_CHECK_RELEVANT_VERIFICATION = "relevant_verification"
 LIMITATION_DOCS_ONLY_CHANGE = "docs_only_change"
 LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED = "verification_not_locally_observed"
 
+# Tri-state local verification truth. "Some tool event happened" never proves
+# a relevant check ran: reads and searches are events too, so a run that only
+# edited and browsed stays unobserved instead of being misread as a failure.
+VERIFICATION_FRESH_PASS = "fresh_pass"
+VERIFICATION_FRESH_FAIL = "fresh_fail"
+VERIFICATION_UNOBSERVED = "unobserved"
+
+
+def _coding_verification_state(
+    selected_check: object,
+    evidence: ExecutionEvidence,
+    files: tuple[str, ...],
+) -> str:
+    """Classify local verification freshness for the selected candidate.
+
+    A relevant check that failed after the latest edit wins over any that
+    passed: the hard gate reports the worst locally observed fact.
+    """
+
+    if selected_check is None:
+        return VERIFICATION_UNOBSERVED
+    if any(
+        check_covers_selected_candidate(selected_check, item.command, item.cwd, files)
+        for item in evidence.failed_checks_after_edit
+    ):
+        return VERIFICATION_FRESH_FAIL
+    if any(
+        check_covers_selected_candidate(selected_check, item.command, item.cwd, files)
+        for item in evidence.successful_checks
+    ):
+        return VERIFICATION_FRESH_PASS
+    return VERIFICATION_UNOBSERVED
+
 
 def _coding_completion_checks(
     *,
     files: tuple[str, ...],
     selected_check_present: bool,
-    verification_observed: bool,
-    relevant_green: bool,
+    verification_state: str,
     checks_passed: bool,
 ) -> tuple[CompletionCheck, ...]:
     """Project local coding facts into completion checks.
 
     The model's own claim ("tests pass") never satisfies a check by itself:
-    without locally observed tool events there is nothing to verify, so the
-    run can at most complete with an explicit limitation.
+    without a locally observed fresh result there is nothing to verify, so
+    the run can at most complete with an explicit limitation.
     """
 
     if files and all(is_document_path(str(item)) for item in files):
@@ -414,11 +447,16 @@ def _coding_completion_checks(
             "no_matching_verification_command",
         )
         return (row,) if row else ()
-    if verification_observed:
+    if verification_state == VERIFICATION_FRESH_PASS:
         row = completion_check(
             CODING_CHECK_RELEVANT_VERIFICATION,
-            CHECK_PASS if relevant_green else CHECK_FAIL,
-            "" if relevant_green else "relevant_verification_failed",
+            CHECK_PASS,
+        )
+    elif verification_state == VERIFICATION_FRESH_FAIL:
+        row = completion_check(
+            CODING_CHECK_RELEVANT_VERIFICATION,
+            CHECK_FAIL,
+            "relevant_verification_failed",
         )
     elif checks_passed:
         row = completion_check(
@@ -434,6 +472,39 @@ def _coding_completion_checks(
     return (row,) if row else ()
 
 
+def _matching_analysis_run_refs(
+    analysis_runs: object,
+    commands: object,
+) -> tuple[str, ...]:
+    """Latest analysis-run ref per executed command (display == command).
+
+    Redacted commands carry no display text and therefore no ref; their
+    digest-only provenance stays in the analysis_runs trace section.
+    """
+
+    wanted = [
+        command
+        for command in dict.fromkeys(str(item).strip() for item in commands or ())
+        if command
+    ]
+    if not wanted:
+        return ()
+    by_command: dict[str, str] = {}
+    for row in analysis_runs or ():
+        if not isinstance(row, Mapping):
+            continue
+        display = str(row.get("command_display") or "")
+        ref = normalize_runtime_ref(row.get("analysis_run_id"), kind="analysis_run")
+        if display and ref:
+            by_command[display] = ref
+    refs: list[str] = []
+    for command in wanted:
+        ref = by_command.get(command)
+        if ref and ref not in refs:
+            refs.append(ref)
+    return tuple(refs)
+
+
 def _coding_completion_proof(
     *,
     run_id: str,
@@ -441,9 +512,9 @@ def _coding_completion_proof(
     task_changed: bool,
     files: tuple[str, ...],
     selected_check_present: bool,
-    verification_observed: bool,
-    relevant_green: bool,
+    verification_state: str,
     checks_passed: bool,
+    analysis_run_refs: tuple[str, ...] = (),
 ):
     if stop_reason != "done" or not task_changed or not files:
         return None
@@ -451,7 +522,10 @@ def _coding_completion_proof(
     limitations: tuple[str, ...] = ()
     if docs_only:
         limitations = (LIMITATION_DOCS_ONLY_CHANGE,)
-    elif not verification_observed and checks_passed:
+    elif (
+        verification_state == VERIFICATION_UNOBSERVED
+        and checks_passed
+    ):
         limitations = (LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED,)
     run_ref = safe_run_ref(run_id)
     contract = build_completion_contract(
@@ -460,11 +534,11 @@ def _coding_completion_proof(
         checks=_coding_completion_checks(
             files=files,
             selected_check_present=selected_check_present,
-            verification_observed=verification_observed,
-            relevant_green=relevant_green,
+            verification_state=verification_state,
             checks_passed=checks_passed,
         ),
         limitation_refs=limitations,
+        analysis_run_refs=analysis_run_refs,
         external_refs=(
             f"ledger:{run_ref}",
             f"receipt:{run_ref}",
@@ -481,20 +555,26 @@ def _record_coding_completion_trace(
     stop_reason: str,
     task_changed: bool,
     files: tuple[str, ...],
-    selected_check_present: bool,
-    verification_observed: bool,
-    relevant_green: bool,
-    checks_passed: bool,
+    selected_check: object,
+    evidence: ExecutionEvidence,
+    reported_checks_passed: bool,
+    analysis_runs: object = (),
 ) -> None:
     proof = _coding_completion_proof(
         run_id=run_id,
         stop_reason=stop_reason,
         task_changed=task_changed,
         files=files,
-        selected_check_present=selected_check_present,
-        verification_observed=verification_observed,
-        relevant_green=relevant_green,
-        checks_passed=checks_passed,
+        selected_check_present=selected_check is not None,
+        verification_state=_coding_verification_state(selected_check, evidence, files),
+        checks_passed=reported_checks_passed,
+        analysis_run_refs=_matching_analysis_run_refs(
+            analysis_runs,
+            [item.command for item in (
+                *evidence.successful_checks,
+                *evidence.failed_checks_after_edit,
+            )],
+        ),
     )
     if proof is None:
         return
@@ -3076,19 +3156,17 @@ class TaskRunner:
             configured_verification_commands,
             configured_ignored_paths,
         )
+        # The agent's own report is captured before the local receipt override
+        # below, so the shadow proof never mistakes the override for a claim.
+        reported_checks_passed = result.checks_passed
         selected_check = None
-        verification_observed = False
         relevant_green = False
         if result.stop_reason == "done" and task_changed and files:
             selected_check = select_verification_candidate(
                 verification_candidates,
                 files,
             )
-            verification_observed = bool(
-                selected_check is not None
-                and work.evidence.observed_tool_events
-            )
-            if verification_observed:
+            if selected_check is not None and work.evidence.observed_tool_events:
                 relevant_green = any(
                     check_covers_selected_candidate(
                         selected_check,
@@ -3116,10 +3194,10 @@ class TaskRunner:
             stop_reason=result.stop_reason,
             task_changed=task_changed,
             files=files,
-            selected_check_present=selected_check is not None,
-            verification_observed=verification_observed,
-            relevant_green=relevant_green,
-            checks_passed=result.checks_passed,
+            selected_check=selected_check,
+            evidence=work.evidence,
+            reported_checks_passed=reported_checks_passed,
+            analysis_runs=work.analysis_run_payloads,
         )
         facts_write_required = (
             self.project_facts is not None
