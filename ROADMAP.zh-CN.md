@@ -2128,7 +2128,20 @@ failure 自动回给模型 repair、或改变 queued done / 用户可见完成�
 
 ## 0.4.10 - Domain Source Trust + Research Brief v2
 
-状态：规划。目标是把不同领域的证据标准、来源可信度和 Research-to-Code handoff
+状态：已落地（0.4.10，catalog + deterministic projection + bounded trace）。实际 scope
+比规划更克制：`research/domain_profiles.py` 落地 `EvidenceProfile`
+证据标准向量 + 六个原子 profile + 按维度 merge（无组合 profile、无继承、
+unknown label 回落 general + warning）；`research/source_trust.py` 落地
+16 类 source class taxonomy 的 deterministic projection，并把 proof review 的
+source-trust 警告规则收编为单一实现；`research/brief_projection.py` 落地
+refs-only brief 投影 + Research-to-Code impact contract（unsupported claim
+只能进 risk_notes）；RunTrace 新增 `research_source_trust` /
+`research_brief_projections` 有界 section。planner 只新增可选
+evidence_profile 参数（默认行为 byte-identical）。Writer 可见 handoff 文案的
+切换、profile 参与 planner 偏好、以及任何 enforcement 仍需按 roadmap 做
+live smoke / A/B 后再启用。
+
+原规划目标：把不同领域的证据标准、来源可信度和 Research-to-Code handoff
 收束到同一个 refs-only projection 里。Domain rules 不单独做 UI，也不提前变成
 Router/provider fallback。
 

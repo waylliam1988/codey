@@ -38,6 +38,7 @@ EXPECTED_BUILTIN_IDS = (
     "research_review_finding",
     "research_runner",
     "research_source_connectors",
+    "research_source_trust",
     "review_runner",
     "run_details",
     "run_ledger",
@@ -45,7 +46,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "49ea65cd5979c3d512d3177982cb08266aa22a7f4c80571d040009ec9e3f070b"
+    "82fb175a9abd16425876079afbd446760144a544072d8b07dc45a300c6034fb2"
 )
 
 

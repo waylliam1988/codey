@@ -17,3 +17,6 @@ dist/
 .readonly-parallel-ab*.json
 .shell-approval-followup-ab*.json
 tests/manual/results/*
+
+# External reference projects checked out locally for design comparison.
+reference-projects/

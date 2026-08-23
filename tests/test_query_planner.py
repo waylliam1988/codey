@@ -279,3 +279,60 @@ def test_unavailable_openalex_and_optional_rss_are_not_source_preferences() -> N
     assert "rss" not in ids
     assert "openalex_deferred" in plan.warnings
     assert "rss_optional" in plan.warnings
+
+
+def test_default_plan_is_byte_identical_without_evidence_profile() -> None:
+    review = _review()
+    question = "clinical disease therapy"
+
+    without_profile = build_research_plan(review, question=question).to_payload()
+    default_again = build_research_plan(review, question=question).to_payload()
+
+    assert json.dumps(without_profile, sort_keys=True) == json.dumps(default_again, sort_keys=True)
+
+
+def test_science_profile_adds_bounded_connector_preferences_with_reason_codes() -> None:
+    from codey.research.domain_profiles import SCIENCE_PROFILE
+
+    plan = build_research_plan(
+        _review(),
+        question="unrelated topic",
+        evidence_profile=SCIENCE_PROFILE,
+    )
+    profiled = [
+        item for item in plan.source_preferences
+        if "domain_profile_source_preference" in item.reason_codes
+    ]
+
+    assert [item.connector_id for item in profiled] == ["arxiv", "pubmed", "csv_tsv", "json_file"]
+    assert all(item.score == 0.92 for item in profiled)
+    assert "domain_profile_source_preference" in plan.reason_codes
+
+
+def test_profile_with_unknown_or_unavailable_kinds_warns_but_stays_bounded() -> None:
+    from codey.research.domain_profiles import EvidenceProfile
+
+    profile = EvidenceProfile(
+        profile_id="finance",
+        preferred_connector_kinds=("mystical_kind",),
+    )
+    plan = build_research_plan(_review(), question="topic", evidence_profile=profile)
+
+    assert all(
+        item.connector_id != "mystical_kind" for item in plan.source_preferences
+    )
+    assert "domain_profile_kind_unavailable" in plan.reason_codes
+
+
+def test_proof_ok_short_circuit_ignores_profile_preferences() -> None:
+    from codey.research.domain_profiles import SCIENCE_PROFILE
+
+    plan = build_research_plan(
+        _review(ok=True, answers_question=True, coverage_gaps=(), missing_evidence=(), answer_status="answered"),
+        question="anything",
+        evidence_profile=SCIENCE_PROFILE,
+    )
+
+    assert plan.query_candidates == ()
+    assert plan.source_preferences == ()
+    assert plan.reason_codes == ("proof_ok_no_required_followup",)

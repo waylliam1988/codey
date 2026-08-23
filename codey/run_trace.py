@@ -38,6 +38,7 @@ from codey.research.review_finding import (
     SEVERITY_WARNING,
     STATUS_OPEN,
 )
+from codey.research.source_trust import SOURCE_CLASSES as _SOURCE_TRUST_CLASSES
 from codey.research.shape import digest_ref as _digest_ref
 from codey.research.shape import generated_ref as _generated_ref
 from codey.research.shape import safe_connector_id as _safe_connector_id
@@ -71,6 +72,12 @@ MAX_PLANNER_GAPS = 16
 MAX_GAP_FINDING_REFS = 4
 MAX_COMPLETION_PROOFS = 8
 MAX_COMPLETION_CHECK_ROWS = _MAX_COMPLETION_CHECKS
+MAX_SOURCE_TRUST_ROWS = 32
+MAX_SOURCE_TRUST_CLASSES = 3
+MAX_BRIEF_PROJECTIONS = 8
+MAX_BRIEF_CLAIM_ROWS = 16
+MAX_BRIEF_REFS = 24
+MAX_BRIEF_TEXT_ITEMS = 6
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 REVIEW_FINDING_REF_KINDS: dict[str, str] = {
@@ -242,6 +249,8 @@ class RunTraceManifest:
     research_review_findings: list[dict[str, object]] = field(default_factory=list)
     research_planner_gaps: list[dict[str, object]] = field(default_factory=list)
     completion_proofs: list[dict[str, object]] = field(default_factory=list)
+    research_source_trust: list[dict[str, object]] = field(default_factory=list)
+    research_brief_projections: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -297,6 +306,10 @@ class RunTraceManifest:
             "research_review_findings": self.research_review_findings[:MAX_REVIEW_FINDINGS],
             "research_planner_gaps": self.research_planner_gaps[:MAX_PLANNER_GAPS],
             "completion_proofs": self.completion_proofs[:MAX_COMPLETION_PROOFS],
+            "research_source_trust": self.research_source_trust[:MAX_SOURCE_TRUST_ROWS],
+            "research_brief_projections": (
+                self.research_brief_projections[:MAX_BRIEF_PROJECTIONS]
+            ),
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
             "policy_decisions": self.policy_decisions[:MAX_POLICY_DECISIONS],
@@ -376,6 +389,8 @@ class RunTraceRecorder:
         self._review_finding_keys: set[str] = set()
         self._planner_gap_keys: set[str] = set()
         self._completion_proof_keys: set[str] = set()
+        self._source_trust_keys: set[str] = set()
+        self._brief_projection_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
@@ -1081,6 +1096,193 @@ class RunTraceRecorder:
                 del self.manifest.research_planner_gaps[:-MAX_PLANNER_GAPS]
                 self.manifest.warnings.append("research_planner_gaps_truncated")
             self.checkpoint()
+
+    def record_research_source_trust(self, projections: Iterable[object]) -> None:
+        """Record bounded source-trust projections (classes and refs only)."""
+
+        changed = False
+        for item in _trace_list_items(projections):
+            raw = item.to_payload() if callable(getattr(item, "to_payload", None)) else item
+            if not isinstance(raw, Mapping):
+                continue
+            source_ref = _normalize_runtime_ref(raw.get("source_ref"), kind="source")
+            source_class = _safe_trace_code(raw.get("source_class"), 40)
+            if (
+                not source_ref
+                or source_class not in _SOURCE_TRUST_CLASSES
+                or source_ref in self._source_trust_keys
+            ):
+                continue
+            payload: dict[str, object] = {
+                "source_ref": source_ref,
+                "source_class": source_class,
+                "tier": _bounded_int(raw.get("tier"), 1, 3),
+                "freshness": _safe_trace_code(raw.get("freshness"), 20) or "undated",
+                "host": _clip(raw.get("host"), 120),
+                "classes": [
+                    cls
+                    for cls in (
+                        _safe_trace_code(value, 40)
+                        for value in _trace_list_items(raw.get("classes"))
+                    )
+                    if cls in _SOURCE_TRUST_CLASSES
+                ][:MAX_SOURCE_TRUST_CLASSES],
+                "warnings": [
+                    code
+                    for code in (
+                        _safe_trace_code(value, 80)
+                        for value in _trace_list_items(raw.get("warnings"))
+                    )
+                    if code
+                ][:MAX_WARNINGS],
+            }
+            self._source_trust_keys.add(source_ref)
+            self.manifest.research_source_trust.append(payload)
+            changed = True
+        if changed:
+            if len(self.manifest.research_source_trust) > MAX_SOURCE_TRUST_ROWS:
+                del self.manifest.research_source_trust[:-MAX_SOURCE_TRUST_ROWS]
+                self.manifest.warnings.append("research_source_trust_truncated")
+            self.checkpoint()
+
+    def record_research_brief_projection(self, projection: Mapping[str, object]) -> None:
+        """Record one bounded research brief projection (refs + summaries)."""
+
+        if not isinstance(projection, Mapping):
+            return
+        record_ref = _normalize_runtime_ref(projection.get("record_ref"), kind="research_record")
+        digest = _digest_ref(projection.get("record_digest"))
+        profile_id = _safe_trace_code(projection.get("profile_id"), 80)
+        if not record_ref or not digest:
+            return
+        key = (record_ref, digest)
+        if key in self._brief_projection_keys:
+            return
+        answer_status = _research_answer_status(projection.get("answer_status"))
+        payload: dict[str, object] = {
+            "record_ref": record_ref,
+            "record_digest": digest,
+            "answer_status": answer_status,
+            "profile_id": profile_id,
+            "claim_refs": [
+                ref
+                for ref in (
+                    _normalize_runtime_ref(value, kind="claim")
+                    for value in _trace_list_items(projection.get("claim_refs"))
+                )
+                if ref
+            ][:MAX_BRIEF_REFS],
+            "evidence_refs": [
+                ref
+                for ref in (
+                    _normalize_runtime_ref(value, kind="evidence")
+                    for value in _trace_list_items(projection.get("evidence_refs"))
+                )
+                if ref
+            ][:MAX_BRIEF_REFS],
+            "assumption_refs": [
+                ref
+                for ref in (
+                    _normalize_runtime_ref(value, kind="assumption")
+                    for value in _trace_list_items(projection.get("assumption_refs"))
+                )
+                if ref
+            ][:MAX_BRIEF_REFS],
+            "analysis_run_refs": [
+                ref
+                for ref in (
+                    _normalize_runtime_ref(value, kind="analysis_run")
+                    for value in _trace_list_items(projection.get("analysis_run_refs"))
+                )
+                if ref
+            ][:MAX_ANALYSIS_RUNS],
+            "artifact_version_refs": [
+                ref
+                for ref in (
+                    _normalize_runtime_ref(value, kind="artifact_version")
+                    for value in _trace_list_items(projection.get("artifact_version_refs"))
+                )
+                if ref
+            ][:MAX_CAPSULE_ARTIFACT_REFS],
+            "proof_review_refs": [
+                ref
+                for ref in (
+                    _normalize_runtime_ref(value, kind="research_proof")
+                    for value in _trace_list_items(projection.get("proof_review_refs"))
+                )
+                if ref
+            ][:MAX_BRIEF_PROJECTIONS],
+            "planner_gap_refs": [
+                ref
+                for ref in (
+                    _normalize_runtime_ref(value, kind="planner_gap")
+                    for value in _trace_list_items(projection.get("planner_gap_refs"))
+                )
+                if ref
+            ][:MAX_BRIEF_PROJECTIONS],
+            "review_finding_refs": [
+                ref
+                for ref in (
+                    _normalize_runtime_ref(value, kind="review_finding")
+                    for value in _trace_list_items(projection.get("review_finding_refs"))
+                )
+                if ref
+            ][:MAX_BRIEF_PROJECTIONS],
+            "contract_refs": [
+                code
+                for code in (
+                    _safe_trace_code(value, 80)
+                    for value in _trace_list_items(projection.get("contract_refs"))
+                )
+                if code
+            ][:MAX_WARNINGS],
+            "open_questions": [
+                text
+                for text in (
+                    _clip(value, 200)
+                    for value in _trace_list_items(projection.get("open_questions"))
+                )
+                if text
+            ][:MAX_BRIEF_TEXT_ITEMS],
+            "warnings": [
+                code
+                for code in (
+                    _safe_trace_code(value, 80)
+                    for value in _trace_list_items(projection.get("warnings"))
+                )
+                if code
+            ][:MAX_WARNINGS],
+        }
+        claim_rows: list[dict[str, object]] = []
+        claims_raw = projection.get("claims")
+        for row in _trace_list_items(claims_raw):
+            if not isinstance(row, Mapping) or len(claim_rows) >= MAX_BRIEF_CLAIM_ROWS:
+                continue
+            claim_ref = _normalize_runtime_ref(row.get("claim_ref"), kind="claim")
+            status = _safe_trace_code(row.get("status"), 20)
+            text = _clip(row.get("text"), 260)
+            if not text or status not in {"evidence_backed", "assumption", "unsupported"}:
+                continue
+            entry: dict[str, object] = {
+                "text": text,
+                "status": status,
+                "evidence_count": _nonnegative_int(row.get("evidence_count")),
+            }
+            if claim_ref:
+                entry["claim_ref"] = claim_ref
+            claim_rows.append(entry)
+        if not claim_rows and not payload["claim_refs"]:
+            return
+        payload["claims"] = claim_rows
+        counts = projection.get("counts")
+        if isinstance(counts, Mapping):
+            payload["counts"] = _bounded_count_mapping(counts)
+        self._brief_projection_keys.add(key)
+        self.manifest.research_brief_projections.append(payload)
+        if len(self.manifest.research_brief_projections) > MAX_BRIEF_PROJECTIONS:
+            del self.manifest.research_brief_projections[:-MAX_BRIEF_PROJECTIONS]
+            self.manifest.warnings.append("research_brief_projections_truncated")
+        self.checkpoint()
 
     def record_completion_proof(self, proof: Any) -> None:
         """Record one bounded completion proof (refs and statuses only)."""

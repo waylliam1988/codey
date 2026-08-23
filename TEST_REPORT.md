@@ -1,5 +1,71 @@
 # Codey Test Report
 
+## 0.4.10 Domain Source Trust + Research Brief Projection
+
+Codey 0.4.10 adds the evidence-standard layer as pure data plus two new
+bounded trace sections, without changing the agent's control plane. New
+`codey/research/domain_profiles.py` holds `EvidenceProfile` -- a small
+expectations vector, not domain knowledge -- with six atomic builtins
+(general/finance/legal/market/science/software_research) and per-dimension
+merge operators: ranked dimensions take the stricter value, tuple dimensions
+union (sorted so A+B == B+A), composition is capped at 4 profiles with an
+explicit truncation warning, merged ids use "+" so they cannot collide with
+builtin ids, and architecture tests lock that no combination profile, no
+inheritance, and no codey import ever appears in the module. Unknown labels
+fall back to `general` with `unknown_profile_label`; keyword-based domain
+inference is deliberately absent. New `codey/research/source_trust.py`
+projects each source onto a 16-class taxonomy from facts it already carries
+(host suffix + declared quality level/kind/freshness); it never fetches,
+never reads bodies, and never removes evidence. The aggregate warning rules
+previously inlined in proof review moved here verbatim as the single owner,
+locked by tests to stay byte-identical (`single_source`,
+`sources_stale_or_undated`, `no_primary_source`, `weak_source_kind`).
+New `codey/research/brief_projection.py` builds a refs-only brief
+(validated runtime refs + bounded claim summaries) and the impact contract
+whose hard boundary is test-locked: unsupported claims are demoted into
+risk notes and can never back an implementation constraint; affected-file
+tokens are validated against absolute/escape paths; test suggestions carry
+an explicit "not authorized by this handoff" label.
+
+RunTrace records both projections into new bounded sections:
+`research_source_trust` (cap 32 rows; class must be in the taxonomy, refs
+validate against runtime ref kinds, dedup by source ref) and
+`research_brief_projections` (cap 8; requires valid record ref + digest,
+claim rows require known statuses, drops projections with neither claim
+rows nor claim refs, dedups by record+digest). Both fail closed on half
+payloads and append truncation warnings. The research pipeline records them
+audit-only next to findings/planner gaps; the planner gained only an
+optional `evidence_profile` parameter that prepends availability-checked
+preferences (score 0.92, explicit reason codes, unknown kinds warn), while
+callers passing no profile get plans byte-identical to 0.4.9.
+
+Debt reduction: `knowledge/brief.py` dropped its local heading scanner and
+now projects note bodies through the shared `parse_sections`; the unbounded
+raw-report excerpt and related-note id noise no longer enter the Writer
+handoff (release-gating live smoke / small A/B documented per roadmap).
+
+Verification:
+
+```text
+python -m pytest tests/test_domain_profiles.py tests/test_source_trust.py
+  tests/test_brief_projection.py ... targeted suite: 303 passed, 214 subtests
+python -m pytest tests                full suite: 2536 passed, 735 subtests
+python -m compileall -q codey tests   ok
+python -m ruff check codey tests      ok
+git diff --check                      clean
+```
+
+New/updated coverage: six atomic profiles and strictness directions locked;
+unknown-label fallback; merge cap + truncation warning; order-insensitive
+merged values; classification of preprint/peer-reviewed/repository/filing/
+gov/news/blog/forum/social hosts and kinds; invalid sources return None;
+below-floor evaluation warns without deleting rows; legacy aggregate
+warnings reproduced exactly; refs-only brief payload (no raw url/body/
+transcript); unsupported-claim demotion; escape-path rejection; handoff
+render bounded and labeled; trace sections keep valid rows, drop junk,
+dedupe, truncate; default planner plans byte-identical without profile;
+capability registry id list and fingerprint updated.
+
 ## 0.4.9 Research Contract Lite + Verified Completion Gate v1
 
 Codey 0.4.9 makes completion claims auditable without changing any completion

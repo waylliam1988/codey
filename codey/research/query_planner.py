@@ -18,6 +18,7 @@ from codey.refs import (
     identifier,
     stable_ref,
 )
+from codey.research.domain_profiles import EvidenceProfile
 from codey.research.proof_quality import ResearchProofReview
 from codey.redaction import looks_sensitive_code, looks_sensitive_signal
 from codey.research.shape import (
@@ -48,6 +49,14 @@ _CONNECTOR_REASON_SCORES = {
     "local_file": (0.9, ("local_file_source",)),
     "csv_tsv": (0.88, ("table_data_source",)),
     "json_file": (0.86, ("structured_data_source",)),
+}
+PROFILE_PREFERENCE_SCORE = 0.92
+# Evidence-profile connector kinds map onto shipped connectors only; unknown
+# kinds yield a bounded warning instead of guesses.
+_PROFILE_CONNECTOR_KINDS = {
+    "paper": ("arxiv", "pubmed"),
+    "data": ("csv_tsv", "json_file"),
+    "local": ("local_file",),
 }
 
 
@@ -133,6 +142,7 @@ def build_research_plan(
     registry: SourceConnectorRegistry | None = None,
     max_queries: int = DEFAULT_MAX_QUERIES,
     max_sources: int = DEFAULT_MAX_SOURCES,
+    evidence_profile: EvidenceProfile | Mapping[str, object] | None = None,
 ) -> ResearchPlan:
     payload = _review_payload(review)
     registry = registry or built_in_connector_registry()
@@ -168,7 +178,11 @@ def build_research_plan(
         )
     signals = _signals_from_review(payload)
     terms = _safe_terms(" ".join([question, *signals]))
-    preferences, pref_reasons = _source_preferences(terms, registry)
+    preferences, pref_reasons = _source_preferences(
+        terms,
+        registry,
+        evidence_profile=evidence_profile,
+    )
     query_candidates = _query_candidates(
         signals=signals,
         terms=terms,
@@ -305,6 +319,8 @@ def _has_items(value: object) -> bool:
 def _source_preferences(
     terms: tuple[str, ...],
     registry: SourceConnectorRegistry,
+    *,
+    evidence_profile: EvidenceProfile | Mapping[str, object] | None = None,
 ) -> tuple[tuple[SourcePreference, ...], tuple[str, ...]]:
     available = {
         spec.id: spec
@@ -322,10 +338,45 @@ def _source_preferences(
         preferences.append(SourcePreference(connector_id, reason_codes, score))
         reasons.extend(reason_codes)
 
+    if evidence_profile is not None:
+        for _kind, connector_ids in _profile_connector_kinds(evidence_profile):
+            added = 0
+            for connector_id in connector_ids:
+                before = len(preferences)
+                add(connector_id, PROFILE_PREFERENCE_SCORE, "domain_profile_source_preference")
+                if len(preferences) > before:
+                    added += 1
+                if len(preferences) >= MAX_PLAN_SOURCES:
+                    break
+            if not added:
+                reasons.append("domain_profile_kind_unavailable")
     for connector_id in preferred_connector_ids(terms, available_ids=tuple(available)):
         score, reason_codes = _CONNECTOR_REASON_SCORES.get(connector_id, (0.0, ()))
         add(connector_id, score, *reason_codes)
     return tuple(preferences[:MAX_PLAN_SOURCES]), tuple(dict.fromkeys(reasons))
+
+
+def _profile_connector_kinds(
+    evidence_profile: EvidenceProfile | Mapping[str, object],
+) -> list[tuple[str, tuple[str, ...]]]:
+    raw = (
+        evidence_profile.get("preferred_connector_kinds")
+        if isinstance(evidence_profile, Mapping)
+        else getattr(evidence_profile, "preferred_connector_kinds", ())
+    ) or ()
+    rows: list[tuple[str, tuple[str, ...]]] = []
+    seen: set[str] = set()
+    for kind in raw:
+        token = identifier(kind, 40).lower()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        # Unknown kinds keep an empty mapping so callers can warn instead of
+        # silently guessing what the profile meant.
+        rows.append((token, _PROFILE_CONNECTOR_KINDS.get(token, ())))
+        if len(rows) >= 4:
+            break
+    return rows
 
 
 def _query_candidates(

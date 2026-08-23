@@ -56,6 +56,8 @@ KNOWN_TRACE_SECTIONS = frozenset({
     "research_planner_gaps",
     "completion_proofs",
     "policy_decisions",
+    "research_source_trust",
+    "research_brief_projections",
 })
 # Stable context source keys admitted through the shared ContextSource contract.
 KNOWN_CONTEXT_SOURCES = frozenset({
@@ -373,6 +375,22 @@ def builtin_capability_registry() -> CapabilityRegistry:
             durable_state=("run_trace",),
             trace_sections=("research_plans",),
             owner_module="codey.research.query_planner",
+        ),
+        CapabilitySpec(
+            id="research_source_trust",
+            provides=(
+                "evidence_profile_projection",
+                "source_trust_projection",
+                "research_brief_projection",
+            ),
+            consumes=(
+                "research_evidence_runtime",
+                "research_object_model",
+                "run_trace",
+            ),
+            durable_state=("run_trace",),
+            trace_sections=("research_brief_projections", "research_source_trust"),
+            owner_module="codey.research.source_trust",
         ),
         CapabilitySpec(
             id="review_runner",

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Mapping
 
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
+from codey.research.source_trust import source_trust_warnings as _shared_source_trust_warnings
 from codey.refs import (
     bounded_refs,
     clip,
@@ -660,25 +661,10 @@ def _planner_signals(
 
 
 def _source_trust_warnings(sources: Mapping[str, Mapping[str, object]]) -> tuple[str, ...]:
-    warnings: list[str] = []
-    if len(sources) < 2:
-        warnings.append("single_source")
-    freshness = []
-    levels = []
-    kinds = []
-    for source in sources.values():
-        quality = source.get("quality")
-        if isinstance(quality, Mapping):
-            freshness.append(identifier(quality.get("freshness"), 80))
-            levels.append(identifier(quality.get("level"), 80))
-            kinds.append(identifier(quality.get("kind"), 80))
-    if freshness and all(item in {"", "undated", "stale"} for item in freshness):
-        warnings.append("sources_stale_or_undated")
-    if levels and not any(item == "primary" for item in levels):
-        warnings.append("no_primary_source")
-    if any(item in {"blog", "forum", "social"} for item in kinds):
-        warnings.append("weak_source_kind")
-    return tuple(dict.fromkeys(warnings))[:MAX_WARNINGS]
+    # Shared deterministic rules live beside the source-trust projection
+    # (research/source_trust.py); this wrapper keeps the review's output
+    # byte-identical while the logic has exactly one owner.
+    return _shared_source_trust_warnings(sources)
 
 
 def _overclaim_warnings(

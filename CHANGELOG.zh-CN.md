@@ -4,6 +4,69 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.10 - Domain Source Trust + Research Brief 投影
+
+- 新增 `codey/research/domain_profiles.py`：证据标准 profile 是纯数据。
+  `EvidenceProfile` 是一个小的期望向量（freshness、source quality
+  threshold、primary source 偏好、counterevidence 要求、数据类结论是否
+  需要本地分析、偏好/降权 source kinds、偏好 connector kinds）——它只回答
+  "这类任务需要什么样的证据才更可信"，从不回答"结论对不对"。内置六个原子
+  profile：general / finance / legal / market / science / software_research。
+  交叉领域在运行时用 `merge_profiles` 组合：ranked 维度取更严格值，tuple
+  维度取并集；组合数有上限（`MAX_MERGE_PROFILES=4`）并显式给截断警告，
+  merged id 用 "+" 连接以区别于内置 id。没有组合 profile、没有继承、
+  没有任何关键词域推断（unknown label 回落 `general` 并带
+  `unknown_profile_label` 警告）。该模块是纯 stdlib leaf，由架构测试锁定：
+  无 codey import、无 I/O。
+- 新增 `codey/research/source_trust.py`：把"这个来源客观上是什么"投影成
+  低维 class taxonomy（official / primary / peer_reviewed / preprint /
+  dataset / filing / standard / repository / issue / release / news /
+  secondary / forum / social / aggregator / unknown），只使用来源已携带的
+  事实（host 后缀、声明的 quality level/kind/freshness）。不联网、不读
+  页面正文、没有 URL pattern 穷举表（只有稳定 host 后缀规则），也绝不
+  删除或过滤 evidence——消费方只能把投影变成 warning、preference 或
+  threshold hint。原先内联在 `research/proof_quality.py` 的聚合
+  source-trust 警告规则原样收编到这里作为唯一实现；proof review 输出
+  逐字节不变，重复规则集消失（本版真实减债点之一）。`evaluate_against_
+  profile` 把投影与质量下限合成有界 counts/warnings，低于下限的行只会
+  得到警告、永远不会被移除。
+- 新增 `codey/research/brief_projection.py`：refs-only research brief
+  投影 + 显式 Research-to-Code impact contract。`ResearchBriefProjection`
+  只承载验证过的 runtime refs、有界 claim 摘要（状态 + 文本 <=260 字符）、
+  open questions、counts 和 warnings；raw synthesis 全文、网页正文和
+  transcript 永远进不来。`ResearchImpactContract` 把受影响文件、verified
+  implementation constraints、test 建议、risk notes、out-of-scope 条目与
+  decision refs 分开，并由测试钉死一条硬边界：unsupported claim 一律降级
+  进 risk notes，永远不能支撑 implementation constraint；affected file
+  路径做逃逸校验；`test_suggestions` 只是 Writer 上下文，不授权任何工具。
+  `render_handoff` 为未来消费方渲染短结构化 handoff。
+- RunTrace 新增两个由新能力拥有的有界 section：`research_source_trust`
+  （每来源 class/tier/freshness 行，cap 32）和 `research_brief_projections`
+  （以 record 锚定的 brief payload，cap 8）。两者都对半截 payload fail
+  closed、按 runtime ref kind 校验 refs、清洗 reason code、去重、追加
+  截断警告，且永不保存 raw prompt、transcript 或输出正文。research
+  pipeline 在最终 proof review 之后把两个投影与 findings/planner gaps
+  一起记入 trace；它们始终是 trace sink 上的 audit-only read model，
+  不能影响搜索、planner 行为、prompt、provider 选择、权限或 done 语义。
+- 注册 metadata-only 能力 `research_source_trust`（provides
+  evidence_profile/source_trust/brief 投影；consumes
+  research_object_model + research_evidence_runtime + run_trace），并把两
+  个新 trace section 加入 `KNOWN_TRACE_SECTIONS`。
+- dry-run query planner 接受可选 `evidence_profile`，只能前置有界、经
+  可用性过滤的 connector 偏好并带显式 `domain_profile_source_preference`
+  reason code（score 0.92）；profile 里未知的 kind 会产生有界的
+  `domain_profile_kind_unavailable` reason 而不是猜测。不传 profile 的
+  调用方拿到的 plan 与 0.4.9 逐字节一致，proof-ok 短路依旧完全忽略偏好。
+- `knowledge/brief.py` 减债：删除本地 heading 扫描解析器
+  （`_extract_section_lines` / `_extract_sources_section`），brief 改用与
+  report quality review 相同的 `parse_sections` 投影 note body——报告结构
+  从此只有一个 owner。无界的 raw 报告摘录（"Synthesis excerpt"，最多
+  3600 字符 note 正文）不再进入 Writer handoff，related-note id 噪音也从
+  handoff 移除；剩余每一行都来自具名 section。这会改变 Writer 可见的
+  research context 文案，因此发布启用前需先过 roadmap 的 live smoke /
+  小型 A/B 门槛。
+
+
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1
 
 - 新增 `codey/completion_contract.py`：Verified Completion Gate 的领域无关

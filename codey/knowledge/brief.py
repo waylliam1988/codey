@@ -2,17 +2,28 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from codey.knowledge.store import KnowledgeStore
+from codey.research.report_quality import parse_sections
 from codey.text_budget import clip_middle
 
-BRIEF_BODY_LIMIT = 3600
+
 BRIEF_TOTAL_LIMIT = 6000
+SECTION_ITEM_LIMIT = 5
+SOURCE_LINE_LIMIT = 16
+MAX_ITEM_CHARS = 220
 
 
 @dataclass(frozen=True)
 class ResearchBrief:
+    """Structured view of one session's latest research synthesis.
+
+    Sections are projected by the shared report parser instead of a local
+    heading scanner, and no raw report body is carried: the writer gets the
+    bounded sections it needs, never the whole vault.
+    """
+
     synthesis_id: str = ""
     original_question: str = ""
     conclusions: tuple[str, ...] = ()
@@ -21,50 +32,32 @@ class ResearchBrief:
     citation_map: tuple[str, ...] = ()
     source_quality_risks: tuple[str, ...] = ()
     evidence_items: tuple[str, ...] = ()
-    risks: tuple[str, ...] = ()
+    coverage_notes: tuple[str, ...] = ()
     open_questions: tuple[str, ...] = ()
-    source_note_ids: tuple[str, ...] = ()
-    raw: str = ""
-    related_note_ids: tuple[str, ...] = field(default_factory=tuple)
 
     def render(self) -> str:
-        if not self.synthesis_id and not self.raw:
+        if not self.synthesis_id and not (
+            self.conclusions or self.evidence_items or self.citation_map
+        ):
             return ""
         lines = [
             "Research context from this chat:",
             f"- synthesis_id: {self.synthesis_id}" if self.synthesis_id else "",
             f"- original_question: {self.original_question}" if self.original_question else "",
         ]
-        if self.conclusions:
-            lines.append("Key conclusions:")
-            lines.extend(f"- {item}" for item in self.conclusions)
-        if self.evidence_urls:
-            lines.append("Evidence URLs:")
-            lines.extend(f"- {item}" for item in self.evidence_urls)
-        if self.citation_map:
-            lines.append("Citation map:")
-            lines.extend(f"- {item}" for item in self.citation_map)
-        if self.evidence_items:
-            lines.append("Evidence items:")
-            lines.extend(f"- {item}" for item in self.evidence_items)
-        if self.counterpoints:
-            lines.append("Counter-evidence / limitations:")
-            lines.extend(f"- {item}" for item in self.counterpoints)
-        if self.source_quality_risks:
-            lines.append("Source quality risks:")
-            lines.extend(f"- {item}" for item in self.source_quality_risks)
-        if self.risks:
-            lines.append("Risks:")
-            lines.extend(f"- {item}" for item in self.risks)
-        if self.open_questions:
-            lines.append("Open questions:")
-            lines.extend(f"- {item}" for item in self.open_questions)
-        if self.related_note_ids:
-            lines.append("Related note ids:")
-            lines.extend(f"- {item}" for item in self.related_note_ids)
-        if self.raw:
-            excerpt, _truncated = clip_middle(self.raw, BRIEF_BODY_LIMIT)
-            lines.extend(("", "Synthesis excerpt:", excerpt))
+        for title, items in (
+            ("Key conclusions:", self.conclusions),
+            ("Evidence items:", self.evidence_items),
+            ("Citation map:", self.citation_map),
+            ("Counter-evidence / limitations:", self.counterpoints),
+            ("Source quality risks:", self.source_quality_risks),
+            ("Search coverage:", self.coverage_notes),
+            ("Evidence URLs:", self.evidence_urls),
+            ("Open questions:", self.open_questions),
+        ):
+            if items:
+                lines.append(title)
+                lines.extend(f"- {item}" for item in items)
         lines.extend((
             "",
             "Use this as background only. Verify against project files before editing.",
@@ -96,60 +89,47 @@ class KnowledgeBriefBuilder:
         note = self.store.read_note(str(rows[0].get("id") or ""))
         if note is None:
             return ResearchBrief()
-        try:
-            links = self.store.index.links_for([note.id])
-        except Exception:
-            links = []
-        related = tuple(str(link.get("dst_id") or "") for link in links if link.get("dst_id"))
+        sections = parse_sections(note.body)
         return ResearchBrief(
             synthesis_id=note.id,
             original_question=note.title,
-            conclusions=_extract_section_lines(note.body, ("结论", "结论候选", "Key conclusions", "Conclusion")),
-            counterpoints=_extract_section_lines(note.body, ("反证与限制", "反证", "Counter-evidence", "Counter", "Limitations")),
+            conclusions=_section_lines(sections.get("conclusion", "")),
+            counterpoints=_section_lines(sections.get("counter", "")),
             evidence_urls=tuple(note.sources[:8]),
-            citation_map=_extract_sources_section(note.body),
-            source_quality_risks=_extract_section_lines(note.body, ("来源质量", "Source quality")),
-            evidence_items=_extract_section_lines(note.body, ("关键证据", "Evidence", "Evidence Ledger")),
-            risks=_extract_section_lines(note.body, ("风险", "Risks")),
+            citation_map=_section_lines(
+                sections.get("sources", ""), limit=SOURCE_LINE_LIMIT, strip_bullets=False
+            ),
+            source_quality_risks=_section_lines(sections.get("source_quality", ""), limit=3),
+            evidence_items=_section_lines(sections.get("evidence", "")),
+            coverage_notes=_section_lines(sections.get("coverage", ""), limit=3),
             open_questions=tuple(note.open_questions[:5]),
-            source_note_ids=related,
-            raw=note.body,
-            related_note_ids=related,
         )
 
 
-def _extract_section_lines(body: str, headings: tuple[str, ...], limit: int = 5) -> tuple[str, ...]:
-    lines = [line.rstrip() for line in str(body or "").splitlines()]
-    heading_lowers = tuple(item.lower() for item in headings)
+def _section_lines(
+    text: str,
+    *,
+    limit: int = SECTION_ITEM_LIMIT,
+    strip_bullets: bool = True,
+) -> tuple[str, ...]:
     out: list[str] = []
-    in_section = False
-    for line in lines:
+    for line in str(text or "").splitlines():
         stripped = line.strip()
-        lower = stripped.strip("#:： ").lower()
-        if stripped.startswith("#") or stripped.endswith((":", "：")):
-            if any(item in lower for item in heading_lowers):
-                in_section = True
-                continue
-            if in_section and out:
-                break
-        if not in_section:
+        if not stripped:
             continue
-        if stripped.startswith(("- ", "* ")):
-            out.append(stripped[2:].strip())
-        elif stripped and len(stripped) < 220:
+        if strip_bullets and stripped.startswith(("- ", "* ")):
+            stripped = stripped[2:].strip()
+        if len(stripped) > MAX_ITEM_CHARS:
+            continue
+        if stripped.casefold() not in {row.casefold() for row in out}:
             out.append(stripped)
-        if len(out) >= limit:
+        if len(out) >= max(0, int(limit)):
             break
     return tuple(out)
 
 
-def _extract_sources_section(body: str) -> tuple[str, ...]:
-    lines = _extract_section_lines(body, ("来源", "Sources", "References"), limit=16)
-    if lines:
-        return lines
-    out: list[str] = []
-    for line in str(body or "").splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[") and "]" in stripped:
-            out.append(stripped)
-    return tuple(out[:16])
+__all__ = [
+    "BRIEF_TOTAL_LIMIT",
+    "KnowledgeBriefBuilder",
+    "ResearchBrief",
+]

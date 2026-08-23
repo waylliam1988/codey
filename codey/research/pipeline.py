@@ -10,12 +10,14 @@ from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
 from codey.research.evidence_runtime import snapshot_from_research_record
+from codey.research.brief_projection import project_research_brief
 from codey.research.plan_executor import PlanExecutionResult, PlanExecutor
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
 from codey.research.query_planner import ResearchPlan, build_research_plan
 from codey.research.record_merge import merge_evidence_patch
 from codey.research.review_finding import findings_from_proof_review, planner_gaps_from_findings
 from codey.research.runner import ResearchRunResult
+from codey.research.source_trust import project_source_set
 from codey.research.tools import ResearchTools
 
 
@@ -308,30 +310,33 @@ class ResearchPipeline:
         result: ResearchRunResult,
         review: ResearchProofReview | None,
     ) -> None:
-        """Audit-only finding projection: trace sink, never the planner.
+        """Audit-only projections: trace sink, never the planner.
 
-        0.4.7 keeps research behavior frozen: findings and planner gaps are
-        deterministic read models recorded for later inspection. Any consumer
-        that lets them influence search is a behavior change and needs its own
-        A/B per the roadmap.
+        Findings, planner gaps, source-trust rows, and the brief projection
+        are deterministic read models recorded for later inspection. Any
+        consumer that lets them influence search or prompts is a behavior
+        change and needs its own A/B per the roadmap.
         """
 
         if review is None:
             return
+        record = getattr(result, "research_record", None)
         try:
-            snapshot = snapshot_from_research_record(
-                getattr(result, "research_record", None),
-                proof_review=review,
-            )
+            snapshot = snapshot_from_research_record(record, proof_review=review)
             if snapshot is None:
                 return
             findings = findings_from_proof_review(review, snapshot)
-            if not findings:
-                return
-            self.context.trace.record_review_findings(findings)
-            gaps = planner_gaps_from_findings(findings)
-            if gaps:
-                self.context.trace.record_planner_gaps(gaps)
+            if findings:
+                self.context.trace.record_review_findings(findings)
+                gaps = planner_gaps_from_findings(findings)
+                if gaps:
+                    self.context.trace.record_planner_gaps(gaps)
+            self.context.trace.record_research_source_trust(
+                project_source_set(getattr(record, "sources", ()) or ())
+            )
+            brief = project_research_brief(record, snapshot=snapshot, findings=findings)
+            if brief is not None:
+                self.context.trace.record_research_brief_projection(brief.to_payload())
         except Exception:
             return
 

@@ -549,6 +549,96 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 for token in forbidden_source:
                     self.assertNotIn(token, source)
 
+    def test_domain_profiles_is_a_stdlib_data_leaf(self) -> None:
+        # Profiles are data only: no planner, no I/O, no codey imports at all.
+        path = ROOT / "codey" / "research" / "domain_profiles.py"
+        imports = imported_modules(path)
+
+        self.assertEqual(
+            [name for name in imports if name == "codey" or name.startswith("codey.")],
+            [],
+        )
+        source = path.read_text(encoding="utf-8")
+        for token in (
+            "write_text(",
+            "write_json",
+            "open(",
+            "eval(",
+            "exec(",
+            "subprocess",
+            "urllib",
+            "importlib",
+        ):
+            self.assertNotIn(token, source)
+
+    def test_source_trust_and_brief_projection_stay_projection_only(self) -> None:
+        # Source trust classifies sources; brief projection structures handoff
+        # refs. Neither may fetch, delete evidence, reach execution layers, or
+        # import the knowledge store (which consumes their outputs instead).
+        forbidden_imports = {
+            "codey.browser",
+            "codey.deepseek",
+            "codey.qwen",
+            "codey.stepfun",
+            "codey.glm",
+            "codey.providers",
+            "codey.provider_controls",
+            "codey.tool_runtime",
+            "codey.managed_outputs",
+            "codey.events",
+            "codey.server",
+            "codey.task_runner",
+            "codey.ghost",
+            "codey.review",
+            "codey.knowledge",
+            "codey.research.runner",
+            "codey.research.tools",
+            "codey.research.connector_search",
+            "urllib",
+            "subprocess",
+            "importlib",
+            "pkgutil",
+        }
+        forbidden_source = (
+            "eval(",
+            "exec(",
+            "write_text(",
+            "write_json",
+            "requests.",
+        )
+        for name in ("source_trust.py", "brief_projection.py"):
+            path = ROOT / "codey" / "research" / name
+            with self.subTest(module=name):
+                imports = imported_modules(path)
+                self.assertTrue(
+                    forbidden_imports.isdisjoint(imports),
+                    sorted(forbidden_imports & imports),
+                )
+                source = path.read_text(encoding="utf-8")
+                for token in forbidden_source:
+                    self.assertNotIn(token, source)
+
+    def test_knowledge_brief_consumes_shared_parser_not_runtime_layers(self) -> None:
+        # The brief may reuse the report section parser (pure function) but
+        # must never import research runtime layers or providers.
+        path = ROOT / "codey" / "knowledge" / "brief.py"
+        imports = imported_modules(path)
+
+        allowed_research = {"codey.research.report_quality"}
+        research_imports = {
+            name for name in imports if name.startswith("codey.research")
+        }
+        self.assertTrue(research_imports.issubset(allowed_research), sorted(research_imports))
+        forbidden = {
+            "codey.providers",
+            "codey.tool_runtime",
+            "codey.server",
+            "codey.task_runner",
+            "codey.research.runner",
+            "codey.research.tools",
+        }
+        self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
+
     def test_ab_journal_is_manual_layer_only(self) -> None:
         # The A/B journal is manual-experiment tooling: production layers must
         # not consume it, and it must not depend on production orchestration.

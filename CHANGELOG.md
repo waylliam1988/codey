@@ -4,6 +4,84 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.10 - Domain Source Trust + Research Brief Projection
+
+- Added `codey/research/domain_profiles.py`: evidence-standard profiles as
+  data. An `EvidenceProfile` is a small vector of expectations
+  (freshness, source quality threshold, primary-source preference,
+  counterevidence requirement, analysis-for-data-claims, preferred and
+  disfavored source kinds, preferred connector kinds) -- it states what kind
+  of evidence makes a claim in this kind of task more credible and never
+  judges whether a conclusion is true. Six atomic builtins ship:
+  general / finance / legal / market / science / software_research.
+  Cross-domain tasks compose at runtime via `merge_profiles`, which merges
+  each ranked dimension to the stricter value and unions tuple dimensions;
+  composition is capped (`MAX_MERGE_PROFILES=4`) with an explicit
+  truncation warning, merged ids use "+" so they can never be mistaken for
+  builtin ids, and there are no combination profiles, no inheritance, and
+  no keyword-based domain inference anywhere (unknown labels fall back to
+  `general` with an `unknown_profile_label` warning). The module is a pure
+  stdlib leaf locked by architecture tests: no codey imports, no I/O.
+- Added `codey/research/source_trust.py`: deterministic projection of what
+  a source objectively is onto a low-dimensional class taxonomy
+  (official / primary / peer_reviewed / preprint / dataset / filing /
+  standard / repository / issue / release / news / secondary / forum /
+  social / aggregator / unknown), derived only from facts the source already
+  carries (host suffix, declared quality level/kind/freshness). No network,
+  no page bodies, no URL pattern tables beyond stable host-suffix rules,
+  and no deletion or filtering of evidence -- consumers may only turn
+  projections into warnings, preferences, or threshold hints. The aggregate
+  source-trust warnings previously inlined in `research/proof_quality.py`
+  moved here verbatim as the single owner; proof review output stays
+  byte-identical while the duplicated rule set is gone (one real complexity
+  reduction for this release). `evaluate_against_profile` combines
+  projections with a quality floor into bounded counts/warnings without ever
+  removing rows below the floor.
+- Added `codey/research/brief_projection.py`: refs-only research brief
+  projection plus an explicit Research-to-Code impact contract.
+  `ResearchBriefProjection` carries validated runtime refs, bounded claim
+  summaries (status + text <= 260 chars), open questions, counts, and
+  warnings; raw synthesis bodies, webpage content, and transcripts never
+  enter it. `ResearchImpactContract` separates affected files, verified
+  implementation constraints, test suggestions, risk notes, out-of-scope
+  items, and decision refs, with one hard boundary enforced by tests:
+  unsupported claims are demoted into risk notes and can never back an
+  implementation constraint, affected-file paths are validated against
+  escape patterns, and `test_suggestions` are writer context that authorize
+  nothing. `render_handoff` renders the short structured handoff for future
+  consumers.
+- RunTrace gained two bounded sections owned by the new capability:
+  `research_source_trust` (per-source class/tier/freshness rows capped at
+  32) and `research_brief_projections` (record-anchored brief payloads
+  capped at 8). Both fail closed on half payloads, validate refs against
+  runtime ref kinds, sanitize reason codes, dedupe, append truncation
+  warnings, and never store raw prompts, transcripts, or output bodies.
+  The research pipeline records both projections next to findings/planner
+  gaps after a run's final proof review; they stay audit-only read models
+  on the trace sink and cannot influence search, planner behavior, prompts,
+  provider selection, permissions, or done semantics.
+- Registered the metadata-only `research_source_trust` capability
+  (provides evidence_profile/source_trust/brief projections; consumes
+  research_object_model + research_evidence_runtime + run_trace) and added
+  the two trace sections to `KNOWN_TRACE_SECTIONS`.
+- The dry-run query planner accepts an optional `evidence_profile` that may
+  only prepend bounded, availability-checked connector preferences with an
+  explicit `domain_profile_source_preference` reason code (score 0.92);
+  unknown profile kinds yield a bounded `domain_profile_kind_unavailable`
+  reason instead of guesses. Callers that pass no profile get plans
+  byte-identical to 0.4.9, and the proof-ok short circuit still ignores
+  preferences entirely.
+- Debt reduction in `knowledge/brief.py`: the local heading-scanning parser
+  (`_extract_section_lines` / `_extract_sources_section`) is gone; the
+  brief now projects note bodies through the same `parse_sections` used by
+  report quality review, so report structure has exactly one owner. The
+  unbounded raw-report excerpt ("Synthesis excerpt", up to 3600 chars of
+  note body) no longer enters the Writer handoff, and related-note id noise
+  was dropped from it; every remaining line comes from a named section.
+  This changes Writer-visible research context text, so enabling it in a
+  release requires the roadmap's live smoke / small A/B gate first.
+
+
 ## 0.4.9 - Research Contract Lite + Verified Completion Gate v1
 
 - Added `codey/completion_contract.py`, the domain-neutral pure projection

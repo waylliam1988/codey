@@ -2316,3 +2316,151 @@ class CompletionProofTraceTests(unittest.TestCase):
             proofs = payload["completion_proofs"]
             self.assertEqual(len(proofs), 1)
             self.assertEqual(proofs[0]["proof_id"], "completion_proof:" + "b" * 16)
+
+
+class SourceTrustTraceTests(unittest.TestCase):
+    def _open(self, store: RunTraceStore) -> object:
+        return store.open(
+            run_id="run-trust",
+            session_id="session-trust",
+            project=None,
+            mode_initial="project",
+            provider_initial="deepseek",
+        )
+
+    def _payload(self, path: Path) -> dict:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_source_trust_rows_keep_valid_classes_and_drop_the_rest(self) -> None:
+        from codey.research.source_trust import project_source_set
+
+        rows = [
+            {"source_id": "source:" + "1" * 16, "host": "sec.gov",
+             "quality": {"level": "primary", "kind": "official", "freshness": "stale"}},
+            {"source_id": "source:" + "2" * 16, "host": "arxiv.org",
+             "quality": {"level": "secondary", "kind": "web", "freshness": "fresh"}},
+        ]
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_research_source_trust(project_source_set(rows))
+            # Junk fails closed: no ref, unknown class, duplicate ref.
+            recorder.record_research_source_trust([{"host": "no-ref.example"}])
+            recorder.record_research_source_trust([{
+                "source_ref": "not-a-ref",
+                "source_class": "preprint",
+            }])
+            recorder.record_research_source_trust([{
+                "source_ref": "source:" + "1" * 16,
+                "source_class": "official",
+            }])
+            # Objects carrying to_payload are accepted too.
+            recorder.record_research_source_trust(
+                project_source_set(rows)[:1]
+            )
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-trust", "run-trust"))
+            rows_out = payload["research_source_trust"]
+
+            self.assertEqual(len(rows_out), 2)
+            first = rows_out[0]
+            self.assertEqual(first["source_ref"], "source:" + "1" * 16)
+            self.assertEqual(first["source_class"], "filing")
+            self.assertIn("official", first["classes"])
+            self.assertEqual(first["tier"], 3)
+            self.assertEqual(first["freshness"], "stale")
+            self.assertEqual(rows_out[1]["source_class"], "preprint")
+            serialized = json.dumps(payload, ensure_ascii=False)
+            self.assertNotIn("no-ref.example", serialized)
+            self.assertNotIn("not-a-ref", serialized)
+
+
+class BriefProjectionTraceTests(unittest.TestCase):
+    def _open(self, store: RunTraceStore) -> object:
+        return store.open(
+            run_id="run-brief",
+            session_id="session-brief",
+            project=None,
+            mode_initial="project",
+            provider_initial="deepseek",
+        )
+
+    def _payload(self, path: Path) -> dict:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_brief_projection_keeps_refs_claim_rows_and_counts(self) -> None:
+        from codey.research.brief_projection import project_research_brief
+
+        record = {
+            "record_id": "research_record:" + "a" * 16,
+            "record_digest": "sha256:" + "b" * 64,
+            "answer_status": "answered",
+            "sources": [{"source_id": "source:" + "1" * 16}],
+            "evidence": [{"evidence_id": "evidence:" + "2" * 16}],
+            "claims": [
+                {
+                    "claim_id": "claim:" + "3" * 16,
+                    "claim_text": "Documented flow confirmed.",
+                    "status": "evidence_backed",
+                    "evidence_refs": ["evidence:" + "2" * 16],
+                },
+                {
+                    "claim_text": "Junk row without status.",
+                },
+            ],
+            "assumptions": [],
+            "relations": [],
+        }
+        projection = project_research_brief(record)
+
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_research_brief_projection(projection.to_payload())
+            # Half payloads fail closed.
+            recorder.record_research_brief_projection({"record_ref": "junk"})
+            recorder.record_research_brief_projection({"record_digest": "sha256:" + "b" * 64})
+            # Duplicate record+digest is ignored.
+            recorder.record_research_brief_projection(projection.to_payload())
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-brief", "run-brief"))
+            rows = payload["research_brief_projections"]
+
+            self.assertEqual(len(rows), 1)
+            row = rows[0]
+            self.assertEqual(row["record_ref"], "research_record:" + "a" * 16)
+            self.assertEqual(row["answer_status"], "answered")
+            self.assertEqual(row["claim_refs"], ["claim:" + "3" * 16])
+            self.assertEqual(row["counts"]["sources"], 1)
+            claim_rows = row["claims"]
+            # The status-less record row was normalized to unsupported by the
+            # projection before reaching the trace boundary.
+            self.assertEqual(len(claim_rows), 2)
+            self.assertEqual(claim_rows[0]["status"], "evidence_backed")
+            self.assertEqual(claim_rows[0]["text"], "Documented flow confirmed.")
+            self.assertEqual(claim_rows[1]["status"], "unsupported")
+            self.assertNotIn("claim_ref", claim_rows[1])
+
+    def test_brief_projection_requires_claims_or_claim_refs(self) -> None:
+        payload_in = {
+            "record_ref": "research_record:" + "c" * 16,
+            "record_digest": "sha256:" + "d" * 64,
+            "answer_status": "partial",
+            "claim_refs": [],
+            "claims": [{"text": "Bad status row.", "status": "exploded"}],
+        }
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_research_brief_projection(payload_in)
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-brief", "run-brief"))
+            # The only claim row had an invalid status, so the projection is
+            # treated as half-filled and dropped entirely.
+            self.assertEqual(payload["research_brief_projections"], [])
