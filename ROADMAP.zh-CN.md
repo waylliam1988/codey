@@ -2089,6 +2089,8 @@ RunTrace 新增 bounded completion_proofs section（proof row cap 8，per-proof 
   与 CompletionContract 共用 MAX_COMPLETION_CHECKS=12，refs-only）
 RunTrace 不信任 raw satisfied；satisfied 只能由 status 派生，避免
   status=failed/satisfied=true 这类不一致 payload 污染 trace
+RunTrace raw mapping 入口强制 contract 形状：没有有效 checks 的 proof 丢弃；
+  complete_with_limitations 必须带有效 limitation_refs
 ```
 
 ### 验证（v1 已测）
@@ -2107,6 +2109,8 @@ queued research completion proof 成功/失败都写入 completion_proofs
 satisfied proof 永远不携带 blocked_reason
 RunTrace 从 status 派生 satisfied，忽略 raw mapping 里的 satisfied
 CompletionContract 与 RunTrace 的 per-proof check cap 保持一致
+RunTrace raw mapping 不能用空 checks 或缺 limitation_refs 的
+  complete_with_limitations 绕过 CompletionContract 约束
 coding docs-only change 不要求 code test（not_applicable + docs_only_change）
 read/search 型 tool event 不会把未跑验证误记成失败（unobserved 三态锁定）
 unobserved + checks_passed=False 只能 blocked，不能 failed（False 可能是默认值）

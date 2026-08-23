@@ -32,7 +32,9 @@
   finding/analysis/artifact refs 按 runtime ref 校验，未知
   domain/status/check 行 fail closed 丢弃，proof row 截断写 warning，并且
   不信任 raw mapping 里的 `satisfied`，统一从 `status` 派生一致性。
-  payload 不含任何 raw prompt / transcript / 输出正文。
+  raw mapping 边界也强制 contract 形状：没有有效 check 行的 proof 直接丢弃，
+  `complete_with_limitations` 必须至少带一个有效 `limitation_refs`。payload
+  不含任何 raw prompt / transcript / 输出正文。
 - queued research completion 现在会把生成的 `CompletionProof` 在成功和
   blocked 两条路径都写进 RunTrace，不再只是把 `proof_refs` 写回 queue item。
   `complete_with_limitations` 不再全局视为 satisfied：只有 clean

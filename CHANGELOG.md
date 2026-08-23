@@ -37,8 +37,11 @@ This file records Codey's release history. The newest release appears first.
   codes only. finding/analysis/artifact refs validate against runtime ref
   kinds, unknown domains/statuses/check rows fail closed, proof-row
   truncation appends a warning, and raw `satisfied` mappings are ignored in
-  favor of deriving coherence from `status`. Payloads never contain raw
-  prompts, transcripts, or output bodies.
+  favor of deriving coherence from `status`. The raw mapping boundary also
+  enforces the contract shape: proofs with no valid check rows are dropped,
+  and `complete_with_limitations` must carry at least one valid
+  `limitation_refs` entry. Payloads never contain raw prompts, transcripts,
+  or output bodies.
 - Research queued completion now persists the generated `CompletionProof`
   into RunTrace on both complete and blocked paths, instead of only writing
   `proof_refs` back to the queue item. `complete_with_limitations` is no

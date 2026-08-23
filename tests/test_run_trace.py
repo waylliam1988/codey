@@ -2138,6 +2138,7 @@ class CompletionProofTraceTests(unittest.TestCase):
                 "domain": "coding",
                 "status": "failed",
                 "satisfied": True,
+                "checks": [{"check_id": "relevant_verification", "status": "fail"}],
             })
             recorder.record_completion_proof({
                 "proof_id": "completion_proof:" + "3" * 16,
@@ -2145,6 +2146,7 @@ class CompletionProofTraceTests(unittest.TestCase):
                 "domain": "coding",
                 "status": "complete_with_limitations",
                 "satisfied": True,
+                "checks": [{"check_id": "relevant_verification", "status": "pass"}],
                 "limitation_refs": ["verification_not_locally_observed"],
             })
             recorder.record_completion_proof({
@@ -2153,6 +2155,7 @@ class CompletionProofTraceTests(unittest.TestCase):
                 "domain": "coding",
                 "status": "complete",
                 "satisfied": False,
+                "checks": [{"check_id": "relevant_verification", "status": "pass"}],
             })
             recorder.finish(status="done")
 
@@ -2163,6 +2166,66 @@ class CompletionProofTraceTests(unittest.TestCase):
             self.assertFalse(by_status["failed"]["satisfied"])
             self.assertFalse(by_status["complete_with_limitations"]["satisfied"])
             self.assertTrue(by_status["complete"]["satisfied"])
+
+    def test_completion_proof_raw_mapping_requires_contract_shape(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            # Empty checks cannot become a contract, so they cannot become a
+            # trace proof through the raw mapping boundary either.
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "1" * 16,
+                "contract_id": "completion_contract:" + "2" * 16,
+                "domain": "coding",
+                "status": "complete",
+                "satisfied": True,
+            })
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "3" * 16,
+                "contract_id": "completion_contract:" + "4" * 16,
+                "domain": "coding",
+                "status": "complete",
+                "satisfied": True,
+                "checks": [{"check_id": "junk", "status": "model_says_done"}],
+            })
+            # Limited completion must carry at least one valid limitation ref.
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "5" * 16,
+                "contract_id": "completion_contract:" + "6" * 16,
+                "domain": "coding",
+                "status": "complete_with_limitations",
+                "satisfied": True,
+                "checks": [{"check_id": "relevant_verification", "status": "pass"}],
+            })
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "7" * 16,
+                "contract_id": "completion_contract:" + "8" * 16,
+                "domain": "coding",
+                "status": "complete_with_limitations",
+                "satisfied": True,
+                "checks": [{"check_id": "relevant_verification", "status": "pass"}],
+                "limitation_refs": ["  "],
+            })
+            recorder.record_completion_proof({
+                "proof_id": "completion_proof:" + "9" * 16,
+                "contract_id": "completion_contract:" + "a" * 16,
+                "domain": "coding",
+                "status": "complete_with_limitations",
+                "satisfied": True,
+                "checks": [{"check_id": "relevant_verification", "status": "pass"}],
+                "limitation_refs": ["verification_not_locally_observed"],
+            })
+            recorder.finish(status="done")
+
+            payload = self._payload(store.path_for("session-completion", "run-completion"))
+            proofs = payload["completion_proofs"]
+
+            self.assertEqual(len(proofs), 1)
+            self.assertEqual(proofs[0]["proof_id"], "completion_proof:" + "9" * 16)
+            self.assertEqual(proofs[0]["status"], "complete_with_limitations")
+            self.assertEqual(proofs[0]["limitation_refs"], ["verification_not_locally_observed"])
+            self.assertFalse(proofs[0]["satisfied"])
 
     def test_completion_proof_check_cap_matches_contract_cap(self) -> None:
         from codey.completion_contract import MAX_COMPLETION_CHECKS
@@ -2203,6 +2266,7 @@ class CompletionProofTraceTests(unittest.TestCase):
                     "domain": "coding",
                     "status": "complete",
                     "satisfied": True,
+                    "checks": [{"check_id": "relevant_verification", "status": "pass"}],
                 })
             recorder.finish(status="done")
 

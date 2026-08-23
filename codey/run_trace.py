@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 from codey.local_store import DEFAULT_STATE_HOME, session_key, write_json_atomic
 from codey.completion_contract import (
     CHECK_STATUSES as _COMPLETION_CHECK_STATUSES,
+    COMPLETION_COMPLETE_WITH_LIMITATIONS as _COMPLETION_COMPLETE_WITH_LIMITATIONS,
     COMPLETION_SATISFIED_STATUSES as _COMPLETION_SATISFIED_STATUSES,
     COMPLETION_DOMAINS as _COMPLETION_TRACE_DOMAINS,
     COMPLETION_STATUSES as _COMPLETION_TRACE_STATUSES,
@@ -1120,6 +1121,20 @@ class RunTraceRecorder:
             if reason_code:
                 row["reason_code"] = reason_code
             check_rows.append(row)
+        if not check_rows:
+            return
+        ref_groups: dict[str, list[str]] = {}
+        for key in ("evidence_refs", "limitation_refs", "external_refs"):
+            refs = [
+                _safe_trace_code(value, 160)
+                for value in _trace_list_items(raw.get(key))
+            ]
+            ref_groups[key] = [ref for ref in refs if ref][:MAX_GAP_FINDING_REFS]
+        if (
+            status == _COMPLETION_COMPLETE_WITH_LIMITATIONS
+            and not ref_groups["limitation_refs"]
+        ):
+            return
         payload["checks"] = check_rows
         blocked_reason = _safe_trace_code(raw.get("blocked_reason"), 120)
         if blocked_reason and not satisfied:
@@ -1164,12 +1179,7 @@ class RunTraceRecorder:
             )
             if ref
         ][:MAX_CAPSULE_ARTIFACT_REFS]
-        for key in ("evidence_refs", "limitation_refs", "external_refs"):
-            refs = [
-                _safe_trace_code(value, 160)
-                for value in _trace_list_items(raw.get(key))
-            ]
-            payload[key] = [ref for ref in refs if ref][:MAX_GAP_FINDING_REFS]
+        payload.update(ref_groups)
         self._completion_proof_keys.add(proof_id)
         self.manifest.completion_proofs.append(payload)
         if len(self.manifest.completion_proofs) > MAX_COMPLETION_PROOFS:

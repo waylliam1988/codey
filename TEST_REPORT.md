@@ -34,8 +34,10 @@ refs, statuses, check summaries, and reason codes only;
 finding/analysis/artifact refs validate against runtime ref kinds, unknown
 domains/statuses/check rows fail closed, proof-row truncation appends a
 warning, satisfied proofs drop blocked_reason even when callers supply one,
-raw mappings cannot override `satisfied`, and payloads never contain raw
-prompts, transcripts, or output bodies.
+raw mappings cannot override `satisfied`, raw mappings with no valid checks
+are dropped, `complete_with_limitations` requires at least one valid
+limitation ref, and payloads never contain raw prompts, transcripts, or output
+bodies.
 
 Coding got a trace-only shadow completion proof projected from existing local
 facts after a done project run, with local verification freshness expressed as
@@ -121,9 +123,10 @@ Characterization locks added:
   commands cite nothing.
 - Trace section: valid rows kept, malformed rows dropped, duplicate proof ids
   ignored, proof-row cap-8 truncation warning, per-proof check rows share the
-  contract cap, raw `satisfied` values are ignored, object/payload/mapping
-  inputs all accepted, sanitized codes replace prose (`junk row` ->
-  `junk_row`).
+  contract cap, raw `satisfied` values are ignored, empty-check raw proofs are
+  dropped, limited raw proofs without valid limitation refs are dropped,
+  object/payload/mapping inputs all accepted, sanitized codes replace prose
+  (`junk row` -> `junk_row`).
 - Real-run shadow proofs: code change without candidates or observed events ->
   blocked(no_matching_verification_command) with ledger/receipt external refs;
   docs-only change -> complete_with_limitations(docs_only_change); unchanged
@@ -135,11 +138,11 @@ Characterization locks added:
   from codey and contain no I/O tokens; no module imports a research path to
   speak the shared ref dialect.
 
-Verification sequence: targeted `py_compile` for changed runtime files,
+Verification sequence: targeted `py_compile` for `codey/run_trace.py`,
 `compileall -q codey tests`, `ruff check codey tests`, `git diff --check`,
 targeted pytest across contract/gate/trace/architecture/capabilities/
-task-runner/work-queue suites (172 passed, 191 subtests); then one full-suite
-run with repository-local `--basetemp`: 2469 passed, 9 skipped, 709 subtests
+task-runner/work-queue suites (173 passed, 191 subtests); then one full-suite
+run with repository-local `--basetemp`: 2470 passed, 9 skipped, 709 subtests
 passed, zero failures.
 
 ## 0.4.8 Safe Context Epoch + Capability Boundary v1
