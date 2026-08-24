@@ -212,6 +212,18 @@ class RunLedgerStoreTests(unittest.TestCase):
             self.assertEqual([item["type"] for item in rows], ["ledger_truncated"])
             self.assertTrue(writer.disabled)
 
+    def test_reopened_writer_continues_sequence(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "ledger.jsonl"
+            first = RunLedgerWriter(path, run_id="run", session_id="session")
+            first.append("info", text="first")
+            second = RunLedgerWriter(path, run_id="run", session_id="session")
+            second.append("info", text="second")
+
+            rows = [item.payload for item in read_ledger(path)]
+
+        self.assertEqual([item["seq"] for item in rows], [1, 2])
+
     def test_append_failure_disables_writer_without_raising(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             writer = RunLedgerWriter(Path(td) / "ledger.jsonl", run_id="run", session_id="session")

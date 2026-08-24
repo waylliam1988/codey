@@ -151,6 +151,7 @@ _REF_LIST_KEYS = frozenset({
     "assumption_refs",
     "relation_refs",
 })
+_CAPSULE_MAP_KEYS = ("sources", "evidence", "claims", "assumptions", "relations")
 
 
 @dataclass(frozen=True)
@@ -354,6 +355,8 @@ class EvidenceLedgerStore:
 def _record_payload(record: object) -> dict[str, object]:
     if not isinstance(record, ResearchRecord):
         return {}
+    if not _digest_schema_ok(getattr(record, "record_digest", "")):
+        return {}
     payload = record.to_jsonable()
     if (
         payload.get("schema_version") != RESEARCH_RECORD_SCHEMA_VERSION
@@ -368,15 +371,25 @@ def _record_payload(record: object) -> dict[str, object]:
     return payload
 
 
-def _entry_integrity(entry: Mapping[str, object]) -> str:
-    """Content digest over one stored record entry, minus the field itself.
+def _record_integrity(payload: Mapping[str, object], entry: Mapping[str, object]) -> str:
+    """Content digest over one record capsule.
 
-    Serialization is explicit (sorted keys, no whitespace) so the digest is
-    stable across dict insertion order and JSON round-trips.
+    The capsule includes the normalized record entry plus every normalized
+    source/evidence/claim/assumption/relation row it references. Serialization
+    is explicit (sorted keys, no whitespace), so the digest is stable across
+    dict insertion order and JSON round-trips.
     """
 
-    canonical = {key: value for key, value in entry.items() if key != "record_integrity"}
-    return digest_text(json.dumps(canonical, ensure_ascii=True, sort_keys=True, separators=(",", ":")))
+    refs = _record_refs(entry)
+    maps = {key: _mapping(payload.get(key)) for key in _CAPSULE_MAP_KEYS}
+    capsule = {
+        "record": {key: value for key, value in entry.items() if key != "record_integrity"},
+        **{
+            key: {item_id: maps[key].get(item_id, {}) for item_id in sorted(refs[key])}
+            for key in _CAPSULE_MAP_KEYS
+        },
+    }
+    return digest_text(json.dumps(capsule, ensure_ascii=True, sort_keys=True, separators=(",", ":")))
 
 
 def _records_integrity_ok(payload: Mapping[str, object]) -> bool:
@@ -386,10 +399,9 @@ def _records_integrity_ok(payload: Mapping[str, object]) -> bool:
         expected = str(entry.get("record_integrity") or "")
         if not expected:
             return False
-        if _entry_integrity(entry) != expected:
+        if _record_integrity(payload, entry) != expected:
             return False
     return True
-    return payload
 
 
 def _append_payload(
@@ -468,12 +480,15 @@ def _append_payload(
     payload["records"] = records[-MAX_LEDGER_RECORDS:]
     payload["updated_at"] = _now()
     _trim_maps(payload)
-    # Stamp integrity after every normalization pass so load-time
-    # recomputation sees byte-identical content. The entry may have been
-    # pruned for dangling refs; only stamp when it survived.
-    records_now = _records(payload)
-    if records_now and str(records_now[-1].get("record_id") or "") == record_id:
-        records_now[-1]["record_integrity"] = _entry_integrity(records_now[-1])
+    # Stamp every surviving record after map normalization. Shared map rows
+    # are part of each record capsule, so a later trusted append that updates
+    # one row must leave all surviving capsules coherent for load-time checks.
+    _stamp_record_integrities(payload)
+
+
+def _stamp_record_integrities(payload: Mapping[str, object]) -> None:
+    for record in _records(payload):
+        record["record_integrity"] = _record_integrity(payload, record)
 
 
 def _source_entry(item: Mapping[str, object]) -> dict[str, object]:
@@ -694,6 +709,7 @@ def _record_schema_ok(record: Mapping[str, object]) -> bool:
         _identifier_schema_ok(record.get("synthesis_id"), 120)
         and _identifier_schema_ok(record.get("stop_reason"), 80)
         and _clip_schema_ok(record.get("captured_at"), 80, allow_empty=False)
+        and _digest_schema_ok(record.get("record_integrity"))
     )
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -196,6 +197,28 @@ def _assert_ledger_records_are_closed(payload: dict[str, object]) -> None:
         assert relation["to_ref"] in evidence_ids | assumption_ids
 
 
+def _tamper_ledger(mutator) -> tuple[bool, str]:
+    with tempfile.TemporaryDirectory() as td:
+        project = Path(td) / "project"
+        project.mkdir()
+        store = EvidenceLedgerStore(Path(td) / "state")
+        record = _record(project=project)
+        assert store.append_record(
+            record,
+            run_id="run-ledger",
+            session_id="session-ledger",
+            project=project,
+        ).ok
+        path = store.path_for("session-ledger", project)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        mutator(payload)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        snapshot = store.load(session_id="session-ledger", project=project)
+
+    return snapshot.available, snapshot.reason_code
+
+
 def test_tampered_record_entry_fails_closed_on_load() -> None:
     # Content addressing must hold on read, not only at write time: editing
     # the stored JSON by hand invalidates the whole ledger instead of
@@ -223,6 +246,52 @@ def test_tampered_record_entry_fails_closed_on_load() -> None:
 
         assert not snapshot.available
         assert snapshot.reason_code == "ledger_unavailable"
+
+
+def test_tampered_record_capsule_maps_fail_closed_on_load() -> None:
+    mutators = (
+        lambda payload: next(iter(payload["sources"].values())).__setitem__(
+            "host",
+            "other.example",
+        ),
+        lambda payload: next(iter(payload["evidence"].values())).__setitem__(
+            "bounded_excerpt",
+            "Different bounded excerpt.",
+        ),
+        lambda payload: next(iter(payload["claims"].values())).__setitem__(
+            "status",
+            "unsupported",
+        ),
+        lambda payload: next(iter(payload["assumptions"].values())).__setitem__(
+            "reason",
+            "different_reason",
+        ),
+        lambda payload: next(iter(payload["relations"].values())).__setitem__(
+            "relation_kind",
+            "conflicts_with",
+        ),
+    )
+
+    for mutator in mutators:
+        available, reason_code = _tamper_ledger(mutator)
+
+        assert available is False
+        assert reason_code == "ledger_unavailable"
+
+
+def test_missing_record_digest_is_rejected_before_empty_digest_can_persist() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        state_home = Path(td) / "state"
+        store = EvidenceLedgerStore(state_home)
+        result = store.append_record(
+            replace(_record(), record_digest=""),
+            session_id="session-ledger",
+        )
+        path = store.path_for("session-ledger", None)
+
+    assert result.skipped is True
+    assert result.reason_code == "invalid_record"
+    assert not path.exists()
 
 
 def test_append_load_and_duplicate_are_bounded_and_deterministic() -> None:

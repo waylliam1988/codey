@@ -1775,11 +1775,23 @@ class Handler(BaseHTTPRequestHandler):
         origin = str(self.headers.get("Origin") or "").strip()
         if not origin:
             return True
-        allowed_origins = {
-            f"http://127.0.0.1:{self.server.server_address[1]}",
-            f"http://localhost:{self.server.server_address[1]}",
+        return origin.rstrip("/").lower() in self._request_allowed_origins()
+
+    def _request_allowed_origins(self) -> set[str]:
+        try:
+            port = self.server.server_address[1]
+            bind_ip = str(self.server.server_address[0] or "")
+        except Exception:
+            return set()
+        origins = {
+            f"http://127.0.0.1:{port}",
+            f"http://localhost:{port}",
+            f"http://[::1]:{port}",
         }
-        return origin.rstrip("/").lower() in allowed_origins
+        if bind_ip and bind_ip not in {"", "0.0.0.0", "::", "127.0.0.1", "::1"}:
+            host = f"[{bind_ip}]" if ":" in bind_ip and not bind_ip.startswith("[") else bind_ip
+            origins.add(f"http://{host}:{port}")
+        return {item.lower() for item in origins}
 
     def _deny_foreign_origin(self) -> None:
         self._send_json(403, {"error": "cross-origin request refused"})
@@ -1933,13 +1945,15 @@ class Handler(BaseHTTPRequestHandler):
             # Never replay a stored credential against a different base_url:
             # a rebinding/XSS page could otherwise exfiltrate the saved key
             # to an attacker endpoint in one request. Changing the target
-            # requires explicitly supplying the key for that target; probing
-            # the same (or a first-time) target may reuse the stored key.
+            # requires explicitly supplying the key for that target. An
+            # orphaned legacy key without its original base_url is not
+            # portable and is cleared unless the user supplies a new key.
             probe_key = api_key
-            same_or_first_target = not previous_base_url or base_url == previous_base_url
-            if not probe_key and same_or_first_target:
+            same_target = bool(previous_base_url) and base_url == previous_base_url
+            target_changed = bool(previous_base_url) and base_url != previous_base_url
+            if not probe_key and same_target:
                 probe_key = str(previous.get("api_key") or "")
-            if not api_key and not same_or_first_target:
+            if not api_key and target_changed:
                 self._send_json(400, {
                     "ok": False,
                     "error": "api_key required when base_url changes",
@@ -1953,7 +1967,7 @@ class Handler(BaseHTTPRequestHandler):
                 save_local_config(
                     endpoint.base_url,
                     model or endpoint.default_model,
-                    api_key if api_key else None,
+                    None if same_target and not api_key else api_key,
                 )
             except (OSError, ValueError) as exc:
                 self._send_json(500, {"ok": False, "error": str(exc)})

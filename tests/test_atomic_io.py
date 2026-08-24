@@ -27,6 +27,18 @@ class AtomicWriteTests(unittest.TestCase):
 
             self.assertEqual(path.read_text(encoding="utf-8"), "x = 1\n")
 
+    def test_stale_fixed_temp_file_is_not_reused(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td, "app.py")
+            path.write_text("before\n", encoding="utf-8")
+            stale = Path(td, ".app.py.atomic-tmp")
+            stale.write_text("stale\n", encoding="utf-8")
+
+            write_text_atomic(path, "after\n")
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "after\n")
+            self.assertEqual(stale.read_text(encoding="utf-8"), "stale\n")
+
     def test_crlf_files_keep_crlf_on_rewrite(self) -> None:
         # Windows EOL regression: universal-newline reads meant editing one
         # line of a CRLF file silently rewrote the whole file to LF. The

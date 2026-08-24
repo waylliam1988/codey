@@ -10,6 +10,7 @@ by platform text-mode translation.
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 
 
@@ -33,9 +34,9 @@ def write_text_atomic(path: str | Path, text: str, *, encoding: str = "utf-8") -
     directory = target.parent if str(target.parent) else Path(".")
     directory.mkdir(parents=True, exist_ok=True)
     data = encode_with_original_eol(target, text, encoding=encoding)
-    tmp = directory / f".{target.name}.atomic-tmp"
+    tmp = directory / f".{target.name}.{uuid.uuid4().hex}.tmp"
     try:
-        with open(tmp, "wb") as handle:
+        with tmp.open("xb") as handle:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())

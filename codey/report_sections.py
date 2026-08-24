@@ -31,6 +31,7 @@ SECTION_ALIASES: dict[str, tuple[str, ...]] = {
     "risk": ("风险", "risks"),
     "notes": ("备注", "说明", "注", "notes"),
     "method": ("方法", "method", "methods"),
+    "assumptions": ("假设", "前提", "assumption", "assumptions"),
     "source_quality": ("来源质量", "source quality", "source assessment"),
     "coverage": ("搜索覆盖", "research coverage", "search coverage", "coverage"),
     "sources": ("来源", "参考文献", "sources", "references"),
@@ -51,6 +52,7 @@ _SECTION_KEY_ORDER = (
     "risk",
     "notes",
     "method",
+    "assumptions",
     "coverage",
     "sources",
 )

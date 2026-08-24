@@ -22,7 +22,7 @@ from codey.refs import (
     bounded_refs as _bounded_refs,
     clip as _clip,
     digest_json as _digest_json,
-    content_digest as _digest_ref,
+    content_digest,
     digest_text as _digest_text,
     identifier as _identifier,
     nonnegative_int as _nonnegative_int,
@@ -124,7 +124,7 @@ class ResearchSource:
             "requested_url_ref": dict(self.requested_url_ref),
             "final_url_ref": dict(self.final_url_ref),
             "host": _clip(self.host, 120),
-            "title_digest": _digest_ref(self.title_digest),
+            "title_digest": content_digest(self.title_digest),
             "content_hash": _clip(self.content_hash, 80),
             "retrieved_at": _clip(self.retrieved_at, 80),
             "content_kind": _identifier(self.content_kind, 40) or "html",
@@ -173,12 +173,12 @@ class ResearchEvidence:
         return {
             "evidence_id": self.evidence_id,
             "source_id": self.source_id,
-            "excerpt_digest": _digest_ref(self.excerpt_digest),
+            "excerpt_digest": content_digest(self.excerpt_digest),
             "bounded_excerpt": _clip(self.bounded_excerpt, MAX_EXCERPT_CHARS),
             "locator": self.locator.to_jsonable(),
             "stance": _identifier(self.stance, 40) or "supports",
             "note_id": _clip(self.note_id, 120),
-            "claim_text_digest": _digest_ref(self.claim_text_digest),
+            "claim_text_digest": content_digest(self.claim_text_digest),
         }
 
 
@@ -261,7 +261,7 @@ class ResearchRecord:
             "schema_version": RESEARCH_RECORD_SCHEMA_VERSION,
             "kind": RESEARCH_RECORD_KIND,
             "record_id": self.record_id,
-            "record_digest": _digest_ref(self.record_digest),
+            "record_digest": content_digest(self.record_digest),
             "question": self.question.to_jsonable(),
             "answer_status": _answer_status(self.answer_status),
             "sources": [item.to_jsonable() for item in self.sources[:MAX_RECORD_SOURCES]],
@@ -455,7 +455,7 @@ def research_record_summary(record: ResearchRecord | Mapping[str, object]) -> di
             "claim_count": len(record.claims),
             "assumption_count": len(record.assumptions),
             "unsupported_claim_count": max(0, int(record.unsupported_claim_count or 0)),
-            "record_digest": _digest_ref(record.record_digest),
+            "record_digest": content_digest(record.record_digest),
         }
     return {
         "record_id": _identifier(record.get("record_id"), 80),
@@ -465,7 +465,7 @@ def research_record_summary(record: ResearchRecord | Mapping[str, object]) -> di
         "claim_count": _nonnegative_int(record.get("claim_count")),
         "assumption_count": _nonnegative_int(record.get("assumption_count")),
         "unsupported_claim_count": _nonnegative_int(record.get("unsupported_claim_count")),
-        "record_digest": _digest_ref(record.get("record_digest")),
+        "record_digest": content_digest(record.get("record_digest")),
     }
 
 

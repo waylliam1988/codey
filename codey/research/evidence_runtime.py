@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
-from codey.refs import content_digest as _digest_ref
+from codey.refs import content_digest
 from codey.refs import identifier as _identifier
 from codey.research.object_model import (
     MAX_RECORD_ASSUMPTIONS,
@@ -229,10 +229,10 @@ def snapshot_from_research_record(
     answer_status = _identifier(payload.get("answer_status"), 40)
     return EvidenceRuntimeSnapshot(
         record_ref=record_ref,
-        record_digest=_digest_ref(payload.get("record_digest")),
+        record_digest=content_digest(payload.get("record_digest")),
         answer_status=answer_status if answer_status in _ANSWER_STATUSES else "not_answered",
         proof_ref=_generated_ref(_field(proof_review, "proof_ref"), "research_proof"),
-        question_digest=_digest_ref(_field(proof_review, "question_digest")),
+        question_digest=content_digest(_field(proof_review, "question_digest")),
         source_refs=sources,
         evidence_refs=evidence,
         claim_refs=claims,

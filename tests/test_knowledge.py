@@ -74,6 +74,30 @@ class KnowledgeStoreTests(unittest.TestCase):
 
         self.assertTrue(any(row["id"] == note.id for row in rows))
 
+    def test_fallback_search_treats_like_wildcards_as_literals(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            literal = KnowledgeNote.create(
+                type="fact",
+                title="Battery 100% result",
+                body="Use snake_case in the config.",
+            )
+            decoy = KnowledgeNote.create(
+                type="fact",
+                title="Battery 1000 result",
+                body="Use snakeXcase in the config.",
+            )
+            store.write_note(literal)
+            store.write_note(decoy)
+            store.index.fts_enabled = False
+
+            percent_rows = store.index.search("100%")
+            underscore_rows = store.index.search("snake_case")
+            store.close()
+
+        self.assertEqual([row["id"] for row in percent_rows], [literal.id])
+        self.assertEqual([row["id"] for row in underscore_rows], [literal.id])
+
     def test_changes_restore_removes_new_notes(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))

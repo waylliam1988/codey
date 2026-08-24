@@ -91,6 +91,22 @@ class ParseSectionsBoundaryTests(unittest.TestCase):
 
         self.assertEqual(sections["sources"], "[1] Example - https://example.com")
 
+    def test_assumptions_title_does_not_pollute_previous_section(self) -> None:
+        sections = parse_sections(
+            "## Conclusion\n"
+            "- Build the cache.\n"
+            "\n"
+            "Assumptions:\n"
+            "- Data remains current.\n"
+            "\n"
+            "## Sources\n"
+            "[1] Example - https://example.com"
+        )
+
+        self.assertEqual(sections["conclusion"], "- Build the cache.")
+        self.assertNotIn("Assumptions", sections["conclusion"])
+        self.assertEqual(sections["assumptions"], "- Data remains current.")
+
     def test_lead_in_colon_line_does_not_cut_its_section(self) -> None:
         sections = parse_sections("## 结论\n具体如下：\n- Build\n\n## 来源\n[1] Example")
 

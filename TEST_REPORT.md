@@ -1,30 +1,36 @@
 # Codey Test Report
 
-## 0.4.11 Security and Integrity Hardening (unreleased)
+## 0.4.10 Security and Integrity Hardening (review hardening)
 
 Security: the local HTTP server validates `Host` (loopback bind + explicit
 bind address) and rejects foreign `Origin` POSTs with 403 before any handler
-logic, closing DNS rebinding; `/api/local_provider` refuses to replay a
-stored key against a changed `base_url` (400 "api_key required when
-base_url changes", probe/save never called); `/api/stop` expires pending
-shell approvals under lock and emits denied `shell_result` events.
+logic, closing DNS rebinding; explicit LAN bind origins matching the bind
+address are allowed; `/api/local_provider` refuses to replay a stored key
+against a changed `base_url` (400 "api_key required when base_url changes",
+probe/save never called), and orphaned stored keys without an old `base_url`
+are neither probed nor preserved; `/api/stop` expires pending shell approvals
+under lock and emits denied `shell_result` events.
 
-Data integrity: UI state sanitizers keep research history (`researchRuns`/
-`research`) and pending-tool message fields across save/load round-trips;
+Data integrity: UI state sanitizers keep research history through the
+frontend `researchRuns` whitelist (cap 32) and preserve the `research` UI flag
+plus pending-tool message fields across save/load round-trips;
 snapshot/untracked diffs lost their double-blank-line rendering (golden
-test); user files are written through new `codey/atomic_io.py`
-(same-dir temp + fsync + os.replace, CRLF/LF preserved) on write/edit/restore;
-the digest vocabulary split into producer (`refs.content_digest`) and
-validator (`shape.valid_digest_ref`) with all call sites migrated and old
-names gone; evidence-ledger entries now carry a canonical-JSON
-`record_integrity` digest stamped after normalization and verified on every
-load — any tampering fails the ledger closed — while records lacking their
-own digest are rejected at append instead of minting empty-string hashes.
+test); user files are written through `codey/atomic_io.py` (unique same-dir
+temp opened `xb` + fsync + os.replace, CRLF/LF preserved) on
+write/edit/restore; the digest vocabulary split into producer
+(`refs.content_digest`) and validator (`shape.valid_digest_ref`) with all call
+sites migrated and architecture coverage against neutral `_digest_ref` aliases;
+evidence-ledger records now carry a canonical-JSON `record_integrity` digest
+over the full record capsule (record row plus referenced
+source/evidence/claim/assumption/relation maps), stamped after normalization
+and verified on every load — tampering any referenced map row fails the
+ledger closed — while records lacking their own raw digest are rejected before
+projection instead of minting empty-string hashes.
 
 Parser correctness: documented bare numbered headings (`1. Conclusion`,
-`一、结论`) are boundaries again; `参考文献`/`风险`/`备注`/`方法` joined
-the alias table; lead-in colon lines no longer cut their section; unknown
-markdown headings still route to a dropped unknown bucket.
+`一、结论`) are boundaries again; `参考文献`/`风险`/`备注`/`方法` and
+`Assumptions:` joined the alias table; lead-in colon lines no longer cut their
+section; unknown markdown headings still route to a dropped unknown bucket.
 
 Projection governance: CapabilitySpec gained validated
 audience/canonical-inputs/fail-mode/release-gate metadata for every
@@ -44,20 +50,27 @@ restores previous cancellation event on all pre-start failure paths (and
 drops `"route_result" in locals()` control flow); nested profile merges
 flatten "+" segments with dedupe; RunTrace clips claim text before hashing;
 context_epoch marks clamped admissions truncated; reopened run ledgers seed
-byte budgets from file size; knowledge search escapes LIKE wildcards;
-hebbian delete path wraps projection writes like reinforce; redundant
-per-test audit patches removed from work_checkpoint_flow.
+byte budgets and event sequence from the existing file; knowledge search
+escapes LIKE wildcards through explicit SQLite `ESCAPE`; hebbian delete path
+wraps projection writes like reinforce; redundant per-test audit patches
+removed from work_checkpoint_flow.
 
 Verification:
 
 ```text
 python -m pytest tests/test_research_evidence_ledger.py ... targeted suite:
-  security/integrity/parser/projection files: 470 passed
-python -m pytest tests                full suite: see counts below
+  security/integrity/parser/projection files: 142 passed + 216 subtests
+python -m pytest tests/test_capabilities.py ... projection-adjacent suite:
+  212 passed + 3 subtests
+python -m pytest -q                   full suite:
+  2593 passed, 9 skipped, 781 subtests passed in 229.95s
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean
 ```
+
+Note: full pytest exited 0. Windows printed a pytest temporary-directory
+cleanup `PermissionError` in an atexit callback after the suite had passed.
 
 ## 0.4.10 Domain Source Trust + Research Brief Projection
 

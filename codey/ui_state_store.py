@@ -126,24 +126,93 @@ def _clean_messages(value: object) -> list[dict[str, Any]]:
     return messages
 
 
-MAX_RESEARCH_RUNS_PER_SESSION = 40
+MAX_RESEARCH_RUNS_PER_SESSION = 32
+MAX_RESEARCH_LIST_ITEMS = 64
+MAX_RESEARCH_OBJECT_KEYS = 24
+MAX_RESEARCH_DEPTH = 2
+RESEARCH_RUN_TEXT_FIELDS = ("runId", "synthesisId", "receipt")
+RESEARCH_RUN_LIST_TEXT_FIELDS = (
+    "notesCreated",
+    "notesUpdated",
+    "sourceUrls",
+    "queries",
+    "counterpoints",
+    "qualityWarnings",
+)
+RESEARCH_RUN_LIST_OBJECT_FIELDS = (
+    "searchResults",
+    "openedSources",
+    "citationMap",
+    "evidenceItems",
+)
 
 
-def _clean_research_runs(value: object) -> list[Any]:
-    """Sanitize one session's research-run summaries without dropping them.
+def _clean_research_json(value: object, *, depth: int = MAX_RESEARCH_DEPTH) -> Any:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return _int(value)
+    if isinstance(value, str):
+        return _str(value, MAX_STRING)
+    if depth <= 0:
+        return _str(value, MAX_SHORT_STRING)
+    if isinstance(value, list):
+        return [
+            _clean_research_json(item, depth=depth - 1)
+            for item in value[:MAX_RESEARCH_LIST_ITEMS]
+        ]
+    if isinstance(value, dict):
+        clean: dict[str, Any] = {}
+        for key, item in list(value.items())[:MAX_RESEARCH_OBJECT_KEYS]:
+            token = _str(key, MAX_SHORT_STRING)
+            if token:
+                clean[token] = _clean_research_json(item, depth=depth - 1)
+        return clean
+    return _str(value, MAX_SHORT_STRING)
 
-    Research history used to be stripped here, and the UI restore then
-    overwrote local state with the stripped copy -- every restart erased all
-    research runs. Keep the run objects bounded but intact.
-    """
 
+def _clean_research_run(value: object) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    run: dict[str, Any] = {}
+    for key in RESEARCH_RUN_TEXT_FIELDS:
+        run[key] = _str(value.get(key), MAX_STRING if key == "receipt" else MAX_SHORT_STRING)
+    for key in RESEARCH_RUN_LIST_TEXT_FIELDS:
+        raw = value.get(key)
+        run[key] = [
+            _str(item, MAX_STRING if key == "sourceUrls" else MAX_SHORT_STRING)
+            for item in (raw if isinstance(raw, list) else [])[:MAX_RESEARCH_LIST_ITEMS]
+        ]
+    for key in RESEARCH_RUN_LIST_OBJECT_FIELDS:
+        raw = value.get(key)
+        run[key] = [
+            _clean_research_json(item, depth=MAX_RESEARCH_DEPTH)
+            for item in (raw if isinstance(raw, list) else [])[:MAX_RESEARCH_LIST_ITEMS]
+        ]
+    run["sourcesRead"] = _int(value.get("sourcesRead"))
+    run["coverage"] = (
+        _clean_research_json(value.get("coverage"), depth=MAX_RESEARCH_DEPTH)
+        if isinstance(value.get("coverage"), dict)
+        else {}
+    )
+    run["restoreable"] = False
+    run["createdAt"] = _int(value.get("createdAt"))
+    return run
+
+
+def _clean_research_runs(value: object) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
-    return [item for item in value[-MAX_RESEARCH_RUNS_PER_SESSION:] if isinstance(item, dict)]
+    rows: list[dict[str, Any]] = []
+    for item in value[-MAX_RESEARCH_RUNS_PER_SESSION:]:
+        clean = _clean_research_run(item)
+        if clean is not None:
+            rows.append(clean)
+    return rows
 
 
-def _clean_research(value: object) -> Any:
-    return value if isinstance(value, dict) else None
+def _clean_research(value: object) -> bool:
+    return bool(value)
 
 
 def _clean_sessions(value: object) -> list[dict[str, Any]]:
@@ -172,8 +241,8 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
         # invents empty keys so older payloads stay byte-shape stable.
         if isinstance(item.get("researchRuns"), list):
             entry["researchRuns"] = _clean_research_runs(item.get("researchRuns"))
-        if isinstance(item.get("research"), dict):
-            entry["research"] = item["research"]
+        if "research" in item:
+            entry["research"] = _clean_research(item.get("research"))
         sessions.append(entry)
     return sessions
 

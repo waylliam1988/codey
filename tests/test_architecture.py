@@ -523,6 +523,19 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 ):
                     self.assertNotIn(token, source)
 
+    def test_digest_helpers_are_not_imported_under_neutral_aliases(self) -> None:
+        offenders: list[str] = []
+        forbidden = (
+            "content_digest as _digest_ref",
+            "valid_digest_ref as _digest_ref",
+        )
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            if any(token in source for token in forbidden):
+                offenders.append(path.relative_to(ROOT).as_posix())
+
+        self.assertEqual(offenders, [])
+
     def test_completion_contract_modules_are_projection_only(self) -> None:
         # The completion contract is the Verified Completion Gate's pure core:
         # it derives proofs from facts handed to it, and must never reach

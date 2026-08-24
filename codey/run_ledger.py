@@ -66,6 +66,24 @@ def _event_common(run_id: str, session_id: str, seq: int, event_type: str) -> di
     }
 
 
+def _last_valid_seq(path: Path) -> int:
+    last_seq = 0
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict) or payload.get("schema_version") != SCHEMA_VERSION:
+                continue
+            seq = _int_or_none(payload.get("seq"))
+            if seq is not None and seq > 0:
+                last_seq = seq
+    except (OSError, UnicodeDecodeError):
+        return 0
+    return last_seq
+
+
 @dataclass(frozen=True)
 class RunLedgerRecord:
     payload: dict[str, object]
@@ -115,7 +133,7 @@ class RunLedgerWriter:
         self.path = path
         self.run_id = run_id
         self.session_id = session_id
-        self.seq = 0
+        self.seq = _last_valid_seq(path)
         # Reopening an existing ledger file (resume path) must count its
         # current size, or the byte budget silently restarts from zero and
         # the cap is exceeded.

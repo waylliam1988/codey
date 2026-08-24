@@ -4,7 +4,7 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## 0.4.11 - Security and Integrity Hardening (unreleased)
+## 0.4.10 - Security and Integrity Hardening (review hardening)
 
 - Local HTTP API is protected against DNS rebinding and cross-origin misuse:
   every request now validates the `Host` header against the loopback bind
@@ -14,36 +14,41 @@ This file records Codey's release history. The newest release appears first.
 - `/api/local_provider` no longer replays a stored credential against a
   different `base_url`: changing the target requires explicitly supplying
   that target's key, so a rebinding/XSS page cannot exfiltrate the saved
-  key in one request. Probing or updating the same (or first) target may
-  still reuse the stored key.
+  key in one request. Only an existing config with the same stored
+  `base_url` may reuse its key; orphaned legacy keys without a recorded
+  base URL are probed with an empty key and cleared unless the user supplies
+  a new one.
 - `/api/stop` now expires every pending shell approval under the same lock
   and emits denied `shell_result` events; a stale Allow card can no longer
   execute a command after the user pressed stop.
-- UI state persistence no longer loses research data: session sanitizers
-  keep `researchRuns` / `research` (bounded), and message sanitizers keep
+- UI state persistence no longer loses research data while keeping a narrow
+  state boundary: session sanitizers preserve the frontend's
+  `researchRuns` shape through a whitelist capped at 32 runs and store
+  `research` as the boolean UI flag it already is; message sanitizers keep
   `toolKey` / `activity` / `pending`, so restarts stop erasing research
   history and pending tool cards survive round-trips.
 - Snapshot/untracked diffs render correctly again: `keepends=True` fed into
   `unified_diff(lineterm="")` plus `"\n".join()` double-spaced every content
   line for non-git projects; both diff builders now use plain `splitlines()`
   with golden assertions.
-- User source files are written atomically and EOL-preserving via new
-  `codey/atomic_io.py` (`write_text_atomic`: same-directory temp file,
-  fsync, `os.replace`, CRLF/LF style retained). Wired into write/edit tool
-  paths and snapshot restore, matching the "written atomically" promise in
-  the tool contract.
+- User source files are written atomically and EOL-preserving via
+  `codey/atomic_io.py` (`write_text_atomic`: unique same-directory temp
+  file opened with `xb`, fsync, `os.replace`, CRLF/LF style retained).
+  Wired into write/edit tool paths and snapshot restore, matching the
+  "written atomically" promise in the tool contract.
 - Digest vocabulary split to kill the同名双义: `refs.digest_ref` becomes
   `refs.content_digest` (producer: any value -> sha256 content digest);
   `research.shape.digest_ref` becomes `shape.valid_digest_ref` (validator:
   returns the value only when already a well-formed sha256 ref). All call
   sites updated; nothing imports the old names.
-- Evidence ledger integrity is now verified on load, not just stamped at
-  write: each record entry carries a canonical-JSON `record_integrity`
-  digest (computed after all normalization passes), and any mismatch or
-  missing field fails the whole ledger closed (`ledger_unavailable`)
-  instead of serving tampered history. Records without their own
-  `record_digest` are rejected at append instead of minting the empty-
-  string digest.
+- Evidence ledger integrity is now verified on load over the full record
+  capsule, not just the record row: each record entry carries a
+  canonical-JSON `record_integrity` digest over the entry (minus that field)
+  plus every referenced source/evidence/claim/assumption/relation map row.
+  Any mismatch or missing field fails the whole ledger closed
+  (`ledger_unavailable`) instead of serving tampered history. Records
+  without their own raw `record_digest` are rejected before projection
+  instead of minting the empty-string digest.
 - Report section boundaries hardened: bare numbered headings documented in
   the README (`1. Conclusion`, `一、结论`) are recognized again, common
   Chinese section titles (`参考文献`, `风险`, `备注`, `方法`) joined the
@@ -68,9 +73,12 @@ This file records Codey's release history. The newest release appears first.
   gains GLM-style double-click protection; `task_runner` restores the
   previous cancellation event on every pre-start failure path;
   `context_epoch` marks clamped admissions as truncated; reopened run
-  ledgers start their byte budget from the existing file size; knowledge
-  search escapes LIKE wildcards; hebbian delete-path wraps projection
-  writes symmetrically with reinforce.
+  ledgers continue both byte budget and event sequence from the existing
+  file; knowledge search escapes LIKE wildcards with explicit SQLite
+  `ESCAPE` clauses; `Assumptions:` is a section boundary that cannot pollute
+  conclusions; digest producer/validator helpers are banned from neutral
+  `_digest_ref` aliases by architecture test; hebbian delete-path wraps
+  projection writes symmetrically with reinforce.
 
 ## 0.4.10 - Domain Source Trust + Research Brief Projection
 

@@ -39,7 +39,7 @@ from codey.research.review_finding import (
     STATUS_OPEN,
 )
 from codey.research.source_trust import SOURCE_CLASSES as _SOURCE_TRUST_CLASSES
-from codey.research.shape import valid_digest_ref as _digest_ref
+from codey.research.shape import valid_digest_ref
 from codey.research.shape import generated_ref as _generated_ref
 from codey.research.shape import safe_connector_id as _safe_connector_id
 
@@ -647,7 +647,7 @@ class RunTraceRecorder:
         if not isinstance(summary, Mapping):
             return
         record_id = _generated_ref(summary.get("record_id"), "research_record")
-        digest = _digest_ref(summary.get("record_digest"))
+        digest = valid_digest_ref(summary.get("record_digest"))
         if not record_id or not digest or record_id in self._research_record_keys:
             return
         answer_status = _research_answer_status(summary.get("answer_status"))
@@ -703,7 +703,7 @@ class RunTraceRecorder:
         proof_ref = _generated_ref(review.get("proof_ref"), "research_proof")
         if not proof_ref:
             return
-        question_digest = _digest_ref(review.get("question_digest"))
+        question_digest = valid_digest_ref(review.get("question_digest"))
         payload: dict[str, object] = {
             "proof_ref": proof_ref,
             "ok": bool(review.get("ok")),
@@ -722,7 +722,7 @@ class RunTraceRecorder:
         record_id = _generated_ref(review.get("record_id"), "research_record")
         if record_id:
             payload["record_id"] = record_id
-        digest = _digest_ref(review.get("record_digest"))
+        digest = valid_digest_ref(review.get("record_digest"))
         if digest:
             payload["record_digest"] = digest
         if payload["ok"] and (not record_id or not digest):
@@ -754,7 +754,7 @@ class RunTraceRecorder:
         plan_ref = _generated_ref(plan.get("plan_ref"), "research_plan")
         if not plan_ref or plan_ref in self._research_plan_keys:
             return
-        question_digest = _digest_ref(plan.get("question_digest"))
+        question_digest = valid_digest_ref(plan.get("question_digest"))
         proof_ref = _generated_ref(plan.get("proof_ref"), "research_proof")
         preferences: list[str] = []
         for item in _trace_list_items(plan.get("source_preferences")):
@@ -897,7 +897,7 @@ class RunTraceRecorder:
             "run_id": str(record.get("run_id") or "")[:120],
             "tool_id": tool_id,
             "tool_name": tool_name,
-            "command_digest": _digest_ref(record.get("command_digest")),
+            "command_digest": valid_digest_ref(record.get("command_digest")),
             "command_display": command_display,
             "cwd_ref": dict(cwd_ref) if isinstance(cwd_ref, Mapping) else {},
             "exit_code": _int_or_none(record.get("exit_code")),
@@ -906,7 +906,7 @@ class RunTraceRecorder:
             "finished_at": str(record.get("finished_at") or "")[:40],
             "duration_ms": _int_or_none(record.get("duration_ms")),
             "managed_output_handle": str(record.get("managed_output_handle") or "")[:80],
-            "output_sha256": _digest_ref(
+            "output_sha256": valid_digest_ref(
                 f"sha256:{record.get('output_sha256')}"
                 if str(record.get("output_sha256") or "")
                 else ""
@@ -914,7 +914,7 @@ class RunTraceRecorder:
             "stored_truncated": bool(record.get("stored_truncated")),
             "capture_quality": _safe_trace_code(record.get("capture_quality"), 40),
             "reproduction_status": _safe_trace_code(record.get("reproduction_status"), 40),
-            "environment_digest": _digest_ref(record.get("environment_digest")),
+            "environment_digest": valid_digest_ref(record.get("environment_digest")),
             "warnings": warnings[:MAX_WARNINGS],
         }
         self._analysis_run_keys.add(ref)
@@ -941,7 +941,7 @@ class RunTraceRecorder:
                 "artifact_id": artifact_id,
                 "version_id": version_id,
                 "artifact_kind": _identifier(item.get("artifact_kind"), 40),
-                "sha256": _digest_ref(
+                "sha256": valid_digest_ref(
                     f"sha256:{item.get('sha256')}"
                     if str(item.get("sha256") or "")
                     else ""
@@ -990,7 +990,7 @@ class RunTraceRecorder:
                 )
                 if version_ref
             ][:MAX_CAPSULE_ARTIFACT_REFS],
-            "environment_digest": _digest_ref(capsule.get("environment_digest")),
+            "environment_digest": valid_digest_ref(capsule.get("environment_digest")),
             "reproduction_status": _safe_trace_code(
                 capsule.get("reproduction_status"), 40
             ),
@@ -1150,7 +1150,7 @@ class RunTraceRecorder:
         if not isinstance(projection, Mapping):
             return
         record_ref = _normalize_runtime_ref(projection.get("record_ref"), kind="research_record")
-        digest = _digest_ref(projection.get("record_digest"))
+        digest = valid_digest_ref(projection.get("record_digest"))
         profile_id = _safe_trace_code(projection.get("profile_id"), 80)
         if not record_ref or not digest:
             return
@@ -1436,7 +1436,7 @@ class RunTraceRecorder:
             "phase": _identifier(raw.get("phase"), 80),
             "subject_ref": subject_ref,
         }
-        display_digest = _digest_ref(raw.get("display_digest"))
+        display_digest = valid_digest_ref(raw.get("display_digest"))
         if display_digest:
             payload["display_digest"] = display_digest
         display_chars = _int_or_none(raw.get("display_chars"))

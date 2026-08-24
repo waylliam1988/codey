@@ -21,7 +21,7 @@ from codey.refs import (
     stable_ref,
 )
 from codey.research.object_model import ResearchRecord
-from codey.research.shape import valid_digest_ref as _digest_ref
+from codey.research.shape import valid_digest_ref
 from codey.redaction import looks_sensitive_signal
 
 
@@ -142,7 +142,7 @@ class ResearchProofReview:
             "support_relation_verified": bool(self.support_relation_verified),
             "counterevidence_checked": bool(self.counterevidence_checked),
             "ledger_record_verified": bool(self.ledger_record_verified),
-            "question_digest": _digest_ref(self.question_digest),
+            "question_digest": valid_digest_ref(self.question_digest),
             "coverage_gaps": [item.to_payload() for item in self.coverage_gaps[:MAX_GAPS]],
             "followup_questions": [
                 item.to_payload() for item in self.followup_questions[:MAX_SIGNALS]
@@ -156,7 +156,7 @@ class ResearchProofReview:
             "missing_evidence": list(bounded_refs(self.missing_evidence, limit=MAX_WARNINGS)),
             "proof_ref": _proof_ref_or_empty(self.proof_ref),
             "record_id": _record_id_or_empty(self.record_id),
-            "record_digest": _digest_ref(self.record_digest),
+            "record_digest": valid_digest_ref(self.record_digest),
         }
 
     def to_trace_payload(self) -> dict[str, object]:
@@ -192,7 +192,7 @@ def review_research_proof(
         )
 
     record_id = _record_id_or_empty(payload.get("record_id"))
-    record_digest = _digest_ref(payload.get("record_digest"))
+    record_digest = valid_digest_ref(payload.get("record_digest"))
     answer_status = _answer_status(payload.get("answer_status"))
     sources = _source_map(payload.get("sources"))
     evidence = _evidence_map(payload.get("evidence"))
@@ -291,8 +291,8 @@ def proof_review_trace_payload(review: ResearchProofReview | Mapping[str, object
     return {
         "proof_ref": proof_ref,
         "record_id": _record_id_or_empty(payload.get("record_id")),
-        "record_digest": _digest_ref(payload.get("record_digest")),
-        "question_digest": _digest_ref(payload.get("question_digest")),
+        "record_digest": valid_digest_ref(payload.get("record_digest")),
+        "question_digest": valid_digest_ref(payload.get("question_digest")),
         "ok": bool(payload.get("ok")),
         "answers_question": bool(payload.get("answers_question")),
         "answer_status": _answer_status(payload.get("answer_status")),
@@ -348,8 +348,8 @@ def _proof_ref_from_payload(payload: Mapping[str, object]) -> str:
     return stable_ref(
         "research_proof",
         _record_id_or_empty(payload.get("record_id")),
-        _digest_ref(payload.get("record_digest")),
-        _digest_ref(payload.get("question_digest")),
+        valid_digest_ref(payload.get("record_digest")),
+        valid_digest_ref(payload.get("question_digest")),
         bool(payload.get("ok")),
         bool(payload.get("answers_question")),
         _bounded_score(payload.get("answer_coverage_score")),

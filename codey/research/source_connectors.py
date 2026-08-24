@@ -43,7 +43,7 @@ from codey.redaction import (
 from codey.research.shape import (
     bounded_limit as _bounded_limit,
     connector_id as _connector_id,
-    valid_digest_ref as _digest_ref,
+    valid_digest_ref,
     generated_ref as _generated_ref,
 )
 from codey.research.source_document import SourceDocument
@@ -366,7 +366,7 @@ class FetchedSource:
             "connector_id": _connector_id(self.connector_id),
             "source_ref": _generated_ref(self.source_ref, "source_ref"),
             "source_id": _generated_ref(self.source_id, "connector_source"),
-            "content_digest": _digest_ref(self.content_digest),
+            "content_digest": valid_digest_ref(self.content_digest),
             "content_kind": _safe_fetched_content_kind(self.document.content_kind),
             "mime_type": _safe_mime_type(self.document.mime_type),
             "text_chars": len(str(self.document.text or "")),
@@ -394,7 +394,7 @@ class SourceConnectorResult:
     def to_payload(self) -> dict[str, object]:
         return {
             "connector_id": _connector_id(self.connector_id),
-            "query_digest": _digest_ref(self.query_digest),
+            "query_digest": valid_digest_ref(self.query_digest),
             "hit_count": len(self.hits),
             "hits": [item.to_payload() for item in self.hits[:MAX_CONNECTOR_HITS]],
             "warnings": list(_safe_payload_refs(self.warnings, limit=8)),

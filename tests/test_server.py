@@ -1444,6 +1444,27 @@ class LocalProviderApiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
 
+    def test_explicit_lan_bind_allows_matching_origin(self) -> None:
+        httpd, host, port = self._start_server()
+        httpd.server_address = ("192.168.1.10", port)
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request(
+                "GET",
+                "/api/no_such_endpoint",
+                headers={
+                    "Host": f"192.168.1.10:{port}",
+                    "Origin": f"http://192.168.1.10:{port}",
+                },
+            )
+            response = conn.getresponse()
+            response.read()
+            conn.close()
+
+            self.assertEqual(response.status, 404)
+        finally:
+            httpd.shutdown()
+
     def test_changing_base_url_requires_explicit_api_key(self) -> None:
         httpd, host, port = self._start_server()
         try:
@@ -1484,7 +1505,10 @@ class LocalProviderApiTests(unittest.TestCase):
         host, port = httpd.server_address
         try:
             with (
-                mock.patch.object(server, "load_local_config", return_value={"api_key": "old-secret"}),
+                mock.patch.object(server, "load_local_config", return_value={
+                    "base_url": "http://127.0.0.1:1234/v1",
+                    "api_key": "old-secret",
+                }),
                 mock.patch.object(
                     server,
                     "probe_local_endpoint",
@@ -1519,6 +1543,44 @@ class LocalProviderApiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+    def test_orphaned_local_api_key_is_not_replayed_or_preserved(self) -> None:
+        httpd, host, port = self._start_server()
+        try:
+            with (
+                mock.patch.object(server, "load_local_config", return_value={"api_key": "old-secret"}),
+                mock.patch.object(
+                    server,
+                    "probe_local_endpoint",
+                    return_value=LocalEndpoint("http://127.0.0.1:1234/v1", ("llama",)),
+                ) as probe,
+                mock.patch.object(server, "save_local_config") as save,
+                mock.patch.object(server, "local_config_payload", return_value={"connected": True}),
+            ):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/local_provider",
+                    body=json.dumps({
+                        "base_url": "http://127.0.0.1:1234/v1",
+                        "model": "llama",
+                    }),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                conn.close()
+
+            self.assertEqual(response.status, 200)
+            self.assertTrue(payload["ok"])
+            probe.assert_called_once_with("http://127.0.0.1:1234/v1", api_key="")
+            save.assert_called_once_with(
+                "http://127.0.0.1:1234/v1",
+                "llama",
+                "",
+            )
+        finally:
+            httpd.shutdown()
 
 
 class ConsensusConnectionTests(unittest.TestCase):

@@ -205,7 +205,8 @@ class KnowledgeIndex:
             rows = self._conn.execute(
                 "SELECT id,type,title,status,confidence,updated,session_id,project,"
                 " substr(body,1,160) AS snippet FROM notes"
-                " WHERE title LIKE ? OR body LIKE ? ORDER BY updated DESC LIMIT ?",
+                " WHERE title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\'"
+                " ORDER BY updated DESC LIMIT ?",
                 (like, like, limit),
             ).fetchall()
         return [dict(r) for r in rows]

@@ -23,7 +23,7 @@ from codey.research.proof_quality import ResearchProofReview
 from codey.redaction import looks_sensitive_code, looks_sensitive_signal
 from codey.research.shape import (
     connector_id as _connector_id,
-    valid_digest_ref as _digest_ref,
+    valid_digest_ref,
     generated_ref as _generated_ref,
 )
 from codey.research.source_connectors import (
@@ -119,7 +119,7 @@ class ResearchPlan:
     def to_payload(self) -> dict[str, object]:
         return {
             "plan_ref": _generated_ref(self.plan_ref, "research_plan"),
-            "question_digest": _digest_ref(self.question_digest),
+            "question_digest": valid_digest_ref(self.question_digest),
             "proof_ref": _generated_ref(self.proof_ref, "research_proof"),
             "query_candidates": [item.to_payload() for item in self.query_candidates[:MAX_PLAN_QUERIES]],
             "source_preferences": [item.to_payload() for item in self.source_preferences[:MAX_PLAN_SOURCES]],
@@ -146,7 +146,9 @@ def build_research_plan(
 ) -> ResearchPlan:
     payload = _review_payload(review)
     registry = registry or built_in_connector_registry()
-    question_digest = _digest_ref(payload.get("question_digest")) or (digest_text(question) if question else "")
+    question_digest = valid_digest_ref(payload.get("question_digest")) or (
+        digest_text(question) if question else ""
+    )
     proof_ref = _generated_ref(payload.get("proof_ref"), "research_proof")
     max_query_count = _bounded_int(max_queries, 1, MAX_PLAN_QUERIES)
     max_source_count = _bounded_int(max_sources, 1, MAX_PLAN_SOURCES)
@@ -234,7 +236,7 @@ def research_plan_trace_payload(plan: ResearchPlan | Mapping[str, object]) -> di
         query_candidates = []
     return {
         "plan_ref": _generated_ref(payload.get("plan_ref"), "research_plan"),
-        "question_digest": _digest_ref(payload.get("question_digest")),
+        "question_digest": valid_digest_ref(payload.get("question_digest")),
         "proof_ref": _generated_ref(payload.get("proof_ref"), "research_proof"),
         "dry_run": True,
         "max_depth": _bounded_int(payload.get("max_depth"), 1, PLAN_MAX_DEPTH),

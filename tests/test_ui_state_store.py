@@ -35,8 +35,26 @@ class UiStateStoreTests(unittest.TestCase):
                     "createdAt": 5,
                     "provider": "deepseek",
                     "researchRuns": [
-                        {"id": "run-1", "status": "done", "question": "helium?"},
-                        {"id": "run-2", "status": "running", "question": "war?"},
+                        {
+                            "runId": "run-1",
+                            "synthesisId": "synth-1",
+                            "notesCreated": ["note-1"],
+                            "sourceUrls": ["https://example.com/helium"],
+                            "sourcesRead": 1,
+                            "queries": ["helium"],
+                            "searchResults": [{"title": "Helium", "extra": "kept-bounded"}],
+                            "coverage": {"opened": 1},
+                            "receipt": "done",
+                            "restoreable": True,
+                            "createdAt": 7,
+                            "unknown": "drop",
+                        },
+                        {
+                            "runId": "run-2",
+                            "synthesisId": "synth-2",
+                            "qualityWarnings": ["stale"],
+                            "createdAt": 8,
+                        },
                     ],
                     "research": {"topic": "helium", "lastRunId": "run-1"},
                 }],
@@ -48,12 +66,43 @@ class UiStateStoreTests(unittest.TestCase):
             session = loaded["sessions"][0]
 
             self.assertEqual(len(session["researchRuns"]), 2)
-            self.assertEqual(session["researchRuns"][0]["id"], "run-1")
-            self.assertEqual(session["research"]["topic"], "helium")
+            self.assertEqual(session["researchRuns"][0]["runId"], "run-1")
+            self.assertNotIn("unknown", session["researchRuns"][0])
+            self.assertFalse(session["researchRuns"][0]["restoreable"])
+            self.assertEqual(session["researchRuns"][0]["coverage"], {"opened": 1})
+            self.assertEqual(session["research"], True)
             message = session["messages"][0]
             for key in ("toolKey", "activity", "pending"):
                 self.assertIn(key, message)
             self.assertTrue(message["pending"])
+
+    def test_research_runs_are_capped_to_frontend_restore_window(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            store.save({
+                "active_id": "chat-research",
+                "updated_at": 10,
+                "revision": 1,
+                "sessions": [{
+                    "id": "chat-research",
+                    "title": "Research chat",
+                    "messages": [],
+                    "terminalRuns": [],
+                    "createdAt": 5,
+                    "provider": "deepseek",
+                    "researchRuns": [
+                        {"runId": f"run-{index}", "createdAt": index}
+                        for index in range(40)
+                    ],
+                }],
+                "projects": [],
+            })
+
+            runs = store.load()["sessions"][0]["researchRuns"]
+
+        self.assertEqual(len(runs), 32)
+        self.assertEqual(runs[0]["runId"], "run-8")
+        self.assertEqual(runs[-1]["runId"], "run-39")
 
     def test_round_trip_visible_ui_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:
