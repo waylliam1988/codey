@@ -33,9 +33,10 @@ This file records Codey's release history. The newest release appears first.
   with golden assertions.
 - User source files are written atomically and EOL-preserving via
   `codey/atomic_io.py` (`write_text_atomic`: unique same-directory temp
-  file opened with `xb`, fsync, `os.replace`, CRLF/LF style retained).
-  Wired into write/edit tool paths and snapshot restore, matching the
-  "written atomically" promise in the tool contract.
+  file opened with `xb`, fsync, existing file mode copied before
+  `os.replace`, CRLF/LF style retained). Wired into write/edit tool paths
+  and snapshot restore, matching the "written atomically" promise in the
+  tool contract without dropping executable bits on POSIX.
 - Digest vocabulary split to kill the同名双义: `refs.digest_ref` becomes
   `refs.content_digest` (producer: any value -> sha256 content digest);
   `research.shape.digest_ref` becomes `shape.valid_digest_ref` (validator:
@@ -50,9 +51,13 @@ This file records Codey's release history. The newest release appears first.
   without their own raw `record_digest` are rejected before projection
   instead of minting the empty-string digest. Append-time shared-map id
   collisions are now rejected before any write: if a new record reuses an
-  existing source/evidence/claim/assumption/relation id with different
-  canonical content, the record is skipped with `ledger_id_collision` and the
-  previous ledger payload is left byte-for-byte unchanged.
+  existing evidence/claim/assumption/relation id with different canonical
+  content, or reuses a source id with different identity fields
+  (final URL ref when known, host, content hash, content kind), the record is skipped with
+  `ledger_id_collision` and the previous ledger payload is left
+  byte-for-byte unchanged. Legitimate repeat captures of the same source do
+  not collide merely because observation fields changed; retrieved time,
+  pages read, truncation, and conservative quality hints are merged.
 - Report section boundaries hardened: bare numbered headings documented in
   the README (`1. Conclusion`, `一、结论`) are recognized again, common
   Chinese section titles (`参考文献`, `风险`, `备注`, `方法`) joined the
@@ -67,12 +72,15 @@ This file records Codey's release history. The newest release appears first.
   capped by test; architecture tests forbid behavior-side research modules
   from reading trace/UI projections and restrict profile+source-trust
   combination to zero import sites today.
-- Smaller fixes: nested evidence-profile merges flatten their "+" segments
-  (no synthetic combo-looking ids like `finance_legal+science`);
+- Smaller fixes: nested evidence-profile merges flatten and cap their atomic
+  "+" segments before computing merged values (no synthetic combo-looking ids
+  like `finance_legal+science`, and no fifth atom leaking into the profile);
   RunTrace's brief-projection claim rows clip text before hashing and store
   digests only; `test_server.py` installs module-level guards so tests
   cannot open real provider tabs (the two receipt/memory tests patch both
-  connectors); `tests/test_work_checkpoint_flow.py` disables post-task
+  connectors); `tests/conftest.py` suppresses pytest's Windows-only
+  `pytest-current` symlink cleanup `PermissionError` at atexit without
+  changing temp paths; `tests/test_work_checkpoint_flow.py` disables post-task
   audit/consensus/advisor side effects (~137s -> ~4s); StepFun submission
   gains GLM-style double-click protection; `task_runner` restores the
   previous cancellation event on every pre-start failure path;

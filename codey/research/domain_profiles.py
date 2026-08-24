@@ -221,48 +221,28 @@ def merge_profiles(*profiles: EvidenceProfile) -> EvidenceProfile:
     """Compose profiles per dimension. Data combination, never inheritance."""
 
     rows: list[EvidenceProfile] = []
-    seen: set[str] = set()
+    seen_segments: set[str] = set()
+    warning_groups: list[tuple[str, ...]] = []
     truncated = False
     for profile in profiles or ():
         if not isinstance(profile, EvidenceProfile):
             continue
-        # Sanitize per "+" segment so composed ids keep their marker and
-        # dedupe against their atomic parts (finance+legal is finance and
-        # legal, never a "finance_legal" atom).
-        segments = [_profile_id(part) for part in str(profile.profile_id or "").split("+")]
-        normalized_id = "+".join(part for part in segments if part)
-        if not normalized_id:
+        warning_groups.append(profile.warnings)
+        atoms = _profile_atoms(profile)
+        if not atoms:
             continue
-        if normalized_id != profile.profile_id:
-            profile = replace(profile, profile_id=normalized_id)
-        duplicate = any(
-            set(profile.profile_id.split("+")).issubset(existing.split("+"))
-            for existing in seen
-        )
-        if duplicate:
-            continue
-        if profile.profile_id in seen:
-            continue
-        seen.add(profile.profile_id)
-        if len(rows) >= MAX_MERGE_PROFILES:
-            truncated = True
-            continue
-        rows.append(profile)
+        for atom in atoms:
+            if atom.profile_id in seen_segments:
+                continue
+            if len(rows) >= MAX_MERGE_PROFILES:
+                truncated = True
+                continue
+            seen_segments.add(atom.profile_id)
+            rows.append(atom)
     if not rows:
         return GENERAL_PROFILE
-    # Flatten "+" segments so composing an already-composed profile can never
-    # sanitize into a builtin-lookalike name: merge(finance+legal, science)
-    # is "finance+legal+science", not "finance_legal+science".
-    segments: list[str] = []
-    seen_segments: set[str] = set()
-    for row in rows:
-        for segment in row.profile_id.split("+"):
-            if segment and segment not in seen_segments:
-                seen_segments.add(segment)
-                segments.append(segment)
-    warnings = _merge_tokens(tuple(item.warnings for item in rows))
-    if len(segments) > MAX_MERGE_PROFILES:
-        truncated = True
+    segments = [row.profile_id for row in rows]
+    warnings = _merge_tokens(tuple(warning_groups))
     if truncated:
         warnings = _merge_tokens((warnings, ("profile_merge_truncated",)))
     profile_id = "+".join(segments)
@@ -297,6 +277,29 @@ def merge_profiles(*profiles: EvidenceProfile) -> EvidenceProfile:
         ),
         warnings=warnings,
     )
+
+
+def _profile_atoms(profile: EvidenceProfile) -> tuple[EvidenceProfile, ...]:
+    """Return sanitized atomic rows from a possibly composed profile id."""
+
+    segments = tuple(
+        part
+        for part in (
+            _profile_id(part) for part in str(profile.profile_id or "").split("+")
+        )
+        if part
+    )
+    if not segments:
+        return ()
+    if len(segments) == 1:
+        segment = segments[0]
+        if segment == profile.profile_id:
+            return (profile,)
+        return (replace(profile, profile_id=segment),)
+    rows: list[EvidenceProfile] = []
+    for segment in segments:
+        rows.append(BUILTIN_PROFILES.get(segment) or replace(profile, profile_id=segment))
+    return tuple(rows)
 
 
 def _strictest(values: Iterable[str], order: tuple[str, ...]) -> str:

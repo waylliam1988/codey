@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,6 +61,17 @@ class AtomicWriteTests(unittest.TestCase):
             write_text_atomic(lf_path, "one\ntwo edited\n")
 
             self.assertNotIn(b"\r\n", lf_path.read_bytes())
+
+    @unittest.skipIf(os.name == "nt", "POSIX executable bits are not stable on Windows")
+    def test_existing_file_mode_is_preserved_on_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            script = Path(td, "run.sh")
+            script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            os.chmod(script, 0o755)
+
+            write_text_atomic(script, "#!/bin/sh\nexit 1\n")
+
+            self.assertEqual(stat.S_IMODE(script.stat().st_mode), 0o755)
 
     def test_encode_helper_defaults_to_lf_without_a_recorded_style(self) -> None:
         self.assertEqual(

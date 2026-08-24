@@ -173,6 +173,13 @@ def _capsule_record(
     *,
     source_id: str | None = None,
     source_host: str = "example.com",
+    source_requested_url_ref: dict[str, object] | None = None,
+    source_final_url_ref: dict[str, object] | None = None,
+    source_retrieved_at: str = "",
+    source_page_count: int = 0,
+    source_pages_read: tuple[int, ...] = (),
+    source_truncated: bool = False,
+    source_quality: dict[str, object] | None = None,
     evidence_id: str | None = None,
     evidence_excerpt: str = "bounded excerpt",
     claim_id: str | None = None,
@@ -205,8 +212,15 @@ def _capsule_record(
         answer_status="answered",
         sources=(ResearchSource(
             source_id=source_ref,
+            requested_url_ref=source_requested_url_ref or {},
+            final_url_ref=source_final_url_ref or {},
             host=source_host,
+            retrieved_at=source_retrieved_at,
             content_kind="html",
+            page_count=source_page_count,
+            pages_read=source_pages_read,
+            truncated=source_truncated,
+            quality=source_quality or {},
         ),),
         evidence=(ResearchEvidence(
             evidence_id=evidence_ref,
@@ -495,6 +509,114 @@ def test_append_id_collision_skips_new_record_and_preserves_existing_payload() -
         assert snapshot.available is True, label
         assert len(snapshot.payload["records"]) == 1, label
         assert snapshot.payload["records"][0]["record_id"] == first_record.record_id, label
+
+
+def test_append_same_source_identity_merges_observations_without_collision() -> None:
+    source_id = "source:" + "5" * 16
+    first_record = _capsule_record(
+        50,
+        source_id=source_id,
+        source_requested_url_ref={
+            "url_digest": "sha256:" + "1" * 64,
+            "host": "mirror-a.example",
+            "scheme": "https",
+        },
+        source_final_url_ref={
+            "url_digest": "sha256:" + "2" * 64,
+            "host": "example.com",
+            "scheme": "https",
+        },
+        source_retrieved_at="2026-01-01T00:00:00Z",
+        source_page_count=2,
+        source_pages_read=(1,),
+        source_quality={
+            "level": "secondary",
+            "kind": "web",
+            "freshness": "stale",
+            "independent_group": "example.com",
+        },
+    )
+    second_record = _capsule_record(
+        51,
+        source_id=source_id,
+        source_requested_url_ref={
+            "url_digest": "sha256:" + "3" * 64,
+            "host": "mirror-b.example",
+            "scheme": "https",
+        },
+        source_final_url_ref={
+            "url_digest": "sha256:" + "2" * 64,
+            "host": "example.com",
+            "scheme": "https",
+        },
+        source_retrieved_at="2026-01-02T00:00:00Z",
+        source_page_count=3,
+        source_pages_read=(2, 1),
+        source_truncated=True,
+        source_quality={
+            "level": "primary",
+            "kind": "official",
+            "freshness": "fresh",
+            "independent_group": "example.com",
+        },
+    )
+    with tempfile.TemporaryDirectory() as td:
+        store = EvidenceLedgerStore(Path(td) / "state")
+        first = store.append_record(first_record, session_id="session-ledger")
+        second = store.append_record(second_record, session_id="session-ledger")
+        snapshot = store.load(session_id="session-ledger")
+
+    assert first.ok is True
+    assert second.ok is True
+    assert snapshot.available is True
+    assert len(snapshot.payload["records"]) == 2
+    source = snapshot.payload["sources"][source_id]
+    assert source["retrieved_at"] == "2026-01-02T00:00:00Z"
+    assert source["requested_url_ref"]["host"] == "mirror-a.example"
+    assert source["final_url_ref"]["host"] == "example.com"
+    assert source["page_count"] == 3
+    assert source["pages_read"] == [1, 2]
+    assert source["truncated"] is True
+    assert source["quality"] == {
+        "level": "secondary",
+        "kind": "web",
+        "freshness": "stale",
+        "independent_group": "example.com",
+    }
+
+
+def test_append_same_source_id_with_different_final_url_ref_collides() -> None:
+    source_id = "source:" + "6" * 16
+    first_record = _capsule_record(
+        60,
+        source_id=source_id,
+        source_final_url_ref={
+            "url_digest": "sha256:" + "6" * 64,
+            "host": "example.com",
+            "scheme": "https",
+        },
+    )
+    colliding_record = _capsule_record(
+        61,
+        source_id=source_id,
+        source_final_url_ref={
+            "url_digest": "sha256:" + "7" * 64,
+            "host": "example.com",
+            "scheme": "https",
+        },
+    )
+    with tempfile.TemporaryDirectory() as td:
+        store = EvidenceLedgerStore(Path(td) / "state")
+        first = store.append_record(first_record, session_id="session-ledger")
+        path = store.path_for("session-ledger", None)
+        before_text = path.read_text(encoding="utf-8")
+        second = store.append_record(colliding_record, session_id="session-ledger")
+        after_text = path.read_text(encoding="utf-8")
+
+    assert first.ok is True
+    assert second.skipped is True
+    assert second.reason_code == "ledger_id_collision"
+    assert before_text == after_text
 
 
 def test_mapping_record_is_rejected_before_nested_refs_can_persist() -> None:

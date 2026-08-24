@@ -10,6 +10,7 @@ by platform text-mode translation.
 from __future__ import annotations
 
 import os
+import stat
 import uuid
 from pathlib import Path
 
@@ -35,17 +36,27 @@ def write_text_atomic(path: str | Path, text: str, *, encoding: str = "utf-8") -
     directory.mkdir(parents=True, exist_ok=True)
     data = encode_with_original_eol(target, text, encoding=encoding)
     tmp = directory / f".{target.name}.{uuid.uuid4().hex}.tmp"
+    existing_mode = _existing_mode(target)
     try:
         with tmp.open("xb") as handle:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
+        if existing_mode is not None:
+            os.chmod(tmp, existing_mode)
         os.replace(tmp, target)
     finally:
         try:
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
+
+
+def _existing_mode(target: Path) -> int | None:
+    try:
+        return stat.S_IMODE(target.stat().st_mode)
+    except OSError:
+        return None
 
 
 __all__ = [

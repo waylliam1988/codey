@@ -2141,7 +2141,10 @@ evidence_profile 参数（默认行为 byte-identical）。
 
 Release 前 hardening：Evidence ledger 的 record capsule integrity 不只在 load
 时校验，也在 append 时阻止共享 map 同 id 不同 canonical 内容改写旧 capsule
-输入；冲突 record 以 `ledger_id_collision` 跳过，旧 payload 不重写。
+输入；source row 区分身份字段（已知 final URL ref、host、content hash、
+content kind）和观测字段（retrieved_at、pages_read、truncated、quality hint），
+合法重复抓取合并观测字段，身份冲突 record 以 `ledger_id_collision` 跳过，
+旧 payload 不重写。
 
 Groundwork 边界：profiles/impact contract/render_handoff 目前只有测试和
 trace 消费；生产路径尚不应用 profile。Writer 可见 handoff 文案已切换为

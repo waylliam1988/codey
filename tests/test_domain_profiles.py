@@ -210,6 +210,24 @@ class MergeProfileTests(unittest.TestCase):
         self.assertEqual(len(merged.profile_id.split("+")), MAX_MERGE_PROFILES)
         self.assertIn("profile_merge_truncated", merged.warnings)
 
+    def test_nested_merge_caps_flattened_atomic_segments_before_values(self) -> None:
+        composed = merge_profiles(
+            BUILTIN_PROFILES["finance"],
+            BUILTIN_PROFILES["legal"],
+            BUILTIN_PROFILES["market"],
+            BUILTIN_PROFILES["science"],
+        )
+
+        merged = merge_profiles(composed, BUILTIN_PROFILES["software_research"])
+
+        self.assertEqual(merged.profile_id, "finance+legal+market+science")
+        self.assertEqual(len(merged.profile_id.split("+")), MAX_MERGE_PROFILES)
+        self.assertIn("profile_merge_truncated", merged.warnings)
+        self.assertNotIn("software_research", merged.profile_id)
+        self.assertNotIn("repository", merged.preferred_source_kinds)
+        self.assertNotIn("release", merged.preferred_source_kinds)
+        self.assertNotIn("issue", merged.preferred_source_kinds)
+
     def test_merge_ignores_non_profiles_and_empty_input(self) -> None:
         self.assertEqual(merge_profiles().profile_id, "general")
         junk = merge_profiles("finance", None)  # type: ignore[arg-type]

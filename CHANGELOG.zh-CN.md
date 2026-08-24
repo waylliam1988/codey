@@ -24,9 +24,9 @@
   `unified_diff(lineterm="")` 再 join 导致非 git 项目每行内容后多一空行；
   两处 diff 构建改用普通 `splitlines()` 并加 golden 断言。
 - 用户源码写入改为原子且保留 EOL：`codey/atomic_io.py` 使用唯一同目录
-  临时文件（`xb` 创建）+ fsync + `os.replace`，保留 CRLF/LF 风格；接入
-  write/edit 工具路径与快照 restore，与工具契约宣称的 "written
-  atomically" 一致。
+  临时文件（`xb` 创建）+ fsync + `os.replace`，替换前复制已有文件 mode，
+  保留 CRLF/LF 风格；接入 write/edit 工具路径与快照 restore，与工具契约
+  宣称的 "written atomically" 一致，POSIX 上不会丢可执行位。
 - 拆分同名双义的 digest 函数：`refs.digest_ref` 更名
   `refs.content_digest`（生产者：任意值 -> sha256 内容摘要）；
   `research.shape.digest_ref` 更名 `shape.valid_digest_ref`（校验器：
@@ -37,9 +37,12 @@
   assumption/relation map 行。load 时任一不匹配/缺失即整册 fail closed
   （`ledger_unavailable`）。缺少原始 `record_digest` 的记录在投影前直接
   拒绝，不再铸出空串摘要。append 时也会拒绝共享 map 的同 id 不同
-  canonical 内容：新 record 若复用已有 source/evidence/claim/assumption/
-  relation id 但内容不同，会以 `ledger_id_collision` 跳过，旧 ledger payload
-  逐字节不变。
+  canonical 内容：新 record 若复用已有 evidence/claim/assumption/relation id
+  但内容不同，或复用 source id 但身份字段（已知 final URL ref、host、
+  content hash、content kind）不同，会以 `ledger_id_collision` 跳过，旧 ledger payload
+  逐字节不变。合法重复抓取同一 source 不再因为 `retrieved_at`、
+  `pages_read`、`truncated`、保守 quality hint 等观测字段变化被误判冲突；
+  这些字段会确定性合并。
 - 报告 section 边界加固：README 文档化的裸编号标题（`1. Conclusion`、
   `一、结论`）恢复识别；常用中文标题（`参考文献`、`风险`、`备注`、
   `方法`）加入别名表；`具体如下：` 这类节内引导行不再切断所属 section；
@@ -51,10 +54,14 @@
   所有触发 spec 已注解；research 自有投影数量由测试设上限；架构测试禁止
   行为侧 research 模块反读 trace/UI 投影，并把 profile+source_trust 组合
   的导入点锁为零。
-- 小项：嵌套 evidence profile merge 展平 "+" 段（不再产生
-  `finance_legal+science` 这类伪组合名）；RunTrace brief 投影 claim 行
+- 小项：嵌套 evidence profile merge 先展平并 cap 原子 "+" 段，再计算合并值
+  （不再产生 `finance_legal+science` 这类伪组合名，也不会让第 5 个 atom
+  泄漏进 profile 值）；RunTrace brief 投影 claim 行
   hash 前截断且只存 digest；`test_server.py` 加模块级守卫禁止真实
   provider tab（receipt/memory 两测试补齐双连接器 patch）；
+  `tests/conftest.py` 针对 Windows 上 pytest atexit 清理
+  `pytest-current` symlink 时偶发的 `PermissionError` 做测试侧 guard，
+  不改变临时目录位置；
   `tests/test_work_checkpoint_flow.py` 隔离 post-task audit/consensus/
   advisors 副作用（~137s -> ~4s）；StepFun 提交加 GLM 式防双击；
   `task_runner` 所有 pre-start 失败路径都恢复先前取消事件；

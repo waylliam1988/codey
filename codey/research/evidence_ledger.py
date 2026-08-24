@@ -152,6 +152,12 @@ _REF_LIST_KEYS = frozenset({
     "relation_refs",
 })
 _CAPSULE_MAP_KEYS = ("sources", "evidence", "claims", "assumptions", "relations")
+_SOURCE_FIXED_IDENTITY_KEYS = frozenset({
+    "source_id",
+    "host",
+    "content_hash",
+    "content_kind",
+})
 
 
 @dataclass(frozen=True)
@@ -436,7 +442,7 @@ def _append_payload(
     for item in _list(record.get("sources"))[:MAX_LEDGER_SOURCES]:
         source_id = identifier(item.get("source_id"), 80)
         if source_id:
-            if not _put_capsule_row(sources, source_id, _source_entry(item)):
+            if not _put_source_row(sources, source_id, _source_entry(item)):
                 return False
             source_ids.append(source_id)
     for item in _list(record.get("evidence"))[:MAX_LEDGER_EVIDENCE]:
@@ -495,8 +501,8 @@ def _append_payload(
     payload["updated_at"] = _now()
     _trim_maps(payload)
     # Stamp every surviving record after map normalization. Shared map rows
-    # are part of each record capsule, so a later trusted append that updates
-    # one row must leave all surviving capsules coherent for load-time checks.
+    # are part of each record capsule, so accepted source observations and
+    # retained rows must leave all surviving capsules coherent on load.
     _stamp_record_integrities(payload)
     return True
 
@@ -517,6 +523,78 @@ def _put_capsule_row(
         return False
     rows[row_id] = normalized
     return True
+
+
+def _put_source_row(
+    rows: dict[str, object],
+    row_id: str,
+    entry: Mapping[str, object],
+) -> bool:
+    existing = rows.get(row_id)
+    normalized = dict(entry)
+    if existing is None:
+        rows[row_id] = normalized
+        return True
+    if not isinstance(existing, dict):
+        return False
+    if not _source_rows_compatible(existing, normalized):
+        return False
+    rows[row_id] = _merge_source_entry(existing, normalized)
+    return True
+
+
+def _source_rows_compatible(
+    existing: Mapping[str, object],
+    incoming: Mapping[str, object],
+) -> bool:
+    for key in _SOURCE_FIXED_IDENTITY_KEYS:
+        if existing.get(key) != incoming.get(key):
+            return False
+    existing_final = _mapping(existing.get("final_url_ref"))
+    incoming_final = _mapping(incoming.get("final_url_ref"))
+    return not (existing_final and incoming_final and existing_final != incoming_final)
+
+
+def _merge_source_entry(
+    existing: Mapping[str, object],
+    incoming: Mapping[str, object],
+) -> dict[str, object]:
+    merged = dict(existing)
+    if not _mapping(merged.get("requested_url_ref")) and _mapping(incoming.get("requested_url_ref")):
+        merged["requested_url_ref"] = incoming.get("requested_url_ref")
+    if not _mapping(merged.get("final_url_ref")) and _mapping(incoming.get("final_url_ref")):
+        merged["final_url_ref"] = incoming.get("final_url_ref")
+    if not merged.get("title_digest") and incoming.get("title_digest"):
+        merged["title_digest"] = incoming.get("title_digest")
+    if str(incoming.get("retrieved_at") or "") > str(merged.get("retrieved_at") or ""):
+        merged["retrieved_at"] = incoming.get("retrieved_at")
+    merged["page_count"] = max(
+        nonnegative_int(merged.get("page_count")),
+        nonnegative_int(incoming.get("page_count")),
+    )
+    merged["pages_read"] = _merge_positive_ints(
+        merged.get("pages_read"),
+        incoming.get("pages_read"),
+        48,
+    )
+    merged["truncated"] = bool(merged.get("truncated")) or bool(incoming.get("truncated"))
+    merged["quality"] = _merge_quality_entry(merged.get("quality"), incoming.get("quality"))
+    return merged
+
+
+def _merge_positive_ints(left: object, right: object, limit: int) -> list[int]:
+    return _positive_ints(tuple(_list_values(left)) + tuple(_list_values(right)), limit)
+
+
+def _merge_quality_entry(left: object, right: object) -> dict[str, object]:
+    existing = _quality_entry(left)
+    incoming = _quality_entry(right)
+    merged: dict[str, object] = {}
+    for key in ("level", "kind", "freshness", "independent_group"):
+        value = existing.get(key) or incoming.get(key)
+        if value:
+            merged[key] = value
+    return merged
 
 
 def _source_entry(item: Mapping[str, object]) -> dict[str, object]:

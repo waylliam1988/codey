@@ -17,7 +17,8 @@ plus pending-tool message fields across save/load round-trips;
 snapshot/untracked diffs lost their double-blank-line rendering (golden
 test); user files are written through `codey/atomic_io.py` (unique same-dir
 temp opened `xb` + fsync + os.replace, CRLF/LF preserved) on
-write/edit/restore; the digest vocabulary split into producer
+write/edit/restore and now copies an existing target mode before replace so
+POSIX executable bits survive rewrites; the digest vocabulary split into producer
 (`refs.content_digest`) and validator (`shape.valid_digest_ref`) with all call
 sites migrated and architecture coverage against neutral `_digest_ref` aliases;
 evidence-ledger records now carry a canonical-JSON `record_integrity` digest
@@ -27,8 +28,10 @@ and verified on every load — tampering any referenced map row fails the
 ledger closed — while records lacking their own raw digest are rejected before
 projection instead of minting empty-string hashes; append-time capsule map id
 collisions now fail before write (`ledger_id_collision`) and preserve the
-previous payload byte-for-byte for source/evidence/claim/assumption/relation
-collisions.
+previous payload byte-for-byte for evidence/claim/assumption/relation row
+collisions plus true source-identity collisions; repeated captures of the same
+source merge observation fields (`retrieved_at`, `pages_read`, `truncated`,
+conservative quality hints) instead of being misclassified as id collisions.
 
 Parser correctness: documented bare numbered headings (`1. Conclusion`,
 `一、结论`) are boundaries again; `参考文献`/`风险`/`备注`/`方法` and
@@ -46,34 +49,34 @@ Test isolation & speed: test_server.py module-level guards fail any real
 provider-tab connection unless explicitly patched (both receipt/memory tests
 now patch both connectors); work_checkpoint_flow disables post-task
 audit/consensus/advisors (~137s -> ~4s); PDF research-UI flow uses a
-side-effect-free State helper (15.3s -> 0.5s).
+side-effect-free State helper (15.3s -> 0.5s); tests/conftest.py guards
+pytest's Windows-only `pytest-current` symlink cleanup `PermissionError`
+without changing temp directory layout.
 
 Smaller fixes: StepFun double-submit guard mirroring GLM; task_runner
 restores previous cancellation event on all pre-start failure paths (and
 drops `"route_result" in locals()` control flow); nested profile merges
-flatten "+" segments with dedupe; RunTrace clips claim text before hashing;
-context_epoch marks clamped admissions truncated; reopened run ledgers seed
-byte budgets and event sequence from the existing file; knowledge search
-escapes LIKE wildcards through explicit SQLite `ESCAPE`; hebbian delete path
-wraps projection writes like reinforce; redundant per-test audit patches
-removed from work_checkpoint_flow.
+flatten and cap atomic "+" segments before computing merged values; RunTrace
+clips claim text before hashing; context_epoch marks clamped admissions
+truncated; reopened run ledgers seed byte budgets and event sequence from the
+existing file; knowledge search escapes LIKE wildcards through explicit SQLite
+`ESCAPE`; hebbian delete path wraps projection writes like reinforce;
+redundant per-test audit patches removed from work_checkpoint_flow; duplicate
+test capability fingerprint assignment removed.
 
 Verification:
 
 ```text
-python -m pytest tests/test_research_evidence_ledger.py ... targeted suite:
-  ledger/proof/completion/pipeline/trace files: 138 passed
-python -m pytest tests/test_capabilities.py ... projection-adjacent suite:
-  41 passed
+python -m pytest tests/test_research_evidence_ledger.py tests/test_domain_profiles.py tests/test_atomic_io.py tests/test_capabilities.py -q
+  94 passed, 1 skipped, 12 subtests passed
+python -m pytest tests/test_research_to_code_ab.py tests/test_transcript_replay_cache.py -q
+  23 passed
 python -m pytest -q                   full suite:
-  2594 passed, 9 skipped, 781 subtests passed in 227.48s
+  2598 passed, 10 skipped, 781 subtests passed in 228.14s
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean
 ```
-
-Note: full pytest exited 0. Windows printed a pytest temporary-directory
-cleanup `PermissionError` in an atexit callback after the suite had passed.
 
 ## 0.4.10 Domain Source Trust + Research Brief Projection
 
@@ -367,7 +370,7 @@ Verification sequence: targeted `py_compile` for `codey/run_trace.py`,
 `compileall -q codey tests`, `ruff check codey tests`, `git diff --check`,
 targeted pytest across contract/gate/trace/architecture/capabilities/
 task-runner/work-queue suites (173 passed, 191 subtests); then one full-suite
-run with repository-local `--basetemp`: 2470 passed, 9 skipped, 709 subtests
+run: 2470 passed, 9 skipped, 709 subtests
 passed, zero failures.
 
 ## 0.4.8 Safe Context Epoch + Capability Boundary v1
@@ -471,7 +474,7 @@ python -m pytest tests/test_agent.py tests/test_research.py tests/test_server.py
 python -m ruff check codey tests
 # All checks passed!
 
-python -m pytest -q --basetemp=.pytest-tmp
+python -m pytest -q
 # 2429 passed, 9 skipped, 706 subtests passed in 375.24s
 ```
 
