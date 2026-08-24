@@ -2287,7 +2287,13 @@ smoke；影响模型输出时做小型 A/B。
 纵向研究 harness、comparison benchmark、manual A/B 共用层。它只证明 Codey
 观察到了什么、验证了什么、哪些指标没有回退；"surpassed OpenScience" 措辞由
 代码门禁控制，必须存在真实 head-to-head artifact 才允许出现。
-live provider smoke 在确定性基线稳定后作为后续增量加入，本版默认不联网。
+本版默认不联网；发布前只补了一轮有限 Qwen provider smoke 来检查既有 live
+harness 的 provider/journal 路径。`research_to_code_ab.py` Qwen smoke 通过；
+`bounded_research_planner_ab.py` 的 paired Qwen smoke 暴露了 provider 状态问题
+（planner row 第一次 send 后 Qwen Studio 卡在原生网页搜索、无模型回复），
+planner-only 重跑通过。`longitudinal_research_harness_ab.py` 和
+`research_comparison_benchmark_ab.py` 在 0.4.11 仍是 deterministic-only，没有
+provider/live 模式。
 
 ### 做什么
 
@@ -2402,7 +2408,10 @@ TranscriptArchive 关闭时 live smoke 仍可生成 digest-only metrics
 
 ### A/B
 
-需要。它验证 0.4 的纵向研究能力和对照评测结果，而不是只验证单点模块。
+需要 deterministic A/B / self-test。生产代码实机 A/B 不需要，因为 0.4.11 不改
+prompt、tool schema、Research 默认路径、Writer handoff、planner 默认路径或
+done 行为。live smoke 只用于诊断 provider/journal 路径；要宣称超过 baseline /
+OpenScience 时，才需要正式 comparison / head-to-head。
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 
@@ -2439,6 +2448,8 @@ This is local context, not evidence. Re-check sources before making factual clai
 - Topic Planner 只能建议“下次该继续研究什么”，不能后台自动联网执行。
 - 旧 claim 进入 planner 时必须带 stale/risk 标记，不能进入 evidence_refs。
 - Ghost continuity 只能作为 ContextSource，经 Safe Context Epoch admission。
+- live smoke 必须区分 provider 状态失败和 planner 质量失败；Qwen 这类原生网页
+  搜索卡住时，只能记为 provider/journal 诊断，不得当作 Research planner 证据。
 
 ### 顺手架构优化
 
@@ -2458,6 +2469,7 @@ topic plan candidate 不会自动触发 Research
 Research continuity prompt 不出现 Ghost 内部词
 disable Ghost 后 Research 行为回到 baseline
 Ghost continuity admission 受 Safe Context Epoch 约束
+provider live smoke 至少能把 native-search stuck / send_error 与 Codey tool loop 区分开
 ```
 
 ### A/B

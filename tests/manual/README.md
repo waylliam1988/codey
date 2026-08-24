@@ -84,6 +84,17 @@ arm schedules, complete-matrix checks, atomic JSON persistence, resume
 payloads with provider identity guards, and the fixture search provider) lives
 in `ab_harness_common.py`; production code must never import it.
 
+0.4.11 provider-smoke boundary: `longitudinal_research_harness_ab.py` and
+`research_comparison_benchmark_ab.py` are deterministic-only and intentionally
+have no `--provider` mode yet. For the provider-enabled harnesses, treat Qwen
+live smoke as diagnostic unless each arm was isolated in a clean provider
+state. A 2026-08-24 paired `bounded_research_planner_ab.py` Qwen run completed
+the baseline row but the planner row failed after one send with no model reply
+while Qwen Studio stayed in its native web-search UI; a planner-only rerun on
+the same fixture completed (`score=6`, one follow-up round, two sources). When
+diagnosing Qwen stalls, rerun one arm per fresh chat or use
+`qwen_submit_probe.py` before treating the paired result as release evidence.
+
 
 `changeset_review_ab.py` compares the old path-only Review prompt with the
 current ChangeSet-summary prompt. It sends fixed review-only diffs to one live
@@ -410,6 +421,12 @@ python -B tests\manual\bounded_research_planner_ab.py `
   --case widget_noop `
   --output tests\manual\results\bounded_research_planner_ab-deepseek.json
 ```
+
+For low-cost live smoke after harness refactors, prefer one provider and one
+case. With Qwen, run arms separately or restart the provider chat between arms
+when the website's native web search is active; a failed send before any
+fixture query/fetch is a provider-state failure, not evidence that the planner
+loop itself is stuck.
 
 2026-08-20 live runs:
 

@@ -48,6 +48,15 @@
 - 不改生产行为：本版不改 prompt、tool result、Router/fallback、permission、
   UI/SSE、Research 默认路径或 done enforcement。按 roadmap A/B 规则，
   projection/harness-only 版本不做 live provider A/B。
+- 最终发布验证补充了 deterministic gates 和有限的 Qwen live smoke。
+  `research_to_code_ab.py` 在 Qwen 上通过：projection arm 保持 success /
+  check 行为，同时去掉 handoff 里的 raw excerpt、related-note id 和 trap
+  conclusion 噪音。`bounded_research_planner_ab.py` 暴露的是 provider 状态
+  smoke 问题：一轮 paired Qwen run 完成 baseline row 后，planner row 在
+  第一次 send 后没有收到模型回复，Qwen Studio 仍停在原生网页搜索 UI；随后
+  planner-only 重跑完成并提升 fixture score。新增的 longitudinal 和
+  comparison 脚本在 0.4.11 仍是 deterministic-only，所以这只记录为诊断性
+  provider smoke，不是统计 A/B，也不是 OpenScience head-to-head 证据。
 - Review 加固（0.4.11 提交后审阅修复）：
   - comparison benchmark 的 superiority 措辞门禁从"存在任意文件即解锁"升级为
     结构化 schema 门禁：head-to-head artifact 必须是 JSON 且包含 roadmap

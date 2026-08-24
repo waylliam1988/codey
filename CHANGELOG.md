@@ -56,6 +56,17 @@ This file records Codey's release history. The newest release appears first.
   permission, UI/SSE, Research default path, or done-enforcement edits. Per
   the roadmap A/B rule, a projection/harness-only version takes no live
   provider A/B.
+- Final release validation added deterministic gates plus limited Qwen live
+  smoke. `research_to_code_ab.py` passed on Qwen with the projection arm
+  preserving success/check behavior while removing raw excerpt, related-id,
+  and trap conclusion noise from the handoff. `bounded_research_planner_ab.py`
+  exposed a provider-state smoke issue: a paired Qwen run completed the
+  baseline row, then the planner row failed after one send with no model reply
+  while Qwen Studio was still inside its native web-search UI; a planner-only
+  rerun completed and improved the fixture score. The new longitudinal and
+  comparison scripts remain deterministic-only in 0.4.11, so this is recorded
+  as diagnostic provider smoke, not statistical A/B or OpenScience
+  head-to-head evidence.
 - Review hardening (post-commit fixes):
   - The comparison benchmark's superiority wording guard upgraded from "any
     file unlocks it" to a structured schema gate: a head-to-head artifact

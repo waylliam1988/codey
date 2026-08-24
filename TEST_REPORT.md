@@ -118,9 +118,84 @@ as a list instead of folding them behind an arm-keyed dict.
 Production-facing behavior changes: none. No prompt, tool result, router,
 fallback, permission, UI/SSE, Research default path, or done-enforcement
 edits. Per the roadmap A/B rule, a projection/harness-only version requires
-no live provider A/B; the deterministic gates and self-tests below are the
-release gate. Live provider smoke is a deliberate follow-up once this
-baseline stabilizes.
+no production live provider A/B; the deterministic gates and self-tests below
+are the release gate. A small provider-facing smoke was run after the baseline
+stabilized to check journal/provider plumbing, and is recorded as diagnostic
+smoke rather than statistical A/B evidence.
+
+Final pre-release validation on 2026-08-24 (`HEAD=2bbb881`,
+worktree clean before smoke; generated artifacts remain local under
+`tests/manual/results/` and are not release inputs):
+
+```text
+python -B -m pytest -q tests\test_research_regression_gate.py tests\test_research_benchmark_suite.py tests\test_manual_ab_harness_common.py tests\test_architecture.py
+# 76 passed, 216 subtests passed in 5.55s
+
+python -B tests\manual\longitudinal_research_harness_ab.py --self-test
+# deterministic longitudinal gate passed; self-test ok
+# All rounds had gate_ok=true. review_ok=false is intentionally visible in the
+# summary so projection regression is not confused with proof-quality success.
+
+python -B tests\manual\research_comparison_benchmark_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\research_to_code_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\bounded_research_planner_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\research_comparison_benchmark_ab.py --output tests\manual\results\research_comparison_benchmark_ab-0.4.11-deterministic-20260824.json
+# ok=true; matrix_complete=true; codey_not_below_baseline=true;
+# codey_not_below_openscience_style=true
+
+python -m ruff check codey tests
+# All checks passed!
+
+python -B -m pytest -q
+# 2675 passed, 10 skipped, 781 subtests passed in 242.30s (0:04:02)
+```
+
+Qwen live smoke, limited to existing provider-enabled harnesses:
+
+```text
+python -B tests\manual\research_to_code_ab.py --provider qwen --repeats 1 --max-turns 10 --timeout 120 --new-chat-timeout 60 --output tests\manual\results\research_to_code_ab-qwen-0.4.11-smoke-20260824.json
+# gate ok=true
+# baseline: success=true, turns=4, tool_calls=4, sent_chars=9869,
+#   brief_chars=1473, independent_check_passed=true, trap_misused=false
+# projection: success=true, turns=4, tool_calls=4, sent_chars=9375,
+#   brief_chars=979, independent_check_passed=true, trap_misused=false
+# projection delta: sent_chars=-494, brief_chars=-494,
+#   brief_trap_in_key_conclusions=-1
+
+python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms baseline,planner --max-turns 10 --send-timeout 120 --new-chat-timeout 60 --output tests\manual\results\bounded_research_planner_ab-qwen-0.4.11-smoke-widget-20260824.json
+# baseline: ok=true, score=5, record_source_count=1,
+#   record_evidence_count=1, proof_coverage=0.556,
+#   unsupported_claim_rate=0.333
+# planner: ok=false, ProviderActionError: Qwen Studio send failed (transient)
+#   after provider_send_count=1 and provider_reply_count=0
+
+python -B tests\manual\bounded_research_planner_ab.py --provider qwen --case widget_noop --arms planner --max-turns 10 --send-timeout 120 --new-chat-timeout 60 --output tests\manual\results\bounded_research_planner_ab-qwen-0.4.11-smoke-widget-planner-only-20260824.json
+# planner-only rerun: ok=true, score=6, followup_rounds=1,
+#   planner_stop_reason=max_followup_rounds, record_source_count=2,
+#   record_evidence_count=2, proof_coverage=0.778,
+#   unsupported_claim_rate=0.250
+```
+
+The bounded paired Qwen smoke exposed a provider-state issue, not a Codey
+Research logic deadlock: the failed planner row had no fixture queries/fetches,
+no model replies, and a `send_error` after the first provider send. The visible
+Qwen Studio UI was still inside its native web-search flow. The planner-only
+rerun completed and exercised Codey's fixture search/open/knowledge path. Keep
+this as a follow-up for provider smoke hygiene: run Qwen paired arms in isolated
+fresh chats or add a native-search-stuck detector before treating paired live
+smoke as release evidence.
+
+`longitudinal_research_harness_ab.py` and
+`research_comparison_benchmark_ab.py` are deterministic-only in 0.4.11; they
+have no `--provider` mode, so no Qwen live smoke was run for those scripts.
+The release claim remains: deterministic regression passed, and a limited Qwen
+provider smoke did not reveal a production behavior regression.
 
 Verification during implementation:
 
