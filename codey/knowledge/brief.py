@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
+from codey.citation_scanner import citation_ref_items
 from codey.knowledge.store import KnowledgeStore
 from codey.report_sections import parse_sections
 from codey.refs import clip as _clip
@@ -20,8 +20,6 @@ UNCITED_CONCLUSION_LIMIT = 2
 LIMITATION_TOTAL_LIMIT = 7
 SOURCE_LINE_LIMIT = 16
 MAX_ITEM_CHARS = 220
-_CITATION_RE = re.compile(r"\[([0-9]+)(?:\]|[ .:_/-][0-9A-Za-z .:_/-]*\])")
-_SOURCE_CITATION_RE = re.compile(r"^\[([0-9]+)\]")
 
 
 @dataclass(frozen=True)
@@ -150,22 +148,22 @@ def _section_lines(
     return tuple(out)
 
 
-def _citation_ids(text: str) -> frozenset[str]:
-    ids: set[str] = set()
+def _citation_ids(text: str) -> frozenset[int]:
+    ids: set[int] = set()
     for line in str(text or "").splitlines():
         stripped = line.strip()
         if stripped.startswith(("- ", "* ")):
             stripped = stripped[2:].strip()
-        match = _SOURCE_CITATION_RE.match(stripped)
-        if match:
-            ids.add(match.group(1))
+        refs = citation_ref_items(stripped)
+        if refs and stripped.startswith(f"[{refs[0].number}]"):
+            ids.add(refs[0].number)
     return frozenset(ids)
 
 
 def _conclusion_lines(
     text: str,
     *,
-    valid_citation_ids: frozenset[str],
+    valid_citation_ids: frozenset[int],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     supported: list[str] = []
     uncited: list[str] = []
@@ -177,11 +175,11 @@ def _conclusion_lines(
     return tuple(supported), tuple(uncited)
 
 
-def _has_valid_citation(item: str, valid_citation_ids: frozenset[str]) -> bool:
+def _has_valid_citation(item: str, valid_citation_ids: frozenset[int]) -> bool:
     if not valid_citation_ids:
         return False
-    cited_ids = tuple(match.group(1) for match in _CITATION_RE.finditer(item))
-    return bool(cited_ids) and all(citation_id in valid_citation_ids for citation_id in cited_ids)
+    refs = citation_ref_items(item)
+    return bool(refs) and all(ref.number in valid_citation_ids for ref in refs)
 
 
 def _merge_lines(

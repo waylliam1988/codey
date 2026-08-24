@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.research.citation_scanner import (
+from codey.citation_scanner import (
     citation_ref_items,
     source_id_ref_items,
     source_id_refs,
@@ -16,6 +16,15 @@ class CitationScannerTests(unittest.TestCase):
         self.assertEqual([(item.number, item.pages) for item in refs], [
             (2, (3, 4)),
             (10, (7,)),
+        ])
+
+    def test_numeric_citations_allow_adjacent_refs_without_array_indexes(self) -> None:
+        refs = citation_ref_items("结论 [1][2]; array[0] per [3]; comma [1, 2].")
+
+        self.assertEqual([(item.number, item.pages) for item in refs], [
+            (1, ()),
+            (2, ()),
+            (3, ()),
         ])
 
     def test_source_id_refs_cover_bracket_and_context_only(self) -> None:

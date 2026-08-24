@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -2184,6 +2185,82 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(rejected)
         self.assertTrue(state.busy)
         self.assertEqual(submit.call_args.args[-1], run_id)
+
+    def test_shell_continuation_waits_for_approval_run_slot_release(self) -> None:
+        state = server.State()
+        previous = state.reserve_run(
+            session_id="session-1",
+            project="E:/demo",
+            task="request shell",
+            provider_id="qwen",
+        )
+        self.assertIsNotNone(previous)
+        assert previous is not None
+        self.assertTrue(state.start_run(previous.run_id))
+
+        def release_previous() -> None:
+            time.sleep(0.05)
+            state.finish_run(previous.run_id, {
+                "type": "task_done",
+                "summary": "shell command requires approval",
+                "stop_reason": "approval",
+            })
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "submit_browser_task") as submit,
+        ):
+            thread = threading.Thread(target=release_previous)
+            thread.start()
+            try:
+                run_id = server._submit_task_after_slot_release(
+                    "session-1",
+                    "E:/demo",
+                    "continue after shell",
+                    8,
+                    True,
+                    "qwen",
+                    "project",
+                    previous_run_id=previous.run_id,
+                    timeout=1.0,
+                )
+            finally:
+                thread.join(timeout=1.0)
+
+        self.assertIsNotNone(run_id)
+        self.assertNotEqual(run_id, previous.run_id)
+        submit.assert_called_once()
+        self.assertEqual(submit.call_args.args[-1], run_id)
+
+    def test_shell_continuation_does_not_steal_unrelated_active_run(self) -> None:
+        state = server.State()
+        active = state.reserve_run(
+            session_id="session-2",
+            project="E:/demo",
+            task="new task",
+            provider_id="deepseek",
+        )
+        self.assertIsNotNone(active)
+        assert active is not None
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "submit_browser_task") as submit,
+        ):
+            run_id = server._submit_task_after_slot_release(
+                "session-1",
+                "E:/demo",
+                "continue after shell",
+                8,
+                True,
+                "qwen",
+                "project",
+                previous_run_id="old-approval-run",
+                timeout=1.0,
+            )
+
+        self.assertIsNone(run_id)
+        submit.assert_not_called()
 
 
 class SessionThreadingTests(unittest.TestCase):

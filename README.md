@@ -900,6 +900,7 @@ codey/
   action_policy.py          monotonic local action allow/ask/deny guards
   context_source.py         named bounded prompt context assembly
   context_epoch.py          provider-turn context admission refs and digests
+  citation_scanner.py       shared numeric citation and source-id scanners
   prompt_envelope.py        prompt section envelopes and fail-open trace sink
   tool_runtime.py           local tools and structured outcomes
   execution_evidence.py     bounded in-memory execution fact ledger
@@ -915,7 +916,7 @@ codey/
   project_task_context.py   project facts, map, checkpoint, and verification context
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
   knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
-  research/                 Research controller/runner/pipeline, shared citation scanners, source connectors, planner dry-run/executor, done citation compiler, evidence ledger, object model, report/proof quality gates
+  research/                 Research controller/runner/pipeline, source connectors, planner dry-run/executor, done citation compiler, evidence ledger, object model, report/proof quality gates
     context.py              narrow ResearchPipeline context/config and trace sink
     pipeline.py             Research lifecycle owner and bounded follow-up orchestration
     plan_executor.py        bounded fresh-material ResearchPlan execution

@@ -68,10 +68,12 @@ This file records Codey's release history. The newest release appears first.
   section, and unknown markdown headings route to a dropped unknown bucket.
   Writer-visible research handoff now keeps Key conclusions
   citation-map-backed: conclusion lines must cite a number present in the
-  rendered Citation map, fake bracket citations such as `[99]` are demoted,
-  later supported conclusions are not lost behind early uncited noise, and
-  uncited conclusions remain visible only as capped `[uncited]` limitations
-  after real counterpoints.
+  rendered Citation map through the shared citation scanner. Fake bracket
+  citations such as `[99]` are demoted, later supported conclusions are not
+  lost behind early uncited noise, and uncited conclusions remain visible only
+  as capped `[uncited]` limitations after real counterpoints. Adjacent refs
+  such as `[1][2]`, page refs such as `[1 p.4]`, and code-like text such as
+  `array[0] per [1]` follow the same rules as the Research done gate.
 - Research projection boundaries are now declared metadata, not comments:
   `CapabilitySpec` gained `projection_audience` / `canonical_inputs` /
   `fail_mode` / `release_gate` with validation (projection capabilities must
@@ -96,7 +98,10 @@ This file records Codey's release history. The newest release appears first.
   `tests/test_work_checkpoint_flow.py` disables post-task
   audit/consensus/advisor side effects (~137s -> ~4s); StepFun submission
   gains GLM-style double-click protection; `task_runner` restores the
-  previous cancellation event on every pre-start failure path;
+  previous cancellation event on every pre-start failure path; shell approval
+  continuation now waits briefly for the just-interrupted approval run to
+  release the single task slot, so a fast Allow click can execute the command
+  once and still resume the interrupted task;
   `context_epoch` marks clamped admissions as truncated; reopened run
   ledgers continue both byte budget and event sequence from the existing
   file; knowledge search escapes LIKE wildcards with explicit SQLite
@@ -904,9 +909,9 @@ This file records Codey's release history. The newest release appears first.
   and reject separate notes or contextual leaks such as `source_id=s9`. Reports
   with no citable source are re-rendered into the required sections before
   quality review, and Run Trace records only a bounded compilation summary.
-- Added a shared `codey/research/citation_scanner.py` helper so the done
-  compiler and report-quality gate use the same citation and source-id scan
-  rules instead of drifting apart. The report-quality gate is now split into
+- Added a shared `codey/citation_scanner.py` helper so the done compiler,
+  report-quality gate, and Writer handoff use the same citation and source-id
+  scan rules instead of drifting apart. The report-quality gate is now split into
   small review helpers for missing sections, source-id leaks, no-citable
   reports, provenance, source-table validation, body citation checks, and
   source-quality warnings.

@@ -267,6 +267,41 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertIn("Unsupported migration claim [99] [uncited]", limitations_block)
         self.assertIn("Mixed dangling reference [1] [99] [uncited]", limitations_block)
 
+    def test_brief_builder_uses_shared_citation_scanner_shapes(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            note = KnowledgeNote.create(
+                type="synthesis",
+                title="Citation shape research",
+                body=(
+                    "## 结论\n"
+                    "- 中文紧贴引用保持支持 [1][2]\n"
+                    "- PDF page citation remains supported [1 p.4]\n"
+                    "- array[0] per cited source [1]\n"
+                    "- array[0] only is not evidence\n"
+                    "- Comma citation stays fail-closed [1, 2]\n\n"
+                    "## 来源\n"
+                    "[1] Primary docs - https://example.com/one\n"
+                    "[2] Secondary docs - https://example.com/two\n"
+                ),
+                sources=["https://example.com/one", "https://example.com/two"],
+                session_id="s1",
+            )
+            store.write_note(note)
+
+            rendered = KnowledgeBriefBuilder(store).build_for_session("s1").render()
+            store.close()
+
+        key_block = rendered.split("Key conclusions:", 1)[1].split("Citation map:", 1)[0]
+        limitations_block = rendered.split("Counter-evidence / limitations:", 1)[1]
+        self.assertIn("中文紧贴引用保持支持 [1][2]", key_block)
+        self.assertIn("PDF page citation remains supported [1 p.4]", key_block)
+        self.assertIn("array[0] per cited source [1]", key_block)
+        self.assertNotIn("array[0] only is not evidence", key_block)
+        self.assertNotIn("Comma citation stays fail-closed", key_block)
+        self.assertIn("array[0] only is not evidence [uncited]", limitations_block)
+        self.assertIn("Comma citation stays fail-closed [1, 2] [uncited]", limitations_block)
+
     def test_brief_builder_scans_past_uncited_conclusions_and_preserves_real_limitations(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))

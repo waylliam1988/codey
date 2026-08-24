@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Mapping
 
-from codey.research.citation_scanner import (
+from codey.citation_scanner import (
     CitationRef,
     citation_ref_items,
     citation_refs,

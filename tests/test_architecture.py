@@ -736,7 +736,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_report_sections_is_a_stdlib_leaf(self) -> None:
         # The shared section parser is domain-neutral: no codey imports and
         # no I/O, so both research and knowledge layers can own one parser.
-        path = ROOT / "codey" / "report_sections.py"
+        self._assert_stdlib_leaf(ROOT / "codey" / "report_sections.py")
+
+    def test_citation_scanner_is_a_stdlib_leaf(self) -> None:
+        # Citation scanning is shared by Research's done gate and Knowledge's
+        # Writer handoff, so the scanner lives below both domains.
+        self._assert_stdlib_leaf(ROOT / "codey" / "citation_scanner.py")
+
+    def _assert_stdlib_leaf(self, path: Path) -> None:
         imports = imported_modules(path)
 
         self.assertEqual(

@@ -50,10 +50,12 @@
   `方法`）加入别名表；`具体如下：` 这类节内引导行不再切断所属 section；
   未知的 markdown 标题进入被丢弃的 unknown 桶。
   Writer 可见 research handoff 现在把 Key conclusions 限定为
-  Citation map 支撑的结论：结论必须引用 sources 里真实存在的编号；
-  `[99]` 这类假 bracket citation 会降级；前排 uncited 噪音不会挤掉后排
-  真实 supported 结论；uncited 结论只会作为少量 `[uncited]` limitations
-  附在真实 counterpoints 之后。
+  Citation map 支撑的结论：结论必须通过共享 citation scanner 引用 sources
+  里真实存在的编号；`[99]` 这类假 bracket citation 会降级；前排 uncited
+  噪音不会挤掉后排真实 supported 结论；uncited 结论只会作为少量
+  `[uncited]` limitations 附在真实 counterpoints 之后。`[1][2]` 紧贴引用、
+  `[1 p.4]` PDF 页码引用和 `array[0] per [1]` 这类代码文本，都与 Research
+  done gate 使用同一套解析规则。
 - Research 投影边界从注释变成元数据：`CapabilitySpec` 新增
   `projection_audience` / `canonical_inputs` / `fail_mode` /
   `release_gate` 并在注册时校验（投影能力必须声明受众；behavior_input
@@ -74,7 +76,9 @@
   `projection_trap_not_in_key_conclusions` 结构性判据；
   `tests/test_work_checkpoint_flow.py` 隔离 post-task audit/consensus/
   advisors 副作用（~137s -> ~4s）；StepFun 提交加 GLM 式防双击；
-  `task_runner` 所有 pre-start 失败路径都恢复先前取消事件；
+  `task_runner` 所有 pre-start 失败路径都恢复先前取消事件；shell approval
+  continuation 会短暂等待刚被 approval 打断的 run 释放单任务槽位，所以用户很快点击
+  Allow 时命令只执行一次，且仍能续跑原任务；
   `context_epoch` 对被 clamp 的 admission 标记 truncated；重开 run ledger
   从现有文件同时续算字节预算和事件序号；knowledge 搜索用 SQLite
   `ESCAPE` 明确转义 LIKE 通配符；`Assumptions:` 成为不会污染结论的
@@ -751,9 +755,10 @@
   `来源` section 改为逐行扫描，允许真实来源标题里的 `Analysis of [S1]`，同时拦截
   另起一行的 `note [s9]` 或 `source_id=s9` 这类上下文泄漏。无可引用来源报告会先被
   重渲染成标准 section 再进质量门，Run Trace 只记录有界 compilation summary。
-- 新增共享的 `codey/research/citation_scanner.py` helper，让 done compiler 和
-  report-quality gate 共用同一套 citation / source-id 扫描规则，避免后续分叉。report
-  quality gate 也顺手拆成几个小 helper：missing section、source-id leak、no-citable
+- 新增共享的 `codey/citation_scanner.py` helper，让 done compiler、
+  report-quality gate 和 Writer handoff 共用同一套 citation / source-id 扫描规则，
+  避免后续分叉。report quality gate 也顺手拆成几个小 helper：missing section、
+  source-id leak、no-citable
   report、provenance、source table、body citation 和 source-quality warnings。
 - Qwen 现在只等待 composer 可交互且页面不在生成中，再填入消息；随后确认受控输入框
   仍保留完整文本且发送按钮可用。如果 hydration 已经清空草稿，就在点击前停止，不会

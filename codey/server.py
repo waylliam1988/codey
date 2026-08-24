@@ -147,6 +147,8 @@ def resolve_web_asset(url_path: str) -> tuple[Path, str] | None:
 FOLDER_DIALOG_LOCK = threading.Lock()
 SHELL_TIMEOUT = 120
 SHELL_OUTPUT_LIMIT = 24_000
+SHELL_CONTINUATION_IDLE_TIMEOUT = 5.0
+SHELL_CONTINUATION_IDLE_POLL = 0.02
 REVIEW_TIMEOUT = 300.0
 REVIEW_FIX_TURNS = 12
 REVIEW_LOG_LINES = 80
@@ -1544,6 +1546,44 @@ def _submit_task(
     return reserved.run_id
 
 
+def _submit_task_after_slot_release(
+    session_id: str,
+    project: str | None,
+    task: str,
+    max_turns: int,
+    continue_task: bool,
+    provider_id: str,
+    intent: str = "auto",
+    *,
+    previous_run_id: str = "",
+    timeout: float = SHELL_CONTINUATION_IDLE_TIMEOUT,
+) -> str | None:
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        with STATE.lock:
+            active = STATE.active_run
+            if active is not None and previous_run_id and active.run_id != previous_run_id:
+                return None
+        run_id = _submit_task(
+            session_id,
+            project,
+            task,
+            max_turns,
+            continue_task,
+            provider_id,
+            intent,
+        )
+        if run_id is not None:
+            return run_id
+        with STATE.lock:
+            active = STATE.active_run
+            if active is not None and previous_run_id and active.run_id != previous_run_id:
+                return None
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(SHELL_CONTINUATION_IDLE_POLL)
+
+
 def _query_list(query: dict[str, list[str]], key: str) -> list[str]:
     values: list[str] = []
     for raw in query.get(key, []):
@@ -2090,7 +2130,7 @@ class Handler(BaseHTTPRequestHandler):
                     setup_context=setup_context,
                     followup_hints=followup_hints,
                 )
-                continuation_run = _submit_task(
+                continuation_run = _submit_task_after_slot_release(
                     session_id,
                     pending["project"],
                     continuation,
@@ -2098,6 +2138,7 @@ class Handler(BaseHTTPRequestHandler):
                     True,
                     pending.get("provider") or DEFAULT_PROVIDER_ID,
                     "project",
+                    previous_run_id=str(pending.get("run_id") or ""),
                 )
                 continued = continuation_run is not None
             self._send_json(200, {

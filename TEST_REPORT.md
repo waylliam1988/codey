@@ -41,10 +41,13 @@ Parser correctness: documented bare numbered headings (`1. Conclusion`,
 section; unknown markdown headings still route to a dropped unknown bucket.
 Writer-visible research handoff now treats Key conclusions as
 Citation-map-backed: conclusion lines must cite a number present in the
-rendered Citation map. Missing citations and fake bracket citations such as
-`[99]` stay visible only as capped `[uncited]` limitations after real
-counterpoints, and supported conclusions later in the section are still
-scanned before the Key conclusions cap is applied.
+rendered Citation map through the shared citation scanner. Missing citations
+and fake bracket citations such as `[99]` stay visible only as capped
+`[uncited]` limitations after real counterpoints, supported conclusions later
+in the section are still scanned before the Key conclusions cap is applied,
+and the Writer handoff now accepts the same citation shapes as the Research
+done gate (`[1][2]`, `[1 p.4]`, and `array[0] per [1]`) while keeping
+`array[0] only` and `[1, 2]` fail-closed.
 
 Projection governance: CapabilitySpec gained validated
 audience/canonical-inputs/fail-mode/release-gate metadata for every
@@ -59,7 +62,10 @@ now patch both connectors); work_checkpoint_flow disables post-task
 audit/consensus/advisors (~137s -> ~4s); PDF research-UI flow uses a
 side-effect-free State helper (15.3s -> 0.5s); tests/conftest.py guards
 only pytest's Windows `pytest-current` symlink cleanup `PermissionError`
-without swallowing unrelated permission errors.
+without swallowing unrelated permission errors. Shell approval continuation
+now waits briefly for the interrupted approval run to release the single task
+slot before submitting the follow-up task; the approved shell command is not
+retried, and continuation will not steal the slot from an unrelated active run.
 
 Research-to-Code smoke structure: `tests/manual/research_to_code_ab.py`
 remains a single-fixture, two-arm live probe. The fixture asks Writer to fix
@@ -101,9 +107,14 @@ test capability fingerprint assignment removed.
 Verification:
 
 ```text
-python -m pytest tests/test_knowledge.py tests/test_research_to_code_ab.py
-  tests/test_report_sections.py -q
-  64 passed
+python -m pytest tests/test_citation_scanner.py tests/test_knowledge.py
+  tests/test_architecture.py tests/test_research.py
+  tests/test_research_completion_gate.py tests/test_research_record_merge.py
+  tests/test_research_pipeline.py tests/test_research_object_model.py
+  tests/test_research_to_code_ab.py -q
+  262 passed, 221 subtests passed
+python -m pytest tests/test_server.py tests/test_ui_browser_e2e.py -q
+  170 passed
 python -B tests\manual\research_to_code_ab.py --self-test
   self-test ok
 python -B tests\manual\research_to_code_ab.py --provider deepseek --repeats 1
@@ -113,7 +124,7 @@ python -B tests\manual\research_to_code_ab.py --provider qwen --repeats 1
   gate ok; baseline 4 turns/4 tools, projection 4 turns/4 tools;
   projection brief -494 chars, sent chars -494, trap not in Key conclusions
 python -m pytest -q                   full suite:
-  2613 passed, 1 skipped, 781 subtests passed
+  2618 passed, 1 skipped, 778 subtests passed in 262.77s
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean
@@ -1137,9 +1148,10 @@ Production changes:
   source section for internal source-id leaks. The source section check is
   line-level: parsed source rows protect source titles such as `[S1]`, while
   separate notes and contextual leaks such as `source_id=s9` remain blockers.
-- `codey/research/citation_scanner.py` now holds the shared citation and
-  source-id scanners, and `review_report_quality()` is split into small review
-  helpers for missing sections, source-id leaks, no-citable reports,
+- `codey/citation_scanner.py` now holds the shared citation and source-id
+  scanners for the Research done gate, report-quality gate, and Writer
+  handoff; `review_report_quality()` is split into small review helpers for
+  missing sections, source-id leaks, no-citable reports,
   provenance, source-table validation, body citation checks, and
   source-quality warnings.
 - `tools/ui_e2e.py` now treats screenshot capture as best effort in CI so the

@@ -1,4 +1,4 @@
-"""Shared citation and source-id scanners for Research reports."""
+"""Shared citation and source-id scanners for bounded reports."""
 
 from __future__ import annotations
 
