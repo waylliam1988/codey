@@ -2441,9 +2441,22 @@ class BriefProjectionTraceTests(unittest.TestCase):
             # projection before reaching the trace boundary.
             self.assertEqual(len(claim_rows), 2)
             self.assertEqual(claim_rows[0]["status"], "evidence_backed")
-            self.assertEqual(claim_rows[0]["text"], "Documented flow confirmed.")
+            # The trace is not a transcript: claim prose travels only as a
+            # digest, never as text.
+            self.assertNotIn("text", claim_rows[0])
+            self.assertEqual(
+                claim_rows[0]["text_digest"],
+                "sha256:" + __import__("hashlib").sha256(
+                    b"Documented flow confirmed."
+                ).hexdigest(),
+            )
+            self.assertEqual(claim_rows[0]["claim_ref"], "claim:" + "3" * 16)
             self.assertEqual(claim_rows[1]["status"], "unsupported")
             self.assertNotIn("claim_ref", claim_rows[1])
+            serialized = json.dumps(payload, ensure_ascii=False)
+            self.assertNotIn("Documented flow confirmed.", serialized)
+            self.assertNotIn("Junk row without status.", serialized)
+            self.assertNotIn("open_questions", row)
 
     def test_brief_projection_requires_claims_or_claim_refs(self) -> None:
         payload_in = {

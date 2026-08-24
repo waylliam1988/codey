@@ -608,9 +608,9 @@ def research_url_denial_reason(url: str, *, resolve: bool = True) -> str | None:
         return None
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
-    except (OSError, UnicodeError) as exc:
-        if isinstance(exc, UnicodeError):
-            return "invalid URL host"
+    except OSError:
+        # The hostname-shape gate above rejects everything the IDNA codec
+        # would raise on, so only real resolution failures land here.
         return "could not resolve host"
     for info in infos:
         address = info[4][0].split("%")[0]

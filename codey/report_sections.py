@@ -14,6 +14,7 @@ import re
 
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.+?)\s*$")
+_LIST_PREFIX_RE = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)、]\s+)")
 _HEADING_NUMBER_RE = re.compile(
     r"^(?:"
     r"\d+(?:\.\d+)*"
@@ -82,20 +83,50 @@ def heading_key(line: str) -> str:
     return ""
 
 
+def is_boundary_line(line: str) -> bool:
+    """True when a line starts a new section regardless of known aliases.
+
+    Markdown headings and short colon-style titles both count. Without
+    this, content under an unknown title (风险:, 方法:, 备注:, custom
+    templates) would keep appending to the previous known section and could
+    be mis-delivered as its conclusions.
+    """
+
+    stripped = str(line or "").strip()
+    if not stripped:
+        return False
+    if _HEADING_RE.match(stripped):
+        return True
+    if stripped.endswith((":", "：")):
+        title = stripped.rstrip(":：").strip()
+        if (
+            title
+            and len(title) <= 60
+            and not stripped.startswith(("- ", "* ", "+ "))
+            and not _LIST_PREFIX_RE.match(stripped)
+        ):
+            return True
+    return False
+
+
 def parse_sections(text: str) -> dict[str, str]:
-    """Split a report body into its named sections."""
+    """Split a report body into its named sections.
+
+    Every boundary line switches the current section; boundaries whose title
+    matches no alias route their content to an internal unknown bucket that
+    is dropped from the result, so unclassified prose can never masquerade
+    as a known section's conclusions.
+    """
 
     sections: dict[str, list[str]] = {}
     current = ""
     for line in str(text or "").splitlines():
-        key = heading_key(line)
-        if key:
-            current = key
-            sections.setdefault(current, [])
+        if is_boundary_line(line):
+            current = heading_key(line)
             continue
         if current:
             sections.setdefault(current, []).append(line)
-    return {key: "\n".join(value).strip() for key, value in sections.items()}
+    return {key: "\n".join(value).strip() for key, value in sections.items() if key}
 
 
 def missing_required_sections(sections: dict[str, str]) -> list[str]:
@@ -117,6 +148,7 @@ __all__ = [
     "REQUIRED_SECTIONS",
     "SECTION_ALIASES",
     "heading_key",
+    "is_boundary_line",
     "missing_required_sections",
     "normalize_heading",
     "parse_sections",

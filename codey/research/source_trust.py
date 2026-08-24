@@ -265,8 +265,6 @@ def _classify(*, host: str, kind: str, level: str) -> tuple[str, ...]:
             add("standard")
         if source_domains.matches_any(lowered, source_domains.FILING_HOSTS):
             add("filing")
-        if source_domains.matches_any(lowered, source_domains.STANDARD_HOSTS):
-            add("standard")
         if source_domains.matches_any(lowered, source_domains.DATASET_HOSTS):
             # Host-backed dataset repositories are the only path into the
             # strong dataset class; a declared data kind never grants it.
@@ -311,12 +309,13 @@ def _bounded_tokens(values: Iterable[object], limit: int) -> tuple[str, ...]:
 
 
 def _host_of(host: object, *url_refs: object) -> str:
-    text = str(host or "").strip().lower().removeprefix("www.")
+    # www-stripping has one owner: source_domains.strip_www.
+    text = source_domains.strip_www(host)
     if text:
         return text
     for ref in url_refs:
         if isinstance(ref, Mapping):
-            candidate = str(ref.get("host") or "").strip().lower().removeprefix("www.")
+            candidate = source_domains.strip_www(ref.get("host"))
             if candidate:
                 return candidate
     return ""

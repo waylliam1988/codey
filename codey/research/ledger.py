@@ -476,15 +476,18 @@ def classify_source_quality(url: str, text: str = "") -> SourceQuality:
     group = _independent_group(host)
     kind = "web"
     level = "secondary"
-    if source_domains.is_government_host(host):
+    if source_domains.matches_any(host, source_domains.DATASET_HOSTS):
+        # Most specific first: data.gov / data.nasa.gov are dataset
+        # repositories that also sit on gov suffixes; the repository role is
+        # the meaningful quality stamp, so it wins over the TLD shape.
+        kind = "data"
+        level = "primary"
+    elif source_domains.is_government_host(host):
         # Strong trust is granted only by registered-suffix host shapes;
         # lookalikes (sec.gov.evil.example) stay plain web/secondary.
         kind = "official"
         level = "primary"
     elif source_domains.is_education_host(host):
-        kind = "data"
-        level = "primary"
-    elif source_domains.matches_any(host, source_domains.DATASET_HOSTS):
         kind = "data"
         level = "primary"
     elif source_domains.matches_any(host, source_domains.NEWS_HOSTS):

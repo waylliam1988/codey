@@ -77,12 +77,23 @@ This file records Codey's release history. The newest release appears first.
   neutral stdlib-only leaf that also owns section parsing for report
   quality review -- one parser, and the knowledge layer no longer reaches
   upward into the eager research package (locked by an import-isolation
-  test). The unbounded raw-report excerpt ("Synthesis excerpt", up to 3600
-  chars of note body) no longer enters the Writer handoff, and related-note
-  id noise was dropped from it; every remaining line comes from a named
-  section, and long lines are clipped instead of silently dropped. This
-  changes Writer-visible research context text, so enabling it in a release
+  test). Section boundaries are strict: every markdown heading or short
+  colon-style title switches the section, and unknown titles route their
+  content to a dropped unknown bucket, so legacy or custom reports can no
+  longer smuggle `风险:`/`方法:` prose into the writer's conclusions. The
+  unbounded raw-report excerpt ("Synthesis excerpt", up to 3600 chars of
+  note body) no longer enters the Writer handoff, and related-note id noise
+  was dropped from it; every remaining line comes from a named section, and
+  long lines are clipped instead of silently dropped. This changes
+  Writer-visible research context text, so enabling it in a release
   requires running the dedicated live A/B first (see below).
+- RunTrace stays transcript-free: `research_brief_projections` rows no
+  longer carry claim texts or open questions -- claim rows keep only
+  claim_ref / status / evidence_count / text_digest, resolvable against the
+  research record's own bounded payloads. The model-visible handoff keeps
+  its short bounded texts; only the audit side becomes digest-first.
+  Merged evidence-profile payloads keep the "+" composition marker instead
+  of sanitizing into names that look like builtin combination profiles.
 - Added `tests/manual/research_to_code_ab.py`, the roadmap's release-gate
   probe for Writer-visible handoff changes: two arms (0.4.9-style baseline
   render vs structured projection render), same fixture project, same

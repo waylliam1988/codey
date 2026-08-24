@@ -63,7 +63,10 @@ class EvidenceProfile:
 
     def to_payload(self) -> dict[str, object]:
         return {
-            "profile_id": _profile_id(self.profile_id),
+            # "+" is the runtime composition marker; sanitizing it away
+            # would make merged profiles look like builtin combination
+            # names (finance_legal), which never exist by design.
+            "profile_id": _payload_profile_id(self.profile_id),
             "freshness_expectation": _ranked(
                 self.freshness_expectation, FRESHNESS_ORDER, "low"
             ),
@@ -325,6 +328,11 @@ def _profile_id(value: object) -> str:
     while "__" in text:
         text = text.replace("__", "_")
     return text.strip("_")[:80]
+
+
+def _payload_profile_id(value: object) -> str:
+    parts = [_profile_id(part) for part in str(value or "").split("+")]
+    return "+".join(part for part in parts if part)
 
 
 __all__ = [

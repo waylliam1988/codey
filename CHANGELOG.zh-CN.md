@@ -61,11 +61,20 @@
   （`_extract_section_lines` / `_extract_sources_section`），brief 改用
   `codey/report_sections.py`——一个中立的 stdlib-only leaf，同时也是 report
   quality review 的 section 解析唯一 owner；knowledge 层不再向上依赖会级联
-  加载 runner/browser/pipeline 的 research 包（由导入隔离测试锁定）。无界的
-  raw 报告摘录（"Synthesis excerpt"，最多 3600 字符 note 正文）不再进入
-  Writer handoff，related-note id 噪音也从 handoff 移除；剩余每一行都来自
-  具名 section，超长行一律截断、绝不静默丢弃。这会改变 Writer 可见的
+  加载 runner/browser/pipeline 的 research 包（由导入隔离测试锁定）。
+  section 边界收紧：任意 markdown 标题或短冒号式标题都切换 section，未知
+  标题的内容进入被丢弃的 unknown 桶——旧报告或自定义模板里的
+  `风险:`/`方法:` 正文不再可能混进 Writer 的结论区。无界的 raw 报告摘录
+  （"Synthesis excerpt"，最多 3600 字符 note 正文）不再进入 Writer
+  handoff，related-note id 噪音也从 handoff 移除；剩余每一行都来自具名
+  section，超长行一律截断、绝不静默丢弃。这会改变 Writer 可见的
   research context 文案，因此发布启用前必须先跑专用 live A/B（见下）。
+- RunTrace 保持非 transcript：`research_brief_projections` 行不再携带
+  claim 文本与 open questions——claim 行只留 claim_ref / status /
+  evidence_count / text_digest，需要正文时回查 research record 自身的有界
+  payload。模型可见 handoff 仍保留其短有界文本；只有审计侧改为 digest 优先。
+  组合 profile 的 payload 保留 "+" 组合标记，不再清洗成酷似内置组合
+  profile 的名字。
 - 新增 `tests/manual/research_to_code_ab.py`：roadmap 要求的 Writer 可见
   handoff 变更发布门槛探针。两臂（0.4.9 风格 baseline 渲染 vs 结构化投影
   渲染）、同一 fixture 项目、同一 synthesis note 内容、同一 Writer 任务。

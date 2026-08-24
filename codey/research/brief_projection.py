@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Iterable, Mapping
 
 from codey.refs import clip as _clip
+from codey.refs import digest_ref as _digest_ref
 from codey.refs import identifier as _identifier
 from codey.research.evidence_runtime import (
     EvidenceRuntimeSnapshot,
@@ -217,7 +218,7 @@ def project_research_brief(
         warnings.append("projection_without_runtime_snapshot")
     return ResearchBriefProjection(
         record_ref=record_ref,
-        record_digest=(snapshot.record_digest if snapshot else _digest((payload or {}).get("record_digest"))),
+        record_digest=(snapshot.record_digest if snapshot else _digest_ref((payload or {}).get("record_digest"))),
         answer_status=_snapshot_answer(snapshot) or _answer_status((payload or {}).get("answer_status")),
         profile_id=_identifier(profile_id, 80) or "general",
         claim_refs=_tuple_slice(snapshot.claim_refs if snapshot else _refs_from(claims)),
@@ -518,12 +519,6 @@ def _claim_status(value: object) -> str:
 def _support_token(value: object) -> str:
     text = _identifier(value, 20).lower()
     return text if text in CONSTRAINT_SUPPORTS else "verified"
-
-
-def _digest(value: object) -> str:
-    from codey.refs import digest_ref
-
-    return digest_ref(value)
 
 
 def _count_field(payload: Mapping[str, object], key: str) -> int:

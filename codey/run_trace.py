@@ -77,7 +77,6 @@ MAX_SOURCE_TRUST_CLASSES = 3
 MAX_BRIEF_PROJECTIONS = 8
 MAX_BRIEF_CLAIM_ROWS = 16
 MAX_BRIEF_REFS = 24
-MAX_BRIEF_TEXT_ITEMS = 6
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 REVIEW_FINDING_REF_KINDS: dict[str, str] = {
@@ -1236,14 +1235,6 @@ class RunTraceRecorder:
                 )
                 if code
             ][:MAX_WARNINGS],
-            "open_questions": [
-                text
-                for text in (
-                    _clip(value, 200)
-                    for value in _trace_list_items(projection.get("open_questions"))
-                )
-                if text
-            ][:MAX_BRIEF_TEXT_ITEMS],
             "warnings": [
                 code
                 for code in (
@@ -1260,13 +1251,16 @@ class RunTraceRecorder:
                 continue
             claim_ref = _normalize_runtime_ref(row.get("claim_ref"), kind="claim")
             status = _safe_trace_code(row.get("status"), 20)
-            text = _clip(row.get("text"), 260)
+            text = str(row.get("text") or "").strip()
             if not text or status not in {"evidence_backed", "assumption", "unsupported"}:
                 continue
+            # The trace is not a transcript: claim prose stays out, the text
+            # travels only as a digest resolvable against the research
+            # record's own bounded payloads.
             entry: dict[str, object] = {
-                "text": text,
                 "status": status,
                 "evidence_count": _nonnegative_int(row.get("evidence_count")),
+                "text_digest": digest_text(text),
             }
             if claim_ref:
                 entry["claim_ref"] = claim_ref

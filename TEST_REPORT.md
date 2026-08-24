@@ -94,6 +94,31 @@ paths instead of escaping a resolver UnicodeError into plan preflight. The
 strong `dataset` class is reachable again via registered data repositories
 (data.gov/data.nasa.gov/data.europa.eu/zenodo.org/figshare.com/kaggle.com/
 archive.ics.uci.edu) while declared data kinds alone still cannot mint it.
+Dataset repositories are matched before the gov suffix in the capture-time
+classifier, so data.gov stamps as a dataset repository rather than generic
+official; the duplicated STANDARD_HOSTS check and the now-unreachable
+UnicodeError branch were removed, www-stripping has the single owner
+(`source_domains.strip_www`), `brief_projection` imports digest_ref at
+module top, merged profile payloads keep the "+" composition marker instead
+of sanitizing into builtin-lookalike names, and `_has_items` lost its
+duplicated branches.
+
+Test isolation hardened: `tests/test_server.py` installs module-level guards
+that fail any test touching real provider tab connectors unless it patches
+them explicitly (the two receipt/memory tests previously fell through to a
+live self-review when only one connector was mocked -- both now patch both),
+and `tests/test_work_checkpoint_flow.py` disables post-task audit/consensus/
+advisor side effects plus ghost-sleep hooks at the source, cutting that file
+from ~137s to under 4s with zero assertion changes.
+
+Section parsing strictness: `parse_sections` treats every markdown heading
+or short colon-style title as a boundary; unknown titles drop their content
+into an internal unknown bucket, so legacy/custom report prose can no longer
+be delivered as a known section's conclusions. RunTrace's brief projection
+rows are digest-first: claim rows carry claim_ref/status/evidence_count/
+text_digest only, with claim texts and open questions excluded from the
+trace entirely.
+
 Gate matrix completeness: `_gate_verdict` additionally requires every
 (case, repeat) pair to have exactly one baseline and one projection row
 (`matrix_complete` criterion), so unbalanced runs such as 2 baseline vs 1
@@ -103,8 +128,8 @@ Verification:
 
 ```text
 python -m pytest tests/test_domain_profiles.py tests/test_source_trust.py
-  tests/test_brief_projection.py ... targeted suite: 421 passed, 22+ subtests
-python -m pytest tests                full suite: 2565 passed, 777 subtests
+  tests/test_brief_projection.py ... targeted suite: 370 passed, 50 subtests
+python -m pytest tests                full suite: 2570 passed, 777 subtests
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean

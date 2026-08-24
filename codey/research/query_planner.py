@@ -311,8 +311,6 @@ def _proof_ok_without_required_gap(payload: Mapping[str, object]) -> bool:
 
 
 def _has_items(value: object) -> bool:
-    if isinstance(value, (list, tuple, set)):
-        return bool(value)
     return bool(value)
 
 

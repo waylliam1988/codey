@@ -156,6 +156,19 @@ class MergeProfileTests(unittest.TestCase):
         two.pop("profile_id")
         self.assertEqual(one, two)
 
+    def test_merged_payload_keeps_composition_marker(self) -> None:
+        merged = merge_profiles(
+            BUILTIN_PROFILES["finance"],
+            BUILTIN_PROFILES["legal"],
+        )
+
+        payload_id = merged.to_payload()["profile_id"]
+
+        # "+" must survive payload sanitization: "finance_legal" would look
+        # exactly like a builtin combination profile, which never exists.
+        self.assertEqual(payload_id, "finance+legal")
+        self.assertNotIn(payload_id, BUILTIN_PROFILES)
+
     def test_merge_never_creates_new_atomic_profile_entries(self) -> None:
         before = dict(BUILTIN_PROFILES)
         merged = merge_profiles(

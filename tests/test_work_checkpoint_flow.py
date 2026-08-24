@@ -12,8 +12,45 @@ from codey.models import ToolCall
 from codey.provider_diagnostics import ProviderActionError, ProviderFailure
 from codey.tool_runtime import ToolOutcome
 
+_POST_TASK_SIDEEFFECT_PATCHES: list[mock.Mock] = []
+
+
+def setUpModule() -> None:
+    """Disable post-task audit/consensus/advisor side effects for this file.
+
+    The checkpoint flows never assert on them, but the real implementations
+    add a fixed ~14s provider-timeout per done task and can reach live web
+    providers. Production behavior is untouched; only these flow tests opt
+    out.
+    """
+
+    for name in ("_run_project_audit", "_run_consensus", "_run_research_advisors"):
+        patcher = mock.patch.object(server, name, return_value=None)
+        patcher.start()
+        _POST_TASK_SIDEEFFECT_PATCHES.append(patcher)
+
+
+def tearDownModule() -> None:
+    while _POST_TASK_SIDEEFFECT_PATCHES:
+        _POST_TASK_SIDEEFFECT_PATCHES.pop().stop()
+
 
 class WorkCheckpointFlowTests(unittest.TestCase):
+    def _state(self, path: Path) -> server.State:
+        """Checkpoint-flow State without background side effects.
+
+        These tests exercise checkpoint/failover/recovery, not Ghost sleep
+        learning or self repair. The real background hooks add a fixed
+        ~15s wait per task (ghost sleep join) and may reach providers, so
+        the flow tests disable them at the source.
+        """
+
+        state = server.State(path)
+        state.kick_ghost_sleep = mock.Mock(return_value=False)
+        state.wait_for_ghost_sleep = mock.Mock(return_value=True)
+        state.kick_self_repair = mock.Mock(return_value=False)
+        return state
+
     def _provider(self):
         provider = mock.Mock()
         provider.name = "DeepSeek Web"
@@ -26,7 +63,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             provider = self._provider()
 
             def interrupted(*args, **kwargs):
@@ -109,7 +146,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             first = self._provider()
             second = self._provider()
@@ -187,7 +224,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("content\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             provider = self._provider()
 
@@ -233,7 +270,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("content\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             providers = [self._provider(), self._provider(), self._provider()]
             failure = ProviderActionError(ProviderFailure(
@@ -290,7 +327,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             target = project / "app.py"
             target.write_text("before\n", encoding="utf-8")
             (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             providers = [self._provider(), self._provider()]
             captured = {}
@@ -364,7 +401,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("content\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             provider = self._provider()
 
@@ -408,7 +445,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("content\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             state.provider_failover_order = lambda: ("deepseek", "stepfun", "qwen", "glm")
             providers = [self._provider(), self._provider(), self._provider()]
 
@@ -457,7 +494,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("content\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             old = state.work_checkpoints.start(
                 run_id="old-run",
                 session_id="session-1",
@@ -494,7 +531,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             facts = mock.Mock()
             facts.render.return_value = ""
             facts.record_success.return_value = True
@@ -553,7 +590,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 "from src.auth import login\n",
                 encoding="utf-8",
             )
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             provider = self._provider()
 
             def completed(*args, **kwargs):
@@ -621,7 +658,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             provider = self._provider()
             changes = {
                 "ok": True,
@@ -658,7 +695,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             provider = self._provider()
             changes = {
                 "ok": True,
@@ -724,7 +761,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             (project / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
             (project / "other.py").write_text("VALUE = 0\n", encoding="utf-8")
             (project / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             provider = self._provider()
             changes = {
                 "ok": True,
@@ -776,7 +813,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project.mkdir()
             manifest = project / "pytest.ini"
             manifest.write_text("[pytest]\n", encoding="utf-8")
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             provider = self._provider()
 
             def completed(*args, **kwargs):
@@ -817,7 +854,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             manifest.write_text(
                 '{"scripts":{"test":"node test.js"}}', encoding="utf-8"
             )
-            state = server.State(root / "state")
+            state = self._state(root / "state")
             state.project_facts.record_success(project, ".", "npm test")
             provider = self._provider()
 

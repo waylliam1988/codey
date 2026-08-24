@@ -42,6 +42,38 @@ from codey.verification_policy import VerificationCandidate
 
 VALID_SHA256 = "a" * 64
 
+_PROVIDER_TAB_GUARDS: list[mock.Mock] = []
+
+
+def setUpModule() -> None:
+    """Forbid real web-provider tab connections for every test here.
+
+    Review/memory/receipt tests only need the fallback text paths; any test
+    that wants a provider must patch ``server.connect_existing_provider`` or
+    ``server.connect_fresh_provider_tab`` explicitly, which nests cleanly
+    over these guards. Live browser flows belong to manual/live-smoke
+    tooling, never to plain pytest.
+    """
+
+    def _deny(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError(
+            "test attempted a real provider tab connection; patch "
+            "server.connect_existing_provider / connect_fresh_provider_tab "
+            "instead of opening live pages"
+        )
+
+    _PROVIDER_TAB_GUARDS.extend([
+        mock.patch.object(server, "connect_existing_provider", side_effect=_deny),
+        mock.patch.object(server, "connect_fresh_provider_tab", side_effect=_deny),
+    ])
+    for guard in _PROVIDER_TAB_GUARDS:
+        guard.start()
+
+
+def tearDownModule() -> None:
+    while _PROVIDER_TAB_GUARDS:
+        _PROVIDER_TAB_GUARDS.pop().stop()
+
 
 def valid_research_report(url: str, conclusion: str = "Helium conclusion.") -> str:
     return (
@@ -4140,6 +4172,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
+            mock.patch.object(server, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
         ):
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
@@ -4209,6 +4242,7 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(server, "collect_changes", return_value=changes),
                 mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
+                mock.patch.object(server, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
             ):
                 server._run_task(
                     "session-memory",
