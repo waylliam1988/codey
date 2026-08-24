@@ -69,6 +69,68 @@ def test_matrix_complete_accepts_only_the_full_matrix() -> None:
     assert not common.matrix_complete(missing_repeat, arms=("a", "b"), cases=("c1",), repeats=2)
 
 
+def test_tracing_provider_true_pass_through_for_scripted_providers() -> None:
+    class _BareProvider:
+        name = "bare"
+
+        def __init__(self) -> None:
+            self.chat_calls: list[bool] = []
+            self.sent: list[str] = []
+
+        def new_chat(self):
+            self.chat_calls.append(True)
+            return object()
+
+        def send(self, text):
+            self.sent.append(text)
+            return "ok"
+
+    bare = _BareProvider()
+    provider = common.TracingProvider(bare)
+
+    assert provider.new_chat() is not None
+    assert bare.chat_calls == [True]
+    assert provider.send("hi") == "ok"
+    assert bare.sent == ["hi"]
+    provider.close()  # No close() on the wrapped provider: silent no-op.
+
+
+def test_tracing_provider_forwards_timeouts_only_when_configured() -> None:
+    class _TimeoutSpy:
+        name = "spy"
+
+        def __init__(self) -> None:
+            self.send_calls: list[dict] = []
+            self.chat_calls: list[dict] = []
+            self.closed = False
+
+        def new_chat(self, *args, **kwargs):
+            self.chat_calls.append({"args": args, "kwargs": kwargs})
+            return object()
+
+        def send(self, *args, **kwargs):
+            self.send_calls.append({"args": args, "kwargs": kwargs})
+            return "r"
+
+        def close(self):
+            self.closed = True
+            return None
+
+    passthrough = _TimeoutSpy()
+    plain = common.TracingProvider(passthrough)
+    plain.send("a")
+    assert passthrough.send_calls == [{"args": ("a",), "kwargs": {}}]
+    plain.new_chat()
+    assert passthrough.chat_calls == [{"args": (), "kwargs": {}}]
+
+    configured = _TimeoutSpy()
+    wrapped = common.TracingProvider(configured, timeout=7.5, new_chat_timeout=3.0)
+    wrapped.send("b")
+    wrapped.new_chat()
+    assert configured.send_calls == [{"args": ("b",), "kwargs": {"timeout": 7.5}}]
+    assert configured.chat_calls == [{"args": (), "kwargs": {"timeout": 3.0}}]
+
+
 def test_tracing_provider_journals_send_reply(tmp_path: Path) -> None:
     from tests.manual.ab_journal import (
         ABJournalWriter,

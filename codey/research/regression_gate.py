@@ -30,6 +30,7 @@ from codey.research.brief_projection import (
     CLAIM_STATUSES,
     CONSTRAINT_SUPPORTS,
 )
+from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.research.review_finding import (
     FINDING_CONTRADICTORY_SOURCES,
     FINDING_SOURCE_CONFLICT,
@@ -42,7 +43,6 @@ from codey.research.source_trust import project_source_set
 
 MAX_FINDINGS_SCANNED = 64
 MAX_RELATIONS_SCANNED = 64
-MAX_SOURCES_PROJECTED = 24
 MAX_EXPECTATION_KEYS = 24
 MAX_REASON_CODES = 12
 
@@ -271,7 +271,18 @@ def build_regression_report(
 
     snapshot_payload = _payload_of(snapshot) or {}
     brief_payload = _payload_of(brief) or {}
-    record_ref = str(snapshot_payload.get("record_ref") or brief_payload.get("record_ref") or "")
+    # Fail closed: only a validated research-record ref may anchor a report.
+    # A junk or hostile mapping can never smuggle text into the refs-only
+    # payload through the anchor field; the first candidate that validates
+    # wins, otherwise there is no report.
+    record_ref = ""
+    for candidate in (
+        snapshot_payload.get("record_ref"),
+        brief_payload.get("record_ref"),
+    ):
+        record_ref = normalize_runtime_ref(str(candidate or ""), kind="research_record")
+        if record_ref:
+            break
     if not record_ref:
         return None
 
@@ -567,8 +578,8 @@ def _capsule_status(capsule: object) -> str:
 
 
 def _source_stale_facts(sources: Iterable[object]) -> tuple[int, bool]:
-    rows = [item for item in (sources or ()) if item is not None][:MAX_SOURCES_PROJECTED]
-    projections = project_source_set(rows)
+    # project_source_set owns the bounded scan; never materialize the input.
+    projections = project_source_set(sources or ())
     stale_count = sum(1 for projection in projections if projection.freshness == "stale")
     return stale_count, stale_count > 0
 

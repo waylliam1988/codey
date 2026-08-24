@@ -45,9 +45,12 @@ class TracingProvider:
     With a journal, each send is fsync-recorded before the request and the
     full prompt/reply pair is archived immediately after the reply (manual
     layer only). With ``journal=None`` it degrades to a plain counting
-    provider, which is what scripted self-tests use. Timeouts are pass-through
-    when not configured, so wrappers that manage their own timeouts keep
-    working unchanged.
+    provider, which is what scripted self-tests use.
+
+    Timeouts are true pass-through when neither configured nor provided:
+    ``send(text)`` / ``new_chat()`` are called without a timeout kwarg, so
+    scripted providers with plain signatures keep working. ``close()``
+    forwards only when the wrapped provider actually closes.
     """
 
     def __init__(
@@ -85,19 +88,21 @@ class TracingProvider:
         return getattr(self.provider, name)
 
     def new_chat(self, timeout: float | None = None) -> object:
-        effective = timeout if timeout is not None else self.new_chat_timeout
-        return self.provider.new_chat(timeout=effective)
+        if timeout is not None:
+            return self.provider.new_chat(timeout=timeout)
+        if self.new_chat_timeout is None:
+            return self.provider.new_chat()
+        return self.provider.new_chat(timeout=self.new_chat_timeout)
 
     def send(self, text: str, timeout: float | None = None) -> str:
         prompt = str(text or "")
-        effective = timeout if timeout is not None else self.timeout
         self.send_index += 1
         turn = self.send_index
         self.prompt_chars += len(prompt)
         if self.journal is not None:
             self.journal.record_send_start(case=self.case, arm=self.arm, turn=turn, prompt=prompt)
         try:
-            reply_text = str(self.provider.send(prompt, timeout=effective))
+            reply_text = str(self._send_through(prompt, timeout))
         except Exception as exc:
             if self.journal is not None:
                 self.journal.record_send_error(
@@ -119,8 +124,17 @@ class TracingProvider:
             )
         return reply_text
 
+    def _send_through(self, prompt: str, timeout: float | None) -> Any:
+        effective = timeout if timeout is not None else self.timeout
+        if effective is None:
+            return self.provider.send(prompt)
+        return self.provider.send(prompt, timeout=effective)
+
     def close(self) -> None:
-        return self.provider.close()
+        closer = getattr(self.provider, "close", None)
+        if callable(closer):
+            return closer()
+        return None
 
 
 def interleaved_arm_schedule(arms: Sequence[str], repeats: int) -> list[tuple[str, int]]:

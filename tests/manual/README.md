@@ -42,11 +42,14 @@ python -B tests\manual\longitudinal_research_harness_ab.py --case stale_claim_re
 frozen rubric: an unstructured `baseline_web_report`, an
 `openscience_style_fixture` (verified locators and support relations, no
 counterevidence pass, no reproducible analysis), and the full
-`codey_evidence_loop`. Without a recorded real head-to-head artifact its
-summary may only say "OpenScience-style regression passed"; passing
-`--openscience-artifact <file>` together with `--claim-superiority` is the
-only way the summary may contain "surpassed OpenScience", and the artifact
-digest is recorded alongside the claim.
+`codey_evidence_loop`. Without a schema-valid real head-to-head artifact its
+summary may only say "OpenScience-style regression passed". The artifact must
+be JSON containing every roadmap metadata field — both sides' version/commit,
+provider/model, task inputs, run date, result source, and the scoring rubric —
+and `--openscience-artifact <file>` together with `--claim-superiority` is the
+only way the summary may contain "surpassed OpenScience"; the digest and the
+validated metadata are recorded alongside the claim, and incomplete artifacts
+fail closed with a non-zero exit instead of unlocking anything.
 
 ```powershell
 python -B tests\manual\research_comparison_benchmark_ab.py --self-test

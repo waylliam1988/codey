@@ -48,6 +48,23 @@
 - 不改生产行为：本版不改 prompt、tool result、Router/fallback、permission、
   UI/SSE、Research 默认路径或 done enforcement。按 roadmap A/B 规则，
   projection/harness-only 版本不做 live provider A/B。
+- Review 加固（0.4.11 提交后审阅修复）：
+  - comparison benchmark 的 superiority 措辞门禁从"存在任意文件即解锁"升级为
+    结构化 schema 门禁：head-to-head artifact 必须是 JSON 且包含 roadmap
+    要求的全部元数据（双方 version/commit、provider/model、任务输入、运行
+    日期、结果来源、评分 rubric），字段非空有界；digest-only 包装、损坏
+    JSON、非对象 payload 或缺字段的 artifact 一律 fail closed，CLI 直接
+    退出非零，summary 记录 `metadata` 与 `errors`。validity 以 payload 本身
+    为唯一事实来源，手拼的 digest 包装无法解锁。
+  - `regression_gate` 的 record anchor 改为经
+    `normalize_runtime_ref(kind="research_record")` 校验：恶意或错误的
+    mapping 无法把长文本塞进 refs-only payload；snapshot 锚点非法时回退到
+    合法的 brief 锚点，两者皆非法则不产出报告。
+  - `_source_stale_facts()` 不再先全量 materialize 再截断，直接把 iterable
+    交给自带 bounded scan 的 `project_source_set()`，删除冗余上限常量。
+  - 共用层 `TracingProvider` 的 timeout 语义与注释对齐为真 pass-through：
+    未配置且未传参时按 `send(text)` / `new_chat()` 裸调用，纯 scripted
+    provider 可直接工作；`close()` 仅在被包装 provider 真正可关闭时转发。
 
 ## 0.4.10 - 安全与完整性加固（review 加固）
 

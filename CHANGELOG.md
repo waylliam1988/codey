@@ -56,6 +56,29 @@ This file records Codey's release history. The newest release appears first.
   permission, UI/SSE, Research default path, or done-enforcement edits. Per
   the roadmap A/B rule, a projection/harness-only version takes no live
   provider A/B.
+- Review hardening (post-commit fixes):
+  - The comparison benchmark's superiority wording guard upgraded from "any
+    file unlocks it" to a structured schema gate: a head-to-head artifact
+    must be JSON containing every roadmap-required metadata field (both
+    sides' version/commit, provider/model, task inputs, run date, result
+    source, scoring rubric), non-empty and bounded. Digest-only wrappers,
+    unreadable JSON, non-object payloads, or missing fields fail closed; the
+    CLI exits non-zero and the summary records `metadata` and `errors`.
+    Validity derives from the payload itself, so hand-assembled digest
+    wrappers can never unlock the wording.
+  - The regression gate's record anchor is now validated through
+    `normalize_runtime_ref(kind="research_record")`: hostile or wrong
+    mappings cannot smuggle text into the refs-only payload; an invalid
+    snapshot anchor falls back to a valid brief anchor, and with neither the
+    report is not produced.
+  - `_source_stale_facts()` no longer materializes the full source list
+    before truncating; the iterable goes straight to
+    `project_source_set()`, which owns its own bounded scan (redundant cap
+    constant removed).
+  - The shared `TracingProvider` timeout semantics now match their docstring
+    as true pass-through: unconfigured and unprovided timeouts call bare
+    `send(text)` / `new_chat()`, so plain scripted providers work directly;
+    `close()` forwards only when the wrapped provider actually closes.
 
 ## 0.4.10 - Security and Integrity Hardening (review hardening)
 
