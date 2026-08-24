@@ -7,10 +7,11 @@ v1 scope (0.4.11, deterministic-only):
   review findings, planner gaps, brief projection, impact contract,
   reproducibility capsule -- and each final round is judged by the shared
   regression gate against the frozen suite's expected observables.
-- Cross-round invariants are asserted directly: old claims keep one
-  content-addressed identity across rounds, stale sources get flagged before
-  the revised conclusion counts, and injected unsupported claims stay out of
-  implementation constraints.
+- Cross-round invariants are asserted directly: superseded conclusions keep
+  their content-addressed claim ids across rounds while revisions arrive as
+  distinct claims linked by explicit refutes relations, stale sources get
+  flagged before the revised conclusion counts, and injected unsupported
+  claims stay out of implementation constraints.
 
 The harness measures; it does not enforce. Nothing here changes production
 Research behavior, prompts, or tool results. Live provider smoke rides on top
@@ -225,17 +226,27 @@ def evaluate_round(
 
 
 def scenario_stale_claim_refresh() -> tuple[list[RoundOutcome], list[str]]:
-    """R1 baseline; R2 marks the old source stale and revises the conclusion."""
+    """R1 baseline; R2 marks the old source stale and revises the conclusion.
+
+    Production claim ids are content-addressed (section + text + citations),
+    so the old stable-v2 conclusion keeps its own id across rounds and the
+    stable-v3 revision arrives as a *different* claim with a *different* id,
+    tied back to the superseded evidence through an explicit ``refutes``
+    relation. Both stay fully supported so support relations still verify.
+    """
 
     old_source_fresh = _source("widget-docs-v2", freshness="fresh")
     old_source_stale = _source("widget-docs-v2", freshness="stale")
     new_source = _source("widget-docs-v3-release", freshness="fresh")
 
+    endpoint_v2_claim_id = _ref("claim", "widget:endpoint:v2")
+    endpoint_v3_claim_id = _ref("claim", "widget:endpoint:v3")
+
     r1_record = _record_payload(
         seed="stale:r1",
         sources=[old_source_fresh],
         claims=[{
-            "claim_id": _ref("claim", "widget:endpoint"),
+            "claim_id": endpoint_v2_claim_id,
             "claim_text": _endpoint_claim_text("stable-v2"),
             "status": "evidence_backed",
             "source_ref": old_source_fresh["source_id"],
@@ -245,14 +256,35 @@ def scenario_stale_claim_refresh() -> tuple[list[RoundOutcome], list[str]]:
     r2_record = _record_payload(
         seed="stale:r2",
         sources=[old_source_stale, new_source],
-        claims=[{
-            "claim_id": _ref("claim", "widget:endpoint"),
-            "claim_text": _endpoint_claim_text("stable-v3"),
-            "status": "evidence_backed",
-            "source_ref": new_source["source_id"],
-            "excerpt": "stable-v3 supersedes stable-v2 as of this release.",
-        }],
+        claims=[
+            {
+                # Same content as R1's conclusion, therefore the same id.
+                "claim_id": endpoint_v2_claim_id,
+                "claim_text": _endpoint_claim_text("stable-v2"),
+                "status": "evidence_backed",
+                "source_ref": old_source_stale["source_id"],
+                "excerpt": "stable-v2 was the recommended endpoint.",
+            },
+            {
+                # Different content, therefore a genuinely different claim.
+                "claim_id": endpoint_v3_claim_id,
+                "claim_text": _endpoint_claim_text("stable-v3"),
+                "status": "evidence_backed",
+                "source_ref": new_source["source_id"],
+                "excerpt": "stable-v3 supersedes stable-v2 as of this release.",
+            },
+        ],
     )
+    # The revision refutes the superseded conclusion's evidence base; the
+    # builder emits supporting evidence rows in claim order, so index 0 is
+    # the stable-v2 evidence.
+    superseded_evidence_id = r2_record["evidence"][0]["evidence_id"]
+    r2_record["relations"].append({
+        "relation_id": _ref("relation", "stale:r2:v3-refutes-v2-evidence"),
+        "relation_kind": "refutes",
+        "from_ref": endpoint_v3_claim_id,
+        "to_ref": superseded_evidence_id,
+    })
 
     suite = load_suite()
     final_expectations = suite.case_expectations("stale_claim_refresh")
@@ -273,8 +305,12 @@ def scenario_stale_claim_refresh() -> tuple[list[RoundOutcome], list[str]]:
     ]
     checks = [
         outcomes[0].report is not None and outcomes[1].report is not None,
-        # The old claim keeps one content-addressed identity across rounds.
+        # Relocation: the old conclusion keeps its content-addressed id.
         r1_record["claims"][0]["claim_id"] == r2_record["claims"][0]["claim_id"],
+        # Revision: the new conclusion is a distinct claim, linked to the
+        # superseded evidence instead of reusing the old slot.
+        r2_record["claims"][1]["claim_id"] == endpoint_v3_claim_id,
+        any(relation.get("relation_kind") == "refutes" for relation in r2_record["relations"]),
         outcomes[0].report is not None and not outcomes[0].report.observable("stale_source_flagged"),
         outcomes[1].report is not None and outcomes[1].report.observable("stale_source_flagged"),
         outcomes[1].passed(),

@@ -100,7 +100,14 @@ Codey moves on). A fourth pass bound superiority to the frozen rubric itself
 (a foreign `rubric` value is a valid record that can never back the wording,
 verified by test), kept zero/False result fields visible in metadata instead
 of filtering them out, and pinned the git provenance lookup to the repository
-root so commit alignment resolves from any working directory.
+root so commit alignment resolves from any working directory. A fifth pass
+upgraded rubric binding to two factors — name plus the lock.json sha256 of
+`rubric.json` as `rubric_digest`, reusing the frozen suite's single hash
+vocabulary — made the comparison matrix gate exact (duplicated arms fail),
+and corrected the longitudinal stale fixture to production semantics: the
+superseded conclusion keeps its content-addressed claim id across rounds
+while the revision arrives as a distinct claim with its own id, linked by an
+explicit refutes relation to the superseded evidence.
 
 Production-facing behavior changes: none. No prompt, tool result, router,
 fallback, permission, UI/SSE, Research default path, or done-enforcement

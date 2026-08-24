@@ -100,6 +100,20 @@ This file records Codey's release history. The newest release appears first.
     survive into audit output instead of vanishing; and
     `current_codey_commit()` runs git with the repository root as cwd so the
     current commit resolves regardless of the calling process's directory.
+  - Two-factor rubric binding + longitudinal fixture semantics fix (fifth
+    review pass): superiority now also requires a machine-checked
+    `rubric_digest`, taken from the frozen suite lock.json's
+    `rubric.json` sha256 entry (one hash vocabulary, no second scheme).
+    Missing or mismatched name/digest keeps the artifact a valid record but
+    denies "surpassed OpenScience"; metadata projects both factors. The
+    comparison matrix gate became exact — every arm exactly once — instead
+    of dict-folding that let duplicated arms silently overwrite their twins.
+    The longitudinal stale fixture now mirrors production's content-
+    addressed claim ids: the old stable-v2 conclusion keeps its own id
+    across rounds while the stable-v3 revision enters as a distinct claim
+    with a new id linked by an explicit refutes relation to the superseded
+    evidence, so the benchmark verifies "old claim relocatable + new claim
+    revises under its own identity" rather than id-slot reuse.
   - The regression gate's record anchor is now validated through
     `normalize_runtime_ref(kind="research_record")`: hostile or wrong
     mappings cannot smuggle text into the refs-only payload; an invalid

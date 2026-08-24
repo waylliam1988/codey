@@ -19,9 +19,13 @@ def test_stale_rounds_flag_only_after_refresh() -> None:
     assert not baseline.report.observable("stale_source_flagged")
     assert refreshed.report.observable("stale_source_flagged")
     assert refreshed.report.observable("answered")
-    # The revised conclusion is the only claim left; the old ref stays stable.
-    assert refreshed.report.metrics["claim_count"] == 1
+    # The old stable-v2 claim keeps its identity while the stable-v3 revision
+    # arrives as a distinct claim (both verified), so the round carries two.
+    assert refreshed.report.metrics["claim_count"] == 2
+    # The revision refutes the superseded evidence base explicitly.
+    assert refreshed.report.observable("conflicting_evidence_finding") is True
     assert refreshed.brief_render.count("stable-v3") >= 1
+    assert refreshed.brief_render.count("stable-v2") >= 1
 
 
 def test_conflicting_evidence_creates_finding_and_gap() -> None:

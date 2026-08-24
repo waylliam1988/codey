@@ -83,6 +83,19 @@
     `regression_gates_passed=False` 这些最能解释"不支持 superiority"的字段
     不再被丢掉；`current_codey_commit()` 固定以仓库根为 cwd 运行 git，
     从任意目录调用都能解析当前 commit。
+  - rubric 双因子绑定 + 纵向 fixture 语义修正（第五轮审阅）：
+    - superiority 在 rubric 名之外新增机器校验因子 `rubric_digest`，取值
+      直接来自冻结套件 lock.json 里 `rubric.json` 的 sha256 条目（复用同一
+      hash 体系，不另起炉灶）。name/digest 任一缺失或不匹配：artifact 仍是
+      valid 记录，但不能解锁 "surpassed OpenScience"。metadata 输出两个
+      因子。
+    - comparison benchmark 的 matrix gate 改为 exact matrix：每个 arm 恰好
+      出现一次；此前 dict 折叠会让重复 arm 静默覆盖后仍判 complete。
+    - longitudinal stale fixture 对齐生产对象模型的 content-addressed
+      claim_id 语义：旧 stable-v2 结论跨轮保持自己的 id，stable-v3 修正以
+      新 id 作为独立 claim 进入，并用显式 refutes relation 指向被取代的
+      evidence——验证的是"旧 claim 可重定位 + 新 claim 以独立身份修正旧结
+      论"，而不是"同一语义槽位复用 id"。
   - `regression_gate` 的 record anchor 改为经
     `normalize_runtime_ref(kind="research_record")` 校验：恶意或错误的
     mapping 无法把长文本塞进 refs-only payload；snapshot 锚点非法时回退到

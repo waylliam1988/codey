@@ -26,11 +26,13 @@ benchmark: every development case from the frozen
 `tests/fixtures/research_benchmark/` corpus runs across multiple rounds
 through the production projection stack (proof review, evidence runtime,
 findings, gaps, brief, impact contract, capsule) and is judged by the shared
-regression gate against the suite's expected observables. It verifies that old
-claims stay relocatable, stale sources get flagged before a revised conclusion
-counts, conflicting evidence creates findings and planner gaps, injected
-unsupported claims never reach implementation constraints, and failed analysis
-runs are never reported as reproduced.
+regression gate against the suite's expected observables. It verifies that
+superseded conclusions keep their content-addressed claim ids across rounds
+while revisions arrive as distinct claims linked by explicit refutes
+relations, stale sources get flagged before a revised conclusion counts,
+conflicting evidence creates findings and planner gaps, injected unsupported
+claims never reach implementation constraints, and failed analysis runs are
+never reported as reproduced.
 
 ```powershell
 python -B tests\manual\longitudinal_research_harness_ab.py --self-test
@@ -46,8 +48,9 @@ counterevidence pass, no reproducible analysis), and the full
 summary may only say "OpenScience-style regression passed", and only when the
 comparison verdict itself passed. The artifact must be JSON containing every
 roadmap metadata field — both sides' version/commit, provider/model, task
-inputs, run date, result source, and a `rubric` equal to the frozen suite
-rubric — *and* its recorded result must back the wording:
+inputs, run date, result source, a `rubric` equal to the frozen suite rubric
+name plus a matching `rubric_digest` taken from the suite lock — *and* its
+recorded result must back the wording:
 `winner: "codey"`, `strictly_better_metric_count >= 4`, and
 `regression_gates_passed: true`.
 `--openscience-artifact <file>` together with `--claim-superiority` is the

@@ -41,6 +41,18 @@ def test_missing_arm_fails_the_matrix_gate() -> None:
     assert "matrix_complete_failed" in verdict["reason_codes"]
 
 
+def test_duplicated_arm_fails_the_exact_matrix_gate() -> None:
+    results = benchmark.run_deterministic_arms()
+    duplicated = [*results, results[-1]]
+
+    verdict = benchmark.compare_verdict(duplicated)
+
+    # Folding arms into a dict would silently overwrite the twin; the exact
+    # matrix requires every arm exactly once.
+    assert verdict["criteria"]["matrix_complete"] is False
+    assert verdict["ok"] is False
+
+
 def test_superiority_wording_is_gated_by_a_validated_artifact(tmp_path: Path) -> None:
     results = benchmark.run_deterministic_arms()
 
@@ -325,24 +337,62 @@ def test_commit_alignment_is_reported_not_assumed(monkeypatch) -> None:
     assert unavailable["real_openscience"]["codey_commit_alignment"]["matches"] is None
 
 
-def test_superiority_is_bound_to_the_frozen_rubric(tmp_path: Path) -> None:
+def test_superiority_is_bound_to_the_frozen_rubric() -> None:
     results = benchmark.run_deterministic_arms()
-    frozen_name = benchmark.load_suite().rubric["rubric"]
-    assert benchmark._sample_head_to_head_payload()["rubric"] == frozen_name
+    identity = benchmark.current_rubric_identity()
+    assert identity["name"] == "research_benchmark_v1"
+    assert identity["digest"].startswith("sha256:")
+    assert benchmark._sample_head_to_head_payload()["rubric"] == identity["name"]
+    assert benchmark._sample_head_to_head_payload()["rubric_digest"] == identity["digest"]
 
-    payload = benchmark._sample_head_to_head_payload()
-    payload["rubric"] = "anything goes"
-    path = tmp_path / "wrong-rubric.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
-    artifact = benchmark.load_head_to_head_artifact(path)
-    # A foreign rubric is an honest record, but it cannot back the wording.
-    assert artifact.valid
-    assert not artifact.supports_superiority()
-    locked = benchmark.build_summary(
-        results=results, head_to_head=artifact, superiority_claimed=True
+    # name match + digest mismatch: valid record, no superiority support.
+    stale_digest = benchmark._sample_head_to_head_payload()
+    stale_digest["rubric_digest"] = "sha256:" + "00" * 32
+    stale_artifact = benchmark.HeadToHeadArtifact(
+        digest="sha256:" + "ab" * 32, payload=stale_digest, errors=()
     )
-    assert locked["verdict"]["ok"] is False
-    assert benchmark.SUPERIORITY_PHRASE not in json.dumps(locked)
+    assert stale_artifact.valid
+    assert not stale_artifact.supports_superiority()
+
+    # name mismatch + digest match: valid record, no superiority support.
+    foreign_name = benchmark._sample_head_to_head_payload()
+    foreign_name["rubric"] = "anything goes"
+    foreign_artifact = benchmark.HeadToHeadArtifact(
+        digest="sha256:" + "cd" * 32, payload=foreign_name, errors=()
+    )
+    assert foreign_artifact.valid
+    assert not foreign_artifact.supports_superiority()
+
+    # digest missing: valid record, no superiority support.
+    missing_digest = benchmark._sample_head_to_head_payload()
+    del missing_digest["rubric_digest"]
+    missing_artifact = benchmark.HeadToHeadArtifact(
+        digest="sha256:" + "ef" * 32, payload=missing_digest, errors=()
+    )
+    assert missing_artifact.valid
+    assert not missing_artifact.supports_superiority()
+
+    for artifact in (stale_artifact, foreign_artifact, missing_artifact):
+        locked = benchmark.build_summary(
+            results=results, head_to_head=artifact, superiority_claimed=True
+        )
+        assert locked["verdict"]["ok"] is False
+        assert benchmark.SUPERIORITY_PHRASE not in json.dumps(locked)
+
+    # The matching pair unlocks, and metadata carries both factors.
+    backed = benchmark.build_summary(
+        results=results,
+        head_to_head=benchmark.HeadToHeadArtifact(
+            digest="sha256:" + "12" * 32,
+            payload=benchmark._sample_head_to_head_payload(),
+            errors=(),
+        ),
+        superiority_claimed=True,
+    )
+    metadata = backed["real_openscience"]["metadata"]
+    assert metadata["rubric"] == identity["name"]
+    assert metadata["rubric_digest"] == identity["digest"]
+    assert benchmark.SUPERIORITY_PHRASE in json.dumps(backed)
 
 
 def test_metadata_keeps_zero_and_false_result_fields() -> None:

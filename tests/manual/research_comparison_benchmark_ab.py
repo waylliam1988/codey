@@ -13,14 +13,16 @@ production projection stack and are scored with the frozen benchmark rubric:
 Claiming ``surpassed OpenScience`` requires a recorded real head-to-head
 artifact (``--openscience-artifact``) that validates against the roadmap's
 schema *and* whose recorded result supports it: both sides' version/commit,
-provider/model, task inputs, run date, result source, and rubric must be
-present and bounded, and the artifact's own result fields must say Codey won
-(``winner: "codey"``, ``strictly_better_metric_count`` at or above the
-roadmap threshold, ``regression_gates_passed: true``). A metadata-only
-record -- even one where ``result_source`` editorializes a win -- never lifts
-the guard; without support the summary may only say ``OpenScience-style
-regression passed``, and only when the comparison verdict itself passed.
-The guards are enforced in code, not documentation.
+provider/model, task inputs, run date, result source must be present and
+bounded, ``rubric`` must equal the current frozen rubric name with a
+matching ``rubric_digest`` (the lock.json entry for rubric.json), and the
+artifact's own result fields must say Codey won (``winner: "codey"``,
+``strictly_better_metric_count`` at or above the roadmap threshold,
+``regression_gates_passed: true``). A metadata-only record -- even one where
+``result_source`` editorializes a win -- never lifts the guard; without
+support the summary may only say ``OpenScience-style regression passed``,
+and only when the comparison verdict itself passed. The guards are enforced
+in code, not documentation.
 """
 
 from __future__ import annotations
@@ -135,26 +137,26 @@ class HeadToHeadArtifact:
     def supports_superiority(self) -> bool:
         """True only when the artifact's own result backs ``surpassed``.
 
-        Metadata validity says the run was recorded honestly; the frozen
-        rubric identity plus the winner, strict-improvement count, and
-        regression-gate fields decide whether it also justifies the wording.
+        Metadata validity says the run was recorded honestly; binding to the
+        current frozen rubric (name + lock digest) plus the winner,
+        strict-improvement count, and regression-gate fields decides whether
+        it also justifies the wording.
         """
 
         payload = self.payload
+        identity = current_rubric_identity()
         count = payload.get("strictly_better_metric_count")
         return (
             self.valid
-            and _text_field(payload, ("rubric",)) == self._frozen_rubric_name()
+            and bool(identity["digest"])
+            and payload.get("rubric_digest") == identity["digest"]
+            and _text_field(payload, ("rubric",)) == identity["name"]
             and payload.get("winner") == "codey"
             and isinstance(count, int)
             and not isinstance(count, bool)
             and int(count) >= MIN_STRICTLY_BETTER_METRICS
             and payload.get("regression_gates_passed") is True
         )
-
-    @staticmethod
-    def _frozen_rubric_name() -> str:
-        return str(load_suite().rubric.get("rubric") or "")
 
     def metadata(self) -> dict[str, Any]:
         """Copy of the validated roadmap fields for the summary.
@@ -192,6 +194,7 @@ class HeadToHeadArtifact:
             "run_date": _text(("run_date",)),
             "result_source": _text(("result_source",)),
             "rubric": _text(("rubric",)),
+            "rubric_digest": self.payload.get("rubric_digest"),
             "winner": _text(("winner",)),
             "strictly_better_metric_count": self.payload.get(
                 "strictly_better_metric_count"
@@ -275,6 +278,21 @@ def load_head_to_head_artifact(path: Path) -> HeadToHeadArtifact:
         payload=payload,
         errors=head_to_head_artifact_errors(payload),
     )
+
+
+def current_rubric_identity() -> dict[str, str]:
+    """Name + lock digest of the current frozen rubric.
+
+    The digest comes from the frozen suite's ``lock.json`` entry for
+    ``rubric.json`` -- one hash vocabulary, no second hashing scheme.
+    """
+
+    suite = load_suite()
+    entries = suite.lock.get("entries") if isinstance(suite.lock, Mapping) else {}
+    return {
+        "name": str(suite.rubric.get("rubric") or ""),
+        "digest": str((entries or {}).get("rubric.json") or ""),
+    }
 
 
 def current_codey_commit() -> str:
@@ -490,19 +508,28 @@ def compare_verdict(
     head_to_head: HeadToHeadArtifact | None = None,
     superiority_claimed: bool = False,
 ) -> dict[str, Any]:
-    by_arm = {result.arm: result for result in results}
-    present = sorted(by_arm)
+    # Exact matrix: every arm exactly once. Folding into a dict would let a
+    # duplicated arm silently overwrite its twin and still count complete.
+    arm_counts: dict[str, int] = {}
+    for result in results:
+        arm_counts[result.arm] = arm_counts.get(result.arm, 0) + 1
+
+    def _sole_arm(name: str) -> ArmResult | None:
+        rows = [result for result in results if result.arm == name]
+        return rows[0] if len(rows) == 1 else None
+
+    codey = _sole_arm(ARM_CODEY)
+    baseline = _sole_arm(ARM_BASELINE)
+    openscience_style = _sole_arm(ARM_OPENSOURCE_STYLE)
     criteria: dict[str, bool] = {
-        "matrix_complete": present == sorted(DETERMINISTIC_ARMS),
+        "matrix_complete": arm_counts == {arm: 1 for arm in DETERMINISTIC_ARMS},
         "codey_not_below_baseline": (
-            by_arm[ARM_CODEY].score >= by_arm[ARM_BASELINE].score
-            if ARM_CODEY in by_arm and ARM_BASELINE in by_arm
-            else False
+            codey is not None and baseline is not None
+            and codey.score >= baseline.score
         ),
         "codey_not_below_openscience_style": (
-            by_arm[ARM_CODEY].score >= by_arm[ARM_OPENSOURCE_STYLE].score
-            if ARM_CODEY in by_arm and ARM_OPENSOURCE_STYLE in by_arm
-            else False
+            codey is not None and openscience_style is not None
+            and codey.score >= openscience_style.score
         ),
     }
     if superiority_claimed:
@@ -605,6 +632,7 @@ def _sample_head_to_head_payload() -> dict[str, Any]:
         "run_date": "2026-08-24",
         "result_source": "exported OpenScience run artifacts + manual scoring notes",
         "rubric": "research_benchmark_v1",
+        "rubric_digest": current_rubric_identity()["digest"],
         "winner": "codey",
         "strictly_better_metric_count": 5,
         "regression_gates_passed": True,
@@ -653,13 +681,15 @@ def _self_test() -> None:
         assert alignment["matches"] in (True, False, None)
 
         # A metadata-valid artifact whose own result does NOT back the claim
-        # (OpenScience won, too few strictly-better metrics, gates failed, or
-        # a foreign rubric) can never unlock the wording.
+        # (OpenScience won, too few strictly-better metrics, gates failed, a
+        # foreign rubric, or a stale/missing rubric digest) can never unlock
+        # the wording.
         for field, value in (
             ("winner", "openscience"),
             ("strictly_better_metric_count", MIN_STRICTLY_BETTER_METRICS - 1),
             ("regression_gates_passed", False),
             ("rubric", "anything goes"),
+            ("rubric_digest", "sha256:" + "00" * 32),
         ):
             opposing = json.loads(json.dumps(_sample_head_to_head_payload()))
             opposing[field] = value
