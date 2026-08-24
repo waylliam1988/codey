@@ -1393,6 +1393,90 @@ class WebAssetTests(unittest.TestCase):
 
 
 class LocalProviderApiTests(unittest.TestCase):
+    def _start_server(self):
+        httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        host, port = httpd.server_address
+        return httpd, host, port
+
+    def test_foreign_host_header_is_rejected_before_any_handler(self) -> None:
+        # DNS-rebinding defense: a page from an attacker domain that
+        # resolves to 127.0.0.1 sends that domain as Host and must get 403
+        # without touching STATE or any handler logic.
+        httpd, host, port = self._start_server()
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request("GET", "/api/state", headers={"Host": "evil.example"})
+            response = conn.getresponse()
+            body = json.loads(response.read().decode("utf-8"))
+            conn.close()
+
+            self.assertEqual(response.status, 403)
+            self.assertIn("refused", str(body.get("error")))
+
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request(
+                "POST",
+                "/api/ui_state",
+                body=json.dumps({"state": {}}),
+                headers={"Origin": f"http://evil.example:{port}"},
+            )
+            response = conn.getresponse()
+            conn.close()
+
+            self.assertEqual(response.status, 403)
+        finally:
+            httpd.shutdown()
+
+    def test_loopback_host_without_origin_is_accepted(self) -> None:
+        httpd, host, port = self._start_server()
+        try:
+            # An unknown path returns the router's 404, which proves the
+            # request passed the Host gate without touching any handler.
+            conn = http.client.HTTPConnection(host, port, timeout=5)
+            conn.request("GET", "/api/no_such_endpoint")
+            response = conn.getresponse()
+            response.read()
+            conn.close()
+
+            self.assertEqual(response.status, 404)
+        finally:
+            httpd.shutdown()
+
+    def test_changing_base_url_requires_explicit_api_key(self) -> None:
+        httpd, host, port = self._start_server()
+        try:
+            with (
+                mock.patch.object(server, "load_local_config", return_value={
+                    "base_url": "http://127.0.0.1:1234/v1",
+                    "api_key": "old-secret",
+                }),
+                mock.patch.object(server, "probe_local_endpoint") as probe,
+                mock.patch.object(server, "save_local_config") as save,
+            ):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/local_provider",
+                    body=json.dumps({
+                        "base_url": "http://attacker.example/v1",
+                        "model": "steal",
+                    }),
+                    headers={"Content-Type": "application/json"},
+                )
+                response = conn.getresponse()
+                payload = json.loads(response.read().decode("utf-8"))
+                conn.close()
+
+                self.assertEqual(response.status, 400)
+                self.assertIn("api_key required", str(payload.get("error")))
+                # The stored credential must never be replayed elsewhere.
+                probe.assert_not_called()
+                save.assert_not_called()
+        finally:
+            httpd.shutdown()
+
     def test_empty_api_key_preserves_existing_key_for_probe_and_save(self) -> None:
         httpd = server.CodeyHTTPServer(("127.0.0.1", 0), server.Handler)
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -1558,6 +1642,32 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertTrue(state.start_run(run.run_id))
 
         self.assertTrue(state.stop_flag.is_set())
+
+    def test_stop_expires_pending_shell_approvals_so_allow_cannot_execute(self) -> None:
+        state = server.State()
+        events = state.subscribe()
+        state.pending_shell["shell-9"] = {
+            "id": "shell-9",
+            "session_id": "session-stop",
+            "run_id": "run-stop",
+            "command": "rm -rf /",
+            "cwd": ".",
+            "project": None,
+        }
+
+        state.expire_pending_shell_approvals()
+
+        with state.lock:
+            self.assertEqual(state.pending_shell, {})
+        emitted = []
+        while not events.empty():
+            emitted.append(events.get_nowait())
+        results = [event for event in emitted if event.get("type") == "shell_result"]
+        self.assertEqual(len(results), 1)
+        self.assertFalse(results[0]["approved"])
+        self.assertEqual(results[0]["command"], "rm -rf /")
+        # A later Allow POST finds nothing to execute: the id is gone.
+        self.assertIsNone(state.pending_shell.pop("shell-9", None))
 
     def test_state_snapshot_keeps_pending_action_and_terminal_event(self) -> None:
         state = server.State()
@@ -2020,10 +2130,29 @@ class SessionThreadingTests(unittest.TestCase):
         self.consensus_mock = self.consensus_patch.start()
         self.project_audit_patch = mock.patch.object(server, "_run_project_audit", return_value=())
         self.project_audit_mock = self.project_audit_patch.start()
+        self.research_advisors_patch = mock.patch.object(
+            server, "_run_research_advisors", return_value=None
+        )
+        self.research_advisors_mock = self.research_advisors_patch.start()
 
     def tearDown(self) -> None:
+        self.research_advisors_patch.stop()
         self.project_audit_patch.stop()
         self.consensus_patch.stop()
+
+    def _state(self, path) -> server.State:
+        """State without background side effects for research-UI flows.
+
+        Only research/UX flow tests should use this: the ghost-sleep
+        threading tests below exercise those hooks on purpose and must keep
+        using real State instances.
+        """
+
+        state = server.State(path)
+        state.kick_ghost_sleep = mock.Mock(return_value=False)
+        state.wait_for_ghost_sleep = mock.Mock(return_value=True)
+        state.kick_self_repair = mock.Mock(return_value=False)
+        return state
 
     def test_conversation_state_is_bounded(self) -> None:
         state = server.State()
@@ -3366,7 +3495,7 @@ class SessionThreadingTests(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as td:
-            state = server.State(td)
+            state = self._state(td)
             from codey.knowledge import KnowledgeStore
             state.knowledge_store = KnowledgeStore(Path(td, "vault"))
             events = state.subscribe()

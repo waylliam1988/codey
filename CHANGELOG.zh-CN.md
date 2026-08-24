@@ -4,6 +4,57 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.11 - 安全与完整性加固（未发布）
+
+- 本地 HTTP API 具备 DNS rebinding / 跨域防护：每个请求先校验 `Host` 头
+  必须是回环绑定（显式 LAN 绑定时额外允许该绑定地址）；携带外部 `Origin`
+  的 POST 一律 403，在任何 handler 逻辑之前拒绝。
+- `/api/local_provider` 不再把已存凭据重放到不同 `base_url`：更换目标必须
+  显式提供该目标的 key，rebinding/XSS 页面无法用一个请求窃取已保存 key。
+  探测或更新同一（或首次）目标仍可沿用旧 key。
+- `/api/stop` 在同一把锁内过期所有 pending shell 批准并发出具否
+  `shell_result` 事件：用户按下停止后，过期的 Allow 卡片不再能执行命令。
+- UI 状态持久化不再丢研究数据：session 清洗器保留 `researchRuns` /
+  `research`（有界），message 清洗器保留 `toolKey` / `activity` /
+  `pending`——重启不再清空研究历史，待批准工具卡片可完整往返。
+- 修复 snapshot/untracked diff 的双倍空行：`keepends=True` 喂给
+  `unified_diff(lineterm="")` 再 join 导致非 git 项目每行内容后多一空行；
+  两处 diff 构建改用普通 `splitlines()` 并加 golden 断言。
+- 用户源码写入改为原子且保留 EOL：新增 `codey/atomic_io.py`
+  （同目录临时文件 + fsync + `os.replace`，保留 CRLF/LF 风格），接入
+  write/edit 工具路径与快照 restore，与工具契约宣称的 "written
+  atomically" 一致。
+- 拆分同名双义的 digest 函数：`refs.digest_ref` 更名
+  `refs.content_digest`（生产者：任意值 -> sha256 内容摘要）；
+  `research.shape.digest_ref` 更名 `shape.valid_digest_ref`（校验器：
+  仅当已是合法 sha256 ref 时返回原值）。全部调用点更新，旧名零残留。
+- Evidence ledger 的完整性从"写入时盖章"升级为"读取时验证"：每条 record
+  entry 携带规范化 JSON 的 `record_integrity` 摘要（在所有规范化之后
+  计算），load 时任一不匹配/缺失即整册 fail closed
+  （`ledger_unavailable`）。缺少自身 `record_digest` 的记录在 append 时
+  直接拒绝，不再铸出空串摘要。
+- 报告 section 边界加固：README 文档化的裸编号标题（`1. Conclusion`、
+  `一、结论`）恢复识别；常用中文标题（`参考文献`、`风险`、`备注`、
+  `方法`）加入别名表；`具体如下：` 这类节内引导行不再切断所属 section；
+  未知的 markdown 标题进入被丢弃的 unknown 桶。
+- Research 投影边界从注释变成元数据：`CapabilitySpec` 新增
+  `projection_audience` / `canonical_inputs` / `fail_mode` /
+  `release_gate` 并在注册时校验（投影能力必须声明受众；behavior_input
+  必须声明 canonical 输入能力；model_visible 投影必须声明发布门槛）。
+  所有触发 spec 已注解；research 自有投影数量由测试设上限；架构测试禁止
+  行为侧 research 模块反读 trace/UI 投影，并把 profile+source_trust 组合
+  的导入点锁为零。
+- 小项：嵌套 evidence profile merge 展平 "+" 段（不再产生
+  `finance_legal+science` 这类伪组合名）；RunTrace brief 投影 claim 行
+  hash 前截断且只存 digest；`test_server.py` 加模块级守卫禁止真实
+  provider tab（receipt/memory 两测试补齐双连接器 patch）；
+  `tests/test_work_checkpoint_flow.py` 隔离 post-task audit/consensus/
+  advisors 副作用（~137s -> ~4s）；StepFun 提交加 GLM 式防双击；
+  `task_runner` 所有 pre-start 失败路径都恢复先前取消事件；
+  `context_epoch` 对被 clamp 的 admission 标记 truncated；重开 run ledger
+  从现有文件大小起算字节预算；knowledge 搜索转义 LIKE 通配符；hebbian
+  删除路径的 projection 写入与 reinforce 路径对称包异常。
+
 ## 0.4.10 - Domain Source Trust + Research Brief 投影
 
 - 新增 `codey/research/domain_profiles.py`：证据标准 profile 是纯数据。

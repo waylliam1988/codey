@@ -133,14 +133,21 @@ def admission_from_rendered_source(
         str(getattr(rendered_source, "admission_reason", "") or "")
         or admission_reason
     )
+    chars = len(text)
+    truncated = bool(getattr(rendered_source, "truncated", False))
+    if chars > MAX_ADMISSION_CHARS:
+        # The audit row reports what the model actually saw: clamp the count
+        # to the budget cap and mark it, instead of silently overstating.
+        chars = MAX_ADMISSION_CHARS
+        truncated = True
     return ContextAdmission(
         source_key=_identifier(key, 80),
         source_ref=source_ref,
         capability_id=_identifier(getattr(rendered_source, "capability_id", ""), 80),
         admission_reason=_identifier(reason, 80),
         budget=max(0, int(getattr(rendered_source, "budget", 0) or 0)),
-        chars=len(text),
-        truncated=bool(getattr(rendered_source, "truncated", False)),
+        chars=chars,
+        truncated=truncated,
         digest="sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest(),
     )
 

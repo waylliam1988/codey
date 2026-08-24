@@ -226,11 +226,21 @@ def merge_profiles(*profiles: EvidenceProfile) -> EvidenceProfile:
     for profile in profiles or ():
         if not isinstance(profile, EvidenceProfile):
             continue
-        normalized_id = _profile_id(profile.profile_id)
+        # Sanitize per "+" segment so composed ids keep their marker and
+        # dedupe against their atomic parts (finance+legal is finance and
+        # legal, never a "finance_legal" atom).
+        segments = [_profile_id(part) for part in str(profile.profile_id or "").split("+")]
+        normalized_id = "+".join(part for part in segments if part)
         if not normalized_id:
             continue
         if normalized_id != profile.profile_id:
             profile = replace(profile, profile_id=normalized_id)
+        duplicate = any(
+            set(profile.profile_id.split("+")).issubset(existing.split("+"))
+            for existing in seen
+        )
+        if duplicate:
+            continue
         if profile.profile_id in seen:
             continue
         seen.add(profile.profile_id)
@@ -240,15 +250,27 @@ def merge_profiles(*profiles: EvidenceProfile) -> EvidenceProfile:
         rows.append(profile)
     if not rows:
         return GENERAL_PROFILE
+    # Flatten "+" segments so composing an already-composed profile can never
+    # sanitize into a builtin-lookalike name: merge(finance+legal, science)
+    # is "finance+legal+science", not "finance_legal+science".
+    segments: list[str] = []
+    seen_segments: set[str] = set()
+    for row in rows:
+        for segment in row.profile_id.split("+"):
+            if segment and segment not in seen_segments:
+                seen_segments.add(segment)
+                segments.append(segment)
     warnings = _merge_tokens(tuple(item.warnings for item in rows))
-    warnings = tuple(sorted(warnings))
+    if len(segments) > MAX_MERGE_PROFILES:
+        truncated = True
     if truncated:
-        warnings = tuple(sorted((*warnings, "profile_merge_truncated")))
-    if len(rows) == 1:
+        warnings = _merge_tokens((warnings, ("profile_merge_truncated",)))
+    profile_id = "+".join(segments)
+    if len(rows) == 1 and len(segments) == 1:
         single = rows[0]
         return single if warnings == single.warnings else replace(single, warnings=warnings)
     return EvidenceProfile(
-        profile_id="+".join(item.profile_id for item in rows),
+        profile_id=profile_id,
         freshness_expectation=_strictest(
             (item.freshness_expectation for item in rows), FRESHNESS_ORDER
         ),

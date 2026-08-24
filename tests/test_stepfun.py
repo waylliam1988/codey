@@ -217,6 +217,28 @@ class StepFunDriverTests(unittest.TestCase):
             page=page,
         )
 
+    def test_submit_does_not_double_click_when_first_submit_actually_landed(self) -> None:
+        # Regression guard: the confirmation watcher can lose a race with a
+        # slow first submit; a second forced click would post twice.
+        page = mock.Mock()
+        textarea = mock.Mock()
+        first_button = mock.Mock()
+        retry_button = mock.Mock()
+
+        with (
+            mock.patch.object(stepfun, "_send_button", side_effect=[first_button, retry_button]),
+            mock.patch.object(stepfun, "_wait_submission_started", return_value=False),
+            mock.patch.object(stepfun, "_submission_started", return_value=True),
+            mock.patch.object(stepfun.cancellation, "wait"),
+            mock.patch.object(stepfun.controls, "confirm_control") as confirm,
+        ):
+            attempt = stepfun._submit(page, textarea, baseline=0, submitted_text="hello")
+
+        first_button.click.assert_called_once_with()
+        retry_button.click.assert_not_called()
+        self.assertTrue(attempt.confirmed)
+        confirm.assert_called_once_with(stepfun.PROVIDER_ID, stepfun.controls.CONTROL_SEND_BUTTON)
+
     def test_submit_retries_click_when_first_click_does_not_start_submission(self) -> None:
         page = mock.Mock()
         textarea = mock.Mock()
@@ -226,6 +248,7 @@ class StepFunDriverTests(unittest.TestCase):
         with (
             mock.patch.object(stepfun, "_send_button", side_effect=[first_button, retry_button]),
             mock.patch.object(stepfun, "_wait_submission_started", side_effect=[False, True]),
+            mock.patch.object(stepfun, "_submission_started", return_value=False),
             mock.patch.object(stepfun.cancellation, "wait") as wait,
             mock.patch.object(stepfun.controls, "reject_control") as reject,
             mock.patch.object(stepfun.controls, "confirm_control") as confirm,

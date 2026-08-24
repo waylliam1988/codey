@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -12,7 +13,7 @@ from codey.local_store import read_json, session_key, write_json_atomic
 from codey.refs import (
     bounded_refs,
     clip,
-    digest_ref,
+    content_digest,
     digest_text,
     identifier,
     nonnegative_int,
@@ -72,6 +73,7 @@ _RECORD_KEYS = frozenset({
     "synthesis_id",
     "stop_reason",
     "captured_at",
+    "record_integrity",
 })
 _SOURCE_KEYS = frozenset({
     "source_id",
@@ -317,6 +319,11 @@ class EvidenceLedgerStore:
         payload = read_json(path, max_bytes=MAX_EVIDENCE_LEDGER_BYTES)
         if not _canonical_ledger_payload(payload):
             return None
+        # Content-addressing must hold on read too, not only at write time:
+        # any in-file tampering invalidates the whole ledger (fail closed)
+        # instead of serving silently rewritten history.
+        if not _records_integrity_ok(payload):
+            return None
         return dict(payload)
 
     def _new_payload(self, *, session_id: str, project: str | Path | None) -> dict[str, object]:
@@ -352,8 +359,36 @@ def _record_payload(record: object) -> dict[str, object]:
         payload.get("schema_version") != RESEARCH_RECORD_SCHEMA_VERSION
         or payload.get("kind") != RESEARCH_RECORD_KIND
         or not _record_id(payload.get("record_id"))
+        # A record without its own content digest is invalid input: storing
+        # it would mint the empty-string digest (e3b0c442...) and look
+        # legitimate while carrying no integrity at all.
+        or not _digest_schema_ok(payload.get("record_digest"))
     ):
         return {}
+    return payload
+
+
+def _entry_integrity(entry: Mapping[str, object]) -> str:
+    """Content digest over one stored record entry, minus the field itself.
+
+    Serialization is explicit (sorted keys, no whitespace) so the digest is
+    stable across dict insertion order and JSON round-trips.
+    """
+
+    canonical = {key: value for key, value in entry.items() if key != "record_integrity"}
+    return digest_text(json.dumps(canonical, ensure_ascii=True, sort_keys=True, separators=(",", ":")))
+
+
+def _records_integrity_ok(payload: Mapping[str, object]) -> bool:
+    """Verify every stored record entry's integrity digest on load."""
+
+    for entry in _records(payload):
+        expected = str(entry.get("record_integrity") or "")
+        if not expected:
+            return False
+        if _entry_integrity(entry) != expected:
+            return False
+    return True
     return payload
 
 
@@ -405,7 +440,7 @@ def _append_payload(
 
     record_entry = {
         "record_id": record_id,
-        "record_digest": digest_ref(record.get("record_digest")),
+        "record_digest": content_digest(record.get("record_digest")),
         "run_id": identifier(run_id or record.get("run_id"), 120),
         "session_ref": digest_text(session_id or record.get("session_id") or "global"),
         "project_ref": project_ref(project) or _project_ref_entry(record.get("project_ref")),
@@ -433,6 +468,12 @@ def _append_payload(
     payload["records"] = records[-MAX_LEDGER_RECORDS:]
     payload["updated_at"] = _now()
     _trim_maps(payload)
+    # Stamp integrity after every normalization pass so load-time
+    # recomputation sees byte-identical content. The entry may have been
+    # pruned for dangling refs; only stamp when it survived.
+    records_now = _records(payload)
+    if records_now and str(records_now[-1].get("record_id") or "") == record_id:
+        records_now[-1]["record_integrity"] = _entry_integrity(records_now[-1])
 
 
 def _source_entry(item: Mapping[str, object]) -> dict[str, object]:
@@ -441,7 +482,7 @@ def _source_entry(item: Mapping[str, object]) -> dict[str, object]:
         "requested_url_ref": _url_ref_entry(item.get("requested_url_ref")),
         "final_url_ref": _url_ref_entry(item.get("final_url_ref")),
         "host": identifier(item.get("host"), 120),
-        "title_digest": digest_ref(item.get("title_digest")),
+        "title_digest": content_digest(item.get("title_digest")),
         "content_hash": _content_hash_entry(item.get("content_hash")),
         "retrieved_at": clip(item.get("retrieved_at"), 80),
         "content_kind": identifier(item.get("content_kind"), 40) or "html",
@@ -456,12 +497,12 @@ def _evidence_entry(item: Mapping[str, object]) -> dict[str, object]:
     return {
         "evidence_id": identifier(item.get("evidence_id"), 80),
         "source_id": identifier(item.get("source_id"), 80),
-        "excerpt_digest": digest_ref(item.get("excerpt_digest")),
+        "excerpt_digest": content_digest(item.get("excerpt_digest")),
         "bounded_excerpt": clip(item.get("bounded_excerpt"), 360),
         "locator": _locator_entry(_mapping(item.get("locator"))),
         "stance": identifier(item.get("stance"), 40) or "supports",
         "note_id": identifier(item.get("note_id"), 120),
-        "claim_text_digest": digest_ref(item.get("claim_text_digest")),
+        "claim_text_digest": content_digest(item.get("claim_text_digest")),
     }
 
 
@@ -987,7 +1028,7 @@ def _counts(payload: Mapping[str, object]) -> dict[str, int]:
 
 def _has_record(payload: Mapping[str, object], record_id: str, record_digest: str) -> bool:
     return any(
-        item.get("record_id") == record_id and item.get("record_digest") == digest_ref(record_digest)
+        item.get("record_id") == record_id and item.get("record_digest") == content_digest(record_digest)
         for item in _records(payload)
     )
 
@@ -1017,9 +1058,9 @@ def _url_ref_entry(value: object) -> dict[str, object]:
         return {}
     payload: dict[str, object] = {}
     if raw.get("url_digest"):
-        payload["url_digest"] = digest_ref(raw.get("url_digest"))
+        payload["url_digest"] = content_digest(raw.get("url_digest"))
     if raw.get("path_digest"):
-        payload["path_digest"] = digest_ref(raw.get("path_digest"))
+        payload["path_digest"] = content_digest(raw.get("path_digest"))
     if raw.get("host"):
         payload["host"] = identifier(raw.get("host"), 120)
     if raw.get("scheme"):
@@ -1038,7 +1079,7 @@ def _project_ref_entry(value: object) -> dict[str, object]:
     if basename:
         payload["basename"] = clip(Path(basename).name or basename, 80)
     if raw.get("digest"):
-        payload["digest"] = digest_ref(raw.get("digest"))
+        payload["digest"] = content_digest(raw.get("digest"))
     return payload
 
 

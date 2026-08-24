@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from codey import cancellation
+from codey.atomic_io import write_text_atomic
 from codey.action_policy import (
     ActionSubject,
     DECISION_DENY,
@@ -234,8 +235,7 @@ def write_file(root: Path, rel: str, content: str) -> ToolOutcome:
                 return ToolOutcome(f"wrote {rel} (no changes)", True)
         except UnicodeDecodeError:
             pass
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    write_text_atomic(path, content)
     syntax_hint = _python_syntax_regression_hint(rel, before, content)
     return ToolOutcome(
         f"wrote {rel} ({len(content)} chars){syntax_hint}",
@@ -629,7 +629,7 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     if len(updated.encode("utf-8")) > WRITE_MAX_FILE_BYTES:
         return ToolOutcome.error(f"file too large to write: {rel}")
     syntax_hint = _python_syntax_regression_hint(rel, content, updated)
-    path.write_text(updated, encoding="utf-8")
+    write_text_atomic(path, updated)
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"
     note = "; indentation recovered" if indentation_recovered else ""

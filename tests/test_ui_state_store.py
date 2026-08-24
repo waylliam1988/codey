@@ -8,6 +8,53 @@ from codey.ui_state_store import UiStateStore
 
 
 class UiStateStoreTests(unittest.TestCase):
+    def test_research_history_and_pending_tool_fields_survive_round_trip(self) -> None:
+        # Regression: the session/message sanitizers used to strip research
+        # runs and pending-tool fields, and the UI's restore-then-overwrite
+        # flow then erased all research history on every restart.
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            state = {
+                "active_id": "chat-research",
+                "updated_at": 10,
+                "revision": 1,
+                "sessions": [{
+                    "id": "chat-research",
+                    "title": "Research chat",
+                    "messages": [
+                        {
+                            "type": "tool",
+                            "text": "approve shell?",
+                            "toolKey": "shell-key-1",
+                            "activity": "awaiting approval",
+                            "pending": True,
+                        },
+                        {"type": "user", "text": "run it"},
+                    ],
+                    "terminalRuns": ["run-9"],
+                    "createdAt": 5,
+                    "provider": "deepseek",
+                    "researchRuns": [
+                        {"id": "run-1", "status": "done", "question": "helium?"},
+                        {"id": "run-2", "status": "running", "question": "war?"},
+                    ],
+                    "research": {"topic": "helium", "lastRunId": "run-1"},
+                }],
+                "projects": [],
+            }
+
+            store.save(state)
+            loaded = store.load()
+            session = loaded["sessions"][0]
+
+            self.assertEqual(len(session["researchRuns"]), 2)
+            self.assertEqual(session["researchRuns"][0]["id"], "run-1")
+            self.assertEqual(session["research"]["topic"], "helium")
+            message = session["messages"][0]
+            for key in ("toolKey", "activity", "pending"):
+                self.assertIn(key, message)
+            self.assertTrue(message["pending"])
+
     def test_round_trip_visible_ui_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = UiStateStore(td)

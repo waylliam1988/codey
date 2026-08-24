@@ -1,5 +1,64 @@
 # Codey Test Report
 
+## 0.4.11 Security and Integrity Hardening (unreleased)
+
+Security: the local HTTP server validates `Host` (loopback bind + explicit
+bind address) and rejects foreign `Origin` POSTs with 403 before any handler
+logic, closing DNS rebinding; `/api/local_provider` refuses to replay a
+stored key against a changed `base_url` (400 "api_key required when
+base_url changes", probe/save never called); `/api/stop` expires pending
+shell approvals under lock and emits denied `shell_result` events.
+
+Data integrity: UI state sanitizers keep research history (`researchRuns`/
+`research`) and pending-tool message fields across save/load round-trips;
+snapshot/untracked diffs lost their double-blank-line rendering (golden
+test); user files are written through new `codey/atomic_io.py`
+(same-dir temp + fsync + os.replace, CRLF/LF preserved) on write/edit/restore;
+the digest vocabulary split into producer (`refs.content_digest`) and
+validator (`shape.valid_digest_ref`) with all call sites migrated and old
+names gone; evidence-ledger entries now carry a canonical-JSON
+`record_integrity` digest stamped after normalization and verified on every
+load — any tampering fails the ledger closed — while records lacking their
+own digest are rejected at append instead of minting empty-string hashes.
+
+Parser correctness: documented bare numbered headings (`1. Conclusion`,
+`一、结论`) are boundaries again; `参考文献`/`风险`/`备注`/`方法` joined
+the alias table; lead-in colon lines no longer cut their section; unknown
+markdown headings still route to a dropped unknown bucket.
+
+Projection governance: CapabilitySpec gained validated
+audience/canonical-inputs/fail-mode/release-gate metadata for every
+projection capability; research-owned projection count capped by test;
+architecture tests forbid behavior-side research modules from importing
+trace/UI projections and lock profile+source-trust combination imports to
+zero sites.
+
+Test isolation & speed: test_server.py module-level guards fail any real
+provider-tab connection unless explicitly patched (both receipt/memory tests
+now patch both connectors); work_checkpoint_flow disables post-task
+audit/consensus/advisors (~137s -> ~4s); PDF research-UI flow uses a
+side-effect-free State helper (15.3s -> 0.5s).
+
+Smaller fixes: StepFun double-submit guard mirroring GLM; task_runner
+restores previous cancellation event on all pre-start failure paths (and
+drops `"route_result" in locals()` control flow); nested profile merges
+flatten "+" segments with dedupe; RunTrace clips claim text before hashing;
+context_epoch marks clamped admissions truncated; reopened run ledgers seed
+byte budgets from file size; knowledge search escapes LIKE wildcards;
+hebbian delete path wraps projection writes like reinforce; redundant
+per-test audit patches removed from work_checkpoint_flow.
+
+Verification:
+
+```text
+python -m pytest tests/test_research_evidence_ledger.py ... targeted suite:
+  security/integrity/parser/projection files: 470 passed
+python -m pytest tests                full suite: see counts below
+python -m compileall -q codey tests   ok
+python -m ruff check codey tests      ok
+git diff --check                      clean
+```
+
 ## 0.4.10 Domain Source Trust + Research Brief Projection
 
 Codey 0.4.10 adds the evidence-standard layer as pure data plus two new

@@ -839,6 +839,30 @@ class State:
             self.last_shell_result = payload
         self.emit(payload)
 
+    def expire_pending_shell_approvals(self) -> None:
+        """Expire every pending shell approval (task stop path).
+
+        A stale Allow card must never execute a command -- and resume work
+        -- after the user pressed stop, so stop clears the map and emits a
+        denied shell_result for each expired approval under the same lock.
+        """
+
+        with self.lock:
+            stale = list(self.pending_shell.values())
+            self.pending_shell.clear()
+        for pending in stale:
+            self.record_shell_result({
+                "type": "shell_result",
+                "run_id": pending.get("run_id") or "",
+                "session_id": pending.get("session_id") or "",
+                "id": pending.get("id") or "",
+                "approved": False,
+                "command": pending.get("command") or "",
+                "cwd": pending.get("cwd") or "",
+                "output": "任务已停止，该命令的执行批准已过期。",
+                "exit_code": None,
+            })
+
     def record_research_changes(self, run_id: str, changes: object) -> None:
         with self.lock:
             self.research_changes[run_id] = changes
@@ -1716,6 +1740,50 @@ class Handler(BaseHTTPRequestHandler):
         # Quiet the default access log.
         pass
 
+    def _loopback_allowed_hosts(self) -> set[str]:
+        """Host headers this server accepts.
+
+        The UI is a local tool. Pinning the accepted Host header closes the
+        DNS-rebinding door: a browser pointed at an attacker-controlled
+        domain that resolves to 127.0.0.1 sends that foreign domain as Host
+        and is rejected before any handler logic runs. A non-loopback bind
+        (explicit LAN serving) additionally allows the bound address itself.
+        """
+
+        try:
+            port = self.server.server_address[1]
+            bind_ip = str(self.server.server_address[0] or "")
+        except Exception:
+            return set()
+        hosts = {
+            f"127.0.0.1:{port}",
+            f"localhost:{port}",
+            f"[::1]:{port}",
+            "127.0.0.1",
+            "localhost",
+            "[::1]",
+        }
+        if bind_ip and bind_ip not in {"", "0.0.0.0", "::"}:
+            hosts.add(f"{bind_ip}:{port}")
+            hosts.add(bind_ip)
+        return hosts
+
+    def _request_origin_allowed(self) -> bool:
+        host_header = str(self.headers.get("Host") or "").strip().lower()
+        if host_header not in self._loopback_allowed_hosts():
+            return False
+        origin = str(self.headers.get("Origin") or "").strip()
+        if not origin:
+            return True
+        allowed_origins = {
+            f"http://127.0.0.1:{self.server.server_address[1]}",
+            f"http://localhost:{self.server.server_address[1]}",
+        }
+        return origin.rstrip("/").lower() in allowed_origins
+
+    def _deny_foreign_origin(self) -> None:
+        self._send_json(403, {"error": "cross-origin request refused"})
+
     def _send_json(self, status: int, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -1743,6 +1811,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self) -> None:  # noqa: N802
+        if not self._request_origin_allowed():
+            self._deny_foreign_origin()
+            return
         url = urlparse(self.path)
         if url.path in ("/", "/index.html"):
             self._send_index()
@@ -1825,6 +1896,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self) -> None:  # noqa: N802
+        if not self._request_origin_allowed():
+            self._deny_foreign_origin()
+            return
         url = urlparse(self.path)
         length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(length) if length else b""
@@ -1855,7 +1929,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"ok": False, "error": "base_url required"})
                 return
             previous = load_local_config()
-            probe_key = api_key if api_key else str(previous.get("api_key") or "")
+            previous_base_url = str(previous.get("base_url") or "").rstrip("/")
+            # Never replay a stored credential against a different base_url:
+            # a rebinding/XSS page could otherwise exfiltrate the saved key
+            # to an attacker endpoint in one request. Changing the target
+            # requires explicitly supplying the key for that target; probing
+            # the same (or a first-time) target may reuse the stored key.
+            probe_key = api_key
+            same_or_first_target = not previous_base_url or base_url == previous_base_url
+            if not probe_key and same_or_first_target:
+                probe_key = str(previous.get("api_key") or "")
+            if not api_key and not same_or_first_target:
+                self._send_json(400, {
+                    "ok": False,
+                    "error": "api_key required when base_url changes",
+                })
+                return
             endpoint = probe_local_endpoint(base_url, api_key=probe_key)
             if endpoint is None:
                 self._send_json(400, {"ok": False, "error": "could not reach an OpenAI-compatible /models endpoint"})
@@ -2028,6 +2117,7 @@ class Handler(BaseHTTPRequestHandler):
             for pending in pending_teach:
                 pending["cancelled"] = True
                 pending["event"].set()
+            STATE.expire_pending_shell_approvals()
             self._send_json(200, {"ok": True})
             return
         self.send_response(404)

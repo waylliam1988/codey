@@ -74,6 +74,29 @@ KNOWN_CONTEXT_SOURCES = frozenset({
 })
 MODEL_VISIBLE_REQUIRED_CONSUMES = frozenset(("prompt_envelope", "run_trace"))
 POLICY_REQUIRED_CONSUMES = frozenset(("policy_guard",))
+# Projection metadata: who consumes a projection, whether it may influence
+# behavior, how failures are handled, and what release verification a change
+# requires. These turn the "trace-only / refs-only" vocabulary into validated
+# constraints instead of comments.
+KNOWN_PROJECTION_AUDIENCES = frozenset({
+    "data_only",
+    "trace_only",
+    "model_visible",
+    "ui_visible",
+    "behavior_input",
+})
+KNOWN_FAIL_MODES = frozenset({
+    "none",
+    "fail_open",
+    "fail_closed",
+})
+KNOWN_RELEASE_GATES = frozenset({
+    "none",
+    "unit_tests",
+    "targeted_tests",
+    "live_smoke",
+    "research_to_code_ab",
+})
 
 
 @dataclass(frozen=True)
@@ -93,6 +116,10 @@ class CapabilitySpec:
     context_sources: tuple[str, ...] = ()
     evidence_producer: bool = False
     enabled_by_default: bool = True
+    projection_audience: tuple[str, ...] = ()
+    canonical_inputs: tuple[str, ...] = ()
+    fail_mode: str = "none"
+    release_gate: str = "none"
 
     def to_jsonable(self) -> dict[str, object]:
         return {
@@ -111,6 +138,10 @@ class CapabilitySpec:
             "context_sources": list(self.context_sources),
             "evidence_producer": bool(self.evidence_producer),
             "enabled_by_default": bool(self.enabled_by_default),
+            "projection_audience": list(self.projection_audience),
+            "canonical_inputs": list(self.canonical_inputs),
+            "fail_mode": self.fail_mode,
+            "release_gate": self.release_gate,
         }
 
 
@@ -190,6 +221,36 @@ class CapabilityRegistry:
                 raise ValueError(f"capability {spec.id} may not be third-party in v1")
             if spec.can_override_user_choice:
                 raise ValueError(f"capability {spec.id} may not override user choices")
+            unknown_audiences = set(spec.projection_audience) - KNOWN_PROJECTION_AUDIENCES
+            if unknown_audiences:
+                raise ValueError(
+                    f"capability {spec.id} declares unknown projection audience"
+                )
+            if spec.fail_mode not in KNOWN_FAIL_MODES:
+                raise ValueError(f"capability {spec.id} declares unknown fail mode")
+            if spec.release_gate not in KNOWN_RELEASE_GATES:
+                raise ValueError(f"capability {spec.id} declares unknown release gate")
+            unknown_canonical = set(spec.canonical_inputs) - known_ids
+            if unknown_canonical:
+                raise ValueError(
+                    f"capability {spec.id} names unknown canonical inputs"
+                )
+            is_projection = (
+                any("projection" in item for item in spec.provides)
+                or bool(spec.trace_sections)
+            )
+            if is_projection and not spec.projection_audience:
+                raise ValueError(
+                    f"projection capability {spec.id} must declare audience"
+                )
+            if "behavior_input" in spec.projection_audience and not spec.canonical_inputs:
+                raise ValueError(
+                    f"behavior-input projection {spec.id} must declare canonical inputs"
+                )
+            if "model_visible" in spec.projection_audience and spec.release_gate == "none":
+                raise ValueError(
+                    f"model-visible projection {spec.id} must declare a release gate"
+                )
 
 
 def builtin_capability_registry() -> CapabilityRegistry:
@@ -213,6 +274,9 @@ def builtin_capability_registry() -> CapabilityRegistry:
                 "initial_listing",
                 "coding_current_context",
             ),
+            projection_audience=("model_visible", "behavior_input"),
+            canonical_inputs=("local_context", "prompt_envelope"),
+            release_gate="live_smoke",
         ),
         CapabilitySpec(
             id="builtin_profiles",
@@ -233,6 +297,8 @@ def builtin_capability_registry() -> CapabilityRegistry:
             model_visible=True,
             owner_module="codey.task_runner",
             trace_sections=("prompt_sections",),
+            projection_audience=("model_visible",),
+            release_gate="live_smoke",
         ),
         CapabilitySpec(
             id="completion_contract",
@@ -242,6 +308,10 @@ def builtin_capability_registry() -> CapabilityRegistry:
             evidence_producer=True,
             trace_sections=("completion_proofs",),
             owner_module="codey.completion_contract",
+            projection_audience=("trace_only", "data_only"),
+            canonical_inputs=("research_proof_quality", "research_review_finding"),
+            fail_mode="fail_open",
+            release_gate="unit_tests",
         ),
         CapabilitySpec(
             id="consensus_advisors",
@@ -250,6 +320,8 @@ def builtin_capability_registry() -> CapabilityRegistry:
             model_visible=True,
             owner_module="codey.consensus",
             trace_sections=("prompt_sections",),
+            projection_audience=("model_visible",),
+            release_gate="live_smoke",
         ),
         CapabilitySpec(
             id="conversation_handoff",
@@ -258,6 +330,8 @@ def builtin_capability_registry() -> CapabilityRegistry:
             model_visible=True,
             owner_module="codey.handoff",
             trace_sections=("prompt_sections",),
+            projection_audience=("model_visible",),
+            release_gate="live_smoke",
         ),
         CapabilitySpec(
             id="context_epoch",
@@ -265,10 +339,18 @@ def builtin_capability_registry() -> CapabilityRegistry:
             consumes=("prompt_envelope", "run_trace"),
             trace_sections=("prompt_sections",),
             owner_module="codey.context_epoch",
+            projection_audience=("behavior_input", "model_visible"),
+            canonical_inputs=("prompt_envelope",),
+            fail_mode="fail_closed",
+            release_gate="targeted_tests",
         ),
         CapabilitySpec(
             id="domain_evidence_profiles",
             provides=("evidence_profile_projection",),
+            projection_audience=("data_only", "behavior_input"),
+            canonical_inputs=("builtin_profiles",),
+            fail_mode="fail_open",
+            release_gate="targeted_tests",
             owner_module="codey.research.domain_profiles",
         ),
         CapabilitySpec(
@@ -282,12 +364,22 @@ def builtin_capability_registry() -> CapabilityRegistry:
             owner_module="codey.ghost",
             trace_sections=("local_context_refs",),
             context_sources=("ghost_directive", "ghost_continuity"),
+            projection_audience=("model_visible", "behavior_input"),
+            canonical_inputs=("policy_guard",),
+            release_gate="live_smoke",
+        ),
+        CapabilitySpec(
+            id="permission_profile_catalog",
+            provides=("permission_profile_catalog",),
+            owner_module="codey.permission_profiles",
         ),
         CapabilitySpec(
             id="policy_guard",
             provides=("permission_profile_boundary", "action_policy_boundary"),
             owner_module="codey.action_policy",
             trace_sections=("policy_decisions",),
+            projection_audience=("behavior_input",),
+            canonical_inputs=("permission_profile_catalog",),
         ),
         CapabilitySpec(
             id="prompt_envelope",
@@ -341,6 +433,10 @@ def builtin_capability_registry() -> CapabilityRegistry:
             evidence_producer=True,
             trace_sections=("research_records",),
             owner_module="codey.research.object_model",
+            projection_audience=("data_only", "trace_only"),
+            canonical_inputs=("research_runner",),
+            fail_mode="fail_open",
+            release_gate="unit_tests",
         ),
         CapabilitySpec(
             id="research_evidence_ledger",
@@ -349,12 +445,20 @@ def builtin_capability_registry() -> CapabilityRegistry:
             durable_state=("research_evidence_ledger", "run_trace"),
             trace_sections=("research_evidence_ledgers",),
             owner_module="codey.research.evidence_ledger",
+            projection_audience=("data_only", "trace_only"),
+            canonical_inputs=("research_object_model",),
+            fail_mode="fail_open",
+            release_gate="unit_tests",
         ),
         CapabilitySpec(
             id="research_evidence_runtime",
             provides=("runtime_ref_validation", "evidence_snapshot_projection"),
             consumes=("research_object_model",),
             owner_module="codey.research.evidence_runtime",
+            projection_audience=("data_only",),
+            canonical_inputs=("research_object_model",),
+            fail_mode="fail_open",
+            release_gate="unit_tests",
         ),
         CapabilitySpec(
             id="research_review_finding",
@@ -364,6 +468,10 @@ def builtin_capability_registry() -> CapabilityRegistry:
             evidence_producer=True,
             trace_sections=("research_review_findings", "research_planner_gaps"),
             owner_module="codey.research.review_finding",
+            projection_audience=("trace_only", "data_only"),
+            canonical_inputs=("research_evidence_runtime",),
+            fail_mode="fail_open",
+            release_gate="unit_tests",
         ),
         CapabilitySpec(
             id="research_proof_quality",
@@ -372,6 +480,10 @@ def builtin_capability_registry() -> CapabilityRegistry:
             durable_state=("run_trace",),
             trace_sections=("research_proof_reviews",),
             owner_module="codey.research.proof_quality",
+            projection_audience=("behavior_input", "trace_only"),
+            canonical_inputs=("research_object_model", "research_evidence_ledger"),
+            fail_mode="fail_open",
+            release_gate="targeted_tests",
         ),
         CapabilitySpec(
             id="research_query_planner",
@@ -380,6 +492,10 @@ def builtin_capability_registry() -> CapabilityRegistry:
             durable_state=("run_trace",),
             trace_sections=("research_plans",),
             owner_module="codey.research.query_planner",
+            projection_audience=("trace_only",),
+            canonical_inputs=("research_proof_quality",),
+            fail_mode="fail_open",
+            release_gate="unit_tests",
         ),
         CapabilitySpec(
             id="research_brief_projection",
@@ -387,6 +503,10 @@ def builtin_capability_registry() -> CapabilityRegistry:
             consumes=("research_evidence_runtime", "run_trace"),
             durable_state=("run_trace",),
             trace_sections=("research_brief_projections",),
+            projection_audience=("trace_only", "model_visible"),
+            canonical_inputs=("research_evidence_runtime",),
+            fail_mode="fail_open",
+            release_gate="research_to_code_ab",
             owner_module="codey.research.brief_projection",
         ),
         CapabilitySpec(
@@ -395,6 +515,10 @@ def builtin_capability_registry() -> CapabilityRegistry:
             consumes=("research_object_model", "run_trace"),
             durable_state=("run_trace",),
             trace_sections=("research_source_trust",),
+            projection_audience=("trace_only",),
+            canonical_inputs=("research_object_model",),
+            fail_mode="fail_open",
+            release_gate="targeted_tests",
             owner_module="codey.research.source_trust",
         ),
         CapabilitySpec(
@@ -410,6 +534,9 @@ def builtin_capability_registry() -> CapabilityRegistry:
             id="run_ledger",
             provides=("task_fact_ledger", "receipt_projection"),
             durable_state=("run_ledger",),
+            projection_audience=("data_only",),
+            fail_mode="fail_closed",
+            release_gate="unit_tests",
             owner_module="codey.run_ledger",
         ),
         CapabilitySpec(
@@ -418,6 +545,10 @@ def builtin_capability_registry() -> CapabilityRegistry:
             consumes=("run_ledger", "run_trace"),
             ui_surface=("chat_stream",),
             owner_module="codey.run_details",
+            projection_audience=("ui_visible",),
+            canonical_inputs=("run_ledger", "run_trace"),
+            fail_mode="fail_open",
+            release_gate="unit_tests",
         ),
         CapabilitySpec(
             id="run_trace",

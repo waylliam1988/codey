@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import unittest
@@ -2446,9 +2447,7 @@ class BriefProjectionTraceTests(unittest.TestCase):
             self.assertNotIn("text", claim_rows[0])
             self.assertEqual(
                 claim_rows[0]["text_digest"],
-                "sha256:" + __import__("hashlib").sha256(
-                    b"Documented flow confirmed."
-                ).hexdigest(),
+                "sha256:" + hashlib.sha256(b"Documented flow confirmed.").hexdigest(),
             )
             self.assertEqual(claim_rows[0]["claim_ref"], "claim:" + "3" * 16)
             self.assertEqual(claim_rows[1]["status"], "unsupported")

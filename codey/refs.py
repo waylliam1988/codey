@@ -89,7 +89,7 @@ def digest_json(value: object) -> str:
     return digest_text(payload)
 
 
-def digest_ref(value: object) -> str:
+def content_digest(value: object) -> str:
     text = str(value or "").strip()
     suffix = text.removeprefix("sha256:")
     if text.startswith("sha256:") and _is_hex_64(suffix):
@@ -111,7 +111,7 @@ __all__ = [
     "bounded_refs",
     "clip",
     "digest_json",
-    "digest_ref",
+    "content_digest",
     "digest_text",
     "identifier",
     "is_valid_hostname",

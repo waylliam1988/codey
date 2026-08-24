@@ -196,6 +196,35 @@ def _assert_ledger_records_are_closed(payload: dict[str, object]) -> None:
         assert relation["to_ref"] in evidence_ids | assumption_ids
 
 
+def test_tampered_record_entry_fails_closed_on_load() -> None:
+    # Content addressing must hold on read, not only at write time: editing
+    # the stored JSON by hand invalidates the whole ledger instead of
+    # serving silently rewritten history.
+    with tempfile.TemporaryDirectory() as td:
+        project = Path(td) / "project"
+        project.mkdir()
+        store = EvidenceLedgerStore(Path(td) / "state")
+        record = _record(project=project)
+        assert store.append_record(
+            record,
+            run_id="run-ledger",
+            session_id="session-ledger",
+            project=project,
+        ).ok
+        path = store.path_for("session-ledger", project)
+        assert store.load(session_id="session-ledger", project=project).available
+
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["records"][0]["answer_status"] = "answered"
+        payload["records"][0]["counts"]["claims"] += 1
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+        snapshot = store.load(session_id="session-ledger", project=project)
+
+        assert not snapshot.available
+        assert snapshot.reason_code == "ledger_unavailable"
+
+
 def test_append_load_and_duplicate_are_bounded_and_deterministic() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td) / "project"

@@ -21,7 +21,7 @@ from codey.refs import (
     stable_ref,
 )
 from codey.research.object_model import ResearchRecord
-from codey.research.shape import digest_ref as _digest_ref
+from codey.research.shape import valid_digest_ref as _digest_ref
 from codey.redaction import looks_sensitive_signal
 
 

@@ -176,6 +176,12 @@ class KnowledgeIndex:
             ).fetchone()
         return row["id"] if row else None
 
+    @staticmethod
+    def _escape_like(query: str) -> str:
+        # LIKE wildcards in user queries must match literally, not expand
+        # into "everything".
+        return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     def search(self, query: str, limit: int = 8) -> list[dict]:
         query = (query or "").strip()
         if not query:
@@ -195,7 +201,7 @@ class KnowledgeIndex:
                         return [dict(r) for r in rows]
                 except sqlite3.OperationalError:
                     pass
-            like = f"%{query}%"
+            like = f"%{self._escape_like(query)}%"
             rows = self._conn.execute(
                 "SELECT id,type,title,status,confidence,updated,session_id,project,"
                 " substr(body,1,160) AS snippet FROM notes"

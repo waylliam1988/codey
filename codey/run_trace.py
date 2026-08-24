@@ -39,7 +39,7 @@ from codey.research.review_finding import (
     STATUS_OPEN,
 )
 from codey.research.source_trust import SOURCE_CLASSES as _SOURCE_TRUST_CLASSES
-from codey.research.shape import digest_ref as _digest_ref
+from codey.research.shape import valid_digest_ref as _digest_ref
 from codey.research.shape import generated_ref as _generated_ref
 from codey.research.shape import safe_connector_id as _safe_connector_id
 
@@ -1256,11 +1256,12 @@ class RunTraceRecorder:
                 continue
             # The trace is not a transcript: claim prose stays out, the text
             # travels only as a digest resolvable against the research
-            # record's own bounded payloads.
+            # record's own bounded payloads. Clip first so even a malformed
+            # direct mapping cannot push unbounded bytes through the hash.
             entry: dict[str, object] = {
                 "status": status,
                 "evidence_count": _nonnegative_int(row.get("evidence_count")),
-                "text_digest": digest_text(text),
+                "text_digest": digest_text(_clip(text, 260)),
             }
             if claim_ref:
                 entry["claim_ref"] = claim_ref

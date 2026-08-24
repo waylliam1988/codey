@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from codey.refs import digest_ref, digest_text, stable_ref
+from codey.refs import content_digest, digest_text, stable_ref
 from codey.research.identity import (
     path_ref,
     project_ref,
@@ -76,12 +76,12 @@ def test_stable_ref_and_digest_text_are_deterministic_and_prefixed() -> None:
     assert stable_ref("evidence ledger", "a", 1).startswith("evidence_ledger:")
 
 
-def test_digest_ref_only_accepts_real_sha256_hex_strings() -> None:
+def test_content_digest_only_accepts_real_sha256_hex_strings() -> None:
     valid = "sha256:" + "A" * 64
     pseudo = "sha256:" + "SECRET".ljust(64, "X")
 
-    valid_ref = digest_ref(valid)
-    pseudo_ref = digest_ref(pseudo)
+    valid_ref = content_digest(valid)
+    pseudo_ref = content_digest(pseudo)
 
     assert valid_ref == "sha256:" + "a" * 64
     assert pseudo_ref.startswith("sha256:")

@@ -43,7 +43,7 @@ from codey.redaction import (
 from codey.research.shape import (
     bounded_limit as _bounded_limit,
     connector_id as _connector_id,
-    digest_ref as _digest_ref,
+    valid_digest_ref as _digest_ref,
     generated_ref as _generated_ref,
 )
 from codey.research.source_document import SourceDocument

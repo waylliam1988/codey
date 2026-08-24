@@ -26,6 +26,7 @@ EXPECTED_BUILTIN_IDS = (
     "conversation_handoff",
     "domain_evidence_profiles",
     "local_context",
+    "permission_profile_catalog",
     "policy_guard",
     "prompt_envelope",
     "provider_capability_registry",
@@ -48,7 +49,10 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "1fd5c610c17f2bf0da76125582d5122e2a54c4c03883ec557fafbb2fdf949b72"
+    "72957a3c0a0dceb668b7cbd4954978c6b63482c593c406fb4459e1e7ee8cf35e"
+)
+EXPECTED_BUILTIN_FINGERPRINT = (
+    "72957a3c0a0dceb668b7cbd4954978c6b63482c593c406fb4459e1e7ee8cf35e"
 )
 
 
@@ -238,6 +242,66 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(spec.trace_sections, ("research_source_trust",))
         self.assertEqual(spec.owner_module, "codey.research.source_trust")
         self.assertFalse(spec.model_visible)
+
+    def test_research_projection_boundaries_declare_audience_source_and_gate(self) -> None:
+        registry = builtin_capability_registry()
+
+        brief = registry.get("research_brief_projection")
+        self.assertEqual(brief.projection_audience, ("trace_only", "model_visible"))
+        self.assertEqual(brief.canonical_inputs, ("research_evidence_runtime",))
+        self.assertEqual(brief.fail_mode, "fail_open")
+        self.assertEqual(brief.release_gate, "research_to_code_ab")
+
+        trust = registry.get("research_source_trust")
+        self.assertEqual(trust.projection_audience, ("trace_only",))
+        self.assertEqual(trust.canonical_inputs, ("research_object_model",))
+        self.assertEqual(trust.fail_mode, "fail_open")
+        self.assertEqual(trust.release_gate, "targeted_tests")
+
+        profiles = registry.get("domain_evidence_profiles")
+        self.assertEqual(profiles.projection_audience, ("data_only", "behavior_input"))
+        self.assertEqual(profiles.canonical_inputs, ("builtin_profiles",))
+        self.assertEqual(profiles.release_gate, "targeted_tests")
+
+    def test_research_to_code_projection_budget_is_small(self) -> None:
+        # A hard ceiling on research-owned projection boundaries: adding one
+        # more must be a deliberate registry change, not silent growth.
+        registry = builtin_capability_registry()
+        owned = [
+            spec.id
+            for spec in registry.all()
+            if spec.owner_module.startswith("codey.research")
+            and spec.projection_audience
+        ]
+
+        self.assertLessEqual(len(owned), 10)
+
+    def test_validation_rejects_unknown_projection_metadata(self) -> None:
+        base = {
+            "id": "probe_capability",
+            "provides": ("some_projection",),
+            "owner_module": "codey.probe",
+        }
+
+        bad_audience = dict(base, projection_audience=("everything",))
+        with self.assertRaises(ValueError):
+            CapabilityRegistry([CapabilitySpec(**bad_audience)])  # type: ignore[arg-type]
+
+        missing_canonical = dict(
+            base,
+            projection_audience=("behavior_input",),
+            canonical_inputs=(),
+        )
+        with self.assertRaises(ValueError):
+            CapabilityRegistry([CapabilitySpec(**missing_canonical)])  # type: ignore[arg-type]
+
+        missing_gate = dict(
+            base,
+            projection_audience=("model_visible",),
+            release_gate="none",
+        )
+        with self.assertRaises(ValueError):
+            CapabilityRegistry([CapabilitySpec(**missing_gate)])  # type: ignore[arg-type]
 
     def test_research_brief_projection_owns_handoff_projection(self) -> None:
         registry = builtin_capability_registry()

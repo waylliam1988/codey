@@ -1507,6 +1507,7 @@ class TaskRunner:
         provider_controls.begin_task_context(session_id)
         state.last_provider_failure = None
         previous_cancel_event = cancellation.set_event(state.stop_flag)
+        route_result = None
         try:
             claim_result = self._maybe_claim_ghost_work_item(request, run_id=run_id)
             if claim_result is not None:
@@ -1559,13 +1560,26 @@ class TaskRunner:
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()
             return
+        except BaseException:
+            # Any other failure inside the claim/route window must still
+            # restore the previous cancellation event and task context, or
+            # later runs on this thread inherit our stop flag.
+            state.set_provider_session(provider_id, None)
+            self._maybe_release_ghost_work_item(
+                claimed_work_item,
+                run_id=run_id,
+                reason="aborted_before_start",
+            )
+            cancellation.set_event(previous_cancel_event)
+            provider_controls.end_task_context()
+            raise
         route_source = "explicit_user_choice" if str(request.intent or "").strip().lower() != "auto" else "baseline"
         route_reason = "intent_selected" if route_source == "explicit_user_choice" else "baseline_kept"
         route_selected_mode = task_kind
         if claimed_work_item is not None:
             route_source = "local_work_item"
             route_reason = "claimed_work_item"
-        elif "route_result" in locals() and route_result is not None:
+        elif route_result is not None:
             route_source = "auto_router"
             route_selected_mode = route_result.selected_mode or route_result.final_mode or task_kind
             route_reason = (

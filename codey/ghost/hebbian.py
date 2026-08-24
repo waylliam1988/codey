@@ -347,7 +347,12 @@ class GhostHebbianStore:
                 },
             ),
         )
-        self._write_projection(remaining_nodes, remaining_edges)
+        # Symmetric with the reinforce path: a projection write failure
+        # invalidates the derived projection, not the authoritative events.
+        try:
+            self._write_projection(remaining_nodes, remaining_edges)
+        except (OSError, TypeError, ValueError):
+            delete_file(self.state_path)
         return {"nodes": len(removed_ids), "edges": len(removed_edges)}
 
     def list_nodes(

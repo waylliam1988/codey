@@ -23,7 +23,7 @@ from codey.research.proof_quality import ResearchProofReview
 from codey.redaction import looks_sensitive_code, looks_sensitive_signal
 from codey.research.shape import (
     connector_id as _connector_id,
-    digest_ref as _digest_ref,
+    valid_digest_ref as _digest_ref,
     generated_ref as _generated_ref,
 )
 from codey.research.source_connectors import (

@@ -93,7 +93,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=interrupted),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
             ):
                 server._run_task("session-1", str(project), "Do work", 8, False, "deepseek")
 
@@ -115,7 +114,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=resumed),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(
                     server,
                     "_run_review",
@@ -187,7 +185,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     side_effect=[first, second],
                 ) as get_provider,
                 mock.patch.object(server, "agent_run", side_effect=writer) as agent_run,
-                mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(
                     server,
                     "_run_review",
@@ -245,7 +242,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
             ):
                 server._run_task(
                     "session-connect-failover",
@@ -300,7 +296,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
             ):
                 server._run_task(
                     "session-rescue-chain",
@@ -374,7 +369,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                         "files": [{"path": "app.py", "status": "M"}],
                     },
                 ),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(server, "_run_review", return_value=None),
             ):
                 server._run_task(
@@ -425,7 +419,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value=provider,
                 ) as get_provider,
                 mock.patch.object(server, "agent_run", side_effect=stopped),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
             ):
                 server._run_task(
                     "session-stop-takeover",
@@ -468,7 +461,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     side_effect=providers,
                 ) as get_provider,
                 mock.patch.object(server, "agent_run", side_effect=failed) as agent_run,
-                mock.patch.object(server, "_run_project_audit", return_value=()),
             ):
                 server._run_task(
                     "session-switch-limit",
@@ -518,7 +510,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": [], "diff": ""},
                 ),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
             ):
                 server._run_task("session-1", str(project), "New task", 8, False, "deepseek")
 
@@ -566,7 +557,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=completed),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(server, "_run_review", return_value=None),
             ):
                 server._run_task("session-1", str(project), "Do work", 8, False, "deepseek")
@@ -629,7 +619,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=completed),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(server, "_run_review", review),
             ):
                 server._run_task("session-1", str(project), "Fix login", 8, False, "deepseek")
@@ -678,7 +667,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value=RunResult("done", "done", 1, False, True, False),
                 ),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(server, "_run_review", review),
                 mock.patch(
                     "codey.task_runner.render_verification_map",
@@ -730,7 +718,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=interrupted),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
             ):
                 server._run_task("session-1", str(project), "Fix app", 8, False, "deepseek")
 
@@ -746,7 +733,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value=RunResult("done", "done", 1, False, False, False),
                 ),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(server, "_run_review", return_value=None),
             ):
                 server._run_task("session-1", str(project), "Continue", 8, True, "deepseek")
@@ -792,7 +778,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(state, "get_provider", return_value=provider),
                 mock.patch.object(server, "agent_run", side_effect=completed),
                 mock.patch.object(server, "collect_changes", return_value=changes),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(server, "_run_review", return_value=None),
             ):
                 server._run_task(
@@ -834,7 +819,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
             ):
                 server._run_task(
                     "session-1",
@@ -883,7 +867,6 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     "collect_changes",
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
-                mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch(
                     "codey.verification_policy.shutil.which",
                     return_value="npm",

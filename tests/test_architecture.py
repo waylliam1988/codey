@@ -460,6 +460,43 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(module=name):
                 self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
+    def test_research_behavior_modules_do_not_read_trace_or_ui_projections(self) -> None:
+        # Projection-of-projection is forbidden: behavior-side research
+        # modules consume canonical facts, never the trace/UI read models.
+        forbidden = {
+            "codey.run_trace",
+            "codey.run_details",
+            "codey.run_ledger_projection",
+        }
+        paths = [
+            ROOT / "codey" / "research" / "query_planner.py",
+            ROOT / "codey" / "research" / "proof_quality.py",
+            ROOT / "codey" / "research" / "brief_projection.py",
+            ROOT / "codey" / "research" / "source_trust.py",
+        ]
+        for path in paths:
+            with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                imports = imported_modules(path)
+                self.assertTrue(
+                    forbidden.isdisjoint(imports),
+                    sorted(forbidden & imports),
+                )
+
+    def test_profile_source_trust_combination_has_single_owner(self) -> None:
+        # Composing evidence profiles with source trust must live in exactly
+        # one place. Today nothing combines them; if a consumer ever needs
+        # to, it must become a dedicated owner module -- not another import
+        # site that quietly grows policy logic.
+        offenders = []
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            imports = imported_modules(path)
+            if (
+                "codey.research.domain_profiles" in imports
+                and "codey.research.source_trust" in imports
+            ):
+                offenders.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(offenders, [])
+
     def test_refs_and_redaction_are_stdlib_leaves(self) -> None:
         # The bounded ref vocabulary and redaction predicates are the shared
         # dialect of every refs-only read model (coding, research, future

@@ -169,6 +169,24 @@ class MergeProfileTests(unittest.TestCase):
         self.assertEqual(payload_id, "finance+legal")
         self.assertNotIn(payload_id, BUILTIN_PROFILES)
 
+    def test_nested_merge_flattens_segments_and_never_mints_combo_names(self) -> None:
+        composed = merge_profiles(
+            BUILTIN_PROFILES["finance"],
+            BUILTIN_PROFILES["legal"],
+        )
+
+        nested = merge_profiles(composed, BUILTIN_PROFILES["science"])
+        flat = resolve_profile(["finance", "legal", "science"])
+
+        self.assertEqual(nested.profile_id, "finance+legal+science")
+        self.assertEqual(nested.to_payload(), flat.to_payload())
+        for forbidden in ("finance_legal", "finance_legal_science", "legal_science"):
+            self.assertNotIn(forbidden, nested.profile_id)
+        self.assertEqual(
+            merge_profiles(nested, BUILTIN_PROFILES["finance"]).profile_id,
+            "finance+legal+science",
+        )
+
     def test_merge_never_creates_new_atomic_profile_entries(self) -> None:
         before = dict(BUILTIN_PROFILES)
         merged = merge_profiles(

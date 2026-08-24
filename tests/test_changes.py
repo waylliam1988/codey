@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from codey import agent
+from codey import changes
 from codey.changes import ChangeTracker, SnapshotStore
 
 
@@ -30,6 +31,31 @@ class FakeProvider:
 
 
 class ChangeTrackerTests(unittest.TestCase):
+    def test_snapshot_and_untracked_diffs_have_no_double_blank_lines(self) -> None:
+        # Regression: keepends=True fed into unified_diff(lineterm="") plus a
+        # "\n".join rendered one blank line after every content line for
+        # snapshot-mode (non-git) projects.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            tracker = ChangeTracker(root)
+
+            (root / "app.py").write_text("a\nb\nc\n", encoding="utf-8")
+            tracker.capture_before("app.py")
+            (root / "app.py").write_text("a\nB\nc\n", encoding="utf-8")
+            data = tracker.collect()
+
+            self.assertNotIn("\n\n", data["diff"])
+            self.assertIn("@@ -1,3 +1,3 @@\n a\n-b\n+B\n c", data["diff"])
+
+            new_file = root / "untracked.py"
+            new_file.write_text("x\ny\n", encoding="utf-8")
+            untracked = changes._untracked_file_diff(root, "untracked.py")
+
+            self.assertIsNotNone(untracked)
+            body, line_count = untracked
+            self.assertNotIn("\n\n", body)
+            self.assertEqual(line_count, 2)
+
     def test_collects_new_file_snapshot_diff(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

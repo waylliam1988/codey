@@ -45,6 +45,11 @@ MESSAGE_KEYS = {
     "riskLabel",
     "riskTitle",
     "riskDetail",
+    # Pending tool-approval and activity fields the UI round-trips; dropping
+    # them silently broke restore of in-flight cards and spinners.
+    "toolKey",
+    "activity",
+    "pending",
 }
 
 
@@ -121,6 +126,26 @@ def _clean_messages(value: object) -> list[dict[str, Any]]:
     return messages
 
 
+MAX_RESEARCH_RUNS_PER_SESSION = 40
+
+
+def _clean_research_runs(value: object) -> list[Any]:
+    """Sanitize one session's research-run summaries without dropping them.
+
+    Research history used to be stripped here, and the UI restore then
+    overwrote local state with the stripped copy -- every restart erased all
+    research runs. Keep the run objects bounded but intact.
+    """
+
+    if not isinstance(value, list):
+        return []
+    return [item for item in value[-MAX_RESEARCH_RUNS_PER_SESSION:] if isinstance(item, dict)]
+
+
+def _clean_research(value: object) -> Any:
+    return value if isinstance(value, dict) else None
+
+
 def _clean_sessions(value: object) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
@@ -128,23 +153,28 @@ def _clean_sessions(value: object) -> list[dict[str, Any]]:
     for item in value[:MAX_SESSIONS]:
         if not isinstance(item, dict):
             continue
-        sessions.append(
-            {
-                "id": _str(item.get("id")),
-                "title": _str(item.get("title") or "New chat", MAX_TITLE),
-                "messages": _clean_messages(item.get("messages")),
-                "terminalRuns": [
-                    _str(run_id) for run_id in (
-                        item.get("terminalRuns")
-                        if isinstance(item.get("terminalRuns"), list)
-                        else []
-                    )[-32:]
-                ],
-                "createdAt": _int(item.get("createdAt")),
-                "projectId": _str(item.get("projectId")) or None,
-                "provider": _str(item.get("provider"), 40),
-            }
-        )
+        entry: dict[str, Any] = {
+            "id": _str(item.get("id")),
+            "title": _str(item.get("title") or "New chat", MAX_TITLE),
+            "messages": _clean_messages(item.get("messages")),
+            "terminalRuns": [
+                _str(run_id) for run_id in (
+                    item.get("terminalRuns")
+                    if isinstance(item.get("terminalRuns"), list)
+                    else []
+                )[-32:]
+            ],
+            "createdAt": _int(item.get("createdAt")),
+            "projectId": _str(item.get("projectId")) or None,
+            "provider": _str(item.get("provider"), 40),
+        }
+        # Research fields are preserved when present; the sanitizer never
+        # invents empty keys so older payloads stay byte-shape stable.
+        if isinstance(item.get("researchRuns"), list):
+            entry["researchRuns"] = _clean_research_runs(item.get("researchRuns"))
+        if isinstance(item.get("research"), dict):
+            entry["research"] = item["research"]
+        sessions.append(entry)
     return sessions
 
 

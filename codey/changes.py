@@ -9,6 +9,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from codey.atomic_io import write_text_atomic
 from codey.local_store import (
     DEFAULT_STATE_HOME,
     delete_file,
@@ -189,8 +190,10 @@ def _status_for(before: str | None, after: str | None) -> str:
 
 
 def _diff_for(path: str, before: str | None, after: str | None) -> str:
-    before_lines = [] if before is None else before.splitlines(keepends=True)
-    after_lines = [] if after is None else after.splitlines(keepends=True)
+    # splitlines() without keepends + lineterm="": keeping line endings here
+    # made every content line double-spaced in the rendered diff.
+    before_lines = [] if before is None else before.splitlines()
+    after_lines = [] if after is None else after.splitlines()
     fromfile = "/dev/null" if before is None else f"a/{path}"
     tofile = "/dev/null" if after is None else f"b/{path}"
     diff = difflib.unified_diff(before_lines, after_lines, fromfile=fromfile, tofile=tofile, lineterm="")
@@ -357,8 +360,7 @@ class ChangeTracker:
                     continue
             else:
                 try:
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(before, encoding="utf-8")
+                    write_text_atomic(path, before)
                 except OSError:
                     conflicts.append(rel)
                     continue
@@ -434,7 +436,7 @@ def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
-    lines = text.splitlines(keepends=True)
+    lines = text.splitlines()
     rel_posix = rel.replace("\\", "/")
     diff = difflib.unified_diff(
         [],
@@ -443,7 +445,7 @@ def _untracked_file_diff(root: Path, rel: str) -> tuple[str, int] | None:
         tofile=f"b/{rel_posix}",
         lineterm="",
     )
-    return "\n".join(diff), len(text.splitlines())
+    return "\n".join(diff), len(lines)
 
 
 def collect_git_changes(project: str | Path | None) -> dict:

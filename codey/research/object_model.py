@@ -22,7 +22,7 @@ from codey.refs import (
     bounded_refs as _bounded_refs,
     clip as _clip,
     digest_json as _digest_json,
-    digest_ref as _digest_ref,
+    content_digest as _digest_ref,
     digest_text as _digest_text,
     identifier as _identifier,
     nonnegative_int as _nonnegative_int,

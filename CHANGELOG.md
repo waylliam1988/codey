@@ -4,6 +4,74 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.11 - Security and Integrity Hardening (unreleased)
+
+- Local HTTP API is protected against DNS rebinding and cross-origin misuse:
+  every request now validates the `Host` header against the loopback bind
+  (plus a non-loopback bind address when explicitly serving LAN), and POST
+  requests presenting a foreign `Origin` are refused with 403 before any
+  handler logic runs.
+- `/api/local_provider` no longer replays a stored credential against a
+  different `base_url`: changing the target requires explicitly supplying
+  that target's key, so a rebinding/XSS page cannot exfiltrate the saved
+  key in one request. Probing or updating the same (or first) target may
+  still reuse the stored key.
+- `/api/stop` now expires every pending shell approval under the same lock
+  and emits denied `shell_result` events; a stale Allow card can no longer
+  execute a command after the user pressed stop.
+- UI state persistence no longer loses research data: session sanitizers
+  keep `researchRuns` / `research` (bounded), and message sanitizers keep
+  `toolKey` / `activity` / `pending`, so restarts stop erasing research
+  history and pending tool cards survive round-trips.
+- Snapshot/untracked diffs render correctly again: `keepends=True` fed into
+  `unified_diff(lineterm="")` plus `"\n".join()` double-spaced every content
+  line for non-git projects; both diff builders now use plain `splitlines()`
+  with golden assertions.
+- User source files are written atomically and EOL-preserving via new
+  `codey/atomic_io.py` (`write_text_atomic`: same-directory temp file,
+  fsync, `os.replace`, CRLF/LF style retained). Wired into write/edit tool
+  paths and snapshot restore, matching the "written atomically" promise in
+  the tool contract.
+- Digest vocabulary split to kill the同名双义: `refs.digest_ref` becomes
+  `refs.content_digest` (producer: any value -> sha256 content digest);
+  `research.shape.digest_ref` becomes `shape.valid_digest_ref` (validator:
+  returns the value only when already a well-formed sha256 ref). All call
+  sites updated; nothing imports the old names.
+- Evidence ledger integrity is now verified on load, not just stamped at
+  write: each record entry carries a canonical-JSON `record_integrity`
+  digest (computed after all normalization passes), and any mismatch or
+  missing field fails the whole ledger closed (`ledger_unavailable`)
+  instead of serving tampered history. Records without their own
+  `record_digest` are rejected at append instead of minting the empty-
+  string digest.
+- Report section boundaries hardened: bare numbered headings documented in
+  the README (`1. Conclusion`, `一、结论`) are recognized again, common
+  Chinese section titles (`参考文献`, `风险`, `备注`, `方法`) joined the
+  alias table, short lead-in colon lines (`具体如下：`) no longer cut their
+  section, and unknown markdown headings route to a dropped unknown bucket.
+- Research projection boundaries are now declared metadata, not comments:
+  `CapabilitySpec` gained `projection_audience` / `canonical_inputs` /
+  `fail_mode` / `release_gate` with validation (projection capabilities must
+  declare an audience; behavior-input projections must name canonical input
+  capabilities; model-visible projections must declare a release gate).
+  Every triggered spec is annotated; research-owned projection count is
+  capped by test; architecture tests forbid behavior-side research modules
+  from reading trace/UI projections and restrict profile+source-trust
+  combination to zero import sites today.
+- Smaller fixes: nested evidence-profile merges flatten their "+" segments
+  (no synthetic combo-looking ids like `finance_legal+science`);
+  RunTrace's brief-projection claim rows clip text before hashing and store
+  digests only; `test_server.py` installs module-level guards so tests
+  cannot open real provider tabs (the two receipt/memory tests patch both
+  connectors); `tests/test_work_checkpoint_flow.py` disables post-task
+  audit/consensus/advisor side effects (~137s -> ~4s); StepFun submission
+  gains GLM-style double-click protection; `task_runner` restores the
+  previous cancellation event on every pre-start failure path;
+  `context_epoch` marks clamped admissions as truncated; reopened run
+  ledgers start their byte budget from the existing file size; knowledge
+  search escapes LIKE wildcards; hebbian delete-path wraps projection
+  writes symmetrically with reinforce.
+
 ## 0.4.10 - Domain Source Trust + Research Brief Projection
 
 - Added `codey/research/domain_profiles.py`: evidence-standard profiles as

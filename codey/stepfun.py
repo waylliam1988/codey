@@ -374,6 +374,14 @@ def _submit(page: Page, textarea: Locator, baseline: int, submitted_text: str) -
             confirm_submission(attempt, PROVIDER_ID)
             return attempt
         cancellation.wait(0.6)
+        # Double-submission guard (mirrors GLM): the confirmation watcher can
+        # lose a race with a slow first submit. If any start signal is now
+        # visible -- input cleared, response count moved, flow recorded --
+        # the first click landed and a second forced click would post the
+        # same message twice.
+        if _submission_started(page, baseline, submitted_text):
+            confirm_submission(attempt, PROVIDER_ID)
+            return attempt
         retry_button = _send_button(page, timeout=2.0, teach=False)
         if retry_button is None:
             return attempt

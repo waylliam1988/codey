@@ -30,7 +30,7 @@ def generated_ref(value: object, prefix: str) -> str:
     return ""
 
 
-def digest_ref(value: object) -> str:
+def valid_digest_ref(value: object) -> str:
     text = str(value or "").strip()
     suffix = text.removeprefix("sha256:")
     if text.startswith("sha256:") and len(suffix) == 64 and all(ch in "0123456789abcdef" for ch in suffix):
@@ -51,7 +51,7 @@ def bounded_limit(value: object, *, default: int, upper: int) -> int:
 __all__ = [
     "bounded_limit",
     "connector_id",
-    "digest_ref",
+    "valid_digest_ref",
     "generated_ref",
     "safe_connector_id",
 ]

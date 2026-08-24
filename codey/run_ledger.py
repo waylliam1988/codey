@@ -116,7 +116,13 @@ class RunLedgerWriter:
         self.run_id = run_id
         self.session_id = session_id
         self.seq = 0
-        self.bytes_written = 0
+        # Reopening an existing ledger file (resume path) must count its
+        # current size, or the byte budget silently restarts from zero and
+        # the cap is exceeded.
+        try:
+            self.bytes_written = path.stat().st_size if path.is_file() else 0
+        except OSError:
+            self.bytes_written = 0
         self.disabled = False
         self.truncated = False
 

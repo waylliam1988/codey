@@ -28,9 +28,12 @@ SECTION_ALIASES: dict[str, tuple[str, ...]] = {
     "conclusion": ("结论", "关键结论", "conclusion", "key conclusions"),
     "evidence": ("关键证据", "evidence", "key evidence"),
     "counter": ("反证与限制", "反证", "限制", "counter-evidence", "counter", "limitations"),
+    "risk": ("风险", "risks"),
+    "notes": ("备注", "说明", "注", "notes"),
+    "method": ("方法", "method", "methods"),
     "source_quality": ("来源质量", "source quality", "source assessment"),
     "coverage": ("搜索覆盖", "research coverage", "search coverage", "coverage"),
-    "sources": ("来源", "sources", "references"),
+    "sources": ("来源", "参考文献", "sources", "references"),
 }
 REQUIRED_SECTIONS = (
     "conclusion",
@@ -40,7 +43,17 @@ REQUIRED_SECTIONS = (
     "coverage",
     "sources",
 )
-_SECTION_KEY_ORDER = ("source_quality", "conclusion", "evidence", "counter", "coverage", "sources")
+_SECTION_KEY_ORDER = (
+    "source_quality",
+    "conclusion",
+    "evidence",
+    "counter",
+    "risk",
+    "notes",
+    "method",
+    "coverage",
+    "sources",
+)
 
 
 def normalize_heading(value: str) -> str:
@@ -84,12 +97,18 @@ def heading_key(line: str) -> str:
 
 
 def is_boundary_line(line: str) -> bool:
-    """True when a line starts a new section regardless of known aliases.
+    """True when a line starts a new section.
 
-    Markdown headings and short colon-style titles both count. Without
-    this, content under an unknown title (风险:, 方法:, 备注:, custom
-    templates) would keep appending to the previous known section and could
-    be mis-delivered as its conclusions.
+    Two boundary shapes exist:
+
+    1. Any line whose title resolves through ``heading_key`` -- markdown
+       headings, bare numbered headings (``1. Conclusion``, ``一、结论``),
+       and aliased colon titles (``风险:``). These switch to that key.
+    2. Unknown markdown headings, which route content to the dropped
+       unknown bucket so custom templates cannot pollute known sections.
+
+    Plain prose and list items are never boundaries; in particular a short
+    lead-in like ``具体如下：`` does not cut the section it introduces.
     """
 
     stripped = str(line or "").strip()
@@ -97,32 +116,29 @@ def is_boundary_line(line: str) -> bool:
         return False
     if _HEADING_RE.match(stripped):
         return True
-    if stripped.endswith((":", "：")):
-        title = stripped.rstrip(":：").strip()
-        if (
-            title
-            and len(title) <= 60
-            and not stripped.startswith(("- ", "* ", "+ "))
-            and not _LIST_PREFIX_RE.match(stripped)
-        ):
-            return True
-    return False
+    return bool(heading_key(stripped))
 
 
 def parse_sections(text: str) -> dict[str, str]:
     """Split a report body into its named sections.
 
-    Every boundary line switches the current section; boundaries whose title
-    matches no alias route their content to an internal unknown bucket that
-    is dropped from the result, so unclassified prose can never masquerade
-    as a known section's conclusions.
+    Boundary lines whose title matches an alias switch to that section;
+    markdown headings without an alias switch to the dropped unknown
+    bucket. Unclassified prose can therefore never masquerade as a known
+    section's conclusions.
     """
 
     sections: dict[str, list[str]] = {}
     current = ""
     for line in str(text or "").splitlines():
-        if is_boundary_line(line):
-            current = heading_key(line)
+        stripped = line.strip()
+        markdown_heading = bool(_HEADING_RE.match(stripped))
+        # An alias hit always wins, even when the line looks like a numbered
+        # list item: bare "1. Conclusion" / "一、结论" headings are
+        # documented report shapes and must open their section.
+        key = heading_key(line)
+        if markdown_heading or key:
+            current = key
             continue
         if current:
             sections.setdefault(current, []).append(line)
