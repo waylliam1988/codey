@@ -75,6 +75,14 @@
     loader 记录的 unreadable 原因，两者皆缺则 `artifact_unverified`）；
     summary 新增 `codey_commit_alignment`（artifact commit vs 当前 HEAD 的
     展示性对齐信息，不匹配不使既有记录失效，只如实显示）。
+  - superiority 绑定冻结 rubric 并修掉剩余审计/环境边角（第四轮审阅）：
+    artifact 的 `rubric` 必须等于当前 suite 的 frozen rubric 名
+    （`research_benchmark_v1`），外来 rubric 的记录仍是诚实有效记录但无法
+    解锁 "surpassed OpenScience"；metadata 只过滤空字符串/空列表，
+    `winner="tie"`、`strictly_better_metric_count=0`、
+    `regression_gates_passed=False` 这些最能解释"不支持 superiority"的字段
+    不再被丢掉；`current_codey_commit()` 固定以仓库根为 cwd 运行 git，
+    从任意目录调用都能解析当前 commit。
   - `regression_gate` 的 record anchor 改为经
     `normalize_runtime_ref(kind="research_record")` 校验：恶意或错误的
     mapping 无法把长文本塞进 refs-only payload；snapshot 锚点非法时回退到

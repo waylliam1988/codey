@@ -96,7 +96,11 @@ errors derive from the payload like validity does, with stored loader reasons
 reserved for unreadable files and `artifact_unverified` as the last resort;
 and summaries display `codey_commit_alignment` (artifact commit vs current
 HEAD, informational only — recorded head-to-heads remain valid evidence as
-Codey moves on).
+Codey moves on). A fourth pass bound superiority to the frozen rubric itself
+(a foreign `rubric` value is a valid record that can never back the wording,
+verified by test), kept zero/False result fields visible in metadata instead
+of filtering them out, and pinned the git provenance lookup to the repository
+root so commit alignment resolves from any working directory.
 
 Production-facing behavior changes: none. No prompt, tool result, router,
 fallback, permission, UI/SSE, Research default path, or done-enforcement

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from tests.manual import research_comparison_benchmark_ab as benchmark
 
@@ -320,6 +323,58 @@ def test_commit_alignment_is_reported_not_assumed(monkeypatch) -> None:
         results=results, head_to_head=_artifact_with("b046b99"), superiority_claimed=True
     )
     assert unavailable["real_openscience"]["codey_commit_alignment"]["matches"] is None
+
+
+def test_superiority_is_bound_to_the_frozen_rubric(tmp_path: Path) -> None:
+    results = benchmark.run_deterministic_arms()
+    frozen_name = benchmark.load_suite().rubric["rubric"]
+    assert benchmark._sample_head_to_head_payload()["rubric"] == frozen_name
+
+    payload = benchmark._sample_head_to_head_payload()
+    payload["rubric"] = "anything goes"
+    path = tmp_path / "wrong-rubric.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    artifact = benchmark.load_head_to_head_artifact(path)
+    # A foreign rubric is an honest record, but it cannot back the wording.
+    assert artifact.valid
+    assert not artifact.supports_superiority()
+    locked = benchmark.build_summary(
+        results=results, head_to_head=artifact, superiority_claimed=True
+    )
+    assert locked["verdict"]["ok"] is False
+    assert benchmark.SUPERIORITY_PHRASE not in json.dumps(locked)
+
+
+def test_metadata_keeps_zero_and_false_result_fields() -> None:
+    payload = benchmark._sample_head_to_head_payload()
+    payload.update({
+        "winner": "tie",
+        "strictly_better_metric_count": 0,
+        "regression_gates_passed": False,
+    })
+    artifact = benchmark.HeadToHeadArtifact(
+        digest="sha256:" + "ab" * 32, payload=payload, errors=()
+    )
+    assert artifact.valid
+    assert not artifact.supports_superiority()
+
+    metadata = artifact.metadata()
+    assert metadata["winner"] == "tie"
+    assert metadata["strictly_better_metric_count"] == 0
+    assert metadata["regression_gates_passed"] is False
+
+
+def test_current_codey_commit_is_cwd_independent(tmp_path: Path, monkeypatch) -> None:
+    expected = subprocess.run(
+        ["git", "-C", str(benchmark.REPO_ROOT), "rev-parse", "--short", "HEAD"],
+        capture_output=True,
+        text=True,
+    )
+    if expected.returncode != 0:
+        pytest.skip("git is unavailable")
+
+    monkeypatch.chdir(tmp_path)
+    assert benchmark.current_codey_commit() == expected.stdout.strip()
 
 
 def test_summary_carries_only_bounded_projection_material() -> None:

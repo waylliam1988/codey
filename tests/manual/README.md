@@ -46,9 +46,10 @@ counterevidence pass, no reproducible analysis), and the full
 summary may only say "OpenScience-style regression passed", and only when the
 comparison verdict itself passed. The artifact must be JSON containing every
 roadmap metadata field — both sides' version/commit, provider/model, task
-inputs, run date, result source, and the scoring rubric — *and* its recorded
-result must back the wording: `winner: "codey"`,
-`strictly_better_metric_count >= 4`, and `regression_gates_passed: true`.
+inputs, run date, result source, and a `rubric` equal to the frozen suite
+rubric — *and* its recorded result must back the wording:
+`winner: "codey"`, `strictly_better_metric_count >= 4`, and
+`regression_gates_passed: true`.
 `--openscience-artifact <file>` together with `--claim-superiority` is the
 only way the summary may contain "surpassed OpenScience"; the digest and the
 validated result fields are recorded alongside the claim, incomplete,

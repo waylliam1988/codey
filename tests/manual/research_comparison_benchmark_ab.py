@@ -52,6 +52,7 @@ from tests.manual.research_benchmark_suite import load_suite
 
 PROBE = "research_comparison_benchmark_ab"
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
+REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = RESULTS_DIR / "research_comparison_benchmark_deterministic.json"
 ARM_BASELINE = "baseline_web_report"
 ARM_OPENSOURCE_STYLE = "openscience_style_fixture"
@@ -96,6 +97,23 @@ def _walk(payload: Mapping[str, Any], path: tuple[str, ...]) -> Any:
     return node
 
 
+def _text_field(payload: Mapping[str, Any], path: tuple[str, ...]) -> str:
+    """Validated-or-empty read of one string field."""
+
+    node = _walk(payload, path)
+    return str(node) if isinstance(node, str) else ""
+
+
+def _keep_field(value: Any) -> bool:
+    """Drop only empty strings and empty lists; keep 0 / False results."""
+
+    if isinstance(value, str):
+        return bool(value)
+    if isinstance(value, (list, tuple)):
+        return len(value) > 0
+    return value is not None
+
+
 @dataclass(frozen=True)
 class HeadToHeadArtifact:
     """One recorded real head-to-head run plus its schema validation result."""
@@ -117,15 +135,16 @@ class HeadToHeadArtifact:
     def supports_superiority(self) -> bool:
         """True only when the artifact's own result backs ``surpassed``.
 
-        Metadata validity says the run was recorded honestly; the winner,
-        strict-improvement count, and regression-gate fields decide whether
-        it also justifies the wording.
+        Metadata validity says the run was recorded honestly; the frozen
+        rubric identity plus the winner, strict-improvement count, and
+        regression-gate fields decide whether it also justifies the wording.
         """
 
         payload = self.payload
         count = payload.get("strictly_better_metric_count")
         return (
             self.valid
+            and _text_field(payload, ("rubric",)) == self._frozen_rubric_name()
             and payload.get("winner") == "codey"
             and isinstance(count, int)
             and not isinstance(count, bool)
@@ -133,11 +152,17 @@ class HeadToHeadArtifact:
             and payload.get("regression_gates_passed") is True
         )
 
+    @staticmethod
+    def _frozen_rubric_name() -> str:
+        return str(load_suite().rubric.get("rubric") or "")
+
     def metadata(self) -> dict[str, Any]:
         """Copy of the validated roadmap fields for the summary.
 
         Validation already bounded every value, so no clipping happens here;
-        invalid artifacts project nothing.
+        invalid artifacts project nothing. Only empty strings and empty
+        lists are dropped -- legitimate ``0`` / ``False`` result fields stay,
+        since they are exactly what explains a non-superior record.
         """
 
         if not self.valid:
@@ -173,7 +198,7 @@ class HeadToHeadArtifact:
             ),
             "regression_gates_passed": self.payload.get("regression_gates_passed"),
         }
-        return {key: value for key, value in nested.items() if value}
+        return {key: value for key, value in nested.items() if _keep_field(value)}
 
 
 def head_to_head_artifact_errors(payload: Mapping[str, Any]) -> tuple[str, ...]:
@@ -255,9 +280,11 @@ def load_head_to_head_artifact(path: Path) -> HeadToHeadArtifact:
 def current_codey_commit() -> str:
     """Short HEAD commit for provenance display; empty when unavailable.
 
-    Informational only: a real head-to-head stays valid evidence even after
-    Codey moves on, so mismatches are surfaced in summaries instead of
-    invalidating recorded results.
+    Runs against the repository root (not the caller's cwd) so importing and
+    calling from anywhere still resolves the commit. Informational only: a
+    real head-to-head stays valid evidence even after Codey moves on, so
+    mismatches are surfaced in summaries instead of invalidating recorded
+    results.
     """
 
     try:
@@ -266,6 +293,7 @@ def current_codey_commit() -> str:
             capture_output=True,
             text=True,
             timeout=10,
+            cwd=str(REPO_ROOT),
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""
@@ -625,12 +653,13 @@ def _self_test() -> None:
         assert alignment["matches"] in (True, False, None)
 
         # A metadata-valid artifact whose own result does NOT back the claim
-        # (OpenScience won, too few strictly-better metrics, or gates failed)
-        # can never unlock the wording.
+        # (OpenScience won, too few strictly-better metrics, gates failed, or
+        # a foreign rubric) can never unlock the wording.
         for field, value in (
             ("winner", "openscience"),
             ("strictly_better_metric_count", MIN_STRICTLY_BETTER_METRICS - 1),
             ("regression_gates_passed", False),
+            ("rubric", "anything goes"),
         ):
             opposing = json.loads(json.dumps(_sample_head_to_head_payload()))
             opposing[field] = value

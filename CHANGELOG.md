@@ -90,6 +90,16 @@ This file records Codey's release history. The newest release appears first.
     resort); and summaries add `codey_commit_alignment` — informational
     artifact-vs-current-HEAD display that never invalidates recorded
     results.
+  - Superiority claims bind to the frozen rubric, plus remaining audit and
+    environment edges (fourth review pass): an artifact's `rubric` must
+    equal the current suite's frozen rubric name
+    (`research_benchmark_v1`) — foreign-rubric records stay honest, valid
+    evidence but cannot unlock "surpassed OpenScience"; metadata filtering
+    now drops only empty strings/lists, so `winner="tie"`,
+    `strictly_better_metric_count=0`, and `regression_gates_passed=False`
+    survive into audit output instead of vanishing; and
+    `current_codey_commit()` runs git with the repository root as cwd so the
+    current commit resolves regardless of the calling process's directory.
   - The regression gate's record anchor is now validated through
     `normalize_runtime_ref(kind="research_record")`: hostile or wrong
     mappings cannot smuggle text into the refs-only payload; an invalid
