@@ -68,7 +68,9 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import (
     apply_research_affinity_hints,
     build_research_interest_candidates,
+    candidate_to_topic_hint,
 )
+from codey.permission_profiles import allows_context_source, profile_for_name
 from codey.knowledge.store import KnowledgeStore
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.managed_outputs import (
@@ -113,6 +115,11 @@ from codey.research.pipeline import ResearchIterationRun, ResearchPipeline, Rese
 from codey.research.proof_quality import proof_review_trace_payload
 from codey.research.query_planner import build_research_plan, research_plan_trace_payload
 from codey.research.reproducibility import build_reproducibility_capsule
+from codey.research.topic_continuity import (
+    CONTEXT_SOURCE_KEY as TOPIC_CONTINUITY_CONTEXT_SOURCE_KEY,
+    MAX_TOPIC_CLAIM_REFS,
+    project_topic_continuity,
+)
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.runner import ResearchRunner
 from codey.review import has_reviewable_changes
@@ -3384,6 +3391,7 @@ class TaskRunner:
         search,
         tools=None,
         iteration_context: str = "",
+        topic_continuity_context: str = "",
     ) -> ResearchIterationRun:
         if self.knowledge_store is None:
             raise RuntimeError("Research is not configured")
@@ -3410,12 +3418,110 @@ class TaskRunner:
             ),
             tools=tools,
             iteration_context=iteration_context,
+            topic_continuity_context=topic_continuity_context,
         )
         for event in runner.run(task):
             on_event(event)
         if runner.result is None:
             raise RuntimeError("research finished without a result")
         return ResearchIterationRun(result=runner.result, tools=runner.tools)
+
+    def _build_research_topic_continuity(
+        self,
+        *,
+        session_id: str,
+        project: str,
+    ) -> tuple[str, dict[str, object] | None]:
+        """Admit bounded Ghost-to-Research topic continuity.
+
+        Single wiring point for the 0.4.12 admission chain: profile gate ->
+        research interests + bounded Ghost continuity + prior evidence-ledger
+        claim refs -> pure projection. Fail-open by contract: any error or a
+        closed gate returns the empty baseline so Research behavior is
+        unchanged. The returned payload is digest-only and never contains raw
+        hint text.
+        """
+        try:
+            profile = profile_for_name("research")
+            if not allows_context_source(profile, TOPIC_CONTINUITY_CONTEXT_SOURCE_KEY):
+                return "", None
+            interest_hints = [
+                candidate_to_topic_hint(candidate)
+                for candidate in build_research_interest_candidates(
+                    self.knowledge_store,
+                    session_id=session_id,
+                    project=project,
+                )
+            ]
+            continuity = self._ghost_continuity(project=project, session_id=session_id)
+            projection = project_topic_continuity(
+                interest_hints=interest_hints,
+                continuity_hints=tuple(getattr(continuity, "selected_items", ()) or ()),
+                claim_refs=self._prior_claim_refs(session_id=session_id, project=project),
+            )
+        except Exception:
+            return "", None
+        payload = projection.to_payload()
+        if not projection.admitted:
+            return "", payload
+        return projection.prompt_text, payload
+
+    def _prior_claim_refs(
+        self,
+        *,
+        session_id: str,
+        project: str,
+    ) -> tuple[dict[str, object], ...]:
+        """Bounded claim refs from the durable evidence ledger (refs only)."""
+        ledgers = self.evidence_ledgers
+        if ledgers is None:
+            return ()
+        try:
+            snapshot = ledgers.load(session_id=session_id, project=project)
+        except Exception:
+            return ()
+        payload = getattr(snapshot, "payload", None)
+        if not getattr(snapshot, "available", False) or not isinstance(payload, Mapping):
+            return ()
+        refs: list[dict[str, object]] = []
+        for record in list(payload.get("records") or ())[-4:]:
+            for claim_ref in record.get("claim_refs") or ():
+                text = str(claim_ref or "").strip()
+                if not text:
+                    continue
+                refs.append({"ref": f"prior_claim:{text}"})
+                if len(refs) >= MAX_TOPIC_CLAIM_REFS:
+                    return tuple(refs)
+        return tuple(refs)
+
+    def _build_research_context(
+        self,
+        frame: _RunFrame,
+        request: TaskRequest,
+        *,
+        proof_question: str,
+        max_turns: int,
+    ) -> ResearchContext:
+        """Assemble the ResearchContext, including continuity admission."""
+        continuity_text, continuity_payload = self._build_research_topic_continuity(
+            session_id=request.session_id,
+            project=frame.project_text,
+        )
+        return ResearchContext(
+            question=request.task,
+            session_id=request.session_id,
+            run_id=frame.run_id,
+            project=frame.project_text,
+            provider_id=frame.provider_id,
+            proof_question=proof_question,
+            permission_profile="research",
+            max_turns=max_turns,
+            chat_handoff=frame.research_handoff,
+            should_stop=self.state.stop_flag.is_set,
+            trace=RunTraceResearchSink(frame.trace),
+            topic_continuity_context=continuity_text,
+            topic_continuity_payload=continuity_payload,
+        )
 
     def _run_research_pipeline(
         self,
@@ -3437,6 +3543,7 @@ class TaskRunner:
             search: object,
             tools=None,
             iteration_context: str = "",
+            topic_continuity_context: str = "",
         ):
             return self._run_research_iteration(
                 provider=frame.provider,
@@ -3453,6 +3560,7 @@ class TaskRunner:
                 search=search,
                 tools=tools,
                 iteration_context=iteration_context,
+                topic_continuity_context=topic_continuity_context,
             )
 
         def run_followup(
@@ -3478,18 +3586,11 @@ class TaskRunner:
 
         recorder = getattr(self.state, "record_research_changes", None)
         changes_sink = recorder if callable(recorder) else None
-        context = ResearchContext(
-            question=request.task,
-            session_id=request.session_id,
-            run_id=frame.run_id,
-            project=frame.project_text,
-            provider_id=frame.provider_id,
+        context = self._build_research_context(
+            frame,
+            request,
             proof_question=proof_question,
-            permission_profile="research",
             max_turns=max_turns,
-            chat_handoff=frame.research_handoff,
-            should_stop=self.state.stop_flag.is_set,
-            trace=RunTraceResearchSink(frame.trace),
         )
         pipeline = ResearchPipeline(
             context=context,

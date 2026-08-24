@@ -870,6 +870,53 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn("ab_journal", imports)
                 self.assertNotIn("tests.manual.ab_journal", imports)
 
+    def test_research_topic_continuity_is_pure_projection_leaf(self) -> None:
+        # Topic continuity (0.4.12) is a read model over bounded local facts.
+        # It must stay a stdlib-only leaf: no Ghost runtime import, no
+        # providers, no I/O, no networking, and no evidence vocabulary of
+        # its own (GhostHint != Evidence).
+        path = ROOT / "codey" / "research" / "topic_continuity.py"
+        imports = imported_modules(path)
+        source = path.read_text(encoding="utf-8")
+
+        self.assertEqual(
+            sorted(name for name in imports if name == "codey" or name.startswith("codey.")),
+            [],
+        )
+        forbidden_imports = {
+            "subprocess",
+            "urllib",
+            "requests",
+            "socket",
+            "importlib",
+            "pkgutil",
+        }
+        self.assertTrue(forbidden_imports.isdisjoint(imports), sorted(imports))
+        for token in (
+            "write_text(",
+            "write_json",
+            "open(",
+            "eval(",
+            "exec(",
+            "evidence_refs",
+            "web_search",
+            "provider.send",
+        ):
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
+    def test_research_stack_never_imports_ghost_runtime(self) -> None:
+        # The Research pipeline consumes only the bounded continuity
+        # projection handed to it; it must never reach into Ghost stores.
+        for name in ("context.py", "pipeline.py", "runner.py", "topic_continuity.py"):
+            imports = imported_modules(ROOT / "codey" / "research" / name)
+            with self.subTest(module=name):
+                ghost_imports = [
+                    item for item in imports
+                    if item == "codey.ghost" or item.startswith("codey.ghost.")
+                ]
+                self.assertEqual(sorted(ghost_imports), [])
+
     def test_stamped_capability_ids_are_registered_boundaries(self) -> None:
         # Every capability_id literal stamped onto a prompt section or context
         # source in production code must name a registered capability.

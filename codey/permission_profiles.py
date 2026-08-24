@@ -16,6 +16,7 @@ KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
     "project_instructions",
     "verified_facts",
     "research_brief",
+    "research_topic_continuity",
     "project_map",
     "project_config_warnings",
     "work_checkpoint",
@@ -87,6 +88,9 @@ PERMISSION_PROFILES = {
             "source_search",
             "done",
         ),
+        # Research admits only the bounded, research-specific topic
+        # continuity source -- never the raw chat-side ghost sources.
+        context_sources=("research_topic_continuity",),
         project_read=False,
         project_write=False,
     ),

@@ -43,6 +43,9 @@ class ResearchTraceSink(Protocol):
     def record_research_brief_projection(self, projection: Mapping[str, object] | None) -> None:
         ...
 
+    def record_topic_continuity(self, projection: Mapping[str, object] | object | None) -> None:
+        ...
+
 
 class NullResearchTraceSink:
     def record_result(self, result: object) -> None:
@@ -70,6 +73,9 @@ class NullResearchTraceSink:
         del projections
 
     def record_research_brief_projection(self, projection: Mapping[str, object] | None) -> None:
+        del projection
+
+    def record_topic_continuity(self, projection: Mapping[str, object] | object | None) -> None:
         del projection
 
 
@@ -162,6 +168,16 @@ class RunTraceResearchSink:
         self._sink.call("record_research_brief_projection", payload)
         self._sink.call("flush")
 
+    def record_topic_continuity(self, projection: Mapping[str, object] | object | None) -> None:
+        to_payload = getattr(projection, "to_payload", None)
+        payload = to_payload() if callable(to_payload) else projection
+        if not isinstance(payload, Mapping):
+            return
+        if not payload.get("admitted"):
+            return
+        self._sink.call("record_research_topic_continuity", payload)
+        self._sink.call("flush")
+
 
 @dataclass(frozen=True)
 class ResearchPipelineConfig:
@@ -185,6 +201,8 @@ class ResearchContext:
     permission_profile: str = "research"
     max_turns: int = 14
     chat_handoff: str = ""
+    topic_continuity_context: str = ""
+    topic_continuity_payload: Mapping[str, object] | None = None
     should_stop: Callable[[], bool] = lambda: False
     trace: ResearchTraceSink = field(default_factory=NullResearchTraceSink)
 

@@ -4,6 +4,42 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.12 - Ghost Research Continuity + Topic Planner v1
+
+- 新增 `codey/research/topic_continuity.py`：stdlib-only 的纯 read model，
+  把有界的本地事实（结构化 research-interest hints、Ghost continuity 选中
+  items、evidence ledger 的旧 claim refs）投影成一小段模型可见提示文本 +
+  一份 digest-only payload。continuity 可以重新定位旧 refs、提示需要复查
+  什么，但不能创造事实：所有输出类型都不携带 evidence 引用字段，且每条
+  prior claim ref 永久 stale（`prior_claim_needs_recheck`）。候选问题是
+  确定性、去重、受预算约束的 leads——不是答案，更不会自动执行研究。
+- Research 通过一个新的 context source key `research_topic_continuity`
+  接收 continuity，仅由 research profile 放行（chat 侧的 `ghost_directive`
+  / `ghost_continuity` source 仍然被排除）。prompt 使用独立的
+  `research_topic_continuity` section，文案直说 "not evidence ... re-check
+  ... do not cite"，且不出现 Ghost / Work Queue / Concept Graph 内部词；
+  follow-up 材料继续走独立的 `research_iteration_context`。空投影不渲染，
+  关闭 continuity 时 baseline intro 逐字节不变。
+- TaskRunner 是减负而不是增重：`_run_research_pipeline` 拆出两个 helper——
+  `_build_research_topic_continuity`（profile 门禁 -> 经 knowledge 层新增的
+  `candidate_to_topic_hint` 取 interest hints -> bounded Ghost items ->
+  ledger claim refs -> projection；任何异常 fail-open 回空 baseline）和
+  `_build_research_context`（组装 `ResearchContext`）。没有新增 TopicManager
+  / TopicStore / continuity runtime，research 模块也不 import Ghost 运行时。
+- Trace 只记 digest：`record_research_topic_continuity` 存 refs、counts、
+  reason codes、warnings 和一个内容 digest——不含原始提示文本，prompt-lab
+  材料无法泄入 RunTrace 或 EvidenceLedger。
+- 新增 manual harness `tests/manual/ghost_research_continuity_ab.py`：两臂
+  使用完全相同的种子状态，只切换 admission 门禁。live smoke 行按
+  `provider_send_error`、`native_search_stall_suspected`（send 超时或有 send
+  无 reply——属于 provider/原生网页搜索诊断，不算 planner 质量）、
+  `planner_quality:<stop_reason>` 三类归因。`--transcript-mode
+  digest-only|archive|off` 让完整 transcript 只保留在 manual journal 层。
+- 验证：架构测试把 topic_continuity 锁成无 I/O leaf，并锁死整个 research
+  栈不得 import Ghost；capability registry、permission profiles、runner/
+  pipeline 转发、TaskRunner admission 均有 deterministic 测试，外加 harness
+  的 pytest 包装测试。
+
 ## 0.4.11 - 评测脊柱：回归门 + 纵向研究 harness + comparison benchmark
 
 - 新增 `codey/research/regression_gate.py`：把 Evidence Runtime snapshot、

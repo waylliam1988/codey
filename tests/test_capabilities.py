@@ -42,6 +42,7 @@ EXPECTED_BUILTIN_IDS = (
     "research_runner",
     "research_source_connectors",
     "research_source_trust",
+    "research_topic_continuity",
     "review_runner",
     "run_details",
     "run_ledger",
@@ -49,7 +50,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "72957a3c0a0dceb668b7cbd4954978c6b63482c593c406fb4459e1e7ee8cf35e"
+    "e61a4684bceabaa361a429c1f65053d6e41297b82ff4af4d95b6e97f83590553"
 )
 
 
@@ -431,6 +432,27 @@ class CapabilityRegistryTests(unittest.TestCase):
         spec = registry.get("local_context")
 
         self.assertEqual(spec.context_sources, ("ghost_directive", "ghost_continuity"))
+
+    def test_research_topic_continuity_is_model_visible_bounded_projection(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("research_topic_continuity")
+
+        self.assertEqual(
+            spec.provides,
+            ("research_topic_continuity_projection", "topic_candidate_projection"),
+        )
+        self.assertEqual(
+            spec.context_sources,
+            ("research_topic_continuity",),
+        )
+        self.assertNotIn("ghost_continuity", spec.context_sources)
+        self.assertEqual(spec.owner_module, "codey.research.topic_continuity")
+        self.assertTrue(spec.model_visible)
+        self.assertEqual(spec.release_gate, "live_smoke")
+        self.assertEqual(spec.fail_mode, "fail_open")
+        self.assertEqual(spec.durable_state, ("run_trace",))
+        self.assertFalse(spec.evidence_producer)
 
     def test_agent_runner_owns_coding_context_sources(self) -> None:
         registry = builtin_capability_registry()

@@ -72,11 +72,21 @@ class PermissionProfileTests(unittest.TestCase):
         self.assertEqual(allowed_coding_tool_names(reviewer), ())
         self.assertFalse(allows_context_source(reviewer, "ghost_directive"))
         self.assertFalse(allows_context_source(reviewer, "ghost_continuity"))
+        self.assertFalse(allows_context_source(reviewer, "research_topic_continuity"))
         self.assertFalse(research.project_write)
         self.assertEqual(allowed_coding_tool_names(research), ())
         self.assertEqual(set(research.research_tools), set(RESEARCH_TOOL_CONTRACTS))
         self.assertFalse(allows_context_source(research, "ghost_directive"))
         self.assertFalse(allows_context_source(research, "ghost_continuity"))
+        # Research admits only its own bounded topic-continuity source.
+        self.assertTrue(allows_context_source(research, "research_topic_continuity"))
+
+    def test_research_topic_continuity_stays_out_of_chat_and_writer_profiles(self) -> None:
+        for name in ("chat", "coding_writer", "planning_readonly", "reviewer"):
+            with self.subTest(profile=name):
+                self.assertFalse(
+                    allows_context_source(name, "research_topic_continuity")
+                )
 
     def test_profile_context_keys_are_known(self) -> None:
         for profile in PERMISSION_PROFILES.values():

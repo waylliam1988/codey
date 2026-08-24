@@ -37,6 +37,7 @@ class ResearchIterationRunner(Protocol):
         search: object,
         tools: ResearchTools | None = None,
         iteration_context: str = "",
+        topic_continuity_context: str = "",
     ) -> ResearchIterationRun:
         ...
 
@@ -109,11 +110,20 @@ class ResearchPipeline:
     def run(self) -> ResearchPipelineResult:
         search = self.search_factory()
         try:
+            # Topic continuity is admitted once, at the initial iteration
+            # boundary: the digest-only payload becomes an audit row and the
+            # bounded hint text rides in its own prompt section. Follow-up
+            # evidence material keeps using iteration_context instead.
+            if self.context.topic_continuity_payload:
+                self.context.trace.record_topic_continuity(
+                    self.context.topic_continuity_payload
+                )
             initial_run = self.run_iteration(
                 task=self.context.question,
                 max_turns=self.context.max_turns,
                 chat_handoff=self.context.chat_handoff,
                 search=search,
+                topic_continuity_context=self.context.topic_continuity_context,
             )
             initial = initial_run.result
             best = initial

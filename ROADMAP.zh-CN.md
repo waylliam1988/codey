@@ -2415,9 +2415,36 @@ OpenScience 时，才需要正式 comparison / head-to-head。
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 
-状态：规划。目标是让 Codey 可以连续追踪长期研究主题，并把开放问题转成
-topic-level plan，但不让记忆污染事实。这个版本必须晚于 Safe Context Epoch、
-Research Contract Lite 和 `GhostHint != Evidence` 架构测试。
+状态：已完成（代码落地，deterministic 测试 + narrow offline A/B 通过；live
+provider smoke 待实机执行）。目标是让 Codey 可以连续追踪长期研究主题，并把
+开放问题转成 topic-level plan，但不让记忆污染事实。
+
+落地形态比原规划更薄：
+
+```text
+codey/research/topic_continuity.py   纯 read-model projection（stdlib-only leaf）
+  interest_hints + bounded Ghost continuity items + prior claim refs
+    -> TopicContinuityItem / TopicPlannerCandidate / TopicContinuityProjection
+    -> bounded prompt_text + digest-only payload
+
+TaskRunner._build_research_topic_continuity()
+  permission gate（research profile 只放行 research_topic_continuity）
+  -> candidate_to_topic_hint()（knowledge 层自有的中立投影）
+  -> build_ghost_continuity().selected_items（bounded items，不读 raw store）
+  -> evidence ledger claim_refs（只取 refs，全部永久 stale）
+
+TaskRunner._build_research_context()
+  ResearchContext.topic_continuity_context / topic_continuity_payload
+
+ResearchPipeline 初始 iteration 只转发 bounded text；
+trace sink 记录 digest-only admission row（record_research_topic_continuity）。
+```
+
+没有新增 TopicManager / TopicStore / ResearchContinuityRuntime；`research/`
+四个核心模块（context/pipeline/runner/topic_continuity）不 import Ghost。
+prompt 使用独立 `research_topic_continuity` section，不复用 follow-up 的
+`research_iteration_context`；文案直说 not evidence / re-check / do not cite，
+且不出现 Ghost、Work Queue、Concept Graph 内部词。
 
 ### 做什么
 

@@ -64,6 +64,26 @@ def build_research_interest_candidates(
     return _dedupe_candidates(rows, limit=limit)
 
 
+def candidate_to_topic_hint(candidate: ResearchInterestCandidate) -> dict[str, object]:
+    """Neutral bounded hint dict for downstream topic-continuity projections.
+
+    Keeps the knowledge layer as the single owner of its own object shape:
+    consumers (e.g. research topic continuity) never import this module's
+    dataclass, they consume the neutral mapping produced here.
+    """
+    return {
+        "ref": f"research_interest:{candidate.id}",
+        "question": candidate.question,
+        "why_now": candidate.why_now,
+        "related_concepts": list(candidate.related_concepts[:4]),
+        "priority": float(candidate.priority),
+        "confidence": float(candidate.confidence),
+        "strong_support": bool(candidate.strong_support),
+        "source": candidate.source,
+        "source_ref": candidate.source_ref,
+    }
+
+
 def apply_research_affinity_hints(
     candidates: Iterable[ResearchInterestCandidate],
     hints: Iterable[Any],
@@ -396,4 +416,5 @@ __all__ = [
     "ResearchInterestCandidate",
     "apply_research_affinity_hints",
     "build_research_interest_candidates",
+    "candidate_to_topic_hint",
 ]

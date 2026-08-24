@@ -139,6 +139,7 @@ class ResearchRunner:
         run_id: str = "",
         tools: ResearchTools | None = None,
         iteration_context: str = "",
+        topic_continuity_context: str = "",
     ) -> None:
         self.provider = provider
         self.search = search
@@ -155,6 +156,7 @@ class ResearchRunner:
         self.prompt_trace = FailOpenPromptTrace(trace_recorder)
         self.chat_handoff = (chat_handoff or "").strip()
         self.iteration_context = (iteration_context or "").strip()
+        self.topic_continuity_context = (topic_continuity_context or "").strip()
         self.review_advisors = review_advisors
         self.controller_enabled = bool(controller_enabled)
         self.controller = (
@@ -589,6 +591,16 @@ class ResearchRunner:
                 purpose="bounded chat handoff for research",
                 freshness="run_start",
                 source_refs=("conversation:research_handoff",),
+            ),
+            PromptEnvelopeSection(
+                name="research_topic_continuity",
+                # Fully self-describing bounded text produced by
+                # codey.research.topic_continuity; render() skips empty
+                # sections so disabled continuity leaves the baseline intact.
+                text=self.topic_continuity_context,
+                purpose="bounded local topic continuity, not evidence",
+                freshness="run_start",
+                source_refs=("local_context:research_topic_continuity",),
             ),
             PromptEnvelopeSection(
                 name="research_iteration_context",

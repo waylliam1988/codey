@@ -1386,7 +1386,7 @@ def test_pipeline_tracks_attempted_metrics_when_candidate_rejected() -> None:
             quality_warnings=("low_confidence",),
         )
 
-        def runner(*, task, max_turns, chat_handoff, search, tools=None, iteration_context=""):
+        def runner(*, task, max_turns, chat_handoff, search, tools=None, iteration_context="", topic_continuity_context=""):
             return ResearchIterationRun(result=initial_result, tools=tools)
 
         def evidence_runner(*, tools, plan, material, question, initial_summary="", max_context_chars=8000, should_stop=None):
