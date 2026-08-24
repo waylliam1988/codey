@@ -66,6 +66,15 @@
     改为反映 verdict——gate 未过的 summary 不再说 "passed"。所有文本字段
     长度上限与 task_inputs 数量/长度上限进入校验本体，不再只在输出截断；
     目录等不可读路径返回 `artifact_unreadable_file` 而不是抛异常。
+  - schema validator 边角卫生（第三轮审阅）：`winner` 先做类型检查再做
+    集合 membership，数组/对象等 unhashable JSON 值返回
+    `artifact_bad:winner` 而不是 TypeError 崩溃；错误列表真正 bounded——
+    达到上限后只追加一次 `artifact_errors_truncated` 并停止记录；invalid
+    artifact 的 summary errors 改为与 validity 同源（从 payload 重新推导，
+    手拼包装不再出现 `errors: []` 却提示 "see errors"，无 payload 时才用
+    loader 记录的 unreadable 原因，两者皆缺则 `artifact_unverified`）；
+    summary 新增 `codey_commit_alignment`（artifact commit vs 当前 HEAD 的
+    展示性对齐信息，不匹配不使既有记录失效，只如实显示）。
   - `regression_gate` 的 record anchor 改为经
     `normalize_runtime_ref(kind="research_record")` 校验：恶意或错误的
     mapping 无法把长文本塞进 refs-only payload；snapshot 锚点非法时回退到

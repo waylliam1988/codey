@@ -79,6 +79,17 @@ This file records Codey's release history. The newest release appears first.
     plus task-input count/length caps moved into validation itself (no
     longer output-clipping only), and unreadable paths such as directories
     return `artifact_unreadable_file` instead of raising.
+  - Schema validator hygiene (third review pass): `winner` is type-checked
+    before set membership so unhashable JSON values (arrays/objects) yield
+    `artifact_bad:winner` instead of a TypeError crash; the error list is
+    truly bounded — one trailing `artifact_errors_truncated` marker, then
+    recording stops; summary errors for invalid artifacts derive from the
+    payload exactly like validity does (hand-assembled wrappers can no
+    longer show empty errors next to "see errors"; stored loader reasons are
+    used only when no payload exists, with `artifact_unverified` as last
+    resort); and summaries add `codey_commit_alignment` — informational
+    artifact-vs-current-HEAD display that never invalidates recorded
+    results.
   - The regression gate's record anchor is now validated through
     `normalize_runtime_ref(kind="research_record")`: hostile or wrong
     mappings cannot smuggle text into the refs-only payload; an invalid

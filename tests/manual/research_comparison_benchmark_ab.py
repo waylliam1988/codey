@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -180,7 +181,9 @@ def head_to_head_artifact_errors(payload: Mapping[str, Any]) -> tuple[str, ...]:
 
     def add(error: str) -> bool:
         if len(errors) >= MAX_ARTIFACT_ERRORS:
-            errors.append("artifact_errors_truncated")
+            # One trailing marker, once; further findings are not recorded.
+            if errors[-1] != "artifact_errors_truncated":
+                errors.append("artifact_errors_truncated")
             return False
         errors.append(error)
         return True
@@ -205,6 +208,10 @@ def head_to_head_artifact_errors(payload: Mapping[str, Any]) -> tuple[str, ...]:
     winner = payload.get("winner")
     if winner is None:
         add("artifact_missing:winner")
+    elif not isinstance(winner, str):
+        # Membership on a frozenset would raise on unhashable JSON values
+        # (lists/objects); type-check first so every input fails closed.
+        add("artifact_bad:winner")
     elif winner not in WINNER_VALUES:
         add("artifact_bad:winner")
 
@@ -243,6 +250,26 @@ def load_head_to_head_artifact(path: Path) -> HeadToHeadArtifact:
         payload=payload,
         errors=head_to_head_artifact_errors(payload),
     )
+
+
+def current_codey_commit() -> str:
+    """Short HEAD commit for provenance display; empty when unavailable.
+
+    Informational only: a real head-to-head stays valid evidence even after
+    Codey moves on, so mismatches are surfaced in summaries instead of
+    invalidating recorded results.
+    """
+
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return completed.stdout.strip() if completed.returncode == 0 else ""
 
 
 @dataclass(frozen=True)
@@ -463,6 +490,23 @@ def compare_verdict(
     }
 
 
+def _reported_artifact_errors(artifact: HeadToHeadArtifact) -> list[str]:
+    """Errors shown for an invalid artifact, derived like validity is.
+
+    When a payload exists, the summary reports exactly why it fails schema
+    validation -- even for hand-assembled wrappers whose stored ``errors``
+    were never populated. Stored errors are only used when there is no
+    payload to derive from (unreadable file / JSON).
+    """
+
+    if artifact.valid:
+        return []
+    if not artifact.payload:
+        return list(artifact.errors) or ["artifact_unverified"]
+    derived = list(head_to_head_artifact_errors(artifact.payload))
+    return derived or list(artifact.errors) or ["artifact_unverified"]
+
+
 def build_summary(
     *,
     results: Sequence[ArmResult],
@@ -478,6 +522,17 @@ def build_summary(
     configured = head_to_head is not None and bool(head_to_head.digest)
     valid = head_to_head is not None and head_to_head.valid
     supporting = head_to_head is not None and head_to_head.supports_superiority()
+    metadata = head_to_head.metadata() if (head_to_head is not None and valid) else {}
+    current_commit = current_codey_commit()
+    alignment: dict[str, Any] = {
+        "artifact": str(metadata.get("codey", {}).get("commit", "")) if isinstance(
+            metadata.get("codey"), Mapping
+        ) else "",
+        "current": current_commit,
+        "matches": None,
+    }
+    if current_commit and alignment["artifact"]:
+        alignment["matches"] = alignment["artifact"] == current_commit
     summary: dict[str, Any] = {
         "probe": PROBE,
         "mode": "deterministic",
@@ -490,8 +545,9 @@ def build_summary(
             "artifact_valid": valid,
             "supports_superiority": supporting,
             "artifact_digest": "" if head_to_head is None else head_to_head.digest,
-            "metadata": head_to_head.metadata() if valid else {},
-            "errors": [] if valid else (list(head_to_head.errors) if head_to_head else []),
+            "metadata": metadata,
+            "errors": [] if valid else (_reported_artifact_errors(head_to_head) if head_to_head else []),
+            "codey_commit_alignment": alignment,
             "skipped_reason": (
                 ""
                 if valid
@@ -563,6 +619,10 @@ def _self_test() -> None:
         assert metadata["codey"]["commit"] == "b046b99"
         assert metadata["winner"] == "codey"
         assert backed["real_openscience"]["supports_superiority"] is True
+        alignment = backed["real_openscience"]["codey_commit_alignment"]
+        assert set(alignment) == {"artifact", "current", "matches"}
+        assert alignment["artifact"] == "b046b99"
+        assert alignment["matches"] in (True, False, None)
 
         # A metadata-valid artifact whose own result does NOT back the claim
         # (OpenScience won, too few strictly-better metrics, or gates failed)
@@ -597,6 +657,8 @@ def _self_test() -> None:
         assert locked["verdict"]["ok"] is False
         assert SUPERIORITY_PHRASE not in json.dumps(locked)
         assert locked["openscience_claim"] == ""
+        # Audit consistency: an invalid artifact always reports why.
+        assert locked["real_openscience"]["errors"], digest_only
 
         broken_payload = _sample_head_to_head_payload()
         del broken_payload["run_date"]

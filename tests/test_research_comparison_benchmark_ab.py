@@ -235,6 +235,93 @@ def test_unreadable_or_non_object_artifacts_fail_closed(tmp_path: Path) -> None:
     assert directory.digest == ""
 
 
+def test_winner_type_mismatch_fails_closed_instead_of_raising() -> None:
+    for bad in ([], {}, 123, True, ["codey"]):
+        payload = json.loads(json.dumps(benchmark._sample_head_to_head_payload()))
+        payload["winner"] = bad
+        errors = benchmark.head_to_head_artifact_errors(payload)
+        assert "artifact_bad:winner" in errors, bad
+        artifact = benchmark.HeadToHeadArtifact(
+            digest="sha256:" + "ab" * 32, payload=payload, errors=errors
+        )
+        assert not artifact.valid
+        assert not artifact.supports_superiority()
+
+
+def test_error_list_is_bounded_with_a_single_truncation_marker() -> None:
+    errors = list(benchmark.head_to_head_artifact_errors({}))
+
+    assert errors, "an empty payload must report missing fields"
+    assert len(errors) <= benchmark.MAX_ARTIFACT_ERRORS + 1
+    markers = [item for item in errors if item == "artifact_errors_truncated"]
+    assert len(markers) <= 1
+    if markers:
+        assert errors[-1] == "artifact_errors_truncated"
+
+
+def test_invalid_artifact_summaries_always_explain_why() -> None:
+    results = benchmark.run_deterministic_arms()
+
+    # Hand-assembled wrapper with empty stored errors still reports reasons.
+    digest_only = benchmark.HeadToHeadArtifact(
+        digest="sha256:" + "cd" * 32, payload={}, errors=()
+    )
+    locked = benchmark.build_summary(
+        results=results,
+        head_to_head=digest_only,
+        superiority_claimed=True,
+    )
+    real = locked["real_openscience"]
+    assert real["artifact_valid"] is False
+    assert real["skipped_reason"]
+    assert real["errors"], "invalid artifacts must never summarize with empty errors"
+    assert "artifact_unverified" in real["errors"]
+
+    # A payload-carrying invalid wrapper reports the derived schema errors.
+    broken_payload = {"provider": "deepseek"}
+    broken = benchmark.HeadToHeadArtifact(
+        digest="sha256:" + "ef" * 32, payload=broken_payload, errors=()
+    )
+    explained = benchmark.build_summary(results=results, head_to_head=broken)
+    derived = explained["real_openscience"]["errors"]
+    assert "artifact_missing:rubric" in derived
+
+
+def test_commit_alignment_is_reported_not_assumed(monkeypatch) -> None:
+    results = benchmark.run_deterministic_arms()
+    valid_payload = benchmark._sample_head_to_head_payload()
+
+    def _artifact_with(commit: str) -> benchmark.HeadToHeadArtifact:
+        payload = json.loads(json.dumps(valid_payload))
+        payload["codey"]["commit"] = commit
+        return benchmark.HeadToHeadArtifact(
+            digest="sha256:" + "ab" * 32, payload=payload, errors=()
+        )
+
+    monkeypatch.setattr(benchmark, "current_codey_commit", lambda: "b046b99")
+    matching = benchmark.build_summary(
+        results=results, head_to_head=_artifact_with("b046b99"), superiority_claimed=True
+    )
+    alignment = matching["real_openscience"]["codey_commit_alignment"]
+    assert alignment == {
+        "artifact": "b046b99",
+        "current": "b046b99",
+        "matches": True,
+    }
+
+    moved_on = benchmark.build_summary(
+        results=results, head_to_head=_artifact_with("abc1234"), superiority_claimed=True
+    )
+    alignment = moved_on["real_openscience"]["codey_commit_alignment"]
+    assert alignment["matches"] is False
+
+    monkeypatch.setattr(benchmark, "current_codey_commit", lambda: "")
+    unavailable = benchmark.build_summary(
+        results=results, head_to_head=_artifact_with("b046b99"), superiority_claimed=True
+    )
+    assert unavailable["real_openscience"]["codey_commit_alignment"]["matches"] is None
+
+
 def test_summary_carries_only_bounded_projection_material() -> None:
     summary = benchmark.build_summary(results=benchmark.run_deterministic_arms())
     serialized = json.dumps(summary).lower()

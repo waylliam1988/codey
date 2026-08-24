@@ -51,9 +51,12 @@ result must back the wording: `winner: "codey"`,
 `strictly_better_metric_count >= 4`, and `regression_gates_passed: true`.
 `--openscience-artifact <file>` together with `--claim-superiority` is the
 only way the summary may contain "surpassed OpenScience"; the digest and the
-validated result fields are recorded alongside the claim, and incomplete,
+validated result fields are recorded alongside the claim, incomplete,
 oversized, or opposing-result artifacts fail closed with a non-zero exit
-instead of unlocking anything.
+instead of unlocking anything, and each summary shows
+`codey_commit_alignment` — whether the artifact's recorded Codey commit is
+the current HEAD (informational; recorded runs stay valid evidence as code
+moves on).
 
 ```powershell
 python -B tests\manual\research_comparison_benchmark_ab.py --self-test

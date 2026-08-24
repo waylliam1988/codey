@@ -88,7 +88,15 @@ per-field artifact schema errors, digest-only/junk/unreadable artifacts
 staying locked, opposing-result records staying locked, verdict-conditional
 claims, enforced length/count bounds, hostile-anchor fail-closed with
 valid-brief fallback, timeout forwarding matrices, and close-on-non-closable
-providers.
+providers. A third pass closed the validator's remaining edges: unhashable
+`winner` values (arrays/objects) fail closed with `artifact_bad:winner`
+instead of raising TypeError; the error list is truly bounded with a single
+trailing truncation marker; invalid-artifact summaries always explain why —
+errors derive from the payload like validity does, with stored loader reasons
+reserved for unreadable files and `artifact_unverified` as the last resort;
+and summaries display `codey_commit_alignment` (artifact commit vs current
+HEAD, informational only — recorded head-to-heads remain valid evidence as
+Codey moves on).
 
 Production-facing behavior changes: none. No prompt, tool result, router,
 fallback, permission, UI/SSE, Research default path, or done-enforcement
