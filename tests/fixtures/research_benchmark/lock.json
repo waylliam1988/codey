@@ -1,0 +1,17 @@
+{
+  "lock_version": 1,
+  "algorithm": "sha256",
+  "entries": {
+    "cases/conflicting_evidence_gap.json": "sha256:4992c60e671b5f83dfd0cf38f279e4e4be504744a95da9da08034958fef92963",
+    "cases/local_csv_pdf_analysis.json": "sha256:91386b1df5748003d52775cd61d3f1f71e896dd9a36b27c634c047a269951617",
+    "cases/oss_ecosystem_change.json": "sha256:ca597d1c8d7e95e442dac3ea5089c55374559dc16ad9d13299bd6c8f1988216e",
+    "cases/paper_progress_update.json": "sha256:24a14f9481bb05fa6b13b17043e4763ae535f0b0fe2582056ba17ce7b54df7b4",
+    "cases/stale_claim_refresh.json": "sha256:9bb555829a7083679637bde4334036ec2f97ecb22ede8d11e56dcdb025e20ad4",
+    "cases/unsupported_claim_injection.json": "sha256:f60bcf01bfb8981061bdb3ffe882f26ab444d94aeac097eaaaae95ebf4aa3e4e",
+    "files/local_note.md": "sha256:8dcbea729af781be7fc4219daf3b8bfe9449305dbeecf3e213dce27ff5f87520",
+    "files/local_report.pdf": "sha256:4277d21dc9c59835af8ad4a38042a338c9dca89cc579526a2a4eab13cf2e2aa6",
+    "files/local_table.csv": "sha256:f900c54ef590345942e5f295ffe4221cd241ae0353f349bc61537346edb19527",
+    "rubric.json": "sha256:e83f95eb8bb4033c3b81fe46fe3d5389daa1b02282c975c2b73139231011d8b5",
+    "suite.json": "sha256:b079c43191e53c0291fa69e974db27cc30e3db09a6584f56fbee077ac4b9e27d"
+  }
+}

@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.10-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.11-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.10`
+Version: `0.4.11`
 
 [Version history](CHANGELOG.md)
 
@@ -84,6 +84,12 @@ Version: `0.4.10`
   the model which files were read, which files changed, and which verification
   command best matches the current edits.
 - **Carry research into projects**: after research, choose a folder and Codey injects a bounded Research Brief with citations and limitations instead of the whole vault.
+- **Measure its own evidence loop**: a frozen longitudinal benchmark suite and a
+  pure regression-gate read model score multi-round research against expected
+  observables (stale handling, unsupported-claim exclusion, reproducible
+  analysis) and compare deterministic arms under a frozen rubric — with
+  wording guards so "surpassed OpenScience" requires a recorded real
+  head-to-head artifact.
 - **Controlled tool loop**: read, edit, test, diff, review, and restore.
 - **Optional local model**: `Local` connects to an OpenAI-compatible endpoint with optional API key support.
 - **Review after edits**: one model can write while another reviews the final

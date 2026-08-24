@@ -41,11 +41,17 @@ from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.text_budget import clip_middle
+from tests.manual import ab_harness_common as common
 from tests.manual.ab_journal import (
     ABJournalWriter,
     TranscriptReplayCache,
     TRANSCRIPT_MODE_ARCHIVE,
 )
+
+
+# Shared manual-layer plumbing (journaling provider, schedules, atomic JSON);
+# the alias keeps the historical name for existing tests and callers.
+TracingProvider = common.TracingProvider
 
 
 ARMS = ("baseline", "projection")
@@ -319,72 +325,6 @@ def _protocol_errors(events: list[RunEvent]) -> int:
     )
 
 
-class TracingProvider:
-    """Provider wrapper that counts traffic and journals every exchange.
-
-    With a journal, each send is fsync-recorded before the request and the
-    full prompt/reply pair is archived immediately after the reply (manual
-    layer only: transcripts never flow into RunTrace/EvidenceLedger). With
-    ``journal=None`` it degrades to a plain counting provider, which is what
-    the scripted self-test uses.
-    """
-
-    def __init__(
-        self,
-        provider,
-        *,
-        timeout: float,
-        new_chat_timeout: float,
-        journal: ABJournalWriter | None = None,
-        case: str = "",
-        arm: str = "",
-    ) -> None:
-        self.provider = provider
-        self.timeout = max(1.0, float(timeout))
-        self.new_chat_timeout = max(1.0, float(new_chat_timeout))
-        self.journal = journal
-        self.case = case
-        self.arm = arm
-        self.send_index = 0
-        self.prompts: list[str] = []
-        self.replies: list[str] = []
-        self.name = getattr(provider, "name", "provider")
-        self.id = getattr(provider, "id", "")
-
-    def new_chat(self, timeout: float | None = None) -> object:
-        return self.provider.new_chat(timeout=timeout or self.new_chat_timeout)
-
-    def send(self, text: str, timeout: float | None = None) -> str:
-        prompt = str(text or "")
-        self.send_index += 1
-        turn = self.send_index
-        if self.journal is not None:
-            self.journal.record_send_start(
-                case=self.case, arm=self.arm, turn=turn, prompt=prompt
-            )
-        try:
-            reply = str(self.provider.send(prompt, timeout=timeout or self.timeout))
-        except Exception as exc:
-            if self.journal is not None:
-                self.journal.record_send_error(
-                    case=self.case,
-                    arm=self.arm,
-                    turn=turn,
-                    error=f"{type(exc).__name__}: {exc}",
-                )
-            raise
-        self.prompts.append(prompt)
-        self.replies.append(reply)
-        if self.journal is not None:
-            self.journal.record_reply(
-                case=self.case, arm=self.arm, turn=turn, prompt=prompt, reply=reply
-            )
-        return reply
-
-    def close(self) -> None:
-        self.provider.close()
-
-
 class _ScriptedProvider:
     id = "self-test"
     name = "Self Test"
@@ -520,13 +460,7 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _arm_schedule(repeats: int) -> list[tuple[str, int]]:
-    """Interleave arm order per repeat to cancel warm-session/order bias."""
-
-    out: list[tuple[str, int]] = []
-    for repeat_index in range(max(1, int(repeats))):
-        order = ARMS if repeat_index % 2 == 0 else tuple(reversed(ARMS))
-        out.extend((arm, repeat_index + 1) for arm in order)
-    return out
+    return common.interleaved_arm_schedule(ARMS, repeats)
 
 
 def _gate_verdict(
@@ -541,11 +475,6 @@ def _gate_verdict(
     nothing errored.
     """
 
-    repeat_count = max(1, int(repeats))
-    expected_keys = {
-        (case, index + 1) for case in cases for index in range(repeat_count)
-    }
-    expected_per_arm = len(expected_keys)
     base_rows = [
         row for row in rows if row.get("arm") == "baseline" and "error" not in row
     ]
@@ -554,26 +483,14 @@ def _gate_verdict(
     ]
     error_rows = [row for row in rows if "error" in row]
 
-    def pair_counts(arm_rows: list[dict[str, Any]]) -> dict[tuple[str, int], int]:
-        counts: dict[tuple[str, int], int] = {}
-        for row in arm_rows:
-            key = (str(row.get("case") or ""), int(row.get("repeat") or 0))
-            counts[key] = counts.get(key, 0) + 1
-        return counts
-
-    base_pairs = pair_counts(base_rows)
-    proj_pairs = pair_counts(proj_rows)
-
     def total(rs: list[dict[str, Any]], key: str) -> int:
         return sum(1 for row in rs if row.get(key))
 
     criteria = {
         "arms_populated": bool(base_rows) and bool(proj_rows),
         "no_error_rows": not error_rows,
-        "matrix_complete": (
-            len(rows) == expected_per_arm * len(ARMS)
-            and all(base_pairs.get(key, 0) == 1 for key in expected_keys)
-            and all(proj_pairs.get(key, 0) == 1 for key in expected_keys)
+        "matrix_complete": common.matrix_complete(
+            rows, arms=ARMS, cases=cases, repeats=repeats
         ),
         "success_not_worse": (
             total(proj_rows, "success") >= total(base_rows, "success")
@@ -597,10 +514,7 @@ def _gate_verdict(
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    common.write_json_atomic(path, payload)
 
 
 def _default_output(provider_id: str) -> Path:

@@ -627,6 +627,81 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 for token in forbidden_source:
                     self.assertNotIn(token, source)
 
+    def test_regression_gate_is_projection_only(self) -> None:
+        # The 0.4.11 regression gate is the evaluation spine's pure core: it
+        # consumes existing projection payloads and emits bounded metrics,
+        # observables, and verdicts. It must never reach execution layers,
+        # providers, the A/B journal, or perform any I/O of its own.
+        path = ROOT / "codey" / "research" / "regression_gate.py"
+        imports = imported_modules(path)
+        source = path.read_text(encoding="utf-8")
+
+        forbidden_imports = {
+            "codey.browser",
+            "codey.deepseek",
+            "codey.qwen",
+            "codey.stepfun",
+            "codey.glm",
+            "codey.providers",
+            "codey.provider_controls",
+            "codey.tool_runtime",
+            "codey.managed_outputs",
+            "codey.events",
+            "codey.server",
+            "codey.task_runner",
+            "codey.ghost",
+            "codey.review",
+            "codey.knowledge",
+            "codey.run_trace",
+            "codey.run_details",
+            "ab_journal",
+            "tests.manual.ab_journal",
+            "importlib",
+            "pkgutil",
+            "subprocess",
+            "urllib",
+        }
+        forbidden_source = (
+            "eval(",
+            "exec(",
+            "write_text(",
+            "write_json",
+            "open(",
+            "pathlib",
+            "requests.",
+        )
+
+        self.assertTrue(
+            forbidden_imports.isdisjoint(imports),
+            sorted(forbidden_imports & imports),
+        )
+        for token in forbidden_source:
+            self.assertNotIn(token, source)
+
+    def test_regression_gate_is_not_exported_from_research_package_init(self) -> None:
+        # The gate stays a lazy sub-module import so importing the research
+        # package surface does not eagerly load the evaluation spine.
+        source = (ROOT / "codey" / "research" / "__init__.py").read_text(encoding="utf-8")
+        self.assertNotIn("regression_gate", source)
+
+    def test_production_never_imports_the_manual_layer(self) -> None:
+        # Manual harnesses, journals, and benchmark tooling are experiment-
+        # layer only; no production module may import them in either direction.
+        offenders: list[str] = []
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            imports = imported_modules(path)
+            bad = [
+                name
+                for name in imports
+                if name.startswith("tests.")
+                or name == "ab_journal"
+                or name == "ab_harness_common"
+                or name.endswith(".ab_journal")
+            ]
+            if bad:
+                offenders.append(f"{path.relative_to(ROOT).as_posix()}: {sorted(bad)}")
+        self.assertEqual(offenders, [])
+
     def test_domain_profiles_is_a_stdlib_data_leaf(self) -> None:
         # Profiles are data only: no planner, no I/O, no codey imports at all.
         path = ROOT / "codey" / "research" / "domain_profiles.py"

@@ -4,6 +4,59 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.11 - Evaluation spine: regression gate + longitudinal harness + comparison benchmark
+
+- New `codey/research/regression_gate.py` chains the Evidence Runtime
+  snapshot, ResearchProofReview, Research Brief, Impact Contract,
+  ReviewFinding, PlannerGap, Reproducibility Capsule, CompletionProof, and
+  pipeline summaries into one end-to-end regression-tested read model. Output
+  carries only bounded metrics, boolean observables, a gate verdict, reason
+  codes, and bounded refs; raw prompts, replies, transcripts, and webpage
+  bodies cannot enter a report by construction. It measures but never
+  enforces: false completions are only counted (`false_completion_candidate`),
+  blocking `done` stays with 0.4.13. Unknown expectation keys fail closed.
+  Architecture tests lock the module projection-only (no I/O, providers, or
+  journal) and keep it out of the research package's eager export surface.
+- New frozen benchmark corpus `tests/fixtures/research_benchmark/`: six fixed
+  cases (stale injection, conflicting sources, unsupported-claim injection,
+  local CSV/PDF analysis, OSS ecosystem change, paper progress) split into
+  development / held-out, with rubric weights plus hard gates and a
+  `lock.json` recording every file's sha256. The offline validator
+  `tests/manual/research_benchmark_suite.py` checks split integrity, fixture
+  path containment (escapes fail), rubric weights summing to 1, vocabulary
+  alignment with the regression gate, and lock hashes; `--update-lock` is the
+  single explicit channel for intentional fixture changes. Raw-material keys
+  (prompt/transcript/webpage) are banned inside case payloads.
+- New longitudinal research harness
+  `tests/manual/longitudinal_research_harness_ab.py` (deterministic by
+  default, no network): multi-round runs of the same topic through the full
+  production projection stack verify that old claims keep one
+  content-addressed identity across rounds, stale sources are flagged before
+  a revised conclusion counts, fresh evidence revises old conclusions,
+  injected unsupported claims stay visible in the brief but never reach
+  implementation constraints, conflicting evidence creates findings and
+  planner gaps, and failed AnalysisRuns are never reported as reproduced.
+- New comparison benchmark
+  `tests/manual/research_comparison_benchmark_ab.py`: three deterministic
+  arms (unstructured baseline report / OpenScience-style fixture / Codey
+  evidence loop) scored with the frozen rubric. Wording is enforced in code:
+  without a recorded real head-to-head artifact the summary may only say
+  "OpenScience-style regression passed"; `--openscience-artifact` plus
+  `--claim-superiority` is the only way "surpassed OpenScience" may appear,
+  with the artifact digest recorded next to the claim.
+- Extracted the shared manual A/B layer `tests/manual/ab_harness_common.py`:
+  merges the TracingProvider wrappers, interleaved arm schedules,
+  complete-matrix gates, atomic JSON writes, resume payloads with provider
+  identity guards, journal directory derivation, and the fixture search
+  provider that `research_to_code_ab.py` and `bounded_research_planner_ab.py`
+  each maintained separately. Both existing harnesses migrated with unchanged
+  behavior (all prior tests and self-tests pass); production imports of the
+  manual layer are now banned by an architecture test.
+- No production behavior change: no prompt, tool result, router/fallback,
+  permission, UI/SSE, Research default path, or done-enforcement edits. Per
+  the roadmap A/B rule, a projection/harness-only version takes no live
+  provider A/B.
+
 ## 0.4.10 - Security and Integrity Hardening (review hardening)
 
 - Local HTTP API is protected against DNS rebinding and cross-origin misuse:

@@ -21,6 +21,55 @@ python -B tests\manual\research_to_code_ab.py --self-test
 python -B tests\manual\research_to_code_ab.py --provider deepseek --repeats 1
 ```
 
+`longitudinal_research_harness_ab.py` is the 0.4.11 deterministic longitudinal
+benchmark: every development case from the frozen
+`tests/fixtures/research_benchmark/` corpus runs across multiple rounds
+through the production projection stack (proof review, evidence runtime,
+findings, gaps, brief, impact contract, capsule) and is judged by the shared
+regression gate against the suite's expected observables. It verifies that old
+claims stay relocatable, stale sources get flagged before a revised conclusion
+counts, conflicting evidence creates findings and planner gaps, injected
+unsupported claims never reach implementation constraints, and failed analysis
+runs are never reported as reproduced.
+
+```powershell
+python -B tests\manual\longitudinal_research_harness_ab.py --self-test
+python -B tests\manual\longitudinal_research_harness_ab.py
+python -B tests\manual\longitudinal_research_harness_ab.py --case stale_claim_refresh,conflicting_evidence_gap
+```
+
+`research_comparison_benchmark_ab.py` scores three deterministic arms with the
+frozen rubric: an unstructured `baseline_web_report`, an
+`openscience_style_fixture` (verified locators and support relations, no
+counterevidence pass, no reproducible analysis), and the full
+`codey_evidence_loop`. Without a recorded real head-to-head artifact its
+summary may only say "OpenScience-style regression passed"; passing
+`--openscience-artifact <file>` together with `--claim-superiority` is the
+only way the summary may contain "surpassed OpenScience", and the artifact
+digest is recorded alongside the claim.
+
+```powershell
+python -B tests\manual\research_comparison_benchmark_ab.py --self-test
+python -B tests\manual\research_comparison_benchmark_ab.py --output tests\manual\results\research_comparison_benchmark_deterministic.json
+```
+
+The frozen corpus itself is guarded offline by
+`research_benchmark_suite.py`: split integrity (development vs held-out),
+fixture path containment, regression-gate vocabulary alignment, rubric weights,
+and lock hashes. `--update-lock` is the one explicit escape hatch for
+intentional fixture changes.
+
+```powershell
+python -B tests\manual\research_benchmark_suite.py
+python -B tests\manual\research_benchmark_suite.py --update-lock
+```
+
+Shared plumbing for these harnesses (journaling provider wrapper, interleaved
+arm schedules, complete-matrix checks, atomic JSON persistence, resume
+payloads with provider identity guards, and the fixture search provider) lives
+in `ab_harness_common.py`; production code must never import it.
+
+
 `changeset_review_ab.py` compares the old path-only Review prompt with the
 current ChangeSet-summary prompt. It sends fixed review-only diffs to one live
 provider at a time and scores whether the model catches the seeded issue,

@@ -4,6 +4,51 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.11 - 评测脊柱：回归门 + 纵向研究 harness + comparison benchmark
+
+- 新增 `codey/research/regression_gate.py`：把 Evidence Runtime snapshot、
+  ResearchProofReview、Research Brief、Impact Contract、ReviewFinding、
+  PlannerGap、Reproducibility Capsule、CompletionProof 和 pipeline summary
+  串成一个端到端可回归测试的 read model。输出只有有界 metrics、布尔
+  observables、gate verdict、reason codes 和 bounded refs；raw prompt、
+  reply、transcript、网页正文按构造无法进入报告。它只衡量、不拦截：
+  false completion 只计数（`false_completion_candidate`），真正阻止 `done`
+  留给 0.4.13。未知 expectation key 一律 fail closed。架构测试锁死该模块
+  projection-only（无 I/O、无 provider、无 journal），且不进入 research
+  package 的 eager 导出面。
+- 新增冻结基准套件 `tests/fixtures/research_benchmark/`：六个固定 case
+  （stale 注入、冲突来源、unsupported claim 注入、本地 CSV/PDF 分析、OSS
+  生态变化、论文进展）按 development / held-out 拆分，附 rubric 权重和
+  hard gates；`lock.json` 记录全部文件 sha256。配套离线校验器
+  `tests/manual/research_benchmark_suite.py` 校验 split 完整性、fixture 路径
+  containment（逃逸即失败）、rubric 权重求和为 1、observable/criterion 词表
+  对齐 regression gate、lock hash 一致；`--update-lock` 是有意变更 fixture 的
+  唯一显式通道。case payload 里禁止出现 prompt/transcript/webpage 等键。
+- 新增纵向研究 harness `tests/manual/longitudinal_research_harness_ab.py`
+  （默认确定性、无网络）：同一主题多轮研究跑完整生产投影栈，验证旧 claim
+  跨轮内容寻址不变（可重定位）、stale source 在修订结论生效前被标记、新
+  evidence 修正旧结论、注入的 unsupported claim 在 brief 里可见但永远进不了
+  implementation constraints、冲突证据生成 finding 与 planner gap、失败的
+  AnalysisRun 永远不会被报告成已复现（诚实性门：对失败 run 期待
+  reproducible 必须判 FAIL）。
+- 新增 comparison benchmark `tests/manual/research_comparison_benchmark_ab.py`：
+  三臂 deterministic 对照（无结构 baseline 报告 / OpenScience-style fixture /
+  Codey evidence loop），用冻结 rubric 加权打分。措辞由代码强制：没有真实
+  head-to-head artifact 时 summary 只能写 "OpenScience-style regression
+  passed"；`--openscience-artifact` + `--claim-superiority` 同时给出才允许
+  "surpassed OpenScience"，并记录 artifact digest。
+- 抽出 manual A/B 共用层 `tests/manual/ab_harness_common.py`：合并
+  `research_to_code_ab.py` 与 `bounded_research_planner_ab.py` 各自维护的
+  TracingProvider（journal 包装、计数、错误记录）、interleaved arm schedule、
+  complete-matrix gate、原子 JSON 写入、带 provider 身份守卫的断点续跑
+  payload、journal 目录推导、fixture search provider 及其 URL policy 旁路。
+  两个既有 harness 迁移到共用层后行为不变（原测试与 self-test 全部通过，
+  r2c 保留 `TracingProvider` 兼容别名）。生产代码 import manual 层被新增
+  架构测试全面禁止。
+- 不改生产行为：本版不改 prompt、tool result、Router/fallback、permission、
+  UI/SSE、Research 默认路径或 done enforcement。按 roadmap A/B 规则，
+  projection/harness-only 版本不做 live provider A/B。
+
 ## 0.4.10 - 安全与完整性加固（review 加固）
 
 - 本地 HTTP API 具备 DNS rebinding / 跨域防护：每个请求先校验 `Host` 头

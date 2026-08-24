@@ -1,0 +1,13 @@
+{
+  "case_id": "oss_ecosystem_change",
+  "category": "oss_ecosystem",
+  "title": "Open-source ecosystem change tracking (held out)",
+  "question": "Track a breaking major-version release of a tracked library across rounds: old guidance must be marked stale before new migration steps are concluded.",
+  "tags": ["longitudinal", "held_out", "oss_ecosystem"],
+  "fixtures": [],
+  "expected_observables": {
+    "stale_source_flagged": true,
+    "answered": true,
+    "counterevidence_checked": false
+  }
+}

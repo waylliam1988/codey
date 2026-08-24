@@ -1,0 +1,19 @@
+{
+  "rubric": "research_benchmark_v1",
+  "description": "Weighted observables over one regression-gate report. Every entry references either a gate observable (optionally negated) or a bounded numeric metric. Weights sum to 1.0.",
+  "metrics": [
+    {"name": "answer_coverage", "observable": "answered", "weight": 0.15},
+    {"name": "grounding_precision", "metric": "grounded_ratio", "weight": 0.2},
+    {"name": "citation_locator_precision", "observable": "citation_locator_verified", "weight": 0.1},
+    {"name": "support_relations", "observable": "support_relation_verified", "weight": 0.1},
+    {"name": "counterevidence_coverage", "observable": "counterevidence_checked", "weight": 0.1},
+    {"name": "freshness_handling", "observable": "stale_source_flagged", "weight": 0.1},
+    {"name": "analysis_reproducibility", "observable": "reproducible_analysis", "weight": 0.1},
+    {"name": "handoff_integrity", "negated_observable": "unsupported_in_constraints", "weight": 0.15}
+  ],
+  "hard_gates": [
+    "anchored_to_record",
+    "constraints_use_supported_claims",
+    "expectation_keys_known"
+  ]
+}

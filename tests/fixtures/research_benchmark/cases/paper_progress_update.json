@@ -1,0 +1,13 @@
+{
+  "case_id": "paper_progress_update",
+  "category": "paper_progress",
+  "title": "Paper progress update tracking (held out)",
+  "question": "Track a research topic from preprint to peer-reviewed publication across rounds; the preprint conclusion may change after review.",
+  "tags": ["longitudinal", "held_out", "paper_progress"],
+  "fixtures": [],
+  "expected_observables": {
+    "answered": true,
+    "stale_source_flagged": true,
+    "citation_locator_verified": true
+  }
+}

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from contextlib import contextmanager
 import sys
 import tempfile
 import time
@@ -24,11 +23,23 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from tests.manual.ab_harness_common import (
+    FixtureDocument,
+    FixtureSearchProvider,
+    OutputProviderMismatch,
+    TracingProvider,
+    fixture_material_phase,
+    fixture_url_policy_bypass,
+    journal_directory_for_output,
+    load_or_new_payload,
+    normalize_payload_metadata,
+    timestamp,
+    write_payload_bounded,
+)
 from tests.manual.ab_journal import (
     ABJournalIdentityMismatch,
     ABJournalReader,
     ABJournalWriter,
-    journal_directory_for,
 )
 from codey import provider_controls
 from codey.knowledge.store import KnowledgeStore
@@ -36,9 +47,6 @@ from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_ledger import EvidenceLedgerStore
 from codey.research.evidence_followup import run_evidence_followup
-from codey.research import plan_executor as research_plan_executor_module
-from codey.research import tools as research_tools_module
-from codey.research import url_policy as research_url_policy_module
 from codey.research.plan_executor import PlanExecutionResult
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
 from codey.research.proof_quality import review_research_proof
@@ -51,24 +59,7 @@ from codey.research.tools import ResearchTools, clone_research_tools
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 WEB_PROVIDERS = tuple(provider_id for provider_id in provider_ids() if provider_id != "local")
 ARMS = ("baseline", "planner")
-MAX_RESULT_BYTES = 1024 * 1024
 AB_EVIDENCE_ONLY_FOLLOWUP_MODE = "production_evidence_followup"
-
-
-@dataclass(frozen=True)
-class FixtureDocument:
-    url: str
-    title: str
-    text: str
-    keywords: tuple[str, ...] = ()
-    default: bool = False
-
-    def result(self) -> dict[str, str]:
-        return {
-            "title": self.title,
-            "url": self.url,
-            "snippet": _clip(self.text, 260),
-        }
 
 
 @dataclass(frozen=True)
@@ -142,87 +133,6 @@ CASES = {
 }
 
 
-class FixtureSearchProvider:
-    name = "fixture-search"
-
-    def __init__(self, case: Case) -> None:
-        self.case = case
-        self.queries: list[str] = []
-        self.fetches: list[str] = []
-        self.material_phase = False
-
-    def search(self, query: str, limit: int = 8) -> list[dict[str, str]]:
-        self.queries.append(str(query or ""))
-        lower = str(query or "").casefold()
-        if self.material_phase:
-            matches = [
-                doc
-                for doc in self.case.documents
-                if doc.keywords and any(keyword.casefold() in lower for keyword in doc.keywords)
-            ]
-        else:
-            matches = []
-        defaults = [doc for doc in self.case.documents if doc.default]
-        ordered: list[FixtureDocument] = []
-        for doc in [*matches, *defaults]:
-            if doc not in ordered:
-                ordered.append(doc)
-        return [doc.result() for doc in ordered[: max(0, int(limit or 0))]]
-
-    def fetch(self, url: str) -> dict[str, object]:
-        self.fetches.append(str(url or ""))
-        for doc in self.case.documents:
-            if doc.url == url:
-                return {
-                    "url": doc.url,
-                    "title": doc.title,
-                    "text": doc.text,
-                    "truncated": False,
-                }
-        return {
-            "url": url,
-            "title": "",
-            "text": "ERROR: fixture URL not found",
-            "truncated": False,
-        }
-
-
-@contextmanager
-def _fixture_material_phase(search: object) -> Any:
-    if not isinstance(search, FixtureSearchProvider):
-        yield
-        return
-    previous = bool(search.material_phase)
-    search.material_phase = True
-    try:
-        yield
-    finally:
-        search.material_phase = previous
-
-
-@contextmanager
-def _fixture_url_policy_bypass() -> Any:
-    original_research = research_url_policy_module.check_fetch_url
-    original_tools = research_tools_module.check_fetch_url
-    original_plan_executor = research_plan_executor_module.check_fetch_url
-
-    def _allow_fixture_urls(url: str, *, resolve: bool = True) -> str | None:
-        text = str(url or "").strip().lower()
-        if text.startswith(("https://source-a.test/", "https://source-b.test/")):
-            return None
-        return original_research(url, resolve=resolve)
-
-    research_url_policy_module.check_fetch_url = _allow_fixture_urls
-    research_tools_module.check_fetch_url = _allow_fixture_urls
-    research_plan_executor_module.check_fetch_url = _allow_fixture_urls
-    try:
-        yield
-    finally:
-        research_url_policy_module.check_fetch_url = original_research
-        research_tools_module.check_fetch_url = original_tools
-        research_plan_executor_module.check_fetch_url = original_plan_executor
-
-
 class FreshMaterialPlanExecutor:
     """A/B-only executor variant that treats already-opened URLs as non-material."""
 
@@ -253,7 +163,7 @@ class FreshMaterialPlanExecutor:
                 skipped += 1
                 continue
             before_searches = len(runtime.ledger.searches)
-            with _fixture_material_phase(runtime.search):
+            with fixture_material_phase(runtime.search):
                 result = runtime.web_search(query)
             queries.append(query)
             if str(result or "").startswith("ERROR:"):
@@ -362,92 +272,6 @@ class TimedProvider:
         return self.provider.close()
 
 
-class OutputProviderMismatch(ValueError):
-    def __init__(self, *, path: Path, expected: str, found: str) -> None:
-        self.path = path
-        self.expected = expected
-        self.found = found
-        super().__init__(
-            f"{path} was created for provider {found!r}; refusing to reuse it for {expected!r}"
-        )
-
-
-class TracingProvider:
-    def __init__(
-        self,
-        provider,
-        *,
-        trace: ABJournalWriter | None,
-        run_id: str,
-        provider_id: str,
-        provider_name: str,
-        case: str,
-        arm: str,
-    ) -> None:
-        self.provider = provider
-        self.trace = trace
-        self.run_id = run_id
-        self.provider_id = provider_id
-        self.provider_name = provider_name
-        self.case = case
-        self.arm = arm
-        self.send_index = 0
-        self.reply_count = 0
-        self.prompt_chars = 0
-        self.reply_chars = 0
-        self.last_turn = 0
-        self.last_reply = ""
-        self.name = getattr(provider, "name", "")
-        self.location = getattr(provider, "location", "")
-        self.thread_safe_send = getattr(provider, "thread_safe_send", False)
-
-    def __getattr__(self, name: str):
-        return getattr(self.provider, name)
-
-    def new_chat(self, timeout=None) -> None:
-        return self.provider.new_chat(timeout=timeout)
-
-    def send(self, text: str, timeout=None) -> str:
-        self.send_index += 1
-        turn = self.send_index
-        self.prompt_chars += len(text or "")
-        if self.trace is not None:
-            self.trace.record_send_start(
-                case=self.case,
-                arm=self.arm,
-                turn=turn,
-                prompt=text,
-            )
-        try:
-            reply = self.provider.send(text, timeout=timeout)
-        except Exception as exc:
-            if self.trace is not None:
-                self.trace.record_send_error(
-                    case=self.case,
-                    arm=self.arm,
-                    turn=turn,
-                    error=f"{type(exc).__name__}: {exc}",
-                )
-            raise
-        reply_text = str(reply or "")
-        self.reply_count += 1
-        self.reply_chars += len(reply_text)
-        self.last_turn = turn
-        self.last_reply = reply_text
-        if self.trace is not None:
-            self.trace.record_reply(
-                case=self.case,
-                arm=self.arm,
-                turn=turn,
-                prompt=text,
-                reply=reply_text,
-            )
-        return reply
-
-    def close(self) -> None:
-        return self.provider.close()
-
-
 def run_case(
     provider,
     *,
@@ -462,12 +286,11 @@ def run_case(
     model_actions: list[dict[str, Any]] = []
     tool_calls: list[dict[str, Any]] = []
     infos: list[str] = []
-    provider_name = str(getattr(provider, "name", "") or "")
     with tempfile.TemporaryDirectory(prefix="codey-bounded-planner-ab-") as td:
         root = Path(td)
         store = KnowledgeStore(root / "knowledge")
         evidence_ledgers = EvidenceLedgerStore(root / "state")
-        search = FixtureSearchProvider(case)
+        search = FixtureSearchProvider(case.documents)
         iterations: list[ResearchIterationRun] = []
         if trace is not None:
             trace.record_case_start(
@@ -477,10 +300,7 @@ def run_case(
             )
         run_provider = TracingProvider(
             provider,
-            trace=trace,
-            run_id=run_id,
-            provider_id=provider_id,
-            provider_name=provider_name,
+            journal=trace,
             case=case.name,
             arm=arm,
         )
@@ -1045,8 +865,14 @@ def run_provider(
     trace: ABJournalWriter | None,
     run_id: str,
 ) -> dict[str, Any]:
-    payload = _load_or_new_payload(output, provider_id=provider_id, cases=cases, arms=arms)
-    _normalize_payload_metadata(payload, provider_id=provider_id, cases=cases, arms=arms)
+    payload = load_or_new_payload(
+        output,
+        probe="bounded_research_planner_ab",
+        provider_id=provider_id,
+        cases=cases,
+        arms=arms,
+    )
+    normalize_payload_metadata(payload, provider_id=provider_id, cases=cases, arms=arms)
     if trace is not None:
         payload["trace_output"] = str(trace.directory)
     existing = {
@@ -1077,19 +903,19 @@ def run_provider(
             trace.record_run_complete(rows=len(payload["rows"]))
         payload["complete"] = True
         payload["summary"] = summarize(payload["rows"])
-        payload["updated_at"] = _timestamp()
-        _write_payload(output, payload)
+        payload["updated_at"] = timestamp()
+        write_payload_bounded(output, payload)
         print(
             f"[{provider_id}] no pending rows for cases={','.join(case.name for case in cases)} "
             f"arms={','.join(arms)}; use --rerun-failed or a new --output to run again.",
             flush=True,
         )
         return payload
-    _write_payload(output, payload)
+    write_payload_bounded(output, payload)
     provider_controls.begin_task_context(f"bounded-research-planner-ab:{provider_id}")
     provider = None
     try:
-        with _fixture_url_policy_bypass():
+        with fixture_url_policy_bypass():
             provider = TimedProvider(
                 connect_provider(
                     provider_id,
@@ -1116,8 +942,8 @@ def run_provider(
                     )
                     payload["rows"].append(row)
                     payload["summary"] = summarize(payload["rows"])
-                    payload["updated_at"] = _timestamp()
-                    _write_payload(output, payload)
+                    payload["updated_at"] = timestamp()
+                    write_payload_bounded(output, payload)
                     print(
                         f"[{provider_id} {case.name} {arm}] "
                         f"ok={row.get('ok')} score={row.get('score')} "
@@ -1127,8 +953,8 @@ def run_provider(
                     )
             payload["complete"] = True
             payload["summary"] = summarize(payload["rows"])
-            payload["updated_at"] = _timestamp()
-            _write_payload(output, payload)
+            payload["updated_at"] = timestamp()
+            write_payload_bounded(output, payload)
             if trace is not None:
                 trace.record_run_complete(rows=len(payload["rows"]))
             return payload
@@ -1139,55 +965,6 @@ def run_provider(
                 provider.close()
             except Exception:
                 pass
-
-
-def _load_or_new_payload(
-    output: Path,
-    *,
-    provider_id: str,
-    cases: tuple[Case, ...],
-    arms: tuple[str, ...],
-) -> dict[str, Any]:
-    if output.exists():
-        try:
-            payload = json.loads(output.read_text(encoding="utf-8"))
-            if isinstance(payload, dict) and isinstance(payload.get("rows"), list):
-                _ensure_payload_provider(payload, provider_id=provider_id, output=output)
-                payload["complete"] = False
-                return payload
-        except (OSError, json.JSONDecodeError):
-            pass
-    return {
-        "probe": "bounded_research_planner_ab",
-        "provider": provider_id,
-        "started_at": _timestamp(),
-        "updated_at": _timestamp(),
-        "trace_output": "",
-        "cases": [case.name for case in cases],
-        "arms": list(arms),
-        "complete": False,
-        "rows": [],
-        "summary": {},
-    }
-
-
-def _normalize_payload_metadata(
-    payload: dict[str, Any],
-    *,
-    provider_id: str,
-    cases: tuple[Case, ...],
-    arms: tuple[str, ...],
-) -> None:
-    payload["provider"] = provider_id
-    payload["cases"] = _merge_unique_names(payload.get("cases"), [case.name for case in cases])
-    payload["arms"] = _merge_unique_names(payload.get("arms"), list(arms))
-
-
-def _ensure_payload_provider(payload: dict[str, Any], *, provider_id: str, output: Path) -> None:
-    found = str(payload.get("provider") or "").strip().lower()
-    expected = str(provider_id or "").strip().lower()
-    if found and expected and found != expected:
-        raise OutputProviderMismatch(path=output, expected=expected, found=found)
 
 
 def _pending_case_keys(
@@ -1204,53 +981,9 @@ def _pending_case_keys(
     ]
 
 
-def _merge_unique_names(*values: object) -> list[str]:
-    merged: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        if value is None:
-            continue
-        if isinstance(value, str):
-            candidates = (value,)
-        else:
-            try:
-                candidates = tuple(value)  # type: ignore[arg-type]
-            except TypeError:
-                candidates = (value,)
-        for candidate in candidates:
-            name = str(candidate or "").strip()
-            if not name or name in seen:
-                continue
-            seen.add(name)
-            merged.append(name)
-    return merged
-
-
-def _write_payload(path: Path, payload: dict[str, Any]) -> None:
-    text = json.dumps(payload, ensure_ascii=False, indent=2)
-    if len(text.encode("utf-8")) > MAX_RESULT_BYTES:
-        raise ValueError("bounded planner A/B result exceeded bounded size")
-    _write_json_atomic(path, payload)
-
-
-def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
-
-
 def _default_output(provider_id: str) -> Path:
     stamp = time.strftime("%Y%m%d-%H%M%S")
     return RESULTS_DIR / f"bounded_research_planner_ab-{provider_id}-{stamp}.json"
-
-
-def _trace_output_path(output: Path) -> Path:
-    return journal_directory_for(output)
-
-
-def _timestamp() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _clip(value: object, limit: int) -> str:
@@ -1329,11 +1062,11 @@ def _self_test() -> None:
     assert usefulness["provider_send_delta"] == 2
     assert _config_for_arm("baseline").enabled is False
     assert _config_for_arm("planner").enabled is True
-    fixture = FixtureSearchProvider(CASES["widget_noop"])
+    fixture = FixtureSearchProvider(CASES["widget_noop"].documents)
     assert [item["url"] for item in fixture.search("current primary source evidence")] == [
         "https://source-a.test/widget-storage"
     ]
-    with _fixture_material_phase(fixture):
+    with fixture_material_phase(fixture):
         assert [item["url"] for item in fixture.search("current primary source evidence")] == [
             "https://source-b.test/widget-storage-update",
             "https://source-a.test/widget-storage",
@@ -1380,7 +1113,7 @@ def _self_test() -> None:
                     "endpoint for client storage integration."
                 ),
             ))
-            with _fixture_url_policy_bypass():
+            with fixture_url_policy_bypass():
                 material_result = executor.execute(
                     ResearchPlan(
                         plan_ref="research_plan:" + "d" * 16,
@@ -1504,7 +1237,7 @@ def _self_test() -> None:
     assert material_only["quality_regression"] is True
     assert material_only["useful"] is False
     assert _expected_terms_present("stable-v2 endpoint", ("stable-v2",))
-    assert _trace_output_path(Path("tests/manual/results/bounded_research_planner_ab-deepseek.json")).name == (
+    assert journal_directory_for_output(Path("tests/manual/results/bounded_research_planner_ab-deepseek.json")).name == (
         "bounded_research_planner_ab-deepseek.trace"
     )
     assert _pending_case_keys(
@@ -1513,7 +1246,7 @@ def _self_test() -> None:
         existing=set(),
     ) == [("warehouse_gap", "baseline")]
     with tempfile.TemporaryDirectory(prefix="codey-bounded-planner-ab-self-") as td:
-        trace_dir = journal_directory_for(Path(td) / "trace.json")
+        trace_dir = journal_directory_for_output(Path(td) / "trace.json")
         trace = ABJournalWriter(
             directory=trace_dir,
             experiment_id="bounded_research_planner_ab",
@@ -1564,8 +1297,9 @@ def _self_test() -> None:
             encoding="utf-8",
         )
         try:
-            _load_or_new_payload(
+            load_or_new_payload(
                 output,
+                probe="bounded_research_planner_ab",
                 provider_id="deepseek",
                 cases=(CASES["warehouse_gap"],),
                 arms=("baseline",),
@@ -1582,7 +1316,7 @@ def _self_test() -> None:
             "cases": ["warehouse_gap"],
             "arms": ["baseline"],
         }
-        _normalize_payload_metadata(
+        normalize_payload_metadata(
             payload,
             provider_id="deepseek",
             cases=(CASES["warehouse_gap"], CASES["widget_noop"]),
@@ -1634,7 +1368,7 @@ def main() -> int:
                         f"{args.trace_output.stem}-{provider_id}{args.trace_output.suffix}"
                     )
             else:
-                trace_output = _trace_output_path(output)
+                trace_output = journal_directory_for_output(output)
             try:
                 trace = ABJournalWriter(
                     directory=trace_output,

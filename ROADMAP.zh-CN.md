@@ -2282,8 +2282,12 @@ smoke；影响模型输出时做小型 A/B。
 
 ## 0.4.11 - Longitudinal Research Harness + Comparison Benchmark v1
 
-状态：规划。目标是做出能证明 0.4 价值的真实连续研究 harness，并用固定任务集验证
-Codey 在泛化个人研究工作流上超过 baseline 和 OpenScience-style 对照。
+状态：已完成（deterministic v1；未宣称现实正确性证明）。0.4.11 落地的是评测
+脊柱：固定 fixture 套件、纯 read-model 回归门（`codey/research/regression_gate.py`）、
+纵向研究 harness、comparison benchmark、manual A/B 共用层。它只证明 Codey
+观察到了什么、验证了什么、哪些指标没有回退；"surpassed OpenScience" 措辞由
+代码门禁控制，必须存在真实 head-to-head artifact 才允许出现。
+live provider smoke 在确定性基线稳定后作为后续增量加入，本版默认不联网。
 
 ### 做什么
 
@@ -2745,7 +2749,7 @@ Writer prompt、provider fallback 策略或工具权限时，才需要 provider 
 0.4.8 Safe Context Epoch（metadata-only 不需要 A/B；改变模型可见 context 需要 A/B）
 0.4.9 Research Contract Lite（local-only 不需要 A/B；改变 completion 语义需要 queue A/B）
 0.4.10 Domain Source Trust + Research Brief（projection-only 不需要 A/B；改变 Writer brief 文案需要 A/B）
-0.4.11 Longitudinal Research Harness + Comparison Benchmark（需要 live/comparison harness）
+0.4.11 Longitudinal Research Harness + Comparison Benchmark（已完成：deterministic harness + comparison gate；live/comparison smoke 后续增量）
 0.4.12 Ghost Research Continuity（模型可见 continuity 必须 A/B）
 0.4.13 Verified Completion Enforcement（阻止 done / repair context admission 必须 A/B）
 ```

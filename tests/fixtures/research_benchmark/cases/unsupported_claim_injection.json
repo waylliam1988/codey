@@ -1,0 +1,13 @@
+{
+  "case_id": "unsupported_claim_injection",
+  "category": "injected_sources",
+  "title": "Injected unsupported claim must stay out of implementation constraints",
+  "question": "A forum post asserts a migration deadline with no primary source. Keep the earlier verified conclusion relocatable and never let the injected claim back a constraint.",
+  "tags": ["longitudinal", "unsupported_claim", "grounding"],
+  "fixtures": [],
+  "expected_observables": {
+    "answered": true,
+    "unsupported_claim_present": true,
+    "unsupported_in_constraints": false
+  }
+}

@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.10-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.11-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.10`
+版本：`0.4.11`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -70,6 +70,10 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 - **写代码时不容易忘事**：每次本地工具结果后，Codey 会提醒模型已经读过哪些
   文件、改了哪些文件，以及当前最该跑哪条验证命令。
 - **把研究带进项目**：研究结束后选择项目文件夹，Codey 只把带引用和限制条件的有边界 Research Brief 注入 Writer，不把整个 vault 塞进去。
+- **度量自己的证据闭环**：冻结的纵向研究基准套件 + 纯 read-model 回归门，
+  按期望 observable 评分多轮研究（stale 处理、unsupported claim 排除、
+  可复现分析），并在冻结 rubric 下做 deterministic 三臂对照；措辞由代码
+  门禁控制，"surpassed OpenScience" 必须有真实 head-to-head artifact 记录。
 - **受控工具循环**：读取、编辑、测试、diff、Review 和 Restore 都有边界。
 - **可选本地模型**：`Local` 可以连接 OpenAI-compatible endpoint，并支持可选 API key。
 - **改完后再审查**：一个模型写代码，另一个模型审查最终 diff；如果没有第二个可用模型，也可以让写代码的模型做一次明确标注的 self-review。

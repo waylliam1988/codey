@@ -1,0 +1,13 @@
+{
+  "case_id": "local_csv_pdf_analysis",
+  "category": "local_data_analysis",
+  "title": "Local CSV plus PDF analysis must be observed, not overclaimed",
+  "question": "Summarize quarterly revenue from the local table and the shipped report, run the analysis command locally, and only report what was actually captured.",
+  "tags": ["longitudinal", "local_analysis", "reproducibility"],
+  "fixtures": ["files/local_table.csv", "files/local_note.md", "files/local_report.pdf"],
+  "expected_observables": {
+    "answered": true,
+    "analysis_run_observed": true,
+    "reproducible_analysis": true
+  }
+}

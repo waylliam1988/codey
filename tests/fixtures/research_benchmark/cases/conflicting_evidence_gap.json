@@ -1,0 +1,13 @@
+{
+  "case_id": "conflicting_evidence_gap",
+  "category": "injected_sources",
+  "title": "Conflicting sources must create counterevidence and a planner gap",
+  "question": "Two vendors publish contradictory claims about the same API limit. Verify both sides, keep the conflict visible, and plan what follow-up would resolve it.",
+  "tags": ["longitudinal", "conflicting_sources", "counterevidence"],
+  "fixtures": [],
+  "expected_observables": {
+    "conflicting_evidence_finding": true,
+    "counterevidence_checked": true,
+    "planner_gap_created": true
+  }
+}

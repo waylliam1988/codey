@@ -1,0 +1,13 @@
+{
+  "case_id": "stale_claim_refresh",
+  "category": "injected_sources",
+  "title": "Stale source injection must be flagged and superseded",
+  "question": "Track the currently recommended Widget Storage endpoint across rounds and revise the earlier conclusion when a fresher primary source appears.",
+  "tags": ["longitudinal", "stale_source", "freshness"],
+  "fixtures": [],
+  "expected_observables": {
+    "answered": true,
+    "stale_source_flagged": true,
+    "support_relation_verified": true
+  }
+}

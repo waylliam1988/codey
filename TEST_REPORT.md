@@ -1,5 +1,105 @@
 # Codey Test Report
 
+## 0.4.11 Evaluation spine: regression gate + longitudinal harness + comparison benchmark
+
+Codey 0.4.11 adds the evaluation layer that lets later versions compare
+against a stable baseline instead of re-arguing architecture taste. The core
+is `codey/research/regression_gate.py`, a projection-only read model that
+consumes the objects 0.4.7–0.4.10 introduced (Evidence Runtime snapshots,
+proof reviews, brief projections, impact contracts, review findings, planner
+gaps, reproducibility capsules, completion proofs, pipeline summaries) and
+emits bounded metrics, boolean observables, and a hard-gate verdict. Facts
+stay strict and conclusions stay modest: the report says what was observed
+(`answered`, `stale_source_flagged`, `reproducible_analysis`,
+`unsupported_in_constraints`, ...) and whether frozen expectations matched;
+it never claims real-world correctness. False completions are counted as
+`false_completion_candidate` metrics — enforcement is explicitly deferred to
+0.4.13. Unknown expectation keys fail closed, and the payload vocabulary makes
+raw prompt/reply/transcript/webpage material unrepresentable.
+
+The frozen corpus `tests/fixtures/research_benchmark/` holds six cases across
+the roadmap topic categories (stale injection, conflicting sources,
+unsupported-claim injection, local CSV/PDF analysis, OSS ecosystem change,
+paper progress) split development/held-out with a rubric whose weights sum to
+1 and a lock file pinning every sha256. The offline validator enforces split
+integrity, fixture path containment, regression-gate vocabulary alignment,
+rubric shape, raw-material key bans inside case payloads, and hash equality;
+`--update-lock` is the single explicit escape hatch for intentional changes.
+Held-out cases are validated but never executed by development scenarios.
+
+Two new manual harnesses ride on this spine, deterministic by default:
+
+- `longitudinal_research_harness_ab.py` runs multi-round scenarios through the
+  production projection stack and locks the invariants that matter for
+  longitudinal research: old claims keep one content-addressed ref across
+  rounds; the stale flag appears exactly when the old source goes stale, not
+  before; conflicting evidence yields counterevidence checks plus findings
+  and planner gaps; an injected unsupported forum claim shows up as
+  `[unsupported]` in the rendered handoff yet never reaches implementation
+  constraints; and a failed analysis run maps to capsule status `failed`
+  where expecting reproduction must fail the gate — honesty is tested, not
+  assumed.
+- `research_comparison_benchmark_ab.py` scores three arms with the rubric:
+  an unstructured baseline report (score 0 by construction — nothing can be
+  anchored), an OpenScience-style fixture (verified locators/support, no
+  counterevidence pass, no reproducible analysis), and the full Codey
+  evidence loop. Wording is gated in code: without a real head-to-head
+  artifact the summary may only say "OpenScience-style regression passed";
+  `--openscience-artifact` plus `--claim-superiority` lifts the guard and
+  records the artifact digest next to the claim.
+
+Refactor debt paid: `tests/manual/ab_harness_common.py` now owns the plumbing
+that two live harnesses each maintained separately — the journaling
+TracingProvider (with error recording and counting fallback), interleaved arm
+schedules, complete-matrix gates, atomic JSON writes, size-bounded payloads,
+resume-with-provider-identity guards, journal directory derivation, and the
+fixture search provider with its URL-policy bypass. `research_to_code_ab.py`
+and `bounded_research_planner_ab.py` migrated with behavior locked by their
+existing tests and self-tests; the r2c script keeps a `TracingProvider` alias
+for compatibility with its test surface.
+
+Architecture fences added: the regression gate is locked projection-only (no
+providers, runtime layers, journal imports, or I/O tokens) and stays out of
+the research package's eager exports; no production module may import
+`tests.*`, `ab_journal`, or `ab_harness_common`.
+
+Production-facing behavior changes: none. No prompt, tool result, router,
+fallback, permission, UI/SSE, Research default path, or done-enforcement
+edits. Per the roadmap A/B rule, a projection/harness-only version requires
+no live provider A/B; the deterministic gates and self-tests below are the
+release gate. Live provider smoke is a deliberate follow-up once this
+baseline stabilizes.
+
+Verification during implementation:
+
+```text
+python -m pytest tests/test_research_regression_gate.py tests/test_research_benchmark_suite.py tests/test_manual_ab_harness_common.py tests/test_longitudinal_research_harness_ab.py tests/test_research_comparison_benchmark_ab.py -q
+# 46 passed
+python -B tests\manual\research_benchmark_suite.py
+# suite ok: 4 development, 2 held-out cases
+python -B tests\manual\research_to_code_ab.py --self-test
+# self-test ok
+python -B tests\manual\bounded_research_planner_ab.py --self-test
+# self-test ok
+python -B tests\manual\longitudinal_research_harness_ab.py --self-test
+# self-test ok
+python -B tests\manual\research_comparison_benchmark_ab.py --self-test
+# self-test ok
+python -m ruff check codey tests
+# All checks passed!
+```
+
+Coverage highlights: gate anchoring fail-closed, criterion-by-criterion pass
+matrix, false-completion counting without enforcement, unsupported claims
+never backing constraints (including unknown-ref fail-closed), stale detection
+from warnings/findings/source trust, honest capsule vocabulary (captured /
+not captured / failed / unknown), unknown expectation keys failing closed,
+input-bundle determinism via stable report ids, payload hygiene bounds,
+suite tamper/escape/rubric/lock failures, held-out isolation, schedule and
+matrix semantics parity after extraction, provider identity mismatch
+fail-closed, journal/error recording, superiority wording guards, and
+missing-arm matrix failures.
+
 ## 0.4.10 Security and Integrity Hardening (review hardening)
 
 Security: the local HTTP server validates `Host` (loopback bind + explicit
