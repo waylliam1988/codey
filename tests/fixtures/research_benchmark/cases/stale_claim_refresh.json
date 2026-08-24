@@ -8,6 +8,7 @@
   "expected_observables": {
     "answered": true,
     "stale_source_flagged": true,
-    "support_relation_verified": true
+    "support_relation_verified": true,
+    "conflicting_evidence_finding": true
   }
 }

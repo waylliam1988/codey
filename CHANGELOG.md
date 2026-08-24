@@ -114,6 +114,20 @@ This file records Codey's release history. The newest release appears first.
     with a new id linked by an explicit refutes relation to the superseded
     evidence, so the benchmark verifies "old claim relocatable + new claim
     revises under its own identity" rather than id-slot reuse.
+  - Conflict-free handoff constraints + audit visibility (sixth review
+    pass): the stale fixture goes one step further into production
+    semantics — round 2 states only the current conclusion (stable-v3) and
+    never restates the superseded stable-v2 as a second evidence_backed
+    claim in the same record, which would hand the Writer two mutually
+    exclusive verified implementation constraints. Superseded conclusions
+    stay relocatable by their content-addressed ids; their evidence is
+    retained as located source material and supersession is expressed via
+    an explicit refutes relation. The frozen stale_claim_refresh case now
+    also pins `conflicting_evidence_finding` (lock re-stamped); the
+    longitudinal summary surfaces `review_ok` per round so "projection
+    regression passed" is never misread as "research proof quality passed";
+    and the comparison summary's `arms` became a list so duplicated arms
+    stay visible after the exact-matrix gate fails.
   - The regression gate's record anchor is now validated through
     `normalize_runtime_ref(kind="research_record")`: hostile or wrong
     mappings cannot smuggle text into the refs-only payload; an invalid

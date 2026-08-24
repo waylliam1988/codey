@@ -96,6 +96,16 @@
       新 id 作为独立 claim 进入，并用显式 refutes relation 指向被取代的
       evidence——验证的是"旧 claim 可重定位 + 新 claim 以独立身份修正旧结
       论"，而不是"同一语义槽位复用 id"。
+  - handoff 约束无冲突化 + 审计可见性（第六轮审阅）：stale fixture 进一步
+    对齐生产语义——R2 记录只陈述当前结论（stable-v3），不再把被取代的
+    stable-v2 复述成同记录内的第二个 evidence_backed claim；否则 brief 会
+    同时产出两条互相冲突的 verified implementation constraints。superseded
+    结论改为靠内容寻址 id 跨轮可重定位，其 evidence 作为定位过的来源材料
+    保留在 R2 中，修正关系用显式 refutes relation 表达。冻结 suite 的
+    stale_claim_refresh case 补上 `conflicting_evidence_finding` 期望并重打
+    lock；longitudinal summary 每轮显式输出 `review_ok`，避免把"projection
+    regression passed"误读成"research proof quality passed"；comparison
+    summary 的 `arms` 改为列表，重复 arm 在门禁失败后仍在展示层可见。
   - `regression_gate` 的 record anchor 改为经
     `normalize_runtime_ref(kind="research_record")` 校验：恶意或错误的
     mapping 无法把长文本塞进 refs-only payload；snapshot 锚点非法时回退到

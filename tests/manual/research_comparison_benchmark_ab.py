@@ -591,7 +591,9 @@ def build_summary(
     summary: dict[str, Any] = {
         "probe": PROBE,
         "mode": "deterministic",
-        "arms": {result.arm: result.to_payload() for result in results},
+        # A list, not an arm-keyed dict: duplicated arms must stay visible
+        # in the report even though the exact-matrix gate already failed.
+        "arms": [result.to_payload() for result in results],
         # The claim reflects the verdict, not a constant: a failed gate run
         # never says "passed".
         "openscience_claim": STYLE_CLAIM if verdict_ok else "",

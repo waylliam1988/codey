@@ -37,7 +37,10 @@ from codey.research.brief_projection import (
     project_research_brief,
     render_handoff,
 )
-from codey.research.evidence_runtime import snapshot_from_research_record
+from codey.research.evidence_runtime import (
+    normalize_runtime_ref,
+    snapshot_from_research_record,
+)
 from codey.research.proof_quality import review_research_proof
 from codey.research.regression_gate import build_regression_report
 from codey.research.reproducibility import build_reproducibility_capsule
@@ -228,11 +231,14 @@ def evaluate_round(
 def scenario_stale_claim_refresh() -> tuple[list[RoundOutcome], list[str]]:
     """R1 baseline; R2 marks the old source stale and revises the conclusion.
 
-    Production claim ids are content-addressed (section + text + citations),
-    so the old stable-v2 conclusion keeps its own id across rounds and the
-    stable-v3 revision arrives as a *different* claim with a *different* id,
-    tied back to the superseded evidence through an explicit ``refutes``
-    relation. Both stay fully supported so support relations still verify.
+    Production semantics: claim ids are content-addressed (section + text +
+    citations), so a superseded conclusion is never restated inside the new
+    round's record -- that would either change its id or, worse, put two
+    mutually exclusive conclusions into the Writer handoff as two verified
+    constraints. Each round states only its current conclusion; the old one
+    stays relocatable by its content-addressed id, and the revision refutes
+    the superseded evidence base (retained as located source material)
+    through an explicit ``refutes`` relation.
     """
 
     old_source_fresh = _source("widget-docs-v2", freshness="fresh")
@@ -256,31 +262,23 @@ def scenario_stale_claim_refresh() -> tuple[list[RoundOutcome], list[str]]:
     r2_record = _record_payload(
         seed="stale:r2",
         sources=[old_source_stale, new_source],
-        claims=[
-            {
-                # Same content as R1's conclusion, therefore the same id.
-                "claim_id": endpoint_v2_claim_id,
-                "claim_text": _endpoint_claim_text("stable-v2"),
-                "status": "evidence_backed",
-                "source_ref": old_source_stale["source_id"],
-                "excerpt": "stable-v2 was the recommended endpoint.",
-            },
-            {
-                # Different content, therefore a genuinely different claim.
-                "claim_id": endpoint_v3_claim_id,
-                "claim_text": _endpoint_claim_text("stable-v3"),
-                "status": "evidence_backed",
-                "source_ref": new_source["source_id"],
-                "excerpt": "stable-v3 supersedes stable-v2 as of this release.",
-            },
-        ],
+        claims=[{
+            # The current truth only: restating the dead stable-v2
+            # conclusion here would hand the Writer two conflicting
+            # "verified" constraints.
+            "claim_id": endpoint_v3_claim_id,
+            "claim_text": _endpoint_claim_text("stable-v3"),
+            "status": "evidence_backed",
+            "source_ref": new_source["source_id"],
+            "excerpt": "stable-v3 supersedes stable-v2 as of this release.",
+        }],
     )
-    # The revision refutes the superseded conclusion's evidence base; the
-    # builder emits supporting evidence rows in claim order, so index 0 is
-    # the stable-v2 evidence.
-    superseded_evidence_id = r2_record["evidence"][0]["evidence_id"]
+    # Keep the superseded evidence base as located source material and make
+    # the revision's supersession explicit against it.
+    superseded_evidence_id = r1_record["evidence"][0]["evidence_id"]
+    r2_record["evidence"].append(dict(r1_record["evidence"][0]))
     r2_record["relations"].append({
-        "relation_id": _ref("relation", "stale:r2:v3-refutes-v2-evidence"),
+        "relation_id": _ref("relation", "stale:r2:v3-refutes-superseded-evidence"),
         "relation_kind": "refutes",
         "from_ref": endpoint_v3_claim_id,
         "to_ref": superseded_evidence_id,
@@ -305,11 +303,16 @@ def scenario_stale_claim_refresh() -> tuple[list[RoundOutcome], list[str]]:
     ]
     checks = [
         outcomes[0].report is not None and outcomes[1].report is not None,
-        # Relocation: the old conclusion keeps its content-addressed id.
-        r1_record["claims"][0]["claim_id"] == r2_record["claims"][0]["claim_id"],
-        # Revision: the new conclusion is a distinct claim, linked to the
-        # superseded evidence instead of reusing the old slot.
-        r2_record["claims"][1]["claim_id"] == endpoint_v3_claim_id,
+        # Relocation: the superseded conclusion keeps its content-addressed
+        # id -- derivable from R1 and still a valid runtime ref in R2's
+        # horizon via its retained evidence row.
+        r1_record["claims"][0]["claim_id"] == endpoint_v2_claim_id,
+        normalize_runtime_ref(endpoint_v2_claim_id, kind="claim")
+        == endpoint_v2_claim_id,
+        # Revision: exactly one current constraint-bearing claim, linked to
+        # the superseded evidence instead of coexisting with it.
+        len(r2_record["claims"]) == 1,
+        r2_record["claims"][0]["claim_id"] == endpoint_v3_claim_id,
         any(relation.get("relation_kind") == "refutes" for relation in r2_record["relations"]),
         outcomes[0].report is not None and not outcomes[0].report.observable("stale_source_flagged"),
         outcomes[1].report is not None and outcomes[1].report.observable("stale_source_flagged"),
@@ -573,6 +576,10 @@ def run_deterministic(cases: Sequence[str]) -> int:
             "rounds": [
                 {
                     "round": outcome.round_name,
+                    # Surfaced explicitly so "projection regression passed"
+                    # is never misread as "research proof quality passed":
+                    # the gate requires a review to exist, not to be ok.
+                    "review_ok": outcome.review_ok,
                     "gate_ok": outcome.passed(),
                     "verdict": (
                         outcome.report.verdict.to_payload()

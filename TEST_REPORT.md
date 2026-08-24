@@ -104,10 +104,16 @@ root so commit alignment resolves from any working directory. A fifth pass
 upgraded rubric binding to two factors — name plus the lock.json sha256 of
 `rubric.json` as `rubric_digest`, reusing the frozen suite's single hash
 vocabulary — made the comparison matrix gate exact (duplicated arms fail),
-and corrected the longitudinal stale fixture to production semantics: the
-superseded conclusion keeps its content-addressed claim id across rounds
-while the revision arrives as a distinct claim with its own id, linked by an
-explicit refutes relation to the superseded evidence.
+and corrected the longitudinal stale fixture to production semantics: claim
+ids are content-addressed, so the superseded conclusion keeps its own id
+while the revision arrives as a distinct claim linked by an explicit refutes
+relation. A sixth pass made the handoff conflict-free: round 2 now states
+only its current conclusion (never restating the superseded one as a second
+evidence_backed claim, which would produce two mutually exclusive verified
+constraints in the Writer brief), the frozen stale case pins
+`conflicting_evidence_finding`, the longitudinal summary surfaces
+`review_ok` per round, and comparison summaries keep duplicated arms visible
+as a list instead of folding them behind an arm-keyed dict.
 
 Production-facing behavior changes: none. No prompt, tool result, router,
 fallback, permission, UI/SSE, Research default path, or done-enforcement

@@ -52,6 +52,13 @@ def test_duplicated_arm_fails_the_exact_matrix_gate() -> None:
     assert verdict["criteria"]["matrix_complete"] is False
     assert verdict["ok"] is False
 
+    # The summary display keeps duplicates visible for debugging instead of
+    # collapsing them behind an arm-keyed dict.
+    summary = benchmark.build_summary(results=duplicated)
+    arm_names = [arm["arm"] for arm in summary["arms"]]
+    assert arm_names.count(benchmark.ARM_CODEY) == 2
+    assert len(summary["arms"]) == len(duplicated)
+
 
 def test_superiority_wording_is_gated_by_a_validated_artifact(tmp_path: Path) -> None:
     results = benchmark.run_deterministic_arms()

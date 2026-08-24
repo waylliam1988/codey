@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 
 from tests.manual import longitudinal_research_harness_ab as harness
 
@@ -19,13 +20,30 @@ def test_stale_rounds_flag_only_after_refresh() -> None:
     assert not baseline.report.observable("stale_source_flagged")
     assert refreshed.report.observable("stale_source_flagged")
     assert refreshed.report.observable("answered")
-    # The old stable-v2 claim keeps its identity while the stable-v3 revision
-    # arrives as a distinct claim (both verified), so the round carries two.
-    assert refreshed.report.metrics["claim_count"] == 2
-    # The revision refutes the superseded evidence base explicitly.
+    # The round states only the current conclusion; the superseded stable-v2
+    # claim is never restated, so the Writer handoff carries exactly one
+    # verified constraint and no mutually exclusive pair.
+    assert refreshed.report.metrics["claim_count"] == 1
+    assert refreshed.brief_render.count("constraint [verified]") == 1
+    assert "stable-v3" in refreshed.brief_render
+    assert "stable-v2" not in refreshed.brief_render
+    # Supersession is still explicit against the retained old evidence.
     assert refreshed.report.observable("conflicting_evidence_finding") is True
-    assert refreshed.brief_render.count("stable-v3") >= 1
-    assert refreshed.brief_render.count("stable-v2") >= 1
+
+
+def test_deterministic_summary_surfaces_review_ok(capsys) -> None:
+    exit_code = harness.run_deterministic(list(harness.development_case_ids()))
+    assert exit_code == 0
+
+    printed = capsys.readouterr().out
+    payload = json.loads(printed.split("\ndeterministic")[0])
+    assert payload["summary"]
+    for case_id, block in payload["summary"].items():
+        rounds = block["rounds"]
+        assert rounds, case_id
+        # review_ok is surfaced per round so gate passage ("projection
+        # regression passed") is never misread as proof-quality passage.
+        assert all("review_ok" in row for row in rounds), case_id
 
 
 def test_conflicting_evidence_creates_finding_and_gap() -> None:

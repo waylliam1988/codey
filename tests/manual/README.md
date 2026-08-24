@@ -27,12 +27,13 @@ benchmark: every development case from the frozen
 through the production projection stack (proof review, evidence runtime,
 findings, gaps, brief, impact contract, capsule) and is judged by the shared
 regression gate against the suite's expected observables. It verifies that
-superseded conclusions keep their content-addressed claim ids across rounds
-while revisions arrive as distinct claims linked by explicit refutes
-relations, stale sources get flagged before a revised conclusion counts,
-conflicting evidence creates findings and planner gaps, injected unsupported
-claims never reach implementation constraints, and failed analysis runs are
-never reported as reproduced.
+each round states only its current conclusions — superseded ones stay
+relocatable by their content-addressed claim ids and are never restated as
+conflicting verified constraints — that revisions refute the superseded
+evidence explicitly, stale sources get flagged before a revised conclusion
+counts, conflicting evidence creates findings and planner gaps, injected
+unsupported claims never reach implementation constraints, and failed
+analysis runs are never reported as reproduced.
 
 ```powershell
 python -B tests\manual\longitudinal_research_harness_ab.py --self-test
