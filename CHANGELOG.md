@@ -66,6 +66,19 @@ This file records Codey's release history. The newest release appears first.
     CLI exits non-zero and the summary records `metadata` and `errors`.
     Validity derives from the payload itself, so hand-assembled digest
     wrappers can never unlock the wording.
+  - The superiority gate then tightened from "metadata exists" to "the
+    artifact's own result supports it": records must carry bounded result
+    fields (`winner` in {codey, openscience, tie},
+    `strictly_better_metric_count` at or above the roadmap threshold of 4,
+    `regression_gates_passed: true`), and only results that actually back
+    the claim unlock "surpassed OpenScience". Metadata-complete records
+    where OpenScience/tie won, too few metrics improved strictly, or gates
+    failed stay locked. Summaries expose `supports_superiority`, project the
+    result fields into `metadata`, and `openscience_claim` now reflects the
+    verdict — a failed gate run never says "passed". Text-field length caps
+    plus task-input count/length caps moved into validation itself (no
+    longer output-clipping only), and unreadable paths such as directories
+    return `artifact_unreadable_file` instead of raising.
   - The regression gate's record anchor is now validated through
     `normalize_runtime_ref(kind="research_record")`: hostile or wrong
     mappings cannot smuggle text into the refs-only payload; an invalid

@@ -64,22 +64,31 @@ the research package's eager exports; no production module may import
 `tests.*`, `ab_journal`, or `ab_harness_common`.
 
 Review hardening (post-commit audit fixes): the comparison benchmark's
-superiority gate now requires a schema-valid head-to-head artifact — every
-roadmap metadata field present, non-empty, and bounded; digest-only wrappers,
-unreadable JSON, non-object payloads, and missing fields fail closed at the
-verdict level and exit non-zero in the CLI, with validity derived from the
-payload itself rather than trusting a bare hash. The regression gate's record
-anchor is validated through the shared runtime-ref validator so hostile
-mappings cannot inject text through it, falling back across snapshot/brief
-candidates before failing closed. `_source_stale_facts()` delegates its bound
-to `project_source_set()` instead of materializing first. The shared
-TracingProvider calls bare `send(text)` / `new_chat()` when no timeout is
-configured or provided (plain scripted providers work), forwards timeout
-kwargs only when set, and forwards `close()` only when the wrapped provider
-closes. New tests cover every case: per-field artifact schema errors,
-digest-only/junk/unreadable artifacts staying locked, metadata surfacing on
-valid records, hostile-anchor fail-closed with valid-brief fallback, timeout
-forwarding matrices, and close-on-non-closable providers.
+superiority gate now requires a schema-valid head-to-head artifact whose own
+recorded result supports the claim — every roadmap metadata field present,
+non-empty, and bounded, plus the result fields (`winner: "codey"`,
+`strictly_better_metric_count` at or above the roadmap threshold of 4,
+`regression_gates_passed: true`). Digest-only wrappers, unreadable JSON,
+non-object payloads, missing metadata fields, oversize values, over-long
+task-input lists, and records where OpenScience/tie won or gates failed all
+fail closed; validity and superiority support derive from the payload itself
+so an editorialized `result_source` cannot unlock anything. Summaries expose
+`supports_superiority`, project result fields into `metadata`, and
+`openscience_claim` reflects the verdict (a failed gate run never says
+"passed"); unreadable paths return `artifact_unreadable_file` instead of
+raising. The regression gate's record anchor is validated through the shared
+runtime-ref validator so hostile mappings cannot inject text through it,
+falling back across snapshot/brief candidates before failing closed.
+`_source_stale_facts()` delegates its bound to `project_source_set()` instead
+of materializing first. The shared TracingProvider calls bare `send(text)` /
+`new_chat()` when no timeout is configured or provided (plain scripted
+providers work), forwards timeout kwargs only when set, and forwards
+`close()` only when the wrapped provider closes. New tests cover every case:
+per-field artifact schema errors, digest-only/junk/unreadable artifacts
+staying locked, opposing-result records staying locked, verdict-conditional
+claims, enforced length/count bounds, hostile-anchor fail-closed with
+valid-brief fallback, timeout forwarding matrices, and close-on-non-closable
+providers.
 
 Production-facing behavior changes: none. No prompt, tool result, router,
 fallback, permission, UI/SSE, Research default path, or done-enforcement

@@ -43,13 +43,17 @@ frozen rubric: an unstructured `baseline_web_report`, an
 `openscience_style_fixture` (verified locators and support relations, no
 counterevidence pass, no reproducible analysis), and the full
 `codey_evidence_loop`. Without a schema-valid real head-to-head artifact its
-summary may only say "OpenScience-style regression passed". The artifact must
-be JSON containing every roadmap metadata field — both sides' version/commit,
-provider/model, task inputs, run date, result source, and the scoring rubric —
-and `--openscience-artifact <file>` together with `--claim-superiority` is the
+summary may only say "OpenScience-style regression passed", and only when the
+comparison verdict itself passed. The artifact must be JSON containing every
+roadmap metadata field — both sides' version/commit, provider/model, task
+inputs, run date, result source, and the scoring rubric — *and* its recorded
+result must back the wording: `winner: "codey"`,
+`strictly_better_metric_count >= 4`, and `regression_gates_passed: true`.
+`--openscience-artifact <file>` together with `--claim-superiority` is the
 only way the summary may contain "surpassed OpenScience"; the digest and the
-validated metadata are recorded alongside the claim, and incomplete artifacts
-fail closed with a non-zero exit instead of unlocking anything.
+validated result fields are recorded alongside the claim, and incomplete,
+oversized, or opposing-result artifacts fail closed with a non-zero exit
+instead of unlocking anything.
 
 ```powershell
 python -B tests\manual\research_comparison_benchmark_ab.py --self-test

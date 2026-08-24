@@ -12,11 +12,15 @@ production projection stack and are scored with the frozen benchmark rubric:
 
 Claiming ``surpassed OpenScience`` requires a recorded real head-to-head
 artifact (``--openscience-artifact``) that validates against the roadmap's
-metadata schema -- both sides' version/commit, provider/model, task inputs,
-run date, result source, and the scoring rubric. A bare file hash or an
-incomplete artifact never lifts the wording guard; without one the summary
-may only say ``OpenScience-style regression passed``. The guard is enforced
-in code, not just documentation.
+schema *and* whose recorded result supports it: both sides' version/commit,
+provider/model, task inputs, run date, result source, and rubric must be
+present and bounded, and the artifact's own result fields must say Codey won
+(``winner: "codey"``, ``strictly_better_metric_count`` at or above the
+roadmap threshold, ``regression_gates_passed: true``). A metadata-only
+record -- even one where ``result_source`` editorializes a win -- never lifts
+the guard; without support the summary may only say ``OpenScience-style
+regression passed``, and only when the comparison verdict itself passed.
+The guards are enforced in code, not documentation.
 """
 
 from __future__ import annotations
@@ -56,14 +60,19 @@ DETERMINISTIC_ARMS = (ARM_BASELINE, ARM_OPENSOURCE_STYLE, ARM_CODEY)
 STYLE_CLAIM = "OpenScience-style regression passed"
 SUPERIORITY_PHRASE = "surpassed OpenScience"
 
-# Roadmap metadata contract for a real OpenScience head-to-head record. Every
-# field must be present, non-empty, and bounded; an artifact that fails any
-# check can never unlock the superiority wording.
+# Roadmap contract for a real OpenScience head-to-head record. Every field
+# must be present, well-formed, and within bounds -- including the recorded
+# *result*, because a superiority claim is only backed when the artifact's
+# own result says Codey won strictly on at least the roadmap's core-metric
+# threshold with all regression gates passed.
 MAX_ARTIFACT_FIELD_CHARS = 120
 MAX_TASK_INPUTS = 16
 MAX_TASK_INPUT_CHARS = 200
 MAX_ARTIFACT_ERRORS = 8
-REQUIRED_HEAD_TO_HEAD_FIELDS: tuple[tuple[str, ...], ...] = (
+MAX_STRICTLY_BETTER_METRIC_COUNT = 99
+MIN_STRICTLY_BETTER_METRICS = 4  # roadmap: strictly better on >= 4 core metrics
+WINNER_VALUES = frozenset({"codey", "openscience", "tie"})
+REQUIRED_HEAD_TO_HEAD_TEXT_FIELDS: tuple[tuple[str, ...], ...] = (
     ("openscience", "version"),
     ("openscience", "commit"),
     ("codey", "version"),
@@ -74,6 +83,16 @@ REQUIRED_HEAD_TO_HEAD_FIELDS: tuple[tuple[str, ...], ...] = (
     ("result_source",),
     ("rubric",),
 )
+_MISSING = object()
+
+
+def _walk(payload: Mapping[str, Any], path: tuple[str, ...]) -> Any:
+    node: Any = payload
+    for key in path:
+        if not isinstance(node, Mapping) or key not in node:
+            return _MISSING
+        node = node[key]
+    return node
 
 
 @dataclass(frozen=True)
@@ -94,20 +113,41 @@ class HeadToHeadArtifact:
             and not head_to_head_artifact_errors(self.payload)
         )
 
+    def supports_superiority(self) -> bool:
+        """True only when the artifact's own result backs ``surpassed``.
+
+        Metadata validity says the run was recorded honestly; the winner,
+        strict-improvement count, and regression-gate fields decide whether
+        it also justifies the wording.
+        """
+
+        payload = self.payload
+        count = payload.get("strictly_better_metric_count")
+        return (
+            self.valid
+            and payload.get("winner") == "codey"
+            and isinstance(count, int)
+            and not isinstance(count, bool)
+            and int(count) >= MIN_STRICTLY_BETTER_METRICS
+            and payload.get("regression_gates_passed") is True
+        )
+
     def metadata(self) -> dict[str, Any]:
-        """Bounded copy of the validated roadmap fields for the summary."""
+        """Copy of the validated roadmap fields for the summary.
+
+        Validation already bounded every value, so no clipping happens here;
+        invalid artifacts project nothing.
+        """
 
         if not self.valid:
             return {}
 
         def _text(path: tuple[str, ...]) -> str:
-            node: Any = self.payload
-            for key in path:
-                node = node.get(key) if isinstance(node, Mapping) else None
-            return str(node or "")[:MAX_ARTIFACT_FIELD_CHARS]
+            node = _walk(self.payload, path)
+            return str(node or "")
 
         tasks = [
-            str(item)[:MAX_TASK_INPUT_CHARS]
+            str(item)
             for item in (self.payload.get("task_inputs") or ())[:MAX_TASK_INPUTS]
             if isinstance(item, str) and item.strip()
         ]
@@ -126,6 +166,11 @@ class HeadToHeadArtifact:
             "run_date": _text(("run_date",)),
             "result_source": _text(("result_source",)),
             "rubric": _text(("rubric",)),
+            "winner": _text(("winner",)),
+            "strictly_better_metric_count": self.payload.get(
+                "strictly_better_metric_count"
+            ),
+            "regression_gates_passed": self.payload.get("regression_gates_passed"),
         }
         return {key: value for key, value in nested.items() if value}
 
@@ -140,38 +185,56 @@ def head_to_head_artifact_errors(payload: Mapping[str, Any]) -> tuple[str, ...]:
         errors.append(error)
         return True
 
-    for path in REQUIRED_HEAD_TO_HEAD_FIELDS:
-        node: Any = payload
-        for key in path:
-            if not isinstance(node, Mapping) or key not in node:
-                if not add(f"artifact_missing:{'.'.join(path)}"):
-                    return tuple(errors)
-                node = None
-                break
-            node = node[key]
-        else:
-            if not isinstance(node, str) or not node.strip():
-                add(f"artifact_missing:{'.'.join(path)}")
+    for path in REQUIRED_HEAD_TO_HEAD_TEXT_FIELDS:
+        dotted = ".".join(path)
+        node = _walk(payload, path)
+        if node is _MISSING or not isinstance(node, str) or not node.strip():
+            add(f"artifact_missing:{dotted}")
+        elif len(node) > MAX_ARTIFACT_FIELD_CHARS:
+            add(f"artifact_bad:{dotted}")
 
     task_inputs = payload.get("task_inputs")
     rows = task_inputs if isinstance(task_inputs, (list, tuple)) else ()
-    cleaned = [
-        str(item).strip()
-        for item in rows[:MAX_TASK_INPUTS]
-        if isinstance(item, str) and str(item).strip()
-    ]
-    if not cleaned:
+    if not rows or not all(isinstance(item, str) and item.strip() for item in rows):
         add("artifact_missing:task_inputs")
-    elif any(len(item) > MAX_TASK_INPUT_CHARS for item in cleaned):
+    elif len(rows) > MAX_TASK_INPUTS or any(
+        len(item) > MAX_TASK_INPUT_CHARS for item in rows
+    ):
         add("artifact_bad:task_inputs")
+
+    winner = payload.get("winner")
+    if winner is None:
+        add("artifact_missing:winner")
+    elif winner not in WINNER_VALUES:
+        add("artifact_bad:winner")
+
+    count = payload.get("strictly_better_metric_count")
+    if count is None:
+        add("artifact_missing:strictly_better_metric_count")
+    elif (
+        isinstance(count, bool)
+        or not isinstance(count, int)
+        or not 0 <= count <= MAX_STRICTLY_BETTER_METRIC_COUNT
+    ):
+        add("artifact_bad:strictly_better_metric_count")
+
+    gates = payload.get("regression_gates_passed")
+    if gates is None:
+        add("artifact_missing:regression_gates_passed")
+    elif not isinstance(gates, bool):
+        add("artifact_bad:regression_gates_passed")
     return tuple(errors)
 
 
 def load_head_to_head_artifact(path: Path) -> HeadToHeadArtifact:
-    digest = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+        raw = path.read_bytes()
+    except OSError:
+        return HeadToHeadArtifact(digest="", payload={}, errors=("artifact_unreadable_file",))
+    digest = "sha256:" + hashlib.sha256(raw).hexdigest()
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
         return HeadToHeadArtifact(digest=digest, payload={}, errors=("artifact_unreadable_json",))
     if not isinstance(payload, Mapping):
         return HeadToHeadArtifact(digest=digest, payload={}, errors=("artifact_not_object",))
@@ -389,7 +452,7 @@ def compare_verdict(
     }
     if superiority_claimed:
         criteria["superiority_claim_backed_by_artifact"] = bool(
-            head_to_head is not None and head_to_head.valid
+            head_to_head is not None and head_to_head.supports_superiority()
         )
     return {
         "ok": all(criteria.values()),
@@ -411,16 +474,21 @@ def build_summary(
         head_to_head=head_to_head,
         superiority_claimed=superiority_claimed,
     )
+    verdict_ok = bool(verdict["ok"])
     configured = head_to_head is not None and bool(head_to_head.digest)
     valid = head_to_head is not None and head_to_head.valid
+    supporting = head_to_head is not None and head_to_head.supports_superiority()
     summary: dict[str, Any] = {
         "probe": PROBE,
         "mode": "deterministic",
         "arms": {result.arm: result.to_payload() for result in results},
-        "openscience_claim": STYLE_CLAIM,
+        # The claim reflects the verdict, not a constant: a failed gate run
+        # never says "passed".
+        "openscience_claim": STYLE_CLAIM if verdict_ok else "",
         "real_openscience": {
             "configured": configured,
             "artifact_valid": valid,
+            "supports_superiority": supporting,
             "artifact_digest": "" if head_to_head is None else head_to_head.digest,
             "metadata": head_to_head.metadata() if valid else {},
             "errors": [] if valid else (list(head_to_head.errors) if head_to_head else []),
@@ -436,7 +504,7 @@ def build_summary(
         },
         "verdict": verdict,
     }
-    if superiority_claimed and valid:
+    if superiority_claimed and supporting:
         summary["superiority_note"] = (
             f"{SUPERIORITY_PHRASE} per recorded head-to-head {head_to_head.digest}"
         )
@@ -453,6 +521,9 @@ def _sample_head_to_head_payload() -> dict[str, Any]:
         "run_date": "2026-08-24",
         "result_source": "exported OpenScience run artifacts + manual scoring notes",
         "rubric": "research_benchmark_v1",
+        "winner": "codey",
+        "strictly_better_metric_count": 5,
+        "regression_gates_passed": True,
     }
 
 
@@ -478,6 +549,7 @@ def _self_test() -> None:
         artifact_path.write_text(json.dumps(_sample_head_to_head_payload()), encoding="utf-8")
         head_to_head = load_head_to_head_artifact(artifact_path)
         assert head_to_head.valid, head_to_head.errors
+        assert head_to_head.supports_superiority()
 
         backed = build_summary(
             results=results,
@@ -489,6 +561,31 @@ def _self_test() -> None:
         metadata = backed["real_openscience"]["metadata"]
         assert metadata["openscience"]["commit"] == "abc1234"
         assert metadata["codey"]["commit"] == "b046b99"
+        assert metadata["winner"] == "codey"
+        assert backed["real_openscience"]["supports_superiority"] is True
+
+        # A metadata-valid artifact whose own result does NOT back the claim
+        # (OpenScience won, too few strictly-better metrics, or gates failed)
+        # can never unlock the wording.
+        for field, value in (
+            ("winner", "openscience"),
+            ("strictly_better_metric_count", MIN_STRICTLY_BETTER_METRICS - 1),
+            ("regression_gates_passed", False),
+        ):
+            opposing = json.loads(json.dumps(_sample_head_to_head_payload()))
+            opposing[field] = value
+            opposing_path = Path(td) / f"opposing-{field}.json"
+            opposing_path.write_text(json.dumps(opposing), encoding="utf-8")
+            recorded = load_head_to_head_artifact(opposing_path)
+            assert recorded.valid, (field, recorded.errors)
+            assert not recorded.supports_superiority(), field
+            locked_summary = build_summary(
+                results=results,
+                head_to_head=recorded,
+                superiority_claimed=True,
+            )
+            assert locked_summary["verdict"]["ok"] is False, field
+            assert SUPERIORITY_PHRASE not in json.dumps(locked_summary), field
 
         # A digest-only or incomplete artifact must never lift the guard.
         digest_only = HeadToHeadArtifact(digest=head_to_head.digest, payload={}, errors=())
@@ -499,6 +596,7 @@ def _self_test() -> None:
         )
         assert locked["verdict"]["ok"] is False
         assert SUPERIORITY_PHRASE not in json.dumps(locked)
+        assert locked["openscience_claim"] == ""
 
         broken_payload = _sample_head_to_head_payload()
         del broken_payload["run_date"]
@@ -520,9 +618,14 @@ def _self_test() -> None:
     unbacked = compare_verdict(results, superiority_claimed=True)
     assert unbacked["ok"] is False
 
-    incomplete = compare_verdict(results[:2])
+    # An incomplete matrix fails the verdict and must not say "passed".
+    incomplete_results = results[:2]
+    incomplete = compare_verdict(incomplete_results)
     assert incomplete["criteria"]["matrix_complete"] is False
     assert incomplete["ok"] is False
+    failed_summary = build_summary(results=incomplete_results)
+    assert failed_summary["openscience_claim"] == ""
+    assert STYLE_CLAIM not in json.dumps(failed_summary)
 
     for result in results:
         if result.report is None:

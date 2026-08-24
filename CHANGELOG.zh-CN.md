@@ -56,6 +56,16 @@
     JSON、非对象 payload 或缺字段的 artifact 一律 fail closed，CLI 直接
     退出非零，summary 记录 `metadata` 与 `errors`。validity 以 payload 本身
     为唯一事实来源，手拼的 digest 包装无法解锁。
+  - superiority 门禁进一步从"元数据存在"升级到"结果支持"：artifact 必须带
+    bounded 结果字段（`winner` ∈ {codey, openscience, tie}、
+    `strictly_better_metric_count` ≥ roadmap 阈值 4、
+    `regression_gates_passed: true`），且只有这些结果字段真正支持时才允许
+    "surpassed OpenScience"；元数据完整但 winner 为 openscience/tie、严格
+    更优指标不足、或 gates 未全过的记录一律锁定。summary 新增
+    `supports_superiority` 并把结果字段写进 metadata；`openscience_claim`
+    改为反映 verdict——gate 未过的 summary 不再说 "passed"。所有文本字段
+    长度上限与 task_inputs 数量/长度上限进入校验本体，不再只在输出截断；
+    目录等不可读路径返回 `artifact_unreadable_file` 而不是抛异常。
   - `regression_gate` 的 record anchor 改为经
     `normalize_runtime_ref(kind="research_record")` 校验：恶意或错误的
     mapping 无法把长文本塞进 refs-only payload；snapshot 锚点非法时回退到
