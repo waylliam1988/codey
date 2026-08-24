@@ -66,9 +66,12 @@ This file records Codey's release history. The newest release appears first.
   Chinese section titles (`参考文献`, `风险`, `备注`, `方法`) joined the
   alias table, short lead-in colon lines (`具体如下：`) no longer cut their
   section, and unknown markdown headings route to a dropped unknown bucket.
-  Writer-visible research handoff now keeps Key conclusions cited-only:
-  conclusion lines without bracketed source citations are still shown, but
-  as `[uncited]` limitations instead of implementation-driving conclusions.
+  Writer-visible research handoff now keeps Key conclusions
+  citation-map-backed: conclusion lines must cite a number present in the
+  rendered Citation map, fake bracket citations such as `[99]` are demoted,
+  later supported conclusions are not lost behind early uncited noise, and
+  uncited conclusions remain visible only as capped `[uncited]` limitations
+  after real counterpoints.
 - Research projection boundaries are now declared metadata, not comments:
   `CapabilitySpec` gained `projection_audience` / `canonical_inputs` /
   `fail_mode` / `release_gate` with validation (projection capabilities must

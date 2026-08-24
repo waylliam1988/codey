@@ -237,6 +237,71 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertIn("ACME_LEDGER_V3_MIGRATION", limitations_block)
         self.assertIn("[uncited]", limitations_block)
 
+    def test_brief_builder_rejects_fake_citation_not_in_citation_map(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            note = KnowledgeNote.create(
+                type="synthesis",
+                title="Migration research",
+                body=(
+                    "## 结论\n"
+                    "- Keep flat-file ledgers for this release. [1]\n"
+                    "- Unsupported migration claim [99]\n\n"
+                    "- Mixed dangling reference [1] [99]\n\n"
+                    "## 来源\n"
+                    "[1] Ledger docs - https://example.com/ledger\n"
+                ),
+                sources=["https://example.com/ledger"],
+                session_id="s1",
+            )
+            store.write_note(note)
+
+            rendered = KnowledgeBriefBuilder(store).build_for_session("s1").render()
+            store.close()
+
+        key_block = rendered.split("Key conclusions:", 1)[1].split("Citation map:", 1)[0]
+        limitations_block = rendered.split("Counter-evidence / limitations:", 1)[1]
+        self.assertIn("Keep flat-file ledgers for this release. [1]", key_block)
+        self.assertNotIn("Unsupported migration claim", key_block)
+        self.assertNotIn("Mixed dangling reference", key_block)
+        self.assertIn("Unsupported migration claim [99] [uncited]", limitations_block)
+        self.assertIn("Mixed dangling reference [1] [99] [uncited]", limitations_block)
+
+    def test_brief_builder_scans_past_uncited_conclusions_and_preserves_real_limitations(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            uncited = "\n".join(f"- Uncited setup note {index}" for index in range(1, 7))
+            limitations = "\n".join(f"- Real limitation {index}" for index in range(1, 6))
+            note = KnowledgeNote.create(
+                type="synthesis",
+                title="Pricing research",
+                body=(
+                    "## 结论\n"
+                    f"{uncited}\n"
+                    "- Supported critical formula [1]\n\n"
+                    "## 反证与限制\n"
+                    f"{limitations}\n\n"
+                    "## 来源\n"
+                    "[1] Pricing docs - https://example.com/pricing\n"
+                ),
+                sources=["https://example.com/pricing"],
+                session_id="s1",
+            )
+            store.write_note(note)
+
+            rendered = KnowledgeBriefBuilder(store).build_for_session("s1").render()
+            store.close()
+
+        key_block = rendered.split("Key conclusions:", 1)[1].split("Citation map:", 1)[0]
+        limitations_block = rendered.split("Counter-evidence / limitations:", 1)[1]
+        self.assertIn("Supported critical formula [1]", key_block)
+        self.assertNotIn("Uncited setup note", key_block)
+        for index in range(1, 6):
+            self.assertIn(f"Real limitation {index}", limitations_block)
+        self.assertIn("Uncited setup note 1 [uncited]", limitations_block)
+        self.assertIn("Uncited setup note 2 [uncited]", limitations_block)
+        self.assertNotIn("Uncited setup note 3 [uncited]", limitations_block)
+
     def test_index_graph_queries_return_neighbors_and_sources(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))

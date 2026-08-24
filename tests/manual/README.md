@@ -6,7 +6,8 @@ Writer-visible research context changes. It uses one synthetic coding fixture
 
 - `baseline`: legacy brief render with raw excerpt and related-note id noise.
 - `projection`: production structured brief render, where Key conclusions are
-  citation-backed only and uncited conclusions are demoted to limitations.
+  backed by Citation map ids and uncited or fake-cited conclusions are demoted
+  to limitations.
 
 The gate requires a complete matrix: for every `(case, repeat)` there must be
 exactly one baseline row and one projection row. It compares success,

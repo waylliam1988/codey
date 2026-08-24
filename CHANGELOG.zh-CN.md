@@ -49,9 +49,11 @@
   `一、结论`）恢复识别；常用中文标题（`参考文献`、`风险`、`备注`、
   `方法`）加入别名表；`具体如下：` 这类节内引导行不再切断所属 section；
   未知的 markdown 标题进入被丢弃的 unknown 桶。
-  Writer 可见 research handoff 现在把 Key conclusions 限定为带 bracket
-  citation 的结论；无 citation 的结论仍保留，但以 `[uncited]` limitations
-  展示，不再进入可驱动实现的结论区。
+  Writer 可见 research handoff 现在把 Key conclusions 限定为
+  Citation map 支撑的结论：结论必须引用 sources 里真实存在的编号；
+  `[99]` 这类假 bracket citation 会降级；前排 uncited 噪音不会挤掉后排
+  真实 supported 结论；uncited 结论只会作为少量 `[uncited]` limitations
+  附在真实 counterpoints 之后。
 - Research 投影边界从注释变成元数据：`CapabilitySpec` 新增
   `projection_audience` / `canonical_inputs` / `fail_mode` /
   `release_gate` 并在注册时校验（投影能力必须声明受众；behavior_input

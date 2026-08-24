@@ -13,9 +13,15 @@ from codey.text_budget import clip_middle
 
 BRIEF_TOTAL_LIMIT = 6000
 SECTION_ITEM_LIMIT = 5
+CONCLUSION_SCAN_LIMIT = 24
+KEY_CONCLUSION_LIMIT = 5
+COUNTERPOINT_LIMIT = 5
+UNCITED_CONCLUSION_LIMIT = 2
+LIMITATION_TOTAL_LIMIT = 7
 SOURCE_LINE_LIMIT = 16
 MAX_ITEM_CHARS = 220
-_CITATION_RE = re.compile(r"\[[0-9][0-9A-Za-z .:_/-]*\]")
+_CITATION_RE = re.compile(r"\[([0-9]+)(?:\]|[ .:_/-][0-9A-Za-z .:_/-]*\])")
+_SOURCE_CITATION_RE = re.compile(r"^\[([0-9]+)\]")
 
 
 @dataclass(frozen=True)
@@ -93,21 +99,26 @@ class KnowledgeBriefBuilder:
         if note is None:
             return ResearchBrief()
         sections = parse_sections(note.body)
+        citation_map = _section_lines(
+            sections.get("sources", ""), limit=SOURCE_LINE_LIMIT, strip_bullets=False
+        )
+        citation_ids = _citation_ids(sections.get("sources", ""))
         conclusions, uncited_conclusions = _conclusion_lines(
-            sections.get("conclusion", "")
+            sections.get("conclusion", ""),
+            valid_citation_ids=citation_ids,
+        )
+        counterpoints = _merge_lines(
+            _section_lines(sections.get("counter", ""), limit=COUNTERPOINT_LIMIT),
+            uncited_conclusions[:UNCITED_CONCLUSION_LIMIT],
+            limit=LIMITATION_TOTAL_LIMIT,
         )
         return ResearchBrief(
             synthesis_id=note.id,
             original_question=note.title,
-            conclusions=conclusions,
-            counterpoints=_merge_lines(
-                uncited_conclusions,
-                _section_lines(sections.get("counter", "")),
-            ),
+            conclusions=conclusions[:KEY_CONCLUSION_LIMIT],
+            counterpoints=counterpoints,
             evidence_urls=tuple(note.sources[:8]),
-            citation_map=_section_lines(
-                sections.get("sources", ""), limit=SOURCE_LINE_LIMIT, strip_bullets=False
-            ),
+            citation_map=citation_map,
             source_quality_risks=_section_lines(sections.get("source_quality", ""), limit=3),
             evidence_items=_section_lines(sections.get("evidence", "")),
             coverage_notes=_section_lines(sections.get("coverage", ""), limit=3),
@@ -139,15 +150,38 @@ def _section_lines(
     return tuple(out)
 
 
-def _conclusion_lines(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+def _citation_ids(text: str) -> frozenset[str]:
+    ids: set[str] = set()
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith(("- ", "* ")):
+            stripped = stripped[2:].strip()
+        match = _SOURCE_CITATION_RE.match(stripped)
+        if match:
+            ids.add(match.group(1))
+    return frozenset(ids)
+
+
+def _conclusion_lines(
+    text: str,
+    *,
+    valid_citation_ids: frozenset[str],
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
     supported: list[str] = []
     uncited: list[str] = []
-    for item in _section_lines(text):
-        if _CITATION_RE.search(item):
+    for item in _section_lines(text, limit=CONCLUSION_SCAN_LIMIT):
+        if _has_valid_citation(item, valid_citation_ids):
             supported.append(item)
         else:
             uncited.append(f"{item} [uncited]")
     return tuple(supported), tuple(uncited)
+
+
+def _has_valid_citation(item: str, valid_citation_ids: frozenset[str]) -> bool:
+    if not valid_citation_ids:
+        return False
+    cited_ids = tuple(match.group(1) for match in _CITATION_RE.finditer(item))
+    return bool(cited_ids) and all(citation_id in valid_citation_ids for citation_id in cited_ids)
 
 
 def _merge_lines(

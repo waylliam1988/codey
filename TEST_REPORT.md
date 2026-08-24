@@ -39,10 +39,12 @@ Parser correctness: documented bare numbered headings (`1. Conclusion`,
 `一、结论`) are boundaries again; `参考文献`/`风险`/`备注`/`方法` and
 `Assumptions:` joined the alias table; lead-in colon lines no longer cut their
 section; unknown markdown headings still route to a dropped unknown bucket.
-Writer-visible research handoff now treats Key conclusions as cited-only:
-conclusion lines without bracketed source citations stay visible as
-`[uncited]` limitations, but no longer enter the implementation-driving
-Key conclusions block.
+Writer-visible research handoff now treats Key conclusions as
+Citation-map-backed: conclusion lines must cite a number present in the
+rendered Citation map. Missing citations and fake bracket citations such as
+`[99]` stay visible only as capped `[uncited]` limitations after real
+counterpoints, and supported conclusions later in the section are still
+scanned before the Key conclusions cap is applied.
 
 Projection governance: CapabilitySpec gained validated
 audience/canonical-inputs/fail-mode/release-gate metadata for every
@@ -99,10 +101,9 @@ test capability fingerprint assignment removed.
 Verification:
 
 ```text
-python -m pytest tests/test_atomic_io.py tests/test_pytest_cleanup_guard.py
-  tests/test_knowledge.py tests/test_research_to_code_ab.py
-  tests/test_ab_observation_journal.py tests/test_transcript_replay_cache.py -q
-  85 passed, 1 skipped
+python -m pytest tests/test_knowledge.py tests/test_research_to_code_ab.py
+  tests/test_report_sections.py -q
+  64 passed
 python -B tests\manual\research_to_code_ab.py --self-test
   self-test ok
 python -B tests\manual\research_to_code_ab.py --provider deepseek --repeats 1
@@ -112,7 +113,7 @@ python -B tests\manual\research_to_code_ab.py --provider qwen --repeats 1
   gate ok; baseline 4 turns/4 tools, projection 4 turns/4 tools;
   projection brief -494 chars, sent chars -494, trap not in Key conclusions
 python -m pytest -q                   full suite:
-  2611 passed, 1 skipped, 781 subtests passed in 234.66s
+  2613 passed, 1 skipped, 781 subtests passed
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean
