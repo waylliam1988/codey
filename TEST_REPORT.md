@@ -25,7 +25,10 @@ over the full record capsule (record row plus referenced
 source/evidence/claim/assumption/relation maps), stamped after normalization
 and verified on every load — tampering any referenced map row fails the
 ledger closed — while records lacking their own raw digest are rejected before
-projection instead of minting empty-string hashes.
+projection instead of minting empty-string hashes; append-time capsule map id
+collisions now fail before write (`ledger_id_collision`) and preserve the
+previous payload byte-for-byte for source/evidence/claim/assumption/relation
+collisions.
 
 Parser correctness: documented bare numbered headings (`1. Conclusion`,
 `一、结论`) are boundaries again; `参考文献`/`风险`/`备注`/`方法` and
@@ -59,11 +62,11 @@ Verification:
 
 ```text
 python -m pytest tests/test_research_evidence_ledger.py ... targeted suite:
-  security/integrity/parser/projection files: 142 passed + 216 subtests
+  ledger/proof/completion/pipeline/trace files: 138 passed
 python -m pytest tests/test_capabilities.py ... projection-adjacent suite:
-  212 passed + 3 subtests
+  41 passed
 python -m pytest -q                   full suite:
-  2593 passed, 9 skipped, 781 subtests passed in 229.95s
+  2594 passed, 9 skipped, 781 subtests passed in 227.48s
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean

@@ -36,7 +36,10 @@
   覆盖 entry 本身（去掉该字段）以及它引用的 source/evidence/claim/
   assumption/relation map 行。load 时任一不匹配/缺失即整册 fail closed
   （`ledger_unavailable`）。缺少原始 `record_digest` 的记录在投影前直接
-  拒绝，不再铸出空串摘要。
+  拒绝，不再铸出空串摘要。append 时也会拒绝共享 map 的同 id 不同
+  canonical 内容：新 record 若复用已有 source/evidence/claim/assumption/
+  relation id 但内容不同，会以 `ledger_id_collision` 跳过，旧 ledger payload
+  逐字节不变。
 - 报告 section 边界加固：README 文档化的裸编号标题（`1. Conclusion`、
   `一、结论`）恢复识别；常用中文标题（`参考文献`、`风险`、`备注`、
   `方法`）加入别名表；`具体如下：` 这类节内引导行不再切断所属 section；

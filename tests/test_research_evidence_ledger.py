@@ -168,6 +168,81 @@ def _wide_record(index: int, *, evidence_count: int = 32) -> ResearchRecord:
     )
 
 
+def _capsule_record(
+    index: int,
+    *,
+    source_id: str | None = None,
+    source_host: str = "example.com",
+    evidence_id: str | None = None,
+    evidence_excerpt: str = "bounded excerpt",
+    claim_id: str | None = None,
+    claim_text: str = "Evidence-backed claim",
+    assumption_id: str | None = None,
+    assumption_text: str = "Declared assumption",
+    relation_id: str | None = None,
+    relation_kind: str = "supports",
+) -> ResearchRecord:
+    source_ref = source_id or f"source:{index:016x}"
+    evidence_ref = evidence_id or f"evidence:{index:016x}"
+    claim_ref = claim_id or f"claim:{index:016x}"
+    relation_ref = relation_id or f"relation:{index:016x}"
+    assumptions = (
+        ResearchAssumption(
+            assumption_id=assumption_id,
+            assumption_text=assumption_text,
+            reason="declared_uncertainty",
+            claim_ref=claim_ref,
+        ),
+    ) if assumption_id else ()
+    assumption_refs = (assumption_id,) if assumption_id else ()
+    return ResearchRecord(
+        record_id=f"research_record:{index:016x}",
+        record_digest="sha256:" + f"{index:064x}",
+        question=ResearchQuestion(
+            question_id=f"question:{index:016x}",
+            question_text_digest="sha256:" + f"{index + 1:064x}",
+        ),
+        answer_status="answered",
+        sources=(ResearchSource(
+            source_id=source_ref,
+            host=source_host,
+            content_kind="html",
+        ),),
+        evidence=(ResearchEvidence(
+            evidence_id=evidence_ref,
+            source_id=source_ref,
+            excerpt_digest="sha256:" + "e" * 64,
+            bounded_excerpt=evidence_excerpt,
+            locator=EvidenceLocator(
+                kind="html",
+                source_id=source_ref,
+                char_start=0,
+                char_end=len(evidence_excerpt),
+            ),
+            stance="supports",
+            claim_text_digest="sha256:" + "c" * 64,
+        ),),
+        claims=(ResearchClaim(
+            claim_id=claim_ref,
+            claim_text=claim_text,
+            claim_section="conclusion",
+            evidence_refs=(evidence_ref,),
+            assumption_refs=assumption_refs,
+            status="evidence_backed",
+        ),),
+        assumptions=assumptions,
+        relations=(ResearchClaimRelation(
+            relation_id=relation_ref,
+            relation_kind=relation_kind,
+            from_ref=claim_ref,
+            to_ref=evidence_ref,
+        ),),
+        run_id=f"run-{index}",
+        session_id="session-ledger",
+        stop_reason="done",
+    )
+
+
 def _assert_ledger_records_are_closed(payload: dict[str, object]) -> None:
     maps = {
         "source_refs": set(payload["sources"]),
@@ -334,6 +409,92 @@ def test_append_load_and_duplicate_are_bounded_and_deterministic() -> None:
     assert snapshot.payload["schema_version"] == EVIDENCE_LEDGER_SCHEMA_VERSION
     assert snapshot.payload["kind"] == EVIDENCE_LEDGER_KIND
     assert len(snapshot.payload["records"]) == 1
+
+
+def test_append_id_collision_skips_new_record_and_preserves_existing_payload() -> None:
+    base = _capsule_record(30)
+    source_id = base.sources[0].source_id
+    evidence_id = base.evidence[0].evidence_id
+    claim_id = base.claims[0].claim_id
+    relation_id = base.relations[0].relation_id
+    assumption_base = _capsule_record(
+        40,
+        assumption_id="assumption:" + "4" * 16,
+    )
+    assumption_id = assumption_base.assumptions[0].assumption_id
+    cases = (
+        (
+            "source",
+            base,
+            _capsule_record(31, source_id=source_id, source_host="evil.example"),
+        ),
+        (
+            "evidence",
+            base,
+            _capsule_record(
+                32,
+                source_id=source_id,
+                evidence_id=evidence_id,
+                evidence_excerpt="altered bounded excerpt",
+            ),
+        ),
+        (
+            "claim",
+            base,
+            _capsule_record(
+                33,
+                source_id=source_id,
+                evidence_id=evidence_id,
+                claim_id=claim_id,
+                claim_text="Altered claim",
+            ),
+        ),
+        (
+            "relation",
+            base,
+            _capsule_record(
+                34,
+                source_id=source_id,
+                evidence_id=evidence_id,
+                claim_id=claim_id,
+                relation_id=relation_id,
+                relation_kind="limits",
+            ),
+        ),
+        (
+            "assumption",
+            assumption_base,
+            _capsule_record(
+                41,
+                source_id=assumption_base.sources[0].source_id,
+                evidence_id=assumption_base.evidence[0].evidence_id,
+                claim_id=assumption_base.claims[0].claim_id,
+                assumption_id=assumption_id,
+                assumption_text="Altered assumption",
+                relation_id=assumption_base.relations[0].relation_id,
+            ),
+        ),
+    )
+    for label, first_record, colliding_record in cases:
+        with tempfile.TemporaryDirectory() as td:
+            store = EvidenceLedgerStore(Path(td) / "state")
+            first = store.append_record(first_record, session_id="session-ledger")
+            path = store.path_for("session-ledger", None)
+            before_text = path.read_text(encoding="utf-8")
+
+            second = store.append_record(colliding_record, session_id="session-ledger")
+            after_text = path.read_text(encoding="utf-8")
+            snapshot = store.load(session_id="session-ledger")
+
+        assert first.ok is True, label
+        assert second.ok is False, label
+        assert second.skipped is True, label
+        assert second.reason_code == "ledger_id_collision", label
+        assert second.counts == first.counts, label
+        assert before_text == after_text, label
+        assert snapshot.available is True, label
+        assert len(snapshot.payload["records"]) == 1, label
+        assert snapshot.payload["records"][0]["record_id"] == first_record.record_id, label
 
 
 def test_mapping_record_is_rejected_before_nested_refs_can_persist() -> None:

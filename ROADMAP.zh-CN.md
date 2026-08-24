@@ -2139,6 +2139,10 @@ refs-only brief 投影 + Research-to-Code impact contract（unsupported claim
 `research_brief_projections` 有界 section。planner 只新增可选
 evidence_profile 参数（默认行为 byte-identical）。
 
+Release 前 hardening：Evidence ledger 的 record capsule integrity 不只在 load
+时校验，也在 append 时阻止共享 map 同 id 不同 canonical 内容改写旧 capsule
+输入；冲突 record 以 `ledger_id_collision` 跳过，旧 payload 不重写。
+
 Groundwork 边界：profiles/impact contract/render_handoff 目前只有测试和
 trace 消费；生产路径尚不应用 profile。Writer 可见 handoff 文案已切换为
 共享 `report_sections` 解析的结构化短摘要（raw excerpt 与 related-id 移除、

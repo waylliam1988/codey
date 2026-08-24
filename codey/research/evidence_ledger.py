@@ -249,13 +249,22 @@ class EvidenceLedgerStore:
                     counts=_counts(payload),
                 )
             candidate = deepcopy(payload)
-            _append_payload(
+            appended = _append_payload(
                 candidate,
                 record_payload,
                 run_id=run_id,
                 session_id=session_id,
                 project=project,
             )
+            if not appended:
+                return EvidenceLedgerWriteResult(
+                    skipped=True,
+                    reason_code="ledger_id_collision",
+                    ledger_ref=previous_ledger_ref,
+                    record_id=record_id,
+                    counts=previous_counts,
+                    warnings=previous_warnings,
+                )
             if not _has_record(candidate, record_id, record_digest):
                 return EvidenceLedgerWriteResult(
                     skipped=True,
@@ -411,7 +420,7 @@ def _append_payload(
     run_id: str,
     session_id: str,
     project: str | Path | None,
-) -> None:
+) -> bool:
     record_id = _record_id(record.get("record_id"))
     sources = _dict_map(payload, "sources")
     evidence = _dict_map(payload, "evidence")
@@ -427,27 +436,32 @@ def _append_payload(
     for item in _list(record.get("sources"))[:MAX_LEDGER_SOURCES]:
         source_id = identifier(item.get("source_id"), 80)
         if source_id:
-            sources[source_id] = _source_entry(item)
+            if not _put_capsule_row(sources, source_id, _source_entry(item)):
+                return False
             source_ids.append(source_id)
     for item in _list(record.get("evidence"))[:MAX_LEDGER_EVIDENCE]:
         evidence_id = identifier(item.get("evidence_id"), 80)
         if evidence_id:
-            evidence[evidence_id] = _evidence_entry(item)
+            if not _put_capsule_row(evidence, evidence_id, _evidence_entry(item)):
+                return False
             evidence_ids.append(evidence_id)
     for item in _list(record.get("claims"))[:MAX_LEDGER_CLAIMS]:
         claim_id = identifier(item.get("claim_id"), 80)
         if claim_id:
-            claims[claim_id] = _claim_entry(item)
+            if not _put_capsule_row(claims, claim_id, _claim_entry(item)):
+                return False
             claim_ids.append(claim_id)
     for item in _list(record.get("assumptions"))[:MAX_LEDGER_ASSUMPTIONS]:
         assumption_id = identifier(item.get("assumption_id"), 80)
         if assumption_id:
-            assumptions[assumption_id] = _assumption_entry(item)
+            if not _put_capsule_row(assumptions, assumption_id, _assumption_entry(item)):
+                return False
             assumption_ids.append(assumption_id)
     for item in _list(record.get("relations"))[:MAX_LEDGER_RELATIONS]:
         relation_id = identifier(item.get("relation_id"), 80)
         if relation_id:
-            relations[relation_id] = _relation_entry(item)
+            if not _put_capsule_row(relations, relation_id, _relation_entry(item)):
+                return False
             relation_ids.append(relation_id)
 
     record_entry = {
@@ -484,11 +498,25 @@ def _append_payload(
     # are part of each record capsule, so a later trusted append that updates
     # one row must leave all surviving capsules coherent for load-time checks.
     _stamp_record_integrities(payload)
+    return True
 
 
 def _stamp_record_integrities(payload: Mapping[str, object]) -> None:
     for record in _records(payload):
         record["record_integrity"] = _record_integrity(payload, record)
+
+
+def _put_capsule_row(
+    rows: dict[str, object],
+    row_id: str,
+    entry: Mapping[str, object],
+) -> bool:
+    existing = rows.get(row_id)
+    normalized = dict(entry)
+    if existing is not None and existing != normalized:
+        return False
+    rows[row_id] = normalized
+    return True
 
 
 def _source_entry(item: Mapping[str, object]) -> dict[str, object]:

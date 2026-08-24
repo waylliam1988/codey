@@ -48,7 +48,11 @@ This file records Codey's release history. The newest release appears first.
   Any mismatch or missing field fails the whole ledger closed
   (`ledger_unavailable`) instead of serving tampered history. Records
   without their own raw `record_digest` are rejected before projection
-  instead of minting the empty-string digest.
+  instead of minting the empty-string digest. Append-time shared-map id
+  collisions are now rejected before any write: if a new record reuses an
+  existing source/evidence/claim/assumption/relation id with different
+  canonical content, the record is skipped with `ledger_id_collision` and the
+  previous ledger payload is left byte-for-byte unchanged.
 - Report section boundaries hardened: bare numbered headings documented in
   the README (`1. Conclusion`, `一、结论`) are recognized again, common
   Chinese section titles (`参考文献`, `风险`, `备注`, `方法`) joined the
