@@ -1,5 +1,25 @@
 # Manual live benchmarks
 
+`research_to_code_ab.py` is the Research-to-Code handoff smoke/A-B gate for
+Writer-visible research context changes. It uses one synthetic coding fixture
+(`discounted_total`), one synthesis note, and two arms:
+
+- `baseline`: legacy brief render with raw excerpt and related-note id noise.
+- `projection`: production structured brief render, where Key conclusions are
+  citation-backed only and uncited conclusions are demoted to limitations.
+
+The gate requires a complete matrix: for every `(case, repeat)` there must be
+exactly one baseline row and one projection row. It compares success,
+key-conclusion retention, trap misuse, independent verification, and the
+structural `projection_trap_not_in_key_conclusions` check. By default every
+prompt/reply pair is archived under the journal's `transcripts/` directory,
+and the manifest is finished with `run_complete` as `done` or `failed`.
+
+```powershell
+python -B tests\manual\research_to_code_ab.py --self-test
+python -B tests\manual\research_to_code_ab.py --provider deepseek --repeats 1
+```
+
 `changeset_review_ab.py` compares the old path-only Review prompt with the
 current ChangeSet-summary prompt. It sends fixed review-only diffs to one live
 provider at a time and scores whether the model catches the seeded issue,

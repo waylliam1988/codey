@@ -36,7 +36,10 @@ This file records Codey's release history. The newest release appears first.
   file opened with `xb`, fsync, existing file mode copied before
   `os.replace`, CRLF/LF style retained). Wired into write/edit tool paths
   and snapshot restore, matching the "written atomically" promise in the
-  tool contract without dropping executable bits on POSIX.
+  tool contract without dropping executable bits on POSIX. If a replace
+  fails after inheriting a read-only target mode, the temp file is chmod'd
+  writable before cleanup so Windows does not leave `.target.<uuid>.tmp`
+  behind.
 - Digest vocabulary split to kill the同名双义: `refs.digest_ref` becomes
   `refs.content_digest` (producer: any value -> sha256 content digest);
   `research.shape.digest_ref` becomes `shape.valid_digest_ref` (validator:
@@ -63,6 +66,9 @@ This file records Codey's release history. The newest release appears first.
   Chinese section titles (`参考文献`, `风险`, `备注`, `方法`) joined the
   alias table, short lead-in colon lines (`具体如下：`) no longer cut their
   section, and unknown markdown headings route to a dropped unknown bucket.
+  Writer-visible research handoff now keeps Key conclusions cited-only:
+  conclusion lines without bracketed source citations are still shown, but
+  as `[uncited]` limitations instead of implementation-driving conclusions.
 - Research projection boundaries are now declared metadata, not comments:
   `CapabilitySpec` gained `projection_audience` / `canonical_inputs` /
   `fail_mode` / `release_gate` with validation (projection capabilities must
@@ -80,7 +86,11 @@ This file records Codey's release history. The newest release appears first.
   cannot open real provider tabs (the two receipt/memory tests patch both
   connectors); `tests/conftest.py` suppresses pytest's Windows-only
   `pytest-current` symlink cleanup `PermissionError` at atexit without
-  changing temp paths; `tests/test_work_checkpoint_flow.py` disables post-task
+  changing temp paths and re-raises unrelated permission errors;
+  `tests/manual/research_to_code_ab.py` now records `run_complete` so live
+  journal manifests end as `done` or `failed`, and its gate includes the
+  structural `projection_trap_not_in_key_conclusions` check;
+  `tests/test_work_checkpoint_flow.py` disables post-task
   audit/consensus/advisor side effects (~137s -> ~4s); StepFun submission
   gains GLM-style double-click protection; `task_runner` restores the
   previous cancellation event on every pre-start failure path;

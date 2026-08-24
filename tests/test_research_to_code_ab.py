@@ -23,6 +23,9 @@ def test_arm_briefs_differ_only_in_rendering_not_facts() -> None:
     assert "Synthesis excerpt" not in briefs["projection"]
     assert probe.RELATED_NOTE_ID in briefs["baseline"]
     assert probe.RELATED_NOTE_ID not in briefs["projection"]
+    assert probe._brief_trap_in_key_conclusions(briefs["baseline"]) is True
+    assert probe._brief_trap_in_key_conclusions(briefs["projection"]) is False
+    assert "[uncited]" in briefs["projection"]
     assert len(briefs["baseline"]) > len(briefs["projection"])
 
 
@@ -79,6 +82,7 @@ def test_summarize_reports_projection_delta_vs_baseline() -> None:
             "turns": 5,
             "tool_calls": 4,
             "protocol_errors": 0,
+            "brief_trap_in_key_conclusions": True,
         },
         {
             "case": "discount-before-tax",
@@ -92,6 +96,7 @@ def test_summarize_reports_projection_delta_vs_baseline() -> None:
             "turns": 5,
             "tool_calls": 4,
             "protocol_errors": 0,
+            "brief_trap_in_key_conclusions": False,
         },
     ]
 
@@ -102,6 +107,7 @@ def test_summarize_reports_projection_delta_vs_baseline() -> None:
     assert delta["sent_chars"] < 0
     assert delta["success"] == 0
     assert delta["trap_misused"] == 0
+    assert delta["brief_trap_in_key_conclusions"] == -1
     serialized = json.dumps(summary)
     assert "projection_delta_vs_baseline" in serialized
 
@@ -128,6 +134,7 @@ def _row(arm: str, **overrides: object) -> dict:
         "success": True,
         "key_conclusion_applied": True,
         "trap_misused": False,
+        "brief_trap_in_key_conclusions": False,
         "independent_check_passed": True,
     }
     row.update(overrides)
@@ -171,6 +178,13 @@ def test_gate_verdict_fails_when_projection_regresses_or_trap_fires() -> None:
     ])
     assert trap["ok"] is False
     assert trap["criteria"]["trap_misuse_not_worse"] is False
+
+    key_trap = probe._gate_verdict([
+        _row("baseline", brief_trap_in_key_conclusions=True),
+        _row("projection", brief_trap_in_key_conclusions=True),
+    ])
+    assert key_trap["ok"] is False
+    assert key_trap["criteria"]["projection_trap_not_in_key_conclusions"] is False
 
     errored = probe._gate_verdict([
         _row("baseline"),
@@ -303,3 +317,76 @@ def test_tracing_provider_without_journal_still_counts(tmp_path=None) -> None:
 
     assert provider.prompts == ["a"]
     assert provider.replies == ["r1"]
+
+
+def _successful_live_replies() -> tuple[str, ...]:
+    return (
+        '{"tool":"read_file","args":{"path":"pricing.py"}}',
+        json.dumps({
+            "tool": "edit",
+            "args": {
+                "path": "pricing.py",
+                "replacements": [{
+                    "old_string": (
+                        "def discounted_total(amount, discount, tax_rate):\n"
+                        "    # RESEARCH_BRIEF_AB_BUG: wrong order, applies tax first.\n"
+                        "    return amount * (1 + tax_rate) - discount"
+                    ),
+                    "new_string": (
+                        "def discounted_total(amount, discount, tax_rate):\n"
+                        "    return (amount - discount) * (1 + tax_rate)"
+                    ),
+                }],
+            },
+        }),
+        '{"tool":"run","args":{"command":"python -B -m pytest -q"}}',
+        '{"tool":"done","args":{"summary":"Implemented pre-tax discount."}}',
+    )
+
+
+def test_run_live_marks_journal_complete(tmp_path: Path, monkeypatch) -> None:
+    class _LiveScriptedProvider:
+        id = "deepseek"
+        name = "DeepSeek"
+
+        def __init__(self, *replies: str) -> None:
+            self.replies = list(replies)
+
+        def new_chat(self, timeout=None):
+            return object()
+
+        def send(self, text, timeout=None):
+            if not self.replies:
+                raise AssertionError("scripted provider ran out of replies")
+            return self.replies.pop(0)
+
+        def close(self):
+            return None
+
+    provider = _LiveScriptedProvider(*(_successful_live_replies() * 2))
+    monkeypatch.setattr(probe, "connect_provider", lambda provider_id, port: provider)
+
+    output = tmp_path / "report.json"
+    journal_dir = tmp_path / "journal"
+    exit_code = probe.run_live(
+        provider_id="deepseek",
+        port=0,
+        timeout=5.0,
+        new_chat_timeout=5.0,
+        repeats=1,
+        max_turns=6,
+        output=output,
+        keep_open=False,
+        trace_output=journal_dir,
+    )
+
+    assert exit_code == 0
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["gate"]["ok"] is True
+    manifest = json.loads((journal_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["status"] == "done"
+    events = [
+        json.loads(line)
+        for line in (journal_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert events[-1]["event_type"] == "run_complete"

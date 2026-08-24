@@ -264,6 +264,33 @@ def _arm_briefs() -> dict[str, str]:
     return {"baseline": _baseline_brief(), "projection": _projection_brief()}
 
 
+def _rendered_section_items(rendered: str, title: str) -> tuple[str, ...]:
+    out: list[str] = []
+    in_section = False
+    for line in str(rendered or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped == title:
+            in_section = True
+            continue
+        if in_section and stripped.endswith(":") and not stripped.startswith("- "):
+            break
+        if not in_section:
+            continue
+        if stripped.startswith("- "):
+            stripped = stripped[2:].strip()
+        out.append(stripped)
+    return tuple(out)
+
+
+def _brief_trap_in_key_conclusions(brief_text: str) -> bool:
+    return any(
+        TRAP_TOKEN in item
+        for item in _rendered_section_items(brief_text, "Key conclusions:")
+    )
+
+
 def score_arm(*, summary: str, changed_files: tuple[str, ...], root: Path) -> dict[str, Any]:
     """Deterministic scorer over one finished arm."""
 
@@ -432,6 +459,7 @@ def _run_arm(
         "brief_has_raw_excerpt": "Synthesis excerpt" in brief_text,
         "brief_has_related_ids": RELATED_NOTE_ID in brief_text,
         "brief_has_trap_claim": TRAP_TOKEN in brief_text,
+        "brief_trap_in_key_conclusions": _brief_trap_in_key_conclusions(brief_text),
         "changed_files": list(changed),
         "independent_check_passed": independent_check,
         **scores,
@@ -466,6 +494,9 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "turns": sum(int(row.get("turns") or 0) for row in arm_rows),
             "tool_calls": sum(int(row.get("tool_calls") or 0) for row in arm_rows),
             "protocol_errors": sum(int(row.get("protocol_errors") or 0) for row in arm_rows),
+            "brief_trap_in_key_conclusions": sum(
+                1 for row in arm_rows if row.get("brief_trap_in_key_conclusions")
+            ),
         }
     baseline = summary["arms"].get("baseline", {})
     projection = summary["arms"].get("projection", {})
@@ -482,6 +513,7 @@ def _summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "turns",
                 "tool_calls",
                 "protocol_errors",
+                "brief_trap_in_key_conclusions",
             )
         }
     return summary
@@ -552,6 +584,9 @@ def _gate_verdict(
         ),
         "trap_misuse_not_worse": (
             total(proj_rows, "trap_misused") <= total(base_rows, "trap_misused")
+        ),
+        "projection_trap_not_in_key_conclusions": not total(
+            proj_rows, "brief_trap_in_key_conclusions"
         ),
         "check_pass_not_worse": (
             total(proj_rows, "independent_check_passed")
@@ -670,6 +705,11 @@ def run_live(
         payload["summary"] = _summarize(payload["rows"])
         payload["gate"] = verdict
         _atomic_write_json(output, payload)
+        if journal is not None:
+            journal.record_run_complete(
+                rows=len(payload["rows"]),
+                status="done" if verdict["ok"] else "failed",
+            )
         print(json.dumps(payload["summary"], ensure_ascii=False, indent=2))
         print(json.dumps(verdict, ensure_ascii=False, indent=2))
         print(f"report: {output}")
@@ -690,6 +730,9 @@ def _self_test() -> None:
     assert "Synthesis excerpt" not in briefs["projection"]
     assert RELATED_NOTE_ID in briefs["baseline"]
     assert RELATED_NOTE_ID not in briefs["projection"]
+    assert _brief_trap_in_key_conclusions(briefs["baseline"])
+    assert not _brief_trap_in_key_conclusions(briefs["projection"])
+    assert "[uncited]" in briefs["projection"]
     for arm in ARMS:
         assert TRAP_TOKEN in briefs[arm], arm
         assert KEY_FORMULA_TOKEN.replace(" ", "") in briefs[arm].replace(" ", ""), arm

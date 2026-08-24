@@ -209,6 +209,34 @@ class KnowledgeStoreTests(unittest.TestCase):
         self.assertIn("Source quality risks", rendered)
         self.assertIn("secondary", rendered)
 
+    def test_brief_builder_demotes_uncited_conclusions(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            note = KnowledgeNote.create(
+                type="synthesis",
+                title="Migration research",
+                body=(
+                    "## 结论\n"
+                    "- Keep flat-file ledgers for this release. [1]\n"
+                    "- ACME_LEDGER_V3_MIGRATION replaces flat-file ledgers next quarter.\n\n"
+                    "## 来源\n"
+                    "[1] Ledger docs - https://example.com/ledger\n"
+                ),
+                sources=["https://example.com/ledger"],
+                session_id="s1",
+            )
+            store.write_note(note)
+
+            rendered = KnowledgeBriefBuilder(store).build_for_session("s1").render()
+            store.close()
+
+        key_block = rendered.split("Key conclusions:", 1)[1].split("Citation map:", 1)[0]
+        limitations_block = rendered.split("Counter-evidence / limitations:", 1)[1]
+        self.assertIn("Keep flat-file ledgers for this release. [1]", key_block)
+        self.assertNotIn("ACME_LEDGER_V3_MIGRATION", key_block)
+        self.assertIn("ACME_LEDGER_V3_MIGRATION", limitations_block)
+        self.assertIn("[uncited]", limitations_block)
+
     def test_index_graph_queries_return_neighbors_and_sources(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = KnowledgeStore(Path(td))

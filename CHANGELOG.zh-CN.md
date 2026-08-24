@@ -26,7 +26,9 @@
 - 用户源码写入改为原子且保留 EOL：`codey/atomic_io.py` 使用唯一同目录
   临时文件（`xb` 创建）+ fsync + `os.replace`，替换前复制已有文件 mode，
   保留 CRLF/LF 风格；接入 write/edit 工具路径与快照 restore，与工具契约
-  宣称的 "written atomically" 一致，POSIX 上不会丢可执行位。
+  宣称的 "written atomically" 一致，POSIX 上不会丢可执行位。若替换在
+  继承只读目标 mode 后失败，会先把 temp chmod 回可写再清理，Windows 上
+  不再留下 `.target.<uuid>.tmp`。
 - 拆分同名双义的 digest 函数：`refs.digest_ref` 更名
   `refs.content_digest`（生产者：任意值 -> sha256 内容摘要）；
   `research.shape.digest_ref` 更名 `shape.valid_digest_ref`（校验器：
@@ -47,6 +49,9 @@
   `一、结论`）恢复识别；常用中文标题（`参考文献`、`风险`、`备注`、
   `方法`）加入别名表；`具体如下：` 这类节内引导行不再切断所属 section；
   未知的 markdown 标题进入被丢弃的 unknown 桶。
+  Writer 可见 research handoff 现在把 Key conclusions 限定为带 bracket
+  citation 的结论；无 citation 的结论仍保留，但以 `[uncited]` limitations
+  展示，不再进入可驱动实现的结论区。
 - Research 投影边界从注释变成元数据：`CapabilitySpec` 新增
   `projection_audience` / `canonical_inputs` / `fail_mode` /
   `release_gate` 并在注册时校验（投影能力必须声明受众；behavior_input
@@ -61,7 +66,10 @@
   provider tab（receipt/memory 两测试补齐双连接器 patch）；
   `tests/conftest.py` 针对 Windows 上 pytest atexit 清理
   `pytest-current` symlink 时偶发的 `PermissionError` 做测试侧 guard，
-  不改变临时目录位置；
+  不改变临时目录位置，且无关 PermissionError 会继续抛出；
+  `tests/manual/research_to_code_ab.py` 结束时记录 `run_complete`，live
+  journal manifest 会落到 `done` 或 `failed`，gate 也新增
+  `projection_trap_not_in_key_conclusions` 结构性判据；
   `tests/test_work_checkpoint_flow.py` 隔离 post-task audit/consensus/
   advisors 副作用（~137s -> ~4s）；StepFun 提交加 GLM 式防双击；
   `task_runner` 所有 pre-start 失败路径都恢复先前取消事件；

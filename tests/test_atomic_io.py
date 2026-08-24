@@ -5,6 +5,7 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from codey.atomic_io import encode_with_original_eol, write_text_atomic
 
@@ -92,6 +93,32 @@ class AtomicWriteTests(unittest.TestCase):
                 write_text_atomic(target_directory, "replacement\n")
 
             self.assertEqual(original.read_text(encoding="utf-8"), "original\n")
+
+    def test_failed_replace_cleans_read_only_temp_file(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td, "readonly.txt")
+            target.write_text("before\n", encoding="utf-8")
+            os.chmod(target, stat.S_IREAD)
+            try:
+                with self.assertRaises(PermissionError):
+                    with mock.patch(
+                        "codey.atomic_io.os.replace",
+                        side_effect=PermissionError("read-only target"),
+                    ):
+                        write_text_atomic(target, "after\n")
+
+                leftovers = [
+                    item.name
+                    for item in Path(td).iterdir()
+                    if item.name.startswith(".readonly.txt.") and item.name.endswith(".tmp")
+                ]
+                self.assertEqual(leftovers, [])
+                self.assertEqual(target.read_text(encoding="utf-8"), "before\n")
+            finally:
+                try:
+                    os.chmod(target, stat.S_IREAD | stat.S_IWRITE)
+                except OSError:
+                    pass
 
 
 if __name__ == "__main__":

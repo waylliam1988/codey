@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from codey.knowledge.store import KnowledgeStore
@@ -14,6 +15,7 @@ BRIEF_TOTAL_LIMIT = 6000
 SECTION_ITEM_LIMIT = 5
 SOURCE_LINE_LIMIT = 16
 MAX_ITEM_CHARS = 220
+_CITATION_RE = re.compile(r"\[[0-9][0-9A-Za-z .:_/-]*\]")
 
 
 @dataclass(frozen=True)
@@ -91,11 +93,17 @@ class KnowledgeBriefBuilder:
         if note is None:
             return ResearchBrief()
         sections = parse_sections(note.body)
+        conclusions, uncited_conclusions = _conclusion_lines(
+            sections.get("conclusion", "")
+        )
         return ResearchBrief(
             synthesis_id=note.id,
             original_question=note.title,
-            conclusions=_section_lines(sections.get("conclusion", "")),
-            counterpoints=_section_lines(sections.get("counter", "")),
+            conclusions=conclusions,
+            counterpoints=_merge_lines(
+                uncited_conclusions,
+                _section_lines(sections.get("counter", "")),
+            ),
             evidence_urls=tuple(note.sources[:8]),
             citation_map=_section_lines(
                 sections.get("sources", ""), limit=SOURCE_LINE_LIMIT, strip_bullets=False
@@ -126,6 +134,36 @@ def _section_lines(
         stripped = _clip(stripped, MAX_ITEM_CHARS)
         if stripped.casefold() not in {row.casefold() for row in out}:
             out.append(stripped)
+        if len(out) >= max(0, int(limit)):
+            break
+    return tuple(out)
+
+
+def _conclusion_lines(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    supported: list[str] = []
+    uncited: list[str] = []
+    for item in _section_lines(text):
+        if _CITATION_RE.search(item):
+            supported.append(item)
+        else:
+            uncited.append(f"{item} [uncited]")
+    return tuple(supported), tuple(uncited)
+
+
+def _merge_lines(
+    primary: tuple[str, ...],
+    extra: tuple[str, ...],
+    *,
+    limit: int = SECTION_ITEM_LIMIT,
+) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in (*primary, *extra):
+        key = item.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
         if len(out) >= max(0, int(limit)):
             break
     return tuple(out)

@@ -46,10 +46,7 @@ def write_text_atomic(path: str | Path, text: str, *, encoding: str = "utf-8") -
             os.chmod(tmp, existing_mode)
         os.replace(tmp, target)
     finally:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        _cleanup_temp_file(tmp)
 
 
 def _existing_mode(target: Path) -> int | None:
@@ -57,6 +54,20 @@ def _existing_mode(target: Path) -> int | None:
         return stat.S_IMODE(target.stat().st_mode)
     except OSError:
         return None
+
+
+def _cleanup_temp_file(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except PermissionError:
+        try:
+            mode = stat.S_IMODE(path.stat().st_mode)
+            os.chmod(path, mode | stat.S_IWRITE | stat.S_IWUSR)
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+    except OSError:
+        pass
 
 
 __all__ = [

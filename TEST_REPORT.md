@@ -18,7 +18,9 @@ snapshot/untracked diffs lost their double-blank-line rendering (golden
 test); user files are written through `codey/atomic_io.py` (unique same-dir
 temp opened `xb` + fsync + os.replace, CRLF/LF preserved) on
 write/edit/restore and now copies an existing target mode before replace so
-POSIX executable bits survive rewrites; the digest vocabulary split into producer
+POSIX executable bits survive rewrites; failed replaces against read-only
+targets chmod the temp writable before cleanup so no hidden temp file is left
+behind; the digest vocabulary split into producer
 (`refs.content_digest`) and validator (`shape.valid_digest_ref`) with all call
 sites migrated and architecture coverage against neutral `_digest_ref` aliases;
 evidence-ledger records now carry a canonical-JSON `record_integrity` digest
@@ -37,6 +39,10 @@ Parser correctness: documented bare numbered headings (`1. Conclusion`,
 `一、结论`) are boundaries again; `参考文献`/`风险`/`备注`/`方法` and
 `Assumptions:` joined the alias table; lead-in colon lines no longer cut their
 section; unknown markdown headings still route to a dropped unknown bucket.
+Writer-visible research handoff now treats Key conclusions as cited-only:
+conclusion lines without bracketed source citations stay visible as
+`[uncited]` limitations, but no longer enter the implementation-driving
+Key conclusions block.
 
 Projection governance: CapabilitySpec gained validated
 audience/canonical-inputs/fail-mode/release-gate metadata for every
@@ -50,8 +56,34 @@ provider-tab connection unless explicitly patched (both receipt/memory tests
 now patch both connectors); work_checkpoint_flow disables post-task
 audit/consensus/advisors (~137s -> ~4s); PDF research-UI flow uses a
 side-effect-free State helper (15.3s -> 0.5s); tests/conftest.py guards
-pytest's Windows-only `pytest-current` symlink cleanup `PermissionError`
-without changing temp directory layout.
+only pytest's Windows `pytest-current` symlink cleanup `PermissionError`
+without swallowing unrelated permission errors.
+
+Research-to-Code smoke structure: `tests/manual/research_to_code_ab.py`
+remains a single-fixture, two-arm live probe. The fixture asks Writer to fix
+`discounted_total`; baseline renders the old raw-excerpt/related-id brief,
+projection renders the production structured brief. Each `(case, repeat)` must
+produce exactly one baseline row and one projection row; the gate compares
+success, key-conclusion retention, trap misuse, independent verification, and
+the structural check `projection_trap_not_in_key_conclusions`. The live journal
+records `run_complete` so manifests end as `done` or `failed` instead of
+remaining `running`, while prompt/reply transcript archives stay manual-only.
+
+2026-08-24 live Research-to-Code A/B observations: DeepSeek and Qwen both
+passed the gate on the same single-case matrix. In both providers, projection
+kept success/key-formula retention/check pass at parity with baseline, did not
+misuse the injected `ACME_LEDGER_V3_MIGRATION` trap, and moved that trap out of
+Key conclusions (`brief_trap_in_key_conclusions`: baseline=1, projection=0).
+Projection reduced the rendered brief from 1473 to 979 chars. Qwen converted
+that directly into 494 fewer sent chars with equal 4-turn/4-tool paths.
+DeepSeek also succeeded, but spent one extra opening `list_dir .` turn/tool in
+the projection arm, leaving sent chars only 63 lower; transcript review shows
+that as single-run navigation variance rather than a stable handoff regression.
+Both journals finished with `manifest.status=done`, `run_complete` as the last
+event, archived prompt/reply transcripts, and clean hash-chain verification.
+No further prompt or projection change is justified by the two-provider sample;
+release confidence would improve by rerunning with `--repeats 2` or
+`--repeats 3` rather than adding complexity.
 
 Smaller fixes: StepFun double-submit guard mirroring GLM; task_runner
 restores previous cancellation event on all pre-start failure paths (and
@@ -67,12 +99,20 @@ test capability fingerprint assignment removed.
 Verification:
 
 ```text
-python -m pytest tests/test_research_evidence_ledger.py tests/test_domain_profiles.py tests/test_atomic_io.py tests/test_capabilities.py -q
-  94 passed, 1 skipped, 12 subtests passed
-python -m pytest tests/test_research_to_code_ab.py tests/test_transcript_replay_cache.py -q
-  23 passed
+python -m pytest tests/test_atomic_io.py tests/test_pytest_cleanup_guard.py
+  tests/test_knowledge.py tests/test_research_to_code_ab.py
+  tests/test_ab_observation_journal.py tests/test_transcript_replay_cache.py -q
+  85 passed, 1 skipped
+python -B tests\manual\research_to_code_ab.py --self-test
+  self-test ok
+python -B tests\manual\research_to_code_ab.py --provider deepseek --repeats 1
+  gate ok; baseline 5 turns/4 tools, projection 6 turns/5 tools;
+  projection brief -494 chars, sent chars -63, trap not in Key conclusions
+python -B tests\manual\research_to_code_ab.py --provider qwen --repeats 1
+  gate ok; baseline 4 turns/4 tools, projection 4 turns/4 tools;
+  projection brief -494 chars, sent chars -494, trap not in Key conclusions
 python -m pytest -q                   full suite:
-  2598 passed, 10 skipped, 781 subtests passed in 228.14s
+  2611 passed, 1 skipped, 781 subtests passed in 234.66s
 python -m compileall -q codey tests   ok
 python -m ruff check codey tests      ok
 git diff --check                      clean
