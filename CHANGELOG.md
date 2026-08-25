@@ -4,7 +4,7 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## 0.4.12 - Ghost Research Continuity + Topic Planner v1
+## 0.4.12 (Unreleased) - Ghost Research Continuity + Topic Planner v1
 
 - New `codey/research/topic_continuity.py`: a stdlib-only pure read model
   that projects bounded local facts (structured research-interest hints,

@@ -4,7 +4,7 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## 0.4.12 - Ghost Research Continuity + Topic Planner v1
+## 0.4.12 (Unreleased) - Ghost Research Continuity + Topic Planner v1
 
 - 新增 `codey/research/topic_continuity.py`：stdlib-only 的纯 read model，
   把有界的本地事实（结构化 research-interest hints、Ghost continuity 选中
