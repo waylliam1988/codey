@@ -2505,7 +2505,7 @@ shell approval 续跑不再吞 Stop；/api/new_chat、/api/changes/restore 加 b
 codey/ghost/numbers.py 统一全部 Ghost store 的 finite unit-float 校验（bool/NaN/inf 拒绝）
 Ghost work 手动 requeue 重置 retry_count，MAX_WORK_RETRIES 阻塞项可重新认领
 StepFun fallback 改为 provider 本地 newest-first 扫描，不走通用 tail-first locate_response
-override worker 使用 per-generation 专属 profile；父端保留有界 stderr tail
+override worker 使用每个 provider 稳定的专属 profile；父端保留有界 stderr tail
 providers/web_driver.py 统一五个 web wrapper 的 deadline 覆盖与 response_missing 归类
 evidence excerpt 超 360 字时保持精确匹配文本；删除单来源 citation 静默推断
 ```

@@ -267,10 +267,13 @@ profile (`state_home/self-repair/<provider>`, never the user's default
 browser profile), and that a candidate Provider worker can run a neutral
 marker canary:
 
-Login note: the isolated profile starts without cookies, so the first smoke
-per provider requires a manual login in the helper tab it opens; a failed
-marker check on an untouched profile usually means "not logged in yet", not
-a driver regression.
+Login note: the smoke exercises two isolated profiles -- the repair helper
+(`state_home/self-repair/<provider>`) and the candidate worker
+(`state_home/provider-workers/<provider>`, stable across override
+generations). Both start without cookies, so the first smoke per provider
+requires a manual login in each tab it opens; a failed marker check on an
+untouched profile usually means "not logged in yet", not a driver
+regression.
 
 ```powershell
 python -B tests\manual\adapter_self_repair_smoke.py --provider qwen --timeout 90

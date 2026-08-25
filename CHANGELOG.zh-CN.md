@@ -76,7 +76,7 @@
     过滤：先试简化版字符串参数 JS，再退化到纯 locator 扫描——读取与
     response 计数都走同一阶梯，降级时的 baseline 不会被可见的 reasoning
     节点抬高。
-  - override worker 每个 provider/generation 使用专属浏览器 profile，不再
+  - override worker 每个 provider 使用稳定专属的浏览器 profile，不再
     用第二个 CDP 端口挂用户默认 profile；父端 worker 把子进程 stderr 抽进
     有界 tail，启动崩溃可诊断；子进程入口 ``--profile`` 必填（缺失直接
     fail closed，不再回落）；self-repair helper 同样改用

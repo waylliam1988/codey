@@ -89,7 +89,7 @@ This file records Codey's release history. The newest release appears first.
     then the pure locator scan as last resort -- for reads and for the
     response count alike, so a degraded baseline can never be inflated by
     visible reasoning copies.
-  - Override workers get a dedicated browser profile per provider/generation
+  - Override workers get a dedicated stable browser profile per provider
     instead of attaching to the user's default profile from a second CDP
     port, parent-side workers drain child stderr into a bounded tail so
     startup crashes are diagnosable, the child entrypoint requires
