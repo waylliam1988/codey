@@ -21,6 +21,7 @@ from codey.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelope,
     PromptEnvelopeSection,
+    RenderedPromptSection,
     record_provider_send_prompt,
 )
 from codey.knowledge.changes import KnowledgeChanges
@@ -196,6 +197,12 @@ class ResearchRunner:
             )
             self.changes = self.tools.changes
         self.result: ResearchRunResult | None = None
+        # Intro rows are projected at the provider-turn boundary, not at
+        # assembly time: the controller appends its action block after the
+        # intro is built, so only the exact outbound bytes define the shared
+        # content-addressed epoch.
+        self._pending_intro_sections: tuple[RenderedPromptSection, ...] = ()
+        self._pending_context_sources: tuple[RenderedContextSource, ...] = ()
 
     def run(self, question: str):
         question = (question or "").strip()
@@ -510,6 +517,9 @@ class ResearchRunner:
     def _send_provider(self, message: str) -> str:
         try:
             cancellation.check()
+            # Bind intro sections and admitted sources to this exact outbound
+            # turn first, so they share the epoch stamped below.
+            self._bind_pending_intro_rows(message)
             record_provider_send_prompt(
                 self.trace_recorder,
                 name="research_outbound_prompt",
@@ -656,19 +666,37 @@ class ResearchRunner:
                 source_refs=("request:research_question",),
             ),
         )).render()
-        # One content-addressed epoch binds every row of this turn together:
-        # the assembled sections and the admitted context sources (the
-        # outbound send is stamped later via record_provider_send_prompt).
-        epoch = context_epoch_id(rendered.text)
-        for section in rendered.sections:
+        # Binding happens at the send boundary, where the controller's
+        # appended action block makes the bytes final (see
+        # _bind_pending_intro_rows).
+        self._pending_intro_sections = rendered.sections
+        self._pending_context_sources = continuity
+        return rendered.text
+
+    def _bind_pending_intro_rows(self, outbound: str) -> None:
+        """Project intro rows onto the exact outbound provider turn.
+
+        One content-addressed epoch binds every row of the first turn
+        together: the assembled sections, the admitted context sources, and
+        the outbound prompt recorded by record_provider_send_prompt() — all
+        over the same bytes. Rows for intros that never reach a provider send
+        are never emitted: nothing was admitted to any provider turn.
+        """
+        if not self._pending_intro_sections and not self._pending_context_sources:
+            return
+        pending_sections = self._pending_intro_sections
+        pending_sources = self._pending_context_sources
+        self._pending_intro_sections = ()
+        self._pending_context_sources = ()
+        epoch = context_epoch_id(outbound)
+        for section in pending_sections:
             self.prompt_trace.record_section(replace(section, epoch_id=epoch))
-        if continuity:
+        if pending_sources:
             self.prompt_trace.call(
                 "record_context_sources",
-                continuity,
+                pending_sources,
                 epoch_id=epoch,
             )
-        return rendered.text
 
     def _persist_synthesis(self, question: str, summary: str, *, open_questions: list[str] | None = None) -> str:
         title = _synthesis_title(question)

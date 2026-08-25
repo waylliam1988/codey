@@ -720,6 +720,9 @@ def _open_journal(
 ) -> ABJournalWriter | None:
     """Open the manual journal for a live run (None when mode is off)."""
     mode = _TRANSCRIPT_MODE_MAP.get(str(transcript_mode or "").strip())
+    if mode is None:
+        # "off": no journal, no transcript material, no journal directory.
+        return None
     journal_dir = output.parent / f"{output.stem}-journal"
     journal = ABJournalWriter(
         directory=journal_dir,

@@ -43,6 +43,25 @@ def test_old_claim_is_carried_as_a_permanently_stale_ref() -> None:
     assert row["digest_only_payload"]
 
 
+def test_open_journal_off_mode_returns_none_without_side_effects() -> None:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        output = root / "live.json"
+
+        journal = ab._open_journal(
+            output=output,
+            provider_id="deepseek",
+            stamp="20260101T000000",
+            transcript_mode="off",
+            max_turns=8,
+            case_names=["case-a"],
+        )
+
+        assert journal is None
+        # No journal directory is created for an explicitly-off run.
+        assert list(root.rglob("*-journal")) == []
+
+
 def test_failure_classification_separates_provider_and_planner_causes() -> None:
     assert ab.classify_outcome(
         sends=2, replies=2, send_error_text="", stop_reason="done"

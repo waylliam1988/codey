@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+from codey.context_epoch import context_epoch_id
 from codey.knowledge.store import KnowledgeStore
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
@@ -65,16 +66,50 @@ class _NullSearch:
         return []
 
 
-def _runner(trace, *, topic_continuity_context: str = "") -> ResearchRunner:
+class _FakeProvider:
+    name = "Fake Provider"
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def new_chat(self, timeout=None) -> None:
+        del timeout
+
+    def send(self, text: str, timeout=None) -> str:
+        del timeout
+        self.prompts.append(text)
+        return "{}"
+
+
+class _RecordingRunner(ResearchRunner):
+    """Exposes the last assembled intro for byte-level assertions."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        self.last_intro = ""
+        super().__init__(*args, **kwargs)
+
+    def _intro(self, question: str) -> str:
+        self.last_intro = super()._intro(question)
+        return self.last_intro
+
+
+def _runner(trace, *, topic_continuity_context: str = "") -> _RecordingRunner:
     store = KnowledgeStore(Path(tempfile.mkdtemp()) / "knowledge")
-    return ResearchRunner(
-        provider=None,
-        search=_NullSearch(),
-        store=store,
+    return _RecordingRunner(
+        _FakeProvider(),
+        _NullSearch(),
+        store,
         session_id="s-continuity",
         trace_recorder=trace,
         topic_continuity_context=topic_continuity_context,
     )
+
+
+def _send(runner: _RecordingRunner, *, controller_block: str = "") -> str:
+    """Drive one real provider turn; the block mimics the controller append."""
+    outbound = runner.last_intro + controller_block
+    runner._send_provider(outbound)
+    return outbound
 
 
 def test_runner_admits_topic_continuity_as_dedicated_prompt_section() -> None:
@@ -87,7 +122,12 @@ def test_runner_admits_topic_continuity_as_dedicated_prompt_section() -> None:
     trace = _SectionRecorder()
     runner = _runner(trace, topic_continuity_context=projection.prompt_text)
 
-    intro = runner._intro("Research question about continuity")
+    runner._intro("Research question about continuity")
+    # Assembly alone projects nothing: no provider turn happened yet.
+    assert trace.sections == []
+    assert trace.context_source_rows == []
+
+    _send(runner)
 
     assert "research_topic_continuity" in trace.section_names
     section = next(
@@ -103,10 +143,9 @@ def test_runner_admits_topic_continuity_as_dedicated_prompt_section() -> None:
     assert "Do not cite this section" in str(section["text"])
     lowered = str(section["text"]).casefold()
     assert not any(term in lowered for term in ("ghost", "work queue"))
-    assert intro == "\n\n".join(str(s["text"]) for s in trace.sections)
 
 
-def test_runner_admission_is_bound_to_one_provider_turn_epoch() -> None:
+def test_runner_rows_share_the_sent_bytes_epoch_not_the_intro_epoch() -> None:
     projection = project_topic_continuity(
         interest_hints=[{
             "ref": "research_interest:ric_x",
@@ -117,36 +156,35 @@ def test_runner_admission_is_bound_to_one_provider_turn_epoch() -> None:
     runner = _runner(trace, topic_continuity_context=projection.prompt_text)
 
     runner._intro("q")
+    outbound = _send(runner, controller_block="\n\nALLOWED ACTIONS: ...")
+    sent_epoch = context_epoch_id(outbound)
+    intro_epoch = context_epoch_id(runner.last_intro)
 
-    epochs = {
+    assert sent_epoch != intro_epoch  # the controller block changes the bytes
+    section_epochs = {
         str(kwargs.get("epoch_id") or "")
         for _name, _args, kwargs in trace.calls
         if _name == "record_prompt_section"
     }
-    assert len(epochs) == 1
-    epoch = next(iter(epochs))
-    assert epoch.startswith("ctx_epoch:")
+    assert section_epochs == {sent_epoch}
 
-    # The admitted source row shares the same provider-turn epoch.
-    assert len(trace.context_source_rows) == 1
     (_args, kwargs) = trace.context_source_rows[0]
     sources = _args[0]
     assert [source.key for source in sources] == ["research_topic_continuity"]
-    assert kwargs.get("epoch_id") == epoch
+    assert kwargs.get("epoch_id") == sent_epoch
 
 
 def test_runner_without_continuity_keeps_baseline_intro() -> None:
     baseline_trace = _SectionRecorder()
-    baseline = _runner(baseline_trace)._intro("Same question")
-    baseline_names = [section["name"] for section in baseline_trace.sections]
+    baseline_runner = _runner(baseline_trace)
+    baseline = baseline_runner._intro("Same question")
 
     enabled_trace = _SectionRecorder()
-    enabled = _runner(enabled_trace)._intro("Same question")
+    enabled_runner = _runner(enabled_trace)
+    enabled = enabled_runner._intro("Same question")
 
-    # Empty continuity renders to nothing: identical bytes and no rows.
-    assert "research_topic_continuity" not in baseline_names
+    assert "research_topic_continuity" not in enabled_trace.section_names
     assert enabled == baseline
-    assert baseline_trace.context_source_rows == []
 
 
 def test_runner_gate_closes_continuity_even_with_text() -> None:
@@ -163,18 +201,29 @@ def test_runner_gate_closes_continuity_even_with_text() -> None:
         return_value=False,
     ):
         runner._intro("q")
+    _send(runner)
 
     assert "research_topic_continuity" not in trace.section_names
+    assert trace.context_source_rows == []
+
+
+def test_unsent_intro_projects_no_rows() -> None:
+    trace = _SectionRecorder()
+    runner = _runner(trace, topic_continuity_context="Local research continuity.")
+
+    runner._intro("never sent")
+
+    assert trace.sections == []
     assert trace.context_source_rows == []
 
 
 def test_runner_iteration_context_and_continuity_stay_separate() -> None:
     trace = _SectionRecorder()
     store = KnowledgeStore(Path(tempfile.mkdtemp()) / "knowledge")
-    runner = ResearchRunner(
-        provider=None,
-        search=_NullSearch(),
-        store=store,
+    runner = _RecordingRunner(
+        _FakeProvider(),
+        _NullSearch(),
+        store,
         session_id="s",
         trace_recorder=trace,
         iteration_context="follow-up material only",
@@ -182,6 +231,7 @@ def test_runner_iteration_context_and_continuity_stay_separate() -> None:
     )
 
     runner._intro("q")
+    runner._send_provider(runner.last_intro)
 
     sections = {s["name"]: str(s["text"]) for s in trace.sections}
     assert "follow-up material" in sections["research_iteration_context"]

@@ -2439,8 +2439,10 @@ TaskRunner._build_research_context()
 ResearchRunner._intro()
   ContextSource -> profile allow-list -> render_context_sources_with_metadata
     -> research_topic_continuity prompt section
-    -> record_context_sources(..., epoch_id=context_epoch_id(prompt))
-  （与 coding intro 同一条 admission 链，绑定 provider-turn epoch）
+  _send_provider()（发送边界统一投影）
+    -> record_context_sources(..., epoch_id=context_epoch_id(outbound))
+  （controller 追加 action block 后字节才定稿，sections / admitted sources /
+   outbound prompt 共享同一个按发送字节计算的 provider-turn epoch）
 
 ResearchPipeline 初始 iteration 只转发 bounded text；
 RunTraceRecorder.record_research_topic_continuity 写入真实的

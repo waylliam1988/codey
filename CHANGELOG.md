@@ -20,13 +20,17 @@ This file records Codey's release history. The newest release appears first.
   chat-side `ghost_directive` / `ghost_continuity` sources stay excluded).
   Admission runs through the shared chain — `ContextSource` -> profile
   allow-list -> `render_context_sources_with_metadata()` -> prompt envelope
-  section — and every admitted source row is bound to the provider turn's
-  content-addressed epoch (`record_context_sources(..., epoch_id=...)`),
-  matching the coding-intro pattern. The section text says "not evidence ...
-  re-check ... do not cite" and never contains Ghost / Work Queue / Concept
-  Graph vocabulary in Codey-authored framing lines; follow-up material keeps
-  using the separate `research_iteration_context`. Empty or gate-closed
-  continuity renders to nothing, leaving the baseline intro byte-identical.
+  section. Intro rows are projected at the actual provider-send boundary:
+  because the Research controller appends its action block after assembly,
+  the assembled sections, the admitted source rows
+  (`record_context_sources(..., epoch_id=...)`), and the outbound prompt are
+  all bound to one content-addressed epoch computed over the exact sent
+  bytes; intros that never reach a provider turn project nothing. The
+  section text says "not evidence ... re-check ... do not cite" and never
+  contains Ghost / Work Queue / Concept Graph vocabulary in Codey-authored
+  framing lines; follow-up material keeps using the separate
+  `research_iteration_context`. Empty or gate-closed continuity renders to
+  nothing, leaving the baseline intro byte-identical.
 - TaskRunner wiring was thinned instead of growing: `_run_research_pipeline`
   now delegates to two helpers, `_build_research_topic_continuity` (profile
   gate -> interest hints via the new knowledge-layer `candidate_to_topic_hint`,
