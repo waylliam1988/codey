@@ -1285,12 +1285,19 @@ class RunTraceRecorder:
             self.manifest.warnings.append("research_brief_projections_truncated")
         self.checkpoint()
 
-    def record_research_topic_continuity(self, projection: Mapping[str, object]) -> None:
+    def record_research_topic_continuity(
+        self,
+        projection: Mapping[str, object],
+        *,
+        epoch_id: str = "",
+    ) -> None:
         """Record one bounded topic-continuity admission (refs + counts only).
 
         The digest is the dedup and integrity anchor: rows without a valid
         content digest fail closed, and raw hint text has no field to live
-        in — the trace stays refs-only by construction.
+        in — the trace stays refs-only by construction. When supplied, the
+        sent-bytes ``epoch_id`` binds this row to the exact provider turn
+        whose intro carried the continuity section.
         """
         if not isinstance(projection, Mapping) or not projection.get("admitted"):
             return
@@ -1367,6 +1374,7 @@ class RunTraceRecorder:
             "schema_version": _nonnegative_int(projection.get("schema_version")) or 1,
             "context_source": _identifier(projection.get("context_source"), 80),
             "digest": digest,
+            "epoch_id": _identifier(epoch_id, 80),
             "item_count": _nonnegative_int(projection.get("item_count")),
             "candidate_count": _nonnegative_int(projection.get("candidate_count")),
             "claim_ref_count": _nonnegative_int(projection.get("claim_ref_count")),

@@ -694,13 +694,19 @@ class ResearchRunner:
                 pending_sources,
                 epoch_id=epoch,
             )
-        if self.topic_continuity_payload:
-            # The admission row lands here, not at assembly time: an
-            # admitted row now guarantees the model actually received this
-            # intro on this exact provider turn.
+        continuity_admitted = any(
+            source.key == TOPIC_CONTINUITY_SOURCE_KEY
+            for source in pending_sources
+        )
+        if continuity_admitted and self.topic_continuity_payload:
+            # The admission row lands here, not at assembly time, and only
+            # when the rendered source actually passed this runner's gate:
+            # an admitted row guarantees the model received the continuity
+            # section on this exact provider turn (same sent-bytes epoch).
             self.prompt_trace.call(
                 "record_research_topic_continuity",
                 self.topic_continuity_payload,
+                epoch_id=epoch,
             )
 
     def _persist_synthesis(self, question: str, summary: str, *, open_questions: list[str] | None = None) -> str:

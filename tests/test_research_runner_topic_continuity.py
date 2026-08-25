@@ -20,8 +20,8 @@ class _SectionRecorder:
     def record_prompt_section(self, name, text, **kwargs) -> None:
         self.calls.append(("record_prompt_section", (name, text), kwargs))
 
-    def record_research_topic_continuity(self, payload) -> None:
-        self.calls.append(("record_research_topic_continuity", (payload,), {}))
+    def record_research_topic_continuity(self, payload, **kwargs) -> None:
+        self.calls.append(("record_research_topic_continuity", (payload,), kwargs))
 
     def __getattr__(self, _name):
         def _call(*args, **kwargs) -> None:
@@ -191,9 +191,15 @@ def test_runner_gate_closes_continuity_even_with_text() -> None:
     from unittest import mock
 
     trace = _SectionRecorder()
-    runner = _runner(
-        trace,
+    store = KnowledgeStore(Path(tempfile.mkdtemp()) / "knowledge")
+    runner = _RecordingRunner(
+        _FakeProvider(),
+        _NullSearch(),
+        store,
+        session_id="s",
+        trace_recorder=trace,
         topic_continuity_context="Local research continuity. This is not evidence.",
+        topic_continuity_payload={"admitted": True, "digest": "sha256:" + "2" * 64},
     )
 
     with mock.patch(
@@ -203,8 +209,12 @@ def test_runner_gate_closes_continuity_even_with_text() -> None:
         runner._intro("q")
     _send(runner)
 
+    # Gate closed -> no section, no context source, and above all no
+    # admission row: the model never saw continuity, so the trace must not
+    # claim it was admitted.
     assert "research_topic_continuity" not in trace.section_names
     assert trace.context_source_rows == []
+    assert trace.topic_payloads == []
 
 
 def test_runner_records_topic_row_only_at_the_send_boundary() -> None:
@@ -235,7 +245,8 @@ def test_runner_records_topic_row_only_at_the_send_boundary() -> None:
     outbound = runner.last_intro + "\n\nALLOWED ACTIONS"
     runner._send_provider(outbound)
 
-    # One row, projected together with the intro rows it describes.
+    # One row, projected together with the intro rows it describes, bound
+    # to the same sent-bytes epoch.
     assert trace.topic_payloads == [payload]
     section_epochs = {
         str(kwargs.get("epoch_id") or "")
@@ -243,6 +254,12 @@ def test_runner_records_topic_row_only_at_the_send_boundary() -> None:
         if name == "record_prompt_section"
     }
     assert len(section_epochs) == 1
+    sent_epoch = next(iter(section_epochs))
+    topic_calls = [
+        kwargs for name, _args, kwargs in trace.calls
+        if name == "record_research_topic_continuity"
+    ]
+    assert [kwargs.get("epoch_id") for kwargs in topic_calls] == [sent_epoch]
 
     # A second send must not duplicate the admission row.
     runner._pending_intro_sections = ()
