@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -94,6 +95,15 @@ class WorkerChatProvider:
         existing = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(self.override.root) + (os.pathsep + existing if existing else "")
         env["CODEY_PROVIDER_WORKER_CHILD"] = "1"
+        # The worker gets its own browser profile per provider/generation:
+        # attaching to the user's default profile from a second CDP port
+        # either fails on the profile lock or corrupts session state.
+        worker_profile = (
+            Path(self.state_home)
+            / "provider-workers"
+            / self.provider_id
+            / str(self.override.generation)
+        )
         cmd = [
             sys.executable,
             "-B",
@@ -103,7 +113,10 @@ class WorkerChatProvider:
             self.provider_id,
             "--port",
             str(self.port),
+            "--profile",
+            str(worker_profile),
         ]
+        self._stderr_tail: deque[str] = deque(maxlen=24)
         group_args: dict = (
             {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
             if os.name == "nt"
@@ -115,7 +128,9 @@ class WorkerChatProvider:
             env=env,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            # Drain stderr instead of dropping it: a startup crash must be
+            # diagnosable from the parent-side failure message.
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -126,8 +141,26 @@ class WorkerChatProvider:
         except Exception:
             self._proc = None
             raise
+        self._stderr_reader = threading.Thread(target=self._stderr_loop, daemon=True)
+        self._stderr_reader.start()
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
         self._reader.start()
+
+    def _stderr_loop(self) -> None:
+        # Startup diagnostics only: any drain failure must never surface.
+        try:
+            proc = self._proc
+            stderr = proc.stderr if proc is not None else None
+            if stderr is None:
+                return
+            for line in stderr:
+                self._stderr_tail.append(line.rstrip())
+        except Exception:
+            return
+
+    def _worker_error_suffix(self) -> str:
+        tail = " | ".join(self._stderr_tail).strip()
+        return f": {tail[-400:]}" if tail else ""
 
     def _read_loop(self) -> None:
         proc = self._proc
@@ -186,7 +219,7 @@ class WorkerChatProvider:
                         method,
                         "",
                         "",
-                        "provider worker exited",
+                        "provider worker exited" + self._worker_error_suffix(),
                         "",
                         FAILURE_RESPONSE_MISSING,
                     )

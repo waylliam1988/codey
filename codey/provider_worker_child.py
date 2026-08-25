@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from codey.browser import DEFAULT_PROFILE
 from codey.providers.registry import PROVIDER_TYPES
@@ -14,18 +15,30 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", required=True)
     parser.add_argument("--port", type=int, required=True)
+    parser.add_argument(
+        "--profile",
+        default="",
+        help="dedicated browser profile dir; never the user's default profile",
+    )
     args = parser.parse_args(argv)
     provider_type = PROVIDER_TYPES.get(args.provider)
     if provider_type is None:
         return 2
-    provider = provider_type.connect(
-        port=args.port,
-        profile=DEFAULT_PROFILE,
-        open_if_missing=True,
-        bring_to_front=False,
-        isolated=False,
-        fresh_tab=True,
-    )
+    # The override worker must not attach to (or lock) the user's default
+    # browser profile on a second CDP port; it always gets its own.
+    profile = Path(args.profile) if args.profile else DEFAULT_PROFILE
+    try:
+        provider = provider_type.connect(
+            port=args.port,
+            profile=profile,
+            open_if_missing=True,
+            bring_to_front=False,
+            isolated=False,
+            fresh_tab=True,
+        )
+    except Exception as exc:
+        _event("startup_error", error=f"{type(exc).__name__}: {exc}")
+        raise
     _event("page", port=getattr(provider.session, "cdp_port", 0), target_id=_target_id(provider))
     try:
         for line in sys.stdin:

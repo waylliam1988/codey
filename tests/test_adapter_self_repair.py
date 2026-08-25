@@ -5,6 +5,7 @@ import io
 import json
 import shutil
 import subprocess
+from collections import deque
 import tempfile
 import threading
 import time
@@ -811,7 +812,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
             fresh_tab=True,
         )
 
-    def test_provider_worker_child_uses_shared_profile_fresh_background_tab(self) -> None:
+    def test_provider_worker_child_uses_dedicated_isolated_profile(self) -> None:
         provider_type = mock.Mock()
         provider = provider_type.connect.return_value
         provider.session.page = mock.Mock()
@@ -828,22 +829,62 @@ class SelfRepairWorkerTests(unittest.TestCase):
                 "qwen",
                 "--port",
                 "9555",
+                "--profile",
+                "state/provider-workers/qwen/generation-3",
             ])
 
         self.assertEqual(code, 0)
-        provider_type.connect.assert_called_once_with(
-            port=9555,
-            profile=provider_worker_child.DEFAULT_PROFILE,
-            open_if_missing=True,
-            bring_to_front=False,
-            isolated=False,
-            fresh_tab=True,
+        # The override worker never attaches to the user's default profile.
+        self.assertNotEqual(
+            provider_type.connect.call_args.kwargs["profile"],
+            provider_worker_child.DEFAULT_PROFILE,
+        )
+        self.assertEqual(
+            provider_type.connect.call_args.kwargs["profile"],
+            Path("state/provider-workers/qwen/generation-3"),
         )
         event = json.loads(stdout.getvalue().splitlines()[0])
         self.assertEqual(event["event"], "page")
         self.assertEqual(event["port"], 9444)
         self.assertEqual(event["target_id"], "target-1")
         provider.close.assert_called_once()
+
+    def test_provider_worker_launches_with_per_generation_profile_and_stderr_drain(self) -> None:
+        override = mock.Mock()
+        override.root = Path("override")
+        override.generation = 7
+        process = mock.Mock()
+        process.stdout = iter(())
+        process.stderr = iter(())
+        process.stdin = mock.Mock()
+        job = mock.Mock()
+
+        with (
+            mock.patch("codey.provider_worker.subprocess.Popen", return_value=process) as popen,
+            mock.patch("codey.provider_worker.cancellation.attach_process_tree", return_value=job),
+        ):
+            WorkerChatProvider("qwen", override, state_home=Path("state"))
+
+        cmd = popen.call_args.args[0]
+        self.assertIn("--profile", cmd)
+        profile_arg = Path(cmd[cmd.index("--profile") + 1])
+        expected_tail = Path("state") / "provider-workers" / "qwen" / "7"
+        self.assertEqual(profile_arg, expected_tail)
+        self.assertIsNotNone(popen.call_args.kwargs.get("stderr"))
+        self.assertNotEqual(popen.call_args.kwargs.get("stderr"), subprocess.DEVNULL)
+
+    def test_provider_worker_stderr_tail_is_kept_bounded_and_attached(self) -> None:
+        provider = WorkerChatProvider.__new__(WorkerChatProvider)
+        provider._stderr_tail = deque(maxlen=24)
+        provider.provider_id = "qwen"
+        provider.name = "qwen worker"
+        for index in range(40):
+            provider._stderr_tail.append(f"line {index}")
+
+        suffix = provider._worker_error_suffix()
+        self.assertIn("line 39", suffix)
+        self.assertNotIn("line 0 ", suffix)
+        self.assertLessEqual(len(suffix), 420)
 
     def test_provider_worker_terminates_process_tree(self) -> None:
         override = mock.Mock()

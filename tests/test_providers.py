@@ -9,13 +9,14 @@ from unittest import mock
 
 from codey import cancellation
 from codey.adapter_overrides import AdapterOverride
-from codey.provider_diagnostics import ProviderActionError
+from codey.provider_diagnostics import FAILURE_RESPONSE_MISSING, ProviderActionError
 from codey.providers import (
     DeepSeekWebProvider,
     GlmWebProvider,
     MimoWebProvider,
     StepFunWebProvider,
     QwenWebProvider,
+    web_driver,
 )
 from codey.providers import deepseek_web, glm_web, local_openai, mimo_web, stepfun_web, qwen_web, registry
 
@@ -265,13 +266,13 @@ class GlmWebProviderTests(unittest.TestCase):
 class ProviderTimeoutBoundaryTests(unittest.TestCase):
     def test_explicit_send_timeout_bounds_entire_provider_call(self) -> None:
         cases = (
-            (DeepSeekWebProvider, deepseek_web.deepseek),
-            (QwenWebProvider, qwen_web.qwen),
-            (MimoWebProvider, mimo_web.mimo),
-            (StepFunWebProvider, stepfun_web.stepfun),
-            (GlmWebProvider, glm_web.glm),
+            (DeepSeekWebProvider, deepseek_web.deepseek, "TIMEOUT_GRACE"),
+            (QwenWebProvider, qwen_web.qwen, "TIMEOUT_GRACE"),
+            (MimoWebProvider, mimo_web.mimo, "TIMEOUT_GRACE"),
+            (StepFunWebProvider, stepfun_web.stepfun, "TIMEOUT_GRACE"),
+            (GlmWebProvider, glm_web.glm, "RESPONSE_TIMEOUT_GRACE"),
         )
-        for provider_type, driver in cases:
+        for provider_type, driver, grace_name in cases:
             with self.subTest(provider=provider_type.__name__):
                 page = SimpleNamespace(url="https://chat.example/")
                 page.title = mock.Mock(return_value="Chat")
@@ -282,9 +283,18 @@ class ProviderTimeoutBoundaryTests(unittest.TestCase):
                 def wait_past_deadline(*_args, **_kwargs):
                     cancellation.wait(60)
 
-                with mock.patch.object(driver, "chat", side_effect=wait_past_deadline) as chat:
+                # Shrink the grace so the test proves the budget math
+                # (response_timeout + grace + margin bounds the call) without
+                # actually waiting seconds.
+                with (
+                    mock.patch.object(driver, grace_name, 0.4),
+                    mock.patch.object(web_driver, "WEB_DEADLINE_MARGIN_SECONDS", 0.1),
+                    mock.patch.object(driver, "chat", side_effect=wait_past_deadline) as chat,
+                ):
                     with self.assertRaises(ProviderActionError) as raised:
                         provider.send("hello", timeout=0)
+                    failure = raised.exception.failure
+                    self.assertEqual(failure.kind, FAILURE_RESPONSE_MISSING)
                     self.assertIsInstance(
                         raised.exception.__cause__,
                         cancellation.DeadlineExceeded,
