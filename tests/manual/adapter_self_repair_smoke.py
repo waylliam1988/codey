@@ -32,7 +32,11 @@ def run_smoke(provider: str, *, timeout: float, state_home: Path) -> dict:
         "state_home": str(state_home),
         "started_at": time.time(),
     }
-    result["fresh_helper"] = _smoke_fresh_helper(provider, timeout)
+    result["fresh_helper"] = _smoke_fresh_helper(
+        provider,
+        timeout,
+        state_home=state_home,
+    )
     result["candidate_worker_canary"] = _smoke_candidate_canary(provider, timeout, state_home)
     result["ok"] = bool(
         result["fresh_helper"].get("ok")
@@ -42,12 +46,12 @@ def run_smoke(provider: str, *, timeout: float, state_home: Path) -> dict:
     return result
 
 
-def _smoke_fresh_helper(provider: str, timeout: float) -> dict:
+def _smoke_fresh_helper(provider: str, timeout: float, *, state_home: Path) -> dict:
     marker = "SESSION_CHECK_" + secrets.token_hex(6).upper()
     helper = None
     started = time.time()
     try:
-        helper = connect_repair_helper(provider)
+        helper = connect_repair_helper(provider, state_home=state_home)
         helper.new_chat(timeout=timeout)
         reply = helper.send(
             f"Return exactly this marker and nothing else: {marker}",
@@ -66,6 +70,10 @@ def _smoke_fresh_helper(provider: str, timeout: float) -> dict:
             "duration_seconds": round(time.time() - started, 3),
             "error_type": type(exc).__name__,
             "error": str(exc)[:500],
+            # Attribution hint: the isolated self-repair profile starts
+            # without cookies, so a login wall here means the profile needs
+            # a one-time manual login, not a driver fix.
+            "hint": "isolated self-repair profile may need a one-time manual login",
         }
     finally:
         if helper is not None:
