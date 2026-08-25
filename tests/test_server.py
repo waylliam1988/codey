@@ -2400,6 +2400,78 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(run_id)
         submit.assert_not_called()
 
+    def test_reserve_run_abort_if_stopped_is_atomic_with_the_flag(self) -> None:
+        # The authoritative guard must live inside reserve_run's lock: a Stop
+        # landing between an external peek and the reservation still wins,
+        # the flag stays set, and no slot is taken.
+        state = server.State()
+        state.stop_flag.set()
+
+        self.assertIsNone(state.reserve_run(
+            session_id="s",
+            project=None,
+            task="continue after shell",
+            provider_id="deepseek",
+            abort_if_stopped=True,
+        ))
+        self.assertTrue(state.stop_flag.is_set())
+        self.assertIsNone(state.active_run)
+        self.assertFalse(state.busy)
+
+        # A plain reservation keeps its existing semantics: clear and go.
+        run = state.reserve_run(
+            session_id="s",
+            project=None,
+            task="fresh task",
+            provider_id="deepseek",
+        )
+        assert run is not None
+        self.assertFalse(state.stop_flag.is_set())
+
+    def test_shell_continuation_uses_the_atomic_stop_guard(self) -> None:
+        # Simulate the race: the flag flips to stopped right after the first
+        # external peek; the atomic reservation must refuse the slot without
+        # clearing the flag.
+        state = server.State()
+        real_flag = state.stop_flag
+
+        class FlippingFlag:
+            """Reports not-stopped once, then always stopped."""
+
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def is_set(self) -> bool:
+                self.calls += 1
+                return self.calls > 1
+
+            def set(self) -> None:
+                real_flag.set()
+
+            def clear(self) -> None:
+                raise AssertionError("continuation must never clear a user Stop")
+
+        flipping = FlippingFlag()
+        state.stop_flag = flipping  # type: ignore[assignment]
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "submit_browser_task") as submit,
+        ):
+            run_id = server._submit_task_after_slot_release(
+                "session-1",
+                None,
+                "continue after shell",
+                8,
+                True,
+                "qwen",
+                timeout=0.5,
+            )
+
+        self.assertIsNone(run_id)
+        submit.assert_not_called()
+        self.assertGreaterEqual(flipping.calls, 2)
+
 
 class SessionThreadingTests(unittest.TestCase):
     def setUp(self) -> None:

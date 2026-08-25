@@ -768,10 +768,20 @@ class State:
         project: str | None,
         task: str,
         provider_id: str,
+        abort_if_stopped: bool = False,
     ) -> RunSnapshot | None:
-        """Atomically reserve the single browser task slot."""
+        """Atomically reserve the single browser task slot.
+
+        With ``abort_if_stopped`` a pending user Stop wins inside the same
+        lock: the slot stays free, the flag is left set, and no reservation
+        happens. This closes the check-then-act race where an external
+        stop-flag peek could not see a Stop landing between the peek and
+        this reserve.
+        """
         with self.lock:
             if self.active_run is not None or self.busy:
+                return None
+            if abort_if_stopped and self.stop_flag.is_set():
                 return None
             self.stop_flag.clear()
             run = RunSnapshot(
@@ -1556,12 +1566,15 @@ def _submit_task(
     continue_task: bool,
     provider_id: str,
     intent: str = "auto",
+    *,
+    abort_if_stopped: bool = False,
 ) -> str | None:
     reserved = STATE.reserve_run(
         session_id=session_id,
         project=project,
         task=task,
         provider_id=provider_id,
+        abort_if_stopped=abort_if_stopped,
     )
     if reserved is None:
         return None
@@ -1597,9 +1610,9 @@ def _submit_task_after_slot_release(
 ) -> str | None:
     deadline = time.monotonic() + max(0.0, timeout)
     while True:
-        # A user Stop during the approved command must never be swallowed by
-        # the continuation's reserve_run() (which clears the flag): bail out
-        # before submitting instead.
+        # Fast path; the authoritative guard is the atomic
+        # abort_if_stopped reservation below, which closes the race where a
+        # Stop lands between this peek and the reserve.
         if STATE.stop_flag.is_set():
             return None
         with STATE.lock:
@@ -1614,6 +1627,7 @@ def _submit_task_after_slot_release(
             continue_task,
             provider_id,
             intent,
+            abort_if_stopped=True,
         )
         if run_id is not None:
             return run_id
