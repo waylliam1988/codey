@@ -77,6 +77,7 @@ MAX_SOURCE_TRUST_CLASSES = 3
 MAX_BRIEF_PROJECTIONS = 8
 MAX_BRIEF_CLAIM_ROWS = 16
 MAX_BRIEF_REFS = 24
+MAX_TOPIC_CONTINUITY_ROWS = 8
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 REVIEW_FINDING_REF_KINDS: dict[str, str] = {
@@ -250,6 +251,7 @@ class RunTraceManifest:
     completion_proofs: list[dict[str, object]] = field(default_factory=list)
     research_source_trust: list[dict[str, object]] = field(default_factory=list)
     research_brief_projections: list[dict[str, object]] = field(default_factory=list)
+    research_topic_continuity: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -308,6 +310,9 @@ class RunTraceManifest:
             "research_source_trust": self.research_source_trust[:MAX_SOURCE_TRUST_ROWS],
             "research_brief_projections": (
                 self.research_brief_projections[:MAX_BRIEF_PROJECTIONS]
+            ),
+            "research_topic_continuity": (
+                self.research_topic_continuity[:MAX_TOPIC_CONTINUITY_ROWS]
             ),
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
@@ -390,6 +395,7 @@ class RunTraceRecorder:
         self._completion_proof_keys: set[str] = set()
         self._source_trust_keys: set[str] = set()
         self._brief_projection_keys: set[str] = set()
+        self._topic_continuity_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
@@ -1277,6 +1283,104 @@ class RunTraceRecorder:
         if len(self.manifest.research_brief_projections) > MAX_BRIEF_PROJECTIONS:
             del self.manifest.research_brief_projections[:-MAX_BRIEF_PROJECTIONS]
             self.manifest.warnings.append("research_brief_projections_truncated")
+        self.checkpoint()
+
+    def record_research_topic_continuity(self, projection: Mapping[str, object]) -> None:
+        """Record one bounded topic-continuity admission (refs + counts only).
+
+        The digest is the dedup and integrity anchor: rows without a valid
+        content digest fail closed, and raw hint text has no field to live
+        in — the trace stays refs-only by construction.
+        """
+        if not isinstance(projection, Mapping) or not projection.get("admitted"):
+            return
+        digest = valid_digest_ref(projection.get("digest"))
+        if not digest or digest in self._topic_continuity_keys:
+            return
+
+        def _codes(key: str) -> list[str]:
+            return [
+                code
+                for code in (
+                    _safe_trace_code(value, 80)
+                    for value in _trace_list_items(projection.get(key))
+                )
+                if code
+            ][:MAX_WARNINGS]
+
+        items: list[dict[str, object]] = []
+        for row in _trace_list_items(projection.get("items")):
+            if not isinstance(row, Mapping) or len(items) >= MAX_BRIEF_REFS:
+                continue
+            refs = [
+                ref
+                for ref in (
+                    _clip(value, MAX_TEXT_CHARS)
+                    for value in _trace_list_items(row.get("refs"))
+                )
+                if ref
+            ]
+            kind = _safe_trace_code(row.get("kind"), 40)
+            if not refs or not kind:
+                continue
+            items.append({
+                "refs": refs[:MAX_BRIEF_REFS],
+                "kind": kind,
+                "stale": bool(row.get("stale")),
+                "reason_codes": [
+                    code
+                    for code in (
+                        _safe_trace_code(value, 80)
+                        for value in _trace_list_items(row.get("reason_codes"))
+                    )
+                    if code
+                ][:MAX_WARNINGS],
+            })
+        candidates: list[dict[str, object]] = []
+        for row in _trace_list_items(projection.get("candidates")):
+            if not isinstance(row, Mapping) or len(candidates) >= MAX_BRIEF_REFS:
+                continue
+            candidate_id = _clip(row.get("candidate_id"), 80)
+            source_refs = [
+                ref
+                for ref in (
+                    _clip(value, MAX_TEXT_CHARS)
+                    for value in _trace_list_items(row.get("source_refs"))
+                )
+                if ref
+            ]
+            if not candidate_id or not source_refs:
+                continue
+            candidates.append({
+                "candidate_id": candidate_id,
+                "source_refs": source_refs[:MAX_BRIEF_REFS],
+                "risk_codes": [
+                    code
+                    for code in (
+                        _safe_trace_code(value, 80)
+                        for value in _trace_list_items(row.get("risk_codes"))
+                    )
+                    if code
+                ][:MAX_WARNINGS],
+            })
+        payload: dict[str, object] = {
+            "schema_version": _nonnegative_int(projection.get("schema_version")) or 1,
+            "context_source": _identifier(projection.get("context_source"), 80),
+            "digest": digest,
+            "item_count": _nonnegative_int(projection.get("item_count")),
+            "candidate_count": _nonnegative_int(projection.get("candidate_count")),
+            "claim_ref_count": _nonnegative_int(projection.get("claim_ref_count")),
+            "truncated": bool(projection.get("truncated")),
+            "reason_codes": _codes("reason_codes"),
+            "warnings": _codes("warnings"),
+            "items": items,
+            "candidates": candidates,
+        }
+        self._topic_continuity_keys.add(digest)
+        self.manifest.research_topic_continuity.append(payload)
+        if len(self.manifest.research_topic_continuity) > MAX_TOPIC_CONTINUITY_ROWS:
+            del self.manifest.research_topic_continuity[:-MAX_TOPIC_CONTINUITY_ROWS]
+            self.manifest.warnings.append("research_topic_continuity_truncated")
         self.checkpoint()
 
     def record_completion_proof(self, proof: Any) -> None:

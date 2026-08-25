@@ -18,28 +18,40 @@ This file records Codey's release history. The newest release appears first.
 - Research admits continuity through one new context source key,
   `research_topic_continuity`, owned by the research profile only (the
   chat-side `ghost_directive` / `ghost_continuity` sources stay excluded).
-  The prompt gets its own `research_topic_continuity` envelope section that
-  says "not evidence ... re-check ... do not cite" and never contains Ghost /
-  Work Queue / Concept Graph vocabulary; follow-up material keeps using the
-  separate `research_iteration_context`. Empty projections render nothing,
-  so disabled continuity leaves the baseline intro byte-identical.
+  Admission runs through the shared chain — `ContextSource` -> profile
+  allow-list -> `render_context_sources_with_metadata()` -> prompt envelope
+  section — and every admitted source row is bound to the provider turn's
+  content-addressed epoch (`record_context_sources(..., epoch_id=...)`),
+  matching the coding-intro pattern. The section text says "not evidence ...
+  re-check ... do not cite" and never contains Ghost / Work Queue / Concept
+  Graph vocabulary in Codey-authored framing lines; follow-up material keeps
+  using the separate `research_iteration_context`. Empty or gate-closed
+  continuity renders to nothing, leaving the baseline intro byte-identical.
 - TaskRunner wiring was thinned instead of growing: `_run_research_pipeline`
   now delegates to two helpers, `_build_research_topic_continuity` (profile
   gate -> interest hints via the new knowledge-layer `candidate_to_topic_hint`,
   bounded Ghost items, ledger claim refs -> projection; fail-open to the
-  empty baseline on any error) and `_build_research_context` (assembles
-  `ResearchContext`). No TopicManager / TopicStore / continuity runtime was
-  added, and the research modules never import the Ghost runtime.
-- Trace visibility is digest-only: `record_research_topic_continuity` stores
-  refs, counts, reason codes, warnings, and one content digest — no raw hint
-  text, so prompt-lab material cannot leak into RunTrace or EvidenceLedger.
+  empty baseline on any error, leaving a bounded `warn` reason code in the
+  run trace) and `_build_research_context` (assembles `ResearchContext`).
+  No TopicManager / TopicStore / continuity runtime was added, and the
+  research modules never import the Ghost runtime.
+- The trace row is real: `RunTraceRecorder.record_research_topic_continuity`
+  persists one bounded `research_topic_continuity` manifest section per run,
+  keyed and deduplicated by content digest. Rows carry refs, counts, reason
+  codes, warnings, and the digest — no raw hint text field exists, so
+  prompt-lab material cannot leak into RunTrace or EvidenceLedger. Claim-ref
+  inputs beyond the 16-row cap are counted before capping, so the
+  `truncated` flag reports honestly.
 - New manual harness `tests/manual/ghost_research_continuity_ab.py`:
   identical seeded state across arms with only the admission gate toggled.
-  Live smoke rows are attributed as `provider_send_error`,
+  Every provider (real or stub) is wrapped in `TracingProvider`, so
+  send/reply counters are attributable regardless of provider class, and
+  live rows are classified as `provider_send_error`,
   `native_search_stall_suspected` (send timeout or sends-without-replies —
   a provider/native-web-search diagnostic, not planner quality), or
-  `planner_quality:<stop_reason>`. `--transcript-mode digest-only|archive|off`
-  keeps archived transcripts in the manual journal layer only.
+  `planner_quality:<stop_reason>`. Live runs journal through
+  `ABJournalWriter`; `--transcript-mode digest-only|archive|off` controls
+  transcript retention in the manual layer only.
 - Verification: architecture tests lock topic_continuity as an I/O-free leaf
   and keep the whole research stack Ghost-import-free; capability registry,
   permission profiles, runner/pipeline forwarding, and TaskRunner admission

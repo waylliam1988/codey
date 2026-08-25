@@ -3431,6 +3431,7 @@ class TaskRunner:
         *,
         session_id: str,
         project: str,
+        trace: Any | None = None,
     ) -> tuple[str, dict[str, object] | None]:
         """Admit bounded Ghost-to-Research topic continuity.
 
@@ -3438,8 +3439,9 @@ class TaskRunner:
         research interests + bounded Ghost continuity + prior evidence-ledger
         claim refs -> pure projection. Fail-open by contract: any error or a
         closed gate returns the empty baseline so Research behavior is
-        unchanged. The returned payload is digest-only and never contains raw
-        hint text.
+        unchanged; failures leave one bounded ``warn`` reason code in the run
+        trace instead of disappearing silently. The returned payload is
+        digest-only and never contains raw hint text.
         """
         try:
             profile = profile_for_name("research")
@@ -3460,6 +3462,10 @@ class TaskRunner:
                 claim_refs=self._prior_claim_refs(session_id=session_id, project=project),
             )
         except Exception:
+            FailOpenPromptTrace(trace).call(
+                "warn",
+                "research_topic_continuity_projection_failed",
+            )
             return "", None
         payload = projection.to_payload()
         if not projection.admitted:
@@ -3506,6 +3512,7 @@ class TaskRunner:
         continuity_text, continuity_payload = self._build_research_topic_continuity(
             session_id=request.session_id,
             project=frame.project_text,
+            trace=frame.trace,
         )
         return ResearchContext(
             question=request.task,

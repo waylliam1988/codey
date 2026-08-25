@@ -40,6 +40,13 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from tests.manual.ab_harness_common import TracingProvider
+from tests.manual.ab_journal import (
+    ABJournalWriter,
+    TRANSCRIPT_MODE_ARCHIVE,
+    TRANSCRIPT_MODE_DIGEST_ONLY,
+    TranscriptReplayCache,
+)
 from codey.agent import RunResult
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import build_research_interest_candidates
@@ -73,12 +80,13 @@ class ContinuityCase:
     # Cases without any local leads stay in plain chat; cases with seeds
     # queue a research item so "continue" routes through Research.
     expected_mode: str = "research"
+    # Plain-chat tasks exercise the real provider send path offline; seeded
+    # cases use the work-queue continuation keyword instead.
+    task: str = "continue"
 
 
 DEFAULT_CASES = (
-    # No local leads: nothing may be admitted in either arm, whatever the
-    # router decides ("chat" here) -- the assertion is admission-only.
-    ContinuityCase(name="empty-state-stays-baseline", expected_mode=""),
+    ContinuityCase(name="empty-state-stays-baseline", expected_mode="", task="hello"),
     ContinuityCase(
         name="old-claim-must-be-rechecked",
         seed_note_open_question=(
@@ -163,18 +171,31 @@ def run_cases(
     output: Path | None = None,
     live: bool = False,
     max_turns: int = 8,
+    journal: ABJournalWriter | None = None,
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     _write_progress(output, provider_id, rows, complete=False)
     for case in cases:
         for arm in ARMS:
-            rows.append(_run_case(
+            row = _run_case(
                 case,
                 arm=arm,
                 provider_factory=provider_factory,
                 live=live,
                 max_turns=max_turns,
-            ))
+                journal=journal,
+            )
+            rows.append(row)
+            if journal is not None:
+                journal.record_case_complete(
+                    case=case.name,
+                    arm=arm,
+                    row={
+                        "ok": bool(row.get("exact")),
+                        "stop_reason": str(row.get("stop_reason") or ""),
+                        "failure_class": str(row.get("failure_class") or ""),
+                    },
+                )
             _write_progress(output, provider_id, rows, complete=False)
     payload = _payload(provider_id, rows, complete=True)
     _write_progress(output, provider_id, rows, complete=True)
@@ -188,10 +209,12 @@ def _run_case(
     provider_factory: Callable[[str], Any] | None,
     live: bool = False,
     max_turns: int = 8,
+    journal: ABJournalWriter | None = None,
 ) -> dict[str, Any]:
     started = time.time()
     gate_open = arm == "continuity"
     raw_provider = None
+    tracing_provider: TracingProvider | None = None
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
         state = server.State(root / "state")
@@ -271,15 +294,24 @@ def _run_case(
                 raw_provider = provider_factory(session_id)
             else:
                 raw_provider = _MainProvider()
+            # Every provider (real or stub) goes through TracingProvider so
+            # send/reply counters and journal transcripts are attributable to
+            # one case/arm regardless of the underlying provider class.
+            tracing_provider = TracingProvider(
+                raw_provider,
+                journal=journal,
+                case=case.name,
+                arm=arm,
+            )
             gate_patch = (
                 None if gate_open
                 else mock.patch("codey.task_runner.allows_context_source", return_value=False)
             )
-            with mock.patch.object(state, "get_provider", return_value=raw_provider):
+            with mock.patch.object(state, "get_provider", return_value=tracing_provider):
                 request = TaskRequest(
                     session_id=session_id,
                     project=project,
-                    task="continue",
+                    task=case.task,
                     max_turns=max_turns,
                     continue_task=False,
                     provider_id="deepseek",
@@ -360,8 +392,12 @@ def _run_case(
         stop_reason = str(done.get("stop_reason") or "")
         send_error_text = error
         row["stop_reason"] = stop_reason
-        row["sends"] = int(getattr(raw_provider, "send_index", 0) or 0)
-        row["replies"] = int(getattr(raw_provider, "reply_count", 0) or 0)
+        # Counters come from the TracingProvider wrapper, so attribution does
+        # not depend on the underlying provider exposing its own counters.
+        row["sends"] = int(getattr(tracing_provider, "send_index", 0) or 0)
+        row["replies"] = int(getattr(tracing_provider, "reply_count", 0) or 0)
+        row["prompt_chars"] = int(getattr(tracing_provider, "prompt_chars", 0) or 0)
+        row["reply_chars"] = int(getattr(tracing_provider, "reply_chars", 0) or 0)
         row["failure_class"] = (
             "ok" if exact and not error
             else classify_outcome(
@@ -667,6 +703,41 @@ def _selected_cases(names: list[str]) -> tuple[ContinuityCase, ...]:
     return selected
 
 
+_TRANSCRIPT_MODE_MAP = {
+    "digest-only": TRANSCRIPT_MODE_DIGEST_ONLY,
+    "archive": TRANSCRIPT_MODE_ARCHIVE,
+}
+
+
+def _open_journal(
+    *,
+    output: Path,
+    provider_id: str,
+    stamp: str,
+    transcript_mode: str,
+    max_turns: int,
+    case_names: list[str],
+) -> ABJournalWriter | None:
+    """Open the manual journal for a live run (None when mode is off)."""
+    mode = _TRANSCRIPT_MODE_MAP.get(str(transcript_mode or "").strip())
+    journal_dir = output.parent / f"{output.stem}-journal"
+    journal = ABJournalWriter(
+        directory=journal_dir,
+        experiment_id="ghost_research_continuity_ab",
+        run_id=f"{provider_id}-{stamp}",
+        provider=provider_id,
+        # digest-only keeps hashes; archive stores full prompt/reply pairs
+        # under transcripts/<digest>.json. Both stay manual-layer material.
+        transcript_cache=TranscriptReplayCache(journal_dir, mode=mode),
+    )
+    journal.record_run_start(
+        cases=tuple(case_names),
+        arms=ARMS,
+        max_turns=max(4, int(max_turns)),
+    )
+    return journal
+
+
 def _self_test() -> None:
     payload = run_cases(provider_id="fake", provider_factory=None)
     if not payload["ok"]:
@@ -717,23 +788,38 @@ def main(argv: list[str] | None = None) -> int:
 
     cases = _selected_cases(args.case)
     if args.provider == "fake":
+        # Offline stubs produce no transcript-worthy traffic: journaling
+        # stays off regardless of --transcript-mode.
         payload = run_cases(provider_id="fake", cases=cases)
         output = args.output or RESULTS_DIR / "ghost_research_continuity_ab_offline.json"
         _atomic_write_json(output, payload)
     else:
-        payload = run_cases(
-            provider_id=args.provider,
-            cases=cases,
-            provider_factory=lambda _label: connect_fresh_provider_tab(
-                args.provider, port=args.port
-            ),
-            live=True,
-            max_turns=max(4, int(args.max_turns)),
-        )
         stamp = time.strftime("%Y%m%dT%H%M%S")
         output = args.output or RESULTS_DIR / (
             f"ghost_research_continuity_live_{args.provider}_{stamp}.json"
         )
+        journal = _open_journal(
+            output=output,
+            provider_id=str(args.provider),
+            stamp=stamp,
+            transcript_mode=str(args.transcript_mode),
+            max_turns=max(4, int(args.max_turns)),
+            case_names=[case.name for case in cases],
+        )
+        try:
+            payload = run_cases(
+                provider_id=str(args.provider),
+                cases=cases,
+                provider_factory=lambda _label: connect_fresh_provider_tab(
+                    args.provider, port=args.port
+                ),
+                live=True,
+                max_turns=max(4, int(args.max_turns)),
+                journal=journal,
+            )
+        finally:
+            if journal is not None:
+                journal.close()
         _atomic_write_json(output, payload)
     print(json.dumps({"ok": bool(payload.get("ok")), "output": str(output)}, ensure_ascii=False))
     return 0 if payload.get("ok") else 1

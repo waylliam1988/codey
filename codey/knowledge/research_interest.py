@@ -69,18 +69,12 @@ def candidate_to_topic_hint(candidate: ResearchInterestCandidate) -> dict[str, o
 
     Keeps the knowledge layer as the single owner of its own object shape:
     consumers (e.g. research topic continuity) never import this module's
-    dataclass, they consume the neutral mapping produced here.
+    dataclass, they consume the neutral mapping produced here. Only the two
+    fields the projection actually reads are emitted.
     """
     return {
         "ref": f"research_interest:{candidate.id}",
         "question": candidate.question,
-        "why_now": candidate.why_now,
-        "related_concepts": list(candidate.related_concepts[:4]),
-        "priority": float(candidate.priority),
-        "confidence": float(candidate.confidence),
-        "strong_support": bool(candidate.strong_support),
-        "source": candidate.source,
-        "source_ref": candidate.source_ref,
     }
 
 

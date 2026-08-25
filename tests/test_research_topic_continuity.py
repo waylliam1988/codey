@@ -9,17 +9,21 @@ from codey.research.topic_continuity import (
     ITEM_KIND_PREFERENCE,
     ITEM_KIND_PRIOR_CLAIM,
     MAX_TOPIC_CANDIDATES,
+    MAX_TOPIC_CLAIM_REFS,
     PROMPT_SOURCE_REF,
     TopicContinuityItem,
     TopicPlannerCandidate,
     build_topic_candidates,
-    merge_topic_candidates,
     project_topic_continuity,
     render_topic_continuity,
     topic_item,
 )
 
-_BANNED_TERMS = ("ghost", "work queue", "concept graph", "memory")
+# Item-text screening follows the codebase-wide internal-vocabulary filter.
+# "memory" is deliberately not an item-text ban (it is common research
+# content, e.g. memory paging); it is enforced on framing lines instead.
+_BANNED_ITEM_TERMS = ("ghost", "work queue", "concept graph")
+_BANNED_FRAMING_TERMS = ("ghost", "memory", "work queue", "concept graph")
 
 
 def _interest_hint(question: str, *, ref: str = "research_interest:ric_1") -> dict[str, object]:
@@ -126,7 +130,7 @@ def test_projection_payload_is_digest_only() -> None:
     assert projection.to_payload()["digest"].startswith("sha256:")
 
 
-def test_duplicate_questions_merge_across_sources() -> None:
+def test_merge_free_duplicate_questions_unify_refs_and_flag_risk() -> None:
     projection = project_topic_continuity(
         interest_hints=(_interest_hint("Is helium supply still constrained?"),),
         continuity_hints=(
@@ -152,14 +156,25 @@ def test_internal_vocabulary_and_secrets_are_dropped() -> None:
         interest_hints=(
             _interest_hint("Research whether the Ghost store needs a Work Queue.", ref="r1"),
             _interest_hint("What is the api_key rotation policy?", ref="r2"),
+            # Common content words stay admissible: "memory" here is a
+            # research topic, not internal machinery vocabulary.
+            _interest_hint("How does memory paging behave under load?", ref="r3"),
         ),
     )
 
-    assert not projection.admitted
+    assert projection.admitted
+    # Warnings are deduplicated by design; two drops collapse into one code.
     assert "interest_hint_skipped" in projection.warnings
+    assert all(
+        not any(term in item.text.casefold() for term in _BANNED_ITEM_TERMS)
+        for item in projection.items
+    )
 
 
-def test_prompt_framing_never_uses_internal_machinery_names() -> None:
+def test_framing_vocabulary_never_contains_internal_names() -> None:
+    # The framing/header lines are Codey-authored, so they must avoid every
+    # roadmap-internal name including "memory"; only seeded item text may
+    # legitimately carry common words.
     projection = project_topic_continuity(
         interest_hints=(_interest_hint("Does the 2026 supply claim still hold?"),),
         continuity_hints=(
@@ -169,7 +184,7 @@ def test_prompt_framing_never_uses_internal_machinery_names() -> None:
     )
     lowered = projection.prompt_text.casefold()
 
-    assert not any(term in lowered for term in ("ghost", "memory", "work queue"))
+    assert not any(term in lowered for term in _BANNED_FRAMING_TERMS)
 
 
 def test_candidate_ranking_is_bounded_and_deterministic() -> None:
@@ -222,31 +237,18 @@ def test_zero_budget_admits_nothing() -> None:
     assert render_topic_continuity(candidates=(TopicPlannerCandidate("t", "q"),), budget_chars=0) == ""
 
 
-def test_merge_topic_candidates_unions_refs_and_risk_codes() -> None:
-    left = (
-        TopicPlannerCandidate(
-            candidate_id="topic_a",
-            question="Q one?",
-            source_refs=("ref:1",),
-            risk_codes=("risk_a",),
-        ),
-    )
-    right = (
-        TopicPlannerCandidate(
-            candidate_id="topic_a",
-            question="Q one?",
-            source_refs=("ref:2", "ref:1"),
-            risk_codes=("risk_b",),
-        ),
-        TopicPlannerCandidate(candidate_id="topic_b", question="Q two?"),
+def test_claim_ref_cap_reports_truncation_honestly() -> None:
+    projection = project_topic_continuity(
+        claim_refs=tuple(f"claim-{index}" for index in range(MAX_TOPIC_CLAIM_REFS + 2)),
     )
 
-    merged = merge_topic_candidates(left, right)
-
-    by_id = {candidate.candidate_id: candidate for candidate in merged}
-    assert set(by_id) == {"topic_a", "topic_b"}
-    assert by_id["topic_a"].source_refs == ("ref:1", "ref:2")
-    assert by_id["topic_a"].risk_codes == ("risk_a", "risk_b")
+    claims = [item for item in projection.items if item.kind == ITEM_KIND_PRIOR_CLAIM]
+    assert len(claims) == MAX_TOPIC_CLAIM_REFS
+    assert projection.claim_ref_count == MAX_TOPIC_CLAIM_REFS
+    assert projection.truncated is True
+    payload = projection.to_payload()
+    assert payload["claim_ref_count"] == MAX_TOPIC_CLAIM_REFS
+    assert payload["truncated"] is True
 
 
 def test_topic_item_factory_fails_closed_on_unusable_input() -> None:
@@ -275,7 +277,7 @@ def test_projection_invariant_refs_only_relocate_history() -> None:
     ]
     assert prior and all(item.stale for item in prior)
     lowered = projection.prompt_text.casefold()
-    assert not any(term in lowered for term in _BANNED_TERMS)
+    assert not any(term in lowered for term in _BANNED_FRAMING_TERMS)
     assert PROMPT_SOURCE_REF == "local_context:research_topic_continuity"
 
 

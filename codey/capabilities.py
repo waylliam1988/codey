@@ -58,6 +58,7 @@ KNOWN_TRACE_SECTIONS = frozenset({
     "policy_decisions",
     "research_source_trust",
     "research_brief_projections",
+    "research_topic_continuity",
 })
 # Stable context source keys admitted through the shared ContextSource contract.
 KNOWN_CONTEXT_SOURCES = frozenset({
@@ -528,7 +529,7 @@ def builtin_capability_registry() -> CapabilityRegistry:
             consumes=("local_context", "prompt_envelope", "run_trace"),
             model_visible=True,
             durable_state=("run_trace",),
-            trace_sections=("prompt_sections",),
+            trace_sections=("prompt_sections", "research_topic_continuity"),
             context_sources=("research_topic_continuity",),
             owner_module="codey.research.topic_continuity",
             projection_audience=("model_visible", "behavior_input"),

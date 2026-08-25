@@ -15,26 +15,37 @@
   确定性、去重、受预算约束的 leads——不是答案，更不会自动执行研究。
 - Research 通过一个新的 context source key `research_topic_continuity`
   接收 continuity，仅由 research profile 放行（chat 侧的 `ghost_directive`
-  / `ghost_continuity` source 仍然被排除）。prompt 使用独立的
-  `research_topic_continuity` section，文案直说 "not evidence ... re-check
-  ... do not cite"，且不出现 Ghost / Work Queue / Concept Graph 内部词；
-  follow-up 材料继续走独立的 `research_iteration_context`。空投影不渲染，
-  关闭 continuity 时 baseline intro 逐字节不变。
+  / `ghost_continuity` source 仍然被排除）。admission 走共享链路：
+  `ContextSource` -> profile allow-list ->
+  `render_context_sources_with_metadata()` -> prompt envelope section，并且
+  每个 admitted source row 都绑定到该 provider turn 的内容寻址 epoch
+  （`record_context_sources(..., epoch_id=...)`），与 coding intro 的模式
+  一致。section 文案直说 "not evidence ... re-check ... do not cite"，
+  Codey 自己的 framing 行不出现 Ghost / Work Queue / Concept Graph /
+  Memory 内部词；follow-up 材料继续走独立的
+  `research_iteration_context`。空投影或门禁关闭时渲染为空，baseline
+  intro 逐字节不变。
 - TaskRunner 是减负而不是增重：`_run_research_pipeline` 拆出两个 helper——
   `_build_research_topic_continuity`（profile 门禁 -> 经 knowledge 层新增的
   `candidate_to_topic_hint` 取 interest hints -> bounded Ghost items ->
-  ledger claim refs -> projection；任何异常 fail-open 回空 baseline）和
-  `_build_research_context`（组装 `ResearchContext`）。没有新增 TopicManager
-  / TopicStore / continuity runtime，research 模块也不 import Ghost 运行时。
-- Trace 只记 digest：`record_research_topic_continuity` 存 refs、counts、
-  reason codes、warnings 和一个内容 digest——不含原始提示文本，prompt-lab
-  材料无法泄入 RunTrace 或 EvidenceLedger。
+  ledger claim refs -> projection；任何异常 fail-open 回空 baseline，同时在
+  run trace 留下一条有界 `warn` reason code）和 `_build_research_context`
+  （组装 `ResearchContext`）。没有新增 TopicManager / TopicStore /
+  continuity runtime，research 模块也不 import Ghost 运行时。
+- Trace row 是真实落地的：`RunTraceRecorder.record_research_topic_continuity`
+  把一个有界的 `research_topic_continuity` manifest section 写进 run trace，
+  以内容 digest 为去重和完整性锚点。row 只含 refs、counts、reason codes、
+  warnings 和 digest——没有原始提示文本字段，prompt-lab 材料无法泄入
+  RunTrace 或 EvidenceLedger。claim ref 超过 16 条上限时先计数再截断，
+  `truncated` 标记如实上报。
 - 新增 manual harness `tests/manual/ghost_research_continuity_ab.py`：两臂
-  使用完全相同的种子状态，只切换 admission 门禁。live smoke 行按
-  `provider_send_error`、`native_search_stall_suspected`（send 超时或有 send
-  无 reply——属于 provider/原生网页搜索诊断，不算 planner 质量）、
-  `planner_quality:<stop_reason>` 三类归因。`--transcript-mode
-  digest-only|archive|off` 让完整 transcript 只保留在 manual journal 层。
+  使用完全相同的种子状态，只切换 admission 门禁。所有 provider（真实或
+  stub）都包一层 `TracingProvider`，send/reply 计数不再依赖 provider 自身
+  实现；live 行按 `provider_send_error`、`native_search_stall_suspected`
+  （send 超时或有 send 无 reply——属于 provider/原生网页搜索诊断，不算
+  planner 质量）、`planner_quality:<stop_reason>` 三类归因。live 运行通过
+  `ABJournalWriter` 记录 journal；`--transcript-mode digest-only|archive|off`
+  只控制 manual 层的 transcript 保留策略。
 - 验证：架构测试把 topic_continuity 锁成无 I/O leaf，并锁死整个 research
   栈不得 import Ghost；capability registry、permission profiles、runner/
   pipeline 转发、TaskRunner admission 均有 deterministic 测试，外加 harness

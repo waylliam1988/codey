@@ -5,12 +5,18 @@ from __future__ import annotations
 import queue
 import threading
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 from codey import cancellation
+from codey.context_epoch import context_epoch_id, context_source_ref
+from codey.context_source import (
+    ContextSource,
+    RenderedContextSource,
+    render_context_sources_with_metadata,
+)
 from codey.events import RunEvent
-from codey.permission_profiles import profile_for_name
+from codey.permission_profiles import allows_context_source, profile_for_name
 from codey.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelope,
@@ -48,6 +54,10 @@ from codey.research.tool_contract import (
     tool_example,
 )
 from codey.research.tools import ResearchTools, clone_research_tools
+from codey.research.topic_continuity import (
+    CONTEXT_SOURCE_KEY as TOPIC_CONTINUITY_SOURCE_KEY,
+    DEFAULT_TOPIC_BUDGET_CHARS,
+)
 
 DEFAULT_MAX_TURNS = 14
 COMPLETION_EXTENSION_TURNS = 4
@@ -563,6 +573,29 @@ class ResearchRunner:
             except Exception:
                 pass
 
+    def _topic_continuity_sources(self) -> tuple[RenderedContextSource, ...]:
+        """Admit bounded topic continuity through the profile gate.
+
+        Mirrors the coding-intro admission chain: ContextSource -> profile
+        allow-list -> rendered metadata. Empty or gate-closed continuity
+        renders to nothing instead of emitting an empty section.
+        """
+        sources = (
+            ContextSource(
+                key=TOPIC_CONTINUITY_SOURCE_KEY,
+                loader=lambda: self.topic_continuity_context,
+                budget=DEFAULT_TOPIC_BUDGET_CHARS,
+                freshness="run_start",
+                why_included="bounded local topic continuity leads, not evidence",
+                capability_id="research_topic_continuity",
+                admission_reason="run_start_assembly",
+            ),
+        )
+        profile = profile_for_name(self.permission_profile)
+        return render_context_sources_with_metadata(
+            source for source in sources if allows_context_source(profile, source.key)
+        ).sources
+
     def _intro(self, question: str) -> str:
         include_source_search = bool(getattr(self.codec, "include_source_search", True))
         system_prompt = (
@@ -570,6 +603,7 @@ class ResearchRunner:
             if self.controller is not None
             else self.codec.system_prompt()
         )
+        continuity = self._topic_continuity_sources()
         rendered = PromptEnvelope((
             PromptEnvelopeSection(
                 name="research_system_prompt",
@@ -593,14 +627,19 @@ class ResearchRunner:
                 source_refs=("conversation:research_handoff",),
             ),
             PromptEnvelopeSection(
-                name="research_topic_continuity",
                 # Fully self-describing bounded text produced by
                 # codey.research.topic_continuity; render() skips empty
                 # sections so disabled continuity leaves the baseline intact.
-                text=self.topic_continuity_context,
+                name="research_topic_continuity",
+                text="\n\n".join(source.text for source in continuity),
                 purpose="bounded local topic continuity, not evidence",
                 freshness="run_start",
-                source_refs=("local_context:research_topic_continuity",),
+                source_refs=(
+                    "local_context:research_topic_continuity",
+                    *(context_source_ref(source.key) for source in continuity),
+                ),
+                budget=sum(source.budget for source in continuity),
+                truncated=any(source.truncated for source in continuity),
             ),
             PromptEnvelopeSection(
                 name="research_iteration_context",
@@ -617,7 +656,18 @@ class ResearchRunner:
                 source_refs=("request:research_question",),
             ),
         )).render()
-        self.prompt_trace.record_envelope(rendered)
+        # One content-addressed epoch binds every row of this turn together:
+        # the assembled sections and the admitted context sources (the
+        # outbound send is stamped later via record_provider_send_prompt).
+        epoch = context_epoch_id(rendered.text)
+        for section in rendered.sections:
+            self.prompt_trace.record_section(replace(section, epoch_id=epoch))
+        if continuity:
+            self.prompt_trace.call(
+                "record_context_sources",
+                continuity,
+                epoch_id=epoch,
+            )
         return rendered.text
 
     def _persist_synthesis(self, question: str, summary: str, *, open_questions: list[str] | None = None) -> str:

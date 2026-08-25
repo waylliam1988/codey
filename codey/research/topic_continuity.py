@@ -55,8 +55,14 @@ _GHOST_ITEM_KIND_MAP = {
 }
 
 # Internal machinery names that must never reach model-visible continuity
-# text, mirroring the knowledge-layer filter conventions.
+# text, mirroring the knowledge-layer filter conventions. "memory" is
+# deliberately absent: it is a common content word in research questions,
+# so it is enforced on the framing lines (which never contain it) instead
+# of being banned as item text.
 _BANNED_TEXT_TERMS = ("ghost", "work queue", "concept graph")
+# The framing/header vocabulary itself must avoid every internal name the
+# roadmap calls out, including "memory".
+_BANNED_FRAMING_TERMS = ("ghost", "memory", "work queue", "concept graph")
 _SECRET_MARKERS = ("api_key", "api key", "password", "token sk-")
 
 _HEADER = (
@@ -260,41 +266,6 @@ def build_topic_candidates(
     return tuple(ranked[:max(0, int(limit))])
 
 
-def merge_topic_candidates(
-    left: Iterable[TopicPlannerCandidate],
-    right: Iterable[TopicPlannerCandidate],
-    *,
-    limit: int = MAX_TOPIC_CANDIDATES,
-) -> tuple[TopicPlannerCandidate, ...]:
-    """Merge two candidate tuples by id, unioning refs and risk codes."""
-    merged: dict[str, TopicPlannerCandidate] = {}
-    for candidate in (*(left or ()), *(right or ())):
-        current = merged.get(candidate.candidate_id)
-        if current is None:
-            merged[candidate.candidate_id] = candidate
-            continue
-        refs = list(current.source_refs)
-        for ref in candidate.source_refs:
-            if ref not in refs:
-                refs.append(ref)
-        merged[candidate.candidate_id] = TopicPlannerCandidate(
-            candidate_id=current.candidate_id,
-            question=current.question,
-            source_refs=tuple(refs[:MAX_TOPIC_ITEM_REFS]),
-            risk_codes=tuple(dict.fromkeys((*current.risk_codes, *candidate.risk_codes))),
-        )
-    ranked = sorted(
-        merged.values(),
-        key=lambda row: (
-            -len(row.source_refs),
-            len(row.risk_codes),
-            row.question.casefold(),
-            row.candidate_id,
-        ),
-    )
-    return tuple(ranked[:max(0, int(limit))])
-
-
 def render_topic_continuity(
     *,
     candidates: Iterable[TopicPlannerCandidate] = (),
@@ -361,7 +332,16 @@ def render_topic_continuity(
         used = local_used
     if len(parts) <= 1:
         return ""
-    return "\n\n".join(parts)
+    rendered = "\n\n".join(parts)
+    lowered_framing = "\n".join((
+        _HEADER,
+        *(title for title, _lines in sections),
+    )).casefold()
+    # Guard the invariant on our own framing vocabulary; item texts were
+    # already screened at construction time by topic_item/_clean_text.
+    if any(term in lowered_framing for term in _BANNED_FRAMING_TERMS):
+        return ""
+    return rendered
 
 
 def topic_item(
@@ -433,7 +413,11 @@ def _item_from_continuity_hint(hint: Any) -> TopicContinuityItem | None:
 def _items_from_claim_refs(
     claim_refs: Iterable[Any],
 ) -> tuple[tuple[TopicContinuityItem, ...], int]:
-    """Project raw claim refs into permanently-stale prior-claim items."""
+    """Project raw claim refs into permanently-stale prior-claim items.
+
+    The returned count is the number of usable inputs seen (before the cap),
+    so callers can report truncation honestly.
+    """
     items: list[TopicContinuityItem] = []
     input_count = 0
     for value in claim_refs or ():
@@ -444,6 +428,8 @@ def _items_from_claim_refs(
         if not text:
             continue
         input_count += 1
+        if len(items) >= MAX_TOPIC_CLAIM_REFS:
+            continue
         ref = text if text.startswith("prior_claim:") else f"prior_claim:{text}"
         item = topic_item(
             kind=ITEM_KIND_PRIOR_CLAIM,
@@ -452,11 +438,8 @@ def _items_from_claim_refs(
             stale=True,
             reason_codes=("prior_claim_needs_recheck",),
         )
-        if item is None:
-            continue
-        items.append(item)
-        if len(items) >= MAX_TOPIC_CLAIM_REFS:
-            break
+        if item is not None:
+            items.append(item)
     return tuple(items), input_count
 
 
@@ -540,7 +523,6 @@ __all__ = [
     "TopicContinuityProjection",
     "TopicPlannerCandidate",
     "build_topic_candidates",
-    "merge_topic_candidates",
     "project_topic_continuity",
     "render_topic_continuity",
     "topic_item",

@@ -1,6 +1,19 @@
 from __future__ import annotations
 
+import json
+import tempfile
+from pathlib import Path
+from unittest import mock
+
+from codey.agent import RunResult
+from codey.task_runner import TaskRequest, TaskRunner
+
 from tests.manual import ghost_research_continuity_ab as ab
+from tests.manual.ab_journal import (
+    TRANSCRIPT_MODE_ARCHIVE,
+    TRANSCRIPT_MODE_DIGEST_ONLY,
+    TranscriptReplayCache,
+)
 
 
 def test_continuity_arm_admits_bounded_hints_and_baseline_stays_empty() -> None:
@@ -46,3 +59,122 @@ def test_failure_classification_separates_provider_and_planner_causes() -> None:
     assert ab.classify_outcome(
         sends=4, replies=4, send_error_text="", stop_reason="no_progress"
     ) == "planner_quality:no_progress"
+
+
+def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
+    """TracingProvider + ABJournalWriter capture every provider exchange."""
+    from codey import server
+    from codey.knowledge.store import KnowledgeStore
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        state = server.State(root / "state")
+        state.knowledge_store = KnowledgeStore(root / "knowledge")
+        journal_dir = root / "journal-archive"
+        journal = ab.ABJournalWriter(
+            directory=journal_dir,
+            experiment_id="ghost_research_continuity_ab",
+            run_id="fake-test-archive",
+            provider="fake",
+            transcript_cache=TranscriptReplayCache(
+                journal_dir, mode=TRANSCRIPT_MODE_ARCHIVE
+            ),
+        )
+        raw_provider = ab._MainProvider()
+        tracing = ab.TracingProvider(raw_provider, journal=journal, case="c1", arm="baseline")
+        runner = TaskRunner(
+            state,
+            agent_run=mock.Mock(return_value=RunResult("stub", "done", 1)),
+            collect_changes=lambda *_a, **_k: {},
+            run_review=mock.Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            is_git_repository=lambda _p: True,
+            ghost_router_provider_factory=None,
+        )
+        try:
+            with mock.patch.object(state, "get_provider", return_value=tracing):
+                runner.run(TaskRequest(
+                    session_id="s-journal",
+                    project=None,
+                    task="hello",
+                    max_turns=8,
+                    continue_task=False,
+                    provider_id="deepseek",
+                    intent="auto",
+                ))
+        finally:
+            journal.close()
+
+        assert tracing.send_index == 1
+        assert tracing.reply_count == 1
+        event_types = [
+            json.loads(line).get("event_type")
+            for line in (journal_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert "send_start" in event_types
+        assert "reply" in event_types
+        transcripts = list((journal_dir / "transcripts").glob("*.json"))
+        assert transcripts, "archive mode must store full prompt/reply transcripts"
+
+
+def test_digest_only_journal_keeps_no_transcript_files() -> None:
+    from codey import server
+    from codey.knowledge.store import KnowledgeStore
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        state = server.State(root / "state")
+        state.knowledge_store = KnowledgeStore(root / "knowledge")
+        journal_dir = root / "journal-digest"
+        journal = ab.ABJournalWriter(
+            directory=journal_dir,
+            experiment_id="ghost_research_continuity_ab",
+            run_id="fake-test-digest",
+            provider="fake",
+            transcript_cache=TranscriptReplayCache(
+                journal_dir, mode=TRANSCRIPT_MODE_DIGEST_ONLY
+            ),
+        )
+        raw_provider = ab._MainProvider()
+        tracing = ab.TracingProvider(raw_provider, journal=journal, case="c1", arm="baseline")
+        runner = TaskRunner(
+            state,
+            agent_run=mock.Mock(return_value=RunResult("stub", "done", 1)),
+            collect_changes=lambda *_a, **_k: {},
+            run_review=mock.Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            is_git_repository=lambda _p: True,
+            ghost_router_provider_factory=None,
+        )
+        try:
+            with mock.patch.object(state, "get_provider", return_value=tracing):
+                runner.run(TaskRequest(
+                    session_id="s-journal-digest",
+                    project=None,
+                    task="hello",
+                    max_turns=8,
+                    continue_task=False,
+                    provider_id="deepseek",
+                    intent="auto",
+                ))
+        finally:
+            journal.close()
+
+        assert tracing.send_index == 1
+        assert tracing.reply_count == 1
+        assert list((journal_dir / "transcripts").glob("*.json")) == []

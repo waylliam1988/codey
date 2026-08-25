@@ -2436,8 +2436,17 @@ TaskRunner._build_research_topic_continuity()
 TaskRunner._build_research_context()
   ResearchContext.topic_continuity_context / topic_continuity_payload
 
+ResearchRunner._intro()
+  ContextSource -> profile allow-list -> render_context_sources_with_metadata
+    -> research_topic_continuity prompt section
+    -> record_context_sources(..., epoch_id=context_epoch_id(prompt))
+  （与 coding intro 同一条 admission 链，绑定 provider-turn epoch）
+
 ResearchPipeline 初始 iteration 只转发 bounded text；
-trace sink 记录 digest-only admission row（record_research_topic_continuity）。
+RunTraceRecorder.record_research_topic_continuity 写入真实的
+`research_topic_continuity` manifest section（digest 去重，refs/counts/codes
+only，无原始文本字段）。projection 异常 fail-open 回空 baseline，并在 run
+trace 留下 `research_topic_continuity_projection_failed` warn code。
 ```
 
 没有新增 TopicManager / TopicStore / ResearchContinuityRuntime；`research/`

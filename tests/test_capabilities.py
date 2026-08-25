@@ -50,7 +50,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "e61a4684bceabaa361a429c1f65053d6e41297b82ff4af4d95b6e97f83590553"
+    "46bcb7785458e4aa61af4bbc235a87d551bf1c82a89d05926ea91b8e5818ab01"
 )
 
 
@@ -450,6 +450,10 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(spec.owner_module, "codey.research.topic_continuity")
         self.assertTrue(spec.model_visible)
         self.assertEqual(spec.release_gate, "live_smoke")
+        self.assertEqual(
+            spec.trace_sections,
+            ("prompt_sections", "research_topic_continuity"),
+        )
         self.assertEqual(spec.fail_mode, "fail_open")
         self.assertEqual(spec.durable_state, ("run_trace",))
         self.assertFalse(spec.evidence_producer)
