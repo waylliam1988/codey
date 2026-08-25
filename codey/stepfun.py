@@ -195,23 +195,6 @@ def _response_selector() -> str:
     return PROFILE.selector("response")
 
 
-# Fallback ladder step 1 for counts: same filtering semantics as the
-# main-path count JS plus the reason-block exclusion, with a plain string
-# argument so it survives the object-payload evaluate failure mode.
-_RESPONSE_COUNT_FALLBACK_JS = r"""
-(selector) => Array.from(document.querySelectorAll(selector))
-  .filter((el) => {
-    if (el.closest('.reason-render-ext')) return false;
-    const rect = el.getBoundingClientRect();
-    const style = getComputedStyle(el);
-    return rect.width > 0
-      && rect.height > 0
-      && style.visibility !== 'hidden'
-      && style.display !== 'none';
-  }).length
-"""
-
-
 def _response_count(page: Page) -> int:
     try:
         return int(page.evaluate(_VISIBLE_RESPONSE_COUNT_JS, _response_selector()))
@@ -222,18 +205,15 @@ def _response_count(page: Page) -> int:
 
 
 def _response_count_fallback(page: Page) -> int:
-    """Count fallback, mirroring the texts-fallback ladder.
+    """Count fallback, reusing the filtered texts ladder.
 
-    An inflated baseline here would make ``fresh = count - baseline`` drop a
-    real reply, so the reason-filtered JS step is preferred; the pure
-    locator scan stays as the last resort.
+    The main count JS already carries the reason filter, so a separate
+    count-only constant would just duplicate it and drift; deriving the
+    count from :func:`_response_texts_fallback` keeps baseline arithmetic
+    (``fresh = count - baseline``) consistent with what fresh/latest
+    actually read in the same degraded mode.
     """
-    try:
-        return int(page.evaluate(_RESPONSE_COUNT_FALLBACK_JS, _response_selector()))
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception:
-        return len(_visible_responses_newest_first(page))
+    return len(_response_texts_fallback(page))
 
 
 def _visible_responses_newest_first(page: Page) -> list[Locator]:

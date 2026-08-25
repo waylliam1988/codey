@@ -73,7 +73,9 @@ class StepFunDriverTests(unittest.TestCase):
 
     def test_response_count_fallback_counts_only_visible_nodes(self) -> None:
         # rawCount=4 / filteredCount=2 on the live page: hidden duplicates
-        # must not inflate the fallback count used as a baseline.
+        # must not inflate the fallback count used as a baseline. The count
+        # reuses the texts ladder, so its last resort is the same locator
+        # scan fresh/latest degrade to.
         page = self._newest_first_page(["B", "A"])
 
         self.assertEqual(stepfun._response_count_fallback(page), 2)
@@ -81,29 +83,17 @@ class StepFunDriverTests(unittest.TestCase):
             f"{stepfun.PROFILE.selector('response')} >> visible=true"
         )
 
-    def test_response_count_fallback_prefers_reason_filtered_js(self) -> None:
-        # When the string-arg count JS works, the locator scan is never
-        # needed; the JS source must carry the reason-block filter so a
-        # visible reasoning copy cannot inflate the baseline.
-        page = self._reason_dom_count_page(2)
+    def test_response_count_fallback_prefers_reason_filtered_texts_js(self) -> None:
+        # When the simplified texts JS works, the count derives from it: one
+        # filter source for baseline arithmetic and reads, never two that
+        # can drift.
+        page = self._reason_dom_page(["B", "A"])
 
         self.assertEqual(stepfun._response_count_fallback(page), 2)
         args = page.evaluate.call_args.args
         self.assertIn(".reason-render-ext", args[0])
         self.assertEqual(args[1], stepfun.PROFILE.selector("response"))
         page.locator.assert_not_called()
-
-    def _reason_dom_count_page(self, count: int):
-        from unittest import mock as _mock
-
-        def evaluate(js, *args):
-            if js == stepfun._RESPONSE_COUNT_FALLBACK_JS:
-                return count
-            raise RuntimeError("object payload unsupported")
-
-        page = _mock.Mock()
-        page.evaluate.side_effect = evaluate
-        return page
 
     def test_fresh_response_fallback_reads_newest_first_head_slice(self) -> None:
         # Live probe: filtered index 0 holds the NEWEST reply. baseline=1
