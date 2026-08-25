@@ -67,9 +67,6 @@ MAX_PROTOCOL_ERRORS = 2
 MAX_IDLE_TURNS = 2
 RECENT_CONTEXT_LIMIT = 8
 PROVIDER_SEND_POLL_INTERVAL = 0.1
-# Display bound for evidence excerpts inside the synthesis appendix; the
-# proof locator keeps working from the unclipped ledger excerpt.
-MAX_APPENDIX_EXCERPT_CHARS = 360
 _ACTIVITY = {
     "web_search": "searching the web",
     "open_url": "reading the page",
@@ -1116,15 +1113,10 @@ def _ledger_appendix(ledger) -> str:
     if evidence:
         lines.append("### Evidence Items")
         for item in evidence:
-            excerpt_text = str(item.get("excerpt") or "")
-            if len(excerpt_text) > MAX_APPENDIX_EXCERPT_CHARS:
-                excerpt_text = (
-                    excerpt_text[:MAX_APPENDIX_EXCERPT_CHARS].rstrip() + "..."
-                )
             lines.extend((
                 f"- [{item.get('stance') or 'supports'}] {item.get('claim') or ''}",
                 f"  source: {item.get('source_url') or ''}{_evidence_locator(item)}",
-                f"  excerpt: {excerpt_text}",
+                f"  excerpt: {item.get('excerpt') or ''}",
             ))
     coverage = ledger.coverage_payload()
     if coverage.get("queries"):

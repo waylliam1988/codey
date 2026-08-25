@@ -98,7 +98,12 @@ class EvidenceItem:
     locator: str = ""
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        data = asdict(self)
+        # Public/UI payload boundary: the exact excerpt stays on the ledger
+        # item for proof locators, while everything leaving the ledger
+        # (events, UI session state) carries only the bounded display form.
+        data["excerpt"] = _clip(self.excerpt, MAX_SNIPPET_CHARS)
+        return data
 
 
 @dataclass(frozen=True)

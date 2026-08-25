@@ -566,6 +566,13 @@ def test_long_excerpt_keeps_exact_text_and_valid_char_locator() -> None:
     assert len(stored.excerpt) > 360          # longer than the display cap...
     assert not stored.excerpt.endswith("...") # ...yet still the exact match
 
+    # Public payload boundary (events / UI session state) carries only the
+    # bounded display form; the internal item stays exact for locators.
+    payload_excerpt = ledger.evidence_payload()[0]["excerpt"]
+    assert payload_excerpt != stored.excerpt
+    assert payload_excerpt.endswith("...")
+    assert len(payload_excerpt) <= 363
+
     start, end = object_model._excerpt_offsets(source_text, stored.excerpt)
     assert start > 0 and end > start
     record = build_research_record(
