@@ -18,9 +18,9 @@ from typing import Any, Callable, TypeVar
 
 from codey import cancellation
 from codey.provider_diagnostics import (
-    FAILURE_RESPONSE_MISSING,
     ProviderActionError,
-    ProviderFailure,
+    ResponseMissing,
+    capture_provider_failure,
     run_provider_action,
 )
 from codey.provider_timeouts import start_deadline
@@ -66,25 +66,32 @@ def run_web_send(
                 func=func,
             )
     except cancellation.DeadlineExceeded as exc:
-        _raise_response_missing(provider, cause=exc)
+        _raise_response_missing(provider, page=page, cause=exc)
     except ProviderActionError as exc:
         # run_provider_action wraps a driver-side DeadlineExceeded into a
         # generic failure before we ever see it; recover the true cause and
         # classify it honestly instead of letting it read as transient.
         if isinstance(exc.__cause__, cancellation.DeadlineExceeded):
-            _raise_response_missing(provider, cause=exc.__cause__)
+            _raise_response_missing(provider, page=page, cause=exc.__cause__)
         raise
 
 
-def _raise_response_missing(provider: Any, *, cause: BaseException) -> None:
-    failure = ProviderFailure(
-        str(getattr(provider, "name", "") or ""),
-        "send",
-        "",
-        "",
-        "provider response deadline exceeded",
-        "",
-        FAILURE_RESPONSE_MISSING,
+def _raise_response_missing(
+    provider: Any,
+    *,
+    page: Any,
+    cause: BaseException,
+) -> None:
+    # Route through the standard capture so the failure keeps the same
+    # on-site diagnostics (url/title/time/stage/facts) as any other
+    # provider failure; ResponseMissing already carries the
+    # response_missing kind.
+    error = ResponseMissing("provider response deadline exceeded")
+    failure = capture_provider_failure(
+        model=str(getattr(provider, "name", "") or ""),
+        action="send",
+        page=page,
+        error=error,
     )
     provider.last_failure = failure
     raise ProviderActionError(failure) from cause

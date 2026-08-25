@@ -295,6 +295,11 @@ class ProviderTimeoutBoundaryTests(unittest.TestCase):
                         provider.send("hello", timeout=0)
                     failure = raised.exception.failure
                     self.assertEqual(failure.kind, FAILURE_RESPONSE_MISSING)
+                    # Standard capture diagnostics: completion stage plus
+                    # the page url/title context of the dead wait.
+                    self.assertEqual(failure.stage, "completion")
+                    self.assertEqual(failure.model, provider.name)
+                    self.assertEqual(failure.url, "https://chat.example/")
                     self.assertIsInstance(
                         raised.exception.__cause__,
                         cancellation.DeadlineExceeded,
