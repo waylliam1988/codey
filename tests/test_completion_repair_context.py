@@ -9,6 +9,7 @@ from codey.completion_repair_context import (
     DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
     DETAIL_MINIMAL,
     PROMPT_SOURCE_REF,
+    REFUSED_NO_SAFE_CHECK_FACTS,
     REFUSED_NOT_FAILED,
     REFUSED_NOT_PRODUCT,
     DecisiveCheckFact,
@@ -89,6 +90,41 @@ class AdmissionTests(unittest.TestCase):
             decisive_checks=(_FACT,),
         )
         self.assertFalse(projection.admitted)
+
+    def test_admission_requires_safe_check_facts_not_just_failed_rows(self) -> None:
+        # A failed proof row alone is not a fact: with no surviving decisive
+        # check fact there is nothing observed to state, so the brief must
+        # refuse instead of admitting an unobserved-check description.
+        for decisive_checks in ((), ({"command": "", "exit_code": 1},)):
+            with self.subTest(decisive_checks=decisive_checks):
+                projection = project_repair_context(
+                    proof=_proof_payload(),
+                    failure_class="product_failure",
+                    decisive_checks=decisive_checks,
+                )
+                self.assertFalse(projection.admitted)
+                self.assertEqual(projection.refused_reason, REFUSED_NO_SAFE_CHECK_FACTS)
+                self.assertIn(REFUSED_NO_SAFE_CHECK_FACTS, projection.warnings)
+                payload = projection.to_payload()
+                self.assertEqual(payload["admitted"], False)
+                self.assertEqual(payload["refused_reason"], REFUSED_NO_SAFE_CHECK_FACTS)
+
+    def test_fully_screened_decisive_command_is_refused_in_both_details(self) -> None:
+        sensitive = DecisiveCheckFact(
+            command="pytest -q --token api_key=sk-abcdefghijklmnop123456",
+            cwd=".",
+            exit_code=1,
+        )
+        for detail in ("full", DETAIL_MINIMAL):
+            with self.subTest(detail=detail):
+                projection = project_repair_context(
+                    proof=_proof_payload(),
+                    failure_class="product_failure",
+                    decisive_checks=(sensitive,),
+                    detail=detail,
+                )
+                self.assertFalse(projection.admitted)
+                self.assertEqual(projection.refused_reason, REFUSED_NO_SAFE_CHECK_FACTS)
 
     def test_accepts_completion_proof_objects_not_only_mappings(self) -> None:
         from codey.completion_contract import (

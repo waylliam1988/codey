@@ -54,6 +54,29 @@
   缺席。A/B 四臂（`control_done` / `proof_only_block` / `repair_context` /
   `repair_context_minimal`）通过唯一常量 `COMPLETION_ENFORCEMENT_MODE`
   在 `tests/manual/completion_enforcement_ab.py` 中切换；生产默认 `repair`。
+- Enforcement 加固（发布前评审修复，五项全部结构化关闭、无兼容回退）：
+  - repair round 不可能再物理超出 turn 预算：初始 writer 用满
+    `max_turns` 且 proof 仍失败时，run 以新的显式停止原因
+    `turn_budget_exhausted` 诚实 blocked，而不是多发一个越界 turn 再把
+    展示 turns 截回去；repair 的 `turn_budget` 就是共享的剩余预算，总和
+    永远不超过 `max_turns`。
+  - 失败分类读取 decisive check 的有界输出尾部：非零 exit 但输出指名执行
+    环境（缺依赖或缺工具如 `No module named pytest`、依赖网络的测试、测试
+    设施崩溃）时按闭合签名词表（`ENVIRONMENT_FAILURE_SIGNATURES`）判为
+    `environment_failure`，诚实阻止而不是触发不必要的 repair；真实断言
+    失败仍是 product failure。
+  - repair admission 必须有安全的 decisive check facts：当全部 decisive
+    fact 为空或被密审筛掉（新拒绝原因 `refused_no_safe_check_facts`）时，
+    projection 拒绝 admit 任何文本，TaskRunner 以
+    `repair_context_unavailable` 阻止——与"没有安全的有界失败事实"合同
+    一致，不再 admit 一段描述未观察 check 的提示。
+  - 有改动但变更清单为空的 run 仍在 enforcement 范围内：changes 收集返回
+    空 file list 而本地观察到真实 edit 时，按观察到的 edit 证据划定
+    enforcement scope，而不是让改过代码的 run 以未验证 done 通过。
+  - 普通 continuation 路径现在字面经过 `PromptEnvelope`：follow-up 请求与
+    repair-facts section 都是 envelope section 并绑定 outbound send epoch，
+    字节完全一致——每次 repair admission 都可证明走了与 fresh intro 相同
+    的组装结构。
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 

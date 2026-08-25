@@ -1087,6 +1087,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         for reason in (
             "unobserved",
             "max_repair_rounds",
+            "turn_budget_exhausted",
             "environment_failure",
             "provider_failure",
             "repair_context_unavailable",

@@ -37,6 +37,7 @@ from codey.completion_verification import (
     coding_completion_checks,
     coding_verification_state,
     decisive_failure_fact,
+    environment_failure_signal,
     matching_analysis_run_refs,
     relevant_verification_pairs,
     repairable_failure_class,
@@ -451,6 +452,58 @@ class FailureClassTests(unittest.TestCase):
             classify_verification_failure(proof_status=COMPLETION_COMPLETE_WITH_LIMITATIONS),
             FAILURE_UNKNOWN,
         )
+
+    def test_output_naming_the_environment_is_never_a_product_failure(self) -> None:
+        environment_failures = (
+            (
+                "ERROR: No module named pytest\n1 exited with code 1",
+                1,
+            ),
+            (
+                "Traceback (most recent call last):\n"
+                "ModuleNotFoundError: No module named 'redis'",
+                1,
+            ),
+            ("./verify.sh: line 2: ruff: command not found", 127),
+            ("'pytest' is not recognized as an internal or external command", 1),
+            ("npm ERR! network request failed\nETIMEDOUT", 1),
+            ("fatal: could not resolve host", 128),
+            ("INTERNALERROR> traceback in pytest internals", 2),
+            ("/bin/sh: segmentation fault (core dumped)", 139),
+        )
+        for summary, exit_code in environment_failures:
+            self.assertEqual(
+                classify_verification_failure(
+                    proof_status=COMPLETION_FAILED,
+                    selected_check_present=True,
+                    decisive_exit_code=exit_code,
+                    decisive_result_summary=summary,
+                ),
+                FAILURE_ENVIRONMENT,
+                summary,
+            )
+
+    def test_assertion_failures_stay_product_even_alongside_noise(self) -> None:
+        self.assertEqual(
+            classify_verification_failure(
+                proof_status=COMPLETION_FAILED,
+                selected_check_present=True,
+                decisive_exit_code=1,
+                decisive_result_summary=(
+                    "1 failed\nFAILED tests/test_mod.py - assert 1 == 2\n"
+                    "1 failed in 0.4s"
+                ),
+            ),
+            FAILURE_PRODUCT,
+        )
+
+    def test_environment_signal_helper_is_closed_and_case_insensitive(self) -> None:
+        from codey.completion_verification import ENVIRONMENT_FAILURE_SIGNATURES
+
+        self.assertIn("no module named", ENVIRONMENT_FAILURE_SIGNATURES)
+        self.assertTrue(environment_failure_signal("NO MODULE NAMED PYTEST"))
+        self.assertFalse(environment_failure_signal("", None, 0))
+        self.assertFalse(environment_failure_signal("assert 1 == 2"))
 
     def test_only_product_failures_are_repair_candidates(self) -> None:
         self.assertTrue(repairable_failure_class(FAILURE_PRODUCT))

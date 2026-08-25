@@ -172,6 +172,36 @@ class ContinuationAdmissionTests(unittest.TestCase):
             )
         self.assertEqual(trace.admissions, [])
 
+    def test_followup_rides_a_literal_envelope_bound_to_the_send_epoch(self) -> None:
+        # The continuation path assembles its prompt through PromptEnvelope
+        # like every other admission: both the follow-up request and the
+        # repair-facts section are recorded against the sent bytes' epoch.
+        trace = _CapturingTrace()
+        provider = FakeProvider(_DONE)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            context = ConversationContext(hard_limit=100_000)
+            context.begin_window("deepseek", "project", str(root))
+            result = self.run_agent(trace, provider, root, context)
+
+        self.assertEqual(result.stop_reason, "done")
+        expected_epoch = context_epoch_id(provider.sent[0])
+        repair_sections = [
+            row for row in trace.sections if row["name"] == CONTEXT_SOURCE_KEY
+        ]
+        request_sections = [
+            row for row in trace.sections if row["name"] == "coding_followup_request"
+        ]
+        self.assertEqual(len(repair_sections), 1)
+        self.assertEqual(len(request_sections), 1)
+        self.assertEqual(repair_sections[0]["epoch_id"], expected_epoch)
+        self.assertEqual(request_sections[0]["epoch_id"], expected_epoch)
+        self.assertEqual(repair_sections[0]["freshness"], "after_tool_result")
+        self.assertEqual(
+            repair_sections[0]["capability_id"], "completion_repair_context"
+        )
+        self.assertIn("Completion repair context. Facts only.", provider.sent[0])
+
     def test_empty_repair_context_leaves_baseline_byte_identical(self) -> None:
         plain_provider = FakeProvider(_DONE)
         empty_provider = FakeProvider(_DONE)

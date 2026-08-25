@@ -423,6 +423,10 @@ _COMPLETION_BLOCKED_NOTE = {
         "Completion blocked: local verification still failing after the "
         "repair round."
     ),
+    "turn_budget_exhausted": (
+        "Completion blocked: local verification still failing and no turn "
+        "budget remains for a repair round."
+    ),
     "environment_failure": (
         "Completion blocked: the verification command could not run "
         "(environment error), so the failure cannot be attributed to the "
@@ -3058,11 +3062,29 @@ class TaskRunner:
         collected_changed = change_state(task_changes)
         if collected_changed is not None:
             task_changed = collected_changed
-        files = tuple(
-            str(item.get("path") or "")
-            for item in (task_changes.get("files") or [])
-            if item.get("path")
-        )
+
+        def enforcement_scope(
+            changes: dict | None,
+            changed: bool,
+        ) -> tuple[bool, tuple[str, ...]]:
+            files = tuple(
+                str(item.get("path") or "")
+                for item in ((changes or {}).get("files") or [])
+                if item.get("path")
+            )
+            if (
+                COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF
+                and not files
+                and work.evidence.changed_files
+            ):
+                # Changes collection produced no usable file list while real
+                # edits were observed locally: scope enforcement from the
+                # observed edits instead of letting an edited run slip past
+                # enforcement as "unchanged".
+                return True, tuple(work.evidence.changed_files)
+            return changed, files
+
+        task_changed, files = enforcement_scope(task_changes, task_changed)
         verification_candidates = safe_verification_candidates(
             project,
             verification_verified_commands,
@@ -3110,6 +3132,9 @@ class TaskRunner:
                     selected_check_present=selected_check is not None,
                     decisive_error_code=str(getattr(decisive, "error_code", "") or ""),
                     decisive_exit_code=getattr(decisive, "exit_code", None),
+                    decisive_result_summary=str(
+                        getattr(decisive, "result_summary", "") or ""
+                    ),
                 )
             return proof, provenance, analysis_refs, failure_class
 
@@ -3118,11 +3143,13 @@ class TaskRunner:
 
         blocked_reason = ""
         repaired_once = False
+        remaining_turns = request.max_turns - result.turns
         if (
             COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF
             and proof is not None
             and not proof.satisfied
             and not state.stop_flag.is_set()
+            and remaining_turns > 0
             and repair_candidate(
                 proof.status,
                 failure_class,
@@ -3153,7 +3180,7 @@ class TaskRunner:
                     try:
                         repair_result = failover.run(
                             task=COMPLETION_REPAIR_FOLLOWUP,
-                            turn_budget=max(1, request.max_turns - result.turns),
+                            turn_budget=remaining_turns,
                             fresh=False,
                             handoff="",
                             checkpoint=refresh_checkpoint_view(),
@@ -3166,10 +3193,9 @@ class TaskRunner:
                         completion_repair_admission.clear()
                     repaired_once = not blocked_reason
                     if repaired_once:
-                        turns = min(
-                            request.max_turns,
-                            result.turns + repair_result.turns,
-                        )
+                        # The repair is bounded by the shared remaining turn
+                        # budget, so the sum can never exceed max_turns.
+                        turns = result.turns + repair_result.turns
                         if repair_result.stop_reason == "stopped":
                             result = replace(repair_result, turns=turns)
                         elif repair_result.stop_reason == "done":
@@ -3178,10 +3204,9 @@ class TaskRunner:
                             collected = change_state(task_changes)
                             if collected is not None:
                                 task_changed = collected
-                            files = tuple(
-                                str(item.get("path") or "")
-                                for item in (task_changes.get("files") or [])
-                                if item.get("path")
+                            task_changed, files = enforcement_scope(
+                                task_changes,
+                                task_changed,
                             )
                             selected_check = (
                                 select_verification_candidate(verification_candidates, files)
@@ -3241,6 +3266,8 @@ class TaskRunner:
                 if proof.status == "blocked"
                 else "environment_failure"
                 if failure_class in ("environment_failure", "verification_unavailable")
+                else "turn_budget_exhausted"
+                if request.max_turns - result.turns <= 0
                 else "max_repair_rounds"
             )
 

@@ -61,6 +61,7 @@ from codey.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelope,
     PromptEnvelopeSection,
+    RenderedPromptSection,
     record_provider_send_prompt,
 )
 from codey.tool_definition import (
@@ -804,7 +805,7 @@ def run(
         )).sources
 
     def with_completion_repair_context(prompt: str) -> str:
-        """Attach rendered repair facts to one outbound follow-up prompt.
+        """Attach rendered repair facts through a literal prompt envelope.
 
         Rows are prepared, not admitted: they bind to the outbound epoch at
         send time via bind_pending_context_rows(), because rollovers can
@@ -814,8 +815,30 @@ def run(
         text = "\n\n".join(source.text for source in sources)
         if not text:
             return prompt
+        rendered = PromptEnvelope((
+            PromptEnvelopeSection(
+                name="coding_followup_request",
+                text=prompt,
+                purpose="continuation follow-up request",
+                freshness="after_tool_result",
+                source_refs=("request:user_task",),
+            ),
+            PromptEnvelopeSection(
+                name=COMPLETION_REPAIR_CONTEXT_SOURCE_KEY,
+                text=text,
+                purpose="bounded failure facts from the previous completion proof",
+                freshness="after_tool_result",
+                source_refs=tuple(
+                    context_source_ref(source.key) for source in sources
+                ),
+                budget=sum(source.budget for source in sources),
+                truncated=any(source.truncated for source in sources),
+                capability_id="completion_repair_context",
+            ),
+        )).render()
+        pending_repair_sections.extend(rendered.sections)
         pending_context_rows.extend(sources)
-        return f"{prompt}\n\n{text}"
+        return rendered.text
 
     def record_repair_context_admission(
         epoch: str,
@@ -845,6 +868,7 @@ def run(
     # records its own rows, so stale prepared rows are discarded instead of
     # being attributed to a prompt that never leaves.
     pending_context_rows: list[RenderedContextSource] = []
+    pending_repair_sections: list[RenderedPromptSection] = []
 
     def project_intro(
         request: str,
@@ -1013,16 +1037,22 @@ def run(
             return
         admitted_keys = {source.key for source in pending_context_rows}
         epoch = context_epoch_id(prompt_text)
+        # Envelope sections first, then the source rows: same order as the
+        # fresh-intro path, all bound to one content-addressed epoch.
+        for section in pending_repair_sections:
+            trace.record_section(replace(section, epoch_id=epoch))
         trace.call(
             "record_context_sources",
             pending_context_rows,
             epoch_id=epoch,
         )
         pending_context_rows.clear()
+        pending_repair_sections.clear()
         record_repair_context_admission(epoch, admitted_keys)
 
     def discard_pending_context_rows() -> None:
         pending_context_rows.clear()
+        pending_repair_sections.clear()
 
     def send_prompt(
         prompt: str,

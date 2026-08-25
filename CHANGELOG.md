@@ -63,6 +63,36 @@ This file records Codey's release history. The newest release appears first.
   `repair_context` / `repair_context_minimal`) run through the single
   `COMPLETION_ENFORCEMENT_MODE` constant via
   `tests/manual/completion_enforcement_ab.py`; production ships `repair`.
+- Enforcement hardening (pre-release review fixes, all five closed
+  structurally rather than by fallback):
+  - The repair round can no longer physically exceed the turn budget: when
+    the initial writer consumed `max_turns` and still failed the proof, the
+    run blocks with the new explicit stop reason `turn_budget_exhausted`
+    instead of sending one unbounded extra turn and clamping the displayed
+    turns back; the repair `turn_budget` is exactly the shared remaining
+    budget, so the sum can never exceed `max_turns`.
+  - Failure classification reads the decisive check's bounded output tail:
+    a non-zero exit whose output names the execution environment (missing
+    dependency or tool such as `No module named pytest`, network-dependent
+    tests, crashed test runners) classifies as `environment_failure` via a
+    closed signature vocabulary (`ENVIRONMENT_FAILURE_SIGNATURES`), so it
+    blocks honestly instead of triggering an unnecessary repair round.
+    Real assertion failures stay product failures.
+  - Repair admission requires safe decisive check facts: if every decisive
+    fact was empty or screened out (new refusal reason
+    `refused_no_safe_check_facts`), the projection refuses to admit any
+    text and TaskRunner blocks with `repair_context_unavailable`, matching
+    the "no safe bounded failure facts" contract instead of admitting an
+    unobserved-check description.
+  - Changed-but-unlisted runs stay in enforcement scope: when changes
+    collection returns no file list while edits were observed locally,
+    enforcement scopes from the observed edit evidence instead of letting
+    an edited run pass as an unverifiable done.
+  - The ordinary continuation path now assembles its prompt through a
+    literal `PromptEnvelope`: the follow-up request and the repair-facts
+    section are envelope sections recorded against the outbound send epoch,
+    identical in bytes, so every repair admission provably rides the same
+    assembly structure as fresh intros.
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 

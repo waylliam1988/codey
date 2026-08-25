@@ -18,7 +18,9 @@ Three vocabularies live here:
 - Deterministic failure classification: ``product_failure`` /
   ``environment_failure`` / ``verification_unavailable`` /
   ``provider_failure`` / ``unknown``. Classification is rule-based on
-  observed exit/error codes; it is not a critic and never diagnoses.
+  observed exit/error codes plus a closed vocabulary of output signatures
+  that name the execution environment (missing dependency or tool, network
+  failure, test-infra crash); it is not a critic and never diagnoses.
 """
 
 from __future__ import annotations
@@ -92,6 +94,44 @@ FAILURE_CLASSES = frozenset({
     FAILURE_PROVIDER,
     FAILURE_UNKNOWN,
 })
+
+# Closed vocabulary of observed-output signatures whose non-zero exit names
+# the execution environment -- not the changed code: a missing interpreter
+# dependency or tool, a network-dependent test, or a crashed test runner.
+# A real assertion failure never carries these strings.
+ENVIRONMENT_FAILURE_SIGNATURES = (
+    # missing python dependency / module
+    "modulenotfounderror",
+    "no module named",
+    "importerror: dll load failed",
+    # missing executable or node module
+    "command not found",
+    "is not recognized as an internal or external command",
+    "cannot find module",
+    "err_module_not_found",
+    # missing package / unresolvable install
+    "no matching distribution found",
+    "could not find a version that satisfies",
+    # network-dependent tests and downloads
+    "could not resolve host",
+    "temporary failure in name resolution",
+    "connection refused",
+    "connection reset by peer",
+    "etimedout",
+    "econnrefused",
+    "enotfound",
+    # test-infrastructure crashes
+    "internalerror",
+    "segmentation fault",
+    "core dumped",
+)
+
+
+def environment_failure_signal(*texts: object) -> bool:
+    """Whether any observed text names the environment as the failure cause."""
+
+    haystack = "\n".join(str(text or "") for text in texts).casefold()
+    return any(signature in haystack for signature in ENVIRONMENT_FAILURE_SIGNATURES)
 
 
 @dataclass(frozen=True)
@@ -361,14 +401,17 @@ def classify_verification_failure(
     selected_check_present: bool = True,
     decisive_error_code: str = "",
     decisive_exit_code: int | None = None,
+    decisive_result_summary: str = "",
     provider_failed: bool = False,
 ) -> str:
     """Deterministically classify why completion did not hold.
 
     The rules are intentionally shallow: an observed non-zero exit is a
     product failure candidate, a tool-level error without an exit code
-    means the check could not even execute (environment), and anything
-    unverifiable is unavailable -- never silently a code bug.
+    means the check could not even execute (environment), an output tail
+    naming the environment (missing dependency/tool, network, crashed test
+    runner) is environment too -- never silently a code bug -- and anything
+    unverifiable is unavailable.
     """
 
     if provider_failed:
@@ -382,6 +425,10 @@ def classify_verification_failure(
         if error_code and decisive_exit_code is None:
             # The command never produced a process exit: approval denied,
             # timeout, spawn failure. That is not evidence the code broke.
+            return FAILURE_ENVIRONMENT
+        if environment_failure_signal(error_code, decisive_result_summary):
+            # The process exited non-zero, but its own bounded output names
+            # the execution environment as the cause, not the edit.
             return FAILURE_ENVIRONMENT
         return FAILURE_PRODUCT
     return FAILURE_UNKNOWN
@@ -410,6 +457,7 @@ def repairable_failure_class(failure_class: str) -> bool:
 
 __all__ = [
     "CODING_CHECK_RELEVANT_VERIFICATION",
+    "ENVIRONMENT_FAILURE_SIGNATURES",
     "FAILURE_CLASSES",
     "FAILURE_ENVIRONMENT",
     "FAILURE_PRODUCT",
@@ -438,6 +486,7 @@ __all__ = [
     "coding_completion_limitations",
     "coding_verification_state",
     "decisive_failure_fact",
+    "environment_failure_signal",
     "matching_analysis_run_refs",
     "relevant_verification_pairs",
     "repairable_failure_class",

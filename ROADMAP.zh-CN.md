@@ -2567,15 +2567,20 @@ proof 第一次影响 coding 行为：阻止明显未验证的 `done`，并把�
   本轮 clean verification fact；模型自报 pass 不再产生任何事实。
 - `codey/completion_repair_context.py`：纯 projection leaf，只消费已生成的
   CompletionProof payload（不 import completion_contract），admit 仅限
-  failed + product_failure；输出 facts-only 提示文本 + digest-only trace
-  payload；`minimal` detail 用于压缩对照臂。
+  failed + product_failure 且必须存在筛后幸存的 decisive check facts
+  （否则以 `refused_no_safe_check_facts` 拒绝 admit）；输出 facts-only
+  提示文本 + digest-only trace payload；`minimal` detail 用于压缩对照臂。
 - admission 走 `ContextSource -> profile gate -> ContextEpoch ->
-  PromptEnvelope`；trace row `record_completion_repair_context(payload, *,
-  epoch_id)` 无默认 epoch、fail closed，绑定 outbound send bytes。
+  PromptEnvelope`（fresh intro 与普通 continuation 都字面经过 envelope）；
+  trace row `record_completion_repair_context(payload, *, epoch_id)` 无默认
+  epoch、fail closed，绑定 outbound send bytes。
 - enforcement 决策点位于 writer/review 收尾之后、receipt/ledger/project
   facts 之前；最终 outcome 唯一驱动 durable state；`max_repair_rounds = 1`；
-  停止条件显式枚举（unobserved / max_repair_rounds / environment_failure /
-  provider_failure / repair_context_unavailable），blocked 是诚实 stop_reason。
+  repair turn 预算就是共享的剩余预算，用尽即以 `turn_budget_exhausted`
+  blocked，绝不越界多发；停止条件显式枚举（unobserved / max_repair_rounds /
+  turn_budget_exhausted / environment_failure / provider_failure /
+  repair_context_unavailable），blocked 是诚实 stop_reason。失败分类按闭合
+  签名词表识别环境/依赖类失败，不误判为 product failure。
 - 无 RepairManager / CompletionManager / 新工具 / critic / 多轮 scheduler；
   架构测试锁死 projection leaf 边界与 payload 词表。
 

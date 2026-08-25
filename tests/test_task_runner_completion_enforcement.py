@@ -95,6 +95,14 @@ def _run_event(ok: bool, *, error_code: str = "") -> RunEvent:
     )
 
 
+def _run_event_output(outcome: ToolOutcome) -> RunEvent:
+    return RunEvent.tool_finished(
+        2,
+        ToolCall("run", {"command": "python -m pytest", "path": "."}),
+        outcome,
+    )
+
+
 def _runner(state: server.State, writer: ScriptedWriter) -> TaskRunner:
     return TaskRunner(
         state,
@@ -315,6 +323,93 @@ def test_environment_failure_blocks_without_repair() -> None:
         assert manifest["completion_repair_context"] == []
 
 
+def test_dependency_failure_with_exit_one_blocks_without_repair() -> None:
+    # "No module named pytest" exits 1 like a real product failure, but its
+    # own output names the environment: no repair round may run for it.
+    writer = ScriptedWriter((
+        [_edit_event(), _run_event_output(
+            ToolOutcome(
+                "ERROR: No module named pytest\n"
+                "ModuleNotFoundError: No module named 'pytest'",
+                False,
+                exit_code=1,
+            )
+        )],
+        RunResult("unreachable", "done", 1),
+    ))
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        project = _pytest_project(Path(td))
+        state = server.State(Path(td) / "state")
+        event = _run(_runner(state, writer), state, project)
+
+        assert len(writer.calls) == 1
+        assert event["stop_reason"] == "blocked"
+        assert "environment error" in str(event["summary"])
+        manifest = _trace_payload(state)
+        assert manifest["completion_proofs"][0]["status"] == "failed"
+        assert manifest["completion_repair_context"] == []
+
+
+def test_exhausted_turn_budget_never_runs_an_extra_repair_turn() -> None:
+    # The initial writer used the whole turn budget and still failed the
+    # proof with a claimed done: no repair turn may physically exceed
+    # max_turns, and the run must block honestly instead of clamping the
+    # display back.
+    writer = ScriptedWriter((
+        [_edit_event(), _run_event(False)],
+        RunResult("unreachable", "done", 6),
+    ))
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        project = _pytest_project(Path(td))
+        state = server.State(Path(td) / "state")
+        event = _run(_runner(state, writer), state, project)
+
+        assert len(writer.calls) == 1
+        assert event["stop_reason"] == "blocked"
+        assert "no turn budget remains" in str(event["summary"])
+        assert event["receipt"]["checks_passed"] is False
+
+
+def test_observed_edits_without_change_list_stay_in_enforcement_scope() -> None:
+    # Changes collection returned an empty file list while real edits were
+    # observed locally: enforcement scopes from the observed edits instead
+    # of letting an edited run pass as an unverifiable done.
+    empty_changes = {
+        "ok": True,
+        "changed_count": 0,
+        "files": [],
+        "diff": "",
+        "mode": "git",
+    }
+    writer = ScriptedWriter(([_edit_event()], RunResult("trust me", "done", 2)))
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        project = _pytest_project(Path(td))
+        state = server.State(Path(td) / "state")
+        runner = TaskRunner(
+            state,
+            agent_run=writer,
+            collect_changes=mock.Mock(return_value=empty_changes),
+            run_review=mock.Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            is_git_repository=lambda _p: True,
+        )
+        event = _run(runner, state, project)
+
+        assert len(writer.calls) == 1
+        assert event["stop_reason"] == "blocked"
+        assert "[Completion blocked:" in str(event["summary"])
+        assert event["receipt"]["checks_passed"] is False
+        manifest = _trace_payload(state)
+        assert manifest["completion_proofs"][0]["status"] == "blocked"
+
+
 def test_docs_only_change_keeps_limited_done() -> None:
     docs_changes = {
         "ok": True,
@@ -419,6 +514,7 @@ def test_blocked_note_vocabulary_is_closed() -> None:
     expected = {
         "unobserved",
         "max_repair_rounds",
+        "turn_budget_exhausted",
         "environment_failure",
         "provider_failure",
         "repair_context_unavailable",

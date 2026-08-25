@@ -21,11 +21,23 @@ writer/review and before receipt/ledger/project facts; the final outcome is
 the only writer of durable state. `complete` allows done, docs-only and
 inherited-green stay allowed as honest `complete_with_limitations`, and
 failed/blocked proofs stop with named reasons (`unobserved`,
-`max_repair_rounds`, `environment_failure`, `provider_failure`,
-`repair_context_unavailable`) instead of a fake done. Unobserved checks are
-never failures and never repair candidates. The repair round is bounded by
-`MAX_COMPLETION_REPAIR_ROUNDS = 1`; admission goes through `ContextSource` ->
-profile gate (coding_writer only) -> `ContextEpoch` -> `PromptEnvelope`, and
+`max_repair_rounds`, `turn_budget_exhausted`, `environment_failure`,
+`provider_failure`, `repair_context_unavailable`) instead of a fake done.
+Unobserved checks are never failures and never repair candidates. The repair
+round is bounded by `MAX_COMPLETION_REPAIR_ROUNDS = 1` and by the shared
+remaining turn budget: an exhausted budget blocks with
+`turn_budget_exhausted` instead of sending one extra turn beyond
+`max_turns`. Admission requires safe decisive check facts (fully screened
+facts refuse with `refused_no_safe_check_facts`) and both the fresh-intro
+and ordinary continuation paths assemble through a literal
+`PromptEnvelope`. Failure classification reads the decisive check's bounded
+output tail against a closed signature vocabulary, so dependency/network/
+infra failures (`No module named pytest`, DNS timeouts, pytest INTERNALERROR)
+classify as environment failures and block honestly instead of triggering
+unnecessary repairs; runs with locally observed edits but an empty collected
+change list stay inside enforcement scope via the observed-edit evidence.
+Admission goes through `ContextSource` -> profile gate (coding_writer only)
+-> `ContextEpoch` -> `PromptEnvelope`, and
 `record_completion_repair_context(payload, *, epoch_id)` fails closed without
 a well-formed sent-bytes epoch binding, digest-keyed, counts/reason-codes
 only. There are no managers, no critic, no new tools; architecture tests lock
@@ -39,7 +51,7 @@ python -B tests\manual\completion_enforcement_ab.py --self-test
 # self-test passed (20-case decision matrix across 4 arms x 5 scenarios)
 
 python -B -m pytest -q
-# 2824 passed, 1 skipped, 852 subtests passed in 271.42s (0:04:31)
+# 2833 passed, 1 skipped, 857 subtests passed in 266.95s (0:04:26)
 ```
 
 The self-test matrix pins the treatment definitions: control_done records

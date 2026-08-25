@@ -12,7 +12,9 @@ projection leaf:
   instructions, no line numbers, no suggested edits, no raw stdout/stderr:
   summaries arrive pre-bounded and are screened again here;
 - unobserved checks are never described as failures, and non-repairable
-  outcomes refuse to admit any text at all.
+  outcomes refuse to admit any text at all. Admission also refuses when no
+  safe decisive check fact survives screening: an admitted brief without
+  observed check facts would be an unbounded claim, not a fact.
 
 The ``minimal`` detail level exists for the A/B treatment that separates
 "proof enforcement alone" from "informative repair context": same facts'
@@ -52,6 +54,7 @@ REPAIR_DETAILS = frozenset({DETAIL_FULL, DETAIL_MINIMAL})
 REFUSED_NOT_FAILED = "refused_proof_not_failed"
 REFUSED_NOT_PRODUCT = "refused_not_product_failure"
 REFUSED_NO_FAILED_CHECK = "refused_no_failed_check"
+REFUSED_NO_SAFE_CHECK_FACTS = "refused_no_safe_check_facts"
 
 _HEADER = (
     "Completion repair context. Facts only.\n"
@@ -204,6 +207,11 @@ def project_repair_context(
         return _refused(base, REFUSED_NO_FAILED_CHECK, warnings)
 
     checks = _check_facts(decisive_checks, warnings)
+    if not checks:
+        # Every decisive fact was empty or screened: admitting a brief
+        # without observed check facts would describe an unobserved check.
+        return _refused(base, REFUSED_NO_SAFE_CHECK_FACTS, warnings)
+
     files = _files(changed_files)
     analysis = _refs(analysis_run_refs, MAX_REPAIR_ANALYSIS_REFS)
     findings = _refs(finding_refs, MAX_REPAIR_FINDING_REFS)
@@ -301,28 +309,23 @@ def _render(
         # exit codes, no output, no files, no refs -- the A/B compressed arm.
         for check in checks[:MAX_REPAIR_CHECKS]:
             emit(f"Failing check: {check.command} (cwd {check.cwd})")
-        if not checks:
-            emit("Failing check: (bounded details unavailable)")
         parts.append(_FOOTER)
         return "\n\n".join(parts)
 
     if files:
         emit("Changed files: " + ", ".join(files))
-    if checks:
-        blocks: list[str] = ["Observed failing checks:"]
-        for check in checks[:MAX_REPAIR_CHECKS]:
-            lines = [f"- Command: {check.command} (cwd {check.cwd})"]
-            if check.exit_code is not None:
-                lines.append(f"  Exit: {check.exit_code}")
-            if check.error_code:
-                lines.append(f"  Error code: {check.error_code}")
-            if check.result_summary:
-                lines.append("  Output tail:")
-                lines.extend(f"    {line}" for line in check.result_summary.splitlines())
-            blocks.extend(lines)
-        emit("\n".join(blocks))
-    else:
-        warnings.append("repair_context_without_check_facts")
+    blocks: list[str] = ["Observed failing checks:"]
+    for check in checks[:MAX_REPAIR_CHECKS]:
+        lines = [f"- Command: {check.command} (cwd {check.cwd})"]
+        if check.exit_code is not None:
+            lines.append(f"  Exit: {check.exit_code}")
+        if check.error_code:
+            lines.append(f"  Error code: {check.error_code}")
+        if check.result_summary:
+            lines.append("  Output tail:")
+            lines.extend(f"    {line}" for line in check.result_summary.splitlines())
+        blocks.extend(lines)
+    emit("\n".join(blocks))
 
     refs: list[str] = []
     if proof_id:
@@ -520,6 +523,7 @@ __all__ = [
     "PROMPT_SOURCE_REF",
     "PROOF_STATUS_FAILED",
     "REFUSED_NO_FAILED_CHECK",
+    "REFUSED_NO_SAFE_CHECK_FACTS",
     "REFUSED_NOT_FAILED",
     "REFUSED_NOT_PRODUCT",
     "REPAIR_DETAILS",
