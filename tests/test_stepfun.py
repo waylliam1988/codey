@@ -168,6 +168,23 @@ class StepFunDriverTests(unittest.TestCase):
 
         self.assertEqual(stepfun._response_texts_fallback(page), ("B", "A"))
 
+    def test_degraded_baseline_unit_mismatch_is_pinned_behavior(self) -> None:
+        """Known residual limit, pinned consciously.
+
+        Probe case: baseline=2 was captured by the healthy node-count JS;
+        reads then degrade to the non-empty texts ladder where only
+        ["B", "A"] remain (an empty placeholder vanished). The head slice
+        comes out empty instead of returning "B". This is fallback-only,
+        never a DOM-direction issue; late-response polling and
+        recover_response are the recovery paths. If this test starts
+        failing because the units were unified upstream, update it.
+        """
+        page = self._newest_first_page(["B", "A"])
+
+        assert stepfun._fresh_response_text(page, 2) == ""
+        # Same degraded mode, self-consistent count: 2 non-empty texts.
+        assert stepfun._response_count_fallback(page) == 2
+
     def test_latest_response_fallback_takes_first_visible_node(self) -> None:
         page = self._newest_first_page(["B", "A"])
 

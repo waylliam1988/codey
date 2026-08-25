@@ -208,10 +208,16 @@ def _response_count_fallback(page: Page) -> int:
     """Count fallback, reusing the filtered texts ladder.
 
     The main count JS already carries the reason filter, so a separate
-    count-only constant would just duplicate it and drift; deriving the
-    count from :func:`_response_texts_fallback` keeps baseline arithmetic
-    (``fresh = count - baseline``) consistent with what fresh/latest
-    actually read in the same degraded mode.
+    count-only constant would just duplicate it and drift. Under
+    degradation this counts non-empty response texts: the same unit the
+    fresh/latest fallbacks slice, so baseline arithmetic inside the
+    degraded mode stays self-consistent.
+
+    Known residual limit: a baseline captured earlier by the healthy
+    main-path node count can differ from the degraded non-empty-text count
+    (e.g. an empty placeholder bubble disappeared). In that window a fresh
+    reply may read as empty; recovery paths (late-response polling and
+    ``recover_response``) still catch it.
     """
     return len(_response_texts_fallback(page))
 
@@ -274,9 +280,15 @@ def _node_text(node: Locator) -> str:
 
 
 def _fresh_response_text_fallback(page: Page, baseline: int) -> str:
+    """Head slice of the degraded newest-first texts, mirroring main JS.
+
+    Main-path semantics: slice visible nodes by ``count - baseline`` first,
+    then drop empty texts. The fallback mirrors that over its non-empty
+    text sequence.
+    """
     texts = _response_texts_fallback(page)
     fresh = texts[: max(0, len(texts) - max(0, int(baseline)))]
-    return "\n".join(fresh).strip()
+    return "\n".join(text for text in fresh if text).strip()
 
 
 def _latest_response_text_fallback(page: Page) -> str:
