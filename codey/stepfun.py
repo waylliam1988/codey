@@ -195,6 +195,23 @@ def _response_selector() -> str:
     return PROFILE.selector("response")
 
 
+# Fallback ladder step 1 for counts: same filtering semantics as the
+# main-path count JS plus the reason-block exclusion, with a plain string
+# argument so it survives the object-payload evaluate failure mode.
+_RESPONSE_COUNT_FALLBACK_JS = r"""
+(selector) => Array.from(document.querySelectorAll(selector))
+  .filter((el) => {
+    if (el.closest('.reason-render-ext')) return false;
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return rect.width > 0
+      && rect.height > 0
+      && style.visibility !== 'hidden'
+      && style.display !== 'none';
+  }).length
+"""
+
+
 def _response_count(page: Page) -> int:
     try:
         return int(page.evaluate(_VISIBLE_RESPONSE_COUNT_JS, _response_selector()))
@@ -202,6 +219,21 @@ def _response_count(page: Page) -> int:
         raise
     except Exception:
         return _response_count_fallback(page)
+
+
+def _response_count_fallback(page: Page) -> int:
+    """Count fallback, mirroring the texts-fallback ladder.
+
+    An inflated baseline here would make ``fresh = count - baseline`` drop a
+    real reply, so the reason-filtered JS step is preferred; the pure
+    locator scan stays as the last resort.
+    """
+    try:
+        return int(page.evaluate(_RESPONSE_COUNT_FALLBACK_JS, _response_selector()))
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        return len(_visible_responses_newest_first(page))
 
 
 def _visible_responses_newest_first(page: Page) -> list[Locator]:
@@ -259,10 +291,6 @@ def _node_text(node: Locator) -> str:
         raise
     except Exception:
         return ""
-
-
-def _response_count_fallback(page: Page) -> int:
-    return len(_visible_responses_newest_first(page))
 
 
 def _fresh_response_text_fallback(page: Page, baseline: int) -> str:
