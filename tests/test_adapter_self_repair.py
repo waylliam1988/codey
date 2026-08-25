@@ -849,12 +849,9 @@ class SelfRepairWorkerTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         # The override worker never attaches to the user's default profile.
-        self.assertNotEqual(
-            provider_type.connect.call_args.kwargs["profile"],
-            provider_worker_child.DEFAULT_PROFILE,
-        )
+        connect_profile = provider_type.connect.call_args.kwargs["profile"]
         self.assertEqual(
-            provider_type.connect.call_args.kwargs["profile"],
+            connect_profile,
             Path("state/provider-workers/qwen/generation-3"),
         )
         event = json.loads(stdout.getvalue().splitlines()[0])
@@ -862,6 +859,19 @@ class SelfRepairWorkerTests(unittest.TestCase):
         self.assertEqual(event["port"], 9444)
         self.assertEqual(event["target_id"], "target-1")
         provider.close.assert_called_once()
+
+    def test_provider_worker_child_fails_closed_without_profile(self) -> None:
+        # Missing --profile must be a hard usage error: silently attaching
+        # to the user's default profile is exactly the old failure mode.
+        provider_type = mock.Mock()
+        with (
+            mock.patch.dict(provider_worker_child.PROVIDER_TYPES, {"qwen": provider_type}),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            provider_worker_child.main(["--provider", "qwen", "--port", "9555"])
+
+        self.assertNotEqual(raised.exception.code, 0)
+        provider_type.connect.assert_not_called()
 
     def test_provider_worker_launches_with_per_generation_profile_and_stderr_drain(self) -> None:
         override = mock.Mock()
