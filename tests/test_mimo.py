@@ -6,8 +6,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import cancellation, mimo
+from codey import cancellation
 from codey.provider_submission import SendAttempt
+from codey.providers.web_drivers import mimo
 
 
 class MimoDriverTests(unittest.TestCase):

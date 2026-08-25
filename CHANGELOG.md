@@ -28,10 +28,19 @@ This file records Codey's release history. The newest release appears first.
   state, and `collect()` is strictly read-only by default. UI polling can no
   longer pop clean baselines out from under a running capture. Pruning moved
   behind an explicit `prune_clean()` called at run terminal states only.
+  Follow-up: the remaining capture-side races are closed too --
+  `capture_before()` re-checks baseline membership under the lock after its
+  unlocked file read (two racing captures now yield exactly one entry and
+  `_total_bytes` is counted once), and `capture_after()` re-checks after
+  hashing, so `prune_clean()` dropping a baseline mid-hash can no longer
+  leave an orphan after-hash behind. Both covered by dedicated concurrency
+  tests.
 - Recovery snapshots rewritten as two layers (`baselines/<rel-digest>` body
   files plus a small `manifest.json`): a non-Git edit now writes one bounded
   baseline file plus the manifest instead of re-serializing up to 64MB of
-  JSON on every capture (write amplification).
+  JSON on every capture (write amplification). The two-layer format is
+  `schema_version: 1`; any other manifest layout (including the older flat
+  one) is ignored outright -- there is no compatibility path.
 - `UiStateStore.save()` compares against an in-memory cache seeded by the
   first load instead of re-reading and re-parsing the file on every save;
   a failed write keeps the previous durable baseline.
@@ -77,6 +86,37 @@ This file records Codey's release history. The newest release appears first.
   scaffolding extracted into `providers/driver_common.py`; provider id
   normalization unified in `codey/provider_ids.py`. Per-site completion
   heuristics deliberately stay in their drivers.
+- Adapter self-repair surface widened deliberately, with impact-escalated
+  validation. New `codey/adapter_surface.py` defines the repair surface as
+  one provider's driver plus the shared web adapter files (`web_provider.py`,
+  `web_driver.py`, `web_drivers/common.py`, provider profiles/controls/flow/
+  send-loop/submission/timeouts, clipboard, browser). Because repairs
+  install into a per-provider override root, touching shared files inside
+  one provider's override cannot leak into another provider's runtime path.
+  `repair_policy.validate_candidate()` no longer treats shared files as a
+  violation; it classifies changes into `provider_local`,
+  `shared_web_surface`, and `profile_data`, scans `*.py` **and** `*.json`
+  (the forbidden-snippet scan stays Python-only), and `_run_static_checks()`
+  escalates with impact: a shared-surface edit must still import the whole
+  web provider layer, and a profile-data edit must still load through the
+  schema. Tests and Codey core runtime stay rejected. The repair prompt now
+  states the real scope ("modify only the web adapter surface ... this
+  repair runs in a provider-scoped override sandbox ... do not modify tests
+  or Codey core runtime"). `adapter_overrides.adapter_base_hash()` includes
+  repair-surface JSON so a changed builtin `provider_profiles.json`
+  invalidates overrides generated against the old data.
+- Provider id normalization fully unified: the local `_provider_id()` copies
+  in `adapter_overrides.py`, `provider_supervisor.py`, `self_repair.py`, and
+  `repair_policy.py` all delegate to `provider_ids.normalize_provider_id()`.
+- Site drivers moved into the providers package: `codey/{deepseek,qwen,mimo,
+  stepfun,glm}.py` are now `codey/providers/web_drivers/*.py`, and
+  `providers/driver_common.py` is `providers/web_drivers/common.py`.
+  `web_provider.py` imports drivers from their new home, so drivers import
+  their sibling `common` instead of reaching back into the providers package
+  init -- the fragile cold-start shape is gone. `web_drivers/__init__.py`
+  stays import-free on purpose.
+- `UiStateStore.save()`'s cache fast path assumes a single Codey server per
+  ``state_home``; that single-writer assumption is now documented in code.
 
 - New `codey/completion_verification.py`: the coding verification semantics
   moved out of `task_runner.py` as pure projections -- tri-state freshness

@@ -323,6 +323,13 @@ class UiStateStore:
     ``save`` compares against the last state this process wrote (seeded by
     the first :meth:`load`) instead of re-reading and re-parsing the file on
     every save, so a save costs one write, not a read-parse-write cycle.
+
+    Single-writer assumption: one Codey server owns ``state_home``. The
+    cache deliberately never re-reads the file after the first load, so two
+    server processes sharing one ``state_home`` could each overwrite the
+    other's freshest state with their own cached baseline. That is
+    acceptable by product design -- local developer tool, one server per
+    user -- and is the price of the single-write fast path.
     """
 
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:

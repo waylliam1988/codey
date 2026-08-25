@@ -6,10 +6,11 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from codey import cancellation, provider_revival, qwen
+from codey import cancellation, provider_revival
 from codey.local_store import read_json, write_json_atomic
 from codey.provider_diagnostics import ControlMissing
 from codey.provider_submission import SendAttempt, SubmissionUncertain
+from codey.providers.web_drivers import qwen
 
 
 class QwenDriverTests(unittest.TestCase):

@@ -15,7 +15,7 @@ from codey import (
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
-from codey.providers import driver_common
+from codey.providers.web_drivers import common as driver_common
 from codey.provider_submission import (
     SendAttempt,
     SubmissionUncertain,

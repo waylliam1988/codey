@@ -10,12 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from codey import __version__
+from codey.adapter_surface import adapter_repair_surface
 from codey.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
 from codey.provider_diagnostics import (
     FAILURE_CONTROL_MISSING,
     FAILURE_READINESS_STALE,
     FAILURE_RESPONSE_MISSING,
 )
+from codey.provider_ids import normalize_provider_id
 
 
 STATUS_CANDIDATE = "candidate"
@@ -57,7 +59,7 @@ def install_candidate(
     base_hash: str = "",
     tests: tuple[str, ...] = (),
 ) -> AdapterOverride:
-    provider_id = _provider_id(provider_id)
+    provider_id = normalize_provider_id(provider_id)
     if not provider_id:
         raise ValueError("provider_id required")
     source_root = Path(source_root).resolve()
@@ -120,7 +122,7 @@ def mark_provisional(
     index["previous_generation"] = current if current != generation else int(index.get("previous_generation") or 0)
     index["current_generation"] = generation
     _save_index(provider_id, state_home, index)
-    return _override_from_record(_provider_id(provider_id), generation, record)
+    return _override_from_record(normalize_provider_id(provider_id), generation, record)
 
 
 def load_enabled_override(
@@ -138,7 +140,7 @@ def load_enabled_override(
         return None
     if not _base_matches(provider_id, record, current_root):
         return None
-    override = _override_from_record(_provider_id(provider_id), generation, record)
+    override = _override_from_record(normalize_provider_id(provider_id), generation, record)
     return override if override.root.is_dir() else None
 
 
@@ -195,16 +197,28 @@ def record_failure(
 
 
 def adapter_base_hash(provider_id: str, source_root: str | Path | None = None) -> str:
-    """Hash the built-in Codey package that an override was generated against."""
+    """Hash the built-in Codey package that an override was generated against.
+
+    Includes every JSON file on the provider's repair surface so a changed
+    builtin profile invalidates overrides generated against the old data.
+    """
+
     root = Path(source_root).resolve() if source_root is not None else Path(__file__).resolve().parents[1]
     digest = hashlib.sha256()
-    digest.update(_provider_id(provider_id).encode("utf-8"))
-    for path in sorted((root / "codey").rglob("*.py")):
-        if "__pycache__" in path.parts:
+    digest.update(normalize_provider_id(provider_id).encode("utf-8"))
+    json_surface = {
+        rel
+        for rel in adapter_repair_surface(normalize_provider_id(provider_id))
+        if rel.endswith(".json")
+    }
+    for path in sorted((root / "codey").rglob("*")):
+        if "__pycache__" in path.parts or not path.is_file():
             continue
         try:
             rel = path.relative_to(root).as_posix()
         except ValueError:
+            continue
+        if path.suffix != ".py" and rel not in json_surface:
             continue
         digest.update(rel.encode("utf-8"))
         try:
@@ -215,7 +229,7 @@ def adapter_base_hash(provider_id: str, source_root: str | Path | None = None) -
 
 
 def _provider_dir(provider_id: str, state_home: str | Path | None) -> Path:
-    return overrides_root(state_home) / _provider_id(provider_id)
+    return overrides_root(state_home) / normalize_provider_id(provider_id)
 
 
 def _index_path(provider_id: str, state_home: str | Path | None) -> Path:
@@ -227,7 +241,7 @@ def _load_index(provider_id: str, state_home: str | Path | None) -> dict[str, An
     if data.get("schema_version") != 1 or not isinstance(data.get("generations"), dict):
         return {
             "schema_version": 1,
-            "provider_id": _provider_id(provider_id),
+            "provider_id": normalize_provider_id(provider_id),
             "current_generation": 0,
             "previous_generation": 0,
             "generations": {},
@@ -308,11 +322,6 @@ def _trim_generations(index: dict[str, Any]) -> None:
                 shutil.rmtree(Path(str(record.get("path") or "")))
             except OSError:
                 pass
-
-
-def _provider_id(value: object) -> str:
-    text = str(value or "").strip().lower()
-    return text if text.replace("-", "").replace("_", "").isalnum() else ""
 
 
 def _now() -> str:

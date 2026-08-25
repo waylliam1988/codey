@@ -105,11 +105,11 @@ def _provider_class(spec: WebProviderSpec) -> type[WebChatProvider]:
     )
 
 
-from codey import deepseek as _deepseek_driver  # noqa: E402
-from codey import glm as _glm_driver  # noqa: E402
-from codey import mimo as _mimo_driver  # noqa: E402
-from codey import qwen as _qwen_driver  # noqa: E402
-from codey import stepfun as _stepfun_driver  # noqa: E402
+from codey.providers.web_drivers import deepseek as _deepseek_driver  # noqa: E402
+from codey.providers.web_drivers import glm as _glm_driver  # noqa: E402
+from codey.providers.web_drivers import mimo as _mimo_driver  # noqa: E402
+from codey.providers.web_drivers import qwen as _qwen_driver  # noqa: E402
+from codey.providers.web_drivers import stepfun as _stepfun_driver  # noqa: E402
 
 
 class DeepSeekWebProvider(_provider_class(WebProviderSpec(

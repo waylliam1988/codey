@@ -28,10 +28,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         self.assertNotIn("playwright.sync_api", imports)
         self.assertNotIn("codey.browser", imports)
-        self.assertNotIn("codey.deepseek", imports)
-        self.assertNotIn("codey.qwen", imports)
-        self.assertNotIn("codey.stepfun", imports)
-        self.assertNotIn("codey.glm", imports)
+        self.assertNotIn("codey.providers.web_drivers.deepseek", imports)
+        self.assertNotIn("codey.providers.web_drivers.qwen", imports)
+        self.assertNotIn("codey.providers.web_drivers.stepfun", imports)
+        self.assertNotIn("codey.providers.web_drivers.glm", imports)
         self.assertIn("codey.providers", imports)
         self.assertIn("codey.protocols", imports)
 
@@ -40,10 +40,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(name=name):
                 imports = imported_modules(ROOT / "codey" / name)
                 self.assertNotIn("codey.browser", imports)
-                self.assertNotIn("codey.deepseek", imports)
-                self.assertNotIn("codey.qwen", imports)
-                self.assertNotIn("codey.stepfun", imports)
-                self.assertNotIn("codey.glm", imports)
+                self.assertNotIn("codey.providers.web_drivers.deepseek", imports)
+                self.assertNotIn("codey.providers.web_drivers.qwen", imports)
+                self.assertNotIn("codey.providers.web_drivers.stepfun", imports)
+                self.assertNotIn("codey.providers.web_drivers.glm", imports)
 
     def test_http_server_delegates_task_orchestration(self) -> None:
         imports = imported_modules(ROOT / "codey" / "server.py")
@@ -147,10 +147,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         imports = imported_modules(ROOT / "codey" / "prompt_envelope.py")
         forbidden = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",
@@ -166,10 +166,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         source = path.read_text(encoding="utf-8")
         forbidden_imports = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",
@@ -220,10 +220,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         source = path.read_text(encoding="utf-8")
         forbidden_imports = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",
@@ -256,10 +256,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         source = path.read_text(encoding="utf-8")
         forbidden_imports = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",
@@ -294,10 +294,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         source = path.read_text(encoding="utf-8")
         forbidden_imports = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",
@@ -330,10 +330,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_research_identity_ledger_and_proof_do_not_import_runtime_layers(self) -> None:
         forbidden_imports = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",
@@ -513,10 +513,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         forbidden_imports = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",
@@ -560,10 +560,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
         forbidden = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",
@@ -603,10 +603,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         forbidden_imports = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",
@@ -695,10 +695,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # import the knowledge store (which consumes their outputs instead).
         forbidden_imports = {
             "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
+            "codey.providers.web_drivers.deepseek",
+            "codey.providers.web_drivers.qwen",
+            "codey.providers.web_drivers.stepfun",
+            "codey.providers.web_drivers.glm",
             "codey.providers",
             "codey.provider_controls",
             "codey.tool_runtime",

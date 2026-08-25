@@ -14,7 +14,13 @@ from pathlib import Path
 from unittest import mock
 
 from codey import adapter_overrides
-from codey.adapter_repair import AdapterRepairResult, _render_repair_prompt, run_adapter_repair, run_worker_canary
+from codey.adapter_repair import (
+    AdapterRepairResult,
+    _render_repair_prompt,
+    _run_static_checks,
+    run_adapter_repair,
+    run_worker_canary,
+)
 from codey.agent import RunResult
 from codey.provider_worker import WorkerChatProvider, _failure_from_response
 from codey import provider_worker_child
@@ -27,20 +33,27 @@ from codey.provider_diagnostics import (
     ProviderFailure,
 )
 from codey.provider_supervisor import ProviderHealth, STATE_DEGRADED, STATE_OPEN
-from codey.repair_policy import validate_candidate
+from codey.repair_policy import (
+    IMPACT_PROFILE_DATA,
+    IMPACT_SHARED_WEB_SURFACE,
+    validate_candidate,
+)
 from codey.repair_sandbox import create_repair_sandbox
 from codey.self_repair import SelfRepairJob, SelfRepairSupervisor
 from codey.self_repair_worker import _run_worker_job, run_self_repair_worker
 
 
 def _source_tree(root: Path) -> None:
-    (root / "codey" / "providers").mkdir(parents=True)
+    (root / "codey" / "providers" / "web_drivers").mkdir(parents=True)
     (root / "tests").mkdir()
     (root / "codey" / "__init__.py").write_text("", encoding="utf-8")
-    (root / "codey" / "qwen.py").write_text("VALUE = 1\n", encoding="utf-8")
     (root / "codey" / "providers" / "__init__.py").write_text("", encoding="utf-8")
-    (root / "codey" / "providers" / "qwen_web.py").write_text(
-        "class QwenWebProvider:\n    pass\n",
+    (root / "codey" / "providers" / "web_drivers" / "__init__.py").write_text(
+        "",
+        encoding="utf-8",
+    )
+    (root / "codey" / "providers" / "web_drivers" / "qwen.py").write_text(
+        "VALUE = 1\n",
         encoding="utf-8",
     )
     (root / "tests" / "test_qwen.py").write_text("def test_qwen():\n    pass\n", encoding="utf-8")
@@ -71,7 +84,7 @@ class AdapterOverridesTests(unittest.TestCase):
 
             second_root = Path(td) / "src2"
             _source_tree(second_root)
-            (second_root / "codey" / "qwen.py").write_text("VALUE = 2\n", encoding="utf-8")
+            (second_root / "codey" / "providers" / "web_drivers" / "qwen.py").write_text("VALUE = 2\n", encoding="utf-8")
             second = adapter_overrides.install_candidate(
                 "qwen",
                 second_root,
@@ -159,7 +172,7 @@ class AdapterOverridesTests(unittest.TestCase):
             )
             self.assertTrue(first.root.exists())
             shutil.rmtree(first.root)
-            (root / "codey" / "qwen.py").write_text("VALUE = 2\n", encoding="utf-8")
+            (root / "codey" / "providers" / "web_drivers" / "qwen.py").write_text("VALUE = 2\n", encoding="utf-8")
             second = adapter_overrides.install_candidate("qwen", root, state_home=state)
             adapter_overrides.mark_provisional("qwen", second.generation, state_home=state)
 
@@ -189,11 +202,27 @@ class AdapterOverridesTests(unittest.TestCase):
                 adapter_overrides.load_enabled_override("qwen", state_home=state, current_root=root)
             )
 
-            (root / "codey" / "qwen.py").write_text("VALUE = 999\n", encoding="utf-8")
+            (root / "codey" / "providers" / "web_drivers" / "qwen.py").write_text("VALUE = 999\n", encoding="utf-8")
 
             self.assertIsNone(
                 adapter_overrides.load_enabled_override("qwen", state_home=state, current_root=root)
             )
+
+    def test_base_hash_covers_profile_data_surface(self) -> None:
+        # Repairs may rewrite codey/provider_profiles.json, so a changed
+        # builtin profile must invalidate overrides generated against it.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            before = adapter_overrides.adapter_base_hash("qwen", root)
+
+            (root / "codey" / "provider_profiles.json").write_text(
+                '{"schema_version":1,"profiles":{}}',
+                encoding="utf-8",
+            )
+            after = adapter_overrides.adapter_base_hash("qwen", root)
+
+            self.assertNotEqual(before, after)
 
     def test_candidate_does_not_disable_existing_active_until_provisional(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -211,7 +240,7 @@ class AdapterOverridesTests(unittest.TestCase):
 
             second_root = Path(td) / "src2"
             _source_tree(second_root)
-            (second_root / "codey" / "qwen.py").write_text("VALUE = 2\n", encoding="utf-8")
+            (second_root / "codey" / "providers" / "web_drivers" / "qwen.py").write_text("VALUE = 2\n", encoding="utf-8")
             second = adapter_overrides.install_candidate(
                 "qwen",
                 second_root,
@@ -234,12 +263,12 @@ class RepairPolicyTests(unittest.TestCase):
             candidate = Path(td) / "candidate"
             _source_tree(base)
             _source_tree(candidate)
-            (candidate / "codey" / "qwen.py").write_text("VALUE = 3\n", encoding="utf-8")
+            (candidate / "codey" / "providers" / "web_drivers" / "qwen.py").write_text("VALUE = 3\n", encoding="utf-8")
 
             result = validate_candidate("qwen", base, candidate)
 
             self.assertTrue(result.ok)
-            self.assertIn("codey/qwen.py", result.changed_files)
+            self.assertIn("codey/providers/web_drivers/qwen.py", result.changed_files)
 
     def test_policy_rejects_generated_tests(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -279,7 +308,7 @@ class RepairPolicyTests(unittest.TestCase):
             candidate = Path(td) / "candidate"
             _source_tree(base)
             _source_tree(candidate)
-            (candidate / "codey" / "qwen.py").write_text(
+            (candidate / "codey" / "providers" / "web_drivers" / "qwen.py").write_text(
                 "def bad():\n    eval('1')\n",
                 encoding="utf-8",
             )
@@ -295,11 +324,11 @@ class RepairPolicyTests(unittest.TestCase):
             candidate = Path(td) / "candidate"
             _source_tree(base)
             _source_tree(candidate)
-            (base / "codey" / "glm.py").write_text(
+            (base / "codey" / "providers" / "web_drivers" / "glm.py").write_text(
                 "def ok(source):\n    return compile(source, '<x>', 'exec')\n",
                 encoding="utf-8",
             )
-            (candidate / "codey" / "glm.py").write_text(
+            (candidate / "codey" / "providers" / "web_drivers" / "glm.py").write_text(
                 "def ok(source):\n    return compile(source, '<x>', 'exec')\n# repaired\n",
                 encoding="utf-8",
             )
@@ -308,7 +337,7 @@ class RepairPolicyTests(unittest.TestCase):
 
             self.assertTrue(result.ok)
 
-            (candidate / "codey" / "glm.py").write_text(
+            (candidate / "codey" / "providers" / "web_drivers" / "glm.py").write_text(
                 "def ok(source):\n    return compile(source, '<x>', 'exec')\n"
                 "def bad(source):\n    return compile(source, '<y>', 'exec')\n",
                 encoding="utf-8",
@@ -318,6 +347,124 @@ class RepairPolicyTests(unittest.TestCase):
 
             self.assertFalse(result.ok)
             self.assertTrue(any("compile(" in item for item in result.errors))
+
+    def test_policy_allows_shared_web_surface_edits_with_impact(self) -> None:
+        # A shared wrapper edit is not a violation: it widens the impact the
+        # runner must validate, so it is classified, not rejected.
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "base"
+            candidate = Path(td) / "candidate"
+            _source_tree(base)
+            _source_tree(candidate)
+            (base / "codey" / "providers" / "web_driver.py").write_text(
+                "GRACE = 1\n",
+                encoding="utf-8",
+            )
+            (candidate / "codey" / "providers" / "web_driver.py").write_text(
+                "GRACE = 2\n",
+                encoding="utf-8",
+            )
+
+            result = validate_candidate("qwen", base, candidate)
+
+            self.assertTrue(result.ok)
+            self.assertIn("codey/providers/web_driver.py", result.changed_files)
+            self.assertEqual(result.impact, ("shared_web_surface",))
+
+    def test_policy_classifies_driver_only_edits_as_provider_local(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "base"
+            candidate = Path(td) / "candidate"
+            _source_tree(base)
+            _source_tree(candidate)
+            (candidate / "codey" / "providers" / "web_drivers" / "qwen.py").write_text(
+                "VALUE = 3\n",
+                encoding="utf-8",
+            )
+
+            result = validate_candidate("qwen", base, candidate)
+
+            self.assertTrue(result.ok)
+            self.assertEqual(result.impact, ("provider_local",))
+
+    def test_policy_allows_profile_data_without_python_snippet_scan(self) -> None:
+        # provider_profiles.json is data: allowed, classified as profile_data,
+        # and never tripped by the Python-only forbidden snippets.
+        payload = json.dumps({
+            "schema_version": 1,
+            "profiles": {"qwen": {"selectors": ["text=open( exec( compile("]}},
+        })
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "base"
+            candidate = Path(td) / "candidate"
+            _source_tree(base)
+            _source_tree(candidate)
+            (candidate / "codey" / "provider_profiles.json").write_text(
+                payload,
+                encoding="utf-8",
+            )
+
+            result = validate_candidate("qwen", base, candidate)
+
+            self.assertTrue(result.ok)
+            self.assertIn("codey/provider_profiles.json", result.changed_files)
+            self.assertEqual(result.impact, ("profile_data",))
+
+
+class StaticCheckEscalationTests(unittest.TestCase):
+    def _capture_commands(self):
+        seen: list[tuple[str, ...]] = []
+
+        def fake_run(command, **_kwargs):
+            seen.append(tuple(str(part) for part in command))
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        return seen, fake_run
+
+    def test_base_checks_cover_only_python_surface_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            seen, fake_run = self._capture_commands()
+
+            with mock.patch("codey.adapter_repair.subprocess.run", side_effect=fake_run):
+                results = _run_static_checks("qwen", root)
+
+            self.assertTrue(all(item.startswith("passed:") for item in results))
+            compile_cmd = next(cmd for cmd in seen if "py_compile" in cmd)
+            self.assertIn("codey/providers/web_drivers/qwen.py", compile_cmd)
+            self.assertNotIn(
+                "codey/provider_profiles.json",
+                " ".join(str(part) for part in compile_cmd),
+            )
+        self.assertEqual(
+            [item.split(":")[0] for item in results],
+            ["passed", "passed", "passed"],
+        )
+
+    def test_shared_and_profile_impact_add_stronger_checks(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            seen, fake_run = self._capture_commands()
+
+            with mock.patch("codey.adapter_repair.subprocess.run", side_effect=fake_run):
+                _base = _run_static_checks("qwen", root)
+                escalated = _run_static_checks(
+                    "qwen",
+                    root,
+                    impact=(IMPACT_SHARED_WEB_SURFACE, IMPACT_PROFILE_DATA),
+                )
+                commands = tuple(seen)
+
+            tail = [
+                " ".join(str(part) for part in cmd)
+                for cmd in commands[-2:]
+            ]
+            self.assertTrue(any("WEB_PROVIDER_CLASSES" in cmd for cmd in tail))
+            self.assertTrue(any("load_profiles" in cmd for cmd in tail))
+            self.assertIn("passed:web_adapter_import", escalated)
+            self.assertIn("passed:profiles_schema_load", escalated)
 
 
 class RepairSandboxTests(unittest.TestCase):
@@ -332,7 +479,7 @@ class RepairSandboxTests(unittest.TestCase):
 
             sandbox = create_repair_sandbox(root)
             try:
-                self.assertTrue((sandbox.baseline_root / "codey" / "qwen.py").is_file())
+                self.assertTrue((sandbox.baseline_root / "codey" / "providers" / "web_drivers" / "qwen.py").is_file())
                 self.assertFalse((sandbox.baseline_root / ".git").exists())
                 self.assertFalse((sandbox.candidate_root / "codey" / "__pycache__").exists())
             finally:
@@ -689,7 +836,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
     def test_parent_runner_uses_subprocess_and_parses_result(self) -> None:
         completed = mock.Mock(
             returncode=0,
-            stdout='noise\n{"ok":true,"provider_id":"qwen","generation":4,"changed_files":["codey/qwen.py"]}\n',
+            stdout='noise\n{"ok":true,"provider_id":"qwen","generation":4,"changed_files":["codey/providers/web_drivers/qwen.py"]}\n',
             stderr="",
         )
         with mock.patch("codey.self_repair_worker.cancellation.run_process", return_value=completed) as run:
@@ -1093,14 +1240,27 @@ class AdapterRepairRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "src"
             _source_tree(root)
-            (root / "codey" / "deepseek.py").write_text("VALUE = 1\n", encoding="utf-8")
-            (root / "codey" / "providers" / "deepseek_web.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "codey" / "providers" / "web_drivers" / "deepseek.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / "codey" / "providers" / "web_provider.py").write_text("VALUE = 1\n", encoding="utf-8")
             (root / "tests" / "test_deepseek.py").write_text("def test_deepseek():\n    pass\n", encoding="utf-8")
 
             prompt = _render_repair_prompt("deepseek", root)
 
-            self.assertIn('"path":"codey/deepseek.py"', prompt)
-            self.assertNotIn('"path":"codey/qwen.py"', prompt)
+            self.assertIn('"path":"codey/providers/web_drivers/deepseek.py"', prompt)
+            self.assertNotIn('"path":"codey/providers/web_drivers/qwen.py"', prompt)
+
+    def test_repair_prompt_states_override_sandbox_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+
+            prompt = _render_repair_prompt("qwen", root)
+
+            self.assertIn("You may modify only the web adapter surface listed below", prompt)
+            self.assertIn("This repair runs in a provider-scoped override sandbox.", prompt)
+            self.assertIn("Do not modify tests or Codey core runtime.", prompt)
+            self.assertIn("codey/providers/web_drivers/qwen.py", prompt)
+            self.assertIn("codey/providers/web_provider.py", prompt)
 
     def test_repair_prompt_includes_bounded_readiness_failure_context(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1138,7 +1298,7 @@ class AdapterRepairRunnerTests(unittest.TestCase):
             reply = {
                 "files": [
                     {
-                        "path": "codey/qwen.py",
+                        "path": "codey/providers/web_drivers/qwen.py",
                         "content": replacement,
                     }
                 ]
@@ -1161,7 +1321,7 @@ class AdapterRepairRunnerTests(unittest.TestCase):
             self.assertIsNotNone(enabled)
             self.assertEqual(enabled.status, adapter_overrides.STATUS_PROVISIONAL)
             self.assertEqual(
-                (enabled.root / "codey" / "qwen.py").read_text(encoding="utf-8"),
+                (enabled.root / "codey" / "providers" / "web_drivers" / "qwen.py").read_text(encoding="utf-8"),
                 replacement,
             )
 
@@ -1173,7 +1333,7 @@ class AdapterRepairRunnerTests(unittest.TestCase):
             reply = {
                 "files": [
                     {
-                        "path": "codey/qwen.py",
+                        "path": "codey/providers/web_drivers/qwen.py",
                         "content": "VALUE = 99\n",
                     }
                 ]

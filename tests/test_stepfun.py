@@ -4,9 +4,9 @@ import unittest
 from contextlib import nullcontext
 from unittest import mock
 
-from codey import stepfun
 from codey.provider_diagnostics import ControlMissing
 from codey.provider_submission import SendAttempt, SubmissionUncertain
+from codey.providers.web_drivers import stepfun
 
 
 class StepFunDriverTests(unittest.TestCase):

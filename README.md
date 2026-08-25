@@ -264,10 +264,13 @@ data-free canary only when they are about to handle real work again.
 
 If a provider adapter itself breaks after a larger website change, Codey can
 queue a background adapter self-repair. The repair path runs in a separate
-Python process, asks a healthy helper model to modify only the broken provider's
-adapter files in a temporary sandbox, validates the candidate with policy
-checks, static checks, provider unit tests, and a neutral marker canary, then
-loads the candidate only through a child Provider worker. The worker uses a
+Python process, asks a healthy helper model to modify only the web adapter
+surface (the broken provider's page driver plus the shared web adapter files)
+in a temporary sandbox, validates the candidate with policy checks that
+escalate with the candidate's impact (a shared-surface or profile-data edit
+must pass stronger import/schema checks), static checks, provider unit tests,
+and a neutral marker canary, then loads the candidate only through a child
+Provider worker. The worker uses a
 fresh background tab in the same logged-in Codey browser profile, so it does
 not need to copy cookies or block your current task. Candidates start as
 provisional, become active only after natural successes, and roll back after
@@ -961,9 +964,10 @@ codey/
   provider_timeouts.py      shared provider deadline and navigation timeout helpers
   provider_capabilities.py  static provider fit hints for fallback ordering
   provider_supervisor.py    passive health circuit, Writer selection, and canary
-  adapter_overrides.py      local adapter candidates, promotion, and rollback
-  adapter_repair.py         sandboxed provider adapter repair runner
-  repair_policy.py          strict adapter repair file and code policy
+   adapter_overrides.py      local adapter candidates, promotion, and rollback
+   adapter_repair.py         sandboxed provider adapter repair runner
+   adapter_surface.py        repair surface: per-provider drivers + shared web files
+   repair_policy.py          strict adapter repair allowlist with impact classification
   repair_sandbox.py         temporary source copy for adapter repair
   repair_journal.py         bounded local adapter repair journal
   self_repair.py            deduplicated background repair queue
@@ -972,20 +976,23 @@ codey/
   provider_worker_child.py  child process adapter runner
   profile_doctor.py         one-shot sanitized candidate selection
   json_tool_reply.py        tolerant final JSON tool-reply detection and repair
-  web_clipboard.py          bounded copy-action clipboard transaction helper
-  deepseek.py               DeepSeek page driver
-  mimo.py                   MiMo page driver
-  stepfun.py                StepFun page driver
-  qwen.py                   Qwen page driver
-  glm.py                    GLM page driver
-  provider_diagnostics.py   compact provider failure records
+   web_clipboard.py          bounded copy-action clipboard transaction helper
+   provider_diagnostics.py   compact provider failure records
   receipt.py                task completion receipt builder
   protocols/
     json_codec.py           JSON-only tool protocol
   providers/
     registry.py             provider registry and sibling-tab borrowing
     local_openai.py         OpenAI-compatible local model provider
-    *_web.py                provider adapters
+    web_provider.py         unified spec-driven web chat wrapper
+    web_driver.py           shared send/new-chat deadline plumbing
+    web_drivers/            per-site page drivers plus common scaffolding
+      common.py             control/response/rate-limit/late-response plumbing
+      deepseek.py           DeepSeek page driver
+      mimo.py               MiMo page driver
+      stepfun.py            StepFun page driver
+      qwen.py               Qwen page driver
+      glm.py                GLM page driver
   server.py                 local HTTP + SSE transport and runtime state
   web/
     index.html              UI core: state, SSE, composer, boot

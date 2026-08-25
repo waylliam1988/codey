@@ -212,9 +212,11 @@ Codey 使用浏览器自动化，所以网页 AI 改版后可能会失效。当�
 Codey 只有在当前布尔事实能证明规则成立时，才会晋级学到的 Flow Recipe。
 
 如果网页变化大到 adapter 代码本身也坏了，Codey 现在可以把这个 Provider 放入后台
-自修复队列。自修复运行在独立 Python 进程中，只允许健康 helper 模型修改坏掉的
-Provider adapter 文件，并在临时 sandbox 里通过策略检查、静态检查、对应 Provider
-单测和中性 marker canary。候选 adapter 不会直接加载进主进程，而是通过子进程
+自修复队列。自修复运行在独立 Python 进程中，只允许健康 helper 模型修改网页适配面
+（坏掉 Provider 的页面 driver 加共享网页适配文件），并在临时 sandbox 里通过按影响
+分级的策略检查（共享层/profile 数据改动必须通过更强的 import/schema 校验）、
+静态检查、对应 Provider 单测和中性 marker canary。候选 adapter 不会直接加载进
+主进程，而是通过子进程
 Provider worker 运行；worker 使用同一个已登录 Codey 浏览器 profile 的后台新标签页，
 不会复制 cookie，也不会阻塞你当前的编程任务。候选先是 provisional，自然成功后才
 晋级 active，连续结构性失败会自动回滚。`agent.py`、`task_runner.py`、`tool_runtime.py`、
@@ -817,9 +819,10 @@ codey/
   provider_timeouts.py      共享的 provider deadline 和导航超时 helper
   provider_capabilities.py  provider 静态适配提示和 fallback 排序
   provider_supervisor.py    被动健康熔断、Writer 选择和 canary
-  adapter_overrides.py      本地 adapter 候选、晋级和回滚
-  adapter_repair.py         sandbox 中的 Provider adapter 修复执行器
-  repair_policy.py          严格的 adapter 修复文件与代码策略
+   adapter_overrides.py      本地 adapter 候选、晋级和回滚
+   adapter_repair.py         sandbox 中的 Provider adapter 修复执行器
+   adapter_surface.py        修复面：单 provider driver + 共享网页适配文件
+   repair_policy.py          严格的 adapter 修复 allowlist 与影响分级
   repair_sandbox.py         adapter 修复用临时源码副本
   repair_journal.py         有边界的本地 adapter 修复日志
   self_repair.py            去重的后台自修复队列
@@ -828,20 +831,23 @@ codey/
   provider_worker_child.py  子进程 adapter 运行器
   profile_doctor.py         单次脱敏候选选择
   json_tool_reply.py        最终 JSON tool reply 的宽容检测和修复
-  web_clipboard.py          有边界的复制按钮剪贴板事务 helper
-  deepseek.py               DeepSeek 页面驱动
-  mimo.py                   MiMo 页面驱动
-  stepfun.py                StepFun 页面驱动
-  qwen.py                   Qwen 页面驱动
-  glm.py                    GLM 页面驱动
-  provider_diagnostics.py   小型 provider 失败记录
+   web_clipboard.py          有边界的复制按钮剪贴板事务 helper
+   provider_diagnostics.py   小型 provider 失败记录
   receipt.py                任务完成收据
   protocols/
     json_codec.py           JSON-only 工具协议
   providers/
     registry.py             模型注册表和同一 CDP 标签页借用
     local_openai.py         OpenAI-compatible 本地模型 provider
-    *_web.py                网页模型适配器
+    web_provider.py         spec 驱动的统一网页模型 wrapper
+    web_driver.py           共享的 send/new-chat deadline 管道
+    web_drivers/            各站点页面驱动与公共脚手架
+      common.py             控件定位/响应计数/限流检测/迟到响应轮询
+      deepseek.py           DeepSeek 页面驱动
+      mimo.py               MiMo 页面驱动
+      stepfun.py            StepFun 页面驱动
+      qwen.py               Qwen 页面驱动
+      glm.py                GLM 页面驱动
   server.py                 本地 HTTP + SSE 传输和运行状态
   web/
     index.html              UI 核心：state、SSE、composer、boot

@@ -16,6 +16,7 @@ from codey.provider_diagnostics import (
     ProviderFailure,
     sanitize_failure_facts,
 )
+from codey.provider_ids import normalize_provider_id
 from codey.provider_supervisor import ProviderHealth, STATE_OPEN
 from codey.repair_journal import RepairJournal
 
@@ -73,7 +74,7 @@ class SelfRepairSupervisor:
             if last is not None and now - last < REPAIR_COOLDOWN_SECONDS:
                 return False
             job = SelfRepairJob(
-                provider_id=_provider_id(provider_id),
+                provider_id=normalize_provider_id(provider_id),
                 failure_kind=failure.kind,
                 failure_stage=failure.stage,
                 enqueued_at=now,
@@ -145,13 +146,9 @@ def _is_repairable_failure(failure: ProviderFailure, health: ProviderHealth) -> 
     return (
         failure.kind in STRUCTURAL_FAILURES
         and health.state == STATE_OPEN
-        and bool(_provider_id(failure.model) or failure.model)
+        and bool(normalize_provider_id(failure.model) or failure.model)
     )
 
 
 def _job_key(provider_id: str, failure: ProviderFailure) -> str:
-    return f"{_provider_id(provider_id)}:{failure.kind}:{failure.stage}"
-
-
-def _provider_id(value: object) -> str:
-    return str(value or "").strip().lower()
+    return f"{normalize_provider_id(provider_id)}:{failure.kind}:{failure.stage}"

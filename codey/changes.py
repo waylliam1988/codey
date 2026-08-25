@@ -27,7 +27,7 @@ MAX_SNAPSHOT_DIFF_CHARS = 240_000
 MAX_SNAPSHOT_FILES = 200
 MAX_SNAPSHOT_TOTAL_BYTES = 32 * 1024 * 1024
 MAX_SNAPSHOT_MANIFEST_BYTES = 4 * 1024 * 1024
-SNAPSHOT_SCHEMA_VERSION = 2
+SNAPSHOT_SCHEMA_VERSION = 1
 SNAPSHOT_DIR_NAME = "recovery"
 BASELINE_DIR_NAME = "baselines"
 GIT_TIMEOUT = 10
@@ -387,10 +387,14 @@ class ChangeTracker:
             if rel_posix in self._before:
                 return
         before = _read_text_or_none(path)
-        with self._lock:
-            self._validate_capacity_locked(rel_posix, before)
         added = len((before or "").encode("utf-8"))
+        # The file read above happens outside the lock, so another thread may
+        # have captured this rel in the meantime. Re-check membership before
+        # mutating anything: exactly one thread wins and pays the byte cost.
         with self._lock:
+            if rel_posix in self._before:
+                return
+            self._validate_capacity_locked(rel_posix, before)
             self._before[rel_posix] = before
             self._total_bytes += added
         try:
@@ -400,8 +404,11 @@ class ChangeTracker:
                 store.put_baseline(self.root, rel_posix, before)
         except Exception:
             with self._lock:
-                self._before.pop(rel_posix, None)
-                self._total_bytes -= added
+                # Roll back only our own write; prune/restore may already have
+                # removed it, and a concurrent re-capture must survive.
+                if rel_posix in self._before and self._before[rel_posix] == before:
+                    del self._before[rel_posix]
+                    self._total_bytes -= added
             raise
 
     def capture_after(self, rel: str) -> None:
@@ -414,7 +421,12 @@ class ChangeTracker:
             digest = _path_hash(path)
         except (OSError, UnicodeDecodeError, ValueError):
             return
+        # Hashing also happens outside the lock; prune_clean may have dropped
+        # the baseline meanwhile. Re-check membership so no orphan after-hash
+        # outlives its baseline.
         with self._lock:
+            if rel_posix not in self._before:
+                return
             self._after_hashes[rel_posix] = digest
             store = self.store
         if store is not None:

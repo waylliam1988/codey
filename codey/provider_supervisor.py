@@ -22,6 +22,7 @@ from codey.provider_diagnostics import (
     FAILURE_TRANSIENT,
     ProviderFailure,
 )
+from codey.provider_ids import normalize_provider_id
 from codey.provider_timeouts import remaining, start_deadline
 
 
@@ -81,7 +82,7 @@ class ProviderSupervisor:
 
     def get(self, provider_id: str) -> ProviderHealth:
         with self._lock:
-            key = _provider_id(provider_id)
+            key = normalize_provider_id(provider_id)
             health = self._health.get(key, ProviderHealth())
             if health.state == STATE_OPEN and health.circuit_open_until <= self.clock():
                 health = replace(
@@ -103,7 +104,7 @@ class ProviderSupervisor:
     def prepare_user_selected(self, provider_id: str) -> ProviderHealth:
         """Allow an explicit user retry to verify that login/challenge was cleared."""
         with self._lock:
-            key = _provider_id(provider_id)
+            key = normalize_provider_id(provider_id)
             current = self.get(key)
             if current.state != STATE_AUTH_REQUIRED:
                 return current
@@ -121,7 +122,7 @@ class ProviderSupervisor:
 
     def record_success(self, provider_id: str, *, canary: bool = False) -> ProviderHealth:
         with self._lock:
-            key = _provider_id(provider_id)
+            key = normalize_provider_id(provider_id)
             current = self.get(key)
             state = STATE_DEGRADED if canary else STATE_HEALTHY
             updated = replace(
@@ -137,7 +138,7 @@ class ProviderSupervisor:
 
     def record_failure(self, provider_id: str, failure: ProviderFailure) -> ProviderHealth:
         with self._lock:
-            key = _provider_id(provider_id)
+            key = normalize_provider_id(provider_id)
             current = self.get(key)
             now = self.clock()
             same_family = _failure_family(current.last_failure_kind) == _failure_family(
@@ -186,7 +187,7 @@ class ProviderSupervisor:
                 else TRANSIENT_COOLDOWN
             )
             return self._store(
-                _provider_id(provider_id),
+                normalize_provider_id(provider_id),
                 replace(
                     updated,
                     state=STATE_OPEN,
@@ -202,9 +203,9 @@ class ProviderSupervisor:
         excluded: Iterable[str] = (),
     ) -> str | None:
         with self._lock:
-            blocked = {_provider_id(item) for item in excluded}
-            ordered = [_provider_id(preferred)]
-            ordered.extend(_provider_id(item) for item in provider_ids)
+            blocked = {normalize_provider_id(item) for item in excluded}
+            ordered = [normalize_provider_id(preferred)]
+            ordered.extend(normalize_provider_id(item) for item in provider_ids)
             seen: set[str] = set()
             for provider_id in ordered:
                 if not provider_id or provider_id in seen or provider_id in blocked:
@@ -228,7 +229,7 @@ class ProviderSupervisor:
             return {}
         health: dict[str, ProviderHealth] = {}
         for raw_id, raw in list(records.items())[:MAX_PROVIDERS]:
-            provider_id = _provider_id(raw_id)
+            provider_id = normalize_provider_id(raw_id)
             if not provider_id or not isinstance(raw, dict):
                 continue
             try:
@@ -264,11 +265,6 @@ class ProviderSupervisor:
             )
         except (OSError, ValueError):
             pass
-
-
-def _provider_id(value: object) -> str:
-    text = str(value or "").strip().lower()
-    return text if text.replace("-", "").replace("_", "").isalnum() else ""
 
 
 def _failure_family(kind: str) -> str:

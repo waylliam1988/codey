@@ -27,7 +27,7 @@ from codey import (
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, RateLimited, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
-from codey.providers import driver_common
+from codey.providers.web_drivers import common as driver_common
 from codey.json_tool_reply import (
     is_json_tool_reply as _is_json_tool_reply,
     looks_like_json_tool_reply as _looks_like_json_tool_reply,

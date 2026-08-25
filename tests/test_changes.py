@@ -394,20 +394,79 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertEqual(errors, [])
             self.assertEqual(len(tracker._before), 20)
 
-
-        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+    def test_concurrent_capture_before_counts_total_bytes_once(self) -> None:
+        # Threads racing capture_before on the same file used to each pay the
+        # byte cost: one dict entry, _total_bytes incremented twice.
+        with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            store = SnapshotStore(state_td)
-            path = store.path_for(root)
-            path.parent.mkdir(parents=True)
-            path.write_text(
-                '{"schema_version":1,"before":{"../outside.py":"x"},"after_hashes":{}}',
-                encoding="utf-8",
-            )
+            content = "baseline\n"
+            (root / "app.py").write_text(content, encoding="utf-8")
+            tracker = ChangeTracker(root)
 
-            tracker = ChangeTracker(root, store)
+            start = threading.Barrier(4)
 
+            def capture() -> None:
+                start.wait()
+                tracker.capture_before("app.py")
+
+            threads = [threading.Thread(target=capture) for _ in range(4)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            self.assertEqual(list(tracker._before), ["app.py"])
+            self.assertEqual(tracker._total_bytes, len(content.encode("utf-8")))
+
+    def test_capture_after_pruned_during_hash_writes_no_orphan(self) -> None:
+        # prune_clean dropping the baseline while capture_after is still
+        # hashing must not leave an orphan after-hash behind.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("same\n", encoding="utf-8")
+            tracker = ChangeTracker(root)
+            tracker.capture_before("app.py")
+
+            hashing = threading.Event()
+            release = threading.Event()
+            real_hash = changes._path_hash
+
+            def slow_hash(path: Path) -> str:
+                hashing.set()
+                release.wait(2.0)
+                return real_hash(path)
+
+            with mock.patch.object(changes, "_path_hash", slow_hash):
+                worker = threading.Thread(
+                    target=lambda: tracker.capture_after("app.py")
+                )
+                worker.start()
+                self.assertTrue(hashing.wait(2.0))
+                self.assertEqual(tracker.prune_clean(), ["app.py"])
+                release.set()
+                worker.join()
+
+            self.assertEqual(tracker._after_hashes, {})
             self.assertFalse(tracker.has_snapshots)
+
+    def test_incompatible_manifest_layouts_are_ignored(self) -> None:
+        # The recovery store reads exactly one manifest shape: an unknown
+        # schema version or a legacy flat layout starts empty instead of
+        # being half-interpreted.
+        for payload in (
+            '{"schema_version":99,"files":{}}',
+            '{"schema_version":1,"before":{"../outside.py":"x"},"after_hashes":{}}',
+        ):
+            with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+                root = Path(td)
+                store = SnapshotStore(state_td)
+                path = store.path_for(root)
+                path.parent.mkdir(parents=True)
+                path.write_text(payload, encoding="utf-8")
+
+                tracker = ChangeTracker(root, store)
+
+                self.assertFalse(tracker.has_snapshots)
 
     def test_snapshot_survives_abrupt_process_exit(self) -> None:
         script = (

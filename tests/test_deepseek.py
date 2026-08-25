@@ -5,8 +5,9 @@ import threading
 import time
 from unittest import mock
 
-from codey import cancellation, deepseek
+from codey import cancellation
 from codey.provider_submission import SendAttempt
+from codey.providers.web_drivers import deepseek
 
 
 class DeepSeekTimeoutTests(unittest.TestCase):

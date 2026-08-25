@@ -23,9 +23,16 @@
 - ChangeTracker 竞态修复：baseline 状态统一由一把可重入锁保护，
   `collect()` 默认严格只读。UI 轮询不再可能在编辑采集进行中把 clean
   baseline 弹掉。清理动作移入显式 `prune_clean()`，只在 run 终态调用。
+  追加：capture 侧遗留竞态也已关闭——`capture_before()` 在锁外读完文件后
+  回锁复查 membership（两个线程竞争同一文件只产生一条 baseline，
+  `_total_bytes` 只计一次）；`capture_after()` 在 hash 完成后回锁复查，
+  `prune_clean()` 在 hash 期间删掉 baseline 不再留下孤儿 after-hash。
+  两处均有专门并发测试覆盖。
 - 非 Git recovery 快照改为两层存储（`baselines/<rel-digest>` 正文文件 +
   小 `manifest.json`）：每次编辑只写一个有上限的 baseline 文件和 manifest，
-  不再把最多 64MB 的 JSON 整体重写（消除写放大）。
+  不再把最多 64MB 的 JSON 整体重写（消除写放大）。两层格式即
+  `schema_version: 1`；任何其他 manifest 布局（包括旧的扁平格式）一律忽略——
+  不保留兼容路径。
 - `UiStateStore.save()` 改为与内存缓存比较（首次 load 时填充），不再每次
   读盘+解析；写失败时保留上一个已落盘基线。
 - SSE 慢客户端丢事件改为可见：溢出时会先塞入有界的
@@ -62,6 +69,30 @@
   迟到响应轮询等公共脚手架提取到 `providers/driver_common.py`；provider id
   规范化统一进 `codey/provider_ids.py`。各站点自己的完成判定刻意保留在
   各自 driver 内。
+- Adapter 自修复边界按影响面升级。新增 `codey/adapter_surface.py`，把修复面
+  定义为"单个 provider 的 driver + 共享网页适配层"（`web_provider.py`、
+  `web_driver.py`、`web_drivers/common.py`、provider profiles/controls/flow/
+  send-loop/submission/timeouts、clipboard、browser）。由于修复安装在
+  per-provider override root 下，改 override 内的共享文件不会泄漏进其他
+  provider 的运行路径。`repair_policy.validate_candidate()` 不再把共享文件当
+  违规，而是把改动分类为 `provider_local` / `shared_web_surface` /
+  `profile_data`；改动扫描覆盖 `*.py` 与 `*.json`（forbidden-snippet 扫描仍只
+  针对 Python）。`_run_static_checks()` 按影响升级验证：改共享层必须整体
+  import web provider 层，改 profile 数据必须通过 schema load。tests 与 Codey
+  core runtime 仍然拒绝。修复 prompt 改为陈述真实边界（只改网页适配面、
+  运行在 provider 级 override 沙箱、不得改测试与 core runtime）。
+  `adapter_overrides.adapter_base_hash()` 把修复面上的 JSON 纳入 hash，
+  内置 `provider_profiles.json` 变更会使旧 override 失效。
+- Provider id 规范化彻底统一：`adapter_overrides.py`、`provider_supervisor.py`、
+  `self_repair.py`、`repair_policy.py` 中的本地 `_provider_id()` 全部改为委托
+  `provider_ids.normalize_provider_id()`。
+- 各站点 driver 移入 providers 包：`codey/{deepseek,qwen,mimo,stepfun,glm}.py`
+  迁移为 `codey/providers/web_drivers/*.py`，`providers/driver_common.py`
+  迁移为 `providers/web_drivers/common.py`。`web_provider.py` 从新位置导入
+  driver，driver 改为引用同包的 `common`，不再回穿 providers 包 init——
+  冷启动脆弱形状消除。`web_drivers/__init__.py` 刻意保持无 import。
+- `UiStateStore.save()` 的缓存快路径假设每个 `state_home` 只有一个 Codey
+  server 写入；该单写者假设已在代码中文档化。
 
 - 新增 `codey/completion_verification.py`：把 coding verification 语义从
   `task_runner.py` 抽成纯投影——tri-state freshness（`fresh_pass` /

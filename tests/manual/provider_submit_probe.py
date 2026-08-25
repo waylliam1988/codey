@@ -9,8 +9,9 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import deepseek, glm, mimo, provider_controls, qwen, stepfun
+from codey import provider_controls
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
+from codey.providers.web_drivers import deepseek, glm, mimo, qwen, stepfun
 
 
 PROVIDER_MODULES = {

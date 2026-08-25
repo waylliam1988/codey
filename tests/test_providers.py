@@ -7,7 +7,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey import cancellation, deepseek, glm, mimo, qwen, stepfun
+from codey import cancellation
+from codey.providers.web_drivers import deepseek, glm, mimo, qwen, stepfun
 from codey.adapter_overrides import AdapterOverride
 from codey.provider_diagnostics import FAILURE_RESPONSE_MISSING, ProviderActionError
 from codey.providers import (

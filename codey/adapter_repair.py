@@ -17,6 +17,8 @@ from codey.provider_diagnostics import FAILURE_READINESS_STALE, sanitize_failure
 from codey.provider_worker import WorkerChatProvider
 from codey.repair_journal import RepairJournal
 from codey.repair_policy import (
+    IMPACT_PROFILE_DATA,
+    IMPACT_SHARED_WEB_SURFACE,
     allowed_adapter_files,
     readonly_reference_files,
     validate_candidate,
@@ -65,7 +67,7 @@ def run_adapter_repair(
             error = "; ".join(policy.errors)
             journal.append("adapter_repair_rejected", provider=provider_id, error=error)
             return AdapterRepairResult(False, provider_id, error=error, changed_files=policy.changed_files)
-        tests = _run_static_checks(provider_id, sandbox.candidate_root)
+        tests = _run_static_checks(provider_id, sandbox.candidate_root, impact=policy.impact)
         failed = tuple(item for item in tests if item.startswith("failed:"))
         if failed:
             error = "; ".join(failed)
@@ -136,7 +138,10 @@ def _render_repair_prompt(
     return (
         "Repair this Codey web provider adapter in a temporary sandbox.\n"
         f"Provider: {provider_id}\n"
-        f"You may modify only: {allowed}\n"
+        "You may modify only the web adapter surface listed below:\n"
+        f"{allowed}\n"
+        "This repair runs in a provider-scoped override sandbox.\n"
+        "Do not modify tests or Codey core runtime.\n"
         f"Tests are read-only references and must not be modified: {readonly}\n"
         "Return one JSON object only, with this shape:\n"
         f'{{"files":[{{"path":"{example_path}","content":"full replacement text"}}]}}\n'
@@ -204,14 +209,38 @@ def _apply_model_reply(provider_id: str, root: Path, reply: str) -> None:
         path.write_text(content, encoding="utf-8")
 
 
-def _run_static_checks(provider_id: str, root: Path) -> tuple[str, ...]:
+_WEB_ADAPTER_IMPORT_SCRIPT = (
+    "from codey.providers.web_provider import WEB_PROVIDER_CLASSES\n"
+    "assert WEB_PROVIDER_CLASSES\n"
+)
+_PROFILES_SCHEMA_LOAD_SCRIPT = (
+    "from pathlib import Path\n"
+    "from codey.provider_profiles import load_profiles\n"
+    "load_profiles(Path('codey/provider_profiles.json'))\n"
+)
+
+
+def _run_static_checks(
+    provider_id: str,
+    root: Path,
+    impact: tuple[str, ...] = (),
+) -> tuple[str, ...]:
     commands: list[tuple[str, list[str]]] = []
-    adapter_files = list(allowed_adapter_files(provider_id))
-    if adapter_files:
-        commands.append(("py_compile", [sys.executable, "-B", "-m", "py_compile", *adapter_files]))
-        commands.append(("ruff", [sys.executable, "-m", "ruff", "check", *adapter_files]))
+    python_files = [
+        rel for rel in allowed_adapter_files(provider_id) if rel.endswith(".py")
+    ]
+    if python_files:
+        commands.append(("py_compile", [sys.executable, "-B", "-m", "py_compile", *python_files]))
+        commands.append(("ruff", [sys.executable, "-m", "ruff", "check", *python_files]))
     test_module = f"tests.test_{provider_id}"
     commands.append(("provider_unittest", [sys.executable, "-B", "-m", "unittest", test_module]))
+    # Escalate validation with the candidate's blast radius: a shared-surface
+    # edit must still import the whole web adapter layer, and a profile-data
+    # edit must still load through the schema.
+    if IMPACT_SHARED_WEB_SURFACE in impact:
+        commands.append(("web_adapter_import", [sys.executable, "-B", "-c", _WEB_ADAPTER_IMPORT_SCRIPT]))
+    if IMPACT_PROFILE_DATA in impact:
+        commands.append(("profiles_schema_load", [sys.executable, "-B", "-c", _PROFILES_SCHEMA_LOAD_SCRIPT]))
     results: list[str] = []
     for name, command in commands:
         try:
