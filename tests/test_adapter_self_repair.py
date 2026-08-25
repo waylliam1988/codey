@@ -844,15 +844,16 @@ class SelfRepairWorkerTests(unittest.TestCase):
                 "--port",
                 "9555",
                 "--profile",
-                "state/provider-workers/qwen/generation-3",
+                "state/provider-workers/qwen",
             ])
 
         self.assertEqual(code, 0)
-        # The override worker never attaches to the user's default profile.
+        # The override worker never attaches to the user's default profile;
+        # the child resolves the path before connecting.
         connect_profile = provider_type.connect.call_args.kwargs["profile"]
         self.assertEqual(
             connect_profile,
-            Path("state/provider-workers/qwen/generation-3"),
+            Path("state/provider-workers/qwen").expanduser().resolve(),
         )
         event = json.loads(stdout.getvalue().splitlines()[0])
         self.assertEqual(event["event"], "page")
@@ -873,7 +874,45 @@ class SelfRepairWorkerTests(unittest.TestCase):
         self.assertNotEqual(raised.exception.code, 0)
         provider_type.connect.assert_not_called()
 
-    def test_provider_worker_launches_with_per_generation_profile_and_stderr_drain(self) -> None:
+    def test_provider_worker_child_fails_closed_on_default_profile(self) -> None:
+        from codey.browser import DEFAULT_PROFILE
+
+        provider_type = mock.Mock()
+        with (
+            mock.patch.dict(provider_worker_child.PROVIDER_TYPES, {"qwen": provider_type}),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            provider_worker_child.main([
+                "--provider",
+                "qwen",
+                "--port",
+                "9555",
+                "--profile",
+                str(DEFAULT_PROFILE),
+            ])
+
+        self.assertNotEqual(raised.exception.code, 0)
+        provider_type.connect.assert_not_called()
+
+    def test_provider_worker_child_fails_closed_on_empty_profile(self) -> None:
+        provider_type = mock.Mock()
+        with (
+            mock.patch.dict(provider_worker_child.PROVIDER_TYPES, {"qwen": provider_type}),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            provider_worker_child.main([
+                "--provider",
+                "qwen",
+                "--port",
+                "9555",
+                "--profile",
+                "   ",
+            ])
+
+        self.assertNotEqual(raised.exception.code, 0)
+        provider_type.connect.assert_not_called()
+
+    def test_provider_worker_launches_with_stable_provider_profile_and_stderr_drain(self) -> None:
         override = mock.Mock()
         override.root = Path("override")
         override.generation = 7
@@ -892,7 +931,9 @@ class SelfRepairWorkerTests(unittest.TestCase):
         cmd = popen.call_args.args[0]
         self.assertIn("--profile", cmd)
         profile_arg = Path(cmd[cmd.index("--profile") + 1])
-        expected_tail = Path("state") / "provider-workers" / "qwen" / "7"
+        # Stable per-provider directory: a generation change must not lose
+        # the browser login that makes background canaries seamless.
+        expected_tail = Path("state") / "provider-workers" / "qwen"
         self.assertEqual(profile_arg, expected_tail)
         self.assertIsNotNone(popen.call_args.kwargs.get("stderr"))
         self.assertNotEqual(popen.call_args.kwargs.get("stderr"), subprocess.DEVNULL)

@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from codey.browser import DEFAULT_PROFILE
 from codey.providers.registry import PROVIDER_TYPES
 
 
@@ -18,13 +19,24 @@ def main(argv: list[str] | None = None) -> int:
     # user's default browser profile from a second CDP port.
     parser.add_argument("--profile", required=True)
     args = parser.parse_args(argv)
+
+    profile_text = args.profile.strip()
+    if not profile_text:
+        parser.error("--profile must be a non-empty path")
+    try:
+        profile = Path(profile_text).expanduser().resolve()
+    except (OSError, RuntimeError, ValueError):
+        parser.error(f"--profile is not a usable path: {args.profile!r}")
+    if profile == DEFAULT_PROFILE.resolve():
+        parser.error("refusing the user's default browser profile")
+
     provider_type = PROVIDER_TYPES.get(args.provider)
     if provider_type is None:
         return 2
     try:
         provider = provider_type.connect(
             port=args.port,
-            profile=Path(args.profile),
+            profile=profile,
             open_if_missing=True,
             bring_to_front=False,
             isolated=False,

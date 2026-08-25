@@ -95,14 +95,13 @@ class WorkerChatProvider:
         existing = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = str(self.override.root) + (os.pathsep + existing if existing else "")
         env["CODEY_PROVIDER_WORKER_CHILD"] = "1"
-        # The worker gets its own browser profile per provider/generation:
-        # attaching to the user's default profile from a second CDP port
-        # either fails on the profile lock or corrupts session state.
+        # Stable per-provider browser profile: the generation identifies the
+        # code override, not the browser identity, so one manual login keeps
+        # every later override generation usable without re-auth prompts.
         worker_profile = (
             Path(self.state_home)
             / "provider-workers"
             / self.provider_id
-            / str(self.override.generation)
         )
         cmd = [
             sys.executable,
