@@ -56,7 +56,7 @@ from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
-from codey.providers.registry import connect_fresh_provider_tab, provider_ids
+from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_fresh_provider_tab, provider_ids
 from codey.research.runner import ResearchRunResult
 from codey.review import ReviewResult
 from codey.task_runner import TaskRequest, TaskRunner
@@ -163,6 +163,16 @@ def classify_outcome(
     return "ok"
 
 
+def _task_request_provider_id(provider_id: str) -> str:
+    normalized = str(provider_id or "").strip().lower()
+    if normalized in LIVE_PROVIDERS:
+        return normalized
+    # ``fake`` is a harness/reporting label. TaskRunner should still see a
+    # real production provider id so offline probes do not exercise an
+    # unsupported-provider path.
+    return DEFAULT_PROVIDER_ID
+
+
 def run_cases(
     *,
     provider_id: str,
@@ -180,6 +190,7 @@ def run_cases(
             row = _run_case(
                 case,
                 arm=arm,
+                provider_id=provider_id,
                 provider_factory=provider_factory,
                 live=live,
                 max_turns=max_turns,
@@ -198,6 +209,11 @@ def run_cases(
                 )
             _write_progress(output, provider_id, rows, complete=False)
     payload = _payload(provider_id, rows, complete=True)
+    if journal is not None:
+        journal.record_run_complete(
+            rows=len(rows),
+            status="done" if payload.get("ok") else "failed",
+        )
     _write_progress(output, provider_id, rows, complete=True)
     return payload
 
@@ -206,13 +222,16 @@ def _run_case(
     case: ContinuityCase,
     *,
     arm: str,
-    provider_factory: Callable[[str], Any] | None,
+    provider_factory: Callable[[str], Any] | None = None,
+    provider_id: str = "fake",
     live: bool = False,
     max_turns: int = 8,
     journal: ABJournalWriter | None = None,
 ) -> dict[str, Any]:
     started = time.time()
     gate_open = arm == "continuity"
+    requested_provider = str(provider_id or "").strip().lower() or "fake"
+    task_provider = _task_request_provider_id(requested_provider)
     raw_provider = None
     tracing_provider: TracingProvider | None = None
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -314,7 +333,7 @@ def _run_case(
                     task=case.task,
                     max_turns=max_turns,
                     continue_task=False,
-                    provider_id="deepseek",
+                    provider_id=task_provider,
                     intent="auto",
                 )
                 if gate_patch is not None:
@@ -375,6 +394,9 @@ def _run_case(
         "gate_open": gate_open,
         "expected_mode": case.expected_mode,
         "observed_mode": observed_mode,
+        "requested_provider": requested_provider,
+        "task_provider": task_provider,
+        "observed_provider": str(done.get("provider") or ""),
         "exact": exact,
         "error": error,
         "admitted": bool(admitted_text),

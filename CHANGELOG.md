@@ -4,7 +4,7 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## 0.4.12 (Unreleased) - Ghost Research Continuity + Topic Planner v1
+## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 
 - New `codey/research/topic_continuity.py`: a stdlib-only pure read model
   that projects bounded local facts (structured research-interest hints,
@@ -67,7 +67,10 @@ This file records Codey's release history. The newest release appears first.
   a provider/native-web-search diagnostic, not planner quality), or
   `planner_quality:<stop_reason>`. Live runs journal through
   `ABJournalWriter`; `--transcript-mode digest-only|archive|off` controls
-  transcript retention in the manual layer only.
+  transcript retention in the manual layer only. The harness now carries the
+  selected provider id into the production `TaskRequest` and writes a terminal
+  `run_complete` journal event, so live smoke provider attribution and
+  manifest status match the run that actually executed.
 - Verification: architecture tests lock topic_continuity as an I/O-free leaf
   and keep the whole research stack Ghost-import-free; capability registry,
   permission profiles, runner/pipeline forwarding, and TaskRunner admission

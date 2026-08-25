@@ -4,7 +4,7 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## 0.4.12 (Unreleased) - Ghost Research Continuity + Topic Planner v1
+## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 
 - 新增 `codey/research/topic_continuity.py`：stdlib-only 的纯 read model，
   把有界的本地事实（结构化 research-interest hints、Ghost continuity 选中
@@ -57,7 +57,10 @@
   （send 超时或有 send 无 reply——属于 provider/原生网页搜索诊断，不算
   planner 质量）、`planner_quality:<stop_reason>` 三类归因。live 运行通过
   `ABJournalWriter` 记录 journal；`--transcript-mode digest-only|archive|off`
-  只控制 manual 层的 transcript 保留策略。
+  只控制 manual 层的 transcript 保留策略。harness 现在会把实际选择的
+  provider id 传进生产 `TaskRequest`，并在矩阵结束时写 terminal
+  `run_complete` journal event，因此 live smoke 的 provider 归因和 manifest
+  状态都对应真实执行的 run。
 - 验证：架构测试把 topic_continuity 锁成无 I/O leaf，并锁死整个 research
   栈不得 import Ghost；capability registry、permission profiles、runner/
   pipeline 转发、TaskRunner admission 均有 deterministic 测试，外加 harness

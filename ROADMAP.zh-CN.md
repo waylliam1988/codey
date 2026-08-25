@@ -2413,11 +2413,12 @@ prompt、tool schema、Research 默认路径、Writer handoff、planner 默认�
 done 行为。live smoke 只用于诊断 provider/journal 路径；要宣称超过 baseline /
 OpenScience 时，才需要正式 comparison / head-to-head。
 
-## 0.4.12 (Unreleased) - Ghost Research Continuity + Topic Planner v1
+## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 
-状态：代码完成，未发布（deterministic 全量测试通过；narrow offline A/B 通过；
-release 前还需一轮 narrow live provider smoke）。目标是让 Codey 可以连续追踪
-长期研究主题，并把开放问题转成 topic-level plan，但不让记忆污染事实。
+状态：已完成（0.4.12）。目标是让 Codey 可以连续追踪长期研究主题，并把开放
+问题转成 topic-level plan，但不让记忆污染事实。发布证据见 `TEST_REPORT.md`；
+真实 provider smoke 只证明 provider/journal 路径和失败归因，不宣称统计显著性、
+现实正确性或超过 OpenScience。
 
 落地形态比原规划更薄：
 
@@ -2522,7 +2523,7 @@ provider profile 增加 response_order = newest_first | oldest_first 元数据�
 compact / quarantine / bounded warnings 基础件给 hebbian 与 affinity 共用
 （本轮已落地第一片 numbers.py）；等"是否改变排序"的观测数据足够，
 再评估把学习公式简化成朴素 priority hint projection
-ghost_research_continuity_ab.py 拆出共享 seed fixture helper（当前 seeding/
+ghost_research_continuity_ab.py 可再抽共享 seed fixture helper（当前 seeding/
 proof helpers 与确定性测试有受控重复；评测脚本层，无生产影响）
 ```
 
@@ -2540,8 +2541,10 @@ provider live smoke 至少能把 native-search stuck / send_error 与 Codey tool
 
 ### A/B
 
-需要。它会改变 Research prompt 的模型可见 continuity，必须复用 0.4.6 journal，
-并记录 UI interruption、unsupported claim、stale-source handling 和 follow-up usefulness。
+需要。它改变了 Research prompt 的模型可见 continuity，因此 release 证据必须
+至少包含 deterministic/self-test 和 narrow provider smoke 或明确的 provider-state
+诊断；更大的统计 A/B、真实 OpenScience head-to-head 仍只在需要发布相应 claim
+时执行。
 
 ## 0.4.13 - Verified Completion Enforcement + Repair Context Admission v1
 

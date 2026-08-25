@@ -95,6 +95,25 @@ the same fixture completed (`score=6`, one follow-up round, two sources). When
 diagnosing Qwen stalls, rerun one arm per fresh chat or use
 `qwen_submit_probe.py` before treating the paired result as release evidence.
 
+`ghost_research_continuity_ab.py` is the 0.4.12 narrow production-spine A/B for
+Research topic continuity. Both arms seed the same local research state; the
+only difference is whether the `research_topic_continuity` context source is
+admitted into the Research prompt. The harness verifies provider identity,
+digest-only payloads, stale prior-claim refs, internal-term leakage, and
+provider/native-search failure attribution. Live journaling is digest-only by
+default, `archive` is available for prompt-lab diagnosis, and every completed
+run writes a terminal `run_complete` event.
+
+```powershell
+python -B tests\manual\ghost_research_continuity_ab.py --self-test
+python -B tests\manual\ghost_research_continuity_ab.py `
+  --provider deepseek `
+  --case old-claim-must-be-rechecked `
+  --max-turns 4 `
+  --transcript-mode digest-only `
+  --output tests\manual\results\ghost_research_continuity_ab-deepseek.json
+```
+
 
 `changeset_review_ab.py` compares the old path-only Review prompt with the
 current ChangeSet-summary prompt. It sends fixed review-only diffs to one live

@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.11-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.12-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.11`
+Version: `0.4.12`
 
 [Version history](CHANGELOG.md)
 
@@ -42,6 +42,10 @@ Version: `0.4.11`
   prompt envelope manifest, so the sections bound to a provider-send attempt
   are auditable by digest, source refs, and context epochs without saving raw
   prompts.
+- **Pick up Research where it left off**: Research can receive a short,
+  explicitly non-evidence continuity hint about prior open questions, stale
+  claim refs, and suggested next topics. It can guide what to re-check, but it
+  cannot create citations, evidence, or background web activity.
 - **Keep internal capability boundaries explicit**: Codey keeps a read-only map
   of built-in capabilities and their policy/model-visible/state boundaries
   without exposing a plugin system or changing task behavior.
@@ -926,6 +930,8 @@ codey/
   research/                 Research controller/runner/pipeline, source connectors, planner dry-run/executor, done citation compiler, evidence ledger, object model, report/proof quality gates
     context.py              narrow ResearchPipeline context/config and trace sink
     pipeline.py             Research lifecycle owner and bounded follow-up orchestration
+    topic_continuity.py     bounded non-evidence continuity and topic-candidate projection
+    regression_gate.py      deterministic evaluation-spine regression read model
     plan_executor.py        bounded fresh-material ResearchPlan execution
     evidence_followup.py    single-turn knowledge_write-only evidence extraction
     record_merge.py         deterministic evidence patch merge and citation re-indexing

@@ -1,5 +1,67 @@
 # Codey Test Report
 
+## 0.4.12 Ghost Research Continuity + Topic Planner v1
+
+Codey 0.4.12 lets a new Research run receive a tiny, explicitly
+non-evidence continuity block from prior local research state. The block can
+surface previous open questions, stale prior-claim refs, preference/framing
+hints, and deterministic next-topic candidates, but it cannot create facts,
+citations, evidence refs, or background network activity. It enters Research
+only as the `research_topic_continuity` context source, through the research
+permission profile and Safe Context Epoch admission, then lands in its own
+prompt section rather than the follow-up `research_iteration_context`.
+
+The main implementation is `codey/research/topic_continuity.py`, a stdlib-only
+projection leaf. It consumes bounded mappings and selected continuity items
+handed in by `TaskRunner._build_research_topic_continuity()`, plus prior
+EvidenceLedger claim refs. `ResearchPipeline` only forwards the resulting
+bounded text/payload through `ResearchContext`; the research package does not
+import the Ghost runtime. `RunTraceRecorder.record_research_topic_continuity`
+writes refs/counts/reason-codes/digests only, and requires a well-formed
+sent-bytes `ctx_epoch:<16 hex>` binding before it records an admitted row.
+The 0.4.12 CI-fix patch also keeps `fake` as a manual harness/reporting label
+only; offline probes now send a real production provider id into
+`TaskRequest`, while live smoke rows preserve the selected provider identity.
+
+Refactor debt paid: `_run_research_pipeline()` is thinner because Research
+context assembly and continuity projection now live behind narrow helpers, and
+all Ghost unit-float parsing now shares `codey/ghost/numbers.py` instead of
+each store keeping its own NaN/bool/range behavior. The five web-provider
+wrappers also share `codey/providers/web_driver.py` for send/new-chat deadline
+coverage and `response_missing` classification.
+
+Release validation on 2026-08-25:
+
+```powershell
+python -B -m pytest tests\test_ghost_research_continuity_ab.py
+# 9 passed
+
+python -B tests\manual\ghost_research_continuity_ab.py --self-test
+# self-test ok
+
+python -B -m pytest tests\test_ghost_research_continuity_ab.py tests\test_manual_ab_harness_common.py tests\test_ab_observation_journal.py tests\test_transcript_replay_cache.py
+# 46 passed
+
+python -B -m pytest tests\test_architecture.py -q
+# 41 passed, 232 subtests passed
+
+python -B tests\manual\ghost_research_continuity_ab.py --provider deepseek --case old-claim-must-be-rechecked --max-turns 4 --transcript-mode digest-only --output tests\manual\results\ghost_research_continuity_ab-deepseek-0.4.12-smoke-20260825.json
+# ok: true
+# baseline exact: 1/1, continuity exact: 1/1
+# continuity admitted: 1, prior_claims_flagged: 1, internal_leaks: 0
+# observed_provider: deepseek in both rows
+# journal manifest status: done
+
+python -m pytest -q
+# 2759 passed, 10 skipped, 835 subtests passed in 258.71s (0:04:18)
+```
+
+The DeepSeek live smoke is intentionally narrow. Both arms stopped at
+`max_turns`, so it is release evidence for the production admission path,
+provider identity, journal completion, stale-ref carriage, and no internal-term
+leak; it is not evidence that Research quality improved or that Codey
+outperforms any external system.
+
 ## 0.4.11 Evaluation spine: regression gate + longitudinal harness + comparison benchmark
 
 Codey 0.4.11 adds the evaluation layer that lets later versions compare

@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.11-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.12-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.11`
+版本：`0.4.12`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -38,6 +38,9 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 - **安静追踪模型输入组成**：每次 run 可以保存有界 prompt envelope manifest，
   用 digest、source refs 和 context epoch 审计哪些 section 被绑定到
   provider-send attempt，但不保存 raw prompt。
+- **接着上次 Research 往下查**：Research 启动时可以看到一小段明确标注为
+  “不是证据”的 continuity 提示，包括旧开放问题、需要复查的 claim refs 和下一步
+  主题建议。它只能帮助决定该复查什么，不能生成 citation、evidence 或后台联网。
 - **内部能力边界明确**：Codey 会维护一份只读的内置能力地图，登记 policy、
   模型可见输入和本地状态边界；它不暴露插件系统，也不改变任务行为。
 - **工具结果按受众分层**：本地工具现在通过一份干净契约返回给模型看的有界文本、
@@ -783,6 +786,8 @@ codey/
   research/                 Research controller/runner/pipeline、共享 citation scanner、source connector、planner dry-run/executor、done citation compiler、evidence ledger、object model、report/proof quality gate
     context.py              狭窄的 ResearchPipeline context/config 和 trace sink
     pipeline.py             Research 生命周期 owner 和 bounded follow-up 编排
+    topic_continuity.py     有界、非证据的 continuity 和 topic candidate 投影
+    regression_gate.py      确定性的评测脊柱 regression read model
     plan_executor.py        有界 fresh-material ResearchPlan 执行器
     evidence_followup.py    单轮 knowledge_write-only evidence 提取
     record_merge.py         确定性 evidence patch merge 和引用重编号
