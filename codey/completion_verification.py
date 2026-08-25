@@ -18,10 +18,10 @@ Three vocabularies live here:
 - Deterministic failure classification: ``product_failure`` /
   ``environment_failure`` / ``verification_unavailable`` /
   ``provider_failure`` / ``unknown``. Classification is rule-based on
-  observed exit/error codes plus a closed vocabulary of line-anchored
-  output signatures that name the execution environment (missing
-  dependency or tool, network failure, test-infra crash); it is not a
-  critic and never diagnoses.
+  observed exit/error codes plus a closed vocabulary of reason-coded,
+  line-anchored output signatures that name the execution environment
+  (missing dependency or tool, network failure, test-infra crash); it is
+  not a critic and never diagnoses.
 """
 
 from __future__ import annotations
@@ -97,37 +97,80 @@ FAILURE_CLASSES = frozenset({
     FAILURE_UNKNOWN,
 })
 
+@dataclass(frozen=True)
+class EnvironmentFailureSignature:
+    """One closed reason group of line-initial diagnostic signatures."""
+
+    reason_code: str
+    prefixes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class EnvironmentFailureMatch:
+    """One auditable match against the environment-failure vocabulary."""
+
+    matched: bool
+    reason_code: str = ""
+    signature: str = ""
+
+
 # Closed vocabulary of observed-output signatures whose non-zero exit names
 # the execution environment -- not the changed code: a missing interpreter
 # dependency or tool, a network-dependent test, or a crashed test runner.
-# Matching is line-anchored (see ``environment_failure_signal``): a
-# signature only counts when it begins its diagnostic line, so a product
-# assertion that merely quotes these words never matches.
+# Signatures live in reason-coded groups so every classification is
+# auditable down to which phrase decided it. Matching is line-anchored (see
+# ``match_environment_failure``): a signature only counts when it begins its
+# diagnostic line, so a product assertion that merely quotes these words
+# never matches.
 ENVIRONMENT_FAILURE_SIGNATURES = (
-    # missing python dependency / module
-    "modulenotfounderror",
-    "no module named",
-    "importerror: dll load failed",
-    # missing executable or node module
-    "command not found",
-    "is not recognized as an internal or external command",
-    "cannot find module",
-    "err_module_not_found",
-    # missing package / unresolvable install
-    "no matching distribution found",
-    "could not find a version that satisfies",
-    # network-dependent tests and downloads
-    "could not resolve host",
-    "temporary failure in name resolution",
-    "connection refused",
-    "connection reset by peer",
-    "etimedout",
-    "econnrefused",
-    "enotfound",
-    # test-infrastructure crashes
-    "internalerror",
-    "segmentation fault",
-    "core dumped",
+    EnvironmentFailureSignature(
+        "missing_python_dependency",
+        (
+            "modulenotfounderror",
+            "no module named",
+            "importerror: dll load failed",
+        ),
+    ),
+    EnvironmentFailureSignature(
+        "missing_executable_or_module",
+        (
+            "command not found",
+            "is not recognized as an internal or external command",
+            "cannot find module",
+            "err_module_not_found",
+        ),
+    ),
+    EnvironmentFailureSignature(
+        "unresolvable_package",
+        (
+            "no matching distribution found",
+            "could not find a version that satisfies",
+        ),
+    ),
+    EnvironmentFailureSignature(
+        "network_unavailable",
+        (
+            "could not resolve host",
+            "temporary failure in name resolution",
+            "connection refused",
+            "connection reset by peer",
+            "etimedout",
+            "econnrefused",
+            "enotfound",
+        ),
+    ),
+    EnvironmentFailureSignature(
+        "test_infrastructure_crash",
+        (
+            "internalerror",
+            "segmentation fault",
+            "core dumped",
+        ),
+    ),
+)
+
+ENVIRONMENT_FAILURE_REASON_CODES = frozenset(
+    group.reason_code for group in ENVIRONMENT_FAILURE_SIGNATURES
 )
 
 # Runner banners that may precede a diagnostic line, plus the structured
@@ -196,22 +239,26 @@ def _diagnostic_lines(*texts: object) -> Iterator[str]:
             yield line.casefold()
 
 
-def environment_failure_signal(*texts: object) -> bool:
-    """Whether an observed diagnostic line names the environment as cause.
+def match_environment_failure(*texts: object) -> EnvironmentFailureMatch:
+    """Project observed output onto the environment-failure vocabulary.
 
     Anchored matching: a signature counts only when it begins a diagnostic
     line once runner banners and tool-name heads are stripped. Real runner
     output prints these signatures as their own diagnostic; a product
     assertion quoting the same words mid-sentence --
     ``E   AssertionError: cannot find module`` -- never matches, so a
-    fixable failure is never misread as an environment problem.
+    fixable failure is never misread as an environment problem. The match
+    names its reason code and deciding signature instead of returning a
+    bare bool, so a live-A/B misjudgment becomes one new test plus one
+    reason code -- never a smarter classifier.
     """
 
-    return any(
-        line.startswith(signature)
-        for line in _diagnostic_lines(*texts)
-        for signature in ENVIRONMENT_FAILURE_SIGNATURES
-    )
+    for line in _diagnostic_lines(*texts):
+        for group in ENVIRONMENT_FAILURE_SIGNATURES:
+            for prefix in group.prefixes:
+                if line.startswith(prefix):
+                    return EnvironmentFailureMatch(True, group.reason_code, prefix)
+    return EnvironmentFailureMatch(False)
 
 
 @dataclass(frozen=True)
@@ -506,7 +553,8 @@ def classify_verification_failure(
             # The command never produced a process exit: approval denied,
             # timeout, spawn failure. That is not evidence the code broke.
             return FAILURE_ENVIRONMENT
-        if environment_failure_signal(error_code, decisive_result_summary):
+        match = match_environment_failure(error_code, decisive_result_summary)
+        if match.matched:
             # The process exited non-zero, but its own diagnostic lines
             # name the execution environment as the cause, not the edit.
             return FAILURE_ENVIRONMENT
@@ -537,7 +585,10 @@ def repairable_failure_class(failure_class: str) -> bool:
 
 __all__ = [
     "CODING_CHECK_RELEVANT_VERIFICATION",
+    "ENVIRONMENT_FAILURE_REASON_CODES",
     "ENVIRONMENT_FAILURE_SIGNATURES",
+    "EnvironmentFailureMatch",
+    "EnvironmentFailureSignature",
     "FAILURE_CLASSES",
     "FAILURE_ENVIRONMENT",
     "FAILURE_PRODUCT",
@@ -566,8 +617,8 @@ __all__ = [
     "coding_completion_limitations",
     "coding_verification_state",
     "decisive_failure_fact",
-    "environment_failure_signal",
     "matching_analysis_run_refs",
+    "match_environment_failure",
     "relevant_verification_pairs",
     "repairable_failure_class",
     "verification_provenance",

@@ -45,6 +45,17 @@
   provider-send bytes、按 digest 去重，只落 counts/classes/reason codes；
   raw 失败文本没有字段可存。admission row 在 `agent.run` 的 send boundary
   落账：assembled ≠ admitted ≠ recorded 由构造保证。
+- RunTrace protocol telemetry（P0a，trace-only）：新增有界的
+  `protocol_telemetry` manifest 区块，按 phase 记录 JSON 工具协议事实——
+  codec 身份（`json` / `research_json`）与 model/runtime tool-contract
+  hash、按 kind 的协议错误计数、protocol repair prompt 计数、以及哪些
+  provider turn 解析出可执行 plan（`first_valid_turn`、有界
+  `valid_turns`）。未知工具只落 digest 加可选的安全短标识符；raw prompt、
+  reply、error 没有字段可存。四个 recorder 方法
+  （`record_protocol_codec` / `record_protocol_error` /
+  `record_protocol_repair_prompt` / `record_protocol_valid_turn`）接入
+  coding writer 循环与 research runner；没有任何行为读取它们——release
+  A/B 更可解释，而运行时风险为零。
 - Capability registry：新增 `completion_repair_context` capability
   （model-visible、fail-closed、canonical input `completion_contract`），
   并新增 `live_ab` release gate；`completion_contract` 保持 trace/data-only。
@@ -63,10 +74,13 @@
     永远不超过 `max_turns`。
   - 失败分类读取 decisive check 的有界输出尾部：非零 exit 但输出指名执行
     环境（缺依赖或缺工具如 `No module named pytest`、依赖网络的测试、测试
-    设施崩溃）时，按行首锚定的闭合签名词表
-    （`ENVIRONMENT_FAILURE_SIGNATURES`）判为 `environment_failure`——剥掉
-    runner 横幅与小写工具名头部后，签名必须位于诊断行的行首。仅引用这些
-    词的断言差异（`E   AssertionError: cannot find module`、
+    设施崩溃）时，按行首锚定、带 reason code 的闭合签名词表
+    （`ENVIRONMENT_FAILURE_SIGNATURES`，五个 reason 组）判为
+    `environment_failure`——剥掉 runner 横幅与小写工具名头部后，签名必须
+    位于诊断行的行首；每次匹配都给出 reason code 与决定性签名
+    （`match_environment_failure`），live A/B 发现误判时是加一个测试加一个
+    reason code，而不是把分类器变聪明。仅引用这些词的断言差异
+    （`E   AssertionError: cannot find module`、
     `assert 'connection refused' == 'connected'`）仍判为 product failure，
     并有 negative tests 锁定该边界。
   - repair admission 必须有安全的 decisive check facts：当全部 decisive

@@ -10,6 +10,7 @@ from codey import agent, cancellation
 from codey.agent_tools import AgentToolFns
 from codey.events import render_run_event
 from codey.handoff import ConversationContext, ConversationSnapshot
+from codey.run_trace import RunTraceStore
 from codey import tool_runtime
 from codey.work_checkpoint import (
     CheckpointCheck,
@@ -2706,6 +2707,92 @@ class RunLoopTests(unittest.TestCase):
         self.assertEqual(result.stop_reason, "done")
         self.assertFalse(result.checks_passed)
         self.assertFalse(any("trusted local check" in prompt for prompt in provider.sent))
+
+
+class ProtocolTelemetryTests(unittest.TestCase):
+    def test_native_tool_denial_counts_error_repair_prompt_and_valid_turn(self) -> None:
+        denial = (
+            "Sorry, the read_file tool does not exist on this website, "
+            "so I cannot proceed."
+        )
+        done = '{"tool":"done","args":{"summary":"finished"}}'
+        provider = FakeProvider(denial, done)
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(Path(td) / "state")
+            trace = store.open(
+                run_id="run-telemetry",
+                session_id="session-telemetry",
+                project=Path(td),
+                mode_initial="project",
+                provider_initial="fake",
+            )
+            result = agent.run(
+                provider,
+                Path(td),
+                "Read the page then finish",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                trace_recorder=trace,
+            )
+            trace.finish(status=result.stop_reason)
+
+            payload = json.loads(
+                store.path_for("session-telemetry", "run-telemetry").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        writer = payload["protocol_telemetry"]["phases"]["writer"]
+        self.assertEqual(writer["codec_name"], "json")
+        self.assertEqual(writer["protocol_error_counts"], {"native_tool_denial": 1})
+        self.assertEqual(writer["repair_prompt_counts"], {"native_tool_denial": 1})
+        self.assertEqual(writer["repair_prompt_count"], 1)
+        # Turn 1 denied the protocol; turn 2 parsed the repaired reply.
+        self.assertEqual(writer["valid_turns"], [2])
+        self.assertEqual(writer["first_valid_turn"], 2)
+
+    def test_unknown_tool_lands_as_safe_label_with_digest(self) -> None:
+        unknown = '{"tool":"write_file","args":{"path":"x.py","content":"hi"}}'
+        edit = (
+            '{"tool":"edit","args":{"path":"app.py",'
+            '"old_string":"a","new_string":"b"}}'
+        )
+        done = '{"tool":"done","args":{"summary":"created"}}'
+        provider = FakeProvider(unknown, edit, done)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "app.py").write_text("a\n", encoding="utf-8")
+            store = RunTraceStore(root / "state")
+            trace = store.open(
+                run_id="run-unknown-tool",
+                session_id="session-unknown-tool",
+                project=root,
+                mode_initial="project",
+                provider_initial="fake",
+            )
+            result = agent.run(
+                provider,
+                root,
+                "Create the file with a local tool",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                trace_recorder=trace,
+            )
+            trace.finish(status=result.stop_reason)
+
+            serialized = (
+                store.path_for("session-unknown-tool", "run-unknown-tool")
+                .read_text(encoding="utf-8")
+            )
+
+        tools = json.loads(serialized)["protocol_telemetry"]["phases"]["writer"][
+            "unknown_tools"
+        ]
+        self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0]["label"], "write_file")
+        self.assertEqual(tools[0]["count"], 1)
+        self.assertTrue(tools[0]["digest"].startswith("sha256:"))
 
 
 if __name__ == "__main__":

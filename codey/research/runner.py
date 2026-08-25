@@ -223,6 +223,17 @@ class ResearchRunner:
                 else self.codec.model_tool_contract_hash()
             )
             self.prompt_trace.call(
+                "record_protocol_codec",
+                str(getattr(self.codec, "name", "") or ""),
+                phase="research",
+                model_tool_contract_hash=model_contract_hash,
+                runtime_tool_contract_hash=(
+                    self.codec.model_tool_contract_hash()
+                    if self.controller is not None
+                    else ""
+                ),
+            )
+            self.prompt_trace.call(
                 "record_tool_contract_hash",
                 model_contract_hash,
                 phase="research",
@@ -309,11 +320,30 @@ class ResearchRunner:
             yield RunEvent.turn_started(turn, reply, note=_plan_note(plan))
             if plan.protocol_error and not plan.calls and plan.control is None:
                 protocol_errors += 1
+                self.prompt_trace.call(
+                    "record_protocol_error",
+                    plan.protocol_error_kind,
+                    phase="research",
+                    turn=turn,
+                    tool_name=str(getattr(plan, "protocol_tool_name", "") or ""),
+                )
+                self.prompt_trace.call(
+                    "record_protocol_repair_prompt",
+                    plan.protocol_error_kind,
+                    phase="research",
+                    turn=turn,
+                )
                 if protocol_errors > MAX_PROTOCOL_ERRORS:
                     stop_reason = "protocol"
                     break
                 message = _protocol_repair_prompt(self.codec, plan, control_state)
                 continue
+            if plan.calls or plan.control is not None:
+                self.prompt_trace.call(
+                    "record_protocol_valid_turn",
+                    turn,
+                    phase="research",
+                )
             protocol_errors = 0
             results: list = []
             for index, call in enumerate(plan.calls):

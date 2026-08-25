@@ -2476,3 +2476,177 @@ class BriefProjectionTraceTests(unittest.TestCase):
             # The only claim row had an invalid status, so the projection is
             # treated as half-filled and dropped entirely.
             self.assertEqual(payload["research_brief_projections"], [])
+
+
+class ProtocolTelemetryTests(unittest.TestCase):
+    def _open(self, store: RunTraceStore, run_id: str = "run-protocol") -> object:
+        return store.open(
+            run_id=run_id,
+            session_id="session-protocol",
+            project=None,
+            mode_initial="project",
+            provider_initial="deepseek",
+        )
+
+    def _payload(self, path: Path) -> dict:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def test_protocol_telemetry_records_counts_turns_and_codec(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_protocol_codec(
+                "json",
+                phase="writer",
+                model_tool_contract_hash="sha256:" + "a" * 64,
+            )
+            recorder.record_protocol_error(
+                "native_tool_denial",
+                phase="writer",
+                turn=1,
+            )
+            recorder.record_protocol_repair_prompt(
+                "native_tool_denial",
+                phase="writer",
+                turn=1,
+            )
+            recorder.record_protocol_valid_turn(2, phase="writer")
+            recorder.finish(status="done")
+
+            phases = self._payload(
+                store.path_for("session-protocol", "run-protocol"),
+            )["protocol_telemetry"]["phases"]
+            writer = phases["writer"]
+
+            self.assertEqual(writer["codec_name"], "json")
+            self.assertEqual(writer["model_tool_contract_hash"], "sha256:" + "a" * 64)
+            self.assertEqual(writer["protocol_error_counts"], {"native_tool_denial": 1})
+            self.assertEqual(writer["repair_prompt_counts"], {"native_tool_denial": 1})
+            self.assertEqual(writer["repair_prompt_count"], 1)
+            self.assertEqual(writer["first_valid_turn"], 2)
+            self.assertEqual(writer["valid_turns"], [2])
+
+    def test_protocol_telemetry_keeps_phases_separate_and_counts_repeats(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_protocol_codec("research_json", phase="research")
+            for _ in range(3):
+                recorder.record_protocol_error(
+                    "native_search_leak",
+                    phase="research",
+                    turn=1,
+                )
+            recorder.record_protocol_valid_turn(2, phase="research")
+            recorder.record_protocol_valid_turn(4, phase="research")
+            recorder.finish(status="done")
+
+            phases = self._payload(
+                store.path_for("session-protocol", "run-protocol"),
+            )["protocol_telemetry"]["phases"]
+
+            self.assertNotIn("writer", phases)
+            research = phases["research"]
+            self.assertEqual(research["codec_name"], "research_json")
+            self.assertEqual(research["protocol_error_counts"], {"native_search_leak": 3})
+            self.assertEqual(research["valid_turns"], [2, 4])
+            self.assertEqual(research["first_valid_turn"], 2)
+            self.assertNotIn("repair_prompt_count", research)
+
+    def test_unknown_tool_stays_digest_only_unless_label_is_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            recorder.record_protocol_error(
+                "unknown_tool",
+                phase="writer",
+                turn=1,
+                tool_name="write_file",
+            )
+            # Same digest accumulates; an unsafe label never lands.
+            recorder.record_protocol_error(
+                "disallowed_tool",
+                phase="writer",
+                turn=2,
+                tool_name="write_file",
+            )
+            recorder.record_protocol_error(
+                "unknown_tool",
+                phase="writer",
+                turn=3,
+                tool_name="run my secret tool NOW",
+            )
+            recorder.finish(status="done")
+
+            serialized = json.dumps(
+                self._payload(store.path_for("session-protocol", "run-protocol")),
+                ensure_ascii=False,
+            )
+            tools = json.loads(serialized)["protocol_telemetry"]["phases"]["writer"][
+                "unknown_tools"
+            ]
+
+            self.assertEqual(len(tools), 2)
+            safe = next(item for item in tools if item.get("label"))
+            self.assertEqual(safe["label"], "write_file")
+            self.assertEqual(safe["count"], 2)
+            self.assertEqual(
+                safe["digest"],
+                "sha256:" + hashlib.sha256(b"write_file").hexdigest(),
+            )
+            unsafe = next(item for item in tools if not item.get("label"))
+            self.assertEqual(
+                unsafe["digest"],
+                "sha256:" + hashlib.sha256(b"run my secret tool NOW").hexdigest(),
+            )
+            self.assertEqual(unsafe["count"], 1)
+            self.assertNotIn("run my secret tool NOW".lower(), serialized.lower())
+
+    def test_protocol_telemetry_never_carries_raw_text_and_stays_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+
+            raw_reply = 'RAW_REPLY {"tool":"junk"} RAW_PROTOCOL_ERROR_SHOULD_NOT_BE_SAVED'
+            recorder.record_protocol_codec("json", phase="writer")
+            recorder.record_protocol_error(raw_reply[:40], phase="writer", turn=0)
+            recorder.record_protocol_error("no_json", phase="writer", turn=0)
+            recorder.record_protocol_repair_prompt("", phase="writer", turn=0)
+            for turn in range(1, 80):
+                recorder.record_protocol_valid_turn(turn, phase="writer")
+            recorder.record_protocol_repair_prompt("no_json", phase="writer")
+            recorder.finish(status="done")
+
+            serialized = json.dumps(
+                self._payload(store.path_for("session-protocol", "run-protocol")),
+                ensure_ascii=False,
+            )
+
+            self.assertNotIn("RAW_PROTOCOL_ERROR_SHOULD_NOT_BE_SAVED", serialized)
+            self.assertNotIn("RAW_REPLY", serialized)
+            phases = json.loads(serialized)["protocol_telemetry"]["phases"]
+            writer = phases["writer"]
+            # An unsanitary kind is dropped, never mangled into the trace.
+            self.assertEqual(writer["protocol_error_counts"], {"no_json": 1})
+            self.assertEqual(
+                writer["repair_prompt_counts"],
+                {"unspecified": 1, "no_json": 1},
+            )
+            self.assertEqual(writer["repair_prompt_count"], 2)
+            self.assertTrue(len(writer["valid_turns"]) <= 64)
+            self.assertTrue(writer.get("valid_turns_truncated"))
+
+    def test_empty_protocol_telemetry_projects_empty_phases(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(td)
+            recorder = self._open(store)
+            recorder.finish(status="done")
+
+            telemetry = self._payload(
+                store.path_for("session-protocol", "run-protocol"),
+            )["protocol_telemetry"]
+
+            self.assertEqual(telemetry, {"phases": {}})

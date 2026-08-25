@@ -14,6 +14,8 @@ from codey.completion_contract import (
     CHECK_PASS,
 )
 from codey.completion_verification import (
+    ENVIRONMENT_FAILURE_REASON_CODES,
+    ENVIRONMENT_FAILURE_SIGNATURES,
     LIMITATION_DOCS_ONLY_CHANGE,
     LIMITATION_INHERITED_VERIFICATION,
     LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED,
@@ -37,7 +39,7 @@ from codey.completion_verification import (
     coding_completion_checks,
     coding_verification_state,
     decisive_failure_fact,
-    environment_failure_signal,
+    match_environment_failure,
     matching_analysis_run_refs,
     relevant_verification_pairs,
     repairable_failure_class,
@@ -532,24 +534,69 @@ class FailureClassTests(unittest.TestCase):
         )
         for summary in diagnostics:
             with self.subTest(summary=summary):
-                self.assertTrue(environment_failure_signal(summary))
+                self.assertTrue(match_environment_failure(summary).matched)
         # Mid-line mentions stay unmatched by design -- including inside
         # longer genuine diagnostics; the safe misclassification direction
         # is one bounded repair attempt, never a hard block.
-        self.assertFalse(environment_failure_signal(
+        self.assertFalse(match_environment_failure(
             "ssh: connect to host localhost port 22: Connection refused",
-        ))
-        self.assertFalse(environment_failure_signal(
+        ).matched)
+        self.assertFalse(match_environment_failure(
             "E       assert 'connection refused' == 'connected'",
-        ))
+        ).matched)
 
-    def test_environment_signal_helper_is_closed_and_case_insensitive(self) -> None:
-        from codey.completion_verification import ENVIRONMENT_FAILURE_SIGNATURES
+    def test_match_names_reason_code_and_deciding_signature(self) -> None:
+        cases = (
+            (
+                "Traceback (most recent call last):\n"
+                "ModuleNotFoundError: No module named 'redis'",
+                "missing_python_dependency",
+                "modulenotfounderror",
+            ),
+            (
+                "./verify.sh: line 2: ruff: command not found",
+                "missing_executable_or_module",
+                "command not found",
+            ),
+            (
+                "ERROR: Could not find a version that satisfies the requirement redis",
+                "unresolvable_package",
+                "could not find a version that satisfies",
+            ),
+            ("npm ERR! network request failed\nETIMEDOUT", "network_unavailable", "etimedout"),
+            ("INTERNALERROR> traceback in pytest internals", "test_infrastructure_crash", "internalerror"),
+        )
+        for summary, reason_code, signature in cases:
+            with self.subTest(summary=summary):
+                match = match_environment_failure(summary)
+                self.assertTrue(match.matched)
+                self.assertEqual(match.reason_code, reason_code)
+                self.assertEqual(match.signature, signature)
+        unmatched = match_environment_failure("assert 1 == 2")
+        self.assertFalse(unmatched.matched)
+        self.assertEqual(unmatched.reason_code, "")
+        self.assertEqual(unmatched.signature, "")
 
-        self.assertIn("no module named", ENVIRONMENT_FAILURE_SIGNATURES)
-        self.assertTrue(environment_failure_signal("NO MODULE NAMED PYTEST"))
-        self.assertFalse(environment_failure_signal("", None, 0))
-        self.assertFalse(environment_failure_signal("assert 1 == 2"))
+    def test_environment_vocabulary_is_closed_and_case_insensitive(self) -> None:
+        self.assertEqual(
+            ENVIRONMENT_FAILURE_REASON_CODES,
+            {
+                "missing_python_dependency",
+                "missing_executable_or_module",
+                "unresolvable_package",
+                "network_unavailable",
+                "test_infrastructure_crash",
+            },
+        )
+        prefixes = {
+            prefix
+            for group in ENVIRONMENT_FAILURE_SIGNATURES
+            for prefix in group.prefixes
+        }
+        self.assertIn("no module named", prefixes)
+        self.assertTrue(match_environment_failure("NO MODULE NAMED PYTEST").matched)
+        self.assertFalse(match_environment_failure("", None, 0).matched)
+        self.assertFalse(match_environment_failure("assert 1 == 2").matched)
 
     def test_only_product_failures_are_repair_candidates(self) -> None:
         self.assertTrue(repairable_failure_class(FAILURE_PRODUCT))

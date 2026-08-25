@@ -79,6 +79,9 @@ MAX_BRIEF_CLAIM_ROWS = 16
 MAX_BRIEF_REFS = 24
 MAX_TOPIC_CONTINUITY_ROWS = 8
 MAX_COMPLETION_REPAIR_ROWS = 4
+MAX_PROTOCOL_ERROR_KINDS = 16
+MAX_PROTOCOL_UNKNOWN_TOOLS = 8
+MAX_PROTOCOL_VALID_TURNS = 64
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 REVIEW_FINDING_REF_KINDS: dict[str, str] = {
@@ -254,6 +257,7 @@ class RunTraceManifest:
     research_brief_projections: list[dict[str, object]] = field(default_factory=list)
     research_topic_continuity: list[dict[str, object]] = field(default_factory=list)
     completion_repair_context: list[dict[str, object]] = field(default_factory=list)
+    protocol_telemetry: dict[str, dict[str, object]] = field(default_factory=dict)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -318,6 +322,9 @@ class RunTraceManifest:
             ),
             "completion_repair_context": (
                 self.completion_repair_context[:MAX_COMPLETION_REPAIR_ROWS]
+            ),
+            "protocol_telemetry": _protocol_telemetry_payload(
+                self.protocol_telemetry
             ),
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
@@ -1580,6 +1587,129 @@ class RunTraceRecorder:
             self.manifest.warnings.append("completion_proofs_truncated")
         self.checkpoint()
 
+    # --- Protocol telemetry -------------------------------------------
+    # Trace-only counters over the JSON tool protocol: which codec ran,
+    # how often replies failed classification, how often a protocol repair
+    # prompt went out, and which provider turns produced a parseable plan.
+    # No raw prompt, reply, or error text has a field here; an unknown tool
+    # name lands only as a digest plus an optional safe short identifier.
+
+    def _protocol_phase(self, phase: object) -> dict[str, object]:
+        key = _identifier(phase, 40) or "unknown"
+        return self.manifest.protocol_telemetry.setdefault(key, {})
+
+    def record_protocol_codec(
+        self,
+        codec_name: object,
+        *,
+        phase: str,
+        model_tool_contract_hash: object = "",
+        runtime_tool_contract_hash: object = "",
+    ) -> None:
+        row = self._protocol_phase(phase)
+        name = _identifier(codec_name, 40)
+        if name:
+            row["codec_name"] = name
+        model_hash = _clip(model_tool_contract_hash, 80)
+        if model_hash:
+            row["model_tool_contract_hash"] = model_hash
+        runtime_hash = _clip(runtime_tool_contract_hash, 80)
+        if runtime_hash:
+            row["runtime_tool_contract_hash"] = runtime_hash
+        self.checkpoint()
+
+    def record_protocol_error(
+        self,
+        kind: object,
+        *,
+        phase: str,
+        turn: int = 0,
+        tool_name: object = "",
+    ) -> None:
+        del turn
+        kind_code = _protocol_kind_code(kind)
+        if not kind_code:
+            return
+        row = self._protocol_phase(phase)
+        counts = row.setdefault("protocol_error_counts", {})
+        if isinstance(counts, dict):
+            counts[kind_code] = min(
+                999,
+                (_nonnegative_int(counts.get(kind_code)) or 0) + 1,
+            )
+            if len(counts) > MAX_PROTOCOL_ERROR_KINDS:
+                keep = sorted(counts.items(), key=lambda item: -item[1])
+                row["protocol_error_counts"] = dict(keep[:MAX_PROTOCOL_ERROR_KINDS])
+                row["protocol_error_counts_truncated"] = True
+        raw_tool = _clip(tool_name, 120)
+        if raw_tool:
+            tools = row.setdefault("unknown_tools", [])
+            if not isinstance(tools, list):
+                tools = row["unknown_tools"] = []
+            digest = digest_text(raw_tool)
+            existing = next(
+                (
+                    item
+                    for item in tools
+                    if isinstance(item, dict) and item.get("digest") == digest
+                ),
+                None,
+            )
+            if existing is not None:
+                existing["count"] = min(
+                    999,
+                    (_nonnegative_int(existing.get("count")) or 0) + 1,
+                )
+            elif len(tools) < MAX_PROTOCOL_UNKNOWN_TOOLS:
+                entry: dict[str, object] = {"digest": digest, "count": 1}
+                label = _safe_tool_label(raw_tool)
+                if label:
+                    entry["label"] = label
+                tools.append(entry)
+            else:
+                row["unknown_tools_truncated"] = True
+        self.checkpoint()
+
+    def record_protocol_repair_prompt(
+        self,
+        kind: object = "",
+        *,
+        phase: str,
+        turn: int = 0,
+    ) -> None:
+        del turn
+        row = self._protocol_phase(phase)
+        code = _protocol_kind_code(kind) or "unspecified"
+        counts = row.setdefault("repair_prompt_counts", {})
+        if isinstance(counts, dict):
+            counts[code] = min(
+                999,
+                (_nonnegative_int(counts.get(code)) or 0) + 1,
+            )
+        row["repair_prompt_count"] = min(
+            999,
+            (_nonnegative_int(row.get("repair_prompt_count")) or 0) + 1,
+        )
+        self.checkpoint()
+
+    def record_protocol_valid_turn(self, turn: object, *, phase: str) -> None:
+        value = _nonnegative_int(turn)
+        if not value:
+            return
+        row = self._protocol_phase(phase)
+        if "first_valid_turn" not in row:
+            row["first_valid_turn"] = value
+        turns = row.setdefault("valid_turns", [])
+        if not isinstance(turns, list):
+            turns = row["valid_turns"] = []
+        if turns and turns[-1] == value:
+            return
+        if len(turns) >= MAX_PROTOCOL_VALID_TURNS:
+            row["valid_turns_truncated"] = True
+            return
+        turns.append(value)
+        self.checkpoint()
+
     def record_fallback(
         self,
         *,
@@ -1716,6 +1846,124 @@ def _action_ref_or_empty(value: object) -> str:
     if text.startswith("action:") and _is_hex_64(text.removeprefix("action:")):
         return text
     return ""
+
+
+def _safe_tool_label(value: object) -> str:
+    """Keep a tool label only when it is already a short safe identifier."""
+
+    text = _clip(value, 40)
+    if not text:
+        return ""
+    if any(not (char.isalnum() or char in "._-") for char in text):
+        return ""
+    lowered = text.lower()
+    if looks_sensitive_code(lowered):
+        return ""
+    return lowered
+
+
+def _protocol_kind_code(value: object) -> str:
+    """Accept an error kind only as a clean short identifier; else drop it."""
+
+    text = _clip(value, 40)
+    if not text:
+        return ""
+    lowered = text.lower()
+    if any(
+        not char.isascii() or not (char.isalnum() or char in "._-")
+        for char in lowered
+    ):
+        return ""
+    if looks_sensitive_code(lowered):
+        return ""
+    return lowered
+
+
+def _bounded_protocol_count_row(value: object) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    bounded: dict[str, int] = {}
+    for key, raw in value.items():
+        code = _protocol_kind_code(key)
+        if not code:
+            continue
+        bounded[code] = min(999, _nonnegative_int(raw))
+        if len(bounded) >= MAX_PROTOCOL_ERROR_KINDS:
+            break
+    return bounded
+
+
+def _protocol_phase_payload(row: Mapping[str, object]) -> dict[str, object]:
+    payload: dict[str, object] = {}
+    codec_name = _identifier(row.get("codec_name"), 40)
+    if codec_name:
+        payload["codec_name"] = codec_name
+    model_hash = _clip(row.get("model_tool_contract_hash"), 80)
+    if model_hash:
+        payload["model_tool_contract_hash"] = model_hash
+    runtime_hash = _clip(row.get("runtime_tool_contract_hash"), 80)
+    if runtime_hash:
+        payload["runtime_tool_contract_hash"] = runtime_hash
+    error_counts = _bounded_protocol_count_row(row.get("protocol_error_counts"))
+    if error_counts:
+        payload["protocol_error_counts"] = error_counts
+    repair_counts = _bounded_protocol_count_row(row.get("repair_prompt_counts"))
+    if repair_counts:
+        payload["repair_prompt_counts"] = repair_counts
+    total = _nonnegative_int(row.get("repair_prompt_count"))
+    if total:
+        payload["repair_prompt_count"] = total
+    first = _nonnegative_int(row.get("first_valid_turn"))
+    if first:
+        payload["first_valid_turn"] = first
+    raw_turns = row.get("valid_turns")
+    turns = [
+        item
+        for item in (
+            _nonnegative_int(value)
+            for value in (raw_turns if isinstance(raw_turns, list) else ())
+        )
+        if item
+    ][:MAX_PROTOCOL_VALID_TURNS]
+    if turns:
+        payload["valid_turns"] = turns
+    raw_tools = row.get("unknown_tools")
+    unknown_tools: list[dict[str, object]] = []
+    for item in raw_tools if isinstance(raw_tools, list) else ():
+        if not isinstance(item, Mapping):
+            continue
+        digest = valid_digest_ref(item.get("digest"))
+        if not digest:
+            continue
+        entry: dict[str, object] = {
+            "digest": digest,
+            "count": min(999, _nonnegative_int(item.get("count"))),
+        }
+        label = _safe_tool_label(item.get("label"))
+        if label:
+            entry["label"] = label
+        unknown_tools.append(entry)
+        if len(unknown_tools) >= MAX_PROTOCOL_UNKNOWN_TOOLS:
+            break
+    if unknown_tools:
+        payload["unknown_tools"] = unknown_tools
+    if row.get("valid_turns_truncated"):
+        payload["valid_turns_truncated"] = True
+    if row.get("unknown_tools_truncated"):
+        payload["unknown_tools_truncated"] = True
+    return payload
+
+
+def _protocol_telemetry_payload(
+    rows: Mapping[str, dict[str, object]],
+) -> dict[str, object]:
+    phases: dict[str, object] = {}
+    for phase, row in rows.items():
+        key = _identifier(phase, 40)
+        if not key or not isinstance(row, Mapping):
+            continue
+        phases[key] = _protocol_phase_payload(row)
+    return {"phases": phases}
 
 
 def _research_connector_error_payload(value: object) -> dict[str, object]:

@@ -718,6 +718,15 @@ def run(
 
     trace.call("record_permission_profile", profile.name, phase="writer")
     try:
+        trace.call(
+            "record_protocol_codec",
+            str(getattr(codec, "name", "") or ""),
+            phase="writer",
+            model_tool_contract_hash=codec.model_tool_contract_hash(),
+        )
+    except Exception:
+        pass
+    try:
         trace.call("record_tool_contract_hash", codec.model_tool_contract_hash(), phase="writer")
     except Exception:
         pass
@@ -1228,6 +1237,19 @@ def run(
         plan = parse_reply(reply, codec)
         if plan.protocol_error:
             stagnant_count += 1
+            trace.call(
+                "record_protocol_error",
+                plan.protocol_error_kind,
+                phase="writer",
+                turn=turn,
+                tool_name=str(getattr(plan, "protocol_tool_name", "") or ""),
+            )
+            trace.call(
+                "record_protocol_repair_prompt",
+                plan.protocol_error_kind,
+                phase="writer",
+                turn=turn,
+            )
             emit(RunEvent.status(
                 f"[agent] rejected invalid tool request: {plan.protocol_error}"
             ))
@@ -1245,6 +1267,8 @@ def run(
             continue
         calls = plan.calls
         control = plan.control
+        if calls or control is not None:
+            trace.call("record_protocol_valid_turn", turn, phase="writer")
 
         results: list[ToolResult] = []
         made_progress = False
@@ -1421,6 +1445,18 @@ def run(
             emit(RunEvent.status(
                 "[agent] reply contained no valid JSON tool call; nudging the model."
             ))
+            trace.call(
+                "record_protocol_error",
+                PROTOCOL_NO_JSON,
+                phase="writer",
+                turn=turn,
+            )
+            trace.call(
+                "record_protocol_repair_prompt",
+                PROTOCOL_NO_JSON,
+                phase="writer",
+                turn=turn,
+            )
             repair = _protocol_repair_prompt(
                 codec,
                 ToolPlan(

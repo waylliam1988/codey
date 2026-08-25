@@ -2574,15 +2574,21 @@ proof 第一次影响 coding 行为：阻止明显未验证的 `done`，并把�
   PromptEnvelope`（fresh intro 与普通 continuation 都字面经过 envelope）；
   trace row `record_completion_repair_context(payload, *, epoch_id)` 无默认
   epoch、fail closed，绑定 outbound send bytes。
+- RunTrace 新增 trace-only 的 `protocol_telemetry` 区块：按 phase 记录
+  codec 身份与 contract hash、按 kind 的协议错误/repair prompt 计数、可解析
+  plan 的 valid turns；未知工具只落 digest + 可选安全短标识符，raw 文本无
+  字段。四个 `record_protocol_*` recorder 接入 coding writer 与 research
+  runner，纯观测，release A/B 结果因此更可解释。
 - enforcement 决策点位于 writer/review 收尾之后、receipt/ledger/project
   facts 之前；最终 outcome 唯一驱动 durable state；`max_repair_rounds = 1`；
   repair turn 预算就是共享的剩余预算，用尽即以 `turn_budget_exhausted`
   blocked，绝不越界多发；停止条件显式枚举（unobserved / max_repair_rounds /
   turn_budget_exhausted / environment_failure / provider_failure /
   repair_context_unavailable / repair_not_admitted），blocked 是诚实
-  stop_reason。失败分类按行首锚定的闭合签名词表识别环境/依赖类失败——签名
-  必须位于诊断行的行首（剥掉 runner 横幅与小写工具名头部后），仅引用这些词
-  的断言差异仍判 product failure；changes 收集产生不了可用结论而本地观察到
+  stop_reason。失败分类按行首锚定、带 reason code 的闭合签名词表识别
+  环境/依赖类失败——签名必须位于诊断行的行首（剥掉 runner 横幅与小写工具
+  名头部后），每次匹配给出 reason code 与决定性短语，仅引用这些词的断言
+  差异仍判 product failure；changes 收集产生不了可用结论而本地观察到
   edit 时按观察证据划 scope，实测净空 diff 保持 run 在 scope 之外。
 - 无 RepairManager / CompletionManager / 新工具 / critic / 多轮 scheduler；
   架构测试锁死 projection leaf 边界与 payload 词表。

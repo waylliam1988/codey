@@ -3691,5 +3691,107 @@ class ConceptRelationsTests(unittest.TestCase):
         self.assertEqual(set(ranked), {"helium", "war", "copper"})
 
 
+class ProtocolTelemetryTests(unittest.TestCase):
+    def test_research_json_codec_has_stable_name(self) -> None:
+        self.assertEqual(JsonToolCodec.name, "research_json")
+        self.assertEqual(JsonToolCodec().name, "research_json")
+
+    def test_native_search_leak_counts_error_and_valid_turn_is_recorded(self) -> None:
+        from codey.run_trace import RunTraceStore
+
+        leak = "I searched the web and the search results show helium is rare."
+        done = json.dumps({"tool": "done", "args": {"answer": "ok"}})
+        provider = FakeProvider(leak, done)
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            trace_store = RunTraceStore(Path(td) / "state")
+            trace = trace_store.open(
+                run_id="run-research-protocol",
+                session_id="session-research-protocol",
+                project=Path(td),
+                mode_initial="research",
+                provider_initial="fake",
+            )
+            runner = ResearchRunner(
+                provider,
+                FakeSearch(),
+                store,
+                max_turns=2,
+                controller_enabled=False,
+                trace_recorder=trace,
+            )
+
+            list(runner.run("Research helium"))
+            store.close()
+            trace.finish(status=runner.result.stop_reason if runner.result else "done")
+
+            payload = json.loads(
+                trace_store.path_for(
+                    "session-research-protocol",
+                    "run-research-protocol",
+                ).read_text(encoding="utf-8")
+            )
+
+        phases = payload["protocol_telemetry"]["phases"]
+        research = phases["research"]
+        self.assertEqual(research["codec_name"], "research_json")
+        self.assertEqual(
+            research["protocol_error_counts"],
+            {"native_search_leak": 1},
+        )
+        self.assertEqual(
+            research["repair_prompt_counts"],
+            {"native_search_leak": 1},
+        )
+        self.assertEqual(research["repair_prompt_count"], 1)
+        # Turn 1 leaked native search; turn 2 parsed the repaired reply.
+        self.assertEqual(research["valid_turns"], [2])
+        self.assertEqual(research["first_valid_turn"], 2)
+
+    def test_unknown_tool_lands_as_safe_label_with_digest(self) -> None:
+        from codey.run_trace import RunTraceStore
+
+        unknown = json.dumps({"tool": "buy_bitcoin", "args": {"amount": "all"}})
+        done = json.dumps({"tool": "done", "args": {"answer": "ok"}})
+        provider = FakeProvider(unknown, done)
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            trace_store = RunTraceStore(Path(td) / "state")
+            trace = trace_store.open(
+                run_id="run-research-unknown",
+                session_id="session-research-unknown",
+                project=Path(td),
+                mode_initial="research",
+                provider_initial="fake",
+            )
+            runner = ResearchRunner(
+                provider,
+                FakeSearch(),
+                store,
+                max_turns=3,
+                controller_enabled=False,
+                trace_recorder=trace,
+            )
+
+            list(runner.run("Research helium"))
+            store.close()
+            trace.finish(status=runner.result.stop_reason if runner.result else "done")
+
+            serialized = (
+                trace_store.path_for(
+                    "session-research-unknown",
+                    "run-research-unknown",
+                ).read_text(encoding="utf-8")
+            )
+
+        tools = json.loads(serialized)["protocol_telemetry"]["phases"]["research"][
+            "unknown_tools"
+        ]
+        self.assertEqual(len(tools), 1)
+        self.assertEqual(tools[0]["label"], "buy_bitcoin")
+        self.assertEqual(tools[0]["count"], 1)
+        self.assertTrue(tools[0]["digest"].startswith("sha256:"))
+
+
 if __name__ == "__main__":
     unittest.main()

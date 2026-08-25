@@ -214,6 +214,7 @@ class ToolPlan:
     control: Control | None
     protocol_error: str = ""
     protocol_error_kind: str = ""
+    protocol_tool_name: str = ""
 
 
 @dataclass(frozen=True)

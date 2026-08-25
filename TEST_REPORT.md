@@ -32,8 +32,9 @@ remaining turn budget: an exhausted budget blocks with
 facts refuse with `refused_no_safe_check_facts`) and both the fresh-intro
 and ordinary continuation paths assemble through a literal
 `PromptEnvelope`. Failure classification reads the decisive check's bounded
-output tail against a closed, line-anchored signature vocabulary (a
-signature only counts when it begins its diagnostic line), so
+output tail against a closed, reason-coded, line-anchored signature
+vocabulary (a signature only counts when it begins its diagnostic line;
+every match names its reason code and deciding phrase), so
 dependency/network/infra failures (`No module named pytest`, DNS timeouts,
 pytest INTERNALERROR) classify as environment failures and block honestly
 instead of triggering unnecessary repairs, while assertion diffs that merely
@@ -48,7 +49,14 @@ Admission goes through `ContextSource` -> profile gate (coding_writer only)
 -> `ContextEpoch` -> `PromptEnvelope`, and
 `record_completion_repair_context(payload, *, epoch_id)` fails closed without
 a well-formed sent-bytes epoch binding, digest-keyed, counts/reason-codes
-only. There are no managers, no critic, no new tools; architecture tests lock
+only. A trace-only `protocol_telemetry` manifest section records per-phase
+JSON tool protocol facts (codec identity and contract hashes, protocol-error
+and repair-prompt counts by kind, first/valid parseable turns) through four
+`record_protocol_*` recorder methods wired into the coding writer loop and
+the research runner; unknown tools land digest-only plus an optional safe
+short label, raw prompts/replies/errors have no field, and nothing
+behavioral reads the section. There are no managers, no critic, no new tools;
+architecture tests lock
 the leaf boundaries, the closed payload vocabulary, and the absence of
 manager layers.
 
@@ -59,7 +67,7 @@ python -B tests\manual\completion_enforcement_ab.py --self-test
 # self-test passed (20-case decision matrix across 4 arms x 5 scenarios)
 
 python -B -m pytest -q
-# 2833 passed, 1 skipped, 857 subtests passed in 266.95s (0:04:26)
+# 2848 passed, 1 skipped, 876 subtests passed in 277.33s (0:04:37)
 ```
 
 The self-test matrix pins the treatment definitions: control_done records

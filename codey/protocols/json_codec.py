@@ -249,9 +249,15 @@ def _summary_is_tool_call(summary: str) -> bool:
 
 
 class ProtocolValidationError(ValueError):
-    def __init__(self, message: str, kind: str = PROTOCOL_INVALID_ARGS) -> None:
+    def __init__(
+        self,
+        message: str,
+        kind: str = PROTOCOL_INVALID_ARGS,
+        tool_name: str = "",
+    ) -> None:
         super().__init__(message)
         self.kind = kind
+        self.tool_name = tool_name
 
 
 def _positive_int_arg(
@@ -351,6 +357,7 @@ class JsonToolCodec:
                     control=None,
                     protocol_error=str(exc),
                     protocol_error_kind=exc.kind,
+                    protocol_tool_name=str(getattr(exc, "tool_name", "") or ""),
                 )
             if plan.protocol_error:
                 return plan
@@ -450,6 +457,7 @@ class JsonToolCodec:
             raise ProtocolValidationError(
                 message,
                 PROTOCOL_UNKNOWN_TOOL,
+                tool_name=normalized,
             )
         if normalized:
             self._require_allowed(normalized)
@@ -632,4 +640,5 @@ class JsonToolCodec:
                 f"disallowed tool for {self.profile.name}: {tool_name}. "
                 "Use only the tools listed in the system prompt.",
                 PROTOCOL_DISALLOWED_TOOL,
+                tool_name=normalized,
             )

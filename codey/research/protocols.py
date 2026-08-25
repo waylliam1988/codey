@@ -37,6 +37,8 @@ class ProtocolCodec(Protocol):
 
 
 class JsonToolCodec:
+    name = "research_json"
+
     def __init__(self, include_source_search: bool = True) -> None:
         self.include_source_search = bool(include_source_search)
         self.last_control_args: dict[str, Any] = {}
@@ -94,6 +96,7 @@ class JsonToolCodec:
                 control=None,
                 protocol_error=f"unknown tool: {runtime}",
                 protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
+                protocol_tool_name=runtime,
             )
         args = obj.get("args")
         if not isinstance(args, dict):

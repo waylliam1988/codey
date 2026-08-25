@@ -222,6 +222,7 @@ class ResearchController:
                 control=None,
                 protocol_error=f"unknown tool: {raw_tool}",
                 protocol_error_kind=PROTOCOL_UNKNOWN_TOOL,
+                protocol_tool_name=raw_tool,
             )
         if state.allowed_tools and tool not in state.allowed_tools:
             return ToolPlan(
@@ -232,6 +233,7 @@ class ResearchController:
                     f"allowed tools: {', '.join(state.allowed_tools)}"
                 ),
                 protocol_error_kind=PROTOCOL_DISALLOWED_TOOL,
+                protocol_tool_name=tool,
             )
         rewritten, error = compile_controller_action(obj, state, tool=tool)
         if error:

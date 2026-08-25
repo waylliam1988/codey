@@ -52,6 +52,18 @@ This file records Codey's release history. The newest release appears first.
   codes only; raw failure text has no field to live in. Admission rows are
   recorded at the send boundary inside `agent.run`, so assembled ≠ admitted ≠
   recorded stays true by construction.
+- RunTrace protocol telemetry (P0a, trace-only): a bounded
+  `protocol_telemetry` manifest section records per-phase JSON tool protocol
+  facts -- codec identity (`json` / `research_json`) with model/runtime
+  tool-contract hashes, protocol-error counts by kind, protocol-repair-prompt
+  counts, and which provider turns produced a parseable plan
+  (`first_valid_turn`, bounded `valid_turns`). Unknown tools land only as a
+  digest plus an optional safe short identifier; raw prompts, replies, and
+  errors have no field. Four recorder methods
+  (`record_protocol_codec` / `record_protocol_error` /
+  `record_protocol_repair_prompt` / `record_protocol_valid_turn`) wire into
+  the coding writer loop and the research runner; nothing behavioral reads
+  them -- the release A/B stays more explainable at zero runtime risk.
 - Capability registry: new `completion_repair_context` capability
   (model-visible, fail-closed, canonical input `completion_contract`) with a
   new `live_ab` release gate; `completion_contract` stays trace/data-only.
@@ -76,10 +88,13 @@ This file records Codey's release history. The newest release appears first.
     a non-zero exit whose output names the execution environment (missing
     dependency or tool such as `No module named pytest`, network-dependent
     tests, crashed test runners) classifies as `environment_failure` via a
-    closed, line-anchored signature vocabulary
-    (`ENVIRONMENT_FAILURE_SIGNATURES`): a signature only counts when it
-    begins its diagnostic line once runner banners and lowercase tool-name
-    heads are stripped. Assertion diffs that merely quote the words
+    closed, reason-coded, line-anchored signature vocabulary
+    (`ENVIRONMENT_FAILURE_SIGNATURES`, five reason groups): a signature
+    only counts when it begins its diagnostic line once runner banners and
+    lowercase tool-name heads are stripped, and every match names its
+    reason code and deciding phrase (`match_environment_failure`), so a
+    live-A/B misjudgment becomes one new test plus one reason code --
+    never a smarter classifier. Assertion diffs that merely quote the words
     (`E   AssertionError: cannot find module`,
     `assert 'connection refused' == 'connected'`) classify as product
     failures, with negative tests locking that boundary.
