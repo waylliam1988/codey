@@ -16,7 +16,7 @@ from pathlib import Path
 
 from codey import cancellation
 from codey.adapter_repair import AdapterRepairResult, run_adapter_repair, run_worker_canary
-from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE
+from codey.browser import DEFAULT_PORT
 from codey.provider_diagnostics import sanitize_failure_facts
 from codey.providers.registry import PROVIDER_TYPES, PROVIDER_WORKER_PORT_OFFSETS
 from codey import provider_controls, provider_flow
@@ -117,7 +117,7 @@ def _run_worker_job(
     for helper_id in helper_ids[:3]:
         helper = None
         try:
-            helper = connect_repair_helper(helper_id)
+            helper = connect_repair_helper(helper_id, state_home=state_home)
             with provider_controls.suppress_assistance(), provider_flow.suppress_assistance():
                 helper.new_chat(timeout=model_timeout)
                 result = run_adapter_repair(
@@ -159,15 +159,20 @@ def _failure_facts_from_json(value: str) -> dict[str, object]:
     return sanitize_failure_facts(decoded)
 
 
-def connect_repair_helper(provider_id: str):
-    """Open a fresh helper tab in the durable Codey browser profile."""
+def connect_repair_helper(provider_id: str, *, state_home: str | Path):
+    """Open a fresh helper tab in an isolated self-repair profile.
+
+    The helper must never attach to the user's default browser profile from
+    a second CDP port (profile lock / session corruption); it gets a
+    dedicated profile directory per provider, like override workers do.
+    """
     normalized = str(provider_id or "").strip().lower()
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported repair helper provider: {provider_id}")
     return provider_type.connect(
         port=DEFAULT_PORT + 200 + PROVIDER_WORKER_PORT_OFFSETS.get(normalized, 100),
-        profile=DEFAULT_PROFILE,
+        profile=Path(state_home) / "self-repair" / normalized,
         open_if_missing=True,
         bring_to_front=False,
         isolated=False,

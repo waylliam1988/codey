@@ -750,7 +750,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
             )
 
         self.assertTrue(result.ok)
-        connect_helper.assert_called_once_with("deepseek")
+        connect_helper.assert_called_once_with("deepseek", state_home=Path("state"))
         controls_suppress.assert_called_once()
         flow_suppress.assert_called_once()
         helper.new_chat.assert_called_once_with(timeout=12.0)
@@ -787,12 +787,16 @@ class SelfRepairWorkerTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.generation, 4)
         self.assertEqual(connect_helper.call_args_list[0].args, ("deepseek",))
+        self.assertEqual(
+            connect_helper.call_args_list[0].kwargs,
+            {"state_home": Path("state")},
+        )
         self.assertEqual(connect_helper.call_args_list[1].args, ("stepfun",))
         self.assertEqual(repair.call_count, 2)
         first.close.assert_called_once()
         second.close.assert_called_once()
 
-    def test_repair_helper_uses_shared_profile_fresh_background_tab(self) -> None:
+    def test_repair_helper_uses_dedicated_isolated_profile(self) -> None:
         from codey import self_repair_worker
 
         provider_type = mock.Mock()
@@ -800,16 +804,26 @@ class SelfRepairWorkerTests(unittest.TestCase):
             mock.patch.dict(self_repair_worker.PROVIDER_TYPES, {"qwen": provider_type}),
             mock.patch.dict(self_repair_worker.PROVIDER_WORKER_PORT_OFFSETS, {"qwen": 3}),
         ):
-            helper = self_repair_worker.connect_repair_helper("qwen")
+            helper = self_repair_worker.connect_repair_helper(
+                "qwen",
+                state_home=Path("state"),
+            )
 
         self.assertIs(helper, provider_type.connect.return_value)
-        provider_type.connect.assert_called_once_with(
-            port=self_repair_worker.DEFAULT_PORT + 200 + 3,
-            profile=self_repair_worker.DEFAULT_PROFILE,
-            open_if_missing=True,
-            bring_to_front=False,
-            isolated=False,
-            fresh_tab=True,
+        # The repair helper never attaches to the user's default profile
+        # from a second CDP port; it gets its own per-provider directory.
+        connect_kwargs = provider_type.connect.call_args.kwargs
+        from codey.browser import DEFAULT_PROFILE
+
+        self.assertEqual(connect_kwargs["port"], self_repair_worker.DEFAULT_PORT + 200 + 3)
+        self.assertNotEqual(connect_kwargs["profile"], DEFAULT_PROFILE)
+        self.assertEqual(
+            Path(str(connect_kwargs["profile"])),
+            Path("state") / "self-repair" / "qwen",
+        )
+        self.assertEqual(
+            (connect_kwargs["open_if_missing"], connect_kwargs["isolated"], connect_kwargs["fresh_tab"]),
+            (True, False, True),
         )
 
     def test_provider_worker_child_uses_dedicated_isolated_profile(self) -> None:
