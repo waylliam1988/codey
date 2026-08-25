@@ -63,6 +63,39 @@ This file records Codey's release history. The newest release appears first.
   and keep the whole research stack Ghost-import-free; capability registry,
   permission profiles, runner/pipeline forwarding, and TaskRunner admission
   all have deterministic tests, plus the harness pytest wrapper.
+- Hardening batch (same-cycle fixes):
+  - Shell-approval continuation can no longer swallow a user Stop: the
+    submission path checks the stop flag before reserving the slot, and the
+    approval endpoint reports ``stopped`` instead of silently resuming.
+  - ``/api/new_chat`` and ``/api/changes/restore`` return 409 while a run is
+    active for the same session/project; restore compares resolved paths and
+    never blocks an idle server (the last-run project lingers in state by
+    design).
+  - New shared `codey/ghost/numbers.py` gives every Ghost store one finite
+    unit-float contract: ``bool``, NaN, inf, and out-of-range values either
+    fail closed (``coerce_unit_float``) or clamp deterministically
+    (``clamp_unit_float``). schema/gate/inbox/router/hebbian/affinity/
+    work_queue now share it -- NaN confidence could previously survive the
+    router's range-only clamp.
+  - Manual Ghost work requeue resets ``retry_count``, so items blocked at
+    MAX_WORK_RETRIES become claimable again instead of being stuck forever.
+  - StepFun keeps its verified newest-first DOM reading in the main path;
+    the evaluate fallbacks were rewritten provider-locally (visible-only
+    head-first scan) because the generic ``locate_response()`` walks
+    tail-first and would read a stale reply on StepFun's newest-first DOM.
+  - Override workers get a dedicated browser profile per provider/generation
+    instead of attaching to the user's default profile from a second CDP
+    port, and parent-side workers drain child stderr into a bounded tail so
+    startup crashes are diagnosable.
+  - The five web provider wrappers share one thin send/new_chat plumbing
+    (`codey/providers/web_driver.py`): the outer deadline now covers
+    ``response_timeout + grace + margin`` so drivers finish their own wait,
+    and a firing deadline classifies as ``response_missing``, not transient.
+  - Research rigor: evidence excerpts longer than the 360-char display cap
+    keep their exact matched text (locator char offsets stay valid; display
+    layers clip), and single-source citation inference was removed --
+    unexplained body ``[n]`` refs fail compilation into repair instead of
+    being silently remapped to the only source.
 
 ## 0.4.11 - Evaluation spine: regression gate + longitudinal harness + comparison benchmark
 

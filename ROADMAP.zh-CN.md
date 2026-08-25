@@ -2498,6 +2498,29 @@ Ghost work queue completion 只接受 Contract proof refs
 ResearchPipeline 消费 bounded continuity refs，不直接读 Ghost store
 ```
 
+同周期加固（已落地，详见 CHANGELOG）：
+
+```text
+shell approval 续跑不再吞 Stop；/api/new_chat、/api/changes/restore 加 busy guard
+codey/ghost/numbers.py 统一全部 Ghost store 的 finite unit-float 校验（bool/NaN/inf 拒绝）
+Ghost work 手动 requeue 重置 retry_count，MAX_WORK_RETRIES 阻塞项可重新认领
+StepFun fallback 改为 provider 本地 newest-first 扫描，不走通用 tail-first locate_response
+override worker 使用 per-generation 专属 profile；父端保留有界 stderr tail
+providers/web_driver.py 统一五个 web wrapper 的 deadline 覆盖与 response_missing 归类
+evidence excerpt 超 360 字时保持精确匹配文本；删除单来源 citation 静默推断
+```
+
+仍延后：
+
+```text
+provider profile 增加 response_order = newest_first | oldest_first 元数据，
+通用 locate_response() 按 profile 决定扫头还是扫尾
+抽取 ghost/store_common.py：JSONL event-store / projection rebuild /
+compact / quarantine / bounded warnings 基础件给 hebbian 与 affinity 共用
+（本轮已落地第一片 numbers.py）；等"是否改变排序"的观测数据足够，
+再评估把学习公式简化成朴素 priority hint projection
+```
+
 ### 验证
 
 ```text
