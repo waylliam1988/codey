@@ -52,6 +52,61 @@ class StepFunDriverTests(unittest.TestCase):
             {"selector": stepfun.PROFILE.selector("response"), "baseline": 3},
         )
 
+    def _newest_first_page(self, replies: list[str]):
+        """Fake page whose DOM order is newest-first: replies[0] is latest.
+
+        ``page.evaluate`` raises, forcing every read through the
+        Playwright-locator fallback; ``locator(...).all()`` returns the
+        nodes in DOM order.
+        """
+        page = mock.MagicMock()
+        page.evaluate.side_effect = RuntimeError("execution context destroyed")
+        nodes = []
+        for reply in replies:
+            node = mock.Mock()
+            node.inner_text.return_value = reply
+            nodes.append(node)
+        locator = mock.Mock()
+        locator.all.return_value = list(nodes)
+        page.locator.return_value = locator
+        return page
+
+    def test_response_count_fallback_counts_only_visible_nodes(self) -> None:
+        # rawCount=4 / filteredCount=2 on the live page: hidden duplicates
+        # must not inflate the fallback count used as a baseline.
+        page = self._newest_first_page(["B", "A"])
+
+        self.assertEqual(stepfun._response_count_fallback(page), 2)
+        page.locator.assert_called_once_with(
+            f"{stepfun.PROFILE.selector('response')} >> visible=true"
+        )
+
+    def test_fresh_response_fallback_reads_newest_first_head_slice(self) -> None:
+        # Live probe: filtered index 0 holds the NEWEST reply. baseline=1
+        # must therefore return B (the head), never A (the tail).
+        page = self._newest_first_page(["B", "A"])
+
+        self.assertEqual(stepfun._fresh_response_text(page, 1), "B")
+
+    def test_latest_response_fallback_takes_first_visible_node(self) -> None:
+        page = self._newest_first_page(["B", "A"])
+
+        # The generic tail-first locate_response() would return A here.
+        self.assertEqual(stepfun._latest_response_text(page), "B")
+
+    def test_latest_response_fallback_never_uses_generic_locate_response(self) -> None:
+        page = self._newest_first_page([])
+
+        with mock.patch.object(stepfun.controls, "locate_response") as locate:
+            self.assertEqual(stepfun._latest_response_text(page), "")
+
+        locate.assert_not_called()
+
+    def test_fresh_response_fallback_baseline_exceeding_count_returns_empty(self) -> None:
+        page = self._newest_first_page(["B", "A"])
+
+        self.assertEqual(stepfun._fresh_response_text(page, 5), "")
+
     def test_final_text_does_not_return_old_response_after_baseline(self) -> None:
         page = mock.Mock()
 

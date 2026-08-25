@@ -183,7 +183,52 @@ def _response_count(page: Page) -> int:
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
-        return controls.response_count(page, PROVIDER_ID, PROFILE.selectors("response"))
+        return _response_count_fallback(page)
+
+
+def _visible_responses_newest_first(page: Page) -> list[Locator]:
+    """Visible response nodes in StepFun's own DOM order: newest first.
+
+    A live DOM probe confirmed the newest reply sits at filtered index 0
+    (head-first), so this fallback must NOT defer to the generic
+    ``provider_controls.locate_response()`` scan, which walks from the tail
+    and assumes oldest-first ordering -- it would read a stale reply.
+    ``>> visible=true`` keeps duplicate/hidden nodes out of the count.
+    """
+    try:
+        return list(
+            page.locator(f"{_response_selector()} >> visible=true").all()
+        )
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        return []
+
+
+def _node_text(node: Locator) -> str:
+    try:
+        return str(node.inner_text() or "").strip()
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        return ""
+
+
+def _response_count_fallback(page: Page) -> int:
+    return len(_visible_responses_newest_first(page))
+
+
+def _fresh_response_text_fallback(page: Page, baseline: int) -> str:
+    els = _visible_responses_newest_first(page)
+    fresh = els[: max(0, len(els) - max(0, int(baseline)))]
+    return "\n".join(
+        text for text in (_node_text(node) for node in fresh) if text
+    ).strip()
+
+
+def _latest_response_text_fallback(page: Page) -> str:
+    els = _visible_responses_newest_first(page)
+    return _node_text(els[0]) if els else ""
 
 
 def _response_action_count(page: Page) -> int:
@@ -238,7 +283,7 @@ def _fresh_response_text(page: Page, baseline: int) -> str:
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
-        return ""
+        return _fresh_response_text_fallback(page, baseline)
 
 
 def _latest_response_text(page: Page) -> str:
@@ -247,13 +292,9 @@ def _latest_response_text(page: Page) -> str:
     except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
         raise
     except Exception:
-        response = controls.locate_response(page, PROVIDER_ID, PROFILE.selectors("response"))
-        if response is None:
-            return ""
-        try:
-            return str(response.inner_text() or "").strip()
-        except Exception:
-            return ""
+        # Provider-local newest-first fallback; the generic tail-first
+        # locate_response() would return a stale reply on StepFun.
+        return _latest_response_text_fallback(page)
 
 
 def _final_text(page: Page, baseline: int) -> str:
