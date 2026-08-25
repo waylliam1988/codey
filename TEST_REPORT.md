@@ -22,7 +22,8 @@ the only writer of durable state. `complete` allows done, docs-only and
 inherited-green stay allowed as honest `complete_with_limitations`, and
 failed/blocked proofs stop with named reasons (`unobserved`,
 `max_repair_rounds`, `turn_budget_exhausted`, `environment_failure`,
-`provider_failure`, `repair_context_unavailable`) instead of a fake done.
+`provider_failure`, `repair_context_unavailable`, `repair_not_admitted`)
+instead of a fake done.
 Unobserved checks are never failures and never repair candidates. The repair
 round is bounded by `MAX_COMPLETION_REPAIR_ROUNDS = 1` and by the shared
 remaining turn budget: an exhausted budget blocks with
@@ -31,11 +32,18 @@ remaining turn budget: an exhausted budget blocks with
 facts refuse with `refused_no_safe_check_facts`) and both the fresh-intro
 and ordinary continuation paths assemble through a literal
 `PromptEnvelope`. Failure classification reads the decisive check's bounded
-output tail against a closed signature vocabulary, so dependency/network/
-infra failures (`No module named pytest`, DNS timeouts, pytest INTERNALERROR)
-classify as environment failures and block honestly instead of triggering
-unnecessary repairs; runs with locally observed edits but an empty collected
-change list stay inside enforcement scope via the observed-edit evidence.
+output tail against a closed, line-anchored signature vocabulary (a
+signature only counts when it begins its diagnostic line), so
+dependency/network/infra failures (`No module named pytest`, DNS timeouts,
+pytest INTERNALERROR) classify as environment failures and block honestly
+instead of triggering unnecessary repairs, while assertion diffs that merely
+quote those words stay product failures under negative tests; runs whose
+changes collection produces no usable verdict while edits were observed
+locally stay inside enforcement scope via the observed-edit evidence, and a
+measured net-empty diff keeps a reverted run honestly out of scope. A failed
+proof without an admitted repair round blocks as `repair_not_admitted`;
+`max_repair_rounds` is reserved for "a repair round ran and verification
+still fails".
 Admission goes through `ContextSource` -> profile gate (coding_writer only)
 -> `ContextEpoch` -> `PromptEnvelope`, and
 `record_completion_repair_context(payload, *, epoch_id)` fails closed without

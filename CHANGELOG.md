@@ -25,8 +25,9 @@ This file records Codey's release history. The newest release appears first.
   inherited-green runs stay allowed as honest
   `complete_with_limitations`; a `failed` or `blocked` proof blocks done with
   an explicit stop reason (`unobserved`, `max_repair_rounds`,
-  `environment_failure`, `provider_failure`,
-  `repair_context_unavailable`) instead of shipping a fake done.
+  `turn_budget_exhausted`, `environment_failure`, `provider_failure`,
+  `repair_context_unavailable`, `repair_not_admitted`) instead of shipping a
+  fake done.
   Unobserved checks are never failures and never repair candidates: "no
   verification" means stop, not "fix something".
 - Repair Context Admission v1: for exactly one bounded round,
@@ -63,7 +64,7 @@ This file records Codey's release history. The newest release appears first.
   `repair_context` / `repair_context_minimal`) run through the single
   `COMPLETION_ENFORCEMENT_MODE` constant via
   `tests/manual/completion_enforcement_ab.py`; production ships `repair`.
-- Enforcement hardening (pre-release review fixes, all five closed
+- Enforcement hardening (pre-release review fixes, all six closed
   structurally rather than by fallback):
   - The repair round can no longer physically exceed the turn budget: when
     the initial writer consumed `max_turns` and still failed the proof, the
@@ -75,9 +76,13 @@ This file records Codey's release history. The newest release appears first.
     a non-zero exit whose output names the execution environment (missing
     dependency or tool such as `No module named pytest`, network-dependent
     tests, crashed test runners) classifies as `environment_failure` via a
-    closed signature vocabulary (`ENVIRONMENT_FAILURE_SIGNATURES`), so it
-    blocks honestly instead of triggering an unnecessary repair round.
-    Real assertion failures stay product failures.
+    closed, line-anchored signature vocabulary
+    (`ENVIRONMENT_FAILURE_SIGNATURES`): a signature only counts when it
+    begins its diagnostic line once runner banners and lowercase tool-name
+    heads are stripped. Assertion diffs that merely quote the words
+    (`E   AssertionError: cannot find module`,
+    `assert 'connection refused' == 'connected'`) classify as product
+    failures, with negative tests locking that boundary.
   - Repair admission requires safe decisive check facts: if every decisive
     fact was empty or screened out (new refusal reason
     `refused_no_safe_check_facts`), the projection refuses to admit any
@@ -85,9 +90,18 @@ This file records Codey's release history. The newest release appears first.
     the "no safe bounded failure facts" contract instead of admitting an
     unobserved-check description.
   - Changed-but-unlisted runs stay in enforcement scope: when changes
-    collection returns no file list while edits were observed locally,
-    enforcement scopes from the observed edit evidence instead of letting
-    an edited run pass as an unverifiable done.
+    collection produces no usable verdict while edits were observed
+    locally, enforcement scopes from the observed edit evidence instead of
+    letting an edited run pass as an unverifiable done. A measured
+    net-empty diff -- the model reverted its own edit -- remains a verdict:
+    the run keeps the honest unchanged receipt and stays out of scope,
+    so reverting is never blocked as an unverifiable done.
+  - The blocked-stop vocabulary no longer borrows a repair budget it did
+    not spend: a failed proof without an admitted repair round (the
+    `proof_only_block` A/B arm, or a failure class outside the repair
+    candidate rule) blocks with the new explicit stop reason
+    `repair_not_admitted`; `max_repair_rounds` now means exactly "a repair
+    round ran and verification still fails", keeping A/B notes readable.
   - The ordinary continuation path now assembles its prompt through a
     literal `PromptEnvelope`: the follow-up request and the repair-facts
     section are envelope sections recorded against the outbound send epoch,

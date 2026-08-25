@@ -2579,8 +2579,11 @@ proof 第一次影响 coding 行为：阻止明显未验证的 `done`，并把�
   repair turn 预算就是共享的剩余预算，用尽即以 `turn_budget_exhausted`
   blocked，绝不越界多发；停止条件显式枚举（unobserved / max_repair_rounds /
   turn_budget_exhausted / environment_failure / provider_failure /
-  repair_context_unavailable），blocked 是诚实 stop_reason。失败分类按闭合
-  签名词表识别环境/依赖类失败，不误判为 product failure。
+  repair_context_unavailable / repair_not_admitted），blocked 是诚实
+  stop_reason。失败分类按行首锚定的闭合签名词表识别环境/依赖类失败——签名
+  必须位于诊断行的行首（剥掉 runner 横幅与小写工具名头部后），仅引用这些词
+  的断言差异仍判 product failure；changes 收集产生不了可用结论而本地观察到
+  edit 时按观察证据划 scope，实测净空 diff 保持 run 在 scope 之外。
 - 无 RepairManager / CompletionManager / 新工具 / critic / 多轮 scheduler；
   架构测试锁死 projection leaf 边界与 payload 词表。
 

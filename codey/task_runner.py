@@ -439,6 +439,10 @@ _COMPLETION_BLOCKED_NOTE = {
         "Completion blocked: no safe bounded failure facts were available "
         "for a repair round."
     ),
+    "repair_not_admitted": (
+        "Completion blocked: local verification failed and this run "
+        "admits no repair round."
+    ),
 }
 
 
@@ -3075,12 +3079,16 @@ class TaskRunner:
             if (
                 COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF
                 and not files
+                and change_state(changes) is None
                 and work.evidence.changed_files
             ):
-                # Changes collection produced no usable file list while real
+                # Changes collection produced no usable verdict while real
                 # edits were observed locally: scope enforcement from the
                 # observed edits instead of letting an edited run slip past
-                # enforcement as "unchanged".
+                # enforcement as "unchanged". A measured net-empty diff --
+                # the model reverted its own edit -- is a verdict, so it
+                # keeps the run out of scope with an honest unchanged
+                # receipt.
                 return True, tuple(work.evidence.changed_files)
             return changed, files
 
@@ -3260,7 +3268,11 @@ class TaskRunner:
         ):
             # A done claim backed by a failed or unverifiable proof must
             # never pass as done. complete_with_limitations (docs-only,
-            # inherited green) stays an allowed -- but honest -- done.
+            # inherited green) stays an allowed -- but honest -- done. The
+            # last branch names the budget honestly: max_repair_rounds
+            # means a repair round actually ran; when no round was admitted
+            # (the block arm, or a failure class outside the repair
+            # candidate rule) the reason says so.
             blocked_reason = (
                 "unobserved"
                 if proof.status == "blocked"
@@ -3269,6 +3281,8 @@ class TaskRunner:
                 else "turn_budget_exhausted"
                 if request.max_turns - result.turns <= 0
                 else "max_repair_rounds"
+                if repaired_once
+                else "repair_not_admitted"
             )
 
         if COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF:

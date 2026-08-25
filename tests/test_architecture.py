@@ -1091,6 +1091,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "environment_failure",
             "provider_failure",
             "repair_context_unavailable",
+            "repair_not_admitted",
         ):
             with self.subTest(reason=reason):
                 self.assertIn(f'"{reason}"', source)

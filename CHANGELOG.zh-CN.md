@@ -22,8 +22,9 @@
   completion proof 决定。`complete` 放行 done；docs-only 与 inherited-green
   继续允许为诚实的 `complete_with_limitations`；`failed` / `blocked` proof
   会以显式停止原因（`unobserved` / `max_repair_rounds` /
-  `environment_failure` / `provider_failure` /
-  `repair_context_unavailable`）阻止 done，而不是假装完成。
+  `turn_budget_exhausted` / `environment_failure` / `provider_failure` /
+  `repair_context_unavailable` / `repair_not_admitted`）阻止 done，而不是
+  假装完成。
   未观察的 check 不是失败、也不是 repair 候选："没验证"意味着停下，
   不是"去修点什么"。
 - Repair Context Admission v1：对且仅对一个 bounded round，
@@ -54,7 +55,7 @@
   缺席。A/B 四臂（`control_done` / `proof_only_block` / `repair_context` /
   `repair_context_minimal`）通过唯一常量 `COMPLETION_ENFORCEMENT_MODE`
   在 `tests/manual/completion_enforcement_ab.py` 中切换；生产默认 `repair`。
-- Enforcement 加固（发布前评审修复，五项全部结构化关闭、无兼容回退）：
+- Enforcement 加固（发布前评审修复，六项全部结构化关闭、无兼容回退）：
   - repair round 不可能再物理超出 turn 预算：初始 writer 用满
     `max_turns` 且 proof 仍失败时，run 以新的显式停止原因
     `turn_budget_exhausted` 诚实 blocked，而不是多发一个越界 turn 再把
@@ -62,17 +63,27 @@
     永远不超过 `max_turns`。
   - 失败分类读取 decisive check 的有界输出尾部：非零 exit 但输出指名执行
     环境（缺依赖或缺工具如 `No module named pytest`、依赖网络的测试、测试
-    设施崩溃）时按闭合签名词表（`ENVIRONMENT_FAILURE_SIGNATURES`）判为
-    `environment_failure`，诚实阻止而不是触发不必要的 repair；真实断言
-    失败仍是 product failure。
+    设施崩溃）时，按行首锚定的闭合签名词表
+    （`ENVIRONMENT_FAILURE_SIGNATURES`）判为 `environment_failure`——剥掉
+    runner 横幅与小写工具名头部后，签名必须位于诊断行的行首。仅引用这些
+    词的断言差异（`E   AssertionError: cannot find module`、
+    `assert 'connection refused' == 'connected'`）仍判为 product failure，
+    并有 negative tests 锁定该边界。
   - repair admission 必须有安全的 decisive check facts：当全部 decisive
     fact 为空或被密审筛掉（新拒绝原因 `refused_no_safe_check_facts`）时，
     projection 拒绝 admit 任何文本，TaskRunner 以
     `repair_context_unavailable` 阻止——与"没有安全的有界失败事实"合同
     一致，不再 admit 一段描述未观察 check 的提示。
-  - 有改动但变更清单为空的 run 仍在 enforcement 范围内：changes 收集返回
-    空 file list 而本地观察到真实 edit 时，按观察到的 edit 证据划定
-    enforcement scope，而不是让改过代码的 run 以未验证 done 通过。
+  - 有改动但变更清单为空的 run 仍在 enforcement 范围内：changes 收集产生
+    不了可用结论而本地观察到真实 edit 时，按观察到的 edit 证据划定
+    enforcement scope，而不是让改过代码的 run 以未验证 done 通过。实测
+    净空 diff——模型自己还原了编辑——本身就是结论：run 保持诚实的未改动
+    receipt、留在 scope 之外，还原不会被当成未验证 done 阻止。
+  - blocked 停止词表不再借用没花掉的 repair 预算：failed proof 而没有
+    admit repair round 时（`proof_only_block` A/B 臂，或失败类别不在
+    repair 候选规则内），以新的显式停止原因 `repair_not_admitted`
+    阻止；`max_repair_rounds` 现在只表示"repair round 真的跑过且验证仍未
+    通过"，A/B 结果解释不再歧义。
   - 普通 continuation 路径现在字面经过 `PromptEnvelope`：follow-up 请求与
     repair-facts section 都是 envelope section 并绑定 outbound send epoch，
     字节完全一致——每次 repair admission 都可证明走了与 fresh intro 相同

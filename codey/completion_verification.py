@@ -18,14 +18,16 @@ Three vocabularies live here:
 - Deterministic failure classification: ``product_failure`` /
   ``environment_failure`` / ``verification_unavailable`` /
   ``provider_failure`` / ``unknown``. Classification is rule-based on
-  observed exit/error codes plus a closed vocabulary of output signatures
-  that name the execution environment (missing dependency or tool, network
-  failure, test-infra crash); it is not a critic and never diagnoses.
+  observed exit/error codes plus a closed vocabulary of line-anchored
+  output signatures that name the execution environment (missing
+  dependency or tool, network failure, test-infra crash); it is not a
+  critic and never diagnoses.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import re
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 
 from codey.completion_contract import (
@@ -98,7 +100,9 @@ FAILURE_CLASSES = frozenset({
 # Closed vocabulary of observed-output signatures whose non-zero exit names
 # the execution environment -- not the changed code: a missing interpreter
 # dependency or tool, a network-dependent test, or a crashed test runner.
-# A real assertion failure never carries these strings.
+# Matching is line-anchored (see ``environment_failure_signal``): a
+# signature only counts when it begins its diagnostic line, so a product
+# assertion that merely quotes these words never matches.
 ENVIRONMENT_FAILURE_SIGNATURES = (
     # missing python dependency / module
     "modulenotfounderror",
@@ -126,12 +130,88 @@ ENVIRONMENT_FAILURE_SIGNATURES = (
     "core dumped",
 )
 
+# Runner banners that may precede a diagnostic line, plus the structured
+# heads they are stripped past. Assertion scaffolding such as an
+# ``AssertionError:`` or ``Failed:`` prefix is deliberately absent -- those
+# heads are CamelCase exception names, and the tool-head rules below only
+# ever strip lowercase program names or quoted commands, so a diff line
+# quoting one of the signatures must stay unmatched.
+_DIAGNOSTIC_LINE_PREFIXES = (
+    "e ",  # pytest marks failure context with E
+    "> ",  # pytest echoes the failing source line
+    "error: ",  # runners and package managers banner their diagnostics
+    "fatal: ",
+    "npm err! ",
+    "/bin/bash: ",  # shells announce their own errors by name
+    "/bin/sh: ",
+    "bash: ",
+    "zsh: ",
+    "sh: ",
+)
+
+_SHELL_TRACE_PREFIX = re.compile(r"[^:\s][^:]*:\s*line\s+\d+:\s*", re.IGNORECASE)
+_LOWERCASE_TOOL_HEAD = re.compile(r"[a-z0-9_][a-z0-9_./\\-]*:\s+")
+_QUOTED_COMMAND_HEAD = re.compile(r"'[^']+'\s+")
+
+
+def _strip_diagnostic_head(line: str) -> str:
+    """Strip runner banners and tool-name heads from one raw output line."""
+
+    while True:
+        folded = line.casefold()
+        banner = next(
+            (
+                prefix
+                for prefix in _DIAGNOSTIC_LINE_PREFIXES
+                if folded.startswith(prefix)
+            ),
+            None,
+        )
+        if banner is not None:
+            line = line[len(banner):].lstrip()
+            continue
+        head = next(
+            (
+                match
+                for match in (
+                    _SHELL_TRACE_PREFIX.match(line),
+                    _LOWERCASE_TOOL_HEAD.match(line),
+                    _QUOTED_COMMAND_HEAD.match(line),
+                )
+                if match is not None
+            ),
+            None,
+        )
+        if head is None:
+            return line.strip()
+        line = line[head.end():].lstrip()
+
+
+def _diagnostic_lines(*texts: object) -> Iterator[str]:
+    """Fold observed output into stripped, casefolded diagnostic lines."""
+
+    for raw_line in "\n".join(str(text or "") for text in texts).splitlines():
+        line = _strip_diagnostic_head(raw_line.strip())
+        if line:
+            yield line.casefold()
+
 
 def environment_failure_signal(*texts: object) -> bool:
-    """Whether any observed text names the environment as the failure cause."""
+    """Whether an observed diagnostic line names the environment as cause.
 
-    haystack = "\n".join(str(text or "") for text in texts).casefold()
-    return any(signature in haystack for signature in ENVIRONMENT_FAILURE_SIGNATURES)
+    Anchored matching: a signature counts only when it begins a diagnostic
+    line once runner banners and tool-name heads are stripped. Real runner
+    output prints these signatures as their own diagnostic; a product
+    assertion quoting the same words mid-sentence --
+    ``E   AssertionError: cannot find module`` -- never matches, so a
+    fixable failure is never misread as an environment problem.
+    """
+
+    return any(
+        line.startswith(signature)
+        for line in _diagnostic_lines(*texts)
+        for signature in ENVIRONMENT_FAILURE_SIGNATURES
+    )
 
 
 @dataclass(frozen=True)
@@ -409,9 +489,9 @@ def classify_verification_failure(
     The rules are intentionally shallow: an observed non-zero exit is a
     product failure candidate, a tool-level error without an exit code
     means the check could not even execute (environment), an output tail
-    naming the environment (missing dependency/tool, network, crashed test
-    runner) is environment too -- never silently a code bug -- and anything
-    unverifiable is unavailable.
+    whose diagnostic lines name the environment (missing dependency/tool,
+    network, crashed test runner) is environment too -- never silently a
+    code bug -- and anything unverifiable is unavailable.
     """
 
     if provider_failed:
@@ -427,8 +507,8 @@ def classify_verification_failure(
             # timeout, spawn failure. That is not evidence the code broke.
             return FAILURE_ENVIRONMENT
         if environment_failure_signal(error_code, decisive_result_summary):
-            # The process exited non-zero, but its own bounded output names
-            # the execution environment as the cause, not the edit.
+            # The process exited non-zero, but its own diagnostic lines
+            # name the execution environment as the cause, not the edit.
             return FAILURE_ENVIRONMENT
         return FAILURE_PRODUCT
     return FAILURE_UNKNOWN

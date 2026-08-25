@@ -370,16 +370,15 @@ def test_exhausted_turn_budget_never_runs_an_extra_repair_turn() -> None:
         assert event["receipt"]["checks_passed"] is False
 
 
-def test_observed_edits_without_change_list_stay_in_enforcement_scope() -> None:
-    # Changes collection returned an empty file list while real edits were
+def test_unavailable_changes_with_observed_edits_stay_in_enforcement_scope() -> None:
+    # Changes collection produced no usable verdict while real edits were
     # observed locally: enforcement scopes from the observed edits instead
     # of letting an edited run pass as an unverifiable done.
-    empty_changes = {
-        "ok": True,
-        "changed_count": 0,
+    unavailable_changes = {
+        "ok": False,
+        "error": "git status failed",
         "files": [],
         "diff": "",
-        "mode": "git",
     }
     writer = ScriptedWriter(([_edit_event()], RunResult("trust me", "done", 2)))
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -388,7 +387,7 @@ def test_observed_edits_without_change_list_stay_in_enforcement_scope() -> None:
         runner = TaskRunner(
             state,
             agent_run=writer,
-            collect_changes=mock.Mock(return_value=empty_changes),
+            collect_changes=mock.Mock(return_value=unavailable_changes),
             run_review=mock.Mock(return_value=None),
             capture_provider_failure=server.capture_provider_failure,
             project_facts=state.project_facts,
@@ -408,6 +407,46 @@ def test_observed_edits_without_change_list_stay_in_enforcement_scope() -> None:
         assert event["receipt"]["checks_passed"] is False
         manifest = _trace_payload(state)
         assert manifest["completion_proofs"][0]["status"] == "blocked"
+
+
+def test_measured_net_empty_diff_keeps_reverted_runs_out_of_scope() -> None:
+    # The model edited and then reverted everything: the collected diff is
+    # a real measurement reporting zero files, so the run is genuinely
+    # unchanged -- out of enforcement scope, no blocked receipt, and the
+    # observed-edit fallback must not override the measurement.
+    empty_git_changes = {
+        "ok": True,
+        "changed_count": 0,
+        "files": [],
+        "diff": "",
+        "mode": "git",
+    }
+    writer = ScriptedWriter(([_edit_event()], RunResult("reverted", "done", 2)))
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        project = _pytest_project(Path(td))
+        state = server.State(Path(td) / "state")
+        runner = TaskRunner(
+            state,
+            agent_run=writer,
+            collect_changes=mock.Mock(return_value=empty_git_changes),
+            run_review=mock.Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            is_git_repository=lambda _p: True,
+        )
+        event = _run(runner, state, project)
+
+        assert len(writer.calls) == 1
+        assert event["stop_reason"] == "done"
+        assert "[Completion blocked:" not in str(event["summary"])
+        manifest = _trace_payload(state)
+        assert manifest["completion_proofs"] == []
 
 
 def test_docs_only_change_keeps_limited_done() -> None:
@@ -510,6 +549,27 @@ def test_off_mode_reproduces_0_4_12_control_semantics() -> None:
         assert manifest["completion_repair_context"] == []
 
 
+def test_block_arm_names_repair_not_admitted_not_max_repair_rounds() -> None:
+    # The proof_only_block arm never runs a repair round, so its blocked
+    # note must not borrow the repair-budget vocabulary: A/B interpretation
+    # reads these notes.
+    writer = ScriptedWriter((
+        [_edit_event(), _run_event(False)],
+        RunResult("trust me", "done", 2),
+    ))
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        project = _pytest_project(Path(td))
+        state = server.State(Path(td) / "state")
+        with mock.patch.object(task_runner_module, "COMPLETION_ENFORCEMENT_MODE", "block"):
+            event = _run(_runner(state, writer), state, project)
+
+        assert len(writer.calls) == 1
+        assert event["stop_reason"] == "blocked"
+        summary = str(event["summary"])
+        assert "admits no repair round" in summary
+        assert "after the repair round" not in summary
+
+
 def test_blocked_note_vocabulary_is_closed() -> None:
     expected = {
         "unobserved",
@@ -518,6 +578,7 @@ def test_blocked_note_vocabulary_is_closed() -> None:
         "environment_failure",
         "provider_failure",
         "repair_context_unavailable",
+        "repair_not_admitted",
     }
     assert set(_COMPLETION_BLOCKED_NOTE) == expected
     for reason in sorted(expected):

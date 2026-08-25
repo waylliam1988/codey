@@ -497,6 +497,52 @@ class FailureClassTests(unittest.TestCase):
             FAILURE_PRODUCT,
         )
 
+    def test_assertions_quoting_environment_words_stay_product(self) -> None:
+        # A product assertion that merely quotes an environment phrase
+        # mid-sentence is a fixable product failure -- never environment.
+        quoted_assertions = (
+            "E       assert 'connection refused' == 'connected'",
+            "E       AssertionError: cannot find module",
+            ">       assert 'cannot find module' in stderr",
+            'assert result.code == "ENOTFOUND"',
+            "E   Failed: DID NOT RAISE ModuleNotFoundError",
+            "expected ETIMEDOUT within 5s",
+            "log mentioned internalerrors twice",
+        )
+        for summary in quoted_assertions:
+            with self.subTest(summary=summary):
+                self.assertEqual(
+                    classify_verification_failure(
+                        proof_status=COMPLETION_FAILED,
+                        selected_check_present=True,
+                        decisive_exit_code=1,
+                        decisive_result_summary=summary,
+                    ),
+                    FAILURE_PRODUCT,
+                )
+
+    def test_environment_signal_matches_diagnostic_line_boundaries(self) -> None:
+        diagnostics = (
+            "./verify.sh: line 2: ruff: command not found",
+            "bash: ruff: command not found",
+            "Error: Cannot find module 'left-pad'",
+            "'pytest' is not recognized as an internal or external command",
+            "INTERNALERROR> traceback in pytest internals",
+            "/bin/sh: segmentation fault (core dumped)",
+        )
+        for summary in diagnostics:
+            with self.subTest(summary=summary):
+                self.assertTrue(environment_failure_signal(summary))
+        # Mid-line mentions stay unmatched by design -- including inside
+        # longer genuine diagnostics; the safe misclassification direction
+        # is one bounded repair attempt, never a hard block.
+        self.assertFalse(environment_failure_signal(
+            "ssh: connect to host localhost port 22: Connection refused",
+        ))
+        self.assertFalse(environment_failure_signal(
+            "E       assert 'connection refused' == 'connected'",
+        ))
+
     def test_environment_signal_helper_is_closed_and_case_insensitive(self) -> None:
         from codey.completion_verification import ENVIRONMENT_FAILURE_SIGNATURES
 
