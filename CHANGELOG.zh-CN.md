@@ -4,6 +4,57 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.13 (Unreleased) - Verified Completion Enforcement + Repair Context Admission v1
+
+- 新增 `codey/completion_verification.py`：把 coding verification 语义从
+  `task_runner.py` 抽成纯投影——tri-state freshness（`fresh_pass` /
+  `fresh_fail` / `unobserved`）、显式 provenance、proof 构建与确定性失败
+  分类（`product_failure` / `environment_failure` /
+  `verification_unavailable` / `provider_failure` / `unknown`）。
+  TaskRunner 只负责收集事实和接线，不再解释 completion。roadmap 点名的
+  legacy 债务已偿还：隐式 `checks_passed` 继承拆成
+  `stance = fresh_pass / fresh_fail / inherited_pass / unverified` 与
+  `source = local_run / checkpoint / none`。inherited pass（checkpoint 恢复
+  或 review 前窄绿色规则）保持 receipt 绿色，但 proof 记录
+  `inherited_verification_not_fresh` limitation——它永远不再是本轮的
+  clean verification fact；模型自报 pass 而无本地观察则干脆不是事实。
+- Verified Completion Enforcement：writer 对已改动代码声称 done 时由
+  completion proof 决定。`complete` 放行 done；docs-only 与 inherited-green
+  继续允许为诚实的 `complete_with_limitations`；`failed` / `blocked` proof
+  会以显式停止原因（`unobserved` / `max_repair_rounds` /
+  `environment_failure` / `provider_failure` /
+  `repair_context_unavailable`）阻止 done，而不是假装完成。
+  未观察的 check 不是失败、也不是 repair 候选："没验证"意味着停下，
+  不是"去修点什么"。
+- Repair Context Admission v1：对且仅对一个 bounded round，
+  `failed + product_failure` 的 proof 把最小失败事实包送回同一个 writer，
+  全程走 0.4.8 链路——`ContextSource` -> profile allow-list（仅
+  coding_writer）-> `ContextEpoch` -> `PromptEnvelope`。事实包只陈述观察
+  到的事实（failed requirement、failure class、changed files、command/exit、
+  截断且过密审的输出尾部、refs），绝不包含修复指令；并明确"未观察不等于
+  失败"。turn 预算沿用原 run 不重置；receipt、ledger、project facts 与用户
+  可见事件只由最终 outcome 驱动一次。
+- 新增 `codey/completion_repair_context.py`：projection leaf，只消费已经
+  生成的 proof payload（不 import completion_contract——completion 语义
+  只有一个 owner），产出提示文本 + digest-only trace payload。`minimal`
+  detail 用于区分"proof enforcement"与"信息量上下文"贡献的 A/B 对照臂。
+- RunTrace 新增一个 bounded manifest section：
+  `record_completion_repair_context(payload, *, epoch_id)` 与 0.4.12 的
+  continuity 合同一致——必填合法 `ctx_epoch:<16 hex>`、绑定 outbound
+  provider-send bytes、按 digest 去重，只落 counts/classes/reason codes；
+  raw 失败文本没有字段可存。admission row 在 `agent.run` 的 send boundary
+  落账：assembled ≠ admitted ≠ recorded 由构造保证。
+- Capability registry：新增 `completion_repair_context` capability
+  （model-visible、fail-closed、canonical input `completion_contract`），
+  并新增 `live_ab` release gate；`completion_contract` 保持 trace/data-only。
+  context source key 仅 coding_writer 开放。
+- 无 RepairManager / CompletionManager / critic / scheduler / 新工具。
+  repair loop 由具名停止条件与 `MAX_COMPLETION_REPAIR_ROUNDS = 1` 约束；
+  架构测试锁死 projection leaf 边界、闭合的 payload 词表以及 manager 层
+  缺席。A/B 四臂（`control_done` / `proof_only_block` / `repair_context` /
+  `repair_context_minimal`）通过唯一常量 `COMPLETION_ENFORCEMENT_MODE`
+  在 `tests/manual/completion_enforcement_ab.py` 中切换；生产默认 `repair`。
+
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 
 - 新增 `codey/research/topic_continuity.py`：stdlib-only 的纯 read model，

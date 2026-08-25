@@ -16,7 +16,8 @@ Hard rules:
 - Observables state what was observed; expectations compare against those
   observations. Unknown expectation keys fail closed instead of being ignored.
 - A false completion is recorded as a metric, never enforced here. Blocking a
-  model-visible ``done`` stays with the 0.4.13 enforcement layer.
+  model-visible ``done`` stays with the coding completion enforcement layer
+  (0.4.13's `task_runner` decision point); this gate keeps reporting.
 """
 
 from __future__ import annotations
@@ -106,7 +107,7 @@ class FalseCompletionObservation:
 
     ``is_candidate`` marks a possible false completion (model claimed done but
     the local proof is not satisfied). This module only counts candidates;
-    enforcing anything is explicitly out of scope until 0.4.13.
+    enforcing anything stays with the coding completion enforcement layer.
     """
 
     model_said_done: bool

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import subprocess
 import sys
 import unittest
@@ -962,6 +963,136 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("def _trace(", research_source)
         self.assertNotIn("def _trace_call", task_runner_source)
         self.assertNotIn("compatibility ``tool_*``", tool_source)
+
+    def test_completion_repair_context_is_pure_projection_leaf(self) -> None:
+        # The repair context (0.4.13) consumes an already-evaluated proof
+        # payload; it must never import the completion contract (one
+        # completion semantic owner), the verification module, or any
+        # runtime layer. It is a stdlib + redaction leaf, nothing else.
+        path = ROOT / "codey" / "completion_repair_context.py"
+        imports = imported_modules(path)
+        source = path.read_text(encoding="utf-8")
+
+        allowed_internal = {"codey.redaction"}
+        internal = sorted(
+            name for name in imports if name == "codey" or name.startswith("codey.")
+        )
+        self.assertTrue(set(internal) <= allowed_internal, sorted(internal))
+        forbidden_imports = {
+            "codey.completion_contract",
+            "codey.completion_verification",
+            "codey.task_runner",
+            "codey.agent",
+            "codey.providers",
+            "codey.tool_runtime",
+            "codey.ghost",
+            "subprocess",
+            "urllib",
+            "socket",
+            "importlib",
+        }
+        self.assertTrue(forbidden_imports.isdisjoint(imports), sorted(imports & forbidden_imports))
+        for token in (
+            "write_text(",
+            "open(",
+            "eval(",
+            "exec(",
+            "build_completion_contract",
+            "project_completion_proof",
+            "provider.send",
+        ):
+            with self.subTest(token=token):
+                self.assertNotIn(token, source)
+
+    def test_completion_repair_payload_vocabulary_is_closed(self) -> None:
+        # The trace payload of a repair projection carries counts, classes,
+        # reason codes and a digest only: there is no field that could hold
+        # raw failure output, prompt text, or source bodies.
+        from codey.completion_repair_context import project_repair_context
+
+        projection = project_repair_context(
+            proof={
+                "status": "failed",
+                "proof_id": "completion_proof:" + "a" * 16,
+                "contract_id": "completion_contract:" + "b" * 16,
+                "reason_codes": ["relevant_verification_failed"],
+                "checks": [{
+                    "check_id": "relevant_verification",
+                    "status": "fail",
+                    "reason_code": "relevant_verification_failed",
+                }],
+                "raw_stdout": "SHOULD_NEVER_APPEAR",
+            },
+            failure_class="product_failure",
+            decisive_checks=[{
+                "command": "pytest -q",
+                "cwd": ".",
+                "exit_code": 1,
+                "result_summary": "1 failed",
+            }],
+        )
+        payload = projection.to_payload()
+        allowed_keys = {
+            "schema_version",
+            "kind",
+            "context_source",
+            "admitted",
+            "failure_class",
+            "detail",
+            "check_count",
+            "changed_file_count",
+            "analysis_run_ref_count",
+            "finding_ref_count",
+            "summary_chars",
+            "truncated",
+            "reason_codes",
+            "warnings",
+            "digest",
+            "proof_id",
+            "contract_id",
+            "refused_reason",
+        }
+        self.assertTrue(set(payload) <= allowed_keys, sorted(set(payload) - allowed_keys))
+        self.assertNotIn("SHOULD_NEVER_APPEAR", json.dumps(payload))
+        self.assertTrue(str(payload["digest"]).startswith("sha256:"))
+
+    def test_no_repair_or_completion_managers_exist(self) -> None:
+        # 0.4.13 closes the loop with pure projections and thin wiring; a
+        # manager/planner/scheduler layer would reintroduce exactly the
+        # runtime-that-thinks-for-the-model boundary Codey rejects.
+        forbidden_names = (
+            "RepairManager",
+            "CompletionManager",
+            "RepairRuntime",
+            "RepairPlanner",
+            "RepairCoordinator",
+            "RepairPolicyEngine",
+            "RepairScheduler",
+            "MetaPlanner",
+        )
+        offenders: list[str] = []
+        for path in sorted((ROOT / "codey").rglob("*.py")):
+            source = path.read_text(encoding="utf-8")
+            found = [name for name in forbidden_names if name in source]
+            if found:
+                offenders.append(f"{path.relative_to(ROOT).as_posix()}: {found}")
+        self.assertEqual(offenders, [])
+
+    def test_completion_enforcement_has_explicit_stop_conditions(self) -> None:
+        # The repair loop must be bounded by named stop conditions, never a
+        # bare `while not complete`. Locks the v1 shape: one round max.
+        source = (ROOT / "codey" / "task_runner.py").read_text(encoding="utf-8")
+        self.assertIn("MAX_COMPLETION_REPAIR_ROUNDS = 1", source)
+        self.assertIn("_COMPLETION_BLOCKED_NOTE", source)
+        for reason in (
+            "unobserved",
+            "max_repair_rounds",
+            "environment_failure",
+            "provider_failure",
+            "repair_context_unavailable",
+        ):
+            with self.subTest(reason=reason):
+                self.assertIn(f'"{reason}"', source)
 
 
 if __name__ == "__main__":

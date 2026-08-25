@@ -23,6 +23,10 @@ from codey.action_policy import (
     evaluate_action,
 )
 from codey.coding_context import CodingContext, render_coding_context
+from codey.completion_repair_context import (
+    CONTEXT_SOURCE_KEY as COMPLETION_REPAIR_CONTEXT_SOURCE_KEY,
+    DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
+)
 from codey.context_epoch import context_epoch_id, context_source_ref
 from codey.context_source import (
     ContextSource,
@@ -676,6 +680,8 @@ def run(
     coding_context_enabled: bool = True,
     ghost_directive: str = "",
     ghost_continuity: str = "",
+    completion_repair_context: str = "",
+    completion_repair_context_payload: dict[str, object] | None = None,
     permission_profile: str = "coding_writer",
     tool_fns: AgentToolFns | None = None,
     trace_recorder=None,
@@ -774,6 +780,71 @@ def run(
     if project_instructions:
         names = ", ".join(doc.name for doc in project_instructions)
         emit(RunEvent.info("loaded project instructions", names=names))
+
+    def render_completion_repair_sources() -> tuple[RenderedContextSource, ...]:
+        """Render the bounded failure-facts source through the profile gate.
+
+        Empty context renders to nothing: a normal run's intro is
+        byte-identical to the baseline.
+        """
+        if not completion_repair_context:
+            return ()
+        if not allows_context_source(profile, COMPLETION_REPAIR_CONTEXT_SOURCE_KEY):
+            return ()
+        return render_context_sources_with_metadata((
+            ContextSource(
+                key=COMPLETION_REPAIR_CONTEXT_SOURCE_KEY,
+                loader=lambda: completion_repair_context,
+                budget=DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
+                freshness="after_tool_result",
+                why_included="bounded failure facts from the previous completion proof",
+                capability_id="completion_repair_context",
+                admission_reason="after_tool_result",
+            ),
+        )).sources
+
+    def with_completion_repair_context(prompt: str) -> str:
+        """Attach rendered repair facts to one outbound follow-up prompt.
+
+        Rows are prepared, not admitted: they bind to the outbound epoch at
+        send time via bind_pending_context_rows(), because rollovers can
+        still replace this prompt wholesale.
+        """
+        sources = render_completion_repair_sources()
+        text = "\n\n".join(source.text for source in sources)
+        if not text:
+            return prompt
+        pending_context_rows.extend(sources)
+        return f"{prompt}\n\n{text}"
+
+    def record_repair_context_admission(
+        epoch: str,
+        admitted_keys: set[str],
+    ) -> None:
+        """Bind the admission row to an actual outbound provider-send epoch.
+
+        Like the 0.4.12 continuity row: assembled is not admitted, and
+        admitted is not recorded until the rendered source shared an
+        outbound send boundary. The trace row proves which bytes carried
+        the section -- never that the model processed them.
+        """
+        if not completion_repair_context_payload:
+            return
+        if COMPLETION_REPAIR_CONTEXT_SOURCE_KEY not in admitted_keys:
+            return
+        trace.call(
+            "record_completion_repair_context",
+            completion_repair_context_payload,
+            epoch_id=epoch,
+        )
+
+    # Context-source rows prepared for a follow-up turn (for example
+    # coding_current_context or completion_repair_context) are bound to
+    # their provider turn only when that exact prompt is actually sent.
+    # A successful rollover replaces the prompt with a fresh intro that
+    # records its own rows, so stale prepared rows are discarded instead of
+    # being attributed to a prompt that never leaves.
+    pending_context_rows: list[RenderedContextSource] = []
 
     def project_intro(
         request: str,
@@ -878,6 +949,13 @@ def run(
                 "current top-level project listing",
                 heading="Initial listing:",
             ),
+            intro_source(
+                COMPLETION_REPAIR_CONTEXT_SOURCE_KEY,
+                lambda: completion_repair_context,
+                DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
+                "bounded failure facts from the previous completion proof",
+                capability_id="completion_repair_context",
+            ),
         ))
         rendered_context = render_context_sources_with_metadata(
             source
@@ -924,24 +1002,24 @@ def run(
             rendered_context.sources,
             epoch_id=epoch,
         )
+        record_repair_context_admission(
+            epoch,
+            {source.key for source in rendered_context.sources},
+        )
         return rendered.text
-
-    # Context-source rows prepared for a follow-up turn (for example
-    # coding_current_context) are bound to their provider turn only when that
-    # exact prompt is actually sent. A successful rollover replaces the prompt
-    # with a fresh intro that records its own rows, so stale prepared rows are
-    # discarded instead of being attributed to a prompt that never leaves.
-    pending_context_rows: list[RenderedContextSource] = []
 
     def bind_pending_context_rows(prompt_text: str) -> None:
         if not pending_context_rows:
             return
+        admitted_keys = {source.key for source in pending_context_rows}
+        epoch = context_epoch_id(prompt_text)
         trace.call(
             "record_context_sources",
             pending_context_rows,
-            epoch_id=context_epoch_id(prompt_text),
+            epoch_id=epoch,
         )
         pending_context_rows.clear()
+        record_repair_context_admission(epoch, admitted_keys)
 
     def discard_pending_context_rows() -> None:
         pending_context_rows.clear()
@@ -1093,7 +1171,13 @@ def run(
             "Continue with the established project and JSON tool protocol.\n\n"
             f"User request:\n{user_task}"
         )
-        reply = send_prompt(followup, restart_request=user_task)
+        # The repair phase's first outbound prompt carries the bounded
+        # failure-facts section; restart_request stays bare so a rollover
+        # re-admits the section exactly once through project_intro().
+        reply = send_prompt(
+            with_completion_repair_context(followup),
+            restart_request=user_task,
+        )
     else:
         intro = project_intro(user_task)
         record_provider_send_prompt(

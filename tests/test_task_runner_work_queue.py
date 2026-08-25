@@ -433,6 +433,7 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
     with tempfile.TemporaryDirectory() as td:
         project = Path(td, "project")
         project.mkdir()
+        (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
         state = server.State(Path(td, "state"))
         assert state.ghost_work_queue is not None
         checkpoints = WorkCheckpointStore(state.state_home)
@@ -448,7 +449,26 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
             session_id="s1",
             project=str(project),
         )
-        agent_run = mock.Mock(return_value=RunResult("fixed", "done", 1, changed=True, checks_passed=True))
+        # Real observable facts (edit + passing check): under 0.4.13 a
+        # claimed green with no local observation would block this run.
+        def _fake_agent_run(_provider, _project, _task, **kwargs):
+            from codey.events import RunEvent
+            from codey.models import ToolCall
+            from codey.tool_runtime import ToolOutcome
+
+            kwargs["on_event"](RunEvent.tool_finished(
+                1,
+                ToolCall("edit", {"path": "app.py", "old_string": "1", "new_string": "2"}),
+                ToolOutcome("edited", True, changed=True),
+            ))
+            kwargs["on_event"](RunEvent.tool_finished(
+                2,
+                ToolCall("run", {"command": "python -m pytest", "path": "."}),
+                ToolOutcome("all passed", True, exit_code=0),
+            ))
+            return RunResult("fixed", "done", 2, changed=True, checks_passed=True)
+
+        agent_run = mock.Mock(side_effect=_fake_agent_run)
         runner = _runner(
             state,
             agent_run=agent_run,

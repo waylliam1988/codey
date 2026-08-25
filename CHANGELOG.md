@@ -4,6 +4,66 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.13 (Unreleased) - Verified Completion Enforcement + Repair Context Admission v1
+
+- New `codey/completion_verification.py`: the coding verification semantics
+  moved out of `task_runner.py` as pure projections -- tri-state freshness
+  (`fresh_pass` / `fresh_fail` / `unobserved`), explicit provenance,
+  proof construction, and deterministic failure classification
+  (`product_failure` / `environment_failure` / `verification_unavailable` /
+  `provider_failure` / `unknown`). TaskRunner now only collects facts and
+  wires I/O; it no longer interprets completion. The legacy debt demanded by
+  the roadmap is paid: the invisible `checks_passed` inheritance is split into
+  `stance = fresh_pass / fresh_fail / inherited_pass / unverified` and
+  `source = local_run / checkpoint / none`. An inherited pass (checkpoint
+  resume or the narrow pre-review green rule) keeps the receipt green but the
+  proof carries the `inherited_verification_not_fresh` limitation, so it can
+  never count as this round's clean verification fact; a model's claimed pass
+  without local observation is simply nothing.
+- Verified Completion Enforcement: when a writer claims done on changed code,
+  the completion proof decides. `complete` allows done; docs-only and
+  inherited-green runs stay allowed as honest
+  `complete_with_limitations`; a `failed` or `blocked` proof blocks done with
+  an explicit stop reason (`unobserved`, `max_repair_rounds`,
+  `environment_failure`, `provider_failure`,
+  `repair_context_unavailable`) instead of shipping a fake done.
+  Unobserved checks are never failures and never repair candidates: "no
+  verification" means stop, not "fix something".
+- Repair Context Admission v1: for exactly one bounded round,
+  `failed + product_failure` proofs admit a minimal failure-facts brief back
+  to the same writer through the full 0.4.8 chain -- `ContextSource` ->
+  profile allow-list (coding_writer only) -> `ContextEpoch` ->
+  `PromptEnvelope`. The brief states observed facts only (failed requirement,
+  failure class, changed files, command/exit, capped secret-screened output
+  tail, refs) and never a fix instruction; unobserved checks are explicitly
+  called out as not-failures. Turn budget is shared with the original run,
+  never reset; receipts, ledger, project facts, and the user-visible event
+  are driven by the final outcome only.
+- New `codey/completion_repair_context.py`: a projection leaf that consumes
+  an already-evaluated proof payload (it does not import the completion
+  contract -- one semantic owner) and produces the prompt text plus a
+  digest-only trace payload. The `minimal` detail level exists for the A/B
+  arm that separates "proof enforcement" from "informative context".
+- RunTrace gains one bounded manifest section:
+  `record_completion_repair_context(payload, *, epoch_id)` mirrors the 0.4.12
+  continuity contract -- required well-formed `ctx_epoch:<16 hex>` binding to
+  the outbound provider-send bytes, digest-keyed dedupe, counts/classes/reason
+  codes only; raw failure text has no field to live in. Admission rows are
+  recorded at the send boundary inside `agent.run`, so assembled ≠ admitted ≠
+  recorded stays true by construction.
+- Capability registry: new `completion_repair_context` capability
+  (model-visible, fail-closed, canonical input `completion_contract`) with a
+  new `live_ab` release gate; `completion_contract` stays trace/data-only.
+  The context source key is coding_writer-only.
+- No RepairManager / CompletionManager / critic / scheduler / new tools. The
+  repair loop is bounded by named stop conditions and
+  `MAX_COMPLETION_REPAIR_ROUNDS = 1`; architecture tests lock the projection
+  leaf boundaries, the closed payload vocabulary, and the absence of manager
+  layers. A/B arms (`control_done` / `proof_only_block` /
+  `repair_context` / `repair_context_minimal`) run through the single
+  `COMPLETION_ENFORCEMENT_MODE` constant via
+  `tests/manual/completion_enforcement_ab.py`; production ships `repair`.
+
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 
 - New `codey/research/topic_continuity.py`: a stdlib-only pure read model

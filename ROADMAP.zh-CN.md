@@ -2548,9 +2548,36 @@ provider live smoke 至少能把 native-search stuck / send_error 与 Codey tool
 
 ## 0.4.13 - Verified Completion Enforcement + Repair Context Admission v1
 
-状态：规划。目标是在 0.4.9 的 shadow completion proof 和 0.4.11 的 harness
-证据足够稳定之后，才让 completion proof 第一次影响 coding 行为：阻止明显
-未验证的 `done`，并把最小的失败事实作为下一轮 repair context admission。
+状态：已完成开发。live provider A/B（control_done / proof_only_block /
+repair_context 四臂）是发布门，harness 见
+`tests/manual/completion_enforcement_ab.py`。目标是在 0.4.9 的 shadow
+completion proof 和 0.4.11 的 harness 证据足够稳定之后，才让 completion
+proof 第一次影响 coding 行为：阻止明显未验证的 `done`，并把最小的失败事实
+作为下一轮 repair context admission。
+
+实现落点（与规划一致）：
+
+- `codey/completion_verification.py`：coding verification 分类从
+  task_runner 抽成纯投影（tri-state、provenance、proof 构建、确定性失败
+  分类）；TaskRunner 只收集事实和接线。
+- legacy `checks_passed` 继承债已拆成显式 provenance：
+  `stance = fresh_pass / fresh_fail / inherited_pass / unverified` 与
+  `source = local_run / checkpoint / none`。inherited pass 保持 receipt 绿色
+  但 proof 记录 limitation（`inherited_verification_not_fresh`），不再被当作
+  本轮 clean verification fact；模型自报 pass 不再产生任何事实。
+- `codey/completion_repair_context.py`：纯 projection leaf，只消费已生成的
+  CompletionProof payload（不 import completion_contract），admit 仅限
+  failed + product_failure；输出 facts-only 提示文本 + digest-only trace
+  payload；`minimal` detail 用于压缩对照臂。
+- admission 走 `ContextSource -> profile gate -> ContextEpoch ->
+  PromptEnvelope`；trace row `record_completion_repair_context(payload, *,
+  epoch_id)` 无默认 epoch、fail closed，绑定 outbound send bytes。
+- enforcement 决策点位于 writer/review 收尾之后、receipt/ledger/project
+  facts 之前；最终 outcome 唯一驱动 durable state；`max_repair_rounds = 1`；
+  停止条件显式枚举（unobserved / max_repair_rounds / environment_failure /
+  provider_failure / repair_context_unavailable），blocked 是诚实 stop_reason。
+- 无 RepairManager / CompletionManager / 新工具 / critic / 多轮 scheduler；
+  架构测试锁死 projection leaf 边界与 payload 词表。
 
 这不是新工具、新 critic 或新 repair framework。它只把已经存在的本地事实闭环起来：
 

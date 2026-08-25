@@ -23,17 +23,23 @@ from codey.consensus import (
     render_project_context,
 )
 from codey.completion_contract import (
-    CHECK_FAIL,
-    CHECK_NOT_APPLICABLE,
-    CHECK_NOT_RUN,
-    CHECK_PASS,
-    DOMAIN_CODING,
-    CompletionCheck,
-    build_completion_contract,
-    completion_check,
     completion_proof_trace_payload,
-    project_completion_proof,
-    safe_run_ref,
+)
+from codey.completion_repair_context import (
+    project_repair_context,
+    repair_candidate,
+)
+from codey.completion_verification import (
+    STANCE_FRESH_PASS,
+    STANCE_INHERITED_PASS,
+    VerificationProvenance,
+    build_coding_completion_proof,
+    classify_verification_failure,
+    coding_verification_state,
+    decisive_failure_fact,
+    matching_analysis_run_refs,
+    relevant_verification_pairs,
+    verification_provenance,
 )
 from codey.events import RunEvent, render_run_event, run_event_ui_payload
 from codey.execution_evidence import ExecutionEvidence
@@ -107,7 +113,6 @@ from codey.research.analysis_run import analysis_run_record
 from codey.research.artifact_lineage import artifact_ref_from_managed_output
 from codey.research.completion_gate import RESEARCH_QUEUE_KINDS, ResearchCompletionGate
 from codey.research.connector_search import ConnectorAwareSearchProvider
-from codey.research.evidence_runtime import normalize_runtime_ref
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.evidence_followup import run_evidence_followup
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult
@@ -129,7 +134,6 @@ from codey.shell_risk import classify_shell_risk
 from codey.verification_map import render_verification_map
 from codey.verification_policy import (
     check_covers_selected_candidate,
-    is_document_path,
     select_verification_candidate,
     selected_verification_candidate_lines,
     verification_candidate_lines,
@@ -388,256 +392,50 @@ def _research_queue_item_title(item: GhostWorkItem | None) -> str:
     return str(getattr(item, "title", "") or "").strip()
 
 
-CODING_CHECK_RELEVANT_VERIFICATION = "relevant_verification"
-LIMITATION_DOCS_ONLY_CHANGE = "docs_only_change"
-LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED = "verification_not_locally_observed"
+# One bounded repair round is the whole of 0.4.13: enough to prove the
+# repair-context loop works, small enough that a model stuck in a wrong
+# local optimum cannot turn Codey into a self-consuming machine.
+MAX_COMPLETION_REPAIR_ROUNDS = 1
 
-# Tri-state local verification truth. "Some tool event happened" never proves
-# a relevant check ran: reads and searches are events too, so a run that only
-# edited and browsed stays unobserved instead of being misread as a failure.
-VERIFICATION_FRESH_PASS = "fresh_pass"
-VERIFICATION_FRESH_FAIL = "fresh_fail"
-VERIFICATION_UNOBSERVED = "unobserved"
+# Verified Completion Enforcement stage (A/B treatment definition):
+#   "off"    -> 0.4.12 control: shadow proof is trace-only, done unchanged;
+#   "block"  -> proof blocks unverifiable done, no repair context admitted;
+#   "repair" -> full v1: one bounded repair-context round for product failures.
+# Production ships "repair"; the A/B harness overrides the constant per arm.
+ENFORCEMENT_OFF = "off"
+ENFORCEMENT_BLOCK = "block"
+ENFORCEMENT_REPAIR = "repair"
+COMPLETION_ENFORCEMENT_MODE = ENFORCEMENT_REPAIR
 
+COMPLETION_REPAIR_FOLLOWUP = (
+    "Continue with the established project and JSON tool protocol.\n\n"
+    "Your previous completion claim did not pass local verification. The "
+    "completion repair context section of this message lists the observed "
+    "failure facts. Decide and perform the next local step yourself."
+)
 
-def _coding_verification_state(
-    selected_check: object,
-    evidence: ExecutionEvidence,
-    files: tuple[str, ...],
-) -> str:
-    """Classify local verification freshness for the selected candidate.
-
-    A relevant check that failed after the latest edit wins over any that
-    passed: the hard gate reports the worst locally observed fact.
-    """
-
-    if selected_check is None:
-        return VERIFICATION_UNOBSERVED
-    if any(
-        check_covers_selected_candidate(selected_check, item.command, item.cwd, files)
-        for item in evidence.failed_checks_after_edit
-    ):
-        return VERIFICATION_FRESH_FAIL
-    if any(
-        check_covers_selected_candidate(selected_check, item.command, item.cwd, files)
-        for item in evidence.successful_checks
-    ):
-        return VERIFICATION_FRESH_PASS
-    return VERIFICATION_UNOBSERVED
-
-
-def _coding_completion_checks(
-    *,
-    files: tuple[str, ...],
-    selected_check_present: bool,
-    verification_state: str,
-    checks_passed: bool,
-) -> tuple[CompletionCheck, ...]:
-    """Project local coding facts into completion checks.
-
-    The model's own claim never satisfies a check by itself, and a falsy
-    reported value is not a failure fact either: ``RunResult.checks_passed``
-    starts as ``False`` and is reset by edits, so without a locally observed
-    fresh result the honest projection is "could not verify" (not_run), not
-    "verified bad" (fail). Failure is reserved for observed failures.
-    """
-
-    if files and all(is_document_path(str(item)) for item in files):
-        row = completion_check(
-            CODING_CHECK_RELEVANT_VERIFICATION,
-            CHECK_NOT_APPLICABLE,
-            LIMITATION_DOCS_ONLY_CHANGE,
-        )
-        return (row,) if row else ()
-    if not selected_check_present:
-        row = completion_check(
-            CODING_CHECK_RELEVANT_VERIFICATION,
-            CHECK_NOT_RUN,
-            "no_matching_verification_command",
-        )
-        return (row,) if row else ()
-    if verification_state == VERIFICATION_FRESH_PASS:
-        row = completion_check(
-            CODING_CHECK_RELEVANT_VERIFICATION,
-            CHECK_PASS,
-        )
-    elif verification_state == VERIFICATION_FRESH_FAIL:
-        row = completion_check(
-            CODING_CHECK_RELEVANT_VERIFICATION,
-            CHECK_FAIL,
-            "relevant_verification_failed",
-        )
-    elif checks_passed:
-        row = completion_check(
-            CODING_CHECK_RELEVANT_VERIFICATION,
-            CHECK_PASS,
-        )
-    else:
-        row = completion_check(
-            CODING_CHECK_RELEVANT_VERIFICATION,
-            CHECK_NOT_RUN,
-            LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED,
-        )
-    return (row,) if row else ()
-
-
-def _relevant_verification_pairs(
-    verification_state: str,
-    selected_check: object,
-    evidence: ExecutionEvidence,
-    files: tuple[str, ...],
-) -> tuple[tuple[str, str], ...]:
-    """The check commands that actually decided the verification state.
-
-    Provenance cites decisive facts only: a fresh-pass proof cites covering
-    passing commands, a fresh-fail proof cites covering failing commands,
-    and an unobserved state cites nothing -- unrelated executed commands
-    stay out of the proof.
-    """
-
-    if selected_check is None:
-        return ()
-    if verification_state == VERIFICATION_FRESH_FAIL:
-        items = evidence.failed_checks_after_edit
-    elif verification_state == VERIFICATION_FRESH_PASS:
-        items = evidence.successful_checks
-    else:
-        return ()
-    pairs: list[tuple[str, str]] = []
-    for item in items:
-        if not check_covers_selected_candidate(selected_check, item.command, item.cwd, files):
-            continue
-        pair = (item.command, item.cwd)
-        if pair not in pairs:
-            pairs.append(pair)
-    return tuple(pairs)
-
-
-def _analysis_run_cwd_digest(cwd: object, project: object) -> str:
-    from codey.research.identity import path_ref
-
-    return str(path_ref(str(cwd or "."), project=project).get("digest") or "")
-
-
-def _matching_analysis_run_refs(
-    analysis_runs: object,
-    pairs: tuple[tuple[str, str], ...],
-    project: object = None,
-) -> tuple[str, ...]:
-    """Latest analysis-run ref per decisive (command, cwd) pair.
-
-    Matching is cwd-aware via the same project-relative path digest the
-    AnalysisRun projection uses, so the same command run under two packages
-    of a monorepo cites its own execution, never a sibling's. Redacted
-    commands carry no display text and therefore no ref; their digest-only
-    provenance stays in the analysis_runs trace section.
-    """
-
-    wanted: dict[tuple[str, str], None] = {}
-    for command, cwd in dict.fromkeys(pairs or ()):
-        text = str(command or "").strip()
-        if not text:
-            continue
-        wanted[(text, _analysis_run_cwd_digest(cwd, project))] = None
-    if not wanted:
-        return ()
-    by_pair: dict[tuple[str, str], str] = {}
-    for row in analysis_runs or ():
-        if not isinstance(row, Mapping):
-            continue
-        display = str(row.get("command_display") or "")
-        ref = normalize_runtime_ref(row.get("analysis_run_id"), kind="analysis_run")
-        cwd_ref = row.get("cwd_ref")
-        digest = (
-            str(cwd_ref.get("digest") or "")
-            if isinstance(cwd_ref, Mapping)
-            else ""
-        )
-        if not display or not ref or not digest:
-            continue
-        key = (display, digest)
-        if key in wanted:
-            by_pair[key] = ref
-    refs: list[str] = []
-    for key in wanted:
-        ref = by_pair.get(key)
-        if ref and ref not in refs:
-            refs.append(ref)
-    return tuple(refs)
-
-
-def _coding_completion_proof(
-    *,
-    run_id: str,
-    stop_reason: str,
-    task_changed: bool,
-    files: tuple[str, ...],
-    selected_check_present: bool,
-    verification_state: str,
-    checks_passed: bool,
-    analysis_run_refs: tuple[str, ...] = (),
-):
-    if stop_reason != "done" or not task_changed or not files:
-        return None
-    docs_only = all(is_document_path(str(item)) for item in files)
-    limitations: tuple[str, ...] = ()
-    if docs_only:
-        limitations = (LIMITATION_DOCS_ONLY_CHANGE,)
-    elif (
-        verification_state == VERIFICATION_UNOBSERVED
-        and checks_passed
-    ):
-        limitations = (LIMITATION_VERIFICATION_NOT_LOCALLY_OBSERVED,)
-    run_ref = safe_run_ref(run_id)
-    contract = build_completion_contract(
-        domain=DOMAIN_CODING,
-        subject_ref=f"run:{run_ref}" if run_ref else DOMAIN_CODING,
-        checks=_coding_completion_checks(
-            files=files,
-            selected_check_present=selected_check_present,
-            verification_state=verification_state,
-            checks_passed=checks_passed,
-        ),
-        limitation_refs=limitations,
-        analysis_run_refs=analysis_run_refs,
-        external_refs=(
-            f"ledger:{run_ref}",
-            f"receipt:{run_ref}",
-            f"diff:{run_ref}",
-        ) if run_ref else (),
-    )
-    return project_completion_proof(contract)
-
-
-def _record_coding_completion_trace(
-    trace: Any | None,
-    *,
-    run_id: str,
-    stop_reason: str,
-    task_changed: bool,
-    files: tuple[str, ...],
-    selected_check: object,
-    evidence: ExecutionEvidence,
-    reported_checks_passed: bool,
-    analysis_runs: object = (),
-    project: object = None,
-) -> None:
-    verification_state = _coding_verification_state(selected_check, evidence, files)
-    proof = _coding_completion_proof(
-        run_id=run_id,
-        stop_reason=stop_reason,
-        task_changed=task_changed,
-        files=files,
-        selected_check_present=selected_check is not None,
-        verification_state=verification_state,
-        checks_passed=reported_checks_passed,
-        analysis_run_refs=_matching_analysis_run_refs(
-            analysis_runs,
-            _relevant_verification_pairs(verification_state, selected_check, evidence, files),
-            project=project,
-        ),
-    )
-    _record_completion_proof_trace(trace, proof)
+_COMPLETION_BLOCKED_NOTE = {
+    "unobserved": (
+        "Completion blocked: the required verification was never observed "
+        "locally. Unobserved is not failure, but it is not done either."
+    ),
+    "max_repair_rounds": (
+        "Completion blocked: local verification still failing after the "
+        "repair round."
+    ),
+    "environment_failure": (
+        "Completion blocked: the verification command could not run "
+        "(environment error), so the failure cannot be attributed to the "
+        "code."
+    ),
+    "provider_failure": (
+        "Completion blocked: provider failed during the repair phase."
+    ),
+    "repair_context_unavailable": (
+        "Completion blocked: no safe bounded failure facts were available "
+        "for a repair round."
+    ),
+}
 
 
 def _record_completion_proof_trace(
@@ -649,6 +447,20 @@ def _record_completion_proof_trace(
     sink = FailOpenPromptTrace(trace)
     sink.call("record_completion_proof", completion_proof_trace_payload(proof))
     sink.call("flush")
+
+
+def _blocked_result(result: RunResult, reason: str) -> RunResult:
+    """Turn a claimed-done result into an honest blocked stop."""
+    note = _COMPLETION_BLOCKED_NOTE.get(
+        reason,
+        "Completion blocked: local completion proof did not pass.",
+    )
+    summary = result.summary.strip()
+    return replace(
+        result,
+        stop_reason="blocked",
+        summary=f"{summary}\n\n[{note}]" if summary else f"[{note}]",
+    )
 
 
 def _provider_fallback_policy_decision(
@@ -2826,6 +2638,11 @@ class TaskRunner:
             persistent=not self.is_git_repository(key),
         )
         tried_writers = set(frame.preflight_tried)
+        # One-shot holder for the repair phase: run_one_writer_attempt passes
+        # it into agent.run(), whose ContextSource machinery renders it and
+        # binds the admission row to the outbound send epoch. It is empty
+        # for every normal writer attempt.
+        completion_repair_admission: dict[str, object] = {}
 
         def refresh_checkpoint_view() -> CheckpointView:
             nonlocal checkpoint_prompt
@@ -2892,6 +2709,14 @@ class TaskRunner:
                 ),
                 ghost_directive="",
                 ghost_continuity="",
+                completion_repair_context=str(
+                    completion_repair_admission.get("text", "")
+                ),
+                completion_repair_context_payload=(
+                    completion_repair_admission.get("payload")
+                    if isinstance(completion_repair_admission.get("payload"), dict)
+                    else None
+                ),
                 permission_profile="coding_writer",
                 tool_fns=self._managed_tool_fns(
                     session_id=request.session_id,
@@ -3011,13 +2836,19 @@ class TaskRunner:
             frame.provider = failover.provider
             frame.provider_id = failover.provider_id
             frame.preflight_switches = failover.switches
-        if (
+        # Narrow checkpoint-resume green inheritance: the workspace did not
+        # change and nothing new ran, so prior green checks still cover it.
+        # The receipt stays green, but the completion proof now records this
+        # explicitly as stance=inherited_pass / source=checkpoint -- never as
+        # this round's clean verification fact (0.4.13 provenance debt).
+        inherited_green = bool(
             project_context.checkpoint.resumed
             and work.work_checkpoint is not None
             and not result.changed
             and not result.checks_ran
             and work.evidence.has_successful_checks
-        ):
+        )
+        if inherited_green:
             result = replace(result, checks_passed=True)
         checkpoint_changed = bool(
             work.work_checkpoint is not None and work.work_checkpoint.changed_files
@@ -3239,18 +3070,149 @@ class TaskRunner:
             configured_verification_commands,
             configured_ignored_paths,
         )
-        # The agent's own report is captured before the local receipt override
-        # below, so the shadow proof never mistakes the override for a claim.
-        reported_checks_passed = result.checks_passed
-        selected_check = None
-        relevant_green = False
-        if result.stop_reason == "done" and task_changed and files:
-            selected_check = select_verification_candidate(
-                verification_candidates,
-                files,
+        # --- Verified Completion Enforcement (0.4.13) --------------------
+        # The first decision point where local facts constrain done: build
+        # the completion proof, admit at most one bounded repair context for
+        # an observed product failure, then let the FINAL proof drive
+        # receipt, ledger, project facts, and the user-visible event.
+        selected_check = (
+            select_verification_candidate(verification_candidates, files)
+            if result.stop_reason == "done" and task_changed and files
+            else None
+        )
+        checkpoint_green = inherited_green or review_cycle.inherited_checks_passed
+
+        def build_enforcement_decision() -> tuple[Any, VerificationProvenance, tuple[str, ...], str]:
+            local_state = coding_verification_state(selected_check, work.evidence, files)
+            provenance = verification_provenance(
+                local_state=local_state,
+                checkpoint_green=checkpoint_green,
             )
-            if selected_check is not None and work.evidence.observed_tool_events:
-                relevant_green = any(
+            analysis_refs = matching_analysis_run_refs(
+                work.analysis_run_payloads,
+                relevant_verification_pairs(local_state, selected_check, work.evidence, files),
+                project=project,
+            )
+            proof = build_coding_completion_proof(
+                run_id=frame.run_id,
+                stop_reason=result.stop_reason,
+                task_changed=task_changed,
+                files=files,
+                selected_check_present=selected_check is not None,
+                provenance=provenance,
+                analysis_run_refs=analysis_refs,
+            )
+            failure_class = ""
+            if proof is not None and not proof.satisfied:
+                decisive = decisive_failure_fact(selected_check, work.evidence, files)
+                failure_class = classify_verification_failure(
+                    proof_status=proof.status,
+                    selected_check_present=selected_check is not None,
+                    decisive_error_code=str(getattr(decisive, "error_code", "") or ""),
+                    decisive_exit_code=getattr(decisive, "exit_code", None),
+                )
+            return proof, provenance, analysis_refs, failure_class
+
+        proof, provenance, analysis_refs, failure_class = build_enforcement_decision()
+        _record_completion_proof_trace(frame.trace, proof)
+
+        blocked_reason = ""
+        repaired_once = False
+        if (
+            COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF
+            and proof is not None
+            and not proof.satisfied
+            and not state.stop_flag.is_set()
+            and repair_candidate(
+                proof.status,
+                failure_class,
+                max_repair_rounds=MAX_COMPLETION_REPAIR_ROUNDS,
+            )
+        ):
+            if COMPLETION_ENFORCEMENT_MODE == ENFORCEMENT_BLOCK:
+                # Treatment arm without repair admission: the failed proof
+                # blocks done below, but no failure facts go back to the
+                # model and no extra writer turn runs.
+                repaired_once = False
+            else:
+                projection = project_repair_context(
+                    proof=proof.to_payload(),
+                    failure_class=failure_class,
+                    decisive_checks=(decisive_failure_fact(selected_check, work.evidence, files),),
+                    changed_files=files,
+                    analysis_run_refs=analysis_refs,
+                )
+                if not projection.admitted:
+                    blocked_reason = "repair_context_unavailable"
+                else:
+                    completion_repair_admission["text"] = projection.prompt_text
+                    completion_repair_admission["payload"] = projection.to_payload()
+                    hooks.on_event(RunEvent.status(
+                        "[runner] completion proof did not pass; running one bounded repair round."
+                    ))
+                    try:
+                        repair_result = failover.run(
+                            task=COMPLETION_REPAIR_FOLLOWUP,
+                            turn_budget=max(1, request.max_turns - result.turns),
+                            fresh=False,
+                            handoff="",
+                            checkpoint=refresh_checkpoint_view(),
+                        )
+                    except cancellation.TaskCancelled:
+                        raise
+                    except ProviderActionError:
+                        blocked_reason = "provider_failure"
+                    finally:
+                        completion_repair_admission.clear()
+                    repaired_once = not blocked_reason
+                    if repaired_once:
+                        turns = min(
+                            request.max_turns,
+                            result.turns + repair_result.turns,
+                        )
+                        if repair_result.stop_reason == "stopped":
+                            result = replace(repair_result, turns=turns)
+                        elif repair_result.stop_reason == "done":
+                            # Re-collect post-repair facts; the new proof decides.
+                            task_changes = self.collect_changes(project, tracker)
+                            collected = change_state(task_changes)
+                            if collected is not None:
+                                task_changed = collected
+                            files = tuple(
+                                str(item.get("path") or "")
+                                for item in (task_changes.get("files") or [])
+                                if item.get("path")
+                            )
+                            selected_check = (
+                                select_verification_candidate(verification_candidates, files)
+                                if files
+                                else None
+                            )
+                            result = RunResult(
+                                summary=repair_result.summary,
+                                stop_reason="done",
+                                turns=turns,
+                                checks_passed=False,
+                                changed=result.changed or repair_result.changed,
+                                checks_ran=result.checks_ran or repair_result.checks_ran,
+                            )
+                            proof, provenance, _analysis_refs, failure_class = (
+                                build_enforcement_decision()
+                            )
+                            _record_completion_proof_trace(frame.trace, proof)
+                        else:
+                            result = replace(repair_result, turns=turns)
+                            if repair_result.stop_reason != "approval":
+                                blocked_reason = "max_repair_rounds"
+
+        if COMPLETION_ENFORCEMENT_MODE == ENFORCEMENT_OFF:
+            # 0.4.12 control semantics: the shadow proof stays trace-only and
+            # the narrow local-green override decides the receipt, exactly as
+            # before enforcement existed.
+            legacy_green = bool(
+                selected_check is not None
+                and work.evidence.observed_tool_events
+                and any(
                     check_covers_selected_candidate(
                         selected_check,
                         item.command,
@@ -3259,7 +3221,52 @@ class TaskRunner:
                     )
                     for item in work.evidence.successful_checks
                 )
-                result = replace(result, checks_passed=relevant_green)
+            )
+            if selected_check is not None and work.evidence.observed_tool_events:
+                result = replace(result, checks_passed=legacy_green)
+            # Control keeps the pre-enforcement receipt flag untouched
+            # (override when a decisive local green existed, else the
+            # model-reported value): nothing else may contaminate the arm.
+        elif (
+            not blocked_reason
+            and result.stop_reason == "done"
+            and proof is not None
+            and proof.status in ("failed", "blocked")
+        ):
+            # A done claim backed by a failed or unverifiable proof must
+            # never pass as done. complete_with_limitations (docs-only,
+            # inherited green) stays an allowed -- but honest -- done.
+            blocked_reason = (
+                "unobserved"
+                if proof.status == "blocked"
+                else "environment_failure"
+                if failure_class in ("environment_failure", "verification_unavailable")
+                else "max_repair_rounds"
+            )
+
+        if COMPLETION_ENFORCEMENT_MODE != ENFORCEMENT_OFF:
+            verified = False
+            if blocked_reason and result.stop_reason in (
+                "done",
+                "max_turns",
+                "no_progress",
+                "protocol",
+            ):
+                # Explicit stop conditions win; everything else becomes an
+                # honest blocked result instead of a claimed done.
+                result = _blocked_result(result, blocked_reason)
+            elif result.stop_reason == "done":
+                if proof is not None:
+                    verified = provenance.stance in (
+                        STANCE_FRESH_PASS,
+                        STANCE_INHERITED_PASS,
+                    )
+                else:
+                    # Out of enforcement scope (no changed files): keep the
+                    # pre-enforcement flag semantics.
+                    verified = bool(result.checks_passed)
+            result = replace(result, checks_passed=verified)
+
         receipt = build_task_receipt(
             task_changes,
             checks_passed=result.checks_passed,
@@ -3270,18 +3277,6 @@ class TaskRunner:
                 checks_passed=result.checks_passed,
                 receipt=receipt.to_dict(),
             )
-        )
-        _record_coding_completion_trace(
-            frame.trace,
-            run_id=frame.run_id,
-            stop_reason=result.stop_reason,
-            task_changed=task_changed,
-            files=files,
-            selected_check=selected_check,
-            evidence=work.evidence,
-            reported_checks_passed=reported_checks_passed,
-            analysis_runs=work.analysis_run_payloads,
-            project=project,
         )
         facts_write_required = (
             self.project_facts is not None

@@ -22,6 +22,7 @@ KNOWN_CONTEXT_SOURCE_KEYS = frozenset({
     "work_checkpoint",
     "initial_listing",
     "coding_current_context",
+    "completion_repair_context",
 })
 CODING_WRITER_CONTEXT_SOURCE_KEYS = (
     "project_instructions",
@@ -32,6 +33,9 @@ CODING_WRITER_CONTEXT_SOURCE_KEYS = (
     "work_checkpoint",
     "initial_listing",
     "coding_current_context",
+    # 0.4.13: bounded failure facts admitted only when a completion proof
+    # failed. Never a default of chat, research, or planning profiles.
+    "completion_repair_context",
 )
 PLANNING_READONLY_CONTEXT_SOURCE_KEYS = (
     "ghost_continuity",

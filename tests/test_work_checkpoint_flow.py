@@ -522,11 +522,19 @@ class WorkCheckpointFlowTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
+            # A selectable verification candidate lets the observed green
+            # check satisfy completion enforcement.
+            (project / "pyproject.toml").write_text(
+                "[tool.pytest.ini_options]\n", encoding="utf-8"
+            )
             state = self._state(root / "state")
             facts = mock.Mock()
             facts.render.return_value = ""
             facts.record_success.return_value = True
             facts.record_successful_change.return_value = False
+            # Real commands tuple: keeps candidate discovery working so the
+            # observed green check can satisfy completion enforcement.
+            facts.load.return_value = mock.Mock(commands=())
             state.project_facts = facts
             provider = self._provider()
 

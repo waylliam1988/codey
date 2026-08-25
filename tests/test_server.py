@@ -43,6 +43,68 @@ from codey.verification_policy import VerificationCandidate
 
 VALID_SHA256 = "a" * 64
 
+
+def _observable_edit_and_pass_events(*, path: str = "app.py"):
+    """Tool events a real writer emits for one edit followed by a green check."""
+    return (
+        RunEvent.tool_finished(
+            1,
+            ToolCall("edit", {"path": path, "old_string": "1", "new_string": "2"}),
+            ToolOutcome("edited", True, changed=True),
+        ),
+        RunEvent.tool_finished(
+            2,
+            ToolCall("run", {"command": "python -m pytest", "path": "."}),
+            ToolOutcome("OK", True, exit_code=0),
+        ),
+    )
+
+
+def _scripted_agent_run(*steps):
+    """Multi-phase agent_run stand-in driven by (result, observed) pairs.
+
+    Each step is ``(result, observed)``: ``result`` is returned (or raised,
+    if it is an exception instance); when ``observed`` is true the step
+    first emits the tool events a real writer produces for one edit plus a
+    green check, because completion enforcement only lets local
+    observations satisfy done.
+    """
+    steps_iter = iter(steps)
+
+    def _run(_provider, _project, _task, **kwargs):
+        result, observed = next(steps_iter)
+        if observed:
+            for event in _observable_edit_and_pass_events():
+                kwargs["on_event"](event)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    return _run
+
+
+def _two_phase_writer(
+    first: RunResult,
+    *,
+    second_summary: str,
+    second_turns: int = 2,
+    second_checks_passed: bool = True,
+):
+    """First writer phase returns ``first``; the repair phase re-verifies."""
+    return _scripted_agent_run(
+        (first, False),
+        (
+            RunResult(second_summary, "done", second_turns, second_checks_passed, True),
+            True,
+        ),
+    )
+
+
+def _verified_writer_agent_run(summary: str, *, turns: int = 3):
+    """One writer phase that performs an edit and a green check."""
+
+    return _scripted_agent_run((RunResult(summary, "done", turns, True, True), True))
+
 _PROVIDER_TAB_GUARDS: list[mock.Mock] = []
 
 
@@ -4646,12 +4708,15 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=RunResult("complete", "done", 3, True, True),
+                side_effect=_verified_writer_agent_run("complete"),
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
             mock.patch.object(server, "connect_fresh_provider_tab", side_effect=RuntimeError("not open")),
         ):
+            # A pytest manifest gives the run a selectable verification
+            # candidate covering app.py.
+            (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
         emitted = []
@@ -4679,6 +4744,7 @@ class SessionThreadingTests(unittest.TestCase):
             project = Path(td, "project")
             project.mkdir()
             (project / "app.py").write_text("old\n", encoding="utf-8")
+            (project / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             synthesis = KnowledgeNote.create(
                 type="synthesis",
                 title="Research API choice",
@@ -4848,7 +4914,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=RunResult("complete", "done", 3, False, True),
+                side_effect=_verified_writer_agent_run("complete"),
             ) as agent_run,
             mock.patch.object(
                 server,
@@ -4858,6 +4924,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer) as connect_review,
             mock.patch.object(server, "connect_fresh_provider_tab") as connect_self_review,
         ):
+            (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
         self.assertEqual(agent_run.call_count, 1)
@@ -4903,14 +4970,15 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                side_effect=[
+                side_effect=_two_phase_writer(
                     RunResult("first pass", "done", 3, False, True),
-                    RunResult("review fixed", "done", 2, False, True),
-                ],
+                    second_summary="review fixed",
+                ),
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
         ):
+            (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 20, False, "deepseek")
 
         self.assertEqual(agent_run.call_count, 2)
@@ -4956,10 +5024,10 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                side_effect=[
+                side_effect=_two_phase_writer(
                     RunResult("first pass", "done", 3, False, True),
-                    RunResult("self-review fixed", "done", 2, False, True),
-                ],
+                    second_summary="self-review fixed",
+                ),
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(
@@ -4973,6 +5041,7 @@ class SessionThreadingTests(unittest.TestCase):
                 return_value=reviewer,
             ) as connect_self_review,
         ):
+            (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 20, False, "deepseek")
 
         connect_self_review.assert_called_once_with("deepseek")
@@ -5035,11 +5104,11 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                side_effect=[
-                    RunResult("first pass", "done", 2, False, True),
-                    provider_failure,
-                    RunResult("fixed by sibling", "done", 1, False, True),
-                ],
+                side_effect=_scripted_agent_run(
+                    (RunResult("first pass", "done", 2, False, True), False),
+                    (provider_failure, False),
+                    (RunResult("fixed by sibling", "done", 1, True, True), True),
+                ),
             ) as agent_run,
             mock.patch.object(
                 server,
@@ -5048,6 +5117,7 @@ class SessionThreadingTests(unittest.TestCase):
             ) as collect_changes,
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
         ):
+            (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-review-failover", td, "task", 12, False, "deepseek")
 
         self.assertEqual(agent_run.call_count, 3)
@@ -5094,14 +5164,15 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                side_effect=[
-                    RunResult("first pass", "done", 3, True, True),
-                    RunResult("review claim was invalid", "done", 2, False, False),
-                ],
+                side_effect=_scripted_agent_run(
+                    (RunResult("first pass", "done", 3, True, True), True),
+                    (RunResult("review claim was invalid", "done", 2, False, False), False),
+                ),
             ),
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
         ):
+            (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 20, False, "deepseek")
 
         emitted = []
@@ -5158,12 +5229,12 @@ class SessionThreadingTests(unittest.TestCase):
         while not events.empty():
             emitted.append(events.get_nowait())
         task_done = next(event for event in emitted if event["type"] == "task_done")
-        self.assertEqual(task_done["summary"], "tests failed")
+        # 0.4.13: the failed-check repair left no locally observed facts, so
+        # the prior claimed green is not inherited and done is blocked.
+        self.assertEqual(task_done["stop_reason"], "blocked")
+        self.assertTrue(task_done["summary"].startswith("tests failed"))
+        self.assertIn("[Completion blocked:", task_done["summary"])
         self.assertFalse(task_done["receipt"]["checks_passed"])
-        self.assertEqual(
-            task_done["receipt"]["text"],
-            "1 file changed · restore available",
-        )
 
     def test_review_followup_no_progress_does_not_inherit_prior_checks_passed(self) -> None:
         state = server.State()
@@ -5235,7 +5306,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(
                 server,
                 "agent_run",
-                return_value=RunResult("complete", "done", 3, False, True),
+                side_effect=_verified_writer_agent_run("complete"),
             ) as agent_run,
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", side_effect=RuntimeError("not open")),
@@ -5245,6 +5316,7 @@ class SessionThreadingTests(unittest.TestCase):
                 side_effect=RuntimeError("self-review failed"),
             ) as connect_self_review,
         ):
+            (Path(td) / "pyproject.toml").write_text("[tool.pytest.ini_options]\n", encoding="utf-8")
             server._run_task("session-1", td, "task", 8, False, "deepseek")
 
         self.assertEqual(agent_run.call_count, 1)

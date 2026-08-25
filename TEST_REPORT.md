@@ -1,5 +1,59 @@
 # Codey Test Report
 
+## 0.4.13 Verified Completion Enforcement + Repair Context Admission v1
+
+Codey 0.4.13 lets the local completion proof constrain `done` for coding
+runs for the first time, and admits one bounded repair context for observed
+product failures. The semantics moved into two pure projection leaves:
+`codey/completion_verification.py` (tri-state freshness, explicit provenance,
+proof construction, deterministic failure classification) and
+`codey/completion_repair_context.py` (facts-only brief + digest-only trace
+payload; consumes an already-evaluated proof payload and never imports the
+completion contract). The legacy `checks_passed` inheritance demanded by the
+roadmap is gone: provenance is explicit (`fresh_pass / fresh_fail /
+inherited_pass / unverified` over `local_run / checkpoint / none`), an
+inherited pass keeps the receipt green but marks the proof
+`complete_with_limitations`, and a claimed pass without local observation is
+not a fact at all.
+
+Enforcement sits at a single completion decision point in TaskRunner after
+writer/review and before receipt/ledger/project facts; the final outcome is
+the only writer of durable state. `complete` allows done, docs-only and
+inherited-green stay allowed as honest `complete_with_limitations`, and
+failed/blocked proofs stop with named reasons (`unobserved`,
+`max_repair_rounds`, `environment_failure`, `provider_failure`,
+`repair_context_unavailable`) instead of a fake done. Unobserved checks are
+never failures and never repair candidates. The repair round is bounded by
+`MAX_COMPLETION_REPAIR_ROUNDS = 1`; admission goes through `ContextSource` ->
+profile gate (coding_writer only) -> `ContextEpoch` -> `PromptEnvelope`, and
+`record_completion_repair_context(payload, *, epoch_id)` fails closed without
+a well-formed sent-bytes epoch binding, digest-keyed, counts/reason-codes
+only. There are no managers, no critic, no new tools; architecture tests lock
+the leaf boundaries, the closed payload vocabulary, and the absence of
+manager layers.
+
+Release validation on 2026-08-25:
+
+```powershell
+python -B tests\manual\completion_enforcement_ab.py --self-test
+# self-test passed (20-case decision matrix across 4 arms x 5 scenarios)
+
+python -B -m pytest -q
+# 2824 passed, 1 skipped, 852 subtests passed in 271.42s (0:04:31)
+```
+
+The self-test matrix pins the treatment definitions: control_done records
+false completions on claim-only and fresh-fail scenarios; enforcement arms
+block them with zero false completions and zero unnecessary repairs;
+repair_context converts exactly the repairable product failures (one round,
+shared turn budget) while environment failures stay blocked without repair;
+the minimal arm admits the same rounds with fewer context characters.
+Live-provider A/B (`--provider deepseek --cases 2-3`) remains the release
+gate: 0.4.13 changes user-visible `done` behavior and adds model-visible
+failure context, so release evidence must show net benefit over control —
+false completion rate down, honest blocks up, no unnecessary-repair or
+repair-induced regressions — not merely that repair sometimes succeeds.
+
 ## 0.4.12 Ghost Research Continuity + Topic Planner v1
 
 Codey 0.4.12 lets a new Research run receive a tiny, explicitly

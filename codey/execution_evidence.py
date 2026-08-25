@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from codey.events import RunEvent
+from codey.redaction import looks_sensitive_signal
 
 MAX_CHANGED_FILES = 32
 MAX_READS = 48
@@ -13,16 +14,55 @@ MAX_CHECKS = 8
 MAX_FAILED_CHECKS = 8
 MAX_TRUNCATED_RESULTS = 16
 MAX_RENDER_CHARS = 5_000
+MAX_CHECK_SUMMARY_CHARS = 400
+MAX_CHECK_SUMMARY_LINES = 6
 
 
 def _text(value: object, limit: int = 500) -> str:
     return str(value or "").strip()[:limit]
 
 
+def check_failure_summary(outcome: object) -> str:
+    """A bounded, secret-screened tail of one failed run's model text.
+
+    The tail carries pytest's short summary; head lines are usually the
+    banner. Secret-looking lines are dropped entirely rather than masked,
+    and the whole field is capped so evidence stays bounded in memory.
+    """
+
+    raw_lines = str(getattr(outcome, "model_text", "") or "").splitlines()
+    kept: list[str] = []
+    for line in reversed(raw_lines):
+        text = line.strip()
+        if not text:
+            continue
+        if looks_sensitive_signal(text):
+            continue
+        kept.append(text[:200])
+        if len(kept) >= MAX_CHECK_SUMMARY_LINES:
+            break
+    summary = "\n".join(reversed(kept))
+    if len(summary) > MAX_CHECK_SUMMARY_CHARS:
+        summary = summary[-MAX_CHECK_SUMMARY_CHARS:].lstrip()
+    return summary
+
+
 @dataclass(frozen=True)
 class CheckEvidence:
+    """One observed verification run.
+
+    The extra fields are bounded execution facts for repair contexts:
+    ``result_summary`` is a capped, secret-screened output tail -- never
+    raw stdout -- and ``managed_output_handle`` points at locally retained
+    full output without carrying any of it.
+    """
+
     command: str
     cwd: str = "."
+    exit_code: int | None = None
+    error_code: str = ""
+    result_summary: str = ""
+    managed_output_handle: str = ""
 
 
 @dataclass(frozen=True)
@@ -92,7 +132,7 @@ class ExecutionEvidence:
                 del self.changed_files[:-MAX_CHANGED_FILES]
             return
         if name == "run":
-            self._record_run(call.args, outcome.ok and outcome.exit_code == 0)
+            self._record_run(call.args, outcome)
             self._record_truncation(name, _text(call.args.get("command")), outcome.truncated)
             return
         if name == "read":
@@ -183,15 +223,35 @@ class ExecutionEvidence:
             rendered = rendered[:MAX_RENDER_CHARS].rstrip() + "\n[evidence truncated]"
         return rendered
 
-    def _record_run(self, args: dict, ok: bool) -> None:
+    def _record_run(self, args: dict, outcome: object) -> None:
         command = _text(args.get("command"))
         cwd = _text(args.get("path"), 240) or "."
         if not command:
             return
-        item = CheckEvidence(command, cwd)
+        ok = bool(
+            getattr(outcome, "ok", False)
+            and getattr(outcome, "exit_code", None) == 0
+        )
+        handle = ""
+        managed = getattr(outcome, "managed_output", None)
+        if callable(managed):
+            try:
+                handle = str((managed() or {}).get("handle") or "")[:80]
+            except Exception:
+                handle = ""
+        item = CheckEvidence(
+            command,
+            cwd,
+            exit_code=getattr(outcome, "exit_code", None),
+            error_code=_text(getattr(outcome, "error_code", ""), 80),
+            result_summary="" if ok else check_failure_summary(outcome),
+            managed_output_handle=handle,
+        )
         if ok:
             self.failed_checks_after_edit[:] = [
-                existing for existing in self.failed_checks_after_edit if existing != item
+                existing
+                for existing in self.failed_checks_after_edit
+                if (existing.command, existing.cwd) != (command, cwd)
             ]
             self._append_check(self.checks_after_edit, item)
             return
@@ -214,7 +274,13 @@ class ExecutionEvidence:
 
     @staticmethod
     def _append_check(values: list[CheckEvidence], item: CheckEvidence, limit: int = MAX_CHECKS) -> None:
-        values[:] = [existing for existing in values if existing != item]
+        # Identity is the executed (command, cwd): a re-run replaces the
+        # earlier observation even when exit code or output differ.
+        values[:] = [
+            existing
+            for existing in values
+            if (existing.command, existing.cwd) != (item.command, item.cwd)
+        ]
         values.append(item)
         del values[:-limit]
 

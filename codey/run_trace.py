@@ -78,6 +78,7 @@ MAX_BRIEF_PROJECTIONS = 8
 MAX_BRIEF_CLAIM_ROWS = 16
 MAX_BRIEF_REFS = 24
 MAX_TOPIC_CONTINUITY_ROWS = 8
+MAX_COMPLETION_REPAIR_ROWS = 4
 CHECKPOINT_FLUSH_INTERVAL = 8
 TRUNCATED_TEXT_SUFFIX = "..."
 REVIEW_FINDING_REF_KINDS: dict[str, str] = {
@@ -252,6 +253,7 @@ class RunTraceManifest:
     research_source_trust: list[dict[str, object]] = field(default_factory=list)
     research_brief_projections: list[dict[str, object]] = field(default_factory=list)
     research_topic_continuity: list[dict[str, object]] = field(default_factory=list)
+    completion_repair_context: list[dict[str, object]] = field(default_factory=list)
     fallbacks: list[FallbackTrace] = field(default_factory=list)
     provider_failures: list[dict[str, str]] = field(default_factory=list)
     policy_decisions: list[dict[str, object]] = field(default_factory=list)
@@ -313,6 +315,9 @@ class RunTraceManifest:
             ),
             "research_topic_continuity": (
                 self.research_topic_continuity[:MAX_TOPIC_CONTINUITY_ROWS]
+            ),
+            "completion_repair_context": (
+                self.completion_repair_context[:MAX_COMPLETION_REPAIR_ROWS]
             ),
             "fallbacks": [item.to_payload() for item in self.fallbacks[:MAX_FALLBACKS]],
             "provider_failures": self.provider_failures[:MAX_FAILURES],
@@ -396,6 +401,7 @@ class RunTraceRecorder:
         self._source_trust_keys: set[str] = set()
         self._brief_projection_keys: set[str] = set()
         self._topic_continuity_keys: set[str] = set()
+        self._completion_repair_keys: set[str] = set()
         self._policy_keys: set[tuple[str, str, str, str, str]] = set()
 
     def record_router(
@@ -1397,6 +1403,76 @@ class RunTraceRecorder:
         if len(self.manifest.research_topic_continuity) > MAX_TOPIC_CONTINUITY_ROWS:
             del self.manifest.research_topic_continuity[:-MAX_TOPIC_CONTINUITY_ROWS]
             self.manifest.warnings.append("research_topic_continuity_truncated")
+        self.checkpoint()
+
+    def record_completion_repair_context(
+        self,
+        projection: Mapping[str, object],
+        *,
+        epoch_id: str,
+    ) -> None:
+        """Record one bounded repair-context admission (counts + refs only).
+
+        Mirrors the 0.4.12 continuity admission contract: the digest is the
+        dedupe and integrity anchor, and the required ``epoch_id`` binds the
+        row to the exact outbound provider-send attempt whose prompt carried
+        the ``completion_repair_context`` source. Anything empty or
+        malformed fails closed without writing a row or touching the dedupe
+        key, so an admitted row cannot exist outside a send-boundary
+        binding. The payload vocabulary has no field for raw failure text:
+        only counts, classes, reason codes, warnings, and proof refs land.
+        """
+        if not isinstance(projection, Mapping) or not projection.get("admitted"):
+            return
+        digest = valid_digest_ref(projection.get("digest"))
+        if not digest or digest in self._completion_repair_keys:
+            return
+        epoch = valid_context_epoch_ref(epoch_id)
+        if not epoch:
+            return
+
+        def _codes(key: str) -> list[str]:
+            return [
+                code
+                for code in (
+                    _safe_trace_code(value, 80)
+                    for value in _trace_list_items(projection.get(key))
+                )
+                if code
+            ][:MAX_WARNINGS]
+
+        payload: dict[str, object] = {
+            "schema_version": _nonnegative_int(projection.get("schema_version")) or 1,
+            "context_source": _identifier(projection.get("context_source"), 80),
+            "digest": digest,
+            "epoch_id": epoch,
+            "failure_class": _safe_trace_code(projection.get("failure_class"), 40),
+            "detail": _identifier(projection.get("detail"), 20),
+            "check_count": _nonnegative_int(projection.get("check_count")),
+            "changed_file_count": _nonnegative_int(projection.get("changed_file_count")),
+            "analysis_run_ref_count": _nonnegative_int(
+                projection.get("analysis_run_ref_count")
+            ),
+            "finding_ref_count": _nonnegative_int(projection.get("finding_ref_count")),
+            "summary_chars": _nonnegative_int(projection.get("summary_chars")),
+            "truncated": bool(projection.get("truncated")),
+            "reason_codes": _codes("reason_codes"),
+            "warnings": _codes("warnings"),
+        }
+        proof_id = _generated_ref(projection.get("proof_id"), "completion_proof")
+        contract_id = _generated_ref(projection.get("contract_id"), "completion_contract")
+        if proof_id:
+            payload["proof_id"] = proof_id
+        if contract_id:
+            payload["contract_id"] = contract_id
+        refused = _safe_trace_code(projection.get("refused_reason"), 80)
+        if refused:
+            payload["refused_reason"] = refused
+        self._completion_repair_keys.add(digest)
+        self.manifest.completion_repair_context.append(payload)
+        if len(self.manifest.completion_repair_context) > MAX_COMPLETION_REPAIR_ROWS:
+            del self.manifest.completion_repair_context[:-MAX_COMPLETION_REPAIR_ROWS]
+            self.manifest.warnings.append("completion_repair_context_truncated")
         self.checkpoint()
 
     def record_completion_proof(self, proof: Any) -> None:

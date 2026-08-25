@@ -32,6 +32,11 @@ class ReviewCycleResult:
     changes_dirty: bool
     review_attempted: bool = False
     review_repair_attempted: bool = False
+    # The narrow pre-review green-check rule fired: the repair changed
+    # nothing, so the earlier local green still covers the workspace. The
+    # caller records this as inherited provenance -- never as this round's
+    # clean verification fact.
+    inherited_checks_passed: bool = False
 
 
 def change_state(changes: object) -> bool | None:
@@ -176,6 +181,7 @@ class ReviewCoordinator:
             ),
         )
         changes_dirty = True
+        inherited = False
         if repaired.stop_reason == "done":
             set_checkpoint_status("ready_for_review")
         if (
@@ -184,7 +190,11 @@ class ReviewCoordinator:
             and checks_before_review_followup
             and not repaired.checks_ran
         ):
+            # Same narrow inheritance rule as before, now surfaced instead of
+            # mutating silently: the caller's completion proof decides what
+            # this green is worth.
             repaired = replace(repaired, checks_passed=True)
+            inherited = True
         return ReviewCycleResult(
             repaired,
             task_changed or repaired.changed,
@@ -192,6 +202,7 @@ class ReviewCoordinator:
             changes_dirty,
             review_attempted=True,
             review_repair_attempted=True,
+            inherited_checks_passed=inherited,
         )
 
 

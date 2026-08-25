@@ -255,6 +255,11 @@ class RunLedgerTaskRunnerIntegrationTests(unittest.TestCase):
             project = root / "project"
             project.mkdir()
             (project / "app.py").write_text("before\n", encoding="utf-8")
+            # A pytest manifest gives the run a selectable verification
+            # candidate, so the observed green check satisfies done.
+            (project / "pyproject.toml").write_text(
+                "[tool.pytest.ini_options]\n", encoding="utf-8"
+            )
             state = server.State(root / "state")
             provider = self._provider()
 

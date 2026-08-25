@@ -55,6 +55,7 @@ KNOWN_TRACE_SECTIONS = frozenset({
     "research_review_findings",
     "research_planner_gaps",
     "completion_proofs",
+    "completion_repair_context",
     "policy_decisions",
     "research_source_trust",
     "research_brief_projections",
@@ -73,6 +74,7 @@ KNOWN_CONTEXT_SOURCES = frozenset({
     "work_checkpoint",
     "initial_listing",
     "coding_current_context",
+    "completion_repair_context",
 })
 MODEL_VISIBLE_REQUIRED_CONSUMES = frozenset(("prompt_envelope", "run_trace"))
 POLICY_REQUIRED_CONSUMES = frozenset(("policy_guard",))
@@ -98,6 +100,7 @@ KNOWN_RELEASE_GATES = frozenset({
     "targeted_tests",
     "live_smoke",
     "research_to_code_ab",
+    "live_ab",
 })
 
 
@@ -314,6 +317,20 @@ def builtin_capability_registry() -> CapabilityRegistry:
             canonical_inputs=("research_proof_quality", "research_review_finding"),
             fail_mode="fail_open",
             release_gate="unit_tests",
+        ),
+        CapabilitySpec(
+            id="completion_repair_context",
+            provides=("completion_repair_context_projection",),
+            consumes=("completion_contract", "context_epoch", "prompt_envelope", "run_trace"),
+            model_visible=True,
+            trace_sections=("prompt_sections", "completion_repair_context"),
+            context_sources=("completion_repair_context",),
+            permission_profiles=("coding_writer",),
+            owner_module="codey.completion_repair_context",
+            projection_audience=("model_visible", "behavior_input"),
+            canonical_inputs=("completion_contract",),
+            fail_mode="fail_closed",
+            release_gate="live_ab",
         ),
         CapabilitySpec(
             id="consensus_advisors",

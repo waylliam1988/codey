@@ -21,6 +21,7 @@ EXPECTED_BUILTIN_IDS = (
     "changes_presenter",
     "chat_runner",
     "completion_contract",
+    "completion_repair_context",
     "consensus_advisors",
     "context_epoch",
     "conversation_handoff",
@@ -50,7 +51,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "46bcb7785458e4aa61af4bbc235a87d551bf1c82a89d05926ea91b8e5818ab01"
+    "eeefdb09d146b795b623c9d4ae5da375e7959234e48114690919e8e2fb388238"
 )
 
 
@@ -635,6 +636,32 @@ class CapabilityRegistryTests(unittest.TestCase):
             CapabilityRegistry((
                 CapabilitySpec("BadCapability", ("bad_boundary",)),
             ))
+
+    def test_completion_repair_context_is_model_visible_bounded_projection(self) -> None:
+        registry = builtin_capability_registry()
+
+        spec = registry.get("completion_repair_context")
+
+        self.assertEqual(spec.provides, ("completion_repair_context_projection",))
+        self.assertEqual(spec.context_sources, ("completion_repair_context",))
+        self.assertEqual(spec.owner_module, "codey.completion_repair_context")
+        self.assertTrue(spec.model_visible)
+        # 0.4.13 changes user-visible done behavior and admits model-visible
+        # failure facts: the release gate is a live A/B, not unit tests.
+        self.assertEqual(spec.release_gate, "live_ab")
+        self.assertIn("completion_contract", spec.consumes)
+        self.assertIn("context_epoch", spec.consumes)
+        self.assertEqual(
+            spec.trace_sections,
+            ("prompt_sections", "completion_repair_context"),
+        )
+        self.assertEqual(spec.fail_mode, "fail_closed")
+        self.assertEqual(spec.canonical_inputs, ("completion_contract",))
+        # The completion contract itself must stay trace/data-only: it is
+        # not a scorer and never becomes model-visible through enforcement.
+        contract = registry.get("completion_contract")
+        self.assertFalse(contract.model_visible)
+        self.assertIn("completion_repair_context", KNOWN_CONTEXT_SOURCES)
 
 
 if __name__ == "__main__":

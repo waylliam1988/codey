@@ -219,7 +219,11 @@ def _exercise_page(
     expect(
         page.locator(".msg.asst .body", has_text="browser flow completed")
     ).to_have_count(1)
-    expect(page.locator("#chat")).to_contain_text("checks passed")
+    # The changed file is a document, so completion is honest-but-limited:
+    # the receipt records the observed green run without claiming a verified
+    # code change (0.4.13 provenance semantics).
+    expect(page.locator("#chat")).to_contain_text("exit 0: python -m unittest")
+    expect(page.locator("#chat")).not_to_contain_text("[Completion blocked:")
     expect(page.locator("#chat")).to_contain_text("DeepSeek approved")
     expect(page.locator("#chat")).not_to_contain_text('{"tool"')
     expect(page.locator("#chat")).not_to_contain_text("[agent]")

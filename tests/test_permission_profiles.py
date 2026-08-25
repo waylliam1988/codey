@@ -110,6 +110,17 @@ class PermissionProfileTests(unittest.TestCase):
             "planning_readonly",
         )
 
+    def test_completion_repair_context_is_coding_writer_only(self) -> None:
+        # 0.4.13: bounded failure facts are admitted only into the coding
+        # writer phase. Chat, research, reviewer, and planning never see it.
+        for name in ("coding_writer",):
+            with self.subTest(profile=name):
+                self.assertTrue(allows_context_source(profile_for_name(name), "completion_repair_context"))
+        for name in ("chat", "research", "reviewer", "planning_readonly"):
+            with self.subTest(profile=name):
+                self.assertFalse(allows_context_source(profile_for_name(name), "completion_repair_context"))
+        self.assertIn("completion_repair_context", KNOWN_CONTEXT_SOURCE_KEYS)
+
 
 if __name__ == "__main__":
     unittest.main()
