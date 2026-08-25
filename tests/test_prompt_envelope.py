@@ -353,7 +353,11 @@ class PromptEnvelopeTests(unittest.TestCase):
 
         self.assertIn("Research question:\nWhy beta?", intro)
 
-    def test_research_request_trace_is_distinct_from_model_question(self) -> None:
+    def test_research_request_row_is_gone_question_section_is_the_only_request(self) -> None:
+        # The old pre-send "research_request" prompt-section row duplicated
+        # the model-visible "research_question" section without ever sharing
+        # its provider-turn epoch. It is gone; "research_question" is the
+        # single request row and carries the sent-bytes epoch.
         with tempfile.TemporaryDirectory() as td:
             store = _Store(Path(td))
             trace = _Trace()
@@ -369,8 +373,28 @@ class PromptEnvelopeTests(unittest.TestCase):
             list(runner.run("Why gamma?"))
 
         names = [section["name"] for section in trace.sections]
-        self.assertEqual(names[0], "research_request")
+        self.assertNotIn("research_request", names)
         self.assertIn("research_question", names)
+        # Every model-visible row carries some provider-turn epoch...
+        for section in trace.sections:
+            with self.subTest(section=section["name"], kind="has_epoch"):
+                self.assertTrue(str(section.get("epoch_id") or "").startswith("ctx_epoch:"))
+        # ...and the first-turn intro sections all share one sent-bytes
+        # epoch (later turns legitimately re-epoch their own prompts).
+        first_epoch = str(trace.sections[0].get("epoch_id") or "")
+        intro_names = {
+            "research_system_prompt",
+            "research_recent_context",
+            "research_chat_handoff",
+            "research_topic_continuity",
+            "research_iteration_context",
+            "research_question",
+        }
+        for section in trace.sections:
+            if section["name"] not in intro_names:
+                continue
+            with self.subTest(section=section["name"], kind="shared_first_turn"):
+                self.assertEqual(section.get("epoch_id"), first_epoch)
 
     def test_record_envelope_fail_open_trace_call(self) -> None:
         trace = _Trace()

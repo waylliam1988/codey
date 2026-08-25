@@ -18,12 +18,15 @@
   / `ghost_continuity` source 仍然被排除）。admission 走共享链路：
   `ContextSource` -> profile allow-list ->
   `render_context_sources_with_metadata()` -> prompt envelope section。
-  intro rows 在真实 provider-send 边界投影：Research controller 会在组装后
-  追加 action block，因此组装 sections、admitted source rows
+  intro rows 在真实 provider-send 边界投影：controller 追加 action block 后
+  字节才定稿，因此组装 sections、admitted source rows
   （`record_context_sources(..., epoch_id=...)`）和 outbound prompt 都绑定
   到按实际发送字节计算的同一个内容寻址 epoch；从未发送的 intro 不产生任何
-  row。section 文案直说 "not evidence ... re-check ... do not cite"，
-  Codey 自己的 framing 行不出现 Ghost / Work Queue / Concept Graph /
+  row。发送前的 `research_request` prompt-section row 已删除：它复制了模型
+  可见的 `research_question` section 却从未共享其 provider-turn epoch；现在
+  所有 research prompt-section row 都携带 sent-bytes epoch。
+  section 文案直说 "not evidence ... re-check ... do not cite"，Codey 自己
+  的 framing 行不出现 Ghost / Work Queue / Concept Graph /
   Memory 内部词；follow-up 材料继续走独立的
   `research_iteration_context`。空投影或门禁关闭时渲染为空，baseline
   intro 逐字节不变。

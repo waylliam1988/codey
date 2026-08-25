@@ -231,13 +231,6 @@ class ResearchRunner:
                 )
         except Exception:
             pass
-        self.prompt_trace.record_section(PromptEnvelopeSection(
-            name="research_request",
-            text=question,
-            purpose="current research request",
-            freshness="run_start",
-            source_refs=("request:research_request",),
-        ))
         if not question:
             self.result = ResearchRunResult(
                 question="",

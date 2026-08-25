@@ -26,11 +26,14 @@ This file records Codey's release history. The newest release appears first.
   (`record_context_sources(..., epoch_id=...)`), and the outbound prompt are
   all bound to one content-addressed epoch computed over the exact sent
   bytes; intros that never reach a provider turn project nothing. The
-  section text says "not evidence ... re-check ... do not cite" and never
-  contains Ghost / Work Queue / Concept Graph vocabulary in Codey-authored
-  framing lines; follow-up material keeps using the separate
-  `research_iteration_context`. Empty or gate-closed continuity renders to
-  nothing, leaving the baseline intro byte-identical.
+  pre-send `research_request` prompt-section row was removed: it duplicated
+  the model-visible `research_question` section without ever sharing its
+  provider-turn epoch, and every research prompt-section row now carries the
+  sent-bytes epoch. The section text says "not evidence ... re-check ... do
+  not cite" and never contains Ghost / Work Queue / Concept Graph vocabulary
+  in Codey-authored framing lines; follow-up material keeps using the
+  separate `research_iteration_context`. Empty or gate-closed continuity
+  renders to nothing, leaving the baseline intro byte-identical.
 - TaskRunner wiring was thinned instead of growing: `_run_research_pipeline`
   now delegates to two helpers, `_build_research_topic_continuity` (profile
   gate -> interest hints via the new knowledge-layer `candidate_to_topic_hint`,
