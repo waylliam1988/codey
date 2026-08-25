@@ -43,9 +43,11 @@
   warnings 和 digest——没有原始提示文本字段，prompt-lab 材料无法泄入
   RunTrace 或 EvidenceLedger。claim ref 超过 16 条上限时先计数再截断，
   `truncated` 标记如实上报。admission 是结构性闭环的：必填的 `epoch_id`
-  没有默认值，admitted row 不可能脱离 send-boundary 绑定而存在；projection
-  sink（`RunTraceResearchSink`）不暴露 continuity writer——唯一写入路径是
-  runner 的门禁加 `record_research_topic_continuity(..., epoch_id=...)`
+  没有默认值，且必须是格式合法的 `ctx_epoch:<16 hex>` ref——空值或畸形值
+  fail closed，不写 row、不污染 dedupe key，因此 admitted row 不可能脱离
+  send-boundary 绑定而存在；projection sink（`RunTraceResearchSink`）不暴露
+  continuity writer——唯一写入路径是 runner 的门禁加
+  `record_research_topic_continuity(..., epoch_id=...)`
   对实际外发字节的绑定。发布口径因此天然诚实：row 证明的是"哪些内容被绑定到
   外发 provider-send attempt 字节"，而不是"模型确实处理了它们"。
 - 新增 manual harness `tests/manual/ghost_research_continuity_ab.py`：两臂

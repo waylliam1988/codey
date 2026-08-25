@@ -16,6 +16,7 @@ from codey.context_epoch import (
     context_epoch_id,
     context_source_ref,
     snapshot_from_rendered_sources,
+    valid_context_epoch_ref,
 )
 
 
@@ -47,6 +48,29 @@ class ContextEpochIdTests(unittest.TestCase):
 
     def test_empty_text_is_valid_deterministic_input(self) -> None:
         self.assertEqual(context_epoch_id(""), context_epoch_id(None))
+
+
+class ValidContextEpochRefTests(unittest.TestCase):
+    def test_accepts_exactly_what_context_epoch_id_emits(self) -> None:
+        ref = context_epoch_id("outbound bytes")
+        self.assertEqual(valid_context_epoch_ref(ref), ref)
+
+    def test_rejects_everything_outside_the_strict_shape(self) -> None:
+        for bad in (
+            "",
+            None,
+            "   ",
+            "not-an-epoch",
+            EPOCH_REF_PREFIX,
+            EPOCH_REF_PREFIX + "a" * 15,  # too short
+            EPOCH_REF_PREFIX + "a" * 17,  # too long
+            EPOCH_REF_PREFIX + "x" * 16,  # not hex
+            EPOCH_REF_PREFIX + "A" * 16,  # uppercase is a foreign vocabulary
+            "sha256:" + "a" * 64,  # digest prefix, not an epoch ref
+            ("ctx_epoch:" + "a" * 16).upper(),
+        ):
+            with self.subTest(bad=bad):
+                self.assertEqual(valid_context_epoch_ref(bad), "")
 
 
 class ContextSourceRefTests(unittest.TestCase):

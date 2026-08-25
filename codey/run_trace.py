@@ -25,7 +25,7 @@ from codey.completion_contract import (
     COMPLETION_STATUSES as _COMPLETION_TRACE_STATUSES,
     MAX_COMPLETION_CHECKS as _MAX_COMPLETION_CHECKS,
 )
-from codey.context_epoch import admission_from_rendered_source
+from codey.context_epoch import admission_from_rendered_source, valid_context_epoch_ref
 from codey.prompt_envelope import is_model_boundary_freshness
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
@@ -1298,14 +1298,19 @@ class RunTraceRecorder:
         in — the trace stays refs-only by construction. The sent-bytes
         ``epoch_id`` binds this row to the exact outbound provider-send
         attempt whose intro carried the continuity section. It has no
-        default: an admitted row cannot exist outside a send-boundary
-        binding, so the trace never claims more than "these bytes left for
+        default and must be a well-formed ``ctx_epoch:<16 hex>`` ref;
+        anything else fails closed without writing a row or touching the
+        dedupe key, so an admitted row cannot exist outside a send-boundary
+        binding — the trace never claims more than "these bytes left for
         the provider".
         """
         if not isinstance(projection, Mapping) or not projection.get("admitted"):
             return
         digest = valid_digest_ref(projection.get("digest"))
         if not digest or digest in self._topic_continuity_keys:
+            return
+        epoch = valid_context_epoch_ref(epoch_id)
+        if not epoch:
             return
 
         def _codes(key: str) -> list[str]:
@@ -1377,7 +1382,7 @@ class RunTraceRecorder:
             "schema_version": _nonnegative_int(projection.get("schema_version")) or 1,
             "context_source": _identifier(projection.get("context_source"), 80),
             "digest": digest,
-            "epoch_id": _identifier(epoch_id, 80),
+            "epoch_id": epoch,
             "item_count": _nonnegative_int(projection.get("item_count")),
             "candidate_count": _nonnegative_int(projection.get("candidate_count")),
             "claim_ref_count": _nonnegative_int(projection.get("claim_ref_count")),

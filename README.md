@@ -39,8 +39,9 @@ Version: `0.4.11`
   `...` menu to inspect, export, delete, reset, or disable bounded local state
   without adding a persistent sidebar or interrupting the task flow.
 - **Trace model input composition quietly**: each run can keep a bounded local
-  prompt envelope manifest, so model-visible sections are auditable by digest,
-  source refs, and context epochs without saving raw prompts.
+  prompt envelope manifest, so the sections bound to a provider-send attempt
+  are auditable by digest, source refs, and context epochs without saving raw
+  prompts.
 - **Keep internal capability boundaries explicit**: Codey keeps a read-only map
   of built-in capabilities and their policy/model-visible/state boundaries
   without exposing a plugin system or changing task behavior.

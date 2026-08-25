@@ -36,6 +36,25 @@ def context_epoch_id(value: object) -> str:
     return f"{EPOCH_REF_PREFIX}{digest}"
 
 
+def valid_context_epoch_ref(value: object) -> str:
+    """Return ``value`` only if it is a well-formed epoch ref, else empty.
+
+    The single valid shape is ``ctx_epoch:`` + exactly 16 lowercase hex
+    chars — exactly what :func:`context_epoch_id` emits. Uppercase, bare
+    digests, foreign prefixes, and empty values all fail closed: callers
+    that bind rows to sent bytes must not accept a looser vocabulary.
+    """
+    text = str(value or "").strip()
+    if not text.startswith(EPOCH_REF_PREFIX):
+        return ""
+    suffix = text.removeprefix(EPOCH_REF_PREFIX)
+    if len(suffix) != 16:
+        return ""
+    if any(char not in "0123456789abcdef" for char in suffix):
+        return ""
+    return text
+
+
 def context_source_ref(key: object) -> str:
     """Return the stable source ref for one named context source key.
 

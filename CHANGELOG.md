@@ -49,9 +49,11 @@ This file records Codey's release history. The newest release appears first.
   prompt-lab material cannot leak into RunTrace or EvidenceLedger. Claim-ref
   inputs beyond the 16-row cap are counted before capping, so the
   `truncated` flag reports honestly. Admission is structurally closed: the
-  required `epoch_id` has no default, so an admitted row cannot exist
-  outside the send-boundary binding, and the projection sink
-  (`RunTraceResearchSink`) exposes no continuity writer — the only path is
+  required `epoch_id` has no default and must be a well-formed
+  `ctx_epoch:<16 hex>` ref — anything empty or malformed fails closed
+  without writing a row or touching the dedupe key, so an admitted row
+  cannot exist outside the send-boundary binding. The projection sink
+  (`RunTraceResearchSink`) exposes no continuity writer: the only path is
   the runner's gate plus `record_research_topic_continuity(...,
   epoch_id=...)` over the exact outbound bytes. The published claim stays
   honest by construction: rows prove what was bound to outbound

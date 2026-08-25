@@ -477,7 +477,8 @@ def test_topic_admission_has_no_bypass_outside_the_send_boundary() -> None:
     Together these make "admitted row exists" structurally imply "bound to
     outbound provider-send attempt bytes": no caller can project an
     un-bound row, so the runner's gate and sent-bytes binding cannot be
-    bypassed.
+    bypassed. (Format validation of the epoch itself lives in
+    test_topic_admission_rejects_empty_or_malformed_epoch.)
     """
     import pytest
 
@@ -503,3 +504,70 @@ def test_topic_admission_has_no_bypass_outside_the_send_boundary() -> None:
         )
         with pytest.raises(TypeError):
             recorder.record_research_topic_continuity(payload)
+
+
+def test_topic_admission_rejects_empty_or_malformed_epoch() -> None:
+    """The trace boundary fails closed unless the epoch is ctx_epoch:<16 hex>.
+
+    An empty or malformed ref writes no row and never touches the dedupe
+    key, so the payload stays admissible by a later valid send — while a
+    well-formed sent-bytes ref admits exactly one row.
+    """
+    import json
+
+    from codey.run_trace import RunTraceStore
+    from codey.research.topic_continuity import project_topic_continuity
+
+    payload = project_topic_continuity(
+        interest_hints=[{"ref": "r1", "question": "Lead?"}],
+    ).to_payload()
+    rejected_epochs = (
+        "",
+        "not-an-epoch",
+        "ctx_epoch:",
+        "ctx_epoch:" + "x" * 16,  # not hex
+        "ctx_epoch:" + "a" * 15,  # too short
+        "ctx_epoch:" + "A" * 16,  # uppercase is a foreign vocabulary
+        "sha256:" + "a" * 64,
+    )
+    for index, bad in enumerate(rejected_epochs):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+            store = RunTraceStore(td)
+            recorder = store.open(
+                run_id=f"run-bad-epoch-{index}",
+                session_id="s-bad-epoch",
+                project=None,
+                mode_initial="research",
+                provider_initial="deepseek",
+            )
+            recorder.record_research_topic_continuity(payload, epoch_id=bad)
+            recorder.flush()
+            manifest = json.loads(
+                store.path_for("s-bad-epoch", f"run-bad-epoch-{index}").read_text(
+                    encoding="utf-8"
+                )
+            )
+            assert manifest["research_topic_continuity"] == []
+
+    # A valid sent-bytes ref admits the row the rejected attempts left
+    # unwritten: same recorder, dedupe key was never polluted.
+    good = context_epoch_id("outbound bytes")
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        store = RunTraceStore(td)
+        recorder = store.open(
+            run_id="run-good-epoch",
+            session_id="s-good-epoch",
+            project=None,
+            mode_initial="research",
+            provider_initial="deepseek",
+        )
+        for bad in ("", good):
+            recorder.record_research_topic_continuity(payload, epoch_id=bad)
+        recorder.flush()
+        manifest = json.loads(
+            store.path_for("s-good-epoch", "run-good-epoch").read_text(encoding="utf-8")
+        )
+
+    rows = manifest["research_topic_continuity"]
+    assert len(rows) == 1
+    assert rows[0]["epoch_id"] == good
