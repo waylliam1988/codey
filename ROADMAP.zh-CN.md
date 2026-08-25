@@ -2447,8 +2447,10 @@ ResearchRunner._intro()
 ResearchPipeline 初始 iteration 只转发 bounded text；
 RunTraceRecorder.record_research_topic_continuity 写入真实的
 `research_topic_continuity` manifest section（digest 去重，refs/counts/codes
-only，无原始文本字段）。projection 异常 fail-open 回空 baseline，并在 run
-trace 留下 `research_topic_continuity_projection_failed` warn code。
+only，无原始文本字段；必填的 `epoch_id` 无默认值，projection sink 也不暴露
+continuity writer，admitted row 结构上只能来自 runner 的发送边界绑定）。
+projection 异常 fail-open 回空 baseline，并在 run trace 留下
+`research_topic_continuity_projection_failed` warn code。
 ```
 
 没有新增 TopicManager / TopicStore / ResearchContinuityRuntime；`research/`

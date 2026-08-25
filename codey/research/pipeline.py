@@ -113,8 +113,8 @@ class ResearchPipeline:
         try:
             # Topic continuity travels to the initial iteration as bounded
             # text plus its digest-only payload; the runner projects the
-            # audit row at the provider-send boundary, so an admitted row
-            # always means the model actually saw the intro.
+            # audit row at the provider-send boundary, so an admitted row is
+            # always bound to outbound provider-send attempt bytes.
             initial_run = self.run_iteration(
                 task=self.context.question,
                 max_turns=self.context.max_turns,

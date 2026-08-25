@@ -514,8 +514,9 @@ class ResearchRunner:
     def _send_provider(self, message: str) -> str:
         try:
             cancellation.check()
-            # Bind intro sections and admitted sources to this exact outbound
-            # turn first, so they share the epoch stamped below.
+            # Bind intro sections and admitted sources to this exact
+            # outbound provider-send attempt first, so they share the epoch
+            # stamped below.
             self._bind_pending_intro_rows(message)
             record_provider_send_prompt(
                 self.trace_recorder,
@@ -671,13 +672,14 @@ class ResearchRunner:
         return rendered.text
 
     def _bind_pending_intro_rows(self, outbound: str) -> None:
-        """Project intro rows onto the exact outbound provider turn.
+        """Project intro rows onto the exact outbound provider-send attempt.
 
         One content-addressed epoch binds every row of the first turn
         together: the assembled sections, the admitted context sources, and
         the outbound prompt recorded by record_provider_send_prompt() — all
-        over the same bytes. Rows for intros that never reach a provider send
-        are never emitted: nothing was admitted to any provider turn.
+        over the same bytes. Rows for intros that never enter a send-boundary
+        projection are never emitted: nothing was bound to any outbound
+        attempt.
         """
         if not self._pending_intro_sections and not self._pending_context_sources:
             return
@@ -701,8 +703,10 @@ class ResearchRunner:
         if continuity_admitted and self.topic_continuity_payload:
             # The admission row lands here, not at assembly time, and only
             # when the rendered source actually passed this runner's gate:
-            # an admitted row guarantees the model received the continuity
-            # section on this exact provider turn (same sent-bytes epoch).
+            # an admitted row is bound to the exact outbound provider-send
+            # attempt that carried the continuity section (same sent-bytes
+            # epoch). It proves what was bound to the outbound bytes, not
+            # what the model ultimately processed.
             self.prompt_trace.call(
                 "record_research_topic_continuity",
                 self.topic_continuity_payload,

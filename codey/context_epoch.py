@@ -136,8 +136,9 @@ def admission_from_rendered_source(
     chars = len(text)
     truncated = bool(getattr(rendered_source, "truncated", False))
     if chars > MAX_ADMISSION_CHARS:
-        # The audit row reports what the model actually saw: clamp the count
-        # to the budget cap and mark it, instead of silently overstating.
+        # The audit row describes the outbound bytes as bound, not the
+        # source: clamp the count to the budget cap and mark it, instead of
+        # silently overstating.
         chars = MAX_ADMISSION_CHARS
         truncated = True
     return ContextAdmission(

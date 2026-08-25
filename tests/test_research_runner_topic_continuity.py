@@ -210,8 +210,8 @@ def test_runner_gate_closes_continuity_even_with_text() -> None:
     _send(runner)
 
     # Gate closed -> no section, no context source, and above all no
-    # admission row: the model never saw continuity, so the trace must not
-    # claim it was admitted.
+    # admission row: continuity never entered an outbound provider-send
+    # attempt, so the trace must not claim it was admitted.
     assert "research_topic_continuity" not in trace.section_names
     assert trace.context_source_rows == []
     assert trace.topic_payloads == []
@@ -239,7 +239,8 @@ def test_runner_records_topic_row_only_at_the_send_boundary() -> None:
 
     runner._intro("q")
 
-    # Assembly alone records nothing: the model has not seen anything yet.
+    # Assembly alone records nothing: no outbound provider-send attempt
+    # exists yet to bind rows to.
     assert trace.topic_payloads == []
 
     outbound = runner.last_intro + "\n\nALLOWED ACTIONS"
@@ -314,8 +315,8 @@ def _stub_result() -> ResearchRunResult:
 def test_pipeline_forwards_continuity_payload_without_pre_recording() -> None:
     """The pipeline hands the payload through; the runner owns the row.
 
-    An admitted trace row must mean the model actually saw the intro, so
-    recording happens at the provider-send boundary, never before it.
+    An admitted trace row must be bound to outbound provider-send attempt
+    bytes, so recording happens at the send boundary, never before it.
     """
     trace = _SectionRecorder()
     received: dict[str, object] = {}
@@ -401,6 +402,7 @@ def test_run_trace_persists_digest_only_topic_continuity_row() -> None:
         }],
         claim_refs=("prior-claim-1",),
     )
+    epoch = context_epoch_id("outbound intro + controller action block")
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         store = RunTraceStore(td)
         recorder = store.open(
@@ -410,8 +412,9 @@ def test_run_trace_persists_digest_only_topic_continuity_row() -> None:
             mode_initial="research",
             provider_initial="deepseek",
         )
-        RunTraceResearchSink(recorder).record_topic_continuity(
-            projection.to_payload()
+        recorder.record_research_topic_continuity(
+            projection.to_payload(),
+            epoch_id=epoch,
         )
         recorder.finish(status="done")
         manifest = json.loads(
@@ -422,6 +425,7 @@ def test_run_trace_persists_digest_only_topic_continuity_row() -> None:
     assert len(rows) == 1
     row = rows[0]
     assert row["digest"] == projection.to_payload()["digest"]
+    assert row["epoch_id"] == epoch
     assert row["context_source"] == "research_topic_continuity"
     assert row["item_count"] == 2
     assert row["claim_ref_count"] == 1
@@ -443,6 +447,7 @@ def test_run_trace_dedupes_and_fails_closed_on_missing_digest() -> None:
         interest_hints=[{"ref": "r1", "question": "Lead?"}],
     ).to_payload()
     digest = payload["digest"]
+    epoch = context_epoch_id("outbound bytes")
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         store = RunTraceStore(td)
         recorder = store.open(
@@ -452,10 +457,10 @@ def test_run_trace_dedupes_and_fails_closed_on_missing_digest() -> None:
             mode_initial="research",
             provider_initial="deepseek",
         )
-        recorder.record_research_topic_continuity(payload)
-        recorder.record_research_topic_continuity(payload)  # dedupe by digest
-        recorder.record_research_topic_continuity({"admitted": True})  # no digest
-        recorder.record_research_topic_continuity({**payload, "admitted": False})
+        recorder.record_research_topic_continuity(payload, epoch_id=epoch)
+        recorder.record_research_topic_continuity(payload, epoch_id=epoch)  # dedupe by digest
+        recorder.record_research_topic_continuity({"admitted": True}, epoch_id=epoch)  # no digest
+        recorder.record_research_topic_continuity({**payload, "admitted": False}, epoch_id=epoch)
         recorder.flush()
         manifest = json.loads(
             store.path_for("s-dup", "run-dup").read_text(encoding="utf-8")
@@ -464,3 +469,37 @@ def test_run_trace_dedupes_and_fails_closed_on_missing_digest() -> None:
     rows = manifest["research_topic_continuity"]
     assert len(rows) == 1
     assert rows[0]["digest"] == digest
+
+
+def test_topic_admission_has_no_bypass_outside_the_send_boundary() -> None:
+    """The sink exposes no continuity writer; the recorder demands an epoch.
+
+    Together these make "admitted row exists" structurally imply "bound to
+    outbound provider-send attempt bytes": no caller can project an
+    un-bound row, so the runner's gate and sent-bytes binding cannot be
+    bypassed.
+    """
+    import pytest
+
+    from codey.run_trace import RunTraceStore
+
+    # The projection sink has no continuity writer at all.
+    assert not hasattr(RunTraceResearchSink(None), "record_topic_continuity")
+
+    payload = {
+        "schema_version": 1,
+        "context_source": "research_topic_continuity",
+        "admitted": True,
+        "digest": "sha256:" + "3" * 64,
+    }
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        store = RunTraceStore(td)
+        recorder = store.open(
+            run_id="run-no-epoch",
+            session_id="s-no-epoch",
+            project=None,
+            mode_initial="research",
+            provider_initial="deepseek",
+        )
+        with pytest.raises(TypeError):
+            recorder.record_research_topic_continuity(payload)

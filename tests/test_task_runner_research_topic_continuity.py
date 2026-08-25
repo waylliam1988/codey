@@ -203,9 +203,6 @@ def _seed_prior_claim_overflow(
         for index in range(count)
     ]
     source_text = " ".join(sentences)
-    claim_lines = "\n".join(
-        f"- {sentence} [{index + 1}]" for index, sentence in enumerate(sentences)
-    )
     excerpt_lines = "\n".join(
         f"- [1] {sentence}" for sentence in sentences
     )
@@ -225,7 +222,6 @@ def _seed_prior_claim_overflow(
         "## 来源\n"
         f"[1] Overflow article - {url}"
     )
-    del claim_lines
     ledger = ResearchLedger()
     ledger.record_open(
         requested_url=url,

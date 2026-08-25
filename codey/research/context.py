@@ -43,9 +43,6 @@ class ResearchTraceSink(Protocol):
     def record_research_brief_projection(self, projection: Mapping[str, object] | None) -> None:
         ...
 
-    def record_topic_continuity(self, projection: Mapping[str, object] | object | None) -> None:
-        ...
-
 
 class NullResearchTraceSink:
     def record_result(self, result: object) -> None:
@@ -75,12 +72,15 @@ class NullResearchTraceSink:
     def record_research_brief_projection(self, projection: Mapping[str, object] | None) -> None:
         del projection
 
-    def record_topic_continuity(self, projection: Mapping[str, object] | object | None) -> None:
-        del projection
-
 
 class RunTraceResearchSink:
-    """Bounded Research projection over a RunTraceRecorder-like object."""
+    """Bounded Research projection over a RunTraceRecorder-like object.
+
+    Deliberately no topic-continuity writer: admitted continuity rows are
+    bound to sent bytes, so only the runner's send-boundary binding may
+    emit them (via ``record_research_topic_continuity(..., epoch_id=...)``,
+    whose ``epoch_id`` has no default).
+    """
 
     def __init__(self, trace: object | None) -> None:
         self._sink = FailOpenPromptTrace(trace)
@@ -166,16 +166,6 @@ class RunTraceResearchSink:
         if not isinstance(payload, Mapping):
             return
         self._sink.call("record_research_brief_projection", payload)
-        self._sink.call("flush")
-
-    def record_topic_continuity(self, projection: Mapping[str, object] | object | None) -> None:
-        to_payload = getattr(projection, "to_payload", None)
-        payload = to_payload() if callable(to_payload) else projection
-        if not isinstance(payload, Mapping):
-            return
-        if not payload.get("admitted"):
-            return
-        self._sink.call("record_research_topic_continuity", payload)
         self._sink.call("flush")
 
 

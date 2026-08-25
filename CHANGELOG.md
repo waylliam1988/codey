@@ -48,7 +48,14 @@ This file records Codey's release history. The newest release appears first.
   codes, warnings, and the digest — no raw hint text field exists, so
   prompt-lab material cannot leak into RunTrace or EvidenceLedger. Claim-ref
   inputs beyond the 16-row cap are counted before capping, so the
-  `truncated` flag reports honestly.
+  `truncated` flag reports honestly. Admission is structurally closed: the
+  required `epoch_id` has no default, so an admitted row cannot exist
+  outside the send-boundary binding, and the projection sink
+  (`RunTraceResearchSink`) exposes no continuity writer — the only path is
+  the runner's gate plus `record_research_topic_continuity(...,
+  epoch_id=...)` over the exact outbound bytes. The published claim stays
+  honest by construction: rows prove what was bound to outbound
+  provider-send attempt bytes, not that the model processed them.
 - New manual harness `tests/manual/ghost_research_continuity_ab.py`:
   identical seeded state across arms with only the admission gate toggled.
   Every provider (real or stub) is wrapped in `TracingProvider`, so

@@ -1289,15 +1289,18 @@ class RunTraceRecorder:
         self,
         projection: Mapping[str, object],
         *,
-        epoch_id: str = "",
+        epoch_id: str,
     ) -> None:
         """Record one bounded topic-continuity admission (refs + counts only).
 
         The digest is the dedup and integrity anchor: rows without a valid
         content digest fail closed, and raw hint text has no field to live
-        in — the trace stays refs-only by construction. When supplied, the
-        sent-bytes ``epoch_id`` binds this row to the exact provider turn
-        whose intro carried the continuity section.
+        in — the trace stays refs-only by construction. The sent-bytes
+        ``epoch_id`` binds this row to the exact outbound provider-send
+        attempt whose intro carried the continuity section. It has no
+        default: an admitted row cannot exist outside a send-boundary
+        binding, so the trace never claims more than "these bytes left for
+        the provider".
         """
         if not isinstance(projection, Mapping) or not projection.get("admitted"):
             return
