@@ -18,11 +18,11 @@ classified as one of
 - ``planner_quality:<stop_reason>`` -- traffic flowed normally but the run
   stopped for Codey-side reasons (protocol/no_progress/max_turns/...).
 
-Transcript policy: this harness may archive full prompt/reply transcripts
-(``--transcript-mode archive``, the default for live runs) under its own
-journal directory. That material is manual prompt-lab input only; it must
-never flow back into RunTrace / EvidenceLedger / ResearchRecord / release
-claims.
+Transcript policy: digest-first by default (``--transcript-mode
+digest-only`` keeps only hashes); pass ``archive`` explicitly to also store
+full prompt/reply transcripts under the journal directory. That material
+is manual prompt-lab input only; it must never flow back into RunTrace /
+EvidenceLedger / ResearchRecord / release claims.
 """
 
 from __future__ import annotations
@@ -777,10 +777,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--transcript-mode",
         choices=TRANSCRIPT_MODES,
-        default="archive",
-        help="archive keeps full prompt/reply transcripts in the manual journal; "
-             "digest-only keeps hashes; off disables journaling entirely "
-             "(manual prompt-lab material only, never release evidence)",
+        default="digest-only",
+        help="digest-only keeps hashes (default, minimal retention); archive "
+             "additionally stores full prompt/reply transcripts for offline "
+             "prompt-lab diagnosis; off disables journaling entirely "
+             "(manual layer only, never release evidence)",
     )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
