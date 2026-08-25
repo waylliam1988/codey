@@ -18,6 +18,7 @@ from codey.ghost.gate import (
     GhostMemoryGate,
     candidate_type_for_signal_kind,
 )
+from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import (
     SCHEMA_VERSION as SIGNAL_SCHEMA_VERSION,
     SIGNAL_KINDS,
@@ -1068,15 +1069,7 @@ def _merge_metadata(
 
 
 def _coerce_confidence(value: object) -> float | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        confidence = float(value)
-    except (TypeError, ValueError):
-        return None
-    if confidence < 0.0 or confidence > 1.0:
-        return None
-    return round(confidence, 4)
+    return coerce_unit_float(value, digits=4)
 
 
 def _int_or_default(value: object, default: int) -> int:

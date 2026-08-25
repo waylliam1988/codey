@@ -19,6 +19,7 @@ from typing import Callable, Iterable, Protocol
 import uuid
 
 from codey import cancellation
+from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text
 from codey.local_store import DEFAULT_STATE_HOME, delete_file, project_key, session_key, write_json_atomic
 
@@ -956,17 +957,7 @@ def _task_hash(task: str) -> str:
 
 
 def _float_confidence(value: object) -> float:
-    if isinstance(value, bool):
-        return 0.0
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    if number < 0:
-        return 0.0
-    if number > 1:
-        return 1.0
-    return round(number, 4)
+    return clamp_unit_float(value, digits=4)
 
 
 def _int_or_zero(value: object) -> int:

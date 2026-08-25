@@ -789,6 +789,43 @@ class State:
             self.status = run.status
             return run
 
+    def active_run_for(
+        self,
+        *,
+        session_id: str = "",
+        project: str | None = None,
+    ) -> RunSnapshot | None:
+        """Return the active run when it matches the given scope.
+
+        Project scope compares resolved paths, so an active run started with
+        a differently-spelled but identical directory still matches.
+        """
+        with self.lock:
+            run = self.active_run
+        if run is None:
+            return None
+        if session_id and run.session_id != session_id:
+            return None
+        if project and not self._same_project(run.project or "", project):
+            return None
+        return run
+
+    def has_active_run_for_project(self, project_key: str) -> bool:
+        """True when the active run writes inside the given project."""
+        return self.active_run_for(project=project_key) is not None
+
+    @staticmethod
+    def _same_project(left: str, right: str) -> bool:
+        if not left or not right:
+            return False
+        try:
+            return (
+                Path(left).expanduser().resolve()
+                == Path(right).expanduser().resolve()
+            )
+        except (OSError, RuntimeError, ValueError):
+            return left == right
+
     def start_run(self, run_id: str) -> bool:
         with self.lock:
             if self.active_run is None or self.active_run.run_id != run_id:
@@ -1560,6 +1597,11 @@ def _submit_task_after_slot_release(
 ) -> str | None:
     deadline = time.monotonic() + max(0.0, timeout)
     while True:
+        # A user Stop during the approved command must never be swallowed by
+        # the continuation's reserve_run() (which clears the flag): bail out
+        # before submitting instead.
+        if STATE.stop_flag.is_set():
+            return None
         with STATE.lock:
             active = STATE.active_run
             if active is not None and previous_run_id and active.run_id != previous_run_id:
@@ -2064,6 +2106,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             clean_paths = [str(path) for path in paths] if paths is not None else None
             key = str(Path(project).expanduser().resolve())
+            # Restoring files while a task is writing to the same project
+            # would corrupt the run's change set.
+            if STATE.has_active_run_for_project(key):
+                self._send_json(409, {"ok": False, "error": "run in progress"})
+                return
             tracker = STATE.change_tracker_for(
                 key,
                 persistent=not is_git_repository(key),
@@ -2115,36 +2162,44 @@ class Handler(BaseHTTPRequestHandler):
             }
             STATE.record_shell_result(event)
             continued = False
+            continuation_stopped = False
             if pending.get("continue_after"):
-                setup_context = _shell_continuation_setup_context(pending)
-                followup_hints = _shell_followup_hints(
-                    pending=pending,
-                    result=result,
-                )
-                continuation = build_shell_approval_continuation(
-                    command=command,
-                    result=result,
-                    post_approval_instructions=str(
-                        pending.get("post_approval_instructions") or ""
-                    ),
-                    setup_context=setup_context,
-                    followup_hints=followup_hints,
-                )
-                continuation_run = _submit_task_after_slot_release(
-                    session_id,
-                    pending["project"],
-                    continuation,
-                    int(pending["max_turns"]),
-                    True,
-                    pending.get("provider") or DEFAULT_PROVIDER_ID,
-                    "project",
-                    previous_run_id=str(pending.get("run_id") or ""),
-                )
-                continued = continuation_run is not None
+                if STATE.stop_flag.is_set():
+                    # The user stopped while the approved command ran; do not
+                    # resurrect the task through the continuation slot.
+                    continuation_stopped = True
+                else:
+                    setup_context = _shell_continuation_setup_context(pending)
+                    followup_hints = _shell_followup_hints(
+                        pending=pending,
+                        result=result,
+                    )
+                    continuation = build_shell_approval_continuation(
+                        command=command,
+                        result=result,
+                        post_approval_instructions=str(
+                            pending.get("post_approval_instructions") or ""
+                        ),
+                        setup_context=setup_context,
+                        followup_hints=followup_hints,
+                    )
+                    continuation_run = _submit_task_after_slot_release(
+                        session_id,
+                        pending["project"],
+                        continuation,
+                        int(pending["max_turns"]),
+                        True,
+                        pending.get("provider") or DEFAULT_PROVIDER_ID,
+                        "project",
+                        previous_run_id=str(pending.get("run_id") or ""),
+                    )
+                    continued = continuation_run is not None
+                    continuation_stopped = not continued and STATE.stop_flag.is_set()
             self._send_json(200, {
                 "ok": True,
                 "approved": True,
                 "continued": continued,
+                "stopped": continuation_stopped,
                 "result": result,
                 "event": event,
             })
@@ -2161,8 +2216,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         if url.path == "/api/new_chat":
             session_id = str(body.get("session_id") or "").strip()
-            if session_id:
-                STATE.forget_conversation(session_id)
+            if not session_id:
+                self._send_json(400, {"ok": False, "error": "session_id required"})
+                return
+            # Forgetting a conversation mid-run would desynchronize the live
+            # task's snapshot from its storage.
+            if STATE.active_run_for(session_id=session_id) is not None:
+                self._send_json(409, {"ok": False, "error": "run in progress"})
+                return
+            STATE.forget_conversation(session_id)
             self._send_json(200, {"ok": True})
             return
         if url.path == "/api/stop":

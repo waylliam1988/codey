@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import re
 
+from codey.ghost.numbers import coerce_unit_float
+
 SCHEMA_VERSION = 1
 MAX_SIGNALS_PER_TURN = 5
 MAX_SIGNAL_TEXT_CHARS = 600
@@ -201,15 +203,7 @@ def signal_from_mapping(
 
 
 def _coerce_confidence(value: object) -> float | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        confidence = float(value)
-    except (TypeError, ValueError):
-        return None
-    if confidence < 0.0 or confidence > 1.0:
-        return None
-    return round(confidence, 4)
+    return coerce_unit_float(value, digits=4)
 
 
 def _clean_metadata(value: object) -> dict[str, object]:

@@ -13,6 +13,7 @@ import uuid
 from typing import Iterable
 
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
+from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
 from codey.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
@@ -1155,25 +1156,11 @@ def _status_filter(value: str | Iterable[str] | None, *, allowed: tuple[str, ...
 
 
 def _coerce_weight(value: object) -> float | None:
-    try:
-        out = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(out) or out < 0.0 or out > 1.0:
-        return None
-    return round(out, 6)
+    return coerce_unit_float(value, digits=6)
 
 
 def _coerce_confidence(value: object) -> float | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        confidence = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(confidence) or confidence < 0.0 or confidence > 1.0:
-        return None
-    return round(confidence, 4)
+    return coerce_unit_float(value, digits=4)
 
 
 def _coerce_reward(value: object) -> float:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import (
     SENSITIVE_SIGNAL_DIAGNOSTIC,
     SIGNAL_KINDS,
@@ -116,12 +117,4 @@ class GhostMemoryGate:
 
 
 def _coerce_confidence(value: object) -> float | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        confidence = float(value)
-    except (TypeError, ValueError):
-        return None
-    if confidence < 0.0 or confidence > 1.0:
-        return None
-    return round(confidence, 4)
+    return coerce_unit_float(value, digits=4)

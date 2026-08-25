@@ -18,6 +18,7 @@ import uuid
 
 from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.continuity import GhostContinuityStore
+from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
 from codey.prompt_safety import is_prompt_visible_text_safe
@@ -509,6 +510,10 @@ class GhostWorkQueueStore:
         queued = replace(
             current,
             status="queued",
+            # A manual requeue is an explicit "try again": it starts a fresh
+            # attempt cycle, otherwise items at MAX_WORK_RETRIES requeue but
+            # can never be claimed.
+            retry_count=0,
             started_run_id="",
             completed_run_id="",
             proof_refs=(),
@@ -1578,13 +1583,7 @@ def _parse_ts_or_none(value: object) -> datetime | None:
 
 
 def _unit_float(value: object) -> float:
-    if isinstance(value, bool):
-        return 0.0
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    return round(max(0.0, min(1.0, number)), 4)
+    return clamp_unit_float(value, digits=4)
 
 
 def _int(value: object) -> int:

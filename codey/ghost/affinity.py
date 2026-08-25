@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 import uuid
 
+from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
 
@@ -2059,27 +2060,11 @@ def _metadata_sequence(value: object) -> tuple[object, ...]:
 
 
 def _unit_float_or_none(value: object) -> float | None:
-    if isinstance(value, bool):
-        return None
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(number) or number < 0.0 or number > 1.0:
-        return None
-    return round(number, 6)
+    return coerce_unit_float(value, digits=6)
 
 
 def _unit_float(value: object) -> float:
-    if isinstance(value, bool):
-        return 0.0
-    try:
-        number = float(value)
-    except (TypeError, ValueError):
-        return 0.0
-    if not math.isfinite(number):
-        return 0.0
-    return round(max(0.0, min(1.0, number)), 6)
+    return clamp_unit_float(value, digits=6)
 
 
 def _parse_ts(value: object) -> datetime:

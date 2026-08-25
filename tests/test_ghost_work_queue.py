@@ -459,6 +459,30 @@ def test_queue_item_does_not_reopen_done_or_running_and_clears_old_completion_fi
     assert queued.proof_refs == ()
 
 
+def test_manual_requeue_resets_retry_count_so_blocked_items_can_be_claimed() -> None:
+    from codey.ghost.work_queue import MAX_WORK_RETRIES
+
+    with tempfile.TemporaryDirectory() as td:
+        store, item_id = _seed_research_work_item(td)
+        blocked = replace(
+            next(iter(store.list_items(status="queued", session_id="s1"))),
+            status="blocked",
+            retry_count=MAX_WORK_RETRIES,
+            blocked_reason="retry_limit",
+        )
+        assert store._replace_items([blocked], "test_seed_max_retries")
+
+        # Before the fix: requeue succeeds but the claim gate
+        # (retry_count < MAX_WORK_RETRIES) rejects the item forever.
+        requeued = store.queue_item(item_id)
+
+        assert requeued is not None
+        assert requeued.status == "queued"
+        assert requeued.retry_count == 0
+        claimed = store.claim_next(session_id="s1", run_id="run-9", user_request="continue")
+        assert claimed.ok
+
+
 def test_sensitive_or_dangerous_titles_are_not_created() -> None:
     continuity = mock.Mock()
     continuity.list_items.return_value = (

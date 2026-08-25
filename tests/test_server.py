@@ -1430,6 +1430,103 @@ class LocalProviderApiTests(unittest.TestCase):
         finally:
             httpd.shutdown()
 
+    def test_new_chat_returns_409_while_session_run_is_active(self) -> None:
+        httpd, host, port = self._start_server()
+        state = server.State()
+        run = state.reserve_run(
+            session_id="session-busy",
+            project=None,
+            task="running task",
+            provider_id="deepseek",
+        )
+        assert run is not None
+        try:
+            with mock.patch.object(server, "STATE", state):
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/new_chat",
+                    body=json.dumps({"session_id": "session-busy"}),
+                )
+                response = conn.getresponse()
+                body = json.loads(response.read().decode("utf-8"))
+                conn.close()
+
+            self.assertEqual(response.status, 409)
+            self.assertFalse(body.get("ok"))
+        finally:
+            httpd.shutdown()
+
+    def test_changes_restore_returns_409_while_project_run_is_active(self) -> None:
+        import tempfile as _tempfile
+
+        with _tempfile.TemporaryDirectory() as td:
+            project = str(Path(td))
+            httpd, host, port = self._start_server()
+            state = server.State()
+            run = state.reserve_run(
+                session_id="session-restore",
+                project=project,
+                task="writing files",
+                provider_id="deepseek",
+            )
+            assert run is not None
+            try:
+                with mock.patch.object(server, "STATE", state):
+                    conn = http.client.HTTPConnection(host, port, timeout=5)
+                    conn.request(
+                        "POST",
+                        "/api/changes/restore",
+                        body=json.dumps({"project": project}),
+                    )
+                    response = conn.getresponse()
+                    body = json.loads(response.read().decode("utf-8"))
+                    conn.close()
+
+                self.assertEqual(response.status, 409)
+                self.assertFalse(body.get("ok"))
+            finally:
+                httpd.shutdown()
+
+    def test_changes_restore_is_allowed_again_once_the_run_finishes(self) -> None:
+        # Regression: the last-run project lingers in STATE.project; an
+        # idle server must never 409 a restore for it.
+        import tempfile as _tempfile
+
+        with _tempfile.TemporaryDirectory() as td:
+            project = str(Path(td))
+            httpd, host, port = self._start_server()
+            state = server.State()
+            run = state.reserve_run(
+                session_id="session-done",
+                project=project,
+                task="writing files",
+                provider_id="deepseek",
+            )
+            assert run is not None
+            state.finish_run(run.run_id, {
+                "type": "task_done",
+                "summary": "done",
+                "stop_reason": "done",
+            })
+            try:
+                conn = http.client.HTTPConnection(host, port, timeout=5)
+                conn.request(
+                    "POST",
+                    "/api/changes/restore",
+                    body=json.dumps({"project": project}),
+                )
+                response = conn.getresponse()
+                body = json.loads(response.read().decode("utf-8"))
+                conn.close()
+
+                # No snapshots exist, so a plain 4xx is fine -- the contract
+                # under test is that an idle server never blocks with 409.
+                self.assertNotEqual(response.status, 409)
+                self.assertNotIn("run in progress", str(body.get("error")))
+            finally:
+                httpd.shutdown()
+
     def test_loopback_host_without_origin_is_accepted(self) -> None:
         httpd, host, port = self._start_server()
         try:
@@ -2185,6 +2282,47 @@ class RunSnapshotTests(unittest.TestCase):
         self.assertIsNone(rejected)
         self.assertTrue(state.busy)
         self.assertEqual(submit.call_args.args[-1], run_id)
+
+    def test_shell_continuation_does_not_submit_after_user_stop(self) -> None:
+        # A Stop pressed while the approved shell command ran must win: the
+        # continuation path used to swallow it because reserve_run() cleared
+        # the flag on the next submit.
+        state = server.State()
+        state.stop_flag.set()
+
+        with (
+            mock.patch.object(server, "STATE", state),
+            mock.patch.object(server, "submit_browser_task") as submit,
+        ):
+            run_id = server._submit_task_after_slot_release(
+                "session-1",
+                "E:/demo",
+                "continue after shell",
+                8,
+                True,
+                "qwen",
+                previous_run_id="old-approval-run",
+                timeout=1.0,
+            )
+
+        self.assertIsNone(run_id)
+        self.assertTrue(state.stop_flag.is_set())
+        submit.assert_not_called()
+
+    def test_active_run_for_matches_session_and_project_scope(self) -> None:
+        state = server.State()
+        run = state.reserve_run(
+            session_id="session-1",
+            project="E:/demo",
+            task="task",
+            provider_id="deepseek",
+        )
+        assert run is not None
+
+        self.assertIs(state.active_run_for(session_id="session-1"), run)
+        self.assertIs(state.active_run_for(project="E:/demo"), run)
+        self.assertIsNone(state.active_run_for(session_id="session-2"))
+        self.assertIsNone(state.active_run_for(project="E:/other"))
 
     def test_shell_continuation_waits_for_approval_run_slot_release(self) -> None:
         state = server.State()
