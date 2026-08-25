@@ -189,6 +189,127 @@ def test_topic_continuity_admission_is_bounded_refs_and_hint_text() -> None:
     assert any(ref.startswith("continuity:") or ref.startswith("research_interest:") for ref in refs)
 
 
+def _seed_prior_claim_overflow(
+    state: server.State,
+    *,
+    session_id: str,
+    project: str,
+    count: int,
+) -> None:
+    """Seed one ledger record carrying `count` distinct evidence claims."""
+    url = "https://example.com/prior-claim-overflow"
+    sentences = [
+        f"Overflow claim number {index} needs a fresh source check."
+        for index in range(count)
+    ]
+    source_text = " ".join(sentences)
+    claim_lines = "\n".join(
+        f"- {sentence} [{index + 1}]" for index, sentence in enumerate(sentences)
+    )
+    excerpt_lines = "\n".join(
+        f"- [1] {sentence}" for sentence in sentences
+    )
+    summary = (
+        "## 结论\n"
+        "- Overflow claims recorded. [1]\n\n"
+        "## 关键证据\n"
+        f"{excerpt_lines}\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证；需要持续追踪新的证据。\n\n"
+        "## 来源质量\n"
+        "- [1] secondary · web · fresh · example.com\n\n"
+        "## 搜索覆盖\n"
+        "- query: overflow\n"
+        "- opened: Overflow article\n"
+        "- skipped: none representative\n\n"
+        "## 来源\n"
+        f"[1] Overflow article - {url}"
+    )
+    del claim_lines
+    ledger = ResearchLedger()
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="Overflow article",
+        text=source_text,
+    )
+    prepared = ledger.prepare_evidence_items(
+        [
+            {
+                "claim": sentence,
+                "source_url": url,
+                "excerpt": sentence,
+                "stance": "supports",
+            }
+            for sentence in sentences
+        ],
+        fallback_sources=[url],
+        fallback_claim=sentences[0],
+        fallback_body=source_text[:200],
+        note_type="fact",
+    )
+    assert not prepared.error and len(prepared.items) == count
+    ledger.add_evidence_items(list(prepared.items), note_id="overflow-note")
+    quality = review_report_quality(
+        summary,
+        ledger=ledger,
+        opened_sources=ledger.final_url_set(),
+        search_result_urls={url},
+    )
+    if not quality.ok:
+        raise AssertionError(quality.message)
+    record = build_research_record(
+        question="Research overflow",
+        summary=summary,
+        ledger=ledger,
+        review=quality,
+        run_id=f"run-{session_id}",
+        session_id=session_id,
+        project=project,
+        synthesis_id=f"synthesis-{session_id}",
+        stop_reason="done",
+    )
+    assert state.evidence_ledgers is not None
+    state.evidence_ledgers.append_record(
+        record,
+        run_id=f"run-{session_id}",
+        session_id=session_id,
+        project=project,
+    )
+
+
+def test_prior_claim_overflow_reports_truncated_honestly() -> None:
+    from codey.research.topic_continuity import MAX_TOPIC_CLAIM_REFS
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        project = str(root / "project")
+        (root / "project").mkdir()
+        state = server.State(root / "state")
+        state.knowledge_store = KnowledgeStore(root / "knowledge")
+        _seed_prior_claim_overflow(
+            state,
+            session_id="s1",
+            project=project,
+            count=MAX_TOPIC_CLAIM_REFS + 2,
+        )
+        runner = _runner(state)
+
+        refs = runner._prior_claim_refs(session_id="s1", project=project)
+        _text, payload = runner._build_research_topic_continuity(
+            session_id="s1",
+            project=project,
+        )
+
+    # The extraction keeps the overflow signal (MAX+1) so the projection's
+    # truncated verdict is honest even though production caps the carried
+    # refs before projecting.
+    assert len(refs) == MAX_TOPIC_CLAIM_REFS + 1
+    assert payload is not None
+    assert payload["truncated"] is True
+    assert payload["claim_ref_count"] == MAX_TOPIC_CLAIM_REFS
+
+
 def test_prior_claims_enter_as_stale_refs_never_evidence() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

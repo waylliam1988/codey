@@ -3484,7 +3484,12 @@ class TaskRunner:
         session_id: str,
         project: str,
     ) -> tuple[dict[str, object], ...]:
-        """Bounded claim refs from the durable evidence ledger (refs only)."""
+        """Bounded claim refs from the durable evidence ledger (refs only).
+
+        Collects up to ``MAX_TOPIC_CLAIM_REFS + 1`` refs: the extra entry is
+        the overflow signal the projection needs to report ``truncated``
+        honestly, without ever carrying claim text.
+        """
         ledgers = self.evidence_ledgers
         if ledgers is None:
             return ()
@@ -3502,8 +3507,10 @@ class TaskRunner:
                 if not text:
                     continue
                 refs.append({"ref": f"prior_claim:{text}"})
-                if len(refs) >= MAX_TOPIC_CLAIM_REFS:
-                    return tuple(refs)
+                if len(refs) > MAX_TOPIC_CLAIM_REFS:
+                    break
+            if len(refs) > MAX_TOPIC_CLAIM_REFS:
+                break
         return tuple(refs)
 
     def _build_research_context(
