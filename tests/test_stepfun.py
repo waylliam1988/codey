@@ -88,6 +88,72 @@ class StepFunDriverTests(unittest.TestCase):
 
         self.assertEqual(stepfun._fresh_response_text(page, 1), "B")
 
+    def _reason_dom_page(self, texts: list[str]):
+        """Page where only the string-arg fallback JS works.
+
+        Simulates the realistic degradation: the object-payload evaluates
+        fail (serialization), while the simplified string-arg JS applies
+        main-path filtering and returns the two real responses newest-first,
+        as it would on a [reasonB, B, reasonA, A] DOM.
+        """
+        page = mock.Mock()
+
+        def evaluate(js, *args):
+            if args and isinstance(args[0], dict):
+                raise RuntimeError("object payload unsupported")
+            return list(texts)
+
+        page.evaluate.side_effect = evaluate
+        return page
+
+    def test_fresh_response_fallback_excludes_reason_blocks(self) -> None:
+        page = self._reason_dom_page(["B", "A"])
+
+        text = stepfun._fresh_response_text(page, 1)
+
+        self.assertEqual(text, "B")
+        args = page.evaluate.call_args.args
+        self.assertIn(".reason-render-ext", args[0])
+        self.assertEqual(args[1], stepfun.PROFILE.selector("response"))
+
+    def test_latest_response_fallback_excludes_reason_blocks(self) -> None:
+        # Degradation ladder for latest: main JS dies -> simplified
+        # reason-filtered JS answers -> (locator scan would be last).
+        page = self._newest_first_page(["B", "A"])
+        seen_js = []
+
+        def evaluate(js, *args):
+            seen_js.append(str(js))
+            if js == stepfun._LATEST_RESPONSE_TEXT_JS:
+                raise RuntimeError("execution context destroyed")
+            return ["B", "A"]
+
+        page.evaluate.side_effect = evaluate
+
+        self.assertEqual(stepfun._latest_response_text(page), "B")
+        self.assertIn(".reason-render-ext", seen_js[1])
+        self.assertEqual(len(seen_js), 2)  # main JS, then the filtered fallback JS
+
+    def test_response_texts_fallback_js_mirrors_main_filtering(self) -> None:
+        # The simplified fallback JS must keep every filter of the main-path
+        # fresh/latest JS: reason exclusion, visibility, and text trim.
+        for token in (
+            ".reason-render-ext",
+            "getBoundingClientRect",
+            "visibility",
+            "display",
+            "innerText",
+        ):
+            self.assertIn(token, stepfun._RESPONSE_TEXTS_FALLBACK_JS)
+
+    def test_response_texts_fallback_degrades_to_locator_scan(self) -> None:
+        # Even when every evaluate fails, the locator scan still returns the
+        # newest-first visible replies (documented residual limit: it cannot
+        # exclude reasoning copies without JS).
+        page = self._newest_first_page(["B", "A"])
+
+        self.assertEqual(stepfun._response_texts_fallback(page), ("B", "A"))
+
     def test_latest_response_fallback_takes_first_visible_node(self) -> None:
         page = self._newest_first_page(["B", "A"])
 

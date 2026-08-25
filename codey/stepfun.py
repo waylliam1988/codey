@@ -87,6 +87,24 @@ _LATEST_RESPONSE_TEXT_JS = r"""
 }
 """
 
+# Fallback ladder step 1: same filtering semantics as the main-path JS but
+# with a plain string argument, so it still works when the object-payload
+# evaluate failed for serialization reasons.
+_RESPONSE_TEXTS_FALLBACK_JS = r"""
+(selector) => Array.from(document.querySelectorAll(selector))
+  .filter((el) => {
+    if (el.closest('.reason-render-ext')) return false;
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return rect.width > 0
+      && rect.height > 0
+      && style.visibility !== 'hidden'
+      && style.display !== 'none';
+  })
+  .map((el) => String(el.innerText || el.textContent || '').trim())
+  .filter(Boolean)
+"""
+
 _SET_TEXTAREA_VALUE_JS = r"""
 (el, value) => {
   const setter = Object.getOwnPropertyDescriptor(
@@ -194,6 +212,11 @@ def _visible_responses_newest_first(page: Page) -> list[Locator]:
     ``provider_controls.locate_response()`` scan, which walks from the tail
     and assumes oldest-first ordering -- it would read a stale reply.
     ``>> visible=true`` keeps duplicate/hidden nodes out of the count.
+
+    Last-resort only: this Playwright-native scan cannot exclude reasoning
+    copies inside ``.reason-render-ext``; prefer
+    :func:`_response_texts_fallback`, whose JS step applies the same
+    closest-ancestor filter as the main path.
     """
     try:
         return list(
@@ -203,6 +226,30 @@ def _visible_responses_newest_first(page: Page) -> list[Locator]:
         raise
     except Exception:
         return []
+
+
+def _response_texts_fallback(page: Page) -> tuple[str, ...]:
+    """Newest-first response texts for the fallback path.
+
+    Ladder: simplified string-arg JS with full main-path filtering (reason
+    exclusion included), then the pure locator scan if even that evaluate
+    fails.
+    """
+    try:
+        rows = page.evaluate(_RESPONSE_TEXTS_FALLBACK_JS, _response_selector())
+    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+        raise
+    except Exception:
+        rows = None
+    if isinstance(rows, list):
+        return tuple(
+            text for text in (str(row or "").strip() for row in rows) if text
+        )
+    return tuple(
+        text
+        for text in (_node_text(node) for node in _visible_responses_newest_first(page))
+        if text
+    )
 
 
 def _node_text(node: Locator) -> str:
@@ -219,16 +266,14 @@ def _response_count_fallback(page: Page) -> int:
 
 
 def _fresh_response_text_fallback(page: Page, baseline: int) -> str:
-    els = _visible_responses_newest_first(page)
-    fresh = els[: max(0, len(els) - max(0, int(baseline)))]
-    return "\n".join(
-        text for text in (_node_text(node) for node in fresh) if text
-    ).strip()
+    texts = _response_texts_fallback(page)
+    fresh = texts[: max(0, len(texts) - max(0, int(baseline)))]
+    return "\n".join(fresh).strip()
 
 
 def _latest_response_text_fallback(page: Page) -> str:
-    els = _visible_responses_newest_first(page)
-    return _node_text(els[0]) if els else ""
+    texts = _response_texts_fallback(page)
+    return texts[0] if texts else ""
 
 
 def _response_action_count(page: Page) -> int:
