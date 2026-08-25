@@ -86,12 +86,17 @@ This file records Codey's release history. The newest release appears first.
     tail-first and would read a stale reply on StepFun's newest-first DOM.
     The fallback is a two-step ladder that preserves the main path's
     ``.reason-render-ext`` filtering: a simplified string-arg JS first,
-    then the pure locator scan as last resort.
+    then the pure locator scan as last resort -- for reads and for the
+    response count alike, so a degraded baseline can never be inflated by
+    visible reasoning copies.
   - Override workers get a dedicated browser profile per provider/generation
     instead of attaching to the user's default profile from a second CDP
     port, parent-side workers drain child stderr into a bounded tail so
-    startup crashes are diagnosable, and the self-repair helper gets its own
-    isolated profile under ``state_home/self-repair/<provider>`` too.
+    startup crashes are diagnosable, the child entrypoint requires
+    ``--profile`` (fail closed instead of falling back), and the self-repair
+    helper gets its own isolated profile under
+    ``state_home/self-repair/<provider>`` too -- with the manual live smoke
+    wired for it and documenting the one-time login requirement.
   - The five web provider wrappers share one thin send/new_chat plumbing
     (`codey/providers/web_driver.py`): the outer deadline now covers
     ``response_timeout + grace + margin`` so drivers finish their own wait,

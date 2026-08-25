@@ -73,11 +73,15 @@
     fallback 重写为 provider 本地实现（仅可见节点、从头正向扫描），因为
     通用 ``locate_response()`` 从尾部反向扫，在 newest-first DOM 上会读到
     旧回复。fallback 是两步阶梯，保留主路径的 ``.reason-render-ext``
-    过滤：先试简化版字符串参数 JS，再退化到纯 locator 扫描。
+    过滤：先试简化版字符串参数 JS，再退化到纯 locator 扫描——读取与
+    response 计数都走同一阶梯，降级时的 baseline 不会被可见的 reasoning
+    节点抬高。
   - override worker 每个 provider/generation 使用专属浏览器 profile，不再
     用第二个 CDP 端口挂用户默认 profile；父端 worker 把子进程 stderr 抽进
-    有界 tail，启动崩溃可诊断；self-repair helper 同样改用
-    ``state_home/self-repair/<provider>`` 隔离 profile。
+    有界 tail，启动崩溃可诊断；子进程入口 ``--profile`` 必填（缺失直接
+    fail closed，不再回落）；self-repair helper 同样改用
+    ``state_home/self-repair/<provider>`` 隔离 profile——manual live smoke
+    已接线并在文档写明隔离 profile 需要一次手动登录。
   - 五个 web provider wrapper 共享一份薄 send/new_chat 管道
     （`codey/providers/web_driver.py`）：外层 deadline 覆盖
     ``response_timeout + grace + margin``，让 driver 自己等完；到点未归则
