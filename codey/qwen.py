@@ -20,6 +20,7 @@ from codey.json_tool_reply import (
     normalize_final_json_tool_reply as _normalize_final_json_tool_reply,
 )
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.providers import driver_common
 from codey.provider_submission import (
     SendAttempt,
     confirm_submission,
@@ -87,13 +88,7 @@ def _visible_locator(page: Page, selector: str) -> Locator | None:
 
 
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
-    return controls.locate_control(
-        page,
-        PROVIDER_ID,
-        controls.CONTROL_MESSAGE_BOX,
-        PROFILE.selectors("message_box"),
-        teach=teach,
-    )
+    return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
 
 
 def _fill_message(page: Page, textarea: Locator, text: str) -> str:
@@ -354,7 +349,7 @@ def new_chat(page: Page, timeout: float | None = None) -> None:
 
 
 def _response_count(page: Page) -> int:
-    return controls.response_count(page, PROVIDER_ID, PROFILE.selectors("response"))
+    return driver_common.response_count(PROVIDER_ID, PROFILE, page)
 
 
 def _last_text(page: Page) -> str:
@@ -522,20 +517,15 @@ def _wait_late_response(
     grace: float = TIMEOUT_GRACE,
     tick: float = 0.8,
 ) -> str:
-    deadline = time.time() + max(0.0, grace)
-    while time.time() < deadline:
-        try:
-            count = _response_count(page)
-            current = _last_text(page) if count else ""
-            if current and (count > baseline or current != baseline_text):
-                if _generation_complete(page):
-                    return _final_text(page)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            pass
-        cancellation.wait(tick)
-    return ""
+    def _ready() -> str:
+        count = _response_count(page)
+        current = _last_text(page) if count else ""
+        if current and (count > baseline or current != baseline_text):
+            if _generation_complete(page):
+                return _final_text(page)
+        return ""
+
+    return driver_common.poll_late_response(_ready, grace=grace, tick=tick)
 
 
 def _chat(

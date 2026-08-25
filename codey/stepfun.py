@@ -23,6 +23,7 @@ from codey.provider_diagnostics import ControlMissing, ResponseMissing
 from codey.provider_profiles import get_profile
 from codey.provider_submission import SendAttempt, SubmissionUncertain, confirm_submission
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.providers import driver_common
 
 PROVIDER_ID = "stepfun"
 PROFILE = get_profile(PROVIDER_ID)
@@ -117,13 +118,7 @@ _SET_TEXTAREA_VALUE_JS = r"""
 }
 """
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
-    return controls.locate_control(
-        page,
-        PROVIDER_ID,
-        controls.CONTROL_MESSAGE_BOX,
-        PROFILE.selectors("message_box"),
-        teach=teach,
-    )
+    return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
 
 
 def _send_button(
@@ -509,18 +504,13 @@ def _wait_late_response(
     grace: float = TIMEOUT_GRACE,
     tick: float = 0.8,
 ) -> str:
-    deadline = time.time() + max(0.0, grace)
-    while time.time() < deadline:
-        try:
-            current = _fresh_response_text(page, baseline)
-            if current:
-                return _final_text(page, baseline)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            pass
-        cancellation.wait(tick)
-    return ""
+    def _ready() -> str:
+        current = _fresh_response_text(page, baseline)
+        if current:
+            return _final_text(page, baseline)
+        return ""
+
+    return driver_common.poll_late_response(_ready, grace=grace, tick=tick)
 
 
 @controls.revival_send(PROVIDER_ID)

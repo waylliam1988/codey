@@ -6,6 +6,63 @@
 
 ## 0.4.13 (Unreleased) - Verified Completion Enforcement + Repair Context Admission v1
 
+### 本批加固与清理
+
+- `providers.preferred` 正式接入为**软偏好排序**：`project_config.py` 新增
+  `preferred_provider_for(config, mode)`，把项目内按模式的 provider 偏好传给
+  两个 failover 排序点（启动 preflight 与 writer failover 的
+  `rank_providers(preferred=...)`）。此前该配置只解析不消费。它只重排候选：
+  不能覆盖用户显式选择、不能绕过 supervisor 可用性/排除、不能启用未连接的
+  provider。`.codey/config.json` 每次运行只读一次，并与 project context
+  builder 共享。
+- 命令分词统一：新增 `codey/command_line.py::split_run_command`
+  （Windows 用 `posix=False` 并去掉匹配引号，`C:\path\file.py` 不再被吃掉；
+  POSIX 用 `posix=True`）。`tool_runtime`、`shell_risk`、`action_policy`、
+  `verification_policy`、`project_facts` 全部走同一入口——审批风险分析、
+  policy guard 与实际执行看到同一个 argv；分词失败一律 fail-closed。
+- ChangeTracker 竞态修复：baseline 状态统一由一把可重入锁保护，
+  `collect()` 默认严格只读。UI 轮询不再可能在编辑采集进行中把 clean
+  baseline 弹掉。清理动作移入显式 `prune_clean()`，只在 run 终态调用。
+- 非 Git recovery 快照改为两层存储（`baselines/<rel-digest>` 正文文件 +
+  小 `manifest.json`）：每次编辑只写一个有上限的 baseline 文件和 manifest，
+  不再把最多 64MB 的 JSON 整体重写（消除写放大）。
+- `UiStateStore.save()` 改为与内存缓存比较（首次 load 时填充），不再每次
+  读盘+解析；写失败时保留上一个已落盘基线。
+- SSE 慢客户端丢事件改为可见：溢出时会先塞入有界的
+  `{"type": "resync_required", "reason": "sse_queue_overflow", "dropped": N}`
+  标记，前端收到后重新拉取 run-state 与 providers，避免无声丢失终态/
+  审批事件。
+- TaskRunner 关闭早期异常窗口：claim/route 阶段的任何异常现在都会产出
+  bounded error terminal event、best-effort trace finish 与
+  `state.finish_run(...)`，run slot 不会再被永久占用。
+- Provider worker 请求改为小步轮询并检查取消事件，Stop 约 0.2s 内即可打断
+  等待中的响应，而不是等满整个 timeout。
+- 已批准 shell 命令改走共享进程树管理器（`cancellation.run_process` 并绑定
+  stop flag）：Stop 会杀掉整棵命令进程树而不是留下孤儿进程。
+- `DeadlineExceeded` 在 agent 工具循环中与 `TaskCancelled` 一样向上抛出，
+  不再被吞成普通工具错误；provider 预算耗尽后不会继续烧 turn。
+- Work checkpoint 把 hash 无法获取的被修改路径显式记录
+  （payload / prompt / reconcile 三处的 `hash_unavailable_files`），
+  不再从看似正常的 checkpoint 里静默消失。
+- Live A/B harness 改从 RunTrace manifest 的 `completion_repair_context`
+  行读取 repair 证据，live 报告不再显示 `repair_rounds=0`；注入的
+  `import redis` 失败只用于 `dependency_missing_env_failure` 用例，
+  `fresh_failing_test_after_edit` 成为可靠的可修复用例。
+- `_bounded_summary()` 保持 evidence 层给出的可读尾部顺序（repair context
+  输出不再倒序）。
+- 删除死代码面：`builtin_profiles`（模块、TaskRunner 注入字段、server 接线、
+  capability 声明、文档页与测试——它只是 metadata 且设计上就不参与决策）、
+  `verification_map.py` 中重名的 `VerificationCandidate`（改名
+  `TestCandidate`）、无引用的 selector 常量（`SEND_READY`/`INPUT`/`RESPONSE`/
+  `ANSWER`/`SEND_BUTTON`）、`citation_scanner.source_id_bracket_ref_items`、
+  `provider_discovery.find_control/find_response`、
+  `provider_controls.reject_flow`。
+- Provider 适配层去重：五个几乎相同的 `providers/*_web.py` 合并为单一
+  spec 驱动的 `web_provider.py`（约 -270 行）；控制定位/响应计数/限流检测/
+  迟到响应轮询等公共脚手架提取到 `providers/driver_common.py`；provider id
+  规范化统一进 `codey/provider_ids.py`。各站点自己的完成判定刻意保留在
+  各自 driver 内。
+
 - 新增 `codey/completion_verification.py`：把 coding verification 语义从
   `task_runner.py` 抽成纯投影——tri-state freshness（`fresh_pass` /
   `fresh_fail` / `unobserved`）、显式 provenance、proof 构建与确定性失败

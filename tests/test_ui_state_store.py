@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from codey.ui_state_store import UiStateStore
 
@@ -210,6 +211,59 @@ class UiStateStoreTests(unittest.TestCase):
                 "updated_at": 17,
                 "revision": 3,
             })
+
+    def test_save_compares_against_cached_state_not_disk(self) -> None:
+        # Regression: save() used to re-read and re-parse the file on every
+        # call, doubling the IO of the hottest UI-state path.
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            state = {
+                "active_id": "chat-1",
+                "updated_at": 5,
+                "revision": 1,
+                "sessions": [],
+                "projects": [],
+            }
+
+            with mock.patch.object(
+                store,
+                "load",
+                wraps=store.load,
+            ) as load_spy:
+                store.save(state)
+                store.save(state)  # identical: skipped without a write
+                bumped = dict(state, revision=2)
+                store.save(bumped)
+
+                # Exactly one seed read (first save with a cold cache); the
+                # remaining comparisons run against memory.
+                self.assertEqual(load_spy.call_count, 1)
+                self.assertEqual(store.load(), bumped)
+                # After the explicit reload, the cache reflects disk again.
+                store.save(bumped)
+                self.assertEqual(load_spy.call_count, 2)
+
+    def test_failed_write_keeps_previous_cache_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            store = UiStateStore(td)
+            first = {
+                "active_id": "chat-1",
+                "updated_at": 1,
+                "revision": 1,
+                "sessions": [],
+                "projects": [],
+            }
+            store.save(first)
+
+            second = dict(first, revision=2, active_id="chat-2")
+            with mock.patch(
+                "codey.ui_state_store.write_json_atomic",
+                side_effect=OSError("disk full"),
+            ):
+                with self.assertRaises(OSError):
+                    store.save(second)
+
+            self.assertEqual(store._cached_state, first)
 
     def test_older_save_cannot_overwrite_newer_state(self) -> None:
         with tempfile.TemporaryDirectory() as td:

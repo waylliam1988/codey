@@ -15,6 +15,7 @@ from codey import (
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.providers import driver_common
 from codey.provider_submission import (
     SendAttempt,
     SubmissionUncertain,
@@ -26,9 +27,6 @@ PROVIDER_ID = "mimo"
 PROFILE = get_profile(PROVIDER_ID)
 MIMO_URL = "https://aistudio.xiaomimimo.com/#/c"
 MIMO_ORIGIN = "https://aistudio.xiaomimimo.com"
-INPUT = PROFILE.selector("message_box")
-SEND_BUTTON = PROFILE.combined("send_button")
-ANSWER = PROFILE.combined("response")
 COPY_BUTTON = 'button[data-track-id="msg_copy_btn"][data-track-name="msg_copy"]'
 
 READY_TIMEOUT = 90.0
@@ -65,13 +63,7 @@ def _visible_locator(page: Page, selector: str) -> Locator | None:
 
 
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
-    return controls.locate_control(
-        page,
-        PROVIDER_ID,
-        controls.CONTROL_MESSAGE_BOX,
-        PROFILE.selectors("message_box"),
-        teach=teach,
-    )
+    return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
 
 
 def _dismiss_known_notice(page: Page) -> bool:
@@ -129,7 +121,7 @@ def new_chat(page: Page, timeout: float | None = None) -> None:
 
 
 def _response_count(page: Page) -> int:
-    return controls.response_count(page, PROVIDER_ID, PROFILE.selectors("response"))
+    return driver_common.response_count(PROVIDER_ID, PROFILE, page)
 
 
 def _last_text(page: Page) -> str:
@@ -602,25 +594,27 @@ def _wait_late_response(
     grace: float = TIMEOUT_GRACE,
     tick: float = 0.8,
 ) -> str:
-    deadline = time.time() + max(0.0, grace)
     last = ""
-    while time.time() < deadline:
-        try:
-            count = _response_count(page)
-            current = _last_text(page) if count else ""
-            if (
-                current
-                and (count > baseline or current != baseline_text)
-                and _generation_complete(page)
-            ):
-                last = current
-                return _final_text(page)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            pass
-        cancellation.wait(tick)
-    return last
+
+    def _ready() -> str:
+        nonlocal last
+        count = _response_count(page)
+        current = _last_text(page) if count else ""
+        if (
+            current
+            and (count > baseline or current != baseline_text)
+            and _generation_complete(page)
+        ):
+            last = current
+            return _final_text(page)
+        return ""
+
+    return driver_common.poll_late_response(
+        _ready,
+        grace=grace,
+        tick=tick,
+        default=lambda: last,
+    )
 
 
 def _chat(

@@ -1030,17 +1030,6 @@ def recover_flow(
     return True
 
 
-def reject_flow(provider_id: str, *, path: Path | None = None) -> None:
-    attempt = _revival_attempts().get(provider_id)
-    if attempt is not None and attempt.staged_flow is not None:
-        attempt.staged_flow = None
-        attempt.flow_recipe = None
-        return
-    store = path or CONTROL_STORE
-    if provider_revival.record_flow_failure(store, provider_id):
-        _invalidate_flow_cache(store, provider_id)
-
-
 def _record_revival_flow_failure(provider_id: str, error: BaseException) -> None:
     attempt = _revival_attempts().get(provider_id)
     if (

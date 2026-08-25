@@ -1,15 +1,9 @@
-"""Thin shared send/new_chat plumbing for the web provider wrappers.
+"""Thin shared send/new_chat plumbing for the browser-backed providers.
 
-The five ``providers/*_web.py`` wrappers previously each re-implemented the
-same deadline wiring, and the send deadline equalled the inner
-``response_timeout`` -- even though every driver keeps polling through an
-internal timeout grace before giving up. The outer scope therefore always
-fired first and surfaced as a transient failure instead of the honest
-"model never answered".
-
-``run_web_send`` sizes the outer budget as
+``run_web_send`` sizes the outer deadline as
 ``response_timeout + grace + margin`` so the driver's own completion path
-wins, and classifies a still-firing outer deadline as ``response_missing``.
+wins, and classifies a still-firing outer deadline as ``response_missing``
+instead of surfacing a transient failure.
 """
 
 from __future__ import annotations

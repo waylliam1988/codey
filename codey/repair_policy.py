@@ -7,11 +7,11 @@ from pathlib import Path
 
 
 PROVIDER_ADAPTER_FILES = {
-    "deepseek": ("codey/deepseek.py", "codey/providers/deepseek_web.py"),
-    "qwen": ("codey/qwen.py", "codey/providers/qwen_web.py"),
-    "mimo": ("codey/mimo.py", "codey/providers/mimo_web.py"),
-    "stepfun": ("codey/stepfun.py", "codey/providers/stepfun_web.py"),
-    "glm": ("codey/glm.py", "codey/providers/glm_web.py"),
+    "deepseek": ("codey/deepseek.py", "codey/providers/web_provider.py"),
+    "qwen": ("codey/qwen.py", "codey/providers/web_provider.py"),
+    "mimo": ("codey/mimo.py", "codey/providers/web_provider.py"),
+    "stepfun": ("codey/stepfun.py", "codey/providers/web_provider.py"),
+    "glm": ("codey/glm.py", "codey/providers/web_provider.py"),
 }
 PROVIDER_TEST_FILES = {
     "deepseek": ("tests/test_deepseek.py",),

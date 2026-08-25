@@ -13,13 +13,16 @@ from codey.browser import (
     detect_open_provider_tabs,
     warm_provider_tabs as browser_warm_provider_tabs,
 )
+from codey.provider_ids import normalize_provider_id
 from codey.providers.base import ChatProvider
-from codey.providers.deepseek_web import DeepSeekWebProvider
-from codey.providers.glm_web import GlmWebProvider
 from codey.providers.local_openai import LocalOpenAIProvider, local_endpoint_available
-from codey.providers.mimo_web import MimoWebProvider
-from codey.providers.qwen_web import QwenWebProvider
-from codey.providers.stepfun_web import StepFunWebProvider
+from codey.providers.web_provider import (
+    DeepSeekWebProvider,
+    GlmWebProvider,
+    MimoWebProvider,
+    QwenWebProvider,
+    StepFunWebProvider,
+)
 from codey.provider_worker import WorkerChatProvider
 
 DEFAULT_PROVIDER_ID = "deepseek"
@@ -90,7 +93,7 @@ def connect_provider(
     open_if_missing: bool = True,
     bring_to_front: bool = True,
 ) -> ChatProvider:
-    normalized = (provider_id or DEFAULT_PROVIDER_ID).strip().lower()
+    normalized = normalize_provider_id(provider_id) or DEFAULT_PROVIDER_ID
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")
@@ -114,7 +117,7 @@ def connect_provider(
 
 def borrow_open_provider(provider_id: str, owner_page: Any) -> ChatProvider | None:
     """Wrap an already-open sibling tab without creating another CDP connection."""
-    normalized = (provider_id or "").strip().lower()
+    normalized = normalize_provider_id(provider_id)
     if normalized == "local":
         return None
     marker = PROVIDER_URL_CONTAINS.get(normalized)
@@ -156,7 +159,7 @@ def connect_fresh_provider_tab(
 ) -> ChatProvider:
     """Open a temporary provider tab for isolated review-style work."""
 
-    normalized = (provider_id or DEFAULT_PROVIDER_ID).strip().lower()
+    normalized = normalize_provider_id(provider_id) or DEFAULT_PROVIDER_ID
     provider_type = PROVIDER_TYPES.get(normalized)
     if provider_type is None:
         raise ValueError(f"unsupported provider: {provider_id}")

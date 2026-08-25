@@ -10,7 +10,6 @@ from typing import Any, Callable
 
 from codey import cancellation, provider_controls, provider_flow
 from codey.action_policy import ActionSubject, evaluate_action
-from codey.builtin_profiles import BuiltinProfileRegistry
 from codey.capabilities import CapabilityRegistry
 from codey.agent import RunResult
 from codey.agent_tools import AgentToolFns
@@ -84,6 +83,11 @@ from codey.managed_outputs import (
     run_command_with_managed_output,
 )
 from codey.project_facts import ProjectFactsStore
+from codey.project_config import (
+    ProjectConfigLoadResult,
+    load_project_config,
+    preferred_provider_for,
+)
 from codey.project_task_context import (
     ProjectTaskContextBuilder,
     safe_project_map,
@@ -694,7 +698,6 @@ class TaskRunner:
         run_traces: RunTraceStore | None = None,
         evidence_ledgers: EvidenceLedgerStore | None = None,
         capabilities: CapabilityRegistry | None = None,
-        builtin_profiles: BuiltinProfileRegistry | None = None,
         managed_outputs: ManagedOutputStore | None = None,
         knowledge_store: KnowledgeStore | None = None,
         search_factory: Callable[[], object] | None = None,
@@ -719,7 +722,6 @@ class TaskRunner:
         self.run_traces = run_traces
         self.evidence_ledgers = evidence_ledgers
         self.capabilities = capabilities
-        self.builtin_profiles = builtin_profiles
         self.managed_outputs = managed_outputs
         self.knowledge_store = knowledge_store
         self.search_factory = search_factory or _default_research_search_provider
@@ -1317,6 +1319,12 @@ class TaskRunner:
                 trace = None
         trace_sink = FailOpenPromptTrace(trace)
 
+        # One config read per run: failover ranking and the project context
+        # builder share this load instead of each re-reading .codey/config.json.
+        project_config_result = (
+            load_project_config(project) if project else ProjectConfigLoadResult()
+        )
+
         def finish_trace(event: dict[str, object]) -> None:
             status = str(event.get("stop_reason") or "done")
             trace_sink.call(
@@ -1387,16 +1395,33 @@ class TaskRunner:
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()
             return
-        except BaseException:
+        except BaseException as exc:
             # Any other failure inside the claim/route window must still
             # restore the previous cancellation event and task context, or
-            # later runs on this thread inherit our stop flag.
+            # later runs on this thread inherit our stop flag. The run slot
+            # is already started, so it also gets a bounded error terminal
+            # event: an exception here must not leave the runner busy
+            # forever.
             state.set_provider_session(provider_id, None)
             self._maybe_release_ghost_work_item(
                 claimed_work_item,
                 run_id=run_id,
                 reason="aborted_before_start",
             )
+            error_event = {
+                "type": "task_done",
+                "run_id": run_id,
+                "session_id": session_id,
+                "summary": f"ERROR: {exc}",
+                "stop_reason": "error",
+                "turns": 0,
+                "max_turns": max_turns,
+                "provider": provider_id,
+                "mode": _ui_mode(task_kind, project),
+                "provider_failure": None,
+            }
+            finish_trace(error_event)
+            state.finish_run(run_id, error_event)
             cancellation.set_event(previous_cancel_event)
             provider_controls.end_task_context()
             raise
@@ -1587,9 +1612,14 @@ class TaskRunner:
                     return tuple(PROVIDER_LABELS)
 
             def ranked_failover_order() -> tuple[str, ...]:
+                mode = _startup_failover_mode(task_kind)
                 return rank_providers(
                     provider_failover_order(),
-                    mode=_startup_failover_mode(task_kind),
+                    mode=mode,
+                    # Soft preference only: project config re-ranks the
+                    # candidates; it cannot override the user's explicit
+                    # provider or supervisor availability decisions.
+                    preferred=preferred_provider_for(project_config_result.config, mode),
                 )
 
             if task_kind == "review":
@@ -1900,11 +1930,25 @@ class TaskRunner:
                     proof_question=_research_queue_item_title(work.claimed_work_item),
                 )
             elif task_kind == "hybrid":
-                outcome = self._run_hybrid_mode(frame, work, hooks)
+                outcome = self._run_hybrid_mode(
+                    frame,
+                    work,
+                    hooks,
+                    config_result=project_config_result,
+                )
             elif task_kind == "planning_readonly":
-                outcome = self._run_planning_readonly_mode(frame, work)
+                outcome = self._run_planning_readonly_mode(
+                    frame,
+                    work,
+                    config_result=project_config_result,
+                )
             elif task_kind == "project":
-                outcome = self._run_project_mode(frame, work, hooks)
+                outcome = self._run_project_mode(
+                    frame,
+                    work,
+                    hooks,
+                    config_result=project_config_result,
+                )
             else:
                 outcome = self._run_chat_mode(frame)
             append_ledger(lambda ledger: ledger.finish(**outcome.event))
@@ -2098,6 +2142,8 @@ class TaskRunner:
         frame: _RunFrame,
         work: _RunWork,
         hooks: _RunHooks,
+        *,
+        config_result: ProjectConfigLoadResult | None = None,
     ) -> _ModeOutcome:
         request = frame.request
         if frame.provider is None:
@@ -2139,6 +2185,7 @@ class TaskRunner:
             frame,
             work,
             hooks,
+            config_result=config_result,
             research_result=research_result,
             research_pipeline_result=pipeline_result,
         )
@@ -2256,6 +2303,8 @@ class TaskRunner:
         self,
         frame: _RunFrame,
         work: _RunWork,
+        *,
+        config_result: ProjectConfigLoadResult | None = None,
     ) -> _ModeOutcome:
         state = self.state
         request = frame.request
@@ -2270,6 +2319,7 @@ class TaskRunner:
             project_facts=self.project_facts,
             work_checkpoints=None,
             knowledge_store=self.knowledge_store,
+            config_result=config_result,
         )
         project_context = context_builder.build(
             project=project,
@@ -2532,6 +2582,7 @@ class TaskRunner:
         work: _RunWork,
         hooks: _RunHooks,
         *,
+        config_result: ProjectConfigLoadResult | None = None,
         research_result=None,
         research_pipeline_result=None,
     ) -> _ModeOutcome:
@@ -2546,6 +2597,7 @@ class TaskRunner:
             project_facts=self.project_facts,
             work_checkpoints=self.work_checkpoints,
             knowledge_store=self.knowledge_store,
+            config_result=config_result,
         )
         project_context = context_builder.build(
             project=project,
@@ -2734,9 +2786,16 @@ class TaskRunner:
             )
 
         def select_next_writer(excluded: set[str]) -> str | None:
+            mode = _writer_failover_mode(frame.task_kind)
+            preference = (
+                preferred_provider_for(config_result.config, mode)
+                if config_result is not None
+                else ""
+            )
             ranked_order = rank_providers(
                 hooks.provider_failover_order(),
-                mode=_writer_failover_mode(frame.task_kind),
+                mode=mode,
+                preferred=preference,
             )
             if hooks.supervisor is not None:
                 return hooks.supervisor.select(
@@ -3371,6 +3430,13 @@ class TaskRunner:
                         result.stop_reason,
                     )
                 )
+        # Terminal state for this run: now -- and only now -- drop snapshot
+        # baselines whose files are back to their original content. UI
+        # polling during a run never prunes.
+        try:
+            tracker.prune_clean()
+        except Exception:
+            pass
         frame.conversation.update_snapshot(replace(
             frame.conversation.snapshot,
             provider_id=frame.provider_id,

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from codey.project_config import (
+    ProjectConfigLoadResult,
     ProjectVerificationCommand,
     load_project_config,
     render_project_config_warnings,
@@ -64,10 +65,12 @@ class ProjectTaskContextBuilder:
         project_facts: ProjectFactsStore | None = None,
         work_checkpoints: WorkCheckpointStore | None = None,
         knowledge_store: KnowledgeStore | None = None,
+        config_result: ProjectConfigLoadResult | None = None,
     ) -> None:
         self.project_facts = project_facts
         self.work_checkpoints = work_checkpoints
         self.knowledge_store = knowledge_store
+        self.config_result = config_result
 
     def build(
         self,
@@ -79,7 +82,13 @@ class ProjectTaskContextBuilder:
         continue_task: bool,
         provider_session_changed: bool,
     ) -> ProjectTaskContext:
-        config_result = load_project_config(project)
+        # The caller may pass a pre-loaded config so one run reads
+        # .codey/config.json exactly once.
+        config_result = (
+            self.config_result
+            if self.config_result is not None
+            else load_project_config(project)
+        )
         config = config_result.config
         verified_facts = self._verified_facts(project)
         verified_commands = self._verified_commands(project)

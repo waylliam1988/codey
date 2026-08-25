@@ -1423,7 +1423,10 @@ def run(
                     outcome = ToolOutcome.error(
                         f"malformed tool call {call.name} (path={path})"
                     )
-            except cancellation.TaskCancelled:
+            except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
+                # Budget exhaustion is a run-level condition, not a tool
+                # error: swallowing it would burn remaining turns after the
+                # provider budget is already gone.
                 raise
             except Exception as exc:
                 outcome = ToolOutcome.error(str(exc))

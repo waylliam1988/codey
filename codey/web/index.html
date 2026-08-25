@@ -1227,8 +1227,10 @@ function setStatus(text, kind) {
 function handleServerEvent(data) {
   const runId = (data.run_id || '').toString();
   const sid = data.session_id;
-  const mayOutliveRun = ['task_start', 'task_done', 'shell_request', 'shell_result', 'teach_request'];
+  const mayOutliveRun = ['task_start', 'task_done', 'shell_request', 'shell_result', 'teach_request', 'resync_required'];
   if (runId && runningRunId && !mayOutliveRun.includes(data.type) && runId !== runningRunId) return;
+  // Server dropped queued events for this client: re-pull authoritative state.
+  if (data.type === 'resync_required') { reconcileRunState(); refreshProviderStatus(); return; }
   if (data.type === 'status') {
     setStatus(data.status === 'connecting' ? 'Connecting to browser…' : data.status, 'warn');
     return;

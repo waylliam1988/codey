@@ -20,10 +20,6 @@ class Discovery:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-def find_control(page: Any, action: str, *, anchor: Any | None = None) -> Discovery | None:
-    return select_control_candidate(control_candidates(page, action, anchor=anchor), action)
-
-
 def control_candidates(
     page: Any,
     action: str,
@@ -156,10 +152,6 @@ def stop_response_watch(page: Any, token: str) -> None:
         page.evaluate(_STOP_RESPONSE_WATCH_JS, {"token": token})
     except Exception:
         pass
-
-
-def find_response(page: Any, token: str) -> Discovery | None:
-    return select_response_candidate(response_candidates(page, token))
 
 
 def response_candidates(

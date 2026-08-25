@@ -48,6 +48,43 @@ class WorkCheckpointStoreTests(unittest.TestCase):
             self.assertTrue(item.changed_files[0].after_hash.startswith("sha256:"))
             self.assertNotIn("one", store.path_for("session-1").read_text(encoding="utf-8"))
 
+    def test_unhashable_edit_stays_visible_in_the_checkpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            home = Path(td) / "state"
+            project = Path(td) / "project"
+            project.mkdir()
+            store = WorkCheckpointStore(home)
+            item = store.start(run_id="run-1", session_id="session-1", project=project, task="Change app")
+
+            # A directory cannot be hashed; the edit must still be recorded
+            # visibly instead of silently dropping the changed path.
+            (project / "weird").mkdir()
+            item = store.record_edit(item, "weird")
+
+            self.assertEqual(item.changed_files, ())
+            self.assertEqual(item.hash_unavailable_files, ("weird",))
+            rendered = render_work_checkpoint(item)
+            self.assertIn("unverified", rendered)
+            self.assertIn("weird", rendered)
+
+            reloaded = WorkCheckpointStore(home).load("session-1")
+            self.assertIsNotNone(reloaded)
+            assert reloaded is not None
+            self.assertEqual(reloaded.hash_unavailable_files, ("weird",))
+
+            # Reconcile stays conservative: an unverifiable file marks the
+            # workspace as changed so inherited checks are invalidated.
+            reconciled = store.reconcile(reloaded)
+            self.assertTrue(reconciled.workspace_changed)
+
+            # Once a later edit captures the hash, the marker clears.
+            target = project / "app.py"
+            target.write_text("new\n", encoding="utf-8")
+            item = store.record_edit(item, "app.py")
+            item = store.record_edit(item, "weird")
+            self.assertEqual(item.hash_unavailable_files, ("weird",))
+            self.assertEqual(len(item.changed_files), 1)
+
     def test_edit_canonicalizes_runtime_accepted_paths_and_invalidates_checks(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             home = Path(td) / "state"

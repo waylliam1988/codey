@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 from codey.provider_capabilities import PROVIDER_CAPABILITIES
+from codey.provider_ids import normalize_provider_id
 
 
 PROJECT_CONFIG_RELATIVE_PATH = ".codey/config.json"
@@ -139,6 +140,24 @@ def load_project_config(project: str | Path) -> ProjectConfigLoadResult:
         path=path_text,
         warning_count=len(warnings),
     )
+
+
+def preferred_provider_for(config: ProjectConfig, mode: str) -> str:
+    """Return the project's soft provider preference for one mode.
+
+    A preference only re-ranks failover candidates. It never overrides the
+    user's explicit provider choice, never bypasses availability checks,
+    supervisor exclusions, or permission boundaries, and never enables a
+    disconnected provider.
+    """
+
+    normalized = str(mode or "").strip().lower()
+    if normalized == "planning_readonly":
+        normalized = "planning"
+    for item in config.preferred_providers:
+        if item.mode == normalized:
+            return item.provider_id
+    return ""
 
 
 def render_project_config_warnings(result: ProjectConfigLoadResult) -> str:
@@ -274,11 +293,11 @@ def _parse_provider_preferences(
     parsed: list[ProjectProviderPreference] = []
     for raw_mode, raw_provider in preferred.items():
         mode = str(raw_mode or "").strip().lower()
-        provider_id = str(raw_provider or "").strip().lower()
+        provider_id = normalize_provider_id(raw_provider)
         if mode not in PROVIDER_POLICY_MODES:
             warnings.append(f"ignored providers.preferred.{mode or '<empty>'} because mode is unsupported")
             continue
-        if provider_id not in PROVIDER_CAPABILITIES:
+        if not provider_id or provider_id not in PROVIDER_CAPABILITIES:
             warnings.append(f"ignored providers.preferred.{mode} because provider is unsupported")
             continue
         parsed.append(ProjectProviderPreference(mode=mode, provider_id=provider_id))
@@ -343,5 +362,6 @@ __all__ = [
     "load_project_config",
     "normalize_project_relative_path",
     "path_matches_ignored_prefix",
+    "preferred_provider_for",
     "render_project_config_warnings",
 ]

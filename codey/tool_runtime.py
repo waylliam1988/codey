@@ -6,7 +6,6 @@ import ast
 import json
 import os
 import re
-import shlex
 import subprocess
 import time
 from collections.abc import Mapping
@@ -25,6 +24,7 @@ from codey.action_policy import (
     is_suite_run_command,
     strip_python_flags,
 )
+from codey.command_line import split_run_command
 from codey.bounded_scan import (
     DEFAULT_MAX_DIR_ENTRIES,
     DEFAULT_MAX_SCAN_DIRS,
@@ -984,7 +984,11 @@ def run_command_raw(
     ))
     if decision.decision == DECISION_DENY:
         return _policy_error_outcome(decision)
-    argv = shlex.split(command)
+    try:
+        argv = split_run_command(command)
+    except ValueError as exc:
+        # Fail closed: an untokenizable command never executes.
+        return ToolOutcome.error(f"invalid command: {exc}")
     cwd = safe_join(root, rel or ".")
     if not cwd.is_dir():
         return ToolOutcome.error(f"not a directory: {rel}")

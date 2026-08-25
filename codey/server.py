@@ -44,7 +44,6 @@ from codey import cancellation, profile_doctor, provider_controls, provider_flow
 from codey import __version__
 from codey.agent import DEFAULT_MAX_TURNS, run as agent_run
 from codey.browser_worker import submit as submit_browser_task
-from codey.builtin_profiles import builtin_profile_registry
 from codey.capabilities import builtin_capability_registry
 from codey.changes import (
     ChangeTracker,
@@ -486,17 +485,22 @@ def execute_approved_shell(project: str | Path, rel: str, command: str) -> dict:
         return {"ok": False, "error": "command required", "exit_code": None, "output": ""}
     try:
         cwd = _safe_project_cwd(project, rel)
-        proc = subprocess.run(
-            command,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=SHELL_TIMEOUT,
-            shell=True,
-            check=False,
-        )
+        # Run through the shared process-tree owner so Stop also terminates
+        # children of the approved command instead of orphaning them.
+        with cancellation.scope(STATE.stop_flag):
+            proc = cancellation.run_process(
+                command,
+                cwd=cwd,
+                timeout=SHELL_TIMEOUT,
+                shell=True,
+            )
+    except cancellation.TaskCancelled:
+        return {
+            "ok": False,
+            "error": "command stopped",
+            "exit_code": None,
+            "output": "",
+        }
     except subprocess.TimeoutExpired:
         return {
             "ok": False,
@@ -616,6 +620,20 @@ RUN_EVENT_TYPES = {
 }
 
 
+class _Subscriber(queue.Queue):
+    """One SSE client queue plus an overflow marker.
+
+    Dropping the oldest event on overflow is unavoidable with a slow
+    client, but the drop must be visible: the queued ``resync_required``
+    marker tells the UI to re-pull run state and provider status instead of
+    silently missing a terminal or approval event.
+    """
+
+    def __init__(self, maxsize: int = 1000) -> None:
+        super().__init__(maxsize=maxsize)
+        self.dropped = 0
+
+
 class CodeyHTTPServer(ThreadingHTTPServer):
     """Keep routine browser disconnects out of the local server log."""
 
@@ -674,7 +692,6 @@ class State:
         self.run_traces = RunTraceStore(state_home) if state_home else None
         self.evidence_ledgers = EvidenceLedgerStore(state_home) if state_home else None
         self.capabilities = builtin_capability_registry()
-        self.builtin_profiles = builtin_profile_registry()
         self.managed_outputs = ManagedOutputStore(state_home) if state_home else None
         self.ghost_inbox = GhostInboxStore(state_home) if state_home else None
         self.ghost_hebbian = GhostHebbianStore(state_home) if state_home else None
@@ -1116,10 +1133,26 @@ class State:
                 try:
                     sub.put_nowait(payload)
                 except queue.Full:
-                    try:
-                        sub.get_nowait()
-                    except queue.Empty:
-                        pass
+                    # Make room for the resync marker plus the new event, but
+                    # tell the client it missed events so it can re-pull
+                    # authoritative state instead of silently running on a
+                    # stale terminal/approval view.
+                    limit = max(0, int(sub.maxsize or 0))
+                    while limit >= 2 and sub.qsize() > limit - 2:
+                        try:
+                            sub.get_nowait()
+                        except queue.Empty:
+                            break
+                        sub.dropped += 1
+                    if limit >= 2 and payload.get("type") != "resync_required":
+                        try:
+                            sub.put_nowait({
+                                "type": "resync_required",
+                                "reason": "sse_queue_overflow",
+                                "dropped": sub.dropped,
+                            })
+                        except Exception:
+                            pass
                     try:
                         sub.put_nowait(payload)
                     except Exception:
@@ -1127,16 +1160,16 @@ class State:
                 except Exception:
                     pass
 
-    def subscribe(self) -> queue.Queue[dict]:
-        q: queue.Queue[dict] = queue.Queue(maxsize=1000)
+    def subscribe(self) -> "_Subscriber":
+        sub = _Subscriber()
         with self.lock:
-            self.subscribers.append(q)
-        return q
+            self.subscribers.append(sub)
+        return sub
 
-    def unsubscribe(self, q: queue.Queue[dict]) -> None:
+    def unsubscribe(self, sub: "_Subscriber") -> None:
         with self.lock:
-            if q in self.subscribers:
-                self.subscribers.remove(q)
+            if sub in self.subscribers:
+                self.subscribers.remove(sub)
 
     def get_provider(self, provider_id: str = DEFAULT_PROVIDER_ID):
         self.set_run_status("connecting")
@@ -1532,7 +1565,6 @@ def _run_task(
         run_traces=STATE.run_traces,
         evidence_ledgers=STATE.evidence_ledgers,
         capabilities=STATE.capabilities,
-        builtin_profiles=STATE.builtin_profiles,
         managed_outputs=STATE.managed_outputs,
         knowledge_store=STATE.knowledge_store,
         is_git_repository=is_git_repository,

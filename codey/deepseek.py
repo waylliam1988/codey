@@ -27,6 +27,7 @@ from codey import (
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, RateLimited, ResponseMissing
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.providers import driver_common
 from codey.json_tool_reply import (
     is_json_tool_reply as _is_json_tool_reply,
     looks_like_json_tool_reply as _looks_like_json_tool_reply,
@@ -42,9 +43,6 @@ from codey.web_clipboard import copy_action_text
 
 PROVIDER_ID = "deepseek"
 PROFILE = get_profile(PROVIDER_ID)
-INPUT = PROFILE.selector("message_box")
-SEND_READY = PROFILE.selector("send_button")
-RESPONSE = PROFILE.combined("response")
 RESPONSE_ACTION = PROFILE.combined("response_action")
 
 DEEPSEEK_URL = "https://chat.deepseek.com/"
@@ -87,13 +85,11 @@ def wait_ready(page: Page, timeout: float = READY_TIMEOUT) -> None:
 
 
 def _message_box(page: Page, *, teach: bool = False):
-    return controls.locate_control(
-        page,
-        PROVIDER_ID,
-        controls.CONTROL_MESSAGE_BOX,
-        PROFILE.selectors("message_box"),
-        teach=teach,
-    )
+    return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
+
+
+def _response_count(page: Page) -> int:
+    return driver_common.response_count(PROVIDER_ID, PROFILE, page)
 
 
 def _send_button(page: Page, *, timeout: float = 0.0, teach: bool = False):
@@ -169,10 +165,6 @@ def _last_text(page: Page) -> str:
     if response is None:
         return ""
     return response.evaluate(_EXTRACT_JS)
-
-
-def _response_count(page: Page) -> int:
-    return controls.response_count(page, PROVIDER_ID, PROFILE.selectors("response"))
 
 
 def _copy_last_text(page: Page) -> str:
@@ -265,12 +257,7 @@ def _wait_submission_started(
 
 
 def _rate_limit_visible(page: Page) -> bool:
-    try:
-        return RATE_LIMIT_TEXT in str(page.locator("body").inner_text(timeout=1000))
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception:
-        return False
+    return driver_common.rate_limit_visible(page, RATE_LIMIT_TEXT)
 
 
 def _click_rate_limit_retry(page: Page) -> bool:
@@ -329,21 +316,18 @@ def _wait_late_response(
     boundary.  Without this last read, Codey may report a timeout even though
     a usable response has already appeared in the page.
     """
-    deadline = time.time() + max(0.0, grace)
-    while time.time() < deadline:
-        try:
-            current = _last_text(page) if _response_count(page) else ""
-            if current and (_response_count(page) > baseline or current != baseline_text):
-                try:
-                    return _final_text(page)
-                except RuntimeError:
-                    pass
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            pass
-        cancellation.wait(tick)
-    return ""
+
+    def _ready() -> str:
+        count = _response_count(page)
+        current = _last_text(page) if count else ""
+        if current and (count > baseline or current != baseline_text):
+            try:
+                return _final_text(page)
+            except RuntimeError:
+                return ""
+        return ""
+
+    return driver_common.poll_late_response(_ready, grace=grace, tick=tick)
 
 
 @controls.revival_send(PROVIDER_ID)

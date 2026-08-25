@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import re
-import shlex
 import shutil
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
+from codey.command_line import split_run_command
 from codey.project_config import path_matches_ignored_prefix
 from codey.tool_runtime import _is_allowed_run_command
 
@@ -77,7 +77,7 @@ def _safe_cwd(root: Path, value: object) -> str | None:
 
 def _allowed_and_available(command: str) -> bool:
     try:
-        argv = shlex.split(command)
+        argv = split_run_command(command)
     except ValueError:
         return False
     return (
@@ -320,7 +320,7 @@ def _historical_candidate_is_current(
     candidate: VerificationCandidate,
 ) -> bool:
     try:
-        argv = shlex.split(candidate.command)
+        argv = split_run_command(candidate.command)
     except ValueError:
         return False
     if not argv:
@@ -491,7 +491,7 @@ def _is_make_path(path: PurePosixPath) -> bool:
 
 def _command_priority(candidate: VerificationCandidate) -> int:
     try:
-        argv = shlex.split(candidate.command)
+        argv = split_run_command(candidate.command)
     except ValueError:
         return 0
     if not argv:
@@ -547,7 +547,7 @@ def _command_priority(candidate: VerificationCandidate) -> int:
 
 def _command_family(command: str) -> str:
     try:
-        argv = shlex.split(command)
+        argv = split_run_command(command)
     except ValueError:
         return ""
     if not argv:
@@ -589,7 +589,7 @@ def _pytest_full_suite_args(args: list[str]) -> bool:
 
 def _is_full_family_command(command: str) -> bool:
     try:
-        argv = shlex.split(command)
+        argv = split_run_command(command)
     except ValueError:
         return False
     if not argv:
@@ -632,7 +632,7 @@ def _compatible(candidate: VerificationCandidate, path: str) -> bool:
     item = PurePosixPath(path)
     suffix = item.suffix.lower()
     try:
-        argv = shlex.split(candidate.command)
+        argv = split_run_command(candidate.command)
     except ValueError:
         return False
     if not argv:

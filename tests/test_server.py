@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import http.client
 import json
-import queue
 import shutil
 import subprocess
 import sys
@@ -346,10 +345,11 @@ class ApprovedShellTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch.object(server, "SHELL_OUTPUT_LIMIT", 80),
-            mock.patch.object(server.subprocess, "run", return_value=completed),
+            mock.patch.object(server.cancellation, "run_process", return_value=completed) as run_process,
         ):
             data = server.execute_approved_shell(td, ".", "command")
 
+        self.assertTrue(run_process.call_args.kwargs.get("shell") is True)
         self.assertTrue(data["truncated"])
         self.assertTrue(data["output"].startswith("HEAD"))
         self.assertTrue(data["output"].endswith("TAIL"))
@@ -1928,19 +1928,49 @@ class RunSnapshotTests(unittest.TestCase):
 
     def test_emit_full_subscriber_queue_drops_oldest_and_keeps_latest(self) -> None:
         state = server.State()
-        q: queue.Queue[dict] = queue.Queue(maxsize=2)
+        q = server._Subscriber(maxsize=3)
         with state.lock:
             state.subscribers.append(q)
         try:
             state.emit({"type": "info", "seq": 1})
             state.emit({"type": "info", "seq": 2})
             state.emit({"type": "info", "seq": 3})
+            state.emit({"type": "info", "seq": 4})
 
-            items = [q.get_nowait(), q.get_nowait()]
+            items = [q.get_nowait() for _ in range(q.qsize())]
         finally:
             state.unsubscribe(q)
 
-        self.assertEqual([item["seq"] for item in items], [2, 3])
+        types = [item["type"] for item in items]
+        self.assertEqual(types[-1], "info")
+        self.assertEqual(items[-1]["seq"], 4)
+        self.assertIn("resync_required", types)
+        self.assertNotIn(1, [item.get("seq") for item in items if item["type"] == "info"])
+
+    def test_emit_overflow_queues_resync_marker_for_slow_clients(self) -> None:
+        state = server.State()
+        bounded = server._Subscriber(maxsize=3)
+        with state.lock:
+            state.subscribers.append(bounded)
+        try:
+            state.emit({"type": "info", "seq": 1})
+            state.emit({"type": "info", "seq": 2})
+            state.emit({"type": "info", "seq": 3})
+            state.emit({"type": "info", "seq": 4})
+
+            first = bounded.get_nowait()
+            marker = bounded.get_nowait()
+            last = bounded.get_nowait()
+        finally:
+            state.unsubscribe(bounded)
+
+        # Room is made for the marker plus the newest event; older events
+        # are counted as dropped instead of vanishing silently.
+        self.assertEqual(first["seq"], 3)
+        self.assertEqual(marker["type"], "resync_required")
+        self.assertEqual(marker["reason"], "sse_queue_overflow")
+        self.assertGreaterEqual(marker["dropped"], 2)
+        self.assertEqual(last["seq"], 4)
 
     def test_state_snapshot_reports_only_restorable_research_runs(self) -> None:
         from codey.knowledge import KnowledgeChanges, KnowledgeNote, KnowledgeStore
@@ -3625,7 +3655,7 @@ class SessionThreadingTests(unittest.TestCase):
             [call.args[0] for call in get_provider.call_args_list],
             ["deepseek", "glm"],
         )
-        rank.assert_called_with(("stepfun", "glm"), mode="project")
+        rank.assert_called_with(("stepfun", "glm"), mode="project", preferred="")
         self.assertEqual(state.last_terminal_event["provider"], "glm")
 
     def test_hybrid_writer_failover_uses_project_capability_order(self) -> None:
@@ -3691,7 +3721,7 @@ class SessionThreadingTests(unittest.TestCase):
             ["deepseek", "stepfun"],
         )
         self.assertEqual(research_task.call_args.kwargs["provider_id"], "deepseek")
-        rank.assert_called_with(("mimo", "stepfun"), mode="project")
+        rank.assert_called_with(("mimo", "stepfun"), mode="project", preferred="")
         self.assertEqual(state.last_terminal_event["provider"], "stepfun")
 
     def test_shell_request_includes_risk_explanation(self) -> None:

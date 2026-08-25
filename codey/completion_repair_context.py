@@ -437,7 +437,9 @@ def _bounded_summary(value: Any, warnings: list[str]) -> str:
         kept.append(text[:200])
         if len(kept) >= MAX_REPAIR_SUMMARY_LINES:
             break
-    summary = "\n".join(reversed(kept)) if kept else ""
+    # The evidence layer already hands over the bounded tail in readable
+    # order; keep that order so the model-facing brief reads top-down.
+    summary = "\n".join(kept)
     if len(summary) > MAX_REPAIR_SUMMARY_CHARS:
         summary = summary[-MAX_REPAIR_SUMMARY_CHARS:].lstrip()
         warnings.append("repair_output_summary_clipped")

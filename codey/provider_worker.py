@@ -224,21 +224,16 @@ class WorkerChatProvider:
                     )
                     self.last_failure = failure
                     raise ProviderActionError(failure)
+                # Small-step polling keeps Stop responsive: waiting on the
+                # full remaining budget would pin the run until timeout even
+                # after the user cancelled.
                 try:
-                    response = self._responses.get(timeout=remaining)
-                except queue.Empty as exc:
-                    self._terminate()
-                    failure = ProviderFailure(
-                        self.provider_id,
-                        method,
-                        "",
-                        "",
-                        "provider worker timed out",
-                        "",
-                        FAILURE_RESPONSE_MISSING,
+                    response = self._responses.get(
+                        timeout=min(cancellation.POLL_INTERVAL, remaining)
                     )
-                    self.last_failure = failure
-                    raise ProviderActionError(failure) from exc
+                except queue.Empty:
+                    cancellation.check()
+                    continue
                 if response.get("id") != request_id:
                     continue
                 if response.get("ok") is True:

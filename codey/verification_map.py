@@ -40,7 +40,7 @@ JS_IMPORT_RE = re.compile(
 
 
 @dataclass(frozen=True)
-class VerificationCandidate:
+class TestCandidate:
     path: str
     reason: str
     evidence: str
@@ -56,7 +56,7 @@ class ObservedCheck:
 class VerificationMap:
     changed_files: tuple[str, ...] = ()
     changed_tests: tuple[str, ...] = ()
-    test_candidates: tuple[VerificationCandidate, ...] = ()
+    test_candidates: tuple[TestCandidate, ...] = ()
     observed_checks: tuple[ObservedCheck, ...] = ()
     recommended_commands: tuple[str, ...] = ()
     broader_commands: tuple[str, ...] = ()
@@ -111,7 +111,7 @@ def build_verification_map(
     changed_tests = tuple(path for path in changed if _is_test_path(path))
     changed_sources = tuple(path for path in changed if path not in changed_tests)
     symbols = changed_symbol_names(changes, include_old_names=True)
-    candidates: dict[str, VerificationCandidate] = {}
+    candidates: dict[str, TestCandidate] = {}
     bytes_read = 0
     byte_limited = False
     budget = BoundedScanBudget(
@@ -250,23 +250,23 @@ def _candidate_for_test(
     text: str,
     changed_sources: Sequence[str],
     symbols: Sequence[str],
-) -> VerificationCandidate | None:
+) -> TestCandidate | None:
     for source in changed_sources:
         if _naming_match(rel, source):
-            return VerificationCandidate(rel, f"name corresponds to changed file {source}", "naming")
+            return TestCandidate(rel, f"name corresponds to changed file {source}", "naming")
     suffix = path.suffix.lower()
     if suffix == ".py":
         imports = _python_imports(text)
         for source in changed_sources:
             if _python_import_matches(source, imports):
-                return VerificationCandidate(rel, f"directly imports changed module {source}", "import")
+                return TestCandidate(rel, f"directly imports changed module {source}", "import")
     elif suffix in {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}:
         for source in changed_sources:
             if _javascript_import_matches(root, path, source, text):
-                return VerificationCandidate(rel, f"directly imports changed module {source}", "import")
+                return TestCandidate(rel, f"directly imports changed module {source}", "import")
     for symbol in symbols:
         if re.search(rf"(?<![\w$]){re.escape(symbol)}(?![\w$])", text):
-            return VerificationCandidate(rel, f"references changed declaration {symbol}", "reference")
+            return TestCandidate(rel, f"references changed declaration {symbol}", "reference")
     return None
 
 

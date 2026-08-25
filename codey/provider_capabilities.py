@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Iterable, Literal
 
+from codey.provider_ids import normalize_provider_id
+
 
 ProviderFit = Literal["ok", "avoid"]
 Reliability = Literal["high", "medium", "low"]
@@ -197,8 +199,7 @@ def _fit_score(fit: ProviderFit) -> int:
 
 
 def _provider_id(value: object) -> str:
-    text = str(value or "").strip().lower()
-    return text if text.replace("-", "").replace("_", "").isalnum() else ""
+    return normalize_provider_id(value)
 
 
 __all__ = [

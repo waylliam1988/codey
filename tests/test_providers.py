@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey import cancellation
+from codey import cancellation, deepseek, glm, mimo, qwen, stepfun
 from codey.adapter_overrides import AdapterOverride
 from codey.provider_diagnostics import FAILURE_RESPONSE_MISSING, ProviderActionError
 from codey.providers import (
@@ -18,14 +18,14 @@ from codey.providers import (
     QwenWebProvider,
     web_driver,
 )
-from codey.providers import deepseek_web, glm_web, local_openai, mimo_web, stepfun_web, qwen_web, registry
+from codey.providers import local_openai, registry, web_provider
 
 
 class DeepSeekWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("profile")
-        with mock.patch.object(deepseek_web, "open_deepseek", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_deepseek", return_value=session) as opened:
             provider = DeepSeekWebProvider.connect(port=9333, profile=profile)
 
         self.assertIs(provider.session, session)
@@ -45,8 +45,8 @@ class DeepSeekWebProviderTests(unittest.TestCase):
         provider = DeepSeekWebProvider(session)
 
         with (
-            mock.patch.object(deepseek_web.deepseek, "new_chat") as new_chat,
-            mock.patch.object(deepseek_web.deepseek, "chat", return_value="reply") as chat,
+            mock.patch.object(deepseek, "new_chat") as new_chat,
+            mock.patch.object(deepseek, "chat", return_value="reply") as chat,
         ):
             provider.new_chat()
             reply = provider.send("hello", timeout=12.5)
@@ -67,7 +67,7 @@ class DeepSeekWebProviderTests(unittest.TestCase):
         provider = DeepSeekWebProvider(session)
 
         with mock.patch.object(
-            deepseek_web.deepseek,
+            deepseek,
             "chat",
             side_effect=TimeoutError("response timed out"),
         ):
@@ -87,7 +87,7 @@ class QwenWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("qwen-profile")
-        with mock.patch.object(qwen_web, "open_qwen", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_qwen", return_value=session) as opened:
             provider = QwenWebProvider.connect(port=9444, profile=profile)
 
         self.assertIs(provider.session, session)
@@ -107,8 +107,8 @@ class QwenWebProviderTests(unittest.TestCase):
         provider = QwenWebProvider(session)
 
         with (
-            mock.patch.object(qwen_web.qwen, "new_chat") as new_chat,
-            mock.patch.object(qwen_web.qwen, "chat", return_value="qwen reply") as chat,
+            mock.patch.object(qwen, "new_chat") as new_chat,
+            mock.patch.object(qwen, "chat", return_value="qwen reply") as chat,
         ):
             provider.new_chat()
             reply = provider.send("hello", timeout=15.0)
@@ -127,7 +127,7 @@ class QwenWebProviderTests(unittest.TestCase):
         page.title = mock.Mock(return_value="Qwen")
         provider = QwenWebProvider(SimpleNamespace(page=page, close=mock.Mock()))
 
-        with mock.patch.object(qwen_web.qwen, "new_chat") as new_chat:
+        with mock.patch.object(qwen, "new_chat") as new_chat:
             provider.new_chat(timeout=7.5)
 
         new_chat.assert_called_once_with(page, timeout=7.5)
@@ -137,7 +137,7 @@ class StepFunWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("stepfun-profile")
-        with mock.patch.object(stepfun_web, "open_stepfun", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_stepfun", return_value=session) as opened:
             provider = StepFunWebProvider.connect(port=9555, profile=profile)
 
         self.assertIs(provider.session, session)
@@ -157,8 +157,8 @@ class StepFunWebProviderTests(unittest.TestCase):
         provider = StepFunWebProvider(session)
 
         with (
-            mock.patch.object(stepfun_web.stepfun, "new_chat") as new_chat,
-            mock.patch.object(stepfun_web.stepfun, "chat", return_value="stepfun reply") as chat,
+            mock.patch.object(stepfun, "new_chat") as new_chat,
+            mock.patch.object(stepfun, "chat", return_value="stepfun reply") as chat,
         ):
             provider.new_chat()
             reply = provider.send("hello", timeout=20.0)
@@ -177,7 +177,7 @@ class MimoWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("mimo-profile")
-        with mock.patch.object(mimo_web, "open_mimo", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_mimo", return_value=session) as opened:
             provider = MimoWebProvider.connect(port=9555, profile=profile)
 
         self.assertIs(provider.session, session)
@@ -197,8 +197,8 @@ class MimoWebProviderTests(unittest.TestCase):
         provider = MimoWebProvider(session)
 
         with (
-            mock.patch.object(mimo_web.mimo, "new_chat") as new_chat,
-            mock.patch.object(mimo_web.mimo, "chat", return_value="mimo reply") as chat,
+            mock.patch.object(mimo, "new_chat") as new_chat,
+            mock.patch.object(mimo, "chat", return_value="mimo reply") as chat,
         ):
             provider.new_chat()
             reply = provider.send("hello", timeout=20.0)
@@ -217,7 +217,7 @@ class GlmWebProviderTests(unittest.TestCase):
     def test_connect_wraps_browser_session(self) -> None:
         session = SimpleNamespace()
         profile = Path("glm-profile")
-        with mock.patch.object(glm_web, "open_glm", return_value=session) as opened:
+        with mock.patch.object(web_provider.browser, "open_glm", return_value=session) as opened:
             provider = GlmWebProvider.connect(port=9666, profile=profile)
 
         self.assertIs(provider.session, session)
@@ -237,8 +237,8 @@ class GlmWebProviderTests(unittest.TestCase):
         provider = GlmWebProvider(session)
 
         with (
-            mock.patch.object(glm_web.glm, "new_chat") as new_chat,
-            mock.patch.object(glm_web.glm, "chat", return_value="glm reply") as chat,
+            mock.patch.object(glm, "new_chat") as new_chat,
+            mock.patch.object(glm, "chat", return_value="glm reply") as chat,
         ):
             provider.new_chat()
             reply = provider.send("hello", timeout=25.0)
@@ -266,11 +266,11 @@ class GlmWebProviderTests(unittest.TestCase):
 class ProviderTimeoutBoundaryTests(unittest.TestCase):
     def test_explicit_send_timeout_bounds_entire_provider_call(self) -> None:
         cases = (
-            (DeepSeekWebProvider, deepseek_web.deepseek, "TIMEOUT_GRACE"),
-            (QwenWebProvider, qwen_web.qwen, "TIMEOUT_GRACE"),
-            (MimoWebProvider, mimo_web.mimo, "TIMEOUT_GRACE"),
-            (StepFunWebProvider, stepfun_web.stepfun, "TIMEOUT_GRACE"),
-            (GlmWebProvider, glm_web.glm, "RESPONSE_TIMEOUT_GRACE"),
+            (DeepSeekWebProvider, deepseek, "TIMEOUT_GRACE"),
+            (QwenWebProvider, qwen, "TIMEOUT_GRACE"),
+            (MimoWebProvider, mimo, "TIMEOUT_GRACE"),
+            (StepFunWebProvider, stepfun, "TIMEOUT_GRACE"),
+            (GlmWebProvider, glm, "RESPONSE_TIMEOUT_GRACE"),
         )
         for provider_type, driver, grace_name in cases:
             with self.subTest(provider=provider_type.__name__):

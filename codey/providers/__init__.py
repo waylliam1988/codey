@@ -1,12 +1,7 @@
 """Chat provider adapters."""
 
 from codey.providers.base import ChatProvider
-from codey.providers.deepseek_web import DeepSeekWebProvider
-from codey.providers.glm_web import GlmWebProvider
 from codey.providers.local_openai import LocalOpenAIProvider
-from codey.providers.mimo_web import MimoWebProvider
-from codey.providers.qwen_web import QwenWebProvider
-from codey.providers.stepfun_web import StepFunWebProvider
 from codey.providers.registry import (
     DEFAULT_PROVIDER_ID,
     PROVIDER_LABELS,
@@ -17,6 +12,15 @@ from codey.providers.registry import (
     provider_tab_availability,
     provider_ids,
     warm_provider_tabs,
+)
+from codey.providers.web_provider import (
+    DeepSeekWebProvider,
+    GlmWebProvider,
+    MimoWebProvider,
+    QwenWebProvider,
+    StepFunWebProvider,
+    WebChatProvider,
+    WebProviderSpec,
 )
 
 __all__ = [
@@ -29,6 +33,8 @@ __all__ = [
     "PROVIDER_LABELS",
     "QwenWebProvider",
     "StepFunWebProvider",
+    "WebChatProvider",
+    "WebProviderSpec",
     "borrow_open_provider",
     "connect_existing_provider",
     "connect_fresh_provider_tab",

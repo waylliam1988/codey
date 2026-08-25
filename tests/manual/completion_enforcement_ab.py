@@ -323,7 +323,7 @@ def _finish_row(
     session_suffix: str,
     project: Path,
     observed: dict[str, Any],
-    writer_phases: int,
+    writer_phases: int | None,
     tool_calls: int | None,
     turns: int | None,
     elapsed_s: float,
@@ -338,11 +338,23 @@ def _finish_row(
     proofs = [row for row in manifest.get("completion_proofs", []) if isinstance(row, dict)]
     initial_proof = proofs[0] if proofs else {}
     texts = observed.get("repair_context_texts", [])
+    # Repair evidence comes from the run trace first: the manifest's
+    # ``completion_repair_context`` rows are recorded in production for every
+    # admitted repair round, live mode included. The scripted-writer
+    # collector only exists in self-test mode, so it can never be the sole
+    # source -- that gap is exactly what made live reports show 0 repairs.
+    repair_rows = [
+        row
+        for row in manifest.get("completion_repair_context", [])
+        if isinstance(row, dict)
+    ]
     done = event.get("stop_reason") == "done"
     blocked = event.get("stop_reason") == "blocked"
     if independent_ok is None:
         independent_ok = _independent_check(project)
-    repair_rounds = len(texts)
+    repair_rounds = max(len(repair_rows), len(texts))
+    if writer_phases is None:
+        writer_phases = repair_rounds + 1
     return {
         "case": case_name,
         "arm": arm,
@@ -361,7 +373,13 @@ def _finish_row(
             repair_rounds > 0 and independent_ok and initial_proof.get("status") == "complete"
         ),
         "independent_ok": independent_ok,
-        "repair_context_chars": max((len(t) for t in texts), default=0),
+        # Live rows carry counts only (no prompt text); their bounded
+        # summary_chars is the closest honest size signal.
+        "repair_context_chars": max(
+            [len(t) for t in texts]
+            + [int(row.get("summary_chars") or 0) for row in repair_rows],
+            default=0,
+        ),
         "writer_phases": writer_phases,
         "tool_calls": tool_calls,
         "turns": turns,
@@ -493,6 +511,7 @@ LIVE_CASES: dict[str, dict[str, Any]] = {
             "and run the project's verification."
         ),
         "docs_only": False,
+        "dependency_missing": True,
         "expected_ok": False,
     },
     # Index 5: docs-only change stays an allowed limited done.
@@ -508,15 +527,19 @@ def _live_project(root: Path, spec: dict[str, Any]) -> Path:
     project = _pytest_project(root, docs_only=bool(spec["docs_only"]))
     if not spec["docs_only"]:
         (project / "tests").mkdir(exist_ok=True)
-        (project / "tests" / "test_mod.py").write_text(
-            "import redis  # noqa: F401\n\n"
+        test_body = (
             "def test_value():\n"
             "    import importlib, sys\n"
             "    sys.path.insert(0, 'src')\n"
             "    mod = importlib.import_module('mod')\n"
-            "    assert mod.VALUE == 2\n",
-            encoding="utf-8",
+            "    assert mod.VALUE == 2\n"
         )
+        if spec.get("dependency_missing"):
+            # The env-failure case is the only one that needs an import the
+            # environment cannot satisfy; injecting it everywhere turned
+            # every repairable-failure case into an environment failure.
+            test_body = "import redis  # noqa: F401\n\n" + test_body
+        (project / "tests" / "test_mod.py").write_text(test_body, encoding="utf-8")
     else:
         (project / "README.md").write_text("# old layout\n", encoding="utf-8")
     return project
@@ -578,7 +601,7 @@ def run_live(provider_id: str, port: int, case_names: tuple[str, ...], arms: tup
                         session_suffix=f"live-{case_name}",
                         project=project,
                         observed=observed,
-                        writer_phases=max(1, observed.get("repair_rounds", 0) + 1),
+                        writer_phases=None,
                         tool_calls=None,
                         turns=None,
                         elapsed_s=time.monotonic() - started,

@@ -10,13 +10,14 @@ import hashlib
 import ipaddress
 import json
 import math
-import shlex
 import socket
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+from codey.command_line import split_run_command
 from codey.permission_profiles import PermissionProfile, profile_for_name
 from codey.refs import is_valid_hostname
 
@@ -396,7 +397,7 @@ def run_command_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
             display="command required",
         )
     try:
-        argv = shlex.split(command)
+        argv = split_run_command(command)
     except ValueError as exc:
         return ActionPolicyDecision.deny(
             subject,

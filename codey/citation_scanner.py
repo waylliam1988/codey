@@ -75,10 +75,6 @@ def source_id_ref_items(text: str) -> list[SourceIdRef]:
     return _dedupe_source_id_refs(refs)
 
 
-def source_id_bracket_ref_items(text: str) -> list[SourceIdRef]:
-    return [item for item in source_id_ref_items(text) if item.bracketed]
-
-
 def _dedupe_source_id_refs(refs: list[SourceIdRef]) -> list[SourceIdRef]:
     ordered = sorted(refs, key=lambda item: (item.start, item.end, not item.bracketed))
     kept: list[SourceIdRef] = []

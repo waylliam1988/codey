@@ -284,11 +284,6 @@ def builtin_capability_registry() -> CapabilityRegistry:
             release_gate="live_smoke",
         ),
         CapabilitySpec(
-            id="builtin_profiles",
-            provides=("builtin_profile_catalog",),
-            owner_module="codey.builtin_profiles",
-        ),
-        CapabilitySpec(
             id="changes_presenter",
             provides=("diff_presentation",),
             ui_surface=("changes_drawer",),
@@ -366,8 +361,7 @@ def builtin_capability_registry() -> CapabilityRegistry:
         CapabilitySpec(
             id="domain_evidence_profiles",
             provides=("evidence_profile_projection",),
-            projection_audience=("data_only", "behavior_input"),
-            canonical_inputs=("builtin_profiles",),
+            projection_audience=("data_only",),
             fail_mode="fail_open",
             release_gate="targeted_tests",
             owner_module="codey.research.domain_profiles",

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import re
-import shlex
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Sequence
 
+from codey.command_line import split_run_command
 from codey.local_store import (
     DEFAULT_STATE_HOME,
     project_key,
@@ -107,7 +107,7 @@ def _verified_command(command: str, cwd: str) -> VerifiedCommand | None:
     ):
         return None
     try:
-        argv = shlex.split(text)
+        argv = split_run_command(text)
     except ValueError:
         return None
     if not argv:

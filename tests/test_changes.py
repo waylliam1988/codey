@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 import subprocess
 import sys
@@ -236,7 +237,7 @@ class ChangeTrackerTests(unittest.TestCase):
             store = SnapshotStore(state_td)
             tracker = ChangeTracker(root, store)
 
-            with mock.patch.object(store, "save", side_effect=OSError("disk full")):
+            with mock.patch.object(store, "put_baseline", side_effect=OSError("disk full")):
                 agent.run(
                     FakeProvider(write, done),
                     root,
@@ -296,7 +297,104 @@ class ChangeTrackerTests(unittest.TestCase):
             self.assertTrue(tracker.has_snapshots)
             self.assertTrue(store.path_for(root).is_file())
 
-    def test_corrupt_or_escaping_snapshot_is_ignored(self) -> None:
+    def test_collect_is_read_only_and_prune_clean_is_explicit(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            clean_path = root / "clean.py"
+            dirty_path = root / "dirty.py"
+            clean_path.write_text("same\n", encoding="utf-8")
+            store = SnapshotStore(state_td)
+            tracker = ChangeTracker(root, store)
+            tracker.capture_before("clean.py")
+            tracker.capture_before("dirty.py")
+            dirty_path.write_text("edited\n", encoding="utf-8")
+            manifest = store.path_for(root)
+
+            # UI polling must never mutate recovery state.
+            first = tracker.collect()
+            self.assertEqual(first["changed_count"], 1)
+            self.assertTrue(manifest.is_file())
+            self.assertTrue(store.dir_for(root).is_dir())
+
+            pruned = tracker.prune_clean()
+            self.assertEqual(pruned, ["clean.py"])
+            self.assertTrue(tracker.has_snapshots)
+            restarted = ChangeTracker(root, store)
+            self.assertEqual(restarted.snapshots()[0].path, "dirty.py")
+
+    def test_prune_clean_after_full_revert_deletes_snapshot_store(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+            store = SnapshotStore(state_td)
+            tracker = ChangeTracker(root, store)
+            tracker.capture_before("app.py")
+            path.write_text("new\n", encoding="utf-8")
+
+            self.assertEqual(tracker.collect()["changed_count"], 1)
+            path.write_text("old\n", encoding="utf-8")
+            tracker.prune_clean()
+
+            self.assertFalse(tracker.has_snapshots)
+            self.assertFalse(store.path_for(root).exists())
+
+    def test_capture_after_only_rewrites_the_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            path = root / "app.py"
+            path.write_text("old\n", encoding="utf-8")
+            store = SnapshotStore(state_td)
+            tracker = ChangeTracker(root, store)
+            tracker.capture_before("app.py")
+            body = store._baseline_path(root, "app.py")
+            manifest_before = store.path_for(root).read_text(encoding="utf-8")
+            body_before = body.read_text(encoding="utf-8")
+
+            path.write_text("new\n", encoding="utf-8")
+            tracker.capture_after("app.py")
+
+            # Baseline body untouched; only the small manifest gained a hash.
+            self.assertEqual(body.read_text(encoding="utf-8"), body_before)
+            manifest_after = store.path_for(root).read_text(encoding="utf-8")
+            self.assertIn("after_hash", manifest_after)
+            self.assertNotEqual(manifest_after, manifest_before)
+
+            restarted = ChangeTracker(root, store)
+            self.assertEqual(
+                restarted.collect()["files"][0]["status"],
+                "M",
+            )
+
+    def test_concurrent_collect_during_capture_never_loses_a_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
+            root = Path(td)
+            (root / "app.py").write_text("old\n", encoding="utf-8")
+            store = SnapshotStore(state_td)
+            tracker = ChangeTracker(root, store)
+            errors: list[BaseException] = []
+
+            def poller() -> None:
+                try:
+                    for _ in range(50):
+                        tracker.collect()
+                except BaseException as exc:  # pragma: no cover - surfaced below
+                    errors.append(exc)
+
+            thread = threading.Thread(target=poller)
+            thread.start()
+            try:
+                for index in range(20):
+                    tracker.capture_before(f"m{index}.py")
+                    (root / f"m{index}.py").write_text(f"new {index}\n", encoding="utf-8")
+                    tracker.capture_after(f"m{index}.py")
+            finally:
+                thread.join()
+
+            self.assertEqual(errors, [])
+            self.assertEqual(len(tracker._before), 20)
+
+
         with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as state_td:
             root = Path(td)
             store = SnapshotStore(state_td)

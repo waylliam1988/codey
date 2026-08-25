@@ -205,50 +205,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertNotIn("if capabilities", source)
         self.assertNotIn("if self.capabilities", source)
 
-    def test_builtin_profiles_are_metadata_only(self) -> None:
-        path = ROOT / "codey" / "builtin_profiles.py"
-        imports = imported_modules(path)
-        source = path.read_text(encoding="utf-8")
-        forbidden_imports = {
-            "codey.browser",
-            "codey.deepseek",
-            "codey.qwen",
-            "codey.stepfun",
-            "codey.glm",
-            "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
-            "codey.research.runner",
-            "codey.server",
-            "codey.task_runner",
-            "importlib",
-            "pkgutil",
-        }
-        forbidden_source = (
-            "entry_points",
-            "load_plugin",
-            "register_runtime",
-            "dispatch(",
-            "execute(",
-            "eval(",
-            "exec(",
-        )
-
-        self.assertTrue(
-            forbidden_imports.isdisjoint(imports),
-            sorted(forbidden_imports & imports),
-        )
-        for token in forbidden_source:
-            with self.subTest(token=token):
-                self.assertNotIn(token, source)
-
-    def test_task_runner_does_not_use_builtin_profiles_for_decisions(self) -> None:
+    def test_builtin_profiles_module_is_gone(self) -> None:
+        # The metadata-only catalog never influenced any decision and was
+        # removed ahead of 0.4.x instead of shipping dead surface.
+        self.assertFalse((ROOT / "codey" / "builtin_profiles.py").exists())
         source = (ROOT / "codey" / "task_runner.py").read_text(encoding="utf-8")
-
-        self.assertIn("self.builtin_profiles = builtin_profiles", source)
-        self.assertEqual(source.count("self.builtin_profiles"), 1)
-        self.assertNotIn("if builtin_profiles", source)
-        self.assertNotIn("if self.builtin_profiles", source)
+        self.assertNotIn("builtin_profiles", source)
+        server_source = (ROOT / "codey" / "server.py").read_text(encoding="utf-8")
+        self.assertNotIn("builtin_profiles", server_source)
 
     def test_action_policy_is_not_runtime_or_plugin_host(self) -> None:
         path = ROOT / "codey" / "action_policy.py"

@@ -906,7 +906,8 @@ codey/
   scan_report.py            compact scan omission facts and coverage rendering
   tool_definition.py        internal coding tool metadata and render hints
   capabilities.py           read-only built-in capability boundary registry
-  builtin_profiles.py       read-only built-in default-profile catalog
+  command_line.py           one tokenizer for run/shell command decisions
+  provider_ids.py           canonical provider id normalization rules
   permission_profiles.py    internal tool/context permission profiles
   action_policy.py          monotonic local action allow/ask/deny guards
   context_source.py         named bounded prompt context assembly

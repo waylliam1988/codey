@@ -17,7 +17,6 @@ from codey.permission_profiles import PERMISSION_PROFILES
 
 EXPECTED_BUILTIN_IDS = (
     "agent_runner",
-    "builtin_profiles",
     "changes_presenter",
     "chat_runner",
     "completion_contract",
@@ -51,7 +50,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "eeefdb09d146b795b623c9d4ae5da375e7959234e48114690919e8e2fb388238"
+    "0b1e614c33b864a599ee69b1684a4abefe45cc923763e3f49bf7393501274c22"
 )
 
 
@@ -82,17 +81,6 @@ class CapabilityRegistryTests(unittest.TestCase):
         spec = registry.get("changes_presenter")
 
         self.assertEqual(spec.provides, ("diff_presentation",))
-        self.assertFalse(spec.requires_policy)
-        self.assertEqual(spec.consumes, ())
-
-    def test_builtin_profiles_is_metadata_only_in_v1(self) -> None:
-        registry = builtin_capability_registry()
-
-        spec = registry.get("builtin_profiles")
-
-        self.assertEqual(spec.provides, ("builtin_profile_catalog",))
-        self.assertEqual(spec.owner_module, "codey.builtin_profiles")
-        self.assertFalse(spec.model_visible)
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.consumes, ())
 
@@ -258,8 +246,8 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(trust.release_gate, "targeted_tests")
 
         profiles = registry.get("domain_evidence_profiles")
-        self.assertEqual(profiles.projection_audience, ("data_only", "behavior_input"))
-        self.assertEqual(profiles.canonical_inputs, ("builtin_profiles",))
+        self.assertEqual(profiles.projection_audience, ("data_only",))
+        self.assertEqual(profiles.canonical_inputs, ())
         self.assertEqual(profiles.release_gate, "targeted_tests")
 
     def test_research_to_code_projection_budget_is_small(self) -> None:

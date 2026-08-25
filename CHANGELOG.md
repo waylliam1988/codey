@@ -6,6 +6,78 @@ This file records Codey's release history. The newest release appears first.
 
 ## 0.4.13 (Unreleased) - Verified Completion Enforcement + Repair Context Admission v1
 
+### Hardening and cleanup (this batch)
+
+- `providers.preferred` is now consumed as a **soft ranking preference**:
+  `preferred_provider_for(config, mode)` (new helper in
+  `codey/project_config.py`) feeds the project's per-mode preference into
+  both failover rankings (`rank_providers(preferred=...)`) -- startup
+  preflight and writer failover. The config was parsed since 0.4.x but never
+  read. It only re-orders candidates: it cannot override the user's explicit
+  provider, bypass supervisor availability/exclusions, or enable a
+  disconnected provider. `.codey/config.json` is read exactly once per run
+  and shared with the project context builder.
+- One tokenizer for every command decision path: new
+  `codey/command_line.py::split_run_command` (Windows: `posix=False` plus
+  matching-quote stripping so `C:\path\file.py` survives; POSIX:
+  `posix=True`). `tool_runtime`, `shell_risk`, `action_policy`,
+  `verification_policy`, and `project_facts` all split through it, so
+  approval risk analysis, policy guards, and actual execution see the same
+  argv; tokenization failure fails closed.
+- ChangeTracker race fixed: one reentrant lock now guards the baseline
+  state, and `collect()` is strictly read-only by default. UI polling can no
+  longer pop clean baselines out from under a running capture. Pruning moved
+  behind an explicit `prune_clean()` called at run terminal states only.
+- Recovery snapshots rewritten as two layers (`baselines/<rel-digest>` body
+  files plus a small `manifest.json`): a non-Git edit now writes one bounded
+  baseline file plus the manifest instead of re-serializing up to 64MB of
+  JSON on every capture (write amplification).
+- `UiStateStore.save()` compares against an in-memory cache seeded by the
+  first load instead of re-reading and re-parsing the file on every save;
+  a failed write keeps the previous durable baseline.
+- SSE overflow is now visible: slow subscribers get a bounded
+  `{"type": "resync_required", "reason": "sse_queue_overflow", "dropped": N}`
+  marker before the newest event, and the frontend re-pulls run state and
+  provider status on receipt instead of silently missing terminal/approval
+  events.
+- TaskRunner closes the early-failure busy window: any exception inside the
+  claim/route window now produces a bounded error terminal event,
+  best-effort trace finish, and `state.finish_run(...)`, so the run slot can
+  never stay busy forever after an early crash.
+- Provider worker requests poll in small steps and check the cancellation
+  event, so Stop interrupts a pending worker response within ~0.2s instead
+  of waiting out the full timeout.
+- Approved shell commands run through the shared process-tree owner
+  (`cancellation.run_process`, bound to the stop flag): Stop now kills the
+  whole approved-command tree instead of orphaning children.
+- `DeadlineExceeded` escapes the agent tool loop like `TaskCancelled`
+  instead of being swallowed into a tool error, so an exhausted provider
+  budget stops burning turns.
+- Work checkpoints record hash-unavailable changed paths visibly
+  (`hash_unavailable_files` in payload, prompt, and reconcile) instead of
+  silently dropping them from an otherwise normal-looking checkpoint.
+- Live A/B harness reads repair evidence from the RunTrace manifest's
+  `completion_repair_context` rows, so live reports no longer show
+  `repair_rounds=0`; the injected `import redis` failure now applies only to
+  the `dependency_missing_env_failure` case, making
+  `fresh_failing_test_after_edit` reliably repairable.
+- `_bounded_summary()` keeps the evidence layer's readable tail order
+  (no more reversed output tails in repair contexts).
+- Removed dead surface: `builtin_profiles` (module, TaskRunner injection
+  field, server wiring, capability spec, docs page, tests -- it was
+  metadata-only and explicitly unused by design), the duplicate
+  `VerificationCandidate` name in `verification_map.py` (renamed to
+  `TestCandidate`), unused driver selector leftovers (`SEND_READY`, `INPUT`,
+  `RESPONSE`, `ANSWER`, `SEND_BUTTON` constants), `citation_scanner.source_id_bracket_ref_items`,
+  `provider_discovery.find_control/find_response`, and
+  `provider_controls.reject_flow`.
+- Provider adapter dedup: the five byte-identical `providers/*_web.py`
+  wrappers collapsed into one spec-driven `web_provider.py` (~270 lines);
+  shared control-location / response-count / rate-limit / late-response
+  scaffolding extracted into `providers/driver_common.py`; provider id
+  normalization unified in `codey/provider_ids.py`. Per-site completion
+  heuristics deliberately stay in their drivers.
+
 - New `codey/completion_verification.py`: the coding verification semantics
   moved out of `task_runner.py` as pure projections -- tri-state freshness
   (`fresh_pass` / `fresh_fail` / `unobserved`), explicit provenance,

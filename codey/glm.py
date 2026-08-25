@@ -16,6 +16,7 @@ from codey import (
 from codey.provider_profiles import get_profile
 from codey.provider_diagnostics import ControlMissing, RateLimited
 from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.providers import driver_common
 from codey.provider_submission import (
     SendAttempt,
     confirm_submission,
@@ -205,13 +206,7 @@ def _normalize_python_edit_content(payload: dict) -> bool:
 
 
 def _message_box(page: Page, *, teach: bool = False) -> Locator | None:
-    return controls.locate_control(
-        page,
-        PROVIDER_ID,
-        controls.CONTROL_MESSAGE_BOX,
-        PROFILE.selectors("message_box"),
-        teach=teach,
-    )
+    return driver_common.message_box(PROVIDER_ID, PROFILE, page, teach=teach)
 
 
 def _send_button(
@@ -263,7 +258,7 @@ def new_chat(page: Page, timeout: float | None = None) -> None:
 
 
 def _response_count(page: Page) -> int:
-    return controls.response_count(page, PROVIDER_ID, PROFILE.selectors("response"))
+    return driver_common.response_count(PROVIDER_ID, PROFILE, page)
 
 
 def _question_count(page: Page) -> int:
@@ -295,12 +290,7 @@ def _submitted_question_count(page: Page, submitted_text: str) -> int:
 
 
 def _rate_limit_visible(page: Page) -> bool:
-    try:
-        return RATE_LIMIT_TEXT in str(page.locator("body").inner_text(timeout=1000))
-    except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-        raise
-    except Exception:
-        return False
+    return driver_common.rate_limit_visible(page, RATE_LIMIT_TEXT)
 
 
 def _click_rate_limit_retry(page: Page) -> bool:
@@ -427,19 +417,14 @@ def _wait_late_response(
     grace: float = RESPONSE_TIMEOUT_GRACE,
     tick: float = 0.8,
 ) -> str:
-    deadline = time.time() + max(0.0, grace)
-    while time.time() < deadline:
-        try:
-            count = _response_count(page)
-            current = _last_text(page) if count else ""
-            if current and (count > baseline or current != baseline_text) and _generation_complete(page):
-                return _final_text(page)
-        except (cancellation.TaskCancelled, cancellation.DeadlineExceeded):
-            raise
-        except Exception:
-            pass
-        cancellation.wait(tick)
-    return ""
+    def _ready() -> str:
+        count = _response_count(page)
+        current = _last_text(page) if count else ""
+        if current and (count > baseline or current != baseline_text) and _generation_complete(page):
+            return _final_text(page)
+        return ""
+
+    return driver_common.poll_late_response(_ready, grace=grace, tick=tick)
 
 
 def _chat(

@@ -121,6 +121,10 @@ class WorkCheckpoint:
     started_at: str = ""
     updated_at: str = ""
     changed_files: tuple[CheckpointFile, ...] = ()
+    # Files edited this run whose after-hash could not be captured (unreadable,
+    # symlinked, ...). They stay visible instead of silently disappearing, so
+    # an edit checkpoint never looks complete when it is not verifiable.
+    hash_unavailable_files: tuple[str, ...] = ()
     successful_checks_after_last_change: tuple[CheckpointCheck, ...] = ()
     last_action: LastAction | None = None
     stop_reason: str = ""
@@ -137,6 +141,7 @@ class WorkCheckpoint:
             "started_at": self.started_at,
             "updated_at": self.updated_at,
             "changed_files": [vars(item) for item in self.changed_files],
+            "hash_unavailable_files": list(self.hash_unavailable_files),
             "successful_checks_after_last_change": [vars(item) for item in self.successful_checks_after_last_change],
             "stop_reason": self.stop_reason,
         }
@@ -170,6 +175,14 @@ class WorkCheckpointStore:
                     files.append(CheckpointFile(rel, digest))
                 if len(files) >= MAX_CHANGED_FILES:
                     break
+            hash_unavailable = tuple(
+                rel
+                for rel in (
+                    _rel_path(item) if isinstance(item, str) else None
+                    for item in payload.get("hash_unavailable_files") or []
+                )
+                if rel
+            )[:MAX_CHANGED_FILES]
             checks = []
             for item in payload.get("successful_checks_after_last_change") or []:
                 if not isinstance(item, dict):
@@ -199,6 +212,7 @@ class WorkCheckpointStore:
                 started_at=_text(payload.get("started_at"), 40),
                 updated_at=_text(payload.get("updated_at"), 40),
                 changed_files=tuple(files),
+                hash_unavailable_files=hash_unavailable,
                 successful_checks_after_last_change=tuple(checks),
                 last_action=action,
                 stop_reason=_text(payload.get("stop_reason"), MAX_STOP_REASON_CHARS),
@@ -231,14 +245,23 @@ class WorkCheckpointStore:
         safe_rel = _canonical_rel_path(root, rel)
         digest = _file_hash(root, safe_rel) if safe_rel else None
         files = list(checkpoint.changed_files)
-        if safe_rel and digest is not None:
+        unhashed = list(checkpoint.hash_unavailable_files)
+        if safe_rel is not None:
             files = [item for item in files if item.path != safe_rel]
-            files.append(CheckpointFile(safe_rel, digest))
+            unhashed = [item for item in unhashed if item != safe_rel]
+            if digest is not None:
+                files.append(CheckpointFile(safe_rel, digest))
+            else:
+                # The edit happened but its hash cannot be captured; keeping
+                # the path visible beats writing a checkpoint that pretends
+                # the file was never changed.
+                unhashed.append(safe_rel)
         updated = replace(
             checkpoint,
             status="working",
             updated_at=_now(),
             changed_files=tuple(files[-MAX_CHANGED_FILES:]),
+            hash_unavailable_files=tuple(unhashed[-MAX_CHANGED_FILES:]),
             successful_checks_after_last_change=(),
             last_action=LastAction("edit", True),
             stop_reason="",
@@ -281,6 +304,9 @@ class WorkCheckpointStore:
     def reconcile(self, checkpoint: WorkCheckpoint) -> WorkCheckpoint:
         root = Path(checkpoint.project).resolve()
         changed = any(_file_hash(root, item.path) != item.after_hash for item in checkpoint.changed_files)
+        # A file whose hash was never captured cannot prove it is unchanged,
+        # so the checkpoint stays conservatively marked workspace-changed.
+        changed = changed or bool(checkpoint.hash_unavailable_files)
         if not changed:
             return checkpoint
         updated = replace(
@@ -306,6 +332,11 @@ def render_work_checkpoint(checkpoint: WorkCheckpoint) -> str:
         lines.append("- Recorded changed files: " + ", ".join(item.path for item in checkpoint.changed_files))
     else:
         lines.append("- Recorded changed files: (none)")
+    if checkpoint.hash_unavailable_files:
+        lines.append(
+            "- Changed files whose hash could not be captured (unverified): "
+            + ", ".join(checkpoint.hash_unavailable_files)
+        )
     if checkpoint.successful_checks_after_last_change:
         checks = "; ".join(
             f"{item.command} (cwd {item.cwd})" for item in checkpoint.successful_checks_after_last_change

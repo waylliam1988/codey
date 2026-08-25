@@ -318,23 +318,39 @@ def _message_excerpt(message: dict[str, Any]) -> str:
 
 
 class UiStateStore:
-    """Persist the current visible UI state as one bounded local snapshot."""
+    """Persist the current visible UI state as one bounded local snapshot.
+
+    ``save`` compares against the last state this process wrote (seeded by
+    the first :meth:`load`) instead of re-reading and re-parsing the file on
+    every save, so a save costs one write, not a read-parse-write cycle.
+    """
 
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.path = Path(state_home) / "ui-state.json"
+        self._cached_state: dict[str, Any] | None = None
 
     def load(self) -> dict[str, Any]:
         payload = read_json(self.path, max_bytes=MAX_UI_STATE_BYTES)
         if not payload or payload.get("schema_version") != SCHEMA_VERSION:
-            return _empty_state()
-        return _clean_payload(payload.get("state"))
+            state = _empty_state()
+        else:
+            state = _clean_payload(payload.get("state"))
+        self._cached_state = state
+        return state
+
+    def _current(self) -> dict[str, Any]:
+        if self._cached_state is not None:
+            return self._cached_state
+        return self.load()
 
     def save(self, state: object) -> None:
         clean = _clean_payload(state)
-        current = self.load()
+        current = self._current()
         if _version(current) > _version(clean):
             return
         if _version(current) == _version(clean) and current != clean:
+            return
+        if current == clean:
             return
         write_json_atomic(
             self.path,
@@ -344,6 +360,9 @@ class UiStateStore:
             },
             max_bytes=MAX_UI_STATE_BYTES,
         )
+        # Only a successful write becomes the new comparison baseline; a
+        # failed write leaves the cache pointing at the last durable state.
+        self._cached_state = clean
 
     def visible_session_excerpt(
         self,

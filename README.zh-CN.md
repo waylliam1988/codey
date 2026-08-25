@@ -763,7 +763,8 @@ codey/
   scan_report.py            紧凑的扫描遗漏事实和覆盖范围渲染
   tool_definition.py        内部 coding 工具元数据和渲染提示
   capabilities.py           只读内置能力边界 registry
-  builtin_profiles.py       只读内置默认策略目录
+  command_line.py           run/shell 命令决策的统一分词器
+  provider_ids.py           provider id 的规范化规则
   permission_profiles.py    内部工具/上下文 permission profile
   action_policy.py          本地动作 allow/ask/deny 单调 guard
   context_source.py         命名且有边界的 prompt 上下文装配

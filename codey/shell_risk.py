@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass
+
+from codey.command_line import split_run_command
 
 
 @dataclass(frozen=True)
@@ -127,8 +128,12 @@ def _argv(command: str) -> list[str]:
 
 
 def _split(command: str) -> list[str]:
+    # Same tokenizer as execution, so the approval card always describes the
+    # command that will actually run. If even that fails, fall back to a raw
+    # whitespace split: risk classification is display-only and must not
+    # invent structure the parser could not see.
     try:
-        return shlex.split(command or "", posix=False)
+        return split_run_command(command or "")
     except ValueError:
         return str(command or "").split()
 
