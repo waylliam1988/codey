@@ -4,6 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
+from codey.research import object_model
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import (
     ANSWER_STATUSES,
@@ -520,3 +521,63 @@ def test_url_redaction_covers_secret_key_variants_without_digesting_values() -> 
     assert malformed_first["url_digest"] == malformed_second["url_digest"]
     assert malformed_userinfo_first["url_digest"] == malformed_userinfo_second["url_digest"]
     assert query_key_first["url_digest"] == query_key_second["url_digest"]
+
+def test_long_excerpt_keeps_exact_text_and_valid_char_locator() -> None:
+    """An excerpt longer than the 360-char display cap must not corrupt the
+    proof locator: char offsets are computed from the exact matched text and
+    the stored excerpt stays verbatim (no "..." marker) until presentation.
+    """
+    url = "https://example.com/long-helium"
+    ledger = ResearchLedger()
+    filler = ("Helium markets stayed tight through the quarter, with traders "
+              "watching every cargo and inventory report for direction. ") * 6
+    long_excerpt = (
+        "Helium is separated from natural gas streams in ways that shape the "
+        + filler
+        + "final 2026 supply outlook for industrial buyers."
+    )
+    source_text = (
+        "Intro paragraph that is not part of any evidence item. "
+        + long_excerpt
+        + " Trailing analysis follows the quoted region."
+    )
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="Long helium article",
+        text=source_text,
+    )
+    prepared = ledger.prepare_evidence_items(
+        [{
+            "claim": "Supply stays tight.",
+            "source_url": url,
+            "excerpt": long_excerpt,
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim="Supply stays tight.",
+        fallback_body=long_excerpt[:200],
+        note_type="fact",
+    )
+
+    assert not prepared.error
+    ledger.add_evidence_items(list(prepared.items), note_id="fact-long")
+    stored = prepared.items[0]
+    assert len(stored.excerpt) > 360          # longer than the display cap...
+    assert not stored.excerpt.endswith("...") # ...yet still the exact match
+
+    start, end = object_model._excerpt_offsets(source_text, stored.excerpt)
+    assert start > 0 and end > start
+    record = build_research_record(
+        question="Research helium supply",
+        summary="## 结论\n- Tight [1]\n\n## 来源\n[1] Long - " + url,
+        ledger=ledger,
+        review=None,
+        run_id="run-long",
+        session_id="session-long",
+        stop_reason="done",
+    )
+    evidence_row = record.evidence[0]
+    locator = evidence_row.locator.to_jsonable()
+    assert locator["char_start"] == start
+    assert locator["char_end"] == end

@@ -2857,6 +2857,9 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertIn(f"[1] Helium article - {url}", finalized.text)
 
     def test_done_finalizer_allows_normal_words_like_s1_in_prose(self) -> None:
+        # Prose containing "s1" must never be treated as a source-id ref;
+        # with strict citation mapping the unexplained [1] simply fails
+        # compilation without any silent rewrite.
         url = "https://example.com/helium"
         ledger = helium_ledger(url)
 
@@ -2870,9 +2873,9 @@ class ResearchBoundaryTests(unittest.TestCase):
             ledger,
         )
 
-        self.assertTrue(finalized.changed)
-        self.assertIn("In our code, s1 was used as key. [1]", finalized.text)
-        self.assertIn(f"[1] Helium article - {url}", finalized.text)
+        self.assertFalse(finalized.changed)
+        self.assertEqual(finalized.reason, "unmapped_numeric_refs")
+        self.assertIn("In our code, s1 was used as key.", finalized.text)
 
     def test_done_finalizer_rejects_duplicate_source_numbers_with_different_urls(self) -> None:
         first = "https://example.com/a"
@@ -2975,7 +2978,10 @@ class ResearchBoundaryTests(unittest.TestCase):
         self.assertNotIn("[10]", finalized.text)
         self.assertNotIn("[20]", finalized.text)
 
-    def test_done_finalizer_repairs_single_source_number_drift(self) -> None:
+    def test_done_finalizer_fails_closed_on_single_source_number_drift(self) -> None:
+        # Even with exactly one citable source, a body [1] the 来源 table
+        # cannot explain must go back through repair instead of being
+        # silently rewritten to that source.
         url = "https://example.com/helium"
         ledger = helium_ledger(url)
 
@@ -2989,20 +2995,12 @@ class ResearchBoundaryTests(unittest.TestCase):
             ledger,
         )
 
-        self.assertTrue(finalized.changed)
-        self.assertEqual(finalized.source_count, 1)
-        self.assertIn("Helium supply depends on gas processing. [1]", finalized.text)
-        self.assertIn(f"[1] Helium article - {url}", finalized.text)
-        self.assertNotIn("[10]", finalized.text)
-        review = review_report_quality(
-            finalized.text,
-            ledger=ledger,
-            opened_sources={url},
-            search_result_urls=set(),
-        )
-        self.assertTrue(review.ok)
+        self.assertFalse(finalized.changed)
+        self.assertEqual(finalized.reason, "unmapped_numeric_refs")
+        # Unchanged text: the original (drifted) source table stays as-is.
+        self.assertIn(f"[10] Helium article - {url}", finalized.text)
 
-    def test_done_finalizer_repairs_single_source_multi_label_drift(self) -> None:
+    def test_done_finalizer_fails_closed_on_single_source_multi_label_drift(self) -> None:
         url = "https://example.com/helium"
         ledger = helium_ledger(url)
 
@@ -3020,28 +3018,26 @@ class ResearchBoundaryTests(unittest.TestCase):
             ledger,
         )
 
-        self.assertTrue(finalized.changed)
-        self.assertEqual(finalized.source_count, 1)
-        self.assertIn("Helium supply depends on gas processing. [1]", finalized.text)
-        self.assertIn("same opened source supports this narrow claim. [1]", finalized.text)
-        self.assertIn(f"[1] Helium article - {url}", finalized.text)
-        self.assertNotIn("[2]", finalized.text)
-        self.assertNotIn("[10]", finalized.text)
+        self.assertFalse(finalized.changed)
+        self.assertEqual(finalized.reason, "unmapped_numeric_refs")
+        self.assertIn("[2]", finalized.text)
 
-    def test_done_finalizer_repairs_duplicate_rows_for_same_source(self) -> None:
+    def test_done_finalizer_compiles_duplicate_rows_for_same_source(self) -> None:
         url = "https://example.com/helium"
         ledger = helium_ledger(url)
 
         finalized = finalize_done_answer(
-            "## 结论\n- Helium supply depends on gas processing. [1]\n\n"
-            "## 关键证据\n- Helium evidence [1]\n\n"
+            "## 结论\n- Helium supply depends on gas processing. [10]\n\n"
+            "## 关键证据\n- Helium evidence [10]\n\n"
             "## 反证与限制\n- 未找到强反证。\n\n"
-            "## 来源质量\n- [1] good\n\n"
+            "## 来源质量\n- [10] good\n\n"
             "## 搜索覆盖\n- search\n\n"
             f"## 来源\n[10] Helium article - {url}\n[20] Duplicate Helium article - {url}",
             ledger,
         )
 
+        # Both rows name one citable URL, so the explicit old numbers still
+        # compile and collapse to a single compact row.
         self.assertTrue(finalized.changed)
         self.assertEqual(finalized.source_count, 1)
         self.assertIn(f"[1] Helium article - {url}", finalized.text)

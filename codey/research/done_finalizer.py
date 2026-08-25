@@ -189,26 +189,15 @@ def _safe_numeric_ref_map(
     body_refs: tuple[int, ...],
     old_number_to_new: dict[int, int],
 ) -> dict[int, int] | None:
+    # No silent inference: a body [n] that the 来源 table cannot explain is
+    # an unmapped citation and must go back through repair, even when only
+    # one citable source exists. Rewriting it here would silently assert
+    # which source supports which claim.
     number_map = dict(old_number_to_new)
-    unresolved = tuple(ref for ref in body_refs if ref not in number_map)
-    if not unresolved:
-        return number_map
-    inferred = _infer_unmapped_numeric_refs(unresolved, old_number_to_new)
-    if not inferred:
-        return None
-    number_map.update(inferred)
+    for ref in body_refs:
+        if ref not in number_map:
+            return None
     return number_map
-
-
-def _infer_unmapped_numeric_refs(
-    unresolved: tuple[int, ...],
-    old_number_to_new: dict[int, int],
-) -> dict[int, int]:
-    targets = set(old_number_to_new.values())
-    if len(targets) == 1:
-        target = next(iter(targets))
-        return {ref: target for ref in unresolved}
-    return {}
 
 
 def _unmapped_source_id_refs(

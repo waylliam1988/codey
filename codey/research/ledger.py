@@ -261,7 +261,11 @@ class ResearchLedger:
                 prepared.append(EvidenceItem(
                     claim=_clip(str(raw.get("claim") or fallback_claim), MAX_CLAIM_CHARS),
                     source_url=final_url,
-                    excerpt=_clip(excerpt, MAX_SNIPPET_CHARS),
+                    # Keep the exact matched substring: downstream proof
+                    # locators re-find this text in the opened source, so any
+                    # display truncation here would break char offsets.
+                    # Presentation layers apply their own bounds.
+                    excerpt=excerpt,
                     stance=_normalize_stance(str(raw.get("stance") or "supports")),
                     page=page,
                     locator=_locator(page),
