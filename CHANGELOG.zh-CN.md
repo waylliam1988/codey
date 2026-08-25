@@ -56,8 +56,9 @@
   pipeline 转发、TaskRunner admission 均有 deterministic 测试，外加 harness
   的 pytest 包装测试。
 - 同周期加固批次：
-  - shell approval 续跑不再吞掉用户 Stop：提交路径在占位前检查 stop flag，
-    审批端点以 ``stopped`` 如实返回而不是静默续跑。
+  - shell approval 续跑不再吞掉用户 Stop，而且守卫是原子的：
+    ``reserve_run(abort_if_stopped=True)`` 在同一把锁内复查 stop flag，
+    封住"外部检查之后、占位之前落下的 Stop 被清掉"的竞态。
   - ``/api/new_chat`` 与 ``/api/changes/restore`` 在同 session/project 有
     run 运行时返回 409；restore 比较解析后的路径，且空闲服务器永不误拦
     （state 会保留最近一次项目，属正常现象）。
@@ -71,17 +72,22 @@
   - StepFun 主路径保留已验证的 newest-first DOM 读取；evaluate 失败时的
     fallback 重写为 provider 本地实现（仅可见节点、从头正向扫描），因为
     通用 ``locate_response()`` 从尾部反向扫，在 newest-first DOM 上会读到
-    旧回复。
+    旧回复。fallback 是两步阶梯，保留主路径的 ``.reason-render-ext``
+    过滤：先试简化版字符串参数 JS，再退化到纯 locator 扫描。
   - override worker 每个 provider/generation 使用专属浏览器 profile，不再
     用第二个 CDP 端口挂用户默认 profile；父端 worker 把子进程 stderr 抽进
-    有界 tail，启动崩溃可诊断。
+    有界 tail，启动崩溃可诊断；self-repair helper 同样改用
+    ``state_home/self-repair/<provider>`` 隔离 profile。
   - 五个 web provider wrapper 共享一份薄 send/new_chat 管道
     （`codey/providers/web_driver.py`）：外层 deadline 覆盖
     ``response_timeout + grace + margin``，让 driver 自己等完；到点未归则
-    归类为 ``response_missing``，不再落成 transient。
-  - Research 严谨性：超过 360 字展示上限的 evidence excerpt 保持精确匹配
-    文本（locator 字符偏移继续有效，展示层自行裁剪）；删除单来源 citation
-    自动推断——正文里解释不了的 ``[n]`` 一律走编译失败进 repair，不再静默
+    归类为 ``response_missing``，且走标准 capture，带完整现场诊断
+    （url/title/stage/facts）。
+  - Research 严谨性：超过 360 字展示上限的 evidence excerpt 在 proof
+    locator 侧保持精确匹配文本，公共 payload 边界
+    （`EvidenceItem.to_dict` / ``evidence_payload``）裁剪为展示形态——
+    UI session state 不再存无界 excerpt 文本。删除单来源 citation 自动
+    推断——正文里解释不了的 ``[n]`` 一律走编译失败进 repair，不再静默
     改写到唯一来源。
 - 后续延后项：provider profile 增加 response_order 元数据并让通用
   locate_response 按 profile 决定扫描方向；抽取 ghost/store_common.jsonl

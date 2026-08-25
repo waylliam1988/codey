@@ -65,8 +65,9 @@ This file records Codey's release history. The newest release appears first.
   all have deterministic tests, plus the harness pytest wrapper.
 - Hardening batch (same-cycle fixes):
   - Shell-approval continuation can no longer swallow a user Stop: the
-    submission path checks the stop flag before reserving the slot, and the
-    approval endpoint reports ``stopped`` instead of silently resuming.
+    guard is now atomic -- ``reserve_run(abort_if_stopped=True)`` re-checks
+    the flag inside its lock, closing the check-then-act race where a Stop
+    landing between an external peek and the reservation used to be cleared.
   - ``/api/new_chat`` and ``/api/changes/restore`` return 409 while a run is
     active for the same session/project; restore compares resolved paths and
     never blocks an idle server (the last-run project lingers in state by
@@ -83,19 +84,26 @@ This file records Codey's release history. The newest release appears first.
     the evaluate fallbacks were rewritten provider-locally (visible-only
     head-first scan) because the generic ``locate_response()`` walks
     tail-first and would read a stale reply on StepFun's newest-first DOM.
+    The fallback is a two-step ladder that preserves the main path's
+    ``.reason-render-ext`` filtering: a simplified string-arg JS first,
+    then the pure locator scan as last resort.
   - Override workers get a dedicated browser profile per provider/generation
     instead of attaching to the user's default profile from a second CDP
-    port, and parent-side workers drain child stderr into a bounded tail so
-    startup crashes are diagnosable.
+    port, parent-side workers drain child stderr into a bounded tail so
+    startup crashes are diagnosable, and the self-repair helper gets its own
+    isolated profile under ``state_home/self-repair/<provider>`` too.
   - The five web provider wrappers share one thin send/new_chat plumbing
     (`codey/providers/web_driver.py`): the outer deadline now covers
     ``response_timeout + grace + margin`` so drivers finish their own wait,
-    and a firing deadline classifies as ``response_missing``, not transient.
+    and a firing deadline classifies as ``response_missing``, not transient,
+    with full standard-capture diagnostics (url/title/stage/facts).
   - Research rigor: evidence excerpts longer than the 360-char display cap
-    keep their exact matched text (locator char offsets stay valid; display
-    layers clip), and single-source citation inference was removed --
-    unexplained body ``[n]`` refs fail compilation into repair instead of
-    being silently remapped to the only source.
+    keep their exact matched text for proof locators, while the public
+    payload boundary (`EvidenceItem.to_dict` / ``evidence_payload``) clips
+    to the display form -- UI session state never stores unbounded excerpt
+    text. Single-source citation inference was removed: unexplained body
+    ``[n]`` refs fail compilation into repair instead of being silently
+    remapped to the only source.
 
 ## 0.4.11 - Evaluation spine: regression gate + longitudinal harness + comparison benchmark
 
