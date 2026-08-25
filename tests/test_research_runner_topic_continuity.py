@@ -207,6 +207,50 @@ def test_runner_gate_closes_continuity_even_with_text() -> None:
     assert trace.context_source_rows == []
 
 
+def test_runner_records_topic_row_only_at_the_send_boundary() -> None:
+    payload = {
+        "schema_version": 1,
+        "kind": "research_topic_continuity_projection",
+        "context_source": "research_topic_continuity",
+        "admitted": True,
+        "digest": "sha256:" + "1" * 64,
+    }
+    trace = _SectionRecorder()
+    store = KnowledgeStore(Path(tempfile.mkdtemp()) / "knowledge")
+    runner = _RecordingRunner(
+        _FakeProvider(),
+        _NullSearch(),
+        store,
+        session_id="s",
+        trace_recorder=trace,
+        topic_continuity_context="Local research continuity. This is not evidence.",
+        topic_continuity_payload=payload,
+    )
+
+    runner._intro("q")
+
+    # Assembly alone records nothing: the model has not seen anything yet.
+    assert trace.topic_payloads == []
+
+    outbound = runner.last_intro + "\n\nALLOWED ACTIONS"
+    runner._send_provider(outbound)
+
+    # One row, projected together with the intro rows it describes.
+    assert trace.topic_payloads == [payload]
+    section_epochs = {
+        str(kwargs.get("epoch_id") or "")
+        for name, _args, kwargs in trace.calls
+        if name == "record_prompt_section"
+    }
+    assert len(section_epochs) == 1
+
+    # A second send must not duplicate the admission row.
+    runner._pending_intro_sections = ()
+    runner._pending_context_sources = ()
+    runner._send_provider(outbound + "2")
+    assert trace.topic_payloads == [payload]
+
+
 def test_unsent_intro_projects_no_rows() -> None:
     trace = _SectionRecorder()
     runner = _runner(trace, topic_continuity_context="Local research continuity.")
@@ -215,6 +259,7 @@ def test_unsent_intro_projects_no_rows() -> None:
 
     assert trace.sections == []
     assert trace.context_source_rows == []
+    assert trace.topic_payloads == []
 
 
 def test_runner_iteration_context_and_continuity_stay_separate() -> None:
@@ -249,7 +294,12 @@ def _stub_result() -> ResearchRunResult:
     )
 
 
-def test_pipeline_forwards_continuity_to_initial_iteration_and_trace() -> None:
+def test_pipeline_forwards_continuity_payload_without_pre_recording() -> None:
+    """The pipeline hands the payload through; the runner owns the row.
+
+    An admitted trace row must mean the model actually saw the intro, so
+    recording happens at the provider-send boundary, never before it.
+    """
     trace = _SectionRecorder()
     received: dict[str, object] = {}
     payload = {
@@ -292,7 +342,9 @@ def test_pipeline_forwards_continuity_to_initial_iteration_and_trace() -> None:
     assert received.get("topic_continuity_context") == (
         "Local research continuity. This is not evidence."
     )
-    assert trace.topic_payloads == [payload]
+    assert received.get("topic_continuity_payload") == payload
+    # The pipeline itself stays silent; no send happened here.
+    assert trace.topic_payloads == []
 
 
 def test_pipeline_skips_trace_row_when_nothing_admitted() -> None:

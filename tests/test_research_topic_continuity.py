@@ -212,7 +212,7 @@ def test_budget_truncation_keeps_only_what_fits() -> None:
     assert render_topic_continuity(
         candidates=(TopicPlannerCandidate("topic_x", long_question),),
         budget_chars=10,
-    ) == ""
+    ).text == ""
     # Lines that cannot fit are skipped; smaller leads still get packed
     # greedily in priority order.
     partial = render_topic_continuity(
@@ -223,18 +223,46 @@ def test_budget_truncation_keeps_only_what_fits() -> None:
         budget_chars=len(header) + 200,
     )
 
-    assert "Short lead?" in partial
-    assert "very long question" not in partial
+    assert "Short lead?" in partial.text
+    assert partial.emitted_lines == 1
+    assert partial.skipped_lines == 1
+    assert "very long question" not in partial.text
 
     # A budget too small for even the framing header admits nothing.
     assert render_topic_continuity(
         candidates=(TopicPlannerCandidate("topic_x", "q"),),
         budget_chars=10,
-    ) == ""
+    ).text == ""
+
+
+def test_budget_skips_are_reported_as_truncated_by_the_projection() -> None:
+    header = (
+        "Local research continuity. This is not evidence.\n"
+        "Treat every line below as a lead that may need re-checking; verify "
+        "against opened sources before factual claims. Do not cite this section."
+    )
+    projection = project_topic_continuity(
+        interest_hints=(
+            _interest_hint(f"Lead number {index} about supply?", ref=f"r{index}")
+            for index in range(3)
+        ),
+        budget_chars=len(header) + 120,  # fits only some lead lines
+    )
+
+    assert projection.admitted
+    assert projection.truncated is True  # render drops are visible in trace
+    payload = projection.to_payload()
+    assert payload["truncated"] is True
 
 
 def test_zero_budget_admits_nothing() -> None:
-    assert render_topic_continuity(candidates=(TopicPlannerCandidate("t", "q"),), budget_chars=0) == ""
+    rendering = render_topic_continuity(
+        candidates=(TopicPlannerCandidate("t", "q"),),
+        budget_chars=0,
+    )
+    assert rendering.text == ""
+    assert rendering.emitted_lines == 0
+    assert rendering.skipped_lines == 0
 
 
 def test_claim_ref_cap_reports_truncation_honestly() -> None:
@@ -295,7 +323,7 @@ def test_standalone_items_render_through_shared_path() -> None:
     ))
 
     assert len(candidates) == 1
-    text = render_topic_continuity(
+    rendering = render_topic_continuity(
         candidates=candidates,
         corrections=(correction,),
         preferences=(
@@ -308,8 +336,8 @@ def test_standalone_items_render_through_shared_path() -> None:
         claim_ref_count=3,
     )
 
-    assert "Suggested next-research topics" in text
-    assert "Still true?" in text
-    assert "Fixed stale figure" in text
-    assert "Short answers" in text
-    assert "3 prior claim(s)" in text
+    assert "Suggested next-research topics" in rendering.text
+    assert "Still true?" in rendering.text
+    assert "Fixed stale figure" in rendering.text
+    assert "Short answers" in rendering.text
+    assert "3 prior claim(s)" in rendering.text

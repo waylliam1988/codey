@@ -3392,6 +3392,7 @@ class TaskRunner:
         tools=None,
         iteration_context: str = "",
         topic_continuity_context: str = "",
+        topic_continuity_payload: dict[str, object] | None = None,
     ) -> ResearchIterationRun:
         if self.knowledge_store is None:
             raise RuntimeError("Research is not configured")
@@ -3419,6 +3420,7 @@ class TaskRunner:
             tools=tools,
             iteration_context=iteration_context,
             topic_continuity_context=topic_continuity_context,
+            topic_continuity_payload=topic_continuity_payload,
         )
         for event in runner.run(task):
             on_event(event)
@@ -3461,6 +3463,10 @@ class TaskRunner:
                 continuity_hints=tuple(getattr(continuity, "selected_items", ()) or ()),
                 claim_refs=self._prior_claim_refs(session_id=session_id, project=project),
             )
+        except cancellation.TaskCancelled:
+            raise
+        except cancellation.DeadlineExceeded:
+            raise
         except Exception:
             FailOpenPromptTrace(trace).call(
                 "warn",
@@ -3551,6 +3557,7 @@ class TaskRunner:
             tools=None,
             iteration_context: str = "",
             topic_continuity_context: str = "",
+            topic_continuity_payload=None,
         ):
             return self._run_research_iteration(
                 provider=frame.provider,
@@ -3568,6 +3575,7 @@ class TaskRunner:
                 tools=tools,
                 iteration_context=iteration_context,
                 topic_continuity_context=topic_continuity_context,
+                topic_continuity_payload=topic_continuity_payload,
             )
 
         def run_followup(

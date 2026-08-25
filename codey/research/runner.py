@@ -6,7 +6,7 @@ import queue
 import threading
 from collections import Counter
 from dataclasses import dataclass, field, replace
-from typing import Callable
+from typing import Callable, Mapping
 
 from codey import cancellation
 from codey.context_epoch import context_epoch_id, context_source_ref
@@ -151,6 +151,7 @@ class ResearchRunner:
         tools: ResearchTools | None = None,
         iteration_context: str = "",
         topic_continuity_context: str = "",
+        topic_continuity_payload: Mapping[str, object] | None = None,
     ) -> None:
         self.provider = provider
         self.search = search
@@ -203,6 +204,9 @@ class ResearchRunner:
         # content-addressed epoch.
         self._pending_intro_sections: tuple[RenderedPromptSection, ...] = ()
         self._pending_context_sources: tuple[RenderedContextSource, ...] = ()
+        # Digest-only admission row, projected at the send boundary together
+        # with the intro rows it describes.
+        self.topic_continuity_payload = topic_continuity_payload
 
     def run(self, question: str):
         question = (question or "").strip()
@@ -689,6 +693,14 @@ class ResearchRunner:
                 "record_context_sources",
                 pending_sources,
                 epoch_id=epoch,
+            )
+        if self.topic_continuity_payload:
+            # The admission row lands here, not at assembly time: an
+            # admitted row now guarantees the model actually received this
+            # intro on this exact provider turn.
+            self.prompt_trace.call(
+                "record_research_topic_continuity",
+                self.topic_continuity_payload,
             )
 
     def _persist_synthesis(self, question: str, summary: str, *, open_questions: list[str] | None = None) -> str:

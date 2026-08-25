@@ -196,7 +196,7 @@ def project_topic_continuity(
     candidates = build_topic_candidates(items)
     corrections = tuple(item for item in items if item.kind == ITEM_KIND_CORRECTION)
     preferences = tuple(item for item in items if item.kind == ITEM_KIND_PREFERENCE)
-    prompt_text = render_topic_continuity(
+    rendering = render_topic_continuity(
         candidates=candidates,
         corrections=corrections,
         preferences=preferences,
@@ -204,15 +204,17 @@ def project_topic_continuity(
         budget_chars=budget_chars,
     )
     return TopicContinuityProjection(
-        prompt_text=prompt_text,
+        prompt_text=rendering.text,
         items=tuple(items),
         candidates=candidates,
         claim_ref_count=len(claim_items),
         warnings=_bounded_warnings(warnings),
+        # Honest verdict: input-cap overflow OR budget-driven render drops.
         truncated=(
             claim_input_count > len(claim_items)
             or len([item for item in items if item.kind == ITEM_KIND_OPEN_QUESTION])
             > MAX_TOPIC_CANDIDATES
+            or rendering.skipped_lines > 0
         ),
     )
 
@@ -266,6 +268,19 @@ def build_topic_candidates(
     return tuple(ranked[:max(0, int(limit))])
 
 
+@dataclass(frozen=True)
+class TopicContinuityRendering:
+    """Honest render result: what the model sees and what was dropped."""
+
+    text: str
+    emitted_lines: int
+    skipped_lines: int
+
+    @property
+    def admitted(self) -> bool:
+        return bool(self.text.strip())
+
+
 def render_topic_continuity(
     *,
     candidates: Iterable[TopicPlannerCandidate] = (),
@@ -273,11 +288,11 @@ def render_topic_continuity(
     preferences: Iterable[TopicContinuityItem] = (),
     claim_ref_count: int = 0,
     budget_chars: int = DEFAULT_TOPIC_BUDGET_CHARS,
-) -> str:
+) -> TopicContinuityRendering:
     """Render the bounded model-visible hint block within the char budget."""
     budget = max(0, int(budget_chars or 0))
     if budget <= 0:
-        return ""
+        return TopicContinuityRendering("", 0, 0)
     sections: list[tuple[str, list[str]]] = []
 
     candidate_rows = [row for row in (candidates or ()) if row.question]
@@ -314,6 +329,8 @@ def render_topic_continuity(
 
     parts = [_HEADER]
     used = len(_HEADER)
+    emitted_lines = 0
+    skipped_lines = 0
     for title, lines in sections:
         # Account for the block separator, the optional title line, and each
         # packed hint line; anything that cannot fit whole is skipped so the
@@ -323,6 +340,7 @@ def render_topic_continuity(
         for line in lines:
             cost = len(line) + (1 if kept else 0)
             if local_used + cost > budget:
+                skipped_lines += 1
                 continue
             kept.append(line)
             local_used += cost
@@ -330,8 +348,9 @@ def render_topic_continuity(
             continue
         parts.append(((title + "\n") if title else "") + "\n".join(kept))
         used = local_used
+        emitted_lines += len(kept)
     if len(parts) <= 1:
-        return ""
+        return TopicContinuityRendering("", 0, skipped_lines)
     rendered = "\n\n".join(parts)
     lowered_framing = "\n".join((
         _HEADER,
@@ -340,8 +359,8 @@ def render_topic_continuity(
     # Guard the invariant on our own framing vocabulary; item texts were
     # already screened at construction time by topic_item/_clean_text.
     if any(term in lowered_framing for term in _BANNED_FRAMING_TERMS):
-        return ""
-    return rendered
+        return TopicContinuityRendering("", 0, skipped_lines)
+    return TopicContinuityRendering(rendered, emitted_lines, skipped_lines)
 
 
 def topic_item(
@@ -521,6 +540,7 @@ __all__ = [
     "TOPIC_CONTINUITY_SCHEMA_VERSION",
     "TopicContinuityItem",
     "TopicContinuityProjection",
+    "TopicContinuityRendering",
     "TopicPlannerCandidate",
     "build_topic_candidates",
     "project_topic_continuity",

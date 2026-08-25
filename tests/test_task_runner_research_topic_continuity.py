@@ -237,6 +237,38 @@ def test_closed_profile_gate_returns_empty_baseline() -> None:
     assert payload is None
 
 
+def test_cancellation_is_never_swallowed_by_the_builder() -> None:
+    # Stop/cancel semantics must not depend on luck: the fail-open guard
+    # covers projection failures only.
+    from codey import cancellation
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        root = Path(td)
+        state = server.State(root / "state")
+        state.knowledge_store = KnowledgeStore(root / "knowledge")
+        _seed_open_question_note(state.knowledge_store, session_id="s1")
+        runner = _runner(state)
+        trace_calls: list[tuple] = []
+
+        with mock.patch.object(
+            runner,
+            "_prior_claim_refs",
+            side_effect=cancellation.TaskCancelled("task stopped"),
+        ):
+            try:
+                runner._build_research_topic_continuity(
+                    session_id="s1",
+                    project=str(root / "project"),
+                    trace=lambda *a, **k: trace_calls.append((a, k)),
+                )
+            except cancellation.TaskCancelled:
+                pass
+            else:
+                raise AssertionError("TaskCancelled was swallowed by the builder")
+
+    assert trace_calls == []  # no warn row: this is a stop, not a failure
+
+
 def test_empty_local_state_admits_nothing() -> None:
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)
