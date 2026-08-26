@@ -2712,10 +2712,1259 @@ latency
 user interruption count
 ```
 
-## 0.5 之后的开放边界
+## 0.5 主线 - Durable Runtime + Local Adaptation + Protocol Portability
 
-0.4 先把 Evidence Research Runtime 做扎实。有限插件化应该放在 0.5 之后再考虑。
-顺序应该是：
+0.5 不做插件系统，也不做 UI 扩张。0.5 的目标是把 0.4 已经完成的
+Evidence / Completion / Repair / Ghost / Protocol telemetry，收成一条更耐用的
+内部运行时主线：
+
+```text
+verified completion
+  -> durable operation state
+  -> effect intent / settlement
+  -> replay policy
+  -> provider / protocol / project habit learning
+  -> bounded context admission
+  -> quieter but more reliable runs
+```
+
+这条线吸收 Pi Harness 的运行语义，但不照搬 session tree、lanes、hooks 或
+完整 Storage conformance。Codey 只需要先让当前单 run、单 project writer、
+Research pipeline 和 repair loop 更可恢复、更可证明、更少协议摩擦。
+
+### 0.5 总边界
+
+必须守住：
+
+```text
+Ghost / World Model 只能产出 hint，不能产出 evidence、permission 或 completion verdict
+World Model prediction_confidence 不是 truth confidence
+Protocol adapter 只能 lower 到 Codey canonical ToolCall
+不同 tool dialect 不能改变 ToolRuntime / ActionPolicy / CompletionProof 语义
+所有 model-visible 新上下文仍必须走 ContextSource / ContextEpoch / PromptEnvelope
+所有 repair/provider/tool 效果必须能在 RunTrace / RunLedger / RunOperationState 中解释
+UI interruption count 不上升；不新增 dashboard、profile selector、常驻面板或自动弹窗
+```
+
+0.5 不做：
+
+```text
+不做 WorldModelManager / WorldModelPlanner / Ghost persona
+不让 Ghost 主动插话或后台自动 Research / Coding
+不开放 hooks API、第三方插件、插件市场或 agent-loop 接管
+不把 evidence / completion / repair 变成模型可调用工具
+不默认导出训练数据，不保存 raw transcript / secret / webpage body
+不按 provider 复制 runtime；provider 差异只存在协议边界和 telemetry
+不在没有 A/B 证明时默认切换 tool dialect
+```
+
+旧文档里 `0.6+` 的“小型 Tool Protocol Adapter、local classifier、可选训练导出、
+multi-provider dialect A/B、Ghost Explain verbalizer、World Model shadow ranker、
+claim-gap / verification strategy evaluation”，全部并入 0.5.xx。合并方式不是提前接线，
+而是每个小版本都交付一个能单独改善 Codey 的能力。
+
+### 0.5 横向架构线
+
+```text
+TaskRunner.run
+  -> RunOperationState：只管当前 run 的 durable program counter
+  -> EffectLog：只管 provider/tool/repair intent + settlement
+  -> ReplayPolicy：只管恢复时 safe / unsafe / interrupted
+  -> ProtocolAdaptation：只管 ToolCall 参数和方言 lower，不碰 runtime 语义
+  -> Ghost / WorldModel projections：只管 hints 和解释，不碰 evidence verdict
+```
+
+拆分规则：
+
+```text
+一个版本只能沿真实生命周期边界抽离
+抽离后本版本必须立刻被生产路径消费
+不能只增加 selector / registry / adapter 空槽
+不能改变 UI/SSE/receipt shape，除非 A/B 明确覆盖
+不能因为减少 task_runner.py 行数而拆模块
+```
+
+## 0.5.0 - Run Operation State + Completion Repair Durability v1
+
+状态：计划。目标是把 0.4.13 的 verified completion / bounded repair 从
+`_run_project_mode` 的函数栈状态，收成一个最小 durable program counter。第一版只覆盖
+coding writer 收尾、CompletionProof、repair admission 和 terminal outcome，不碰
+Research lanes、hooks 或多并发。
+
+### 做什么
+
+新增：
+
+```text
+codey/run_operation.py
+tests/test_run_operation.py
+tests/test_task_runner_operation_state.py
+```
+
+核心对象：
+
+```text
+RunOperationState(
+  schema_version
+  run_id
+  session_id
+  project_ref
+  phase
+  writer_attempt
+  provider_id
+  turn_budget
+  turns_used
+  completion_proof_ref
+  repair_rounds
+  repair_context_ref
+  blocked_reason
+  terminal
+)
+```
+
+第一版 phase 控制在少数几类：
+
+```text
+accepted
+writer_running
+writer_settled
+completion_proof_recorded
+repair_context_admitted
+repair_running
+repair_settled
+terminal
+```
+
+落盘方式先复用 `local_store.write_json_atomic()`，路径限定在：
+
+```text
+state/run_operations/<session_key>/<run_id>.json
+```
+
+收益必须在本版直接体现：
+
+```text
+crash / stop / provider failure 后能看到最后一个 committed phase
+repair round 不再只能靠局部变量推断是否跑过
+blocked reason、turn budget、proof ref 和 repair admission ref 绑定到同一个 run state
+用户恢复或查看 run details 时能解释“停在 writer、proof、repair 还是 terminal”
+```
+
+### 边界
+
+- 不新增 CompletionManager / RepairManager。
+- 不恢复 provider stream。
+- 不重放工具。
+- 不改变 0.4.13 的 prompt、tool result、receipt、SSE 或 UI。
+- 不保存 raw prompt、raw reply、raw stdout/stderr、raw diff 或 source body。
+- terminal 后可以保留一个 bounded terminal snapshot；不要把 operation state 变成长历史。
+
+### 顺手架构优化
+
+```text
+把 completion enforcement 中的 repaired_once / blocked_reason / remaining_turns
+  收成 RunOperationState writer 方法
+TaskRunner 只在 phase 边界调用 state.commit(...)
+_record_completion_proof_trace() 继续是 trace 写入；RunOperationState 只存 proof ref / status
+RunLedger 的 run_finished 和 RunOperationState terminal 必须一致
+```
+
+### 验证
+
+```text
+每个 phase 都能 round-trip
+bad schema / wrong run_id / oversize state fail closed
+completion proof failed 后必须先进入 repair_context_admitted 才能 repair_running
+repair_rounds 不能超过 MAX_COMPLETION_REPAIR_ROUNDS
+terminal state 和 final event stop_reason 一致
+crash 在 writer_settled / completion_proof_recorded / repair_running 后重启时能给出诚实恢复摘要
+state payload 不含 raw prompt / reply / stdout / diff / source body
+RunOperationState 不 import agent/provider/tool_runtime/server/ghost
+```
+
+### A/B
+
+不需要 live provider A/B。它不改变模型可见内容或工具语义。需要做 deterministic
+crash-position tests 和一条手工 stop/resume smoke。
+
+## 0.5.1 - Effect Intent / Settlement + Tool Replay Policy v1
+
+状态：计划。目标是把 Pi 的 effect sandwich 落到 Codey 当前最危险的三个边界：
+provider send、tool run、completion repair round。每个真实外部效果前写 intent，
+效果后写 settlement；恢复时不从事件缺失推断，而是读取最后一个 committed state。
+
+### 做什么
+
+新增：
+
+```text
+codey/effect_log.py
+codey/replay_policy.py
+tests/test_effect_log.py
+tests/test_tool_replay_policy.py
+tests/test_agent_effect_sandwich.py
+```
+
+Intent / settlement 类型：
+
+```text
+provider_send_intent
+provider_send_settlement
+tool_call_intent
+tool_call_settlement
+repair_round_intent
+repair_round_settlement
+synthetic_interrupted_settlement
+```
+
+Replay policy：
+
+```text
+safe:
+  read
+  ls
+  search
+  references
+  project_facts / project_map projection
+
+unsafe:
+  edit
+  write
+  shell
+  run
+  knowledge_write
+  any tool with local write, network write, subprocess, approval, or unknown side effect
+```
+
+`run` 默认 unsafe；即使看起来是测试命令，也可能写缓存、snapshot、数据库或远程服务。
+
+直接收益：
+
+```text
+provider send 失败能区分 never_sent / maybe_sent / settled
+edit/run 崩溃后不会被自动重复执行
+unsafe tool 崩溃恢复时产生 synthetic interrupted result，让对话保持一 call 一 result
+safe read/search 崩溃恢复时可以按 persisted args 重新跑，减少“读到一半死掉”的丢失
+RunTrace / RunLedger 可以解释一次 repair 是否真的发起、是否结算
+```
+
+### 边界
+
+- 不承诺 exactly-once external effects。
+- 不恢复半截 provider stream。
+- unsafe effect 不自动 retry。
+- `shell` approval 卡片过期仍走现有 stop/deny 语义。
+- effect payload 只存 args digest、bounded path/command display、tool id、policy decision ref。
+- 不把 raw tool output 持久化到 effect log；长输出仍走 managed output。
+
+### 顺手架构优化
+
+```text
+Agent tool loop 的 emit(tool_started) 前先写 tool_call_intent
+record_tool_outcome() 后写 tool_call_settlement
+provider.send(prompt) 前写 provider_send_intent，返回后写 provider_send_settlement
+completion repair failover.run(...) 前后写 repair_round intent/settlement
+RunLedger 的 tool_started/tool_finished 继续服务事实流；EffectLog 服务恢复语义
+```
+
+### 验证
+
+```text
+任何 provider/tool/repair effect 开始前必须已有 intent
+settlement 只能引用已存在 intent
+safe tool effect_pending 恢复会重新执行
+unsafe tool effect_pending 恢复生成 interrupted result，不重复执行
+provider maybe_sent 恢复不会伪造 done
+RunOperationState phase 与 EffectLog 最新 settlement 一致
+policy denied tool 没有真实 effect，只能有 immediate settlement
+tool args digest 稳定且不含 raw secret
+未知工具默认 unsafe
+```
+
+### A/B
+
+不需要质量 A/B。需要 fault-injection tests 和 live smoke：杀进程位置覆盖
+`before intent / after intent / during effect / after settlement`。
+
+## 0.5.2 - Shared Tool Argument Repair + Protocol Friction Reduction v1
+
+状态：计划。目标是把 coding `JsonToolCodec` 里散落的参数别名、编辑参数宽容和
+常见 provider 方言误差，收成所有 coding codec 共用的薄 repair shim。这个版本会直接
+降低 unknown/invalid args repair 次数。
+
+### 做什么
+
+新增：
+
+```text
+codey/tool_args_repair.py
+tests/test_tool_args_repair.py
+tests/test_protocols.py
+tests/manual/tool_args_repair_ab.py
+```
+
+支持的保守修复：
+
+```text
+search / old / before -> old_string
+replace / replacement / after -> new_string
+single replacement object -> replacements[...]
+write_file / create_file + content -> edit content for new file
+JSON string replacements -> parsed replacements, invalid JSON fail closed
+numeric string offset/limit -> bounded int
+path normalization -> project-relative only, escape fail closed
+```
+
+直接收益：
+
+```text
+模型输出接近 Codey 工具语义但字段名稍偏时，少打一轮协议修复
+protocol_telemetry 记录 alias_rewrite_count / repair_kind
+invalid args 错误更稳定，方便 provider/protocol affinity 学习
+```
+
+### 边界
+
+- 不改变模型可见工具名。
+- 不把 research validate_tool_args 盲目合并进 coding shim。
+- Runtime 仍重新校验 canonical args。
+- 只修复明确等价字段；不能猜命令、猜路径、猜 diff。
+- 修复失败仍走现有 protocol repair prompt。
+
+### 顺手架构优化
+
+```text
+JsonToolCodec._tool_call() 只负责 parse JSON 和调用 normalize_tool_args()
+ToolCall(name,args) 进入 Agent 前已经是 canonical args
+RunTrace protocol_telemetry 增加 alias_rewrite_count / arg_repair_counts
+```
+
+### 验证
+
+```text
+每个 alias rewrite 都有 deterministic case
+敏感字符串不能从 fake tool name / path / command 泄漏到 trace
+path escape fail closed
+invalid JSON replacements 不被吞掉
+edit existing file with content 仍由 runtime guard 拒绝
+shim 不 import tool_runtime/provider/task_runner
+```
+
+### A/B
+
+需要小型 live A/B，因为 parser 接受范围变宽。指标：
+
+```text
+invalid_args_rate
+protocol_repair_count
+first_valid_tool_rate
+edit_success
+verification_success
+unsafe_action_count
+false_completion_rate
+```
+
+## 0.5.3 - Tool Contract Drift Guard + Prompt Surface Decoupling v1
+
+状态：计划。目标是让 coding 和 research 的模型可见工具说明由同一套 contract renderer
+生成，并用 hash/parity tests 防止 prompt 描述、parser 接受范围和 runtime 语义漂移。
+这不是空接线：本版的直接收益是减少“工具文案说 A、parser/runtime 实际做 B”的协议故障。
+
+### 做什么
+
+新增：
+
+```text
+codey/tool_prompt.py
+tests/test_tool_prompt.py
+tests/test_tool_contract_drift.py
+```
+
+落地：
+
+```text
+ToolDefinition -> model-visible snippet
+ProtocolCodec -> final tool contract render
+Research tool contract -> final research tool contract render
+model_tool_contract_hash 覆盖最终模型可见文本
+RunTrace 同时记录 controller_action_contract_hash / runtime_tool_contract_hash
+```
+
+直接收益：
+
+```text
+prompt/tool schema/parser/runtime 四者漂移时测试直接失败
+减少 provider 因过时工具说明产生的 protocol repair
+为后续方言投影提供可比较 contract hash，但本版不启用方言切换
+```
+
+### 边界
+
+- 默认 prompt 字节必须先保持 parity；任何压缩/改文案单独 A/B。
+- 不新增工具。
+- 不改 research 工具名。
+- 不新增 semantic taxonomy，除非已有 runtime 消费者。
+
+### 顺手架构优化
+
+```text
+JsonToolCodec 中的大段工具说明迁到 tool_prompt.py
+ToolDefinition 保持执行契约；tool_prompt.py 只渲染模型说明
+Research contract 保持领域边界，和 coding 只共享 trace/hash 规则
+```
+
+### 验证
+
+```text
+默认 rendered prompt 与旧 prompt byte parity
+contract_hash 因工具文案变化而变化
+parser 接受字段未声明时测试提示必须更新 prompt 或收窄 parser
+runtime-only audit/presentation 字段不能进入 model contract
+research open_url / knowledge_write 不被改名成 read / write
+```
+
+### A/B
+
+默认 parity 不需要 A/B。若本版顺手压缩工具说明或改变模型可见文案，必须走
+`tests/manual/tool_protocol_portability_ab.py`。
+
+## 0.5.4 - Provider / Protocol Affinity + Repair Outcome Learning v1
+
+状态：计划。目标是让 Ghost 学会“哪个 provider 常在哪类协议摩擦上失败、哪类
+repair prompt 更有效”，但只影响 repair strategy 和诊断，不自动换 provider、不授权工具。
+
+### 做什么
+
+新增或扩展：
+
+```text
+codey/ghost/protocol_affinity.py
+codey/ghost/affinity.py
+codey/ghost/sleep.py
+tests/test_ghost_protocol_affinity.py
+tests/test_provider_protocol_learning.py
+```
+
+学习输入：
+
+```text
+protocol_telemetry
+provider_failure
+completion_proof outcome
+repair_context admitted/refused
+repair_result stop_reason
+tool_args_repair counts
+```
+
+输出：
+
+```text
+ProviderProtocolHint(
+  provider_id
+  phase
+  dominant_error_kind
+  effective_repair_detail
+  protocol_stability_score
+  provenance_refs
+  not_evidence=true
+  not_policy=true
+)
+```
+
+直接收益：
+
+```text
+同一个 provider 连续 no_json / native_tool_denial 时，repair prompt 可选更短或更明确
+Run Details / trace 能解释 provider 协议失败趋势
+manual A/B 能按 provider 优先挑高风险 case，而不是盲跑
+```
+
+### 边界
+
+- 不自动切换 provider。
+- 不放宽 PermissionProfile。
+- 不把 provider 稳定性当结果可信度。
+- 不把 protocol affinity 注入默认 writer prompt；只允许进入 repair prompt 策略选择。
+- Ghost 只存 bounded counts、reason codes、refs，不存 raw prompt/reply。
+
+### 顺手架构优化
+
+```text
+Ghost sleep 读取 RunTrace projection，而不是 TaskRunner 内存对象
+repair context detail(full/minimal) 选择收成小函数，不散在 task_runner.py
+provider failure classification 和 protocol error counts 共用 reason-code vocabulary
+```
+
+### 验证
+
+```text
+protocol affinity 不进入 EvidenceLedger / CompletionProof
+not_evidence / not_policy 必填
+没有足够样本时不输出 hint
+hint 过期后衰减
+repair prompt 策略选择有 deterministic fallback
+Ghost protocol_affinity 不 import provider/tool_runtime/task_runner
+```
+
+### A/B
+
+需要。它改变 repair prompt strategy。指标：
+
+```text
+protocol_repair_success_rate
+repair_turns
+first_valid_tool_rate_after_repair
+completion_proof_status
+false_completion_rate
+provider_failure_rate
+```
+
+## 0.5.5 - Project Verification Habit Projection v1
+
+状态：计划。目标是让 Codey 记住项目实际验证习惯，帮助模型更容易选择正确验证命令，
+但不自动执行，也不把习惯当 completion proof。
+
+### 做什么
+
+新增：
+
+```text
+codey/ghost/project_habits.py
+tests/test_project_verification_habits.py
+tests/test_task_runner_project_habits.py
+tests/manual/project_habits_ab.py
+```
+
+输入：
+
+```text
+successful CheckEvidence
+configured verification commands
+completion proof failures
+review inherited checks
+project config warnings
+manual user corrections
+```
+
+输出为 ContextSource 候选：
+
+```text
+Project habit hint:
+- This project often verifies release changes with `python -m pytest`.
+- This is a habit hint, not proof. Run a relevant check before claiming done.
+```
+
+直接收益：
+
+```text
+新 run 更容易选择本项目常用验证命令
+stale / inherited verification 更容易触发 fresh check
+减少 premature done 和错误命令尝试
+```
+
+### 边界
+
+- 不自动运行验证。
+- 不覆盖 `.codey/config.json` 明确命令。
+- 不把历史 successful check 当本轮 fresh pass。
+- 不在没有 task_changed / verification scope 时强行提示。
+- 所有 model-visible hint 必须经过 ContextEpoch。
+
+### 顺手架构优化
+
+```text
+ProjectTaskContextBuilder 只负责选取 habit hints，不负责学习
+ghost/project_habits.py 从 ledger/trace projection 学习
+verification_candidate_lines 和 habit hints 分层渲染，避免混成 hard contract
+```
+
+### 验证
+
+```text
+history check 只能生成 habit，不生成 fresh verification
+explicit config 优先于 habit
+过期或失败率高的 habit 不进入 context
+ContextEpoch admission 绑定 outbound bytes
+habit payload 不含 raw stdout/stderr
+```
+
+### A/B
+
+需要。它改变 writer model-visible context。指标：
+
+```text
+fresh_verification_rate
+wrong_command_rate
+premature_done_rate
+completion_repair_count
+task_success
+sent_chars
+```
+
+## 0.5.6 - Ghost Explain v0 + Provenance-Safe Inspector
+
+状态：计划。目标是让用户和开发者能解释“这次 Ghost 为什么选了这些 hint”，但不让
+Ghost 成为独立说话者，也不改主 UI。第一版只做 deterministic renderer 和 CLI/JSON。
+
+### 做什么
+
+新增：
+
+```text
+codey/ghost/explain.py
+tests/test_ghost_explain.py
+tests/test_cli_ghost_explain.py
+```
+
+CLI：
+
+```text
+codey ghost explain --project ... --session-id ... --format json
+codey ghost explain --project ... --session-id ... --format text
+```
+
+核心 payload：
+
+```text
+GhostExplainItem(
+  surface
+  item_id
+  label
+  scope
+  reason_code
+  weight
+  selection_confidence
+  provenance_refs
+  warnings
+  not_evidence=true
+  not_policy=true
+)
+```
+
+直接收益：
+
+```text
+能解释 directive / affinity / continuity / work_queue 的选择原因
+坏记忆、过期偏好和错误关联更容易定位
+为 delete/reset/export 提供可审计 ref，不需要新增 UI
+```
+
+### 边界
+
+- Ghost Explain 不调用 provider。
+- Ghost Explain 不进入默认 prompt。
+- Ghost Explain 不生成工具调用。
+- `GhostNode.evidence_refs` 在 explain payload 中必须改名为 `provenance_refs`。
+- 输出固定标注：not evidence / not policy。
+
+### 顺手架构优化
+
+```text
+build_ghost_directive() 暴露 selected_nodes 的 bounded metadata
+affinity hint provenance 和 directive provenance 使用同一 renderer
+RunTrace 只存 explain report digest/counts，不存正文
+```
+
+### 验证
+
+```text
+not_evidence / not_policy 必填
+renderer 输出包含 not evidence / not policy
+payload 不含 raw transcript / secret / webpage body
+ghost/explain.py 不 import provider/browser/tool_runtime/task_runner
+默认 PromptEnvelope 不包含 Ghost Explain section
+```
+
+### A/B
+
+不需要。它不改变默认模型行为。需要 CLI smoke。
+
+## 0.5.7 - World Model Event Log + Prediction Review v0
+
+状态：计划。目标是落地最小 World Model 合同：记录项目/研究/环境状态预测，并用已有
+runtime evidence、proof 或用户纠正复盘命中/失败。第一版不进入 prompt，先用于
+blocked summary、RunTrace 和本地诊断。
+
+### 做什么
+
+新增：
+
+```text
+codey/world_model/events.py
+codey/world_model/prediction.py
+codey/world_model/projection.py
+codey/world_model/trace.py
+tests/test_world_model_events.py
+tests/test_world_model_prediction.py
+tests/test_world_model_projection.py
+```
+
+对象：
+
+```text
+WorldModelEvent
+PredictionRecord
+PredictionReview
+WorldModelProjection
+```
+
+事件类型：
+
+```text
+prediction_recorded
+prediction_reviewed
+claim_gap_observed
+environment_marker_observed
+calibration_updated
+projection_compacted
+projection_staled
+```
+
+直接收益：
+
+```text
+反复出现的 environment_failure / verification_unavailable 有本地复盘记录
+上次“这个 repair 策略可能有效”的预测能被 proof outcome 打分
+blocked summary 可以更稳定地区分环境、协议、证据缺口和完成失败
+```
+
+### 边界
+
+- 不进入 EvidenceLedger / CompletionProof。
+- 不产生 citation refs。
+- 不调用 provider、search、tool_runtime。
+- 没有 proof/event/user-correction refs 时只能 `unjudged`，不能猜 hit/miss。
+- projection 必须有 `valid_until`；过期默认 stale。
+
+### 顺手架构优化
+
+```text
+completion_verification 的 failure_class 结果可以投影成 environment_marker_observed
+research proof gaps 可以投影成 claim_gap_observed
+protocol affinity 的 repair outcome 可以投影成 prediction_reviewed
+World Model 单独在 codey/world_model/，不塞进 codey/ghost/
+```
+
+### 验证
+
+```text
+append-only jsonl tail damage 可恢复
+schema/kind/source_ref/payload_digest 校验 fail closed
+review 没有 refs 不能 mark hit
+projection 没有 valid_until 视为 stale
+stale projection 只能生成 recheck candidate
+world_model 不 import provider/browser/tool_runtime/task_runner
+```
+
+### A/B
+
+不需要 live A/B。它不进入 prompt。需要 deterministic prediction/review replay tests。
+
+## 0.5.8 - World Model ContextSource + Shadow Strategy Ranker v1
+
+状态：计划。目标是把 0.5.7 的 state estimate 变成可选、受限、可 A/B 的
+ContextSource：只提示模型“哪里需要复查”，不告诉模型“什么是真的”。同时增加 shadow
+strategy ranker，用历史 review 评估 verification-first / source-refresh / repair-short
+等策略，但默认不接管执行。
+
+### 做什么
+
+新增：
+
+```text
+codey/world_model/context.py
+codey/world_model/strategy.py
+tests/test_world_model_context.py
+tests/test_world_model_strategy.py
+tests/manual/world_model_context_ab.py
+```
+
+模型可见前缀固定：
+
+```text
+Local state estimate. This is not evidence.
+Use it only to decide what to inspect, verify, or ask next.
+Do not cite it as a source.
+Do not treat stale or predicted state as fact.
+```
+
+直接收益：
+
+```text
+Research 遇到 stale claim 时更容易先 refresh source
+Coding 遇到连续 environment marker 时更容易先复查环境，而不是乱改代码
+completion repair 更容易选择 verify-first，而不是直接宣布 done
+```
+
+### 边界
+
+- 只带 bounded statement、state_refs、review_event_refs、payload_digests、non-citation recheck_refs。
+- `recheck_refs` 不能渲染成 citation/source/evidence refs。
+- strategy ranker 第一版只 shadow；默认执行路径仍由 TaskRunner/ResearchPipeline 决定。
+- prompt admission 必须走 ContextEpoch，过期 projection 只允许 re-check hint。
+
+### 顺手架构优化
+
+```text
+ProjectTaskContextBuilder / ResearchContext 只消费 WorldModelContextSource
+strategy shadow 结果进 RunTrace，不进 Ghost memory
+Context admission 与 Ghost continuity 使用同一 epoch 机制
+```
+
+### 验证
+
+```text
+WorldModelContext 未经过 ContextEpoch 不得进入 prompt
+context payload 不含 evidence_refs / citation_refs
+stale projection 不能生成 reuse hint
+strategy ranker 输出不能执行工具、不能改变 provider、不能改权限
+```
+
+### A/B
+
+需要。它改变模型可见 context。指标：
+
+```text
+stale_update_correctness
+environment_misrepair_rate
+completion_repair_success
+unsupported_claim_rate
+verification_success
+sent_chars
+UI interruption count
+```
+
+## 0.5.9 - Protocol Adapter Dataset Export + Shadow Normalizer v1
+
+状态：计划。目标是把 protocol telemetry、tool args repair、repair prompts 和最终
+ToolCall/CompletionProof outcome 导出成可选本地数据集，并同时跑一个 shadow normalizer
+评估“如果用了 adapter 会不会更早得到合法 ToolCall”。这不是默认训练，也不是空槽：
+本版直接给 Codey 一个离线诊断和回归能力。
+
+### 做什么
+
+新增：
+
+```text
+codey/evaluation/protocol_dataset.py
+codey/protocols/shadow_adapter.py
+tests/test_protocol_dataset.py
+tests/test_shadow_protocol_adapter.py
+tests/manual/tool_protocol_portability_ab.py
+```
+
+导出样本：
+
+```text
+protocol_error -> corrected ToolCall
+invalid args -> repaired canonical args
+provider output digest -> protocol error kind
+failed completion proof -> repair context class
+research native_search_leak -> local Research tool correction
+```
+
+直接收益：
+
+```text
+能离线比较 provider 之间的协议失败类型
+能回放 parser / shim / shadow adapter，不需要重新打 live provider
+能发现某类 provider native-like output 是否值得做生产 adapter
+```
+
+### 边界
+
+- 默认关闭，用户显式开启导出。
+- 默认 digest/bounded text，不导出 raw transcript。
+- 不导出 secret、cookie、DOM、webpage body、source body。
+- shadow adapter 不影响生产执行。
+- 导出样本不能进入 EvidenceLedger / CompletionProof。
+
+### 顺手架构优化
+
+```text
+ABJournal TranscriptReplayCache 只供 manual/evaluation 层读取
+生产 RunTrace 提供 digest/counts/refs；dataset exporter 负责显式 materialize
+shadow adapter 只消费 protocol telemetry 和 saved transcript refs
+```
+
+### 验证
+
+```text
+export disabled 时无文件写入
+archive disabled 时只有 digest/ref
+raw transcript 不进入生产 RunTrace/EvidenceLedger
+shadow adapter output 必须再过 runtime validator
+dataset schema 稳定且可 prune/delete
+```
+
+### A/B
+
+本版新增 manual A/B harness，但不改变生产行为，不需要 release-blocking live A/B。
+
+## 0.5.10 - Local Protocol Classifier + Repair Strategy Selector v1
+
+状态：计划。目标是把 0.5.9 的数据和 0.5.4 的 affinity 用起来：训练或规则化一个小型
+本地 classifier，选择已有 repair prompt strategy、tool-args repair strictness 和
+protocol hint 长度。它不训练主模型，也不改变安全语义。
+
+### 做什么
+
+新增：
+
+```text
+codey/protocols/classifier.py
+codey/protocols/repair_strategy.py
+tests/test_protocol_classifier.py
+tests/test_protocol_repair_strategy.py
+tests/manual/protocol_repair_strategy_ab.py
+```
+
+策略：
+
+```text
+minimal_json_reminder
+schema_focused
+unknown_tool_specific
+native_tool_denial_specific
+research_native_search_specific
+completion_repair_minimal
+completion_repair_full
+```
+
+直接收益：
+
+```text
+不同 provider/phase 使用更合适的 repair prompt
+减少重复 no_json / unknown_tool 循环
+Research native_search_leak 更快回到 Codey Research 工具
+```
+
+### 边界
+
+- classifier 只在 protocol/repair 边界生效。
+- 不能选择 provider，不能授权工具，不能跳过 verification。
+- 坏 classifier 输出 fail closed 到默认 repair prompt。
+- 训练/更新模型必须本地可删除、可回滚；默认可用规则 baseline。
+
+### 顺手架构优化
+
+```text
+_protocol_repair_prompt() 接受 RepairStrategy，而不是散落 if provider/phase
+Research protocol repair 与 coding protocol repair 共用 strategy vocabulary
+RunTrace 记录 strategy_id / classifier_version / shadow_vs_chosen
+```
+
+### 验证
+
+```text
+每个 strategy 都只改 repair prompt，不改 tool schema
+classifier malformed output 回退默认
+native_search_leak 不会启用 provider native search
+strategy_id 进入 trace，但 raw prompt 不进入 trace
+```
+
+### A/B
+
+需要。它改变 repair prompt。指标：
+
+```text
+protocol_repair_success_rate
+repair_turn_count
+first_valid_tool_rate
+research_done_before_evidence_rate
+native_search_leak_count
+completion_proof_status
+```
+
+## 0.5.11 - Conditional Tool Projection + One Proven Dialect v1
+
+状态：计划。目标是只在 A/B 证明收益后，为一个 provider/model family 启用一个
+替代模型可见工具面，并 lower 到 Codey canonical ToolCall。这个版本不能提前预设赢家；
+如果没有赢家，就不发布生产默认，只保留 A/B 报告。
+
+### 做什么
+
+候选 dialect：
+
+```text
+minimal_primitives
+claude_like_str_replace
+codex_like_patch_shape
+research_minimal_surface
+```
+
+直接收益：
+
+```text
+对已证明更适合某方言的 provider，降低 protocol_error_rate
+内部执行仍走同一 ToolRuntime / ActionPolicy / Evidence / CompletionProof
+用户不需要知道方言存在
+```
+
+### 边界
+
+- 单次 prompt 只展示一种 dialect。
+- 没有 A/B 胜出就不启用生产默认。
+- Patch dialect 只有在有安全、原子、可验证 patch parser 后才能启用。
+- `bash` 永远 lower 到 Codey run/shell policy，不绕过 approval。
+- Research native search/browse 不能绕过 source ledger/opened source gate。
+
+### 顺手架构优化
+
+```text
+ProtocolCodec 增加 lower_to_canonical() 的 explicit result shape
+Tool contract hash 标记 dialect_id
+Effect intent 记录 canonical tool 和 model_visible_tool_digest 的对应关系
+```
+
+### 验证
+
+```text
+dialect parser bad payload fail closed
+same semantic tool lower 后 canonical ToolCall 一致
+permission/profile/policy 对所有 dialect 结果一致
+dialect prompt 不混用多套工具名
+completion/evidence 工具不得出现
+```
+
+### A/B
+
+必须。`tests/manual/tool_protocol_portability_ab.py` 覆盖：
+
+```text
+read-edit-run-done
+create-file
+exact-replacement
+multi-file-read
+failed-test-then-repair
+approval-required-command
+premature-done
+research search/open/knowledge_write/done
+native-search-leak repair
+```
+
+发布默认阈值：
+
+```text
+protocol_error_rate 下降
+first_valid_tool_rate 上升
+false_completion_rate 不升
+unsafe_action_count = 0
+verification_success 不降
+research evidence bypass = 0
+```
+
+## 0.5.12 - Native Structured Provider Path v1
+
+状态：计划。目标是给真正支持原生 tool/function calling 的 API provider 一个可选
+structured path，避免正文 JSON 的协议摩擦。网页 provider 仍走现有 prompt/reply。
+
+### 做什么
+
+新增或扩展：
+
+```text
+codey/providers/base.py
+codey/providers/local_openai.py
+codey/protocols/structured.py
+tests/test_structured_provider_path.py
+tests/test_provider_capabilities.py
+```
+
+可选 provider 能力：
+
+```text
+send_structured(messages, tools) -> assistant_message_with_tool_calls
+```
+
+直接收益：
+
+```text
+local/API provider 可以用原生 tool channel
+减少正文 JSON parse failure
+tool call ids、args 和 finish_reason 更清楚
+```
+
+### 边界
+
+- 不影响 DeepSeek/Qwen/GLM/MiMo/StepFun web provider。
+- structured tool call 仍必须 lower 到 canonical ToolCall 并过 runtime validator。
+- 不把 provider 原生搜索/浏览变成 Codey evidence。
+- 不新增模型可调用 completion/evidence 工具。
+
+### 顺手架构优化
+
+```text
+ProviderCapability 声明 structured_tools 支持
+Protocol telemetry 区分 text_json / structured_tool_channel
+Effect intent 对 structured call 仍记录 canonical ids
+```
+
+### 验证
+
+```text
+structured provider missing capability 时回退 text JSON
+bad structured args fail closed
+structured/native tool names 不绕过 permission
+usage / finish reason 进入 bounded trace
+web provider 不导入 structured-only SDK
+```
+
+### A/B
+
+需要 API/local provider A/B；web provider 不作为本版 blocker。指标：
+
+```text
+no_json_rate
+invalid_args_rate
+tool_call_success
+verification_success
+latency
+token usage
+```
+
+## 0.5.13 - Local Training Export + Optional Tiny Adapter v0
+
+状态：计划。目标是把 0.5 的 telemetry 和 dataset 用于可选的小适配层训练：protocol
+error classifier、tool-call normalizer、repair prompt selector、claim-gap classifier。
+它不是默认能力，不训练主模型，不需要 GPU。
+
+### 做什么
+
+新增：
+
+```text
+codey/evaluation/training_export.py
+codey/protocols/tiny_adapter.py
+tests/test_training_export.py
+tests/test_tiny_adapter_policy.py
+```
+
+可训练对象：
+
+```text
+protocol error classifier
+tool-call normalizer
+repair prompt selector
+mode/provider hint ranker shadow
+claim-gap classifier
+verification-first strategy ranker
+explanation template selector
+```
+
+直接收益：
+
+```text
+高级用户可以本地生成小适配器并在 shadow mode 评估
+Codey 可以用固定 eval 判断 adapter 是否真的减少协议失败
+训练数据和 adapter 可删除、可回滚、可审计
+```
+
+### 边界
+
+- 默认关闭。
+- 不导出 raw transcript / secret / webpage body。
+- adapter 先 shadow mode，不直接生产默认。
+- adapter 输出必须过 runtime validator。
+- LoRA/SFT 仍是高级可选，不进入默认 release gate。
+
+### 顺手架构优化
+
+```text
+training export 复用 protocol_dataset，不重新读取生产 state 私有路径
+adapter eval 复用 manual AB journal 和 regression fixtures
+RunTrace 只记录 adapter_id / eval summary，不记录训练样本正文
+```
+
+### 验证
+
+```text
+explicit opt-in 才能导出
+delete/prune/export 路径可测试
+adapter malformed output fail closed
+shadow eval 可重复
+adapter 不 import tool_runtime/provider/task_runner
+```
+
+### A/B
+
+不作为默认生产路径时不需要 release-blocking A/B。若某 adapter 要默认启用，必须回到
+0.5.10/0.5.11 的 provider live A/B gate。
+
+## 0.5.14 - Ghost / World Model Maintenance Hardening v1
+
+状态：计划。目标是把 0.5 新增的 Ghost protocol affinity、project habits、World Model
+projection、dataset refs 做成可衰减、可删除、可重建、可导出的本地状态。它给用户
+带来的实质收益是长期状态更干净，坏 hint 更容易移除，维护不打扰工作。
+
+### 做什么
+
+扩展：
+
+```text
+codey/ghost/sleep.py
+codey/ghost/store.py
+codey/world_model/maintenance.py
+tests/test_ghost_sleep.py
+tests/test_world_model_maintenance.py
+tests/test_local_state_delete_export.py
+```
+
+维护项：
+
+```text
+projection health
+event compaction
+hebbian / affinity decay
+project habit decay
+world model stale marking
+prediction due review using existing refs
+corruption quarantine
+bounded maintenance report
+```
+
+直接收益：
+
+```text
+长期使用不会让 Ghost / World Model state 无限增长
+坏 projection 被 quarantine 而不是污染下一次 prompt
+用户可以按 user/project/session scope 删除或导出本地适应状态
+```
+
+### 边界
+
+- maintenance 不调用 provider。
+- maintenance 不联网、不执行工具、不触发 Research。
+- maintenance 不修改项目文件。
+- quarantine 不删除原始 event，除非用户显式 delete scope。
+
+### 顺手架构优化
+
+```text
+Ghost sleep 和 WorldModel maintenance 共享 single-flight guard
+state corruption 统一 reason codes
+delete/export scope 使用同一 session_key/project_ref helper
+```
+
+### 验证
+
+```text
+single-flight background run
+oversize state compaction
+bad json quarantine
+delete user/project/session scope
+export 不含 raw prompt/reply/secret
+maintenance 不 import provider/browser/tool_runtime/task_runner
+```
+
+### A/B
+
+不需要。它不改变模型可见内容。需要长跑 smoke 和 corruption fixture。
+
+## 0.5 插件开放边界
+
+0.5 完成前仍不做有限插件化。即使 0.5.12 引入 structured provider path，
+它也只是 provider capability，不是插件系统。真正的开放顺序仍然应放到 0.5 稳定后：
 
 ```text
 trusted built-in plugins
@@ -2736,6 +3985,61 @@ Local context 直接写入 accepted state
 connector 任意读写本地文件或联网
 ```
 
+## 0.4.13 未发布收口与 0.5 切入
+
+0.4.13 现在已经完成核心：一轮 bounded repair、CompletionProof provenance、
+repair context admission、protocol telemetry。未发布前不建议把 Pi-style durable
+harness 大改塞进 0.4.13；它会污染 release A/B。应该只做两个收口动作：
+
+```text
+补文档：明确 0.4.13 只做 proof enforcement + repair admission + telemetry
+补架构测试：锁住无 CompletionManager / RepairManager、repair context 不消费 Ghost state、
+  protocol telemetry 不保存 raw prompt/reply/error
+```
+
+三件 Pi 借鉴能力的具体修改落点如下，版本归属应放到 0.5.0 / 0.5.1：
+
+```text
+1. repair/provider/tool 显式 operation phase
+   -> 新增 codey/run_operation.py
+   -> TaskRunner._run_project_mode 在 writer start/settle、proof record、
+      repair admission/start/settle、terminal 处 commit phase
+   -> state 只存 refs/status/counts/reason，不存 raw 文本
+
+2. provider/tool intent -> effect -> settlement
+   -> 新增 codey/effect_log.py
+   -> provider.send(prompt) 前 commit provider_send_intent，返回后 commit settlement
+   -> agent tool loop 在真实 tool 执行前 commit tool_call_intent，结果后 commit settlement
+   -> repair failover.run(...) 前后 commit repair_round_intent/settlement
+
+3. tool replay policy
+   -> 新增 codey/replay_policy.py
+   -> read/ls/search/references/project_facts 标 safe
+   -> edit/write/shell/run/knowledge_write/unknown 默认 unsafe
+   -> unsafe effect_pending 恢复时 synthetic interrupted result，不重复执行
+```
+
+判断线：
+
+```text
+0.4.13：完成 verified completion release gate，不引入恢复语义
+0.5.0：让 completion/repair 状态可恢复、可解释
+0.5.1：让 provider/tool effects 有 intent/settlement 和 replay policy
+```
+
+## Adapter 自修复 prompt 分层（后续）
+
+0.4.13 把修复面扩成完整 web adapter 层后，repair prompt 明显变重：实测 Qwen 约
+117k chars、DeepSeek 约 112k chars。语义上正确，但 live web helper 在网页故障时
+更容易慢、截断或跑偏。不加复杂检索系统；后续按 failure stage 做轻量分层：
+
+```text
+默认：目标 driver 源码 + provider_profiles.json + 失败事实 + 全部 surface 文件清单（只列路径）
+升级：shared failure 或二轮请求时，才内联 browser.py / provider_controls.py 这类大文件全文
+```
+
+判断线：只有当 live repair 实测出现截断或超时再引入分层机制，不提前加。
+
 ## 验证体系
 
 0.3 已完成 Ghost 专用验证和能力边界验证：Run Trace、Prompt Envelope、
@@ -2745,6 +4049,18 @@ Capability Registry、Tool Contract、Action Policy、Event Matrix、Built-in Pr
 0.4 需要新增 Evidence Research Runtime 验证。Research 质量不能只看最终 summary
 是否像样，还要验证 source、evidence、claim、assumption、analysis run、artifact、
 critic finding 和 Ghost continuity 的边界。
+
+0.5 继续新增 Durable Runtime / Local Adaptation / Protocol Portability 验证。重点不是
+“模块是否存在”，而是每个运行边界是否能证明：
+
+```text
+外部效果前有 intent
+外部效果后有 settlement
+恢复时读 durable state，不从事件缺失推断
+Ghost / World Model / Protocol adapter 都不能跨过 Evidence / Permission / Completion
+每个模型可见 hint 都绑定 ContextEpoch
+每个 tool dialect 都 lower 到同一个 canonical ToolCall
+```
 
 ### Ghost 单元测试
 
@@ -2808,6 +4124,41 @@ tests/test_research_comparison_benchmark.py
 tests/test_ghost_research_continuity.py
 ```
 
+### Durable / Adaptation 单元测试
+
+0.5 逐步新增：
+
+```text
+tests/test_run_operation.py
+tests/test_task_runner_operation_state.py
+tests/test_effect_log.py
+tests/test_tool_replay_policy.py
+tests/test_agent_effect_sandwich.py
+tests/test_tool_args_repair.py
+tests/test_tool_prompt.py
+tests/test_tool_contract_drift.py
+tests/test_ghost_protocol_affinity.py
+tests/test_provider_protocol_learning.py
+tests/test_project_verification_habits.py
+tests/test_task_runner_project_habits.py
+tests/test_ghost_explain.py
+tests/test_cli_ghost_explain.py
+tests/test_world_model_events.py
+tests/test_world_model_prediction.py
+tests/test_world_model_projection.py
+tests/test_world_model_context.py
+tests/test_world_model_strategy.py
+tests/test_protocol_dataset.py
+tests/test_shadow_protocol_adapter.py
+tests/test_protocol_classifier.py
+tests/test_protocol_repair_strategy.py
+tests/test_structured_provider_path.py
+tests/test_training_export.py
+tests/test_tiny_adapter_policy.py
+tests/test_world_model_maintenance.py
+tests/test_local_state_delete_export.py
+```
+
 ### 架构测试
 
 必须锁住：
@@ -2851,6 +4202,28 @@ ReviewFinding confirmed 必须来自后续 verification event
 Research Contract Lite 不能是模型工具
 Safe Context Epoch 必须约束 Ghost continuity admission
 Research-to-Code impact 不能授权工具
+RunOperationState 不能 import agent/provider/tool_runtime/server/ghost
+EffectLog 不能保存 raw prompt/reply/stdout/diff/source body
+外部 provider/tool/repair effect 启动前必须已有 intent
+unsafe tool effect_pending 恢复不能重复执行
+ReplayPolicy 未知工具默认 unsafe
+Tool args repair shim 不能 import tool_runtime/provider/task_runner
+Tool prompt renderer 不能改变默认 prompt parity，除非对应 A/B 更新
+Protocol adapter 不能绕过 canonical ToolCall validation
+Protocol dialect prompt 不能混用多套工具语言
+CompletionProof / Evidence / EvidenceLedger 不能成为模型工具
+Ghost protocol affinity 不能进入 EvidenceLedger / CompletionProof
+Project habit 不能产生 fresh verification fact
+Ghost Explain 不得进入默认 PromptEnvelope
+Ghost Explain payload 必须使用 provenance_refs，不得输出 evidence_refs
+codey/world_model 不 import provider/browser/tool_runtime/task_runner
+WorldModelProjection 不产生 evidence_refs / citation_refs
+WorldModelContext 未经过 ContextEpoch 不得进入 prompt
+World Model stale projection 只能生成 re-check hint
+Protocol dataset export 默认关闭且不得写 raw transcript
+Tiny adapter 输出必须再过 runtime validator
+Structured provider path 不影响 web provider
+Ghost / World Model maintenance 不能执行 provider/search/tool calls
 ```
 
 ### A/B 测试
@@ -2874,6 +4247,21 @@ Writer prompt、provider fallback 策略或工具权限时，才需要 provider 
 0.4.11 Longitudinal Research Harness + Comparison Benchmark（已完成：deterministic harness + comparison gate；live/comparison smoke 后续增量）
 0.4.12 Ghost Research Continuity（模型可见 continuity 必须 A/B）
 0.4.13 Verified Completion Enforcement（阻止 done / repair context admission 必须 A/B）
+0.5.0 RunOperationState（durability-only，不需要 live A/B）
+0.5.1 Effect Intent / Replay Policy（fault-injection，不需要质量 A/B）
+0.5.2 Tool Args Repair（parser 接受范围变宽，需要 A/B）
+0.5.3 Tool Prompt Decoupling（默认 parity 不需要 A/B；改文案需要 A/B）
+0.5.4 Provider / Protocol Affinity（改变 repair strategy，需要 A/B）
+0.5.5 Project Verification Habit（改变 writer context，需要 A/B）
+0.5.6 Ghost Explain（默认不进 prompt，不需要 A/B）
+0.5.7 World Model Event Log（不进 prompt，不需要 A/B）
+0.5.8 World Model ContextSource（改变 context，需要 A/B）
+0.5.9 Protocol Dataset / Shadow Adapter（默认 shadow，不需要 release-blocking A/B）
+0.5.10 Local Protocol Classifier（改变 repair prompt，需要 A/B）
+0.5.11 Conditional Tool Projection（启用任何生产 dialect 必须 A/B）
+0.5.12 Native Structured Provider Path（API/local provider 需要 A/B）
+0.5.13 Local Training Export（默认关闭，不需要 A/B；默认启用 adapter 必须 A/B）
+0.5.14 Maintenance Hardening（不进 prompt，不需要 A/B）
 ```
 
 0.4.1、0.4.3、0.4.5 以及后续任何只做 schema、ledger、projection、
@@ -2904,6 +4292,13 @@ tests/manual/research_brief_v2_ab.py
 tests/manual/ghost_research_continuity_ab.py
 tests/manual/longitudinal_research_harness_ab.py
 tests/manual/research_comparison_benchmark_ab.py
+tests/manual/completion_operation_resume_smoke.py
+tests/manual/effect_sandwich_fault_smoke.py
+tests/manual/tool_args_repair_ab.py
+tests/manual/tool_protocol_portability_ab.py
+tests/manual/project_habits_ab.py
+tests/manual/world_model_context_ab.py
+tests/manual/protocol_repair_strategy_ab.py
 ```
 
 每个 A/B 都要记录：
@@ -2940,6 +4335,13 @@ research-to-code handoff quality 不能低于 baseline
 unsupported claim rate 不能高于 baseline
 Ghost continuity 不能被当成 evidence
 extractor failure 必须 fail closed / no_signal
+operation resume 不能伪造 done
+unsafe tool replay count 必须为 0
+protocol args repair 不能提高 unsafe_action_count
+project habit 不能降低 fresh verification rate
+World Model context 不能产生 citation/evidence refs
+conditional dialect 不能提高 false completion / evidence bypass
+structured provider path 不能影响 web provider baseline
 ```
 
 ### Live smoke
@@ -2972,13 +4374,20 @@ Connector recorded fixture + live connector smoke
 Longitudinal topic tracking smoke
 Comparison benchmark fixture smoke
 Real OpenScience manual head-to-head smoke（发布 surpassed OpenScience 结论前）
+RunOperation crash-position smoke
+Effect intent/settlement fault-injection smoke
+Tool args repair live A/B smoke
+Project verification habit prompt admission smoke
+World Model context admission smoke
+Protocol repair strategy live A/B smoke
 ```
 
 ## 架构债边界
 
-0.4 会继续让 Research、Evidence、Review、Ghost、Provider fallback 和本地持久化在
-TaskRunner / Server 周围汇合。这个压力是真实的，但不能为了“看起来架构更好”做
-big-bang rewrite。
+0.4 已经让 Research、Evidence、Review、Ghost、Provider fallback 和本地持久化在
+TaskRunner / Server 周围汇合。0.5 会继续增加 RunOperationState、EffectLog、
+ReplayPolicy、ProtocolAdaptation 和 World Model。这个压力是真实的，但不能为了
+“看起来架构更好”做 big-bang rewrite。
 
 需要承认并逐步收敛的债务：
 
@@ -2986,14 +4395,20 @@ big-bang rewrite。
 TaskRunner.run 承担 provider setup、routing、research、review、writer、ledger、trace
 _RunFrame 已经包含 provider / conversation / trace / handoff / preflight / snapshot 等生命周期状态
 后续 planner、multi-browser、recursive research 会继续放大这个 runtime context
+0.5 还会加入 operation phase、effect intent/settlement、replay policy 和 protocol strategy
 ```
 
 正确拆分顺序：
 
 ```text
+RunOperationState：先覆盖 completion/repair terminal，再扩到 provider/tool effects
+EffectLog：只在 provider/tool/repair 三个真实效果边界稳定后引入
+ReplayPolicy：先保守 safe/unsafe，再谈自动恢复
 ResearchPipeline：只在 proof quality / evidence ledger / follow-up research 边界成熟后抽
 ProviderPipeline：只在 provider setup / preflight / fallback / canary 边界稳定后抽
 ReviewPipeline：只在 review input / fix loop / finding lifecycle 边界稳定后抽
+ProtocolAdaptation：先参数 repair，再 prompt contract，再方言投影
+WorldModelProjection：先事件/复盘，再 ContextSource，再策略 shadow
 SessionContext：request/session/conversation/snapshot
 ProviderContext：provider/provider_id/preflight/fallback/supervisor state
 TraceContext：run trace / prompt trace / ledger trace refs
@@ -3007,6 +4422,8 @@ TraceContext：run trace / prompt trace / ledger trace refs
 不放宽 permission/profile/policy
 先有 deterministic tests 锁住旧行为
 只沿真实生命周期边界抽，不按“减少行数”硬拆
+每个新模块必须在同版本被生产路径或明确 CLI/diagnostic 路径消费
+每个 shadow / export 能力必须有立即可用的回放、评分或解释价值
 ```
 
 ## 成功定义
@@ -3093,3 +4510,34 @@ critic / review
 
 前台仍然安静：Research drawer 和 Run Details 只在用户主动查看时显示 bounded summary，
 不把 provenance graph、connector graph、profile、ledger 或内部 Ghost 术语推给用户。
+
+0.5 做完后，Codey 应该进一步变成：
+
+```text
+一个可恢复、可解释、跨 provider 更稳的本地 agent runtime
+```
+
+并且每个增强都不要求用户理解内部系统：
+
+```text
+provider/tool/repair 的不确定窗口有 intent 和 settlement
+edit/run 崩溃不会被静默重复执行
+safe read/search 可以恢复，unsafe effect 会诚实中断
+CompletionProof / RepairContext 有 durable phase，而不是函数局部变量
+Ghost 能学习 provider 协议摩擦和项目验证习惯，但不能当证据或权限
+World Model 能提示复查和校准预测，但不能裁定事实
+Tool protocol 可以按 provider 逐步适配，但 Codey 内部执行 IR 不变
+API/native structured provider 有更少 JSON 摩擦，web provider 稳定性不受影响
+本地适配数据可导出、可删除、可回滚，默认不泄露 raw transcript
+```
+
+用户体验仍然应该是：
+
+```text
+你继续自然聊天、研究、写代码
+Codey 更少误判 done
+Codey 更少重复危险动作
+Codey 更懂项目验证习惯
+Codey 更能解释本地 hint 从哪里来
+外部模型可以换，工具语义和安全边界仍然留在 Codey
+```
