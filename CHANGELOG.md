@@ -241,6 +241,48 @@ This file records Codey's release history. The newest release appears first.
     section are envelope sections recorded against the outbound send epoch,
     identical in bytes, so every repair admission provably rides the same
     assembly structure as fresh intros.
+- Writer failover no longer keeps a closed provider on the runner: closing
+  is now one operation that clears `self.provider` in the same step, so a
+  canary failure that hits the switch budget cannot leave a dead provider
+  behind for the shared Review-repair reuse of the same instance (which
+  would skip reconnect and burn one doomed attempt).
+- Adapter repair fails closed on empty candidates: `validate_candidate`
+  rejects a no-op diff with the explicit error code
+  `repair_candidate_no_changes`, so `{"files":[]}` can no longer install as
+  a "successful repair", pollute repair success metrics, or send the
+  provider into a pointless override worker.
+- The adapter repair sandbox materializes only the repair surface instead
+  of copying the whole repo twice: the `codey` package (what the override
+  installer copies and what provider unit tests import), `pyproject.toml`
+  (ruff config parity), plus the provider's read-only test files.
+  `reference-projects/`, docs, fixtures, and tooling never enter a sandbox.
+- Protocol telemetry binds `repair_prompt_counts` to real sends: the writer
+  loop and the research runner record the repair prompt only after the
+  terminal-stagnation / max-protocol-errors checks pass, so a run that dies
+  on a protocol failure no longer reports a repair prompt it never sent.
+- `prompt_safety` stops flagging ordinary paths as secrets: path-like
+  tokens (`src/main/java/util/ArrayList.java`,
+  `C:/Users/alienware/.codey/state.json`) are exempt only inside the
+  high-entropy branch; explicit secret markers (including markers inside
+  path segments) and secret shapes still block.
+- Secret shape coverage widened to common provider prefixes: AWS access key
+  ids (`AKIA…`, case-sensitive, boundary-aware), GitHub fine-grained PATs
+  (`github_pat_…`), and Stripe live/test keys (`sk_live_`, `rk_live_`,
+  `sk_test_`, `rk_test_`). A bare 40-char AWS-secret-shaped value stays
+  deliberately unflagged as a pure shape — too many ordinary values look
+  like it — and is caught next to marker words instead.
+- Shell risk explanations cover more of what users actually approve:
+  `uv add`, `go get`, `cargo add`, `deno install`, and any `npx <pkg>`
+  classify as dependency installs; `irm` / `Invoke-RestMethod` classify as
+  external source; `cmd /k` unwraps like `cmd /c`. Display-only: approval
+  decisions are unchanged.
+- Local CI becomes the release gate: new `tools/local_ci.py` runs ruff, the
+  full pytest suite, JavaScript asset syntax checks (hard-fails when Node.js
+  is installed, visibly skips when not), and the completion-enforcement A/B
+  self-test; `.githooks/pre-commit` wires it into every commit after a
+  one-time `git config core.hooksPath .githooks`; `.github/workflows/ci.yml`
+  triggers only via manual `workflow_dispatch`; README carries an honest
+  static local-CI badge instead of a GitHub Actions badge.
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 

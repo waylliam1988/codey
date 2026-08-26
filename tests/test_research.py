@@ -3748,6 +3748,50 @@ class ProtocolTelemetryTests(unittest.TestCase):
         self.assertEqual(research["valid_turns"], [2])
         self.assertEqual(research["first_valid_turn"], 2)
 
+    def test_terminal_protocol_failure_sends_and_counts_one_fewer_repair_prompts(self) -> None:
+        # Three leaks exceed MAX_PROTOCOL_ERRORS: two repair prompts go out
+        # between them, the terminal failure sends none.
+        from codey.run_trace import RunTraceStore
+
+        leak = "I searched the web and the search results show helium is rare."
+        provider = FakeProvider(leak, leak, leak)
+        with tempfile.TemporaryDirectory() as td:
+            store = KnowledgeStore(Path(td))
+            trace_store = RunTraceStore(Path(td) / "state")
+            trace = trace_store.open(
+                run_id="run-research-protocol-terminal",
+                session_id="session-research-protocol-terminal",
+                project=Path(td),
+                mode_initial="research",
+                provider_initial="fake",
+            )
+            runner = ResearchRunner(
+                provider,
+                FakeSearch(),
+                store,
+                max_turns=4,
+                controller_enabled=False,
+                trace_recorder=trace,
+            )
+
+            list(runner.run("Research helium"))
+            store.close()
+            trace.finish(status=runner.result.stop_reason if runner.result else "done")
+
+            payload = json.loads(
+                trace_store.path_for(
+                    "session-research-protocol-terminal",
+                    "run-research-protocol-terminal",
+                ).read_text(encoding="utf-8")
+            )
+
+        self.assertIsNotNone(runner.result)
+        self.assertEqual(runner.result.stop_reason, "protocol")
+        research = payload["protocol_telemetry"]["phases"]["research"]
+        self.assertEqual(research["protocol_error_counts"], {"native_search_leak": 3})
+        self.assertEqual(sum(research["repair_prompt_counts"].values()), 2)
+        self.assertEqual(len(provider.sent), 3)
+
     def test_unknown_tool_lands_as_safe_label_with_digest(self) -> None:
         from codey.run_trace import RunTraceStore
 

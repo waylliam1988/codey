@@ -145,7 +145,6 @@ class WriterFailoverRunner:
                 self.record_failure(self.provider_id, exc.failure)
                 self.clear_session(self.provider_id)
                 self._close_current()
-                self.provider = None
                 if self.switches >= self.max_switches or turns_used >= turn_budget:
                     raise
                 cur_checkpoint = self._activate_next(exc)
@@ -217,9 +216,10 @@ class WriterFailoverRunner:
             return self.refresh_checkpoint()
 
     def _close_current(self) -> None:
-        if self.provider is not None:
+        provider, self.provider = self.provider, None
+        if provider is not None:
             try:
-                self.close(self.provider)
+                self.close(provider)
             except Exception:
                 pass
 

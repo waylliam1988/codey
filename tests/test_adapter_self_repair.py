@@ -412,6 +412,20 @@ class RepairPolicyTests(unittest.TestCase):
             self.assertIn("codey/provider_profiles.json", result.changed_files)
             self.assertEqual(result.impact, ("profile_data",))
 
+    def test_policy_rejects_candidate_without_changes(self) -> None:
+        # Fail closed: a no-op reply must never count as a successful repair.
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "base"
+            candidate = Path(td) / "candidate"
+            _source_tree(base)
+            _source_tree(candidate)
+
+            result = validate_candidate("qwen", base, candidate)
+
+            self.assertFalse(result.ok)
+            self.assertIn("repair_candidate_no_changes", result.errors)
+            self.assertEqual(result.changed_files, ())
+
     def test_unknown_provider_has_empty_repair_surface(self) -> None:
         # Fail closed: the shared web files are never granted on their own;
         # they only widen a known provider's driver surface.
@@ -500,23 +514,45 @@ class StaticCheckEscalationTests(unittest.TestCase):
 
 
 class RepairSandboxTests(unittest.TestCase):
-    def test_sandbox_copies_source_without_runtime_junk(self) -> None:
+    def test_sandbox_materializes_only_the_repair_surface(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "src"
             _source_tree(root)
-            (root / ".git").mkdir()
-            (root / ".git" / "HEAD").write_text("ref", encoding="utf-8")
+            (root / "pyproject.toml").write_text(
+                "[tool.ruff]\nline-length = 120\n",
+                encoding="utf-8",
+            )
+            (root / "reference-projects" / "big").mkdir(parents=True)
+            (root / "reference-projects" / "big" / "huge.txt").write_text("x", encoding="utf-8")
+            (root / "docs").mkdir()
+            (root / "docs" / "notes.md").write_text("notes", encoding="utf-8")
+            (root / "README.md").write_text("readme", encoding="utf-8")
             (root / "codey" / "__pycache__").mkdir()
             (root / "codey" / "__pycache__" / "x.pyc").write_bytes(b"x")
 
-            sandbox = create_repair_sandbox(root)
+            sandbox = create_repair_sandbox(root, extra_files=("tests/test_qwen.py",))
             try:
-                self.assertTrue((sandbox.baseline_root / "codey" / "providers" / "web_drivers" / "qwen.py").is_file())
-                self.assertFalse((sandbox.baseline_root / ".git").exists())
-                self.assertFalse((sandbox.candidate_root / "codey" / "__pycache__").exists())
+                for materialized in (sandbox.baseline_root, sandbox.candidate_root):
+                    self.assertTrue(
+                        (materialized / "codey" / "providers" / "web_drivers" / "qwen.py").is_file()
+                    )
+                    self.assertTrue((materialized / "tests" / "test_qwen.py").is_file())
+                    self.assertTrue((materialized / "pyproject.toml").is_file())
+                    self.assertFalse((materialized / "reference-projects").exists())
+                    self.assertFalse((materialized / "docs").exists())
+                    self.assertFalse((materialized / "README.md").exists())
+                    self.assertFalse((materialized / "codey" / "__pycache__").exists())
             finally:
                 sandbox.cleanup()
                 self.assertFalse(sandbox.temp_root.exists())
+
+    def test_sandbox_requires_the_codey_package(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            root.mkdir()
+
+            with self.assertRaises(OSError):
+                create_repair_sandbox(root)
 
 
 class SelfRepairSupervisorTests(unittest.TestCase):
@@ -1342,6 +1378,26 @@ class AdapterRepairRunnerTests(unittest.TestCase):
             self.assertIn('- waited_for="/api/v2/models/"', prompt)
             self.assertIn("prefer DOM readiness over brittle internal bootstrap resources", prompt)
             self.assertNotIn("secret answer", prompt)
+
+    def test_empty_repair_reply_fails_closed_without_install(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            state = Path(td) / "state"
+
+            result = run_adapter_repair(
+                "qwen",
+                send_prompt=lambda _prompt: '{"files":[]}',
+                state_home=state,
+                source_root=root,
+                run_canary=lambda _override: True,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("repair_candidate_no_changes", result.error)
+            self.assertIsNone(
+                adapter_overrides.load_enabled_override("qwen", state_home=state)
+            )
 
     def test_adapter_repair_installs_candidate_after_policy_and_checks(self) -> None:
         with tempfile.TemporaryDirectory() as td:

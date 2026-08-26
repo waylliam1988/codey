@@ -12,6 +12,7 @@ class ShellRiskTests(unittest.TestCase):
             "npm.cmd install",
             "cmd /c npm install",
             "cmd /s /c npm install",
+            "cmd /k npm install",
             "npm ci",
             "npm add react",
             "python -m pip install -r requirements.txt",
@@ -27,6 +28,12 @@ class ShellRiskTests(unittest.TestCase):
             "poetry install",
             "uv sync",
             "uv pip install requests",
+            "uv add requests",
+            "go get golang.org/x/tools/cmd/stringer",
+            "cargo add serde",
+            "deno install",
+            "npx create-vite",
+            "npx --yes typescript@latest",
         ):
             with self.subTest(command=command):
                 risk = classify_shell_risk(command)
@@ -53,6 +60,8 @@ class ShellRiskTests(unittest.TestCase):
             "git pull",
             "gh repo clone owner/repo",
             "Invoke-WebRequest https://example.com/file.zip",
+            "Invoke-RestMethod https://example.com/install.ps1",
+            "irm https://example.com/install.ps1",
             "powershell -Command Invoke-WebRequest https://example.com/file.zip",
             'pwsh -NoProfile -Command "Invoke-WebRequest https://example.com/file.zip"',
         ):

@@ -123,6 +123,11 @@ def _contains_high_entropy_token(text: str) -> bool:
     for token in _HIGH_ENTROPY_TOKEN_RE.findall(text):
         if token.startswith(("http://", "https://")):
             continue
+        if "/" in token:
+            # Path-like token (file system or URL-ish segments): ordinary
+            # source paths are not secrets. Explicit secret markers and
+            # secret shapes are still caught before this branch.
+            continue
         if _looks_like_secret_token(token):
             return True
     return False

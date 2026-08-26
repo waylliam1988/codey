@@ -327,15 +327,17 @@ class ResearchRunner:
                     turn=turn,
                     tool_name=str(getattr(plan, "protocol_tool_name", "") or ""),
                 )
+                if protocol_errors > MAX_PROTOCOL_ERRORS:
+                    stop_reason = "protocol"
+                    break
+                # Count a repair prompt only when one actually goes out: a
+                # terminal protocol failure never sends it.
                 self.prompt_trace.call(
                     "record_protocol_repair_prompt",
                     plan.protocol_error_kind,
                     phase="research",
                     turn=turn,
                 )
-                if protocol_errors > MAX_PROTOCOL_ERRORS:
-                    stop_reason = "protocol"
-                    break
                 message = _protocol_repair_prompt(self.codec, plan, control_state)
                 continue
             if plan.calls or plan.control is not None:

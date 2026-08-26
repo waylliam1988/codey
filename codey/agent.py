@@ -1244,12 +1244,6 @@ def run(
                 turn=turn,
                 tool_name=str(getattr(plan, "protocol_tool_name", "") or ""),
             )
-            trace.call(
-                "record_protocol_repair_prompt",
-                plan.protocol_error_kind,
-                phase="writer",
-                turn=turn,
-            )
             emit(RunEvent.status(
                 f"[agent] rejected invalid tool request: {plan.protocol_error}"
             ))
@@ -1257,6 +1251,14 @@ def run(
                 msg = f"stopped after {stagnant_turns} invalid tool requests"
                 emit(RunEvent.status(f"[agent] {msg}."))
                 return finish(msg, "protocol", turn)
+            # Count a repair prompt only when one actually goes out: a
+            # terminal protocol failure never sends it.
+            trace.call(
+                "record_protocol_repair_prompt",
+                plan.protocol_error_kind,
+                phase="writer",
+                turn=turn,
+            )
             repair = _protocol_repair_prompt(codec, plan, previous_reply=reply)
             reply = send_prompt(
                 repair,

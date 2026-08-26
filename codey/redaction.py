@@ -23,7 +23,10 @@ SECRET_MARKER_RE = re.compile(
 SECRET_SHAPE_RE = re.compile(
     r"(?i)(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|"
     r"xox[baprs]-[A-Za-z0-9-]{16,}|AIza[0-9A-Za-z_-]{20,}|"
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----)"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----)|"
+    r"(?-i:(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}(?![A-Za-z0-9])|"
+    r"(?<![A-Za-z0-9])github_pat_[A-Za-z0-9_]{22,}|"
+    r"(?<![A-Za-z0-9])(?:sk|rk)_(?:live|test)_[A-Za-z0-9_-]{16,})"
 )
 _CODE_SEPARATOR_RE = re.compile(r"[^a-z0-9]+")
 _CJK_SECRET_CODE_RE = re.compile(r"(?:密钥|密码|令牌|私钥|访问令牌)")

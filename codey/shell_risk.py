@@ -150,7 +150,7 @@ def _unwrap_shell(argv: list[str]) -> list[str]:
     if normalized[0] == "cmd":
         switches = [_strip_quotes(part).lower() for part in argv[1:]]
         for index, token in enumerate(switches, start=1):
-            if token == "/c" and index + 1 < len(argv):
+            if token in {"/c", "/k"} and index + 1 < len(argv):
                 command = " ".join(_strip_quotes(part) for part in argv[index + 1:])
                 return _split(command)
     return argv
@@ -183,6 +183,11 @@ def _is_dependency_install(argv: list[str]) -> bool:
         or _starts_with(argv, "poetry", "install")
         or _starts_with(argv, "uv", "sync")
         or _starts_with(argv, "uv", "pip", "install")
+        or _starts_with(argv, "uv", "add")
+        or _starts_with(argv, "go", "get")
+        or _starts_with(argv, "cargo", "add")
+        or _starts_with(argv, "deno", "install")
+        or (len(argv) >= 2 and argv[0] == "npx")
     )
 
 
@@ -225,6 +230,8 @@ def _is_external_source(argv: list[str], text: str) -> bool:
         or _starts_with(argv, "wget")
         or _starts_with(argv, "invoke-webrequest")
         or _starts_with(argv, "iwr")
+        or _starts_with(argv, "invoke-restmethod")
+        or _starts_with(argv, "irm")
         or text.startswith("powershell invoke-webrequest")
         or text.startswith("pwsh invoke-webrequest")
     )

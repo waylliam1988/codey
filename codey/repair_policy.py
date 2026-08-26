@@ -114,6 +114,14 @@ def validate_candidate(
         )
     readonly_tests = set(PROVIDER_TEST_FILES.get(provider_id, ()))
     changed = _changed_files(baseline_root, candidate_root)
+    if not changed:
+        # Fail closed: a no-op reply installs nothing and must never count
+        # as a successful repair or feed the override worker.
+        return RepairPolicyResult(
+            ok=False,
+            changed_files=(),
+            errors=("repair_candidate_no_changes",),
+        )
     errors: list[str] = []
     for rel in sorted(changed):
         if rel in readonly_tests:

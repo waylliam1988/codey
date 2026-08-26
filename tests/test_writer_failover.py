@@ -254,6 +254,50 @@ class WriterFailoverRunnerTests(unittest.TestCase):
         self.assertIn({"provider": "p2"}, h.closed)
         self.assertEqual(h.switched, ["p2", "p3"])
 
+    def test_terminal_canary_failure_leaves_no_closed_provider(self) -> None:
+        # A canary failure at the switch budget raises; the runner must not
+        # keep a closed provider around, or a later run on this shared
+        # instance would skip reconnect and use a dead provider once.
+        h = _Harness(
+            order=["p1", "p2"],
+            connect_fail={"p1"},
+            needs_canary={"p2"},
+            canary_fail={"p2"},
+        )
+        h.script = []
+        runner = h.make_runner(provider=None, provider_id="p1")
+        runner.max_switches = 1
+
+        with self.assertRaises(ProviderActionError):
+            runner.run(
+                task="t",
+                turn_budget=5,
+                fresh=False,
+                handoff="",
+                checkpoint=CheckpointView(),
+            )
+
+        self.assertEqual(runner.provider_id, "p2")
+        self.assertIn({"provider": "p2"}, h.closed)
+        self.assertIsNone(runner.provider)
+
+    def test_mid_attempt_close_always_clears_provider_reference(self) -> None:
+        h = _Harness(order=["p1", "p2", "p3", "p4"])
+        h.script = [_fail(turn=1), _fail(turn=1), _fail(turn=1)]
+        runner = h.make_runner(provider={"p": "p1"}, provider_id="p1")
+
+        with self.assertRaises(ProviderActionError):
+            runner.run(
+                task="t",
+                turn_budget=100,
+                fresh=True,
+                handoff="",
+                checkpoint=CheckpointView(),
+            )
+
+        self.assertEqual(h.switched, ["p2", "p3"])
+        self.assertIsNone(runner.provider)
+
     def test_switches_at_most_twice(self) -> None:
         h = _Harness(order=["p1", "p2", "p3", "p4"])
         h.script = [_fail(turn=1), _fail(turn=1), _fail(turn=1)]

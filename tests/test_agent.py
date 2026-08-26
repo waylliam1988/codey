@@ -2752,6 +2752,43 @@ class ProtocolTelemetryTests(unittest.TestCase):
         self.assertEqual(writer["valid_turns"], [2])
         self.assertEqual(writer["first_valid_turn"], 2)
 
+    def test_terminal_protocol_failure_sends_and_counts_one_fewer_repair_prompts(self) -> None:
+        # Four invalid replies exhaust DEFAULT_STAGNANT_TURNS: three repair
+        # prompts go out between them, the terminal failure sends none.
+        bad = "I cannot produce JSON right now."
+        provider = FakeProvider(bad, bad, bad, bad)
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(Path(td) / "state")
+            trace = store.open(
+                run_id="run-telemetry-terminal",
+                session_id="session-telemetry-terminal",
+                project=Path(td),
+                mode_initial="project",
+                provider_initial="fake",
+            )
+            result = agent.run(
+                provider,
+                Path(td),
+                "Read the page then finish",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                trace_recorder=trace,
+            )
+            trace.finish(status=result.stop_reason)
+
+            payload = json.loads(
+                store.path_for("session-telemetry-terminal", "run-telemetry-terminal").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+        self.assertEqual(result.stop_reason, "protocol")
+        writer = payload["protocol_telemetry"]["phases"]["writer"]
+        self.assertEqual(sum(writer["protocol_error_counts"].values()), 4)
+        self.assertEqual(sum(writer["repair_prompt_counts"].values()), 3)
+        # Intro plus three repairs; nothing was sent after the terminal error.
+        self.assertEqual(len(provider.sent), 4)
+
     def test_unknown_tool_lands_as_safe_label_with_digest(self) -> None:
         unknown = '{"tool":"write_file","args":{"path":"x.py","content":"hi"}}'
         edit = (

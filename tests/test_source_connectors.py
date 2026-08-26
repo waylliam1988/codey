@@ -213,6 +213,27 @@ def test_redaction_markers_are_boundary_aware_for_scientific_terms() -> None:
     assert looks_secret_shape("sk-" + "A" * 16)
 
 
+def test_redaction_shapes_cover_common_provider_key_prefixes() -> None:
+    assert looks_secret_shape("AKIAIOSFODNN7EXAMPLE")
+    assert looks_secret_shape("id=AKIAIOSFODNN7EXAMPLE")
+    assert not looks_secret_shape("akiaiosfodnn7example")
+    assert looks_secret_shape("github_pat_" + "A1b2C3d4E5" * 3)
+    assert not looks_secret_shape("github_pat_short")
+    for prefix in ("sk_live_", "sk_test_", "rk_live_", "rk_test_"):
+        assert looks_secret_shape(prefix + "aBcD1234efGh5678")
+        assert not looks_secret_shape(prefix + "short")
+
+
+def test_aws_secret_values_bind_to_marker_context_not_bare_shape() -> None:
+    # A bare 40-char base64-ish string stays allowed as a shape: too many
+    # ordinary values look like it. Next to a marker word it is a secret.
+    value = "jD2f9kQpXw7ZrNs4Tb8Vm1Ly6Hc0AgEu5Oi3SqXz"
+    assert len(value) == 40
+    assert not looks_secret_shape(value)
+    assert looks_sensitive_signal(f"AWS_SECRET_ACCESS_KEY={value}")
+    assert looks_sensitive_signal(f"aws secret {value}")
+
+
 def test_connector_query_secret_signal_detects_separator_split_markers() -> None:
     sensitive = (
         "api - key - abcdef clinical cancer",

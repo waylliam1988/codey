@@ -1,5 +1,88 @@
 # Codey Test Report
 
+## 0.4.13 Hardening Batch - Fail-Closed Repairs, Telemetry Binding, Safety Shape Coverage (2026-08-26)
+
+This batch closes seven review findings plus one process change. No new
+features; every change is fail-closed or display-only.
+
+**Writer failover terminal canary failure.** `_close_current()` now clears
+`self.provider` in the same step it closes, so a canary failure that hits the
+switch budget cannot leave a closed provider on the shared runner instance
+(the Review-repair reuse would have skipped reconnect and made one doomed
+attempt against a dead provider). Locked by unit tests: terminal canary
+failure leaves `provider is None`, and every mid-attempt close clears too.
+
+**Adapter repair rejects empty candidates.** `validate_candidate` fails
+closed with error code `repair_candidate_no_changes` when baseline and
+candidate are identical, so `{"files":[]}` can no longer pass policy as
+"ok", install into the override store, pollute repair success metrics, or
+send the provider into a pointless override worker run. Locked at both the
+policy level and the full `run_adapter_repair` level (no install, rejection
+journal entry).
+
+**Repair sandbox materializes only the repair surface.** Instead of copying
+the whole repo twice (minus deny-listed dirs), each sandbox now copies
+exactly what the pipeline reads/writes/executes: the `codey` package (the
+override installer copies it wholesale; provider unit tests import it),
+`pyproject.toml` for ruff config parity, and the provider's read-only test
+files passed explicitly via `extra_files=`. `reference-projects/`, docs,
+fixtures, tooling, and caches never enter a sandbox; a missing `codey/`
+package fails loudly. Locked by sandbox tests including the negative case.
+
+**Protocol telemetry binds repair-prompt counts to real sends.** The writer
+loop records `record_protocol_repair_prompt` only after the stagnation check
+passes, and the research runner only after the `MAX_PROTOCOL_ERRORS` check;
+a run that terminates on a protocol failure no longer reports a repair
+prompt that never left. Existing happy-path telemetry is byte-identical.
+Locked by new tests asserting errors=4/repairs=3/sends=4 (writer) and
+errors=3/repairs=2/sends=3 (research).
+
+**prompt_safety path exemption.** Path-like tokens (containing `/`) are
+exempt only inside the high-entropy branch: `src/main/java/util/ArrayList.java`
+and `C:/Users/alienware/.codey/state.json` no longer count as sensitive.
+Explicit secret markers anywhere in text -- including markers inside path
+segments such as `C:/Users/x/token.txt` -- and all secret shapes still
+block. Locked with positive and negative parameterized cases.
+
+**Redaction shape coverage.** `SECRET_SHAPE_RE` now covers AWS access key
+ids (`AKIA` + 16 chars, case-sensitive with word boundaries), GitHub
+fine-grained PATs (`github_pat_…`), and Stripe keys (`sk_live_`, `rk_live_`,
+`sk_test_`, `rk_test_`). A bare 40-char AWS-secret-shaped value stays
+deliberately unflagged as a pure shape (false-positive surface too high)
+and is caught next to marker words instead. Locked with shape positives,
+case negatives, and marker-context positives.
+
+**Shell risk coverage.** `uv add`, `go get`, `cargo add`, `deno install`,
+and any `npx <pkg>` classify as dependency installs; `irm` /
+`Invoke-RestMethod` as external source; `cmd /k` unwraps like `cmd /c`.
+Display-only risk explanations; approval decisions unchanged.
+
+**Local CI release gate.** New `tools/local_ci.py` runs ruff, the full
+pytest suite, JavaScript asset syntax checks, and the completion-enforcement
+A/B self-test in that order, failing fast. `.githooks/pre-commit` runs it on
+every commit after one-time `git config core.hooksPath .githooks`.
+`.github/workflows/ci.yml` now triggers only via manual `workflow_dispatch`.
+README badges use an honest static local-CI badge. On this machine Node.js
+is not installed, so js-syntax reports a visible `SKIPPED` line; on machines
+with Node.js it is a hard check.
+
+Release-gate validation for this batch:
+
+```text
+python -m ruff check .            # All checks passed!
+python -B tests/manual/completion_enforcement_ab.py --self-test
+                                  # self-test passed (control_done false_completion_rate=0.8,
+                                  # enforcement arms 0.0; repair arms task_success_rate 0.4)
+python -m pytest -q               # 2887 passed, 1 skipped, 877 subtests passed in 276.84s
+```
+
+Targeted suites before the full run: test_writer_failover (11),
+test_adapter_self_repair (62), test_prompt_safety (48),
+test_source_connectors (32), test_shell_risk (6 + 48 subtests), protocol
+telemetry tests in test_agent/test_research (7), architecture/trace/A-B
+boundary suites (121 + 248 subtests). All green before the single full
+pytest run.
+
 ## 0.4.13 Verified Completion Enforcement + Repair Context Admission v1
 
 Codey 0.4.13 lets the local completion proof constrain `done` for coding

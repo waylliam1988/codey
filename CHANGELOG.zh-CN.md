@@ -197,6 +197,38 @@
     repair-facts section 都是 envelope section 并绑定 outbound send epoch，
     字节完全一致——每次 repair admission 都可证明走了与 fresh intro 相同
     的组装结构。
+- Writer failover 不再在 runner 上留下已关闭的 provider：关闭现在是"关闭并
+  清引用"一步完成，canary 失败撞上 switch 预算时不会把死 provider 留给同一
+  实例的 Review-repair 复用（否则会跳过 reconnect、烧掉一次注定失败的尝试）。
+- Adapter repair 对空候选 fail-closed：`validate_candidate` 以显式错误码
+  `repair_candidate_no_changes` 拒绝无差异 diff，`{"files":[]}` 不再能作为
+  "成功修复"安装、污染修复成功率指标，或让 provider 白走一次 override worker。
+- Adapter repair sandbox 只 materialize 修复面，不再整个 repo 复制两份：
+  `codey` 包（override installer 要复制、provider 单测要导入的全部）、
+  `pyproject.toml`（保持 ruff 配置一致），加上该 provider 的只读测试文件。
+  `reference-projects/`、docs、fixtures、工具脚本不再进入沙箱。
+- Protocol telemetry 把 `repair_prompt_counts` 绑定到真实发送：writer 循环
+  与 research runner 都在 terminal-stagnation / max-protocol-errors 检查通过
+  之后才记录 repair prompt，协议失败终止的 run 不再虚报一条没发过的修复提示。
+- `prompt_safety` 不再把普通路径误判为密钥：path-like token
+  （`src/main/java/util/ArrayList.java`、`C:/Users/alienware/.codey/state.json`）
+  只在高熵分支内豁免；显式 secret marker（包括路径段里的 marker）与 secret
+  shape 仍然拦截。
+- 密钥 shape 覆盖补齐常见 provider 前缀：AWS access key id（`AKIA…`，区分
+  大小写、带边界）、GitHub fine-grained PAT（`github_pat_…`）、Stripe
+  live/test key（`sk_live_`、`rk_live_`、`sk_test_`、`rk_test_`）。裸的 40 位
+  AWS-secret 形状值刻意不做纯 shape 拦截——误伤太高——改为依赖 marker 词
+  相邻上下文命中。
+- Shell risk 说明覆盖更多用户真实会批准的命令：`uv add`、`go get`、
+  `cargo add`、`deno install` 与任意 `npx <pkg>` 归类为 dependency install；
+  `irm` / `Invoke-RestMethod` 归类为 external source；`cmd /k` 与 `cmd /c`
+  一样展开。只影响审批说明文案，不影响授权判定。
+- 本地 CI 成为发布门禁：新增 `tools/local_ci.py`，依次跑 ruff、全量 pytest、
+  JavaScript 资产语法检查（装了 Node.js 就硬性失败，未装则输出可见 SKIPPED）
+  和 completion-enforcement A/B self-test；`.githooks/pre-commit` 在一次性
+  `git config core.hooksPath .githooks` 之后接入每次 commit；
+  `.github/workflows/ci.yml` 只保留手动 `workflow_dispatch` 触发；README
+  使用诚实的静态 local-CI 徽标，不再伪装 GitHub Actions badge。
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 

@@ -5,6 +5,7 @@
 [![版本](https://img.shields.io/badge/version-0.4.12-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
+[![本地 CI](https://img.shields.io/badge/local%20CI-required-brightgreen)](tools/local_ci.py)
 
 [English](README.md)
 
@@ -671,6 +672,28 @@ Codey 已经测试过用 DeepSeek、MiMo、StepFun 和 Qwen 修复被故意弄�
 ```powershell
 python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
 ```
+
+## 本地 CI
+
+本地验证就是发布门禁。GitHub CI 只保留手动触发（`workflow_dispatch`）；每次
+commit 都会由一个本地入口自动检查：ruff、全量 pytest、JavaScript 资产语法检查，
+以及 completion-enforcement A/B self-test：
+
+```powershell
+python tools/local_ci.py
+```
+
+commit 钩子随仓库提供，每台机器激活一次后 `git commit` 会自动跑完整本地 CI：
+
+```powershell
+git config core.hooksPath .githooks
+```
+
+JavaScript 语法检查在装有 Node.js 的机器上是硬性失败；未安装 Node.js 时会输出
+可见的 `SKIPPED` 行。其余步骤始终执行。
+
+发布前再跑一次完整门禁和 live provider A/B，并把结果记入
+[TEST_REPORT.md](TEST_REPORT.md)。
 
 当 Edge CDP 已打开并登录支持的网页模型页面时，可以运行真实 Provider 矩阵。每个结果都会在 Agent 结束后再经过独立功能断言和 unittest 验证：
 
