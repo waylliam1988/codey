@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 import tempfile
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -39,6 +41,84 @@ class _FakeIndex:
 
 class _FakeKnowledge:
     index = _FakeIndex()
+
+
+def _write_work_snapshot(store: GhostWorkQueueStore, items) -> None:
+    store.events_path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_snapshot",
+        "event_id": "test_work_snapshot",
+        "ts": FRESH_TS,
+        "reason": "test_seed",
+        "items": [item.to_payload() for item in items],
+    }
+    store.events_path.write_text(
+        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert store.rebuild_from_events()
+
+
+def _work_observed_event(item, *, event_id: str = "observed") -> dict[str, object]:
+    return {
+        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_item_observed",
+        "event_id": event_id,
+        "ts": FRESH_TS,
+        "item": item.to_payload(),
+    }
+
+
+def _work_transition_event(current, *, action: str, patch: dict[str, object], event_id: str) -> dict[str, object]:
+    return {
+        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_item_transitioned",
+        "event_id": event_id,
+        "ts": FRESH_TS,
+        "action": action,
+        "item_id": current.id,
+        "precondition": {
+            "expected_status": current.status,
+            "expected_started_run_id": current.started_run_id,
+            "expected_retry_count": current.retry_count,
+        },
+        "patch": patch,
+    }
+
+
+def _write_work_events(store: GhostWorkQueueStore, events: list[dict[str, object]]) -> None:
+    store.events_path.parent.mkdir(parents=True, exist_ok=True)
+    store.events_path.write_text(
+        "".join(json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n" for event in events),
+        encoding="utf-8",
+    )
+    assert store.rebuild_from_events()
+
+
+def _interest_candidate(
+    *,
+    candidate_id: str,
+    question: str,
+    source_ref: str,
+    source_refs: tuple[str, ...],
+    priority: float,
+):
+    return SimpleNamespace(
+        id=candidate_id,
+        question=question,
+        related_concepts=("provider recovery",),
+        shared_neighbors=(),
+        source_refs=source_refs,
+        scope="session",
+        scope_ref="s1",
+        priority=priority,
+        confidence=0.8,
+        why_now="Bounded local interest.",
+        source="concept_open_question",
+        source_ref=source_ref,
+        strong_support=True,
+    )
 
 
 def _seed_research_work_item(state_home: str) -> tuple[GhostWorkQueueStore, str]:
@@ -338,18 +418,18 @@ def test_unreadable_events_block_mutating_sync_before_projection_update() -> Non
     assert "work_events_unreadable" in result.warnings
 
 
-def test_missing_events_bootstrap_projection_on_next_append() -> None:
+def test_missing_events_with_projection_blocks_next_mutation() -> None:
     with tempfile.TemporaryDirectory() as td:
         store, item_id = _seed_research_work_item(td)
         delete_file(store.events_path)
 
         claimed = store.claim_next(session_id="s1", run_id="run-1", user_request="continue")
         exported = store.export_state()
-        raw = store.events_path.read_text(encoding="utf-8")
 
-    assert claimed.ok
-    assert item_id in raw
+    assert not claimed.ok
+    assert claimed.skipped_reason == "work_events_missing"
     assert {item["id"] for item in exported["work_queue"]["items"]} == {item_id}
+    assert not store.events_path.exists()
 
 
 def test_expired_running_claim_is_reclaimed_on_next_claim() -> None:
@@ -403,7 +483,7 @@ def test_malformed_running_lease_is_reconciled_as_stale() -> None:
         assert first.ok
         assert first.item is not None
         malformed = replace(first.item, lease_expires_at="not-a-date")
-        assert store._replace_items([malformed], "test_malformed_work_claim")
+        _write_work_snapshot(store, [malformed])
 
         result = store.reconcile_stale_claims()
         item = store.list_items()[0]
@@ -450,7 +530,7 @@ def test_queue_item_does_not_reopen_done_or_running_and_clears_old_completion_fi
             status="blocked",
             blocked_reason="manual",
         )
-        assert store._replace_items([stale_blocked], "test_seed_blocked_with_proof")
+        _write_work_snapshot(store, [stale_blocked])
         queued = store.queue_item(item_id)
 
     assert queued is not None
@@ -471,7 +551,7 @@ def test_manual_requeue_resets_retry_count_so_blocked_items_can_be_claimed() -> 
             retry_count=MAX_WORK_RETRIES,
             blocked_reason="retry_limit",
         )
-        assert store._replace_items([blocked], "test_seed_max_retries")
+        _write_work_snapshot(store, [blocked])
 
         # Before the fix: requeue succeeds but the claim gate
         # (retry_count < MAX_WORK_RETRIES) rejects the item forever.
@@ -626,30 +706,225 @@ def test_proof_refs_require_kind_specific_primary_proof() -> None:
     assert "review:run-1" in review_proof
 
 
-def test_concurrent_event_appends_keep_every_event() -> None:
+def test_concurrent_claim_allows_only_one_runner() -> None:
     with tempfile.TemporaryDirectory() as td:
-        # Two store instances model two Codey processes racing on the same
-        # events file; the sidecar lock must serialize read-modify-write.
-        first = GhostWorkQueueStore(td)
-        second = GhostWorkQueueStore(td)
+        _store, item_id = _seed_research_work_item(td)
+        results = []
 
-        def append(store: GhostWorkQueueStore, marker: str) -> None:
-            ok = store._append_events_atomic([{
-                "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
-                "kind": "control",
-                "marker": marker,
-            }])
-            assert ok is True
+        def claim(run_id: str) -> None:
+            store = GhostWorkQueueStore(td)
+            results.append(store.claim_next(session_id="s1", run_id=run_id, user_request="continue"))
 
         threads = [
-            threading.Thread(target=append, args=(first, "a")),
-            threading.Thread(target=append, args=(second, "b")),
+            threading.Thread(target=claim, args=("run-a",)),
+            threading.Thread(target=claim, args=("run-b",)),
         ]
         for thread in threads:
             thread.start()
         for thread in threads:
             thread.join()
 
-        rows = first._read_events()
+        item = GhostWorkQueueStore(td).list_items()[0]
 
-    assert sorted(row.get("marker") or "" for row in rows) == ["a", "b"]
+    assert sum(1 for result in results if result.ok) == 1
+    assert {result.skipped_reason for result in results if not result.ok} == {"no_queued_item"}
+    assert item.id == item_id
+    assert item.status == "running"
+    assert item.started_run_id in {"run-a", "run-b"}
+
+
+def test_stale_transition_does_not_overwrite_newer_terminal_state() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store, item_id = _seed_research_work_item(td)
+        queued = store.list_items()[0]
+        running = replace(
+            queued,
+            status="running",
+            started_run_id="run-1",
+            retry_count=1,
+            lease_expires_at=FRESH_TS,
+            updated_at=FRESH_TS,
+        )
+        complete_patch = {
+            "status": "done",
+            "completed_run_id": "run-1",
+            "proof_refs": ("research_proof:" + "a" * 16,),
+            "blocked_reason": "",
+            "lease_expires_at": "",
+            "updated_at": FRESH_TS,
+        }
+        stale_release_patch = {
+            "status": "queued",
+            "started_run_id": "",
+            "blocked_reason": "",
+            "lease_expires_at": "",
+            "updated_at": FRESH_TS,
+        }
+        _write_work_events(store, [
+            _work_observed_event(queued, event_id="observed"),
+            _work_transition_event(
+                queued,
+                action="claim",
+                patch={
+                    "status": "running",
+                    "started_run_id": "run-1",
+                    "retry_count": 1,
+                    "lease_expires_at": FRESH_TS,
+                    "blocked_reason": "",
+                    "updated_at": FRESH_TS,
+                },
+                event_id="claim",
+            ),
+            _work_transition_event(running, action="complete", patch=complete_patch, event_id="complete"),
+            _work_transition_event(running, action="release", patch=stale_release_patch, event_id="stale-release"),
+        ])
+        item = store.list_items()[0]
+
+    assert item.id == item_id
+    assert item.status == "done"
+    assert item.completed_run_id == "run-1"
+    assert item.proof_refs == ("research_proof:" + "a" * 16,)
+
+
+def test_concurrent_source_sync_merges_refs_and_priority() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        results = []
+
+        def sync(candidate_id: str, note_ref: str, priority: float) -> None:
+            store = GhostWorkQueueStore(td)
+            results.append(store.sync_from_sources(
+                research_interest_candidates=(_interest_candidate(
+                    candidate_id=candidate_id,
+                    question="Research provider recovery follow-up",
+                    source_ref="shared-source",
+                    source_refs=(note_ref,),
+                    priority=priority,
+                ),),
+                session_id="s1",
+            ))
+
+        threads = [
+            threading.Thread(target=sync, args=("candidate-a", "note:a", 0.42)),
+            threading.Thread(target=sync, args=("candidate-b", "note:b", 0.91)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        item = GhostWorkQueueStore(td).list_items(session_id="s1")[0]
+
+    assert all(result.ok for result in results)
+    assert item.priority == 0.91
+    assert "note:a" in item.evidence_refs
+    assert "note:b" in item.evidence_refs
+    assert "research_interest:candidate-a" in item.evidence_refs
+    assert "research_interest:candidate-b" in item.evidence_refs
+
+
+def test_old_work_upsert_event_is_unsupported_for_mutation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            json.dumps({
+                "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+                "type": "ghost_work_item_upsert",
+                "event_id": "old",
+                "ts": FRESH_TS,
+                "item": {},
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+        result = store.sync_from_sources(
+            research_interest_candidates=(_interest_candidate(
+                candidate_id="candidate",
+                question="Research provider recovery follow-up",
+                source_ref="source",
+                source_refs=("note:source",),
+                priority=0.8,
+            ),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("unsupported_event" in warning for warning in result.warnings)
+
+
+def test_work_snapshot_with_invalid_item_is_unsupported_for_mutation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            json.dumps({
+                "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+                "type": "ghost_work_snapshot",
+                "event_id": "bad-snapshot",
+                "ts": FRESH_TS,
+                "reason": "test",
+                "items": [{"id": "missing-required-fields"}],
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+        result = store.sync_from_sources(
+            research_interest_candidates=(_interest_candidate(
+                candidate_id="candidate",
+                question="Research provider recovery follow-up",
+                source_ref="source",
+                source_refs=("note:source",),
+                priority=0.8,
+            ),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_work_transition_missing_precondition_is_unsupported_for_mutation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store = GhostWorkQueueStore(td)
+        item = work_queue_module._new_item(
+            kind="research",
+            status="queued",
+            scope="session",
+            scope_ref=work_queue_module._session_ref("s1"),
+            title="Research provider recovery follow-up",
+            why_now="Bounded local test.",
+            priority=0.8,
+            confidence=0.9,
+            source="test",
+            source_ref="source",
+            evidence_refs=("note:source",),
+            run_refs=(),
+            now=FRESH_TS,
+        )
+        transition = _work_transition_event(
+            item,
+            action="claim",
+            patch={"status": "running", "started_run_id": "run-1", "retry_count": 1},
+            event_id="bad-transition",
+        )
+        del transition["precondition"]["expected_retry_count"]
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                for event in (_work_observed_event(item), transition)
+            ),
+            encoding="utf-8",
+        )
+
+        result = store.claim_next(session_id="s1", run_id="run-2", user_request="continue")
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_work_queue_schema_version_stays_cold_start_v1() -> None:
+    assert work_queue_module.WORK_QUEUE_SCHEMA_VERSION == 1

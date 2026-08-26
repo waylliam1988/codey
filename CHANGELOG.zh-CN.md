@@ -6,6 +6,16 @@
 
 ## Unreleased
 
+- Ghost Affinity 和 Work Queue 事件日志现在记录语义意图事件，不再记录已计算
+  好的 upsert 结果。Affinity replay 通过 reducer 应用 node/edge reinforcement
+  spec、scope delete、decay event 和 snapshot anchor；Work Queue replay 通过
+  reducer 应用 observed candidate、带 precondition 的 transition、delete event
+  和 snapshot anchor。冷启动 schema 常量仍为 `1`；旧 upsert event type 不再
+  兼容，mutation 会 fail closed。
+- Ghost Affinity 和 Work Queue 的 mutation API 现在把 read -> reduce ->
+  decide -> append/rewrite -> project 流程放进 store 文件锁内，关闭并发
+  reinforcement 和双重 claim 这类语义 lost-update 竞态。
+
 ## 0.4.15 - Run Command Boundary + Stabilization Hardening
 
 - run-command policy 现在把 pytest ini override 当成第二层 argv 面处理。

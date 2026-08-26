@@ -210,7 +210,20 @@ def _seed_review_item(state: server.State, project: Path) -> str:
         run_refs=(),
         now="2999-01-01T00:00:00Z",
     )
-    assert state.ghost_work_queue._replace_items([item], "test_seed_review_item")
+    event = {
+        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_snapshot",
+        "event_id": "test_work_snapshot",
+        "ts": "2999-01-01T00:00:00Z",
+        "reason": "test_seed",
+        "items": [item.to_payload()],
+    }
+    state.ghost_work_queue.events_path.parent.mkdir(parents=True, exist_ok=True)
+    state.ghost_work_queue.events_path.write_text(
+        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert state.ghost_work_queue.rebuild_from_events()
     return item.id
 
 

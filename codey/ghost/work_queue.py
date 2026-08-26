@@ -38,6 +38,12 @@ MAX_WORK_WARNINGS = 20
 MAX_WORK_RETRIES = 3
 DEFAULT_WORK_CLAIM_LEASE_SECONDS = 24 * 60 * 60
 _PROJECTION_KIND = "ghost_work_items_projection"
+_WORK_EVENT_TYPES = frozenset({
+    "ghost_work_item_observed",
+    "ghost_work_item_transitioned",
+    "ghost_work_items_deleted",
+    "ghost_work_snapshot",
+})
 
 WORK_ITEM_KINDS = frozenset({
     "research",
@@ -237,6 +243,16 @@ class GhostWorkClaimResult:
     warnings: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class _WorkMutation:
+    result: object
+    append_events: tuple[dict[str, object], ...] = ()
+    replace_events: tuple[dict[str, object], ...] | None = None
+    items: tuple[GhostWorkItem, ...] = ()
+    write_projection: bool = True
+    compact: bool = True
+
+
 class GhostWorkQueueStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.directory = Path(state_home) / "ghost"
@@ -244,6 +260,7 @@ class GhostWorkQueueStore:
         self.events_path = self.directory / "work_events.jsonl"
         self.last_warnings: tuple[str, ...] = ()
         self._events_read_blocked = False
+        self._events_blocked_reason = ""
 
     def sync_from_sources(
         self,
@@ -258,9 +275,6 @@ class GhostWorkQueueStore:
         project: str = "",
     ) -> GhostWorkSyncResult:
         try:
-            existing = list(self._load_items_for_event_rewrite())
-            if self._events_read_blocked:
-                return self._sync_failed("events_read_blocked")
             now = _now()
             candidates: list[GhostWorkItem] = []
             candidates.extend(_items_from_continuity(
@@ -294,43 +308,67 @@ class GhostWorkQueueStore:
                 project=project,
                 now=now,
             ))
-            if not candidates:
-                active = _bounded_items(item for item in existing if not _is_expired(item, now))
-                if len(active) != len(existing):
-                    if not self._replace_items(active, "ghost_work_items_expired"):
-                        return self._sync_failed("event_write_failed")
-                self.last_warnings = ()
-                return GhostWorkSyncResult(True, skipped_reason="no_sources", total_items=len(active))
-            active_existing = _bounded_items(item for item in existing if not _is_expired(item, now))
-            merged, changed = _merge_items(active_existing, candidates, now=now)
-            merged = _bounded_items(item for item in merged if not _is_expired(item, now))
-            projection_changed = _item_payloads(active_existing) != _item_payloads(merged)
-            if not changed and not projection_changed:
-                self.last_warnings = ()
-                return GhostWorkSyncResult(True, items_changed=0, total_items=len(merged))
-            events: list[dict[str, object]] = []
-            if changed:
-                events = [_item_event(item, "upsert") for item in changed]
-                events.append(_control_event(
-                    "ghost_work_items_synced",
-                    {
-                        "session_ref": _session_ref(session_id),
-                        "project_ref": _project_ref(project),
-                        "run_id": clip_signal_text(run_id, 120),
-                        "items_seen": len(candidates),
-                        "items_changed": len(changed),
-                        "items_total": len(merged),
-                    },
-                ))
-            if events and not self._append_events_atomic(events):
-                return self._sync_failed("event_write_failed")
-            elif projection_changed:
-                if not self._replace_items(merged, "ghost_work_items_pruned"):
-                    return self._sync_failed("event_write_failed")
-            self._write_projection_best_effort(merged)
-            self._compact_if_needed(merged)
-            return GhostWorkSyncResult(True, items_changed=len(changed), total_items=len(merged), warnings=self.last_warnings)
+
+            def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                items = _bounded_items(_items_from_events(events))
+                expired = tuple(item for item in items if _is_expired(item, now))
+                append_events: list[dict[str, object]] = []
+                if expired:
+                    append_events.append(_items_deleted_event(
+                        reason="expired",
+                        expected_items=expired,
+                        ts=now,
+                    ))
+                    expired_ids = {item.id for item in expired}
+                    items = _bounded_items(item for item in items if item.id not in expired_ids)
+                if not candidates:
+                    if not append_events:
+                        self.last_warnings = ()
+                        return _WorkMutation(
+                            GhostWorkSyncResult(True, skipped_reason="no_sources", total_items=len(items)),
+                            items=tuple(items),
+                            write_projection=False,
+                            compact=False,
+                        )
+                    new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                    return _WorkMutation(
+                        GhostWorkSyncResult(True, skipped_reason="no_sources", items_changed=len(expired), total_items=len(new_items)),
+                        append_events=tuple(append_events),
+                        items=tuple(new_items),
+                    )
+                observed_count = 0
+                current = items
+                for candidate in candidates:
+                    before = _item_payloads(current)
+                    current, changed = _merge_items(current, (candidate,), now=now)
+                    current = _bounded_items(item for item in current if not _is_expired(item, now))
+                    if changed and _item_payloads(current) != before:
+                        append_events.append(_observed_event(candidate, ts=now))
+                        observed_count += 1
+                if not append_events:
+                    self.last_warnings = ()
+                    return _WorkMutation(
+                        GhostWorkSyncResult(True, items_changed=0, total_items=len(current)),
+                        items=tuple(current),
+                        write_projection=False,
+                        compact=False,
+                    )
+                new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                return _WorkMutation(
+                    GhostWorkSyncResult(True, items_changed=observed_count, total_items=len(new_items), warnings=self.last_warnings),
+                    append_events=tuple(append_events),
+                    items=tuple(new_items),
+                )
+
+            result = self._mutate_event_log(decide)
+            if isinstance(result, GhostWorkSyncResult):
+                return result
+            return self._sync_failed("work_queue_error")
         except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                return self._sync_failed(self._events_blocked_reason or "events_read_blocked")
+            if "work_event_write_failed" in self.last_warnings:
+                return self._sync_failed("event_write_failed")
             return self._sync_failed("work_queue_error")
 
     def list_items(
@@ -375,49 +413,100 @@ class GhostWorkQueueStore:
         if not is_strict_work_continuation(user_request):
             return GhostWorkClaimResult(False, skipped_reason="not_continuation")
         try:
-            items = list(self._load_items_for_event_rewrite())
-            if self._events_read_blocked:
-                return GhostWorkClaimResult(False, skipped_reason="events_read_blocked", warnings=self.last_warnings)
-            now = _now()
-            items, stale = _release_stale_claims(items, now=now)
-            if stale and not self._append_events_atomic([_item_event(item, "release_stale") for item in stale]):
-                return GhostWorkClaimResult(False, skipped_reason="event_write_failed", warnings=self.last_warnings)
-            candidate = _next_claimable_item(
-                items,
-                session_id=session_id,
-                project=project,
-                affinity_hints=affinity_hints,
-            )
-            if candidate is None:
-                if stale:
-                    self._write_projection_best_effort(items)
-                    self._compact_if_needed(items)
-                return GhostWorkClaimResult(False, skipped_reason="no_queued_item")
-            mode = mode_for_work_item(replace(candidate, status="running"), project=project)
-            if not mode:
-                return GhostWorkClaimResult(False, skipped_reason="unrunnable_item")
-            claimed = replace(
-                candidate,
-                status="running",
-                started_run_id=clip_signal_text(run_id, 120),
-                retry_count=candidate.retry_count + 1,
-                lease_expires_at=_future_ts(now, lease_seconds),
-                updated_at=now,
-                blocked_reason="",
-            )
-            updated = _replace_item(items, claimed)
-            if not self._append_events_atomic([_item_event(claimed, "claim")]):
-                return GhostWorkClaimResult(False, skipped_reason="event_write_failed", warnings=self.last_warnings)
-            self._write_projection_best_effort(updated)
-            self._compact_if_needed(updated)
-            return GhostWorkClaimResult(
-                True,
-                item=claimed,
-                mode=mode,
-                task=render_work_item_task(claimed, user_request=user_request),
-                warnings=self.last_warnings,
-            )
+            def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                now = _now()
+                append_events: list[dict[str, object]] = []
+                items = _bounded_items(_items_from_events(events))
+                for item in items:
+                    if not _is_stale_claim(item, now):
+                        continue
+                    next_status = "blocked" if item.retry_count >= MAX_WORK_RETRIES else "queued"
+                    append_events.append(_transition_event(
+                        item,
+                        action="release_stale",
+                        patch={
+                            "status": next_status,
+                            "started_run_id": "" if next_status == "queued" else item.started_run_id,
+                            "lease_expires_at": "",
+                            "blocked_reason": "stale_claim" if next_status == "blocked" else "",
+                            "updated_at": now,
+                        },
+                        ts=now,
+                    ))
+                if append_events:
+                    items = _bounded_items(_items_from_events((*events, *append_events)))
+                candidate = _next_claimable_item(
+                    items,
+                    session_id=session_id,
+                    project=project,
+                    affinity_hints=affinity_hints,
+                )
+                if candidate is None:
+                    result = GhostWorkClaimResult(
+                        False,
+                        skipped_reason="no_queued_item",
+                        warnings=self.last_warnings,
+                    )
+                    if not append_events:
+                        return _WorkMutation(result, items=tuple(items), write_projection=False, compact=False)
+                    new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                    return _WorkMutation(result, append_events=tuple(append_events), items=tuple(new_items))
+                mode = mode_for_work_item(replace(candidate, status="running"), project=project)
+                if not mode:
+                    return _WorkMutation(
+                        GhostWorkClaimResult(False, skipped_reason="unrunnable_item"),
+                        items=tuple(items),
+                        write_projection=False,
+                        compact=False,
+                    )
+                claimed = replace(
+                    candidate,
+                    status="running",
+                    started_run_id=clip_signal_text(run_id, 120),
+                    retry_count=candidate.retry_count + 1,
+                    lease_expires_at=_future_ts(now, lease_seconds),
+                    updated_at=now,
+                    blocked_reason="",
+                )
+                append_events.append(_transition_event(
+                    candidate,
+                    action="claim",
+                    patch={
+                        "status": "running",
+                        "started_run_id": claimed.started_run_id,
+                        "retry_count": claimed.retry_count,
+                        "lease_expires_at": claimed.lease_expires_at,
+                        "updated_at": now,
+                        "blocked_reason": "",
+                    },
+                    ts=now,
+                ))
+                new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                return _WorkMutation(
+                    GhostWorkClaimResult(
+                        True,
+                        item=claimed,
+                        mode=mode,
+                        task=render_work_item_task(claimed, user_request=user_request),
+                        warnings=self.last_warnings,
+                    ),
+                    append_events=tuple(append_events),
+                    items=tuple(new_items),
+                )
+
+            result = self._mutate_event_log(decide)
+            if isinstance(result, GhostWorkClaimResult):
+                return result
+            return GhostWorkClaimResult(False, skipped_reason="work_queue_error")
         except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                return GhostWorkClaimResult(
+                    False,
+                    skipped_reason=self._events_blocked_reason or "events_read_blocked",
+                    warnings=self.last_warnings,
+                )
+            if "work_event_write_failed" in self.last_warnings:
+                return GhostWorkClaimResult(False, skipped_reason="event_write_failed", warnings=self.last_warnings)
             return GhostWorkClaimResult(False, skipped_reason="work_queue_error")
 
     def complete_item(
@@ -428,28 +517,68 @@ class GhostWorkQueueStore:
         proof_refs: Iterable[object],
     ) -> GhostWorkItem | None:
         refs = _bounded_refs(tuple(proof_refs))
-        if not refs:
-            return self.block_item(item_id, run_id=run_id, blocked_reason="missing_proof")
-        items = list(self._load_items_for_event_rewrite())
-        if self._events_read_blocked:
-            raise OSError("ghost work events are unreadable")
-        current = _find_item(items, item_id)
         expected_run_id = clip_signal_text(run_id, 120)
-        if current is None or current.status != "running":
-            return None
-        if expected_run_id and current.started_run_id and current.started_run_id != expected_run_id:
-            return None
-        if not _primary_proof_matches_item_kind(current, refs):
-            return self.block_item(item_id, run_id=run_id, blocked_reason="missing_proof")
-        return self._transition_item(
-            item_id,
-            expected_run_id=run_id,
-            status="done",
-            proof_refs=refs,
-            completed_run_id=clip_signal_text(run_id, 120),
-            blocked_reason="",
-            action="complete",
-        )
+        try:
+            def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                items = _bounded_items(_items_from_events(events))
+                current = _find_item(items, item_id)
+                if current is None or current.status != "running":
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+                if expected_run_id and current.started_run_id and current.started_run_id != expected_run_id:
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+                now = _now()
+                if not refs or not _primary_proof_matches_item_kind(current, refs):
+                    blocked = replace(
+                        current,
+                        status="blocked",
+                        blocked_reason="missing_proof",
+                        lease_expires_at="",
+                        updated_at=now,
+                    )
+                    event = _transition_event(
+                        current,
+                        action="block",
+                        patch={
+                            "status": "blocked",
+                            "blocked_reason": "missing_proof",
+                            "lease_expires_at": "",
+                            "updated_at": now,
+                        },
+                        ts=now,
+                    )
+                    new_items = _bounded_items(_items_from_events((*events, event)))
+                    return _WorkMutation(blocked, append_events=(event,), items=tuple(new_items))
+                completed = replace(
+                    current,
+                    status="done",
+                    completed_run_id=expected_run_id,
+                    proof_refs=refs,
+                    blocked_reason="",
+                    lease_expires_at="",
+                    updated_at=now,
+                )
+                event = _transition_event(
+                    current,
+                    action="complete",
+                    patch={
+                        "status": "done",
+                        "completed_run_id": expected_run_id,
+                        "proof_refs": refs,
+                        "blocked_reason": "",
+                        "lease_expires_at": "",
+                        "updated_at": now,
+                    },
+                    ts=now,
+                )
+                new_items = _bounded_items(_items_from_events((*events, event)))
+                return _WorkMutation(completed, append_events=(event,), items=tuple(new_items))
+
+            result = self._mutate_event_log(decide)
+            return result if isinstance(result, GhostWorkItem) else None
+        except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                raise OSError("ghost work events are unreadable")
+            raise
 
     def block_item(
         self,
@@ -473,72 +602,145 @@ class GhostWorkQueueStore:
         run_id: str = "",
         reason: str = "",
     ) -> GhostWorkItem | None:
-        items = list(self._load_items_for_event_rewrite())
-        if self._events_read_blocked:
-            raise OSError("ghost work events are unreadable")
-        current = _find_item(items, item_id)
-        if current is None:
-            return None
-        if current.status != "running":
-            return None
-        if run_id and current.started_run_id and current.started_run_id != clip_signal_text(run_id, 120):
-            return None
-        next_status = "blocked" if current.retry_count >= MAX_WORK_RETRIES else "queued"
-        updated = replace(
-            current,
-            status=next_status,
-            started_run_id="" if next_status == "queued" else current.started_run_id,
-            lease_expires_at="",
-            blocked_reason=clip_signal_text(reason or "retry_limit" if next_status == "blocked" else "", 120),
-            updated_at=_now(),
-        )
-        return self._store_transition(items, updated, action="release")
+        expected_run_id = clip_signal_text(run_id, 120)
+        try:
+            def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                items = _bounded_items(_items_from_events(events))
+                current = _find_item(items, item_id)
+                if current is None or current.status != "running":
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+                if expected_run_id and current.started_run_id and current.started_run_id != expected_run_id:
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+                now = _now()
+                next_status = "blocked" if current.retry_count >= MAX_WORK_RETRIES else "queued"
+                blocked_reason = clip_signal_text(reason or "retry_limit" if next_status == "blocked" else "", 120)
+                updated = replace(
+                    current,
+                    status=next_status,
+                    started_run_id="" if next_status == "queued" else current.started_run_id,
+                    lease_expires_at="",
+                    blocked_reason=blocked_reason,
+                    updated_at=now,
+                )
+                event = _transition_event(
+                    current,
+                    action="release",
+                    patch={
+                        "status": next_status,
+                        "started_run_id": updated.started_run_id,
+                        "lease_expires_at": "",
+                        "blocked_reason": blocked_reason,
+                        "updated_at": now,
+                    },
+                    ts=now,
+                )
+                new_items = _bounded_items(_items_from_events((*events, event)))
+                return _WorkMutation(updated, append_events=(event,), items=tuple(new_items))
+
+            result = self._mutate_event_log(decide)
+            return result if isinstance(result, GhostWorkItem) else None
+        except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                raise OSError("ghost work events are unreadable")
+            raise
 
     def reject_item(self, item_id: str) -> GhostWorkItem | None:
         return self._transition_item(item_id, status="rejected", blocked_reason="", action="reject")
 
     def queue_item(self, item_id: str) -> GhostWorkItem | None:
-        items = list(self._load_items_for_event_rewrite())
-        if self._events_read_blocked:
-            raise OSError("ghost work events are unreadable")
-        current = _find_item(items, item_id)
-        if current is None:
-            return None
-        if current.status == "queued":
-            return current
-        if current.status not in {"candidate", "blocked", "rejected"}:
-            return None
-        queued = replace(
-            current,
-            status="queued",
-            # A manual requeue is an explicit "try again": it starts a fresh
-            # attempt cycle, otherwise items at MAX_WORK_RETRIES requeue but
-            # can never be claimed.
-            retry_count=0,
-            started_run_id="",
-            completed_run_id="",
-            proof_refs=(),
-            blocked_reason="",
-            lease_expires_at="",
-            updated_at=_now(),
-        )
-        return self._store_transition(items, queued, action="queue")
+        try:
+            def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                items = _bounded_items(_items_from_events(events))
+                current = _find_item(items, item_id)
+                if current is None:
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+                if current.status == "queued":
+                    return _WorkMutation(current, items=tuple(items), write_projection=False, compact=False)
+                if current.status not in {"candidate", "blocked", "rejected"}:
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+                now = _now()
+                queued = replace(
+                    current,
+                    status="queued",
+                    retry_count=0,
+                    started_run_id="",
+                    completed_run_id="",
+                    proof_refs=(),
+                    blocked_reason="",
+                    lease_expires_at="",
+                    updated_at=now,
+                )
+                event = _transition_event(
+                    current,
+                    action="queue",
+                    patch={
+                        "status": "queued",
+                        "retry_count": 0,
+                        "started_run_id": "",
+                        "completed_run_id": "",
+                        "proof_refs": (),
+                        "blocked_reason": "",
+                        "lease_expires_at": "",
+                        "updated_at": now,
+                    },
+                    ts=now,
+                )
+                new_items = _bounded_items(_items_from_events((*events, event)))
+                return _WorkMutation(queued, append_events=(event,), items=tuple(new_items))
+
+            result = self._mutate_event_log(decide)
+            return result if isinstance(result, GhostWorkItem) else None
+        except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                raise OSError("ghost work events are unreadable")
+            raise
 
     def reconcile_stale_claims(self) -> GhostWorkSyncResult:
         try:
-            items = list(self._load_items_for_event_rewrite())
-            if self._events_read_blocked:
-                return self._sync_failed("events_read_blocked")
-            updated, stale = _release_stale_claims(items, now=_now())
-            if not stale:
-                self.last_warnings = ()
-                return GhostWorkSyncResult(True, skipped_reason="no_stale_claims", total_items=len(updated))
-            if not self._append_events_atomic([_item_event(item, "release_stale") for item in stale]):
-                return self._sync_failed("event_write_failed")
-            self._write_projection_best_effort(updated)
-            self._compact_if_needed(updated)
-            return GhostWorkSyncResult(True, items_changed=len(stale), total_items=len(updated), warnings=self.last_warnings)
+            def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                now = _now()
+                items = _bounded_items(_items_from_events(events))
+                append_events: list[dict[str, object]] = []
+                for item in items:
+                    if not _is_stale_claim(item, now):
+                        continue
+                    next_status = "blocked" if item.retry_count >= MAX_WORK_RETRIES else "queued"
+                    append_events.append(_transition_event(
+                        item,
+                        action="release_stale",
+                        patch={
+                            "status": next_status,
+                            "started_run_id": "" if next_status == "queued" else item.started_run_id,
+                            "lease_expires_at": "",
+                            "blocked_reason": "stale_claim" if next_status == "blocked" else "",
+                            "updated_at": now,
+                        },
+                        ts=now,
+                    ))
+                if not append_events:
+                    self.last_warnings = ()
+                    return _WorkMutation(
+                        GhostWorkSyncResult(True, skipped_reason="no_stale_claims", total_items=len(items)),
+                        items=tuple(items),
+                        write_projection=False,
+                        compact=False,
+                    )
+                new_items = _bounded_items(_items_from_events((*events, *append_events)))
+                return _WorkMutation(
+                    GhostWorkSyncResult(True, items_changed=len(append_events), total_items=len(new_items), warnings=self.last_warnings),
+                    append_events=tuple(append_events),
+                    items=tuple(new_items),
+                )
+
+            result = self._mutate_event_log(decide)
+            if isinstance(result, GhostWorkSyncResult):
+                return result
+            return self._sync_failed("work_queue_error")
         except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                return self._sync_failed(self._events_blocked_reason or "events_read_blocked")
+            if "work_event_write_failed" in self.last_warnings:
+                return self._sync_failed("event_write_failed")
             return self._sync_failed("work_queue_error")
 
     def export_state(self) -> dict[str, object]:
@@ -585,42 +787,42 @@ class GhostWorkQueueStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
-        items = list(self._load_items_for_event_rewrite())
-        if self._events_read_blocked:
-            raise OSError("ghost work events are unreadable")
-        kept = [
-            item for item in items
-            if not _scope_filter_matches(
-                item,
-                scope=normalized_scope,
-                project_ref=project_ref,
-                session_ref=session_ref,
-            )
-        ]
-        removed = len(items) - len(kept)
-        if not removed:
-            return 0
-        self._rewrite_events_from_items(
-            kept,
-            control_event=_control_event(
-                "ghost_work_scope_deleted",
-                {
-                    "scope": normalized_scope,
-                    "project_ref": project_ref if normalized_scope == "project" else "",
-                    "session_ref": session_ref if normalized_scope == "session" else "",
-                    "removed_count": removed,
-                },
-            ),
-        )
-        self._write_projection(kept, warnings=[])
-        return removed
+        try:
+            def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                items = _bounded_items(_items_from_events(events))
+                removed = [
+                    item for item in items
+                    if _scope_filter_matches(
+                        item,
+                        scope=normalized_scope,
+                        project_ref=project_ref,
+                        session_ref=session_ref,
+                    )
+                ]
+                if not removed:
+                    return _WorkMutation(0, items=tuple(items), write_projection=False, compact=False)
+                event = _items_deleted_event(
+                    reason="scope_deleted",
+                    scope=normalized_scope,
+                    project_ref=project_ref if normalized_scope == "project" else "",
+                    session_ref=session_ref if normalized_scope == "session" else "",
+                    ts=_now(),
+                )
+                new_items = _bounded_items(_items_from_events((*events, event)))
+                return _WorkMutation(len(removed), append_events=(event,), items=tuple(new_items))
+
+            result = self._mutate_event_log(decide)
+            return int(result or 0)
+        except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                raise OSError("ghost work events are unreadable")
+            raise
 
     def rebuild_from_events(self) -> bool:
         try:
-            events = self._read_events()
-            if self._events_read_blocked:
-                return False
-            self._write_projection(_bounded_items(_items_from_events(events)), warnings=[])
+            with with_file_lock(self.events_path):
+                events = self._events_for_mutation_locked()
+                self._write_projection(_bounded_items(_items_from_events(events)), warnings=[])
             return True
         except (OSError, TypeError, ValueError):
             return False
@@ -633,12 +835,18 @@ class GhostWorkQueueStore:
             return _compact_payload(False, False, before, before, (warning,))
         if before["events"] <= MAX_WORK_EVENTS and before["bytes"] <= MAX_WORK_EVENTS_BYTES:
             return _compact_payload(True, False, before, before, self.last_warnings)
-        items = self._load_items_for_event_rewrite()
-        if self._events_read_blocked:
+        try:
+            with with_file_lock(self.events_path):
+                events = self._events_for_mutation_locked()
+                items = _bounded_items(_items_from_events(events))
+                self._write_events_atomic([_snapshot_event(items, ts=_now(), reason="events_compacted")])
+                self._write_projection(items, warnings=[])
+            after = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
+            return _compact_payload(True, after != before, before, after, self.last_warnings)
+        except (OSError, TypeError, ValueError):
+            warning = "events_read_blocked" if self._events_read_blocked else "work_compaction_failed"
+            self.last_warnings = _bounded_warnings((*self.last_warnings, warning))
             return _compact_payload(False, False, before, before, self.last_warnings)
-        self._rewrite_events_from_items(items)
-        after = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
-        return _compact_payload(True, after != before, before, after, self.last_warnings)
 
     def _transition_item(
         self,
@@ -651,43 +859,54 @@ class GhostWorkQueueStore:
         blocked_reason: str = "",
         action: str,
     ) -> GhostWorkItem | None:
-        items = list(self._load_items_for_event_rewrite())
-        if self._events_read_blocked:
-            raise OSError("ghost work events are unreadable")
-        current = _find_item(items, item_id)
-        if current is None:
+        target_status = _clean_status(status)
+        expected = clip_signal_text(expected_run_id, 120)
+        if not target_status:
             return None
-        if status == "done" and current.status != "running":
-            return None
-        if status == "blocked" and current.status not in {"running", "queued", "candidate"}:
-            return None
-        if expected_run_id and current.started_run_id and current.started_run_id != clip_signal_text(expected_run_id, 120):
-            return None
-        updated = replace(
-            current,
-            status=_clean_status(status) or current.status,
-            started_run_id="" if status in {"queued", "candidate"} else current.started_run_id,
-            completed_run_id=completed_run_id or current.completed_run_id,
-            proof_refs=proof_refs or current.proof_refs,
-            blocked_reason=blocked_reason,
-            lease_expires_at=current.lease_expires_at if status == "running" else "",
-            updated_at=_now(),
-        )
-        return self._store_transition(items, updated, action=action)
+        try:
+            def decide(events: list[dict[str, object]]) -> _WorkMutation:
+                items = _bounded_items(_items_from_events(events))
+                current = _find_item(items, item_id)
+                if current is None:
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+                if not _transition_allowed(current, target_status, action=action):
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+                if expected and current.started_run_id and current.started_run_id != expected:
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+                now = _now()
+                updated = replace(
+                    current,
+                    status=target_status,
+                    started_run_id="" if target_status in {"queued", "candidate"} else current.started_run_id,
+                    completed_run_id=completed_run_id or current.completed_run_id,
+                    proof_refs=proof_refs or current.proof_refs,
+                    blocked_reason=blocked_reason,
+                    lease_expires_at=current.lease_expires_at if target_status == "running" else "",
+                    updated_at=now,
+                )
+                event = _transition_event(
+                    current,
+                    action=action,
+                    patch={
+                        "status": target_status,
+                        "started_run_id": updated.started_run_id,
+                        "completed_run_id": updated.completed_run_id,
+                        "proof_refs": updated.proof_refs,
+                        "blocked_reason": blocked_reason,
+                        "lease_expires_at": updated.lease_expires_at,
+                        "updated_at": now,
+                    },
+                    ts=now,
+                )
+                new_items = _bounded_items(_items_from_events((*events, event)))
+                return _WorkMutation(updated, append_events=(event,), items=tuple(new_items))
 
-    def _store_transition(
-        self,
-        items: Iterable[GhostWorkItem],
-        updated: GhostWorkItem,
-        *,
-        action: str,
-    ) -> GhostWorkItem:
-        merged = _replace_item(items, updated)
-        if not self._append_events_atomic([_item_event(updated, action)]):
-            raise OSError("ghost work event write failed")
-        self._write_projection_best_effort(merged)
-        self._compact_if_needed(merged)
-        return updated
+            result = self._mutate_event_log(decide)
+            return result if isinstance(result, GhostWorkItem) else None
+        except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                raise OSError("ghost work events are unreadable")
+            raise
 
     def _sync_failed(self, reason: str) -> GhostWorkSyncResult:
         warnings = self.last_warnings or ((reason,) if reason else ())
@@ -705,13 +924,6 @@ class GhostWorkQueueStore:
             self.last_warnings = ("work_events_missing",)
         return projection
 
-    def _load_items_for_event_rewrite(self) -> tuple[GhostWorkItem, ...]:
-        if self.events_path.exists():
-            return tuple(_bounded_items(_items_from_events(self._read_events())))
-        self._events_read_blocked = False
-        self.last_warnings = ()
-        return self._load_projection_items()
-
     def _load_projection_items(self) -> tuple[GhostWorkItem, ...]:
         payload = read_json(self.projection_path, max_bytes=MAX_WORK_STATE_BYTES)
         if not isinstance(payload, dict):
@@ -727,6 +939,7 @@ class GhostWorkQueueStore:
 
     def _read_events(self) -> list[dict[str, object]]:
         self._events_read_blocked = False
+        self._events_blocked_reason = ""
         try:
             if not self.events_path.is_file():
                 self.last_warnings = ()
@@ -734,51 +947,83 @@ class GhostWorkQueueStore:
             if self.events_path.stat().st_size > MAX_WORK_EVENTS_BYTES:
                 self.last_warnings = ("work_events_too_large",)
                 self._events_read_blocked = True
+                self._events_blocked_reason = "events_read_blocked"
                 return []
             lines = self.events_path.read_text(encoding="utf-8").splitlines()
         except (OSError, UnicodeDecodeError):
             self.last_warnings = ("work_events_unreadable",)
             self._events_read_blocked = True
+            self._events_blocked_reason = "events_read_blocked"
             return []
         rows: list[dict[str, object]] = []
-        for line in lines:
+        warnings: list[str] = []
+        for index, line in enumerate(lines, start=1):
             if not line.strip():
                 continue
             try:
                 payload = json.loads(line)
             except json.JSONDecodeError:
+                warnings.append(f"work_events.jsonl:{index}:bad_json")
+                self._events_read_blocked = True
                 continue
-            if isinstance(payload, dict) and payload.get("schema_version") == WORK_QUEUE_SCHEMA_VERSION:
-                rows.append(payload)
-        self.last_warnings = ()
+            if not isinstance(payload, dict):
+                warnings.append(f"work_events.jsonl:{index}:not_object")
+                self._events_read_blocked = True
+                continue
+            if payload.get("schema_version") != WORK_QUEUE_SCHEMA_VERSION:
+                warnings.append(f"work_events.jsonl:{index}:unsupported_schema")
+                self._events_read_blocked = True
+                continue
+            if str(payload.get("type") or "") not in _WORK_EVENT_TYPES:
+                warnings.append(f"work_events.jsonl:{index}:unsupported_event")
+                self._events_read_blocked = True
+                continue
+            if not _valid_work_event(payload):
+                warnings.append(f"work_events.jsonl:{index}:invalid_event")
+                self._events_read_blocked = True
+                continue
+            rows.append(payload)
+        self.last_warnings = _bounded_warnings(warnings)
+        if self._events_read_blocked:
+            self._events_blocked_reason = "events_read_blocked"
+            return []
         return rows
 
-    def _append_events_atomic(self, events: Iterable[dict[str, object]]) -> bool:
-        rows = [event for event in events if isinstance(event, dict)]
-        if not rows:
-            return True
-        try:
-            # Serialize read-modify-write against other processes: without
-            # the lock two concurrent appends each write their own version
-            # of the whole events file and one side's events vanish.
-            with with_file_lock(self.events_path):
-                existing = []
-                if self.events_path.exists():
-                    existing = self._read_events()
-                    if self._events_read_blocked:
-                        return False
-                elif self._load_projection_items():
-                    self._rewrite_events_from_items(
-                        self._load_projection_items(), control_event=None
-                    )
-                    existing = self._read_events()
-                    if self._events_read_blocked:
-                        return False
-                self._write_events_atomic([*existing, *rows])
-            return True
-        except (OSError, TypeError, ValueError):
-            self.last_warnings = ("work_event_write_failed",)
-            return False
+    def _events_for_mutation_locked(self) -> list[dict[str, object]]:
+        if not self.events_path.exists():
+            if self.projection_path.exists():
+                self._events_read_blocked = True
+                self._events_blocked_reason = "work_events_missing"
+                self.last_warnings = ("work_events_missing",)
+                raise OSError("ghost work events are missing")
+            self._events_read_blocked = False
+            self._events_blocked_reason = ""
+            self.last_warnings = ()
+            return []
+        events = self._read_events()
+        if self._events_read_blocked:
+            raise OSError("ghost work events are unreadable")
+        return events
+
+    def _mutate_event_log(self, decide: Any) -> object:
+        with with_file_lock(self.events_path):
+            events = self._events_for_mutation_locked()
+            mutation = decide(events)
+            if not isinstance(mutation, _WorkMutation):
+                raise TypeError("invalid work mutation result")
+            try:
+                if mutation.replace_events is not None:
+                    self._write_events_atomic(mutation.replace_events)
+                elif mutation.append_events:
+                    self._write_events_atomic((*events, *mutation.append_events))
+            except (OSError, TypeError, ValueError):
+                self.last_warnings = _bounded_warnings((*self.last_warnings, "work_event_write_failed"))
+                raise
+            if mutation.write_projection:
+                self._write_projection_best_effort(mutation.items)
+            if mutation.compact:
+                self._compact_if_needed_locked(mutation.items)
+            return mutation.result
 
     def _write_projection(self, items: Iterable[GhostWorkItem], *, warnings: Iterable[str]) -> None:
         write_json_atomic(
@@ -812,30 +1057,7 @@ class GhostWorkQueueStore:
             except OSError:
                 pass
 
-    def _rewrite_events_from_items(
-        self,
-        items: Iterable[GhostWorkItem],
-        *,
-        control_event: dict[str, object] | None = None,
-    ) -> None:
-        rows = [_item_event(item, "upsert") for item in _bounded_items(items)]
-        rows.append(control_event or _control_event("ghost_work_events_compacted", {"items": len(rows)}))
-        # Same lock as _append_events_atomic (reentrant within this process):
-        # a concurrent append must not be overwritten by the compaction.
-        with with_file_lock(self.events_path):
-            self._write_events_atomic(rows)
-
-    def _replace_items(self, items: Iterable[GhostWorkItem], reason: str) -> bool:
-        rows = _bounded_items(items)
-        try:
-            self._rewrite_events_from_items(rows, control_event=_control_event(reason, {"items": len(rows)}))
-            self._write_projection(rows, warnings=[])
-            return True
-        except (OSError, TypeError, ValueError):
-            self.last_warnings = ("work_event_write_failed",)
-            return False
-
-    def _compact_if_needed(self, items: Iterable[GhostWorkItem]) -> None:
+    def _compact_if_needed_locked(self, items: Iterable[GhostWorkItem]) -> None:
         stats = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
         if not stats["readable"]:
             self.last_warnings = (str(stats["warning"] or "work_events_unreadable"),)
@@ -843,9 +1065,9 @@ class GhostWorkQueueStore:
         if stats["events"] <= MAX_WORK_EVENTS and stats["bytes"] <= MAX_WORK_EVENTS_BYTES:
             return
         try:
-            self._rewrite_events_from_items(items)
-        except OSError:
-            pass
+            self._write_events_atomic([_snapshot_event(items, ts=_now(), reason="events_compacted")])
+        except (OSError, TypeError, ValueError):
+            self.last_warnings = _bounded_warnings((*self.last_warnings, "work_compaction_failed"))
 
 
 def is_strict_work_continuation(value: object) -> bool:
@@ -1267,12 +1489,6 @@ def _next_claimable_item(
     return sorted(candidates, key=lambda item: _claim_sort_key(item, affinity_hints))[0]
 
 
-def _replace_item(items: Iterable[GhostWorkItem], updated: GhostWorkItem) -> list[GhostWorkItem]:
-    by_id = {item.id: item for item in items}
-    by_id[updated.id] = updated
-    return _bounded_items(by_id.values())
-
-
 def _find_item(items: Iterable[GhostWorkItem], item_id: str) -> GhostWorkItem | None:
     target = clip_signal_text(item_id, 120)
     for item in items:
@@ -1337,12 +1553,29 @@ def _scope_filter_matches(
 def _items_from_events(events: Iterable[dict[str, object]]) -> list[GhostWorkItem]:
     by_id: dict[str, GhostWorkItem] = {}
     for event in events:
-        if event.get("type") != "ghost_work_item_upsert":
-            continue
-        item = GhostWorkItem.from_payload(event.get("item"))
-        if item is not None:
-            by_id[item.id] = item
+        event_type = str(event.get("type") or "")
+        now = _event_ts(event)
+        if event_type == "ghost_work_snapshot":
+            by_id = {item.id: item for item in _snapshot_items(event)}
+        elif event_type == "ghost_work_item_observed":
+            item = GhostWorkItem.from_payload(event.get("item"))
+            if item is None:
+                continue
+            item = replace(item, created_at=item.created_at or now, updated_at=item.updated_at or now)
+            merged, _changed = _merge_items(by_id.values(), (item,), now=now)
+            by_id = {row.id: row for row in _bounded_items(merged)}
+        elif event_type == "ghost_work_item_transitioned":
+            _apply_transition_event(by_id, event, now=now)
+        elif event_type == "ghost_work_items_deleted":
+            _apply_items_deleted_event(by_id, event)
     return list(by_id.values())
+
+
+def _snapshot_items(event: Mapping[str, object]) -> list[GhostWorkItem]:
+    return _bounded_items(
+        item for item in (GhostWorkItem.from_payload(row) for row in _list(event.get("items")))
+        if item is not None
+    )
 
 
 def _projection_payload(
@@ -1361,25 +1594,285 @@ def _projection_payload(
     }
 
 
-def _item_event(item: GhostWorkItem, action: str) -> dict[str, object]:
+def _observed_event(item: GhostWorkItem, *, ts: str) -> dict[str, object]:
     return {
         "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-        "type": "ghost_work_item_upsert",
+        "type": "ghost_work_item_observed",
         "event_id": "gwe_" + uuid.uuid4().hex[:24],
-        "ts": _now(),
-        "action": clip_signal_text(action, 40),
+        "ts": clip_signal_text(ts, 80),
         "item": item.to_payload(),
     }
 
 
-def _control_event(event_type: str, payload: Mapping[str, object]) -> dict[str, object]:
+def _transition_event(
+    current: GhostWorkItem,
+    *,
+    action: str,
+    patch: Mapping[str, object],
+    ts: str,
+) -> dict[str, object]:
     return {
         "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-        "type": clip_signal_text(event_type, 80),
-        "event_id": "gwc_" + uuid.uuid4().hex[:24],
-        "ts": _now(),
-        "payload": _clean_metadata(payload),
+        "type": "ghost_work_item_transitioned",
+        "event_id": "gwe_" + uuid.uuid4().hex[:24],
+        "ts": clip_signal_text(ts, 80),
+        "action": clip_signal_text(action, 40),
+        "item_id": clip_signal_text(current.id, 120),
+        "precondition": {
+            "expected_status": current.status,
+            "expected_started_run_id": current.started_run_id,
+            "expected_retry_count": current.retry_count,
+        },
+        "patch": _transition_patch_payload(patch),
     }
+
+
+def _items_deleted_event(
+    *,
+    reason: str,
+    ts: str,
+    item_ids: Iterable[object] = (),
+    expected_items: Iterable[GhostWorkItem] = (),
+    scope: str = "",
+    project_ref: str = "",
+    session_ref: str = "",
+) -> dict[str, object]:
+    expected = [
+        {
+            "id": item.id,
+            "expected_status": item.status,
+            "expected_started_run_id": item.started_run_id,
+            "expected_retry_count": item.retry_count,
+        }
+        for item in expected_items
+        if isinstance(item, GhostWorkItem)
+    ]
+    return {
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_items_deleted",
+        "event_id": "gwd_" + uuid.uuid4().hex[:24],
+        "ts": clip_signal_text(ts, 80),
+        "payload": {
+            "reason": clip_signal_text(reason, 80),
+            "item_ids": [
+                item_id for item_id in (clip_signal_text(value, 120) for value in item_ids)
+                if item_id
+            ],
+            "expected_items": expected,
+            "scope": _clean_scope(scope),
+            "project_ref": clip_signal_text(project_ref, 120),
+            "session_ref": clip_signal_text(session_ref, 120),
+        },
+    }
+
+
+def _snapshot_event(
+    items: Iterable[GhostWorkItem],
+    *,
+    ts: str,
+    reason: str,
+) -> dict[str, object]:
+    rows = _bounded_items(items)
+    return {
+        "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_snapshot",
+        "event_id": "gws_" + uuid.uuid4().hex[:24],
+        "ts": clip_signal_text(ts, 80),
+        "reason": clip_signal_text(reason, 80),
+        "items": [item.to_payload() for item in rows],
+    }
+
+
+def _valid_work_event(event: Mapping[str, object]) -> bool:
+    if not clip_signal_text(event.get("event_id"), 120):
+        return False
+    if not clip_signal_text(event.get("ts"), 80):
+        return False
+    event_type = str(event.get("type") or "")
+    if event_type == "ghost_work_snapshot":
+        return _valid_work_snapshot(event)
+    if event_type == "ghost_work_item_observed":
+        return GhostWorkItem.from_payload(event.get("item")) is not None
+    if event_type == "ghost_work_item_transitioned":
+        patch = event.get("patch")
+        return (
+            bool(clip_signal_text(event.get("item_id"), 120))
+            and bool(clip_signal_text(event.get("action"), 40))
+            and _valid_work_precondition(event.get("precondition"))
+            and isinstance(patch, Mapping)
+            and bool(_clean_status(patch.get("status")))
+        )
+    if event_type == "ghost_work_items_deleted":
+        payload = event.get("payload")
+        if not isinstance(payload, Mapping):
+            return False
+        reason = clip_signal_text(payload.get("reason"), 80)
+        if reason == "expired":
+            expected_items = _list(payload.get("expected_items"))
+            return bool(expected_items) and all(
+                _valid_work_precondition(row, require_id=True)
+                for row in expected_items
+            )
+        if reason == "scope_deleted":
+            scope = _clean_scope(payload.get("scope"))
+            project_ref = clip_signal_text(payload.get("project_ref"), 120)
+            session_ref = clip_signal_text(payload.get("session_ref"), 120)
+            return bool(scope and (scope == "user" or project_ref or session_ref))
+        return False
+    return False
+
+
+def _valid_work_snapshot(event: Mapping[str, object]) -> bool:
+    raw_items = event.get("items")
+    if not isinstance(raw_items, list) or len(raw_items) > MAX_WORK_ITEMS:
+        return False
+    item_ids: set[str] = set()
+    for row in raw_items:
+        item = GhostWorkItem.from_payload(row)
+        if item is None or item.id in item_ids:
+            return False
+        item_ids.add(item.id)
+    return True
+
+
+def _valid_work_precondition(value: object, *, require_id: bool = False) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    if require_id and not clip_signal_text(value.get("id"), 120):
+        return False
+    if not _clean_status(value.get("expected_status")):
+        return False
+    if "expected_started_run_id" not in value or "expected_retry_count" not in value:
+        return False
+    try:
+        return int(value.get("expected_retry_count")) >= 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _event_ts(event: Mapping[str, object]) -> str:
+    return clip_signal_text(event.get("ts"), 80)
+
+
+def _transition_patch_payload(patch: Mapping[str, object]) -> dict[str, object]:
+    out: dict[str, object] = {}
+    if "status" in patch:
+        status = _clean_status(patch.get("status"))
+        if status:
+            out["status"] = status
+    if "started_run_id" in patch:
+        out["started_run_id"] = clip_signal_text(patch.get("started_run_id"), 120)
+    if "completed_run_id" in patch:
+        out["completed_run_id"] = clip_signal_text(patch.get("completed_run_id"), 120)
+    if "proof_refs" in patch:
+        out["proof_refs"] = list(_bounded_refs(patch.get("proof_refs")))
+    if "blocked_reason" in patch:
+        out["blocked_reason"] = clip_signal_text(patch.get("blocked_reason"), 120)
+    if "retry_count" in patch:
+        out["retry_count"] = max(0, _int(patch.get("retry_count")))
+    if "lease_expires_at" in patch:
+        out["lease_expires_at"] = clip_signal_text(patch.get("lease_expires_at"), 80)
+    if "updated_at" in patch:
+        out["updated_at"] = clip_signal_text(patch.get("updated_at"), 80)
+    return out
+
+
+def _apply_transition_event(
+    by_id: dict[str, GhostWorkItem],
+    event: Mapping[str, object],
+    *,
+    now: str,
+) -> None:
+    item_id = clip_signal_text(event.get("item_id"), 120)
+    current = by_id.get(item_id)
+    if current is None:
+        return
+    precondition = event.get("precondition")
+    patch = event.get("patch")
+    if not isinstance(precondition, Mapping) or not isinstance(patch, Mapping):
+        return
+    if not _precondition_matches(current, precondition):
+        return
+    target_status = _clean_status(patch.get("status"))
+    action = clip_signal_text(event.get("action"), 40)
+    if not target_status or not _transition_allowed(current, target_status, action=action):
+        return
+    updated = replace(
+        current,
+        status=target_status,
+        started_run_id=clip_signal_text(patch.get("started_run_id"), 120) if "started_run_id" in patch else current.started_run_id,
+        completed_run_id=clip_signal_text(patch.get("completed_run_id"), 120) if "completed_run_id" in patch else current.completed_run_id,
+        proof_refs=_bounded_refs(patch.get("proof_refs")) if "proof_refs" in patch else current.proof_refs,
+        blocked_reason=clip_signal_text(patch.get("blocked_reason"), 120) if "blocked_reason" in patch else current.blocked_reason,
+        retry_count=max(0, _int(patch.get("retry_count"))) if "retry_count" in patch else current.retry_count,
+        lease_expires_at=clip_signal_text(patch.get("lease_expires_at"), 80) if "lease_expires_at" in patch else current.lease_expires_at,
+        updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+    )
+    if GhostWorkItem.from_payload(updated.to_payload()) is None:
+        return
+    by_id[updated.id] = updated
+
+
+def _apply_items_deleted_event(by_id: dict[str, GhostWorkItem], event: Mapping[str, object]) -> None:
+    payload = event.get("payload")
+    if not isinstance(payload, Mapping):
+        return
+    item_ids = {
+        item_id for item_id in (clip_signal_text(value, 120) for value in _list(payload.get("item_ids")))
+        if item_id
+    }
+    expected_items = [
+        row for row in _list(payload.get("expected_items"))
+        if isinstance(row, Mapping)
+    ]
+    if expected_items:
+        for row in expected_items:
+            item_id = clip_signal_text(row.get("id"), 120)
+            current = by_id.get(item_id)
+            if current is not None and _precondition_matches(current, row):
+                by_id.pop(item_id, None)
+        return
+    if item_ids:
+        for item_id in item_ids:
+            by_id.pop(item_id, None)
+        return
+    scope = _clean_scope(payload.get("scope"))
+    project_ref = clip_signal_text(payload.get("project_ref"), 120)
+    session_ref = clip_signal_text(payload.get("session_ref"), 120)
+    if not scope:
+        return
+    for item_id, item in list(by_id.items()):
+        if _scope_filter_matches(item, scope=scope, project_ref=project_ref, session_ref=session_ref):
+            by_id.pop(item_id, None)
+
+
+def _precondition_matches(item: GhostWorkItem, precondition: Mapping[str, object]) -> bool:
+    expected_status = _clean_status(precondition.get("expected_status"))
+    if expected_status and item.status != expected_status:
+        return False
+    if "expected_started_run_id" in precondition:
+        expected_run_id = clip_signal_text(precondition.get("expected_started_run_id"), 120)
+        if item.started_run_id != expected_run_id:
+            return False
+    if "expected_retry_count" in precondition and item.retry_count != max(0, _int(precondition.get("expected_retry_count"))):
+        return False
+    return True
+
+
+def _transition_allowed(item: GhostWorkItem, target_status: str, *, action: str) -> bool:
+    if target_status == "running":
+        return item.status == "queued"
+    if target_status == "done":
+        return item.status == "running"
+    if target_status == "blocked":
+        return item.status in {"running", "queued", "candidate"}
+    if target_status == "queued":
+        if action in {"release", "release_stale"}:
+            return item.status == "running"
+        return action == "queue" and item.status in {"candidate", "blocked", "rejected"}
+    if target_status == "rejected":
+        return item.status in {"candidate", "queued", "blocked"}
+    return False
 
 
 def _stable_item_id(

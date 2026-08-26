@@ -6,6 +6,18 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
+- Ghost Affinity and Work Queue event logs now store semantic intent events
+  instead of computed upsert results. Affinity replay applies reinforced
+  node/edge specs, scope deletes, decay events, and snapshot anchors through
+  the reducer; Work Queue replay applies observed candidates, preconditioned
+  transitions, delete events, and snapshot anchors through the reducer. The
+  cold-start schema constants remain `1`; old upsert event types are
+  unsupported and fail closed for mutation.
+- Ghost Affinity and Work Queue mutating APIs now run their read -> reduce ->
+  decide -> append/rewrite -> project flow under the store file lock, closing
+  semantic lost-update races such as concurrent reinforcement and double
+  claim attempts.
+
 ## 0.4.15 - Run Command Boundary + Stabilization Hardening
 
 - Run-command policy now treats pytest ini overrides as a guarded second argv

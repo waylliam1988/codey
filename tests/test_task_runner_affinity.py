@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 from unittest import mock
 
@@ -96,6 +97,23 @@ def _queued_research_item(*, title: str, concept: str, priority: float):
     )
 
 
+def _write_work_snapshot(store, items) -> None:
+    store.events_path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_snapshot",
+        "event_id": "test_work_snapshot",
+        "ts": "2999-01-01T00:00:00Z",
+        "reason": "test_seed",
+        "items": [item.to_payload() for item in items],
+    }
+    store.events_path.write_text(
+        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert store.rebuild_from_events()
+
+
 def _research_record(concept: str):
     url = f"https://example.com/{concept}-provider-recovery"
     claim = f"{concept} provider recovery should be tracked with opened evidence."
@@ -168,7 +186,7 @@ def test_task_runner_uses_affinity_to_order_strict_continue_work_items() -> None
         assert state.ghost_affinity is not None
         favored = _queued_research_item(title="Research alpha provider recovery", concept="alpha", priority=0.50)
         baseline_top = _queued_research_item(title="Research beta provider recovery", concept="beta", priority=0.52)
-        assert state.ghost_work_queue._replace_items([favored, baseline_top], "test_seed_affinity_order")
+        _write_work_snapshot(state.ghost_work_queue, [favored, baseline_top])
         state.ghost_affinity.sync_from_sources(
             research_interest_candidates=(
                 _research_candidate("alpha"),
@@ -246,7 +264,7 @@ def test_ghost_disable_prevents_affinity_hint_consumption() -> None:
         assert state.ghost_affinity is not None
         favored = _queued_research_item(title="Research alpha provider recovery", concept="alpha", priority=0.50)
         baseline_top = _queued_research_item(title="Research beta provider recovery", concept="beta", priority=0.52)
-        assert state.ghost_work_queue._replace_items([favored, baseline_top], "test_seed_disabled_order")
+        _write_work_snapshot(state.ghost_work_queue, [favored, baseline_top])
         state.ghost_affinity.sync_from_sources(
             research_interest_candidates=(_research_candidate("alpha"),),
             session_id="s1",

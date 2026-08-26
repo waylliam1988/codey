@@ -407,7 +407,24 @@ def _seed_case_item(
     else:
         return
     assert state.ghost_work_queue is not None
-    state.ghost_work_queue._replace_items([item], f"test_seed_{case.seed_kind}")
+    _write_work_snapshot(state.ghost_work_queue, [item])
+
+
+def _write_work_snapshot(store, items) -> None:
+    store.events_path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_snapshot",
+        "event_id": "manual_work_snapshot",
+        "ts": "2999-01-01T00:00:00Z",
+        "reason": "manual_seed",
+        "items": [item.to_payload() for item in items],
+    }
+    store.events_path.write_text(
+        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert store.rebuild_from_events()
 
 
 class _patched_provider:

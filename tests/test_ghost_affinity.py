@@ -7,6 +7,8 @@ import threading
 from pathlib import Path
 from unittest import mock
 
+import pytest
+
 import codey.ghost.affinity as affinity_module
 import codey.ghost.work_queue as work_queue_module
 from codey.ghost.affinity import AffinityEdge, AffinityNode, GhostAffinityStore
@@ -177,6 +179,41 @@ def _affinity_edge(
     )
 
 
+def _write_work_snapshot(store: GhostWorkQueueStore, items) -> None:
+    store.events_path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_snapshot",
+        "event_id": "test_work_snapshot",
+        "ts": FRESH_TS,
+        "reason": "test_seed",
+        "items": [item.to_payload() for item in items],
+    }
+    store.events_path.write_text(
+        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert store.rebuild_from_events()
+
+
+def _write_affinity_snapshot(store: GhostAffinityStore, nodes, edges) -> None:
+    store.events_path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+        "type": "ghost_affinity_snapshot",
+        "event_id": "test_affinity_snapshot",
+        "ts": FRESH_TS,
+        "reason": "test_seed",
+        "nodes": [node.to_payload() for node in nodes],
+        "edges": [edge.to_payload() for edge in edges],
+    }
+    store.events_path.write_text(
+        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert store.rebuild_from_events()
+
+
 def test_hebbian_accepted_node_syncs_to_affinity_node_without_raw_text() -> None:
     with tempfile.TemporaryDirectory() as td:
         inbox = GhostInboxStore(td)
@@ -306,7 +343,7 @@ def test_work_queue_done_and_blocked_generate_bounded_edges() -> None:
         queue = GhostWorkQueueStore(td)
         done = _work_item(item_id_seed="done", status="done", project=project, proof_refs=("diff:run-done",))
         blocked = _work_item(item_id_seed="blocked", status="blocked", project=project)
-        assert queue._replace_items([done, blocked], "test_seed_items")
+        _write_work_snapshot(queue, [done, blocked])
         affinity = GhostAffinityStore(td)
 
         result = affinity.sync_from_sources(work_queue_store=queue, project=str(project))
@@ -346,10 +383,7 @@ def test_work_priority_hints_use_relevant_target_edge_among_irrelevant_edges() -
                 weight=0.2,
                 source_ref=f"edge:other-{index}",
             ))
-        affinity._write_events_atomic([
-            *(affinity_module._node_event(node, action="test_seed") for node in nodes),
-            *(affinity_module._edge_event(edge, action="test_seed") for edge in edges),
-        ])
+        _write_affinity_snapshot(affinity, nodes, edges)
         item = _work_item(item_id_seed="target", status="queued", project=project, kind="research")
 
         hints = affinity.query_work_priority_hints((item,), project=str(project))
@@ -444,7 +478,7 @@ def test_provider_failure_does_not_store_raw_secret_message() -> None:
 def test_event_write_failure_does_not_affect_projection_or_hints() -> None:
     with tempfile.TemporaryDirectory() as td:
         affinity = GhostAffinityStore(td)
-        with mock.patch.object(affinity, "_append_events_atomic", return_value=False):
+        with mock.patch.object(affinity, "_write_events_atomic", side_effect=OSError("event log down")):
             result = affinity.sync_from_sources(research_interest_candidates=(_candidate(),), session_id="s1")
 
         hints = affinity.query_research_priority_hints((_candidate(candidate_id="target"),), session_id="s1")
@@ -535,7 +569,8 @@ def test_missing_events_projection_export_compact_and_delete_scope_are_diagnosti
 
         exported = affinity.export_state()
         compacted = affinity.compact_if_needed()
-        removed = affinity.delete_scope("session", session_id="s1")
+        with pytest.raises(OSError):
+            affinity.delete_scope("session", session_id="s1")
         after_nodes = affinity.list_nodes(kind="research_concept", session_id="s1")
 
     assert exported["affinity"]["nodes"]
@@ -543,9 +578,7 @@ def test_missing_events_projection_export_compact_and_delete_scope_are_diagnosti
     assert "affinity_events_missing" in exported["warnings"]
     assert not compacted["ok"]
     assert "affinity_events_missing" in compacted["warnings"]
-    assert removed["nodes"] > 0
-    assert "affinity_projection_only_delete" in removed["warnings"]
-    assert after_nodes == ()
+    assert {node.key for node in after_nodes} == {"alpha"}
     assert not affinity.events_path.exists()
 
 
@@ -651,30 +684,115 @@ def test_export_contains_valid_json_and_no_research_body() -> None:
     assert "Research body" not in raw
 
 
-def test_concurrent_event_appends_keep_every_event() -> None:
+def test_concurrent_reinforce_accumulates_both_events() -> None:
     with tempfile.TemporaryDirectory() as td:
-        # Two store instances model two Codey processes racing on the same
-        # events file; the sidecar lock must serialize read-modify-write.
-        first = GhostAffinityStore(td)
-        second = GhostAffinityStore(td)
+        seed = GhostAffinityStore(td)
+        with mock.patch("codey.ghost.affinity._now", return_value=FRESH_TS):
+            assert seed.sync_from_sources(
+                research_interest_candidates=(_candidate(candidate_id="alpha-base", concepts=("alpha",), neighbors=()),),
+                session_id="s1",
+            ).ok
+            base_weight = seed.list_nodes(kind="research_concept", session_id="s1")[0].weight
 
-        def append(store: GhostAffinityStore, marker: str) -> None:
-            ok = store._append_events_atomic([{
+            def reinforce(candidate_id: str) -> None:
+                store = GhostAffinityStore(td)
+                result = store.sync_from_sources(
+                    research_interest_candidates=(_candidate(candidate_id=candidate_id, concepts=("alpha",), neighbors=()),),
+                    session_id="s1",
+                )
+                assert result.ok
+
+            threads = [
+                threading.Thread(target=reinforce, args=("alpha-a",)),
+                threading.Thread(target=reinforce, args=("alpha-b",)),
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+        final = GhostAffinityStore(td).list_nodes(kind="research_concept", session_id="s1")[0]
+
+    expected_increment = affinity_module.NODE_LEARNING_RATE * 0.7 * 0.8
+    assert round(final.weight - base_weight, 4) == round(expected_increment * 2, 4)
+    assert {"research_interest:alpha-a", "research_interest:alpha-b"}.issubset(set(final.source_refs))
+
+
+def test_snapshot_then_reinforce_continues_accumulating() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        with mock.patch("codey.ghost.affinity._now", return_value=FRESH_TS):
+            assert affinity.sync_from_sources(
+                research_interest_candidates=(_candidate(candidate_id="alpha-1", concepts=("alpha",), neighbors=()),),
+                session_id="s1",
+            ).ok
+            before = affinity.list_nodes(kind="research_concept", session_id="s1")[0]
+            with mock.patch.object(affinity_module, "MAX_AFFINITY_EVENTS", 0):
+                compacted = affinity.compact_if_needed()
+            assert compacted["compacted"] is True
+            assert "ghost_affinity_snapshot" in affinity.events_path.read_text(encoding="utf-8")
+
+            assert affinity.sync_from_sources(
+                research_interest_candidates=(_candidate(candidate_id="alpha-2", concepts=("alpha",), neighbors=()),),
+                session_id="s1",
+            ).ok
+            after = affinity.list_nodes(kind="research_concept", session_id="s1")[0]
+
+    expected_increment = affinity_module.NODE_LEARNING_RATE * 0.7 * 0.8
+    assert round(after.weight - before.weight, 4) == round(expected_increment, 4)
+
+
+def test_old_affinity_upsert_event_is_unsupported_for_mutation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps({
                 "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
-                "kind": "node",
-                "marker": marker,
-            }])
-            assert ok is True
+                "type": "ghost_affinity_node_upsert",
+                "event_id": "old",
+                "ts": FRESH_TS,
+                "node": {},
+            }) + "\n",
+            encoding="utf-8",
+        )
 
-        threads = [
-            threading.Thread(target=append, args=(first, "a")),
-            threading.Thread(target=append, args=(second, "b")),
-        ]
-        for thread in threads:
-            thread.start()
-        for thread in threads:
-            thread.join()
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
 
-        rows = first._read_events()
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("unsupported_event" in warning for warning in result.warnings)
 
-    assert sorted(row.get("marker") or "" for row in rows) == ["a", "b"]
+
+def test_affinity_snapshot_with_invalid_row_is_unsupported_for_mutation() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        affinity.events_path.parent.mkdir(parents=True, exist_ok=True)
+        affinity.events_path.write_text(
+            json.dumps({
+                "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                "type": "ghost_affinity_snapshot",
+                "event_id": "bad-snapshot",
+                "ts": FRESH_TS,
+                "reason": "test",
+                "nodes": [{"id": "missing-required-fields"}],
+                "edges": [],
+            }) + "\n",
+            encoding="utf-8",
+        )
+
+        result = affinity.sync_from_sources(
+            research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha",), neighbors=()),),
+            session_id="s1",
+        )
+
+    assert not result.ok
+    assert result.skipped_reason == "events_read_blocked"
+    assert any("invalid_event" in warning for warning in result.warnings)
+
+
+def test_affinity_schema_version_stays_cold_start_v1() -> None:
+    assert affinity_module.AFFINITY_SCHEMA_VERSION == 1

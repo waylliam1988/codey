@@ -42,6 +42,13 @@ MIN_NODE_WEIGHT = 0.04
 MIN_EDGE_WEIGHT = 0.01
 MAX_HINTS = 16
 _STATE_KIND = "ghost_affinity_state_projection"
+_AFFINITY_EVENT_TYPES = frozenset({
+    "ghost_affinity_node_reinforced",
+    "ghost_affinity_edge_reinforced",
+    "ghost_affinity_scope_deleted",
+    "ghost_affinity_decay_applied",
+    "ghost_affinity_snapshot",
+})
 
 AFFINITY_SCOPES = frozenset({"user", "project", "session"})
 AFFINITY_NODE_KINDS = frozenset({
@@ -320,6 +327,17 @@ class _EdgeSpec:
     proof_refs: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class _AffinityMutation:
+    result: object
+    append_events: tuple[dict[str, object], ...] = ()
+    replace_events: tuple[dict[str, object], ...] | None = None
+    nodes: tuple[AffinityNode, ...] = ()
+    edges: tuple[AffinityEdge, ...] = ()
+    write_projection: bool = True
+    compact: bool = True
+
+
 class GhostAffinityStore:
     def __init__(self, state_home: str | Path = DEFAULT_STATE_HOME) -> None:
         self.directory = Path(state_home) / "ghost"
@@ -342,12 +360,6 @@ class GhostAffinityStore:
         project: str = "",
     ) -> GhostAffinitySyncResult:
         try:
-            nodes, edges = self._load_state_for_mutation()
-            if self._events_read_blocked:
-                return self._sync_failed(self._events_blocked_reason or "events_read_blocked")
-            node_by_id = {node.id: node for node in nodes}
-            edge_by_id = {edge.id: edge for edge in edges}
-            now = _now()
             node_specs, edge_specs = self._source_specs(
                 hebbian_store=hebbian_store,
                 work_queue_store=work_queue_store,
@@ -358,55 +370,79 @@ class GhostAffinityStore:
                 session_id=session_id,
                 project=project,
             )
-            changed_nodes: list[AffinityNode] = []
-            for spec in node_specs:
-                node, changed = _reinforce_node(node_by_id.get(_node_id(spec.kind, spec.scope, spec.scope_ref, spec.key)), spec, now=now)
-                if changed:
+
+            def decide(events: list[dict[str, object]]) -> _AffinityMutation:
+                nodes, edges = _rows_from_events(events)
+                node_by_id = {node.id: node for node in nodes}
+                edge_by_id = {edge.id: edge for edge in edges}
+                now = _now()
+                append_events: list[dict[str, object]] = []
+                changed_nodes = 0
+                for spec in node_specs:
+                    node, changed = _reinforce_node(
+                        node_by_id.get(_node_id(spec.kind, spec.scope, spec.scope_ref, spec.key)),
+                        spec,
+                        now=now,
+                    )
+                    if not changed:
+                        continue
                     node_by_id[node.id] = node
-                    changed_nodes.append(node)
-            changed_edges: list[AffinityEdge] = []
-            for spec in edge_specs:
-                if spec.source not in node_by_id or spec.target not in node_by_id:
-                    continue
-                edge, changed = _reinforce_edge(edge_by_id.get(_edge_id(spec.source, spec.target, spec.relation, spec.scope, spec.scope_ref)), spec, now=now)
-                if changed:
+                    append_events.append(_node_reinforced_event(spec, ts=now))
+                    changed_nodes += 1
+                changed_edges = 0
+                for spec in edge_specs:
+                    if spec.source not in node_by_id or spec.target not in node_by_id:
+                        continue
+                    edge, changed = _reinforce_edge(
+                        edge_by_id.get(_edge_id(spec.source, spec.target, spec.relation, spec.scope, spec.scope_ref)),
+                        spec,
+                        now=now,
+                    )
+                    if not changed:
+                        continue
                     edge_by_id[edge.id] = edge
-                    changed_edges.append(edge)
-            bounded_nodes = _bounded_nodes(node_by_id.values())
-            bounded_node_ids = {node.id for node in bounded_nodes}
-            bounded_edges = _bounded_edges(edge_by_id.values(), node_ids=bounded_node_ids)
-            bounded_edge_ids = {row.id for row in bounded_edges}
-            if not changed_nodes and not changed_edges:
-                self.last_warnings = ()
-                return GhostAffinitySyncResult(
-                    True,
-                    skipped_reason="no_change",
-                    total_nodes=len(bounded_nodes),
-                    total_edges=len(bounded_edges),
+                    append_events.append(_edge_reinforced_event(spec, ts=now))
+                    changed_edges += 1
+                bounded_nodes = _bounded_nodes(node_by_id.values())
+                bounded_edges = _bounded_edges(edge_by_id.values(), node_ids={node.id for node in bounded_nodes})
+                if not append_events:
+                    self.last_warnings = ()
+                    return _AffinityMutation(
+                        GhostAffinitySyncResult(
+                            True,
+                            skipped_reason="no_change",
+                            total_nodes=len(bounded_nodes),
+                            total_edges=len(bounded_edges),
+                        ),
+                        nodes=tuple(bounded_nodes),
+                        edges=tuple(bounded_edges),
+                        write_projection=False,
+                        compact=False,
+                    )
+                new_nodes, new_edges = _rows_from_events((*events, *append_events))
+                return _AffinityMutation(
+                    GhostAffinitySyncResult(
+                        True,
+                        nodes_changed=changed_nodes,
+                        edges_changed=changed_edges,
+                        total_nodes=len(new_nodes),
+                        total_edges=len(new_edges),
+                        warnings=self.last_warnings,
+                    ),
+                    append_events=tuple(append_events),
+                    nodes=tuple(new_nodes),
+                    edges=tuple(new_edges),
                 )
-            events = [
-                _node_event(node, action="reinforced")
-                for node in changed_nodes
-                if node.id in bounded_node_ids
-            ]
-            events.extend(
-                _edge_event(edge, action="reinforced")
-                for edge in changed_edges
-                if edge.id in bounded_edge_ids
-            )
-            if not self._append_events_atomic(events):
-                return self._sync_failed("event_write_failed")
-            self._write_projection_best_effort(bounded_nodes, bounded_edges)
-            self._compact_if_needed(bounded_nodes, bounded_edges)
-            return GhostAffinitySyncResult(
-                True,
-                nodes_changed=len(changed_nodes),
-                edges_changed=len(changed_edges),
-                total_nodes=len(bounded_nodes),
-                total_edges=len(bounded_edges),
-                warnings=self.last_warnings,
-            )
+
+            result = self._mutate_event_log(decide)
+            if isinstance(result, GhostAffinitySyncResult):
+                return result
+            return self._sync_failed("affinity_error")
         except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                return self._sync_failed(self._events_blocked_reason or "events_read_blocked")
+            if "affinity_event_write_failed" in self.last_warnings:
+                return self._sync_failed("event_write_failed")
             return self._sync_failed("affinity_error")
 
     def list_nodes(
@@ -675,93 +711,135 @@ class GhostAffinityStore:
         scope_ref = _scope_ref_for_filter(normalized_scope, project=project, session_id=session_id)
         if normalized_scope in {"project", "session"} and not scope_ref:
             raise ValueError(f"{normalized_scope} reference is required")
-        if not self.events_path.exists() and self.projection_path.exists():
-            nodes, edges = self._load_projection_rows()
-            return self._delete_scope_from_rows(
-                nodes,
-                edges,
-                normalized_scope=normalized_scope,
-                scope_ref=scope_ref,
-                projection_only=True,
-            )
-        nodes, edges = self._load_state_for_mutation()
-        if self._events_read_blocked:
-            raise OSError("ghost affinity events are unreadable")
-        return self._delete_scope_from_rows(
-            nodes,
-            edges,
-            normalized_scope=normalized_scope,
-            scope_ref=scope_ref,
-            projection_only=False,
-        )
+        try:
+            def decide(events: list[dict[str, object]]) -> _AffinityMutation:
+                nodes, edges = _rows_from_events(events)
+                kept_nodes, kept_edges, removed_nodes, removed_edges = _delete_scope_rows(
+                    nodes,
+                    edges,
+                    normalized_scope=normalized_scope,
+                    scope_ref=scope_ref,
+                )
+                if not removed_nodes and not removed_edges:
+                    return _AffinityMutation(
+                        {"nodes": 0, "edges": 0, "warnings": []},
+                        nodes=tuple(nodes),
+                        edges=tuple(edges),
+                        write_projection=False,
+                        compact=False,
+                    )
+                event = _scope_deleted_event(
+                    normalized_scope,
+                    scope_ref if normalized_scope != "user" else "",
+                    removed_nodes=removed_nodes,
+                    removed_edges=removed_edges,
+                    ts=_now(),
+                )
+                new_nodes, new_edges = _rows_from_events((*events, event))
+                return _AffinityMutation(
+                    {"nodes": removed_nodes, "edges": removed_edges, "warnings": []},
+                    append_events=(event,),
+                    nodes=tuple(new_nodes),
+                    edges=tuple(new_edges),
+                )
 
-    def _delete_scope_from_rows(
-        self,
-        nodes: Iterable[AffinityNode],
-        edges: Iterable[AffinityEdge],
-        *,
-        normalized_scope: str,
-        scope_ref: str,
-        projection_only: bool,
-    ) -> dict[str, object]:
-        node_rows = list(nodes)
-        edge_rows = list(edges)
-        removed_node_ids = {
-            node.id for node in node_rows
-            if node.scope == normalized_scope and (normalized_scope == "user" or node.scope_ref == scope_ref)
-        }
-        kept_nodes = [node for node in node_rows if node.id not in removed_node_ids]
-        kept_node_ids = {node.id for node in kept_nodes}
-        kept_edges = [
-            edge for edge in edge_rows
-            if edge.source in kept_node_ids
-            and edge.target in kept_node_ids
-            and not (edge.scope == normalized_scope and (normalized_scope == "user" or edge.scope_ref == scope_ref))
-        ]
-        removed_edges = len(edge_rows) - len(kept_edges)
-        warnings = (
-            ("affinity_events_missing", "affinity_projection_only_delete")
-            if projection_only else ()
-        )
-        if not removed_node_ids and not removed_edges:
-            return {"nodes": 0, "edges": 0, "warnings": list(warnings)}
-        if projection_only:
-            if kept_nodes or kept_edges:
-                self._write_projection(kept_nodes, kept_edges, warnings=warnings)
-            else:
-                delete_file(self.projection_path)
-            self.last_warnings = _bounded_warnings(warnings)
-            return {"nodes": len(removed_node_ids), "edges": removed_edges, "warnings": list(warnings)}
-        self._rewrite_events_from_state(
-            kept_nodes,
-            kept_edges,
-            control_event=_control_event(
-                "ghost_affinity_scope_deleted",
-                {
-                    "scope": normalized_scope,
-                    "scope_ref": scope_ref if normalized_scope != "user" else "",
-                    "removed_nodes": len(removed_node_ids),
-                    "removed_edges": removed_edges,
-                },
-            ),
-        )
-        self._write_projection(kept_nodes, kept_edges, warnings=[])
-        return {"nodes": len(removed_node_ids), "edges": removed_edges, "warnings": []}
+            result = self._mutate_event_log(decide)
+            return result if isinstance(result, dict) else {"nodes": 0, "edges": 0, "warnings": ["affinity_error"]}
+        except (OSError, TypeError, ValueError):
+            if self._events_read_blocked:
+                raise OSError("ghost affinity events are unreadable")
+            raise
 
     def rebuild_from_events(self) -> bool:
         try:
-            events = self._read_events()
-            if self._events_read_blocked:
-                return False
-            nodes, edges = _rows_from_events(events)
-            self._write_projection(nodes, edges, warnings=self.last_warnings)
+            with with_file_lock(self.events_path):
+                events = self._events_for_mutation_locked()
+                nodes, edges = _rows_from_events(events)
+                self._write_projection(nodes, edges, warnings=self.last_warnings)
             return True
         except (OSError, TypeError, ValueError):
             return False
 
     def decay(self, *, min_interval_seconds: int = 0) -> dict[str, object]:
-        if self.events_path.exists():
-            self._read_events()
+        interval = max(0, int(min_interval_seconds or 0))
+        try:
+            def decide(events: list[dict[str, object]]) -> _AffinityMutation:
+                nodes, edges = _rows_from_events(events)
+                now = _now()
+                if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
+                    return _AffinityMutation(
+                        {
+                            "removed_nodes": 0,
+                            "removed_edges": 0,
+                            "decayed_nodes": 0,
+                            "decayed_edges": 0,
+                            "skipped_reason": "min_interval",
+                        },
+                        nodes=tuple(nodes),
+                        edges=tuple(edges),
+                        write_projection=False,
+                        compact=False,
+                    )
+                decayed_nodes = [_decay_node(node, now=now) for node in nodes]
+                decayed_edges = [_decay_edge(edge, now=now) for edge in edges]
+                bounded_nodes = _bounded_nodes(decayed_nodes)
+                bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
+                decayed_node_count = sum(
+                    1 for before, after in zip(nodes, decayed_nodes, strict=False)
+                    if before.weight != after.weight or before.status != after.status
+                )
+                decayed_edge_count = sum(
+                    1 for before, after in zip(edges, decayed_edges, strict=False)
+                    if before.weight != after.weight or before.status != after.status
+                )
+                removed_nodes = len(nodes) - len(bounded_nodes)
+                removed_edges = len(edges) - len(bounded_edges)
+                if not removed_nodes and not removed_edges and not decayed_node_count and not decayed_edge_count:
+                    return _AffinityMutation(
+                        {
+                            "removed_nodes": 0,
+                            "removed_edges": 0,
+                            "decayed_nodes": 0,
+                            "decayed_edges": 0,
+                            "skipped_reason": "no_change",
+                        },
+                        nodes=tuple(nodes),
+                        edges=tuple(edges),
+                        write_projection=False,
+                        compact=False,
+                    )
+                event = _decay_applied_event(
+                    removed_nodes=removed_nodes,
+                    removed_edges=removed_edges,
+                    decayed_nodes=decayed_node_count,
+                    decayed_edges=decayed_edge_count,
+                    min_interval_seconds=interval,
+                    ts=now,
+                )
+                new_nodes, new_edges = _rows_from_events((*events, event))
+                return _AffinityMutation(
+                    {
+                        "removed_nodes": removed_nodes,
+                        "removed_edges": removed_edges,
+                        "decayed_nodes": decayed_node_count,
+                        "decayed_edges": decayed_edge_count,
+                        "skipped_reason": "",
+                    },
+                    append_events=(event,),
+                    nodes=tuple(new_nodes),
+                    edges=tuple(new_edges),
+                )
+
+            result = self._mutate_event_log(decide)
+            return result if isinstance(result, dict) else {
+                "removed_nodes": 0,
+                "removed_edges": 0,
+                "decayed_nodes": 0,
+                "decayed_edges": 0,
+                "skipped_reason": "affinity_error",
+                "warnings": list(self.last_warnings),
+            }
+        except (OSError, TypeError, ValueError):
             if self._events_read_blocked:
                 return {
                     "removed_nodes": 0,
@@ -771,69 +849,14 @@ class GhostAffinityStore:
                     "skipped_reason": self._events_blocked_reason or "events_read_blocked",
                     "warnings": list(self.last_warnings),
                 }
-        nodes, edges = self._load_state_for_mutation()
-        if self._events_read_blocked:
             return {
                 "removed_nodes": 0,
                 "removed_edges": 0,
                 "decayed_nodes": 0,
                 "decayed_edges": 0,
-                "skipped_reason": self._events_blocked_reason or "events_read_blocked",
+                "skipped_reason": "affinity_error",
                 "warnings": list(self.last_warnings),
             }
-        now = _now()
-        interval = max(0, int(min_interval_seconds or 0))
-        if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
-            return {
-                "removed_nodes": 0,
-                "removed_edges": 0,
-                "decayed_nodes": 0,
-                "decayed_edges": 0,
-                "skipped_reason": "min_interval",
-            }
-        decayed_nodes = [_decay_node(node, now=now) for node in nodes]
-        decayed_edges = [_decay_edge(edge, now=now) for edge in edges]
-        bounded_nodes = _bounded_nodes(decayed_nodes)
-        bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
-        decayed_node_count = sum(
-            1 for before, after in zip(nodes, decayed_nodes, strict=False)
-            if before.weight != after.weight or before.status != after.status
-        )
-        decayed_edge_count = sum(
-            1 for before, after in zip(edges, decayed_edges, strict=False)
-            if before.weight != after.weight or before.status != after.status
-        )
-        removed_nodes = len(nodes) - len(bounded_nodes)
-        removed_edges = len(edges) - len(bounded_edges)
-        if not removed_nodes and not removed_edges and not decayed_node_count and not decayed_edge_count:
-            return {
-                "removed_nodes": 0,
-                "removed_edges": 0,
-                "decayed_nodes": 0,
-                "decayed_edges": 0,
-                "skipped_reason": "no_change",
-            }
-        self._rewrite_events_from_state(
-            bounded_nodes,
-            bounded_edges,
-            control_event=_control_event(
-                "ghost_affinity_state_decayed",
-                {
-                    "removed_nodes": removed_nodes,
-                    "removed_edges": removed_edges,
-                    "decayed_nodes": decayed_node_count,
-                    "decayed_edges": decayed_edge_count,
-                },
-            ),
-        )
-        self._write_projection(bounded_nodes, bounded_edges, warnings=[])
-        return {
-            "removed_nodes": removed_nodes,
-            "removed_edges": removed_edges,
-            "decayed_nodes": decayed_node_count,
-            "decayed_edges": decayed_edge_count,
-            "skipped_reason": "",
-        }
 
     def compact_if_needed(self) -> dict[str, object]:
         before = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
@@ -847,12 +870,18 @@ class GhostAffinityStore:
             return _compact_payload(False, False, before, before, (warning,))
         if before["events"] <= MAX_AFFINITY_EVENTS and before["bytes"] <= MAX_AFFINITY_EVENTS_BYTES:
             return _compact_payload(True, False, before, before, self.last_warnings)
-        nodes, edges = self._load_state_for_mutation()
-        if self._events_read_blocked:
+        try:
+            with with_file_lock(self.events_path):
+                events = self._events_for_mutation_locked()
+                nodes, edges = _rows_from_events(events)
+                self._write_events_atomic([_snapshot_event(nodes, edges, ts=_now(), reason="events_compacted")])
+                self._write_projection(nodes, edges, warnings=self.last_warnings)
+            after = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
+            return _compact_payload(True, after != before, before, after, self.last_warnings)
+        except (OSError, TypeError, ValueError):
+            warning = self._events_blocked_reason or "affinity_compaction_failed"
+            self.last_warnings = _bounded_warnings((*self.last_warnings, warning))
             return _compact_payload(False, False, before, before, self.last_warnings)
-        self._rewrite_events_from_state(nodes, edges)
-        after = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
-        return _compact_payload(True, after != before, before, after, self.last_warnings)
 
     def _source_specs(
         self,
@@ -910,22 +939,6 @@ class GhostAffinityStore:
             self.last_warnings = ("affinity_events_missing",)
         return [], []
 
-    def _load_state_for_mutation(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
-        if self.events_path.exists():
-            events = self._read_events()
-            if self._events_read_blocked:
-                return [], []
-            return _rows_from_events(events)
-        if self.projection_path.exists():
-            self._events_read_blocked = True
-            self._events_blocked_reason = "affinity_events_missing"
-            self.last_warnings = ("affinity_events_missing",)
-            return [], []
-        self._events_read_blocked = False
-        self._events_blocked_reason = ""
-        self.last_warnings = ()
-        return [], []
-
     def _load_projection_rows(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
         payload = read_json(self.projection_path, max_bytes=MAX_AFFINITY_STATE_BYTES)
         if not isinstance(payload, Mapping):
@@ -972,39 +985,66 @@ class GhostAffinityStore:
                 payload = json.loads(line)
             except json.JSONDecodeError:
                 warnings.append(f"affinity_events.jsonl:{index}:bad_json")
+                self._events_read_blocked = True
                 continue
             if not isinstance(payload, dict):
                 warnings.append(f"affinity_events.jsonl:{index}:not_object")
+                self._events_read_blocked = True
                 continue
             if payload.get("schema_version") != AFFINITY_SCHEMA_VERSION:
                 warnings.append(f"affinity_events.jsonl:{index}:unsupported_schema")
+                self._events_read_blocked = True
+                continue
+            if str(payload.get("type") or "") not in _AFFINITY_EVENT_TYPES:
+                warnings.append(f"affinity_events.jsonl:{index}:unsupported_event")
+                self._events_read_blocked = True
+                continue
+            if not _valid_affinity_event(payload):
+                warnings.append(f"affinity_events.jsonl:{index}:invalid_event")
+                self._events_read_blocked = True
                 continue
             rows.append(payload)
         self.last_warnings = _bounded_warnings(warnings)
+        if self._events_read_blocked:
+            self._events_blocked_reason = "events_read_blocked"
+            return []
         return rows
 
-    def _append_events_atomic(self, events: Iterable[dict[str, object]]) -> bool:
-        rows = [event for event in events if isinstance(event, dict)]
-        if not rows:
-            return True
-        try:
-            # Serialize read-modify-write against other processes: without
-            # the lock two concurrent appends each write their own version
-            # of the whole events file and one side's events vanish.
-            with with_file_lock(self.events_path):
-                if not self.events_path.exists() and self.projection_path.exists():
-                    self.last_warnings = ("affinity_events_missing",)
-                    self._events_read_blocked = True
-                    self._events_blocked_reason = "affinity_events_missing"
-                    return False
-                existing = self._read_events() if self.events_path.exists() else []
-                if self._events_read_blocked:
-                    return False
-                self._write_events_atomic([*existing, *rows])
-            return True
-        except (OSError, TypeError, ValueError):
-            self.last_warnings = ("affinity_event_write_failed",)
-            return False
+    def _events_for_mutation_locked(self) -> list[dict[str, object]]:
+        if not self.events_path.exists():
+            if self.projection_path.exists():
+                self._events_read_blocked = True
+                self._events_blocked_reason = "affinity_events_missing"
+                self.last_warnings = ("affinity_events_missing",)
+                raise OSError("ghost affinity events are missing")
+            self._events_read_blocked = False
+            self._events_blocked_reason = ""
+            self.last_warnings = ()
+            return []
+        events = self._read_events()
+        if self._events_read_blocked:
+            raise OSError("ghost affinity events are unreadable")
+        return events
+
+    def _mutate_event_log(self, decide: Any) -> object:
+        with with_file_lock(self.events_path):
+            events = self._events_for_mutation_locked()
+            mutation = decide(events)
+            if not isinstance(mutation, _AffinityMutation):
+                raise TypeError("invalid affinity mutation result")
+            try:
+                if mutation.replace_events is not None:
+                    self._write_events_atomic(mutation.replace_events)
+                elif mutation.append_events:
+                    self._write_events_atomic((*events, *mutation.append_events))
+            except (OSError, TypeError, ValueError):
+                self.last_warnings = _bounded_warnings((*self.last_warnings, "affinity_event_write_failed"))
+                raise
+            if mutation.write_projection:
+                self._write_projection_best_effort(mutation.nodes, mutation.edges)
+            if mutation.compact:
+                self._compact_if_needed_locked(mutation.nodes, mutation.edges)
+            return mutation.result
 
     def _write_events_atomic(self, events: Iterable[dict[str, object]]) -> None:
         rows = [event for event in events if isinstance(event, dict)]
@@ -1024,24 +1064,6 @@ class GhostAffinityStore:
                 temporary.unlink()
             except OSError:
                 pass
-
-    def _rewrite_events_from_state(
-        self,
-        nodes: Iterable[AffinityNode],
-        edges: Iterable[AffinityEdge],
-        *,
-        control_event: dict[str, object] | None = None,
-    ) -> None:
-        node_rows = _bounded_nodes(nodes)
-        node_ids = {node.id for node in node_rows}
-        edge_rows = _bounded_edges(edges, node_ids=node_ids)
-        events = [_node_event(node, action="compacted") for node in node_rows]
-        events.extend(_edge_event(edge, action="compacted") for edge in edge_rows)
-        events.append(control_event or _control_event("ghost_affinity_events_compacted", {"nodes": len(node_rows), "edges": len(edge_rows)}))
-        # Same lock as _append_events_atomic (reentrant within this process):
-        # a concurrent append must not be overwritten by the compaction.
-        with with_file_lock(self.events_path):
-            self._write_events_atomic(events)
 
     def _write_projection(
         self,
@@ -1070,7 +1092,7 @@ class GhostAffinityStore:
                 pass
             self.last_warnings = _bounded_warnings((*self.last_warnings, "affinity_projection_write_failed"))
 
-    def _compact_if_needed(self, nodes: Iterable[AffinityNode], edges: Iterable[AffinityEdge]) -> None:
+    def _compact_if_needed_locked(self, nodes: Iterable[AffinityNode], edges: Iterable[AffinityEdge]) -> None:
         stats = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
         if not stats["readable"]:
             self.last_warnings = (str(stats["warning"] or "affinity_events_unreadable"),)
@@ -1078,7 +1100,7 @@ class GhostAffinityStore:
         if stats["events"] <= MAX_AFFINITY_EVENTS and stats["bytes"] <= MAX_AFFINITY_EVENTS_BYTES:
             return
         try:
-            self._rewrite_events_from_state(nodes, edges)
+            self._write_events_atomic([_snapshot_event(nodes, edges, ts=_now(), reason="events_compacted")])
         except (OSError, TypeError, ValueError):
             self.last_warnings = _bounded_warnings((*self.last_warnings, "affinity_compaction_failed"))
 
@@ -1682,17 +1704,97 @@ def _rows_from_events(events: Iterable[dict[str, object]]) -> tuple[list[Affinit
     edges: dict[str, AffinityEdge] = {}
     for event in events:
         event_type = str(event.get("type") or "")
-        if event_type == "ghost_affinity_node_upsert":
-            node = AffinityNode.from_payload(event.get("node"))
-            if node is not None:
+        now = _event_ts(event)
+        if event_type == "ghost_affinity_snapshot":
+            snapshot_nodes, snapshot_edges = _snapshot_rows(event)
+            nodes = {node.id: node for node in snapshot_nodes}
+            edges = {edge.id: edge for edge in snapshot_edges}
+        elif event_type == "ghost_affinity_node_reinforced":
+            spec = _node_spec_from_payload(event.get("spec"))
+            if spec is None:
+                continue
+            node, changed = _reinforce_node(
+                nodes.get(_node_id(spec.kind, spec.scope, spec.scope_ref, spec.key)),
+                spec,
+                now=now,
+            )
+            if changed:
                 nodes[node.id] = node
-        elif event_type == "ghost_affinity_edge_upsert":
-            edge = AffinityEdge.from_payload(event.get("edge"))
-            if edge is not None:
+        elif event_type == "ghost_affinity_edge_reinforced":
+            spec = _edge_spec_from_payload(event.get("spec"))
+            if spec is None:
+                continue
+            if spec.source not in nodes or spec.target not in nodes:
+                continue
+            edge, changed = _reinforce_edge(
+                edges.get(_edge_id(spec.source, spec.target, spec.relation, spec.scope, spec.scope_ref)),
+                spec,
+                now=now,
+            )
+            if changed:
                 edges[edge.id] = edge
+        elif event_type == "ghost_affinity_scope_deleted":
+            payload = event.get("payload")
+            if not isinstance(payload, Mapping):
+                continue
+            kept_nodes, kept_edges, _removed_nodes, _removed_edges = _delete_scope_rows(
+                nodes.values(),
+                edges.values(),
+                normalized_scope=_clean_scope(payload.get("scope")),
+                scope_ref=clip_signal_text(payload.get("scope_ref"), 120),
+            )
+            nodes = {node.id: node for node in kept_nodes}
+            edges = {edge.id: edge for edge in kept_edges}
+        elif event_type == "ghost_affinity_decay_applied":
+            decayed_nodes = [_decay_node(node, now=now) for node in nodes.values()]
+            bounded_nodes = _bounded_nodes(decayed_nodes)
+            decayed_edges = [_decay_edge(edge, now=now) for edge in edges.values()]
+            bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
+            nodes = {node.id: node for node in bounded_nodes}
+            edges = {edge.id: edge for edge in bounded_edges}
     bounded_nodes = _bounded_nodes(nodes.values())
     bounded_edges = _bounded_edges(edges.values(), node_ids={node.id for node in bounded_nodes})
     return bounded_nodes, bounded_edges
+
+
+def _snapshot_rows(event: Mapping[str, object]) -> tuple[list[AffinityNode], list[AffinityEdge]]:
+    nodes = [
+        node for node in (AffinityNode.from_payload(row) for row in _list(event.get("nodes")))
+        if node is not None
+    ]
+    node_ids = {node.id for node in nodes}
+    edges = [
+        edge for edge in (AffinityEdge.from_payload(row) for row in _list(event.get("edges")))
+        if edge is not None and edge.source in node_ids and edge.target in node_ids
+    ]
+    return _bounded_nodes(nodes), _bounded_edges(edges, node_ids=node_ids)
+
+
+def _delete_scope_rows(
+    nodes: Iterable[AffinityNode],
+    edges: Iterable[AffinityEdge],
+    *,
+    normalized_scope: str,
+    scope_ref: str,
+) -> tuple[list[AffinityNode], list[AffinityEdge], int, int]:
+    node_rows = list(nodes)
+    edge_rows = list(edges)
+    removed_node_ids = {
+        node.id for node in node_rows
+        if node.scope == normalized_scope and (normalized_scope == "user" or node.scope_ref == scope_ref)
+    }
+    kept_nodes = [node for node in node_rows if node.id not in removed_node_ids]
+    kept_node_ids = {node.id for node in kept_nodes}
+    kept_edges = [
+        edge for edge in edge_rows
+        if edge.source in kept_node_ids
+        and edge.target in kept_node_ids
+        and not (edge.scope == normalized_scope and (normalized_scope == "user" or edge.scope_ref == scope_ref))
+    ]
+    removed_edges = len(edge_rows) - len(kept_edges)
+    bounded_nodes = _bounded_nodes(kept_nodes)
+    bounded_edges = _bounded_edges(kept_edges, node_ids={node.id for node in bounded_nodes})
+    return bounded_nodes, bounded_edges, len(removed_node_ids), removed_edges
 
 
 def _projection_payload(
@@ -1715,36 +1817,234 @@ def _projection_payload(
     }
 
 
-def _node_event(node: AffinityNode, *, action: str) -> dict[str, object]:
+def _node_reinforced_event(spec: _NodeSpec, *, ts: str) -> dict[str, object]:
     return {
         "schema_version": AFFINITY_SCHEMA_VERSION,
-        "type": "ghost_affinity_node_upsert",
+        "type": "ghost_affinity_node_reinforced",
         "event_id": "gae_" + uuid.uuid4().hex[:24],
-        "ts": _now(),
-        "action": clip_signal_text(action, 40),
-        "node": node.to_payload(),
+        "ts": clip_signal_text(ts, 80),
+        "spec": _node_spec_payload(spec),
     }
 
 
-def _edge_event(edge: AffinityEdge, *, action: str) -> dict[str, object]:
+def _edge_reinforced_event(spec: _EdgeSpec, *, ts: str) -> dict[str, object]:
     return {
         "schema_version": AFFINITY_SCHEMA_VERSION,
-        "type": "ghost_affinity_edge_upsert",
+        "type": "ghost_affinity_edge_reinforced",
         "event_id": "gae_" + uuid.uuid4().hex[:24],
-        "ts": _now(),
-        "action": clip_signal_text(action, 40),
-        "edge": edge.to_payload(),
+        "ts": clip_signal_text(ts, 80),
+        "spec": _edge_spec_payload(spec),
     }
 
 
-def _control_event(event_type: str, payload: Mapping[str, object]) -> dict[str, object]:
+def _scope_deleted_event(
+    scope: str,
+    scope_ref: str,
+    *,
+    removed_nodes: int,
+    removed_edges: int,
+    ts: str,
+) -> dict[str, object]:
     return {
         "schema_version": AFFINITY_SCHEMA_VERSION,
-        "type": clip_signal_text(event_type, 80),
+        "type": "ghost_affinity_scope_deleted",
         "event_id": "gac_" + uuid.uuid4().hex[:24],
-        "ts": _now(),
-        "payload": _clean_metadata(payload),
+        "ts": clip_signal_text(ts, 80),
+        "payload": {
+            "scope": _clean_scope(scope),
+            "scope_ref": clip_signal_text(scope_ref, 120),
+            "removed_nodes": max(0, int(removed_nodes or 0)),
+            "removed_edges": max(0, int(removed_edges or 0)),
+        },
     }
+
+
+def _decay_applied_event(
+    *,
+    removed_nodes: int,
+    removed_edges: int,
+    decayed_nodes: int,
+    decayed_edges: int,
+    min_interval_seconds: int,
+    ts: str,
+) -> dict[str, object]:
+    return {
+        "schema_version": AFFINITY_SCHEMA_VERSION,
+        "type": "ghost_affinity_decay_applied",
+        "event_id": "gac_" + uuid.uuid4().hex[:24],
+        "ts": clip_signal_text(ts, 80),
+        "payload": {
+            "removed_nodes": max(0, int(removed_nodes or 0)),
+            "removed_edges": max(0, int(removed_edges or 0)),
+            "decayed_nodes": max(0, int(decayed_nodes or 0)),
+            "decayed_edges": max(0, int(decayed_edges or 0)),
+            "min_interval_seconds": max(0, int(min_interval_seconds or 0)),
+        },
+    }
+
+
+def _snapshot_event(
+    nodes: Iterable[AffinityNode],
+    edges: Iterable[AffinityEdge],
+    *,
+    ts: str,
+    reason: str,
+) -> dict[str, object]:
+    node_rows = _bounded_nodes(nodes)
+    edge_rows = _bounded_edges(edges, node_ids={node.id for node in node_rows})
+    return {
+        "schema_version": AFFINITY_SCHEMA_VERSION,
+        "type": "ghost_affinity_snapshot",
+        "event_id": "gas_" + uuid.uuid4().hex[:24],
+        "ts": clip_signal_text(ts, 80),
+        "reason": clip_signal_text(reason, 80),
+        "nodes": [node.to_payload() for node in node_rows],
+        "edges": [edge.to_payload() for edge in edge_rows],
+    }
+
+
+def _valid_affinity_event(event: Mapping[str, object]) -> bool:
+    if not clip_signal_text(event.get("event_id"), 120):
+        return False
+    if not clip_signal_text(event.get("ts"), 80):
+        return False
+    event_type = str(event.get("type") or "")
+    if event_type == "ghost_affinity_snapshot":
+        return _valid_affinity_snapshot(event)
+    if event_type == "ghost_affinity_node_reinforced":
+        return _node_spec_from_payload(event.get("spec")) is not None
+    if event_type == "ghost_affinity_edge_reinforced":
+        return _edge_spec_from_payload(event.get("spec")) is not None
+    if event_type == "ghost_affinity_scope_deleted":
+        payload = event.get("payload")
+        if not isinstance(payload, Mapping):
+            return False
+        scope = _clean_scope(payload.get("scope"))
+        scope_ref = clip_signal_text(payload.get("scope_ref"), 120)
+        return bool(scope and (scope == "user" or scope_ref))
+    if event_type == "ghost_affinity_decay_applied":
+        return isinstance(event.get("payload"), Mapping)
+    return False
+
+
+def _valid_affinity_snapshot(event: Mapping[str, object]) -> bool:
+    raw_nodes = event.get("nodes")
+    raw_edges = event.get("edges")
+    if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
+        return False
+    if len(raw_nodes) > MAX_AFFINITY_NODES or len(raw_edges) > MAX_AFFINITY_EDGES:
+        return False
+    nodes: list[AffinityNode] = []
+    node_ids: set[str] = set()
+    for row in raw_nodes:
+        node = AffinityNode.from_payload(row)
+        if node is None or node.id in node_ids:
+            return False
+        nodes.append(node)
+        node_ids.add(node.id)
+    edge_ids: set[str] = set()
+    for row in raw_edges:
+        edge = AffinityEdge.from_payload(row)
+        if edge is None or edge.id in edge_ids:
+            return False
+        if edge.source not in node_ids or edge.target not in node_ids:
+            return False
+        edge_ids.add(edge.id)
+    return True
+
+
+def _event_ts(event: Mapping[str, object]) -> str:
+    return clip_signal_text(event.get("ts"), 80)
+
+
+def _node_spec_payload(spec: _NodeSpec) -> dict[str, object]:
+    payload = {
+        "kind": _clean_node_kind(spec.kind),
+        "key": _clean_key(spec.key, 180),
+        "label": _clean_label(spec.label, 180),
+        "scope": _clean_scope(spec.scope),
+        "scope_ref": clip_signal_text(spec.scope_ref, 120),
+        "confidence": _unit_float(spec.confidence),
+        "reward": _unit_float(spec.reward),
+        "source_refs": list(_bounded_refs(spec.source_refs)),
+        "evidence_refs": list(_bounded_refs(spec.evidence_refs)),
+        "metadata": _clean_metadata(spec.metadata),
+    }
+    if _node_spec_from_payload(payload) is None:
+        raise ValueError("invalid affinity node reinforcement event")
+    return payload
+
+
+def _node_spec_from_payload(payload: object) -> _NodeSpec | None:
+    if not isinstance(payload, Mapping):
+        return None
+    kind = _clean_node_kind(payload.get("kind"))
+    key = _clean_key(payload.get("key"), 180)
+    label = _clean_label(payload.get("label"), 180)
+    scope = _clean_scope(payload.get("scope"))
+    scope_ref = clip_signal_text(payload.get("scope_ref"), 120)
+    source_refs = _bounded_refs(payload.get("source_refs"))
+    evidence_refs = _bounded_refs(payload.get("evidence_refs"))
+    if not kind or not key or not label or not scope:
+        return None
+    if not source_refs and not evidence_refs:
+        return None
+    return _NodeSpec(
+        kind=kind,
+        key=key,
+        label=label,
+        scope=scope,
+        scope_ref=scope_ref,
+        confidence=_unit_float(payload.get("confidence")),
+        reward=_unit_float(payload.get("reward")),
+        source_refs=source_refs,
+        evidence_refs=evidence_refs,
+        metadata=_clean_metadata(payload.get("metadata")),
+    )
+
+
+def _edge_spec_payload(spec: _EdgeSpec) -> dict[str, object]:
+    payload = {
+        "source": clip_signal_text(spec.source, 120),
+        "target": clip_signal_text(spec.target, 120),
+        "relation": _clean_relation(spec.relation),
+        "scope": _clean_scope(spec.scope),
+        "scope_ref": clip_signal_text(spec.scope_ref, 120),
+        "confidence": _unit_float(spec.confidence),
+        "reward": _unit_float(spec.reward),
+        "source_refs": list(_bounded_refs(spec.source_refs)),
+        "proof_refs": list(_bounded_refs(spec.proof_refs)),
+    }
+    if _edge_spec_from_payload(payload) is None:
+        raise ValueError("invalid affinity edge reinforcement event")
+    return payload
+
+
+def _edge_spec_from_payload(payload: object) -> _EdgeSpec | None:
+    if not isinstance(payload, Mapping):
+        return None
+    source = clip_signal_text(payload.get("source"), 120)
+    target = clip_signal_text(payload.get("target"), 120)
+    relation = _clean_relation(payload.get("relation"))
+    scope = _clean_scope(payload.get("scope"))
+    scope_ref = clip_signal_text(payload.get("scope_ref"), 120)
+    source_refs = _bounded_refs(payload.get("source_refs"))
+    proof_refs = _bounded_refs(payload.get("proof_refs"))
+    if not source or not target or source == target or not relation or not scope:
+        return None
+    if not source_refs and not proof_refs:
+        return None
+    return _EdgeSpec(
+        source=source,
+        target=target,
+        relation=relation,
+        scope=scope,
+        scope_ref=scope_ref,
+        confidence=_unit_float(payload.get("confidence")),
+        reward=_unit_float(payload.get("reward")),
+        source_refs=source_refs,
+        proof_refs=proof_refs,
+    )
 
 
 def _node_id(kind: str, scope: str, scope_ref: str, key: str) -> str:

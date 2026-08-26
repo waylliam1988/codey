@@ -945,7 +945,9 @@ repository or run shell commands. The live provider is only used as the normal
 main provider for paths that need it; Work Queue itself does not call a model.
 Since 0.4.2, the research safe stub also writes a real `ResearchRecord` into
 the Evidence Ledger so queued Research completion is tested through the
-`research_proof:<digest>` gate rather than a legacy `research:*` ref.
+`research_proof:<digest>` gate rather than a legacy `research:*` ref. Seeded
+fixture rows are written as `ghost_work_snapshot` events, matching the current
+intent-event log shape.
 
 ```powershell
 python -B tests\manual\ghost_work_queue_production_ab.py --self-test
@@ -1040,7 +1042,9 @@ full six-case matrix.
 The harness uses production `TaskRunner` paths with safe Research stubs. It
 compares baseline ordering against affinity-boosted ordering, writes progress
 atomically after each row, and verifies that explicit chat selection and
-permission boundaries are not expanded.
+permission boundaries are not expanded. Seeded queue rows are written as
+`ghost_work_snapshot` events so the harness does not depend on removed upsert
+fixtures.
 
 ```powershell
 python -B tests\manual\ghost_affinity_ab.py --self-test

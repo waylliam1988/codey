@@ -22,11 +22,16 @@ if __package__ in (None, ""):
 
 from codey.app import server
 from codey.agents.runner import RunResult
+import codey.ghost.affinity as affinity_module
+from codey.ghost.affinity import AffinityNode
 from codey.ghost.hebbian import GhostNode
 import codey.ghost.work_queue as work_queue_module
 from codey.knowledge.research_interest import ResearchInterestCandidate
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
+from codey.research.ledger import ResearchLedger
+from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun
+from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
 from codey.app.task_runner import TaskRequest, TaskRunner
 from codey.storage.local_store import write_json_atomic
@@ -130,16 +135,22 @@ def _run_case(
             runner = _runner(state)
             _seed_case(state, case, arm=arm)
             if case.kind in {"work", "research", "permission"}:
-                runner._run_research_iteration = lambda **_kwargs: ResearchIterationRun(
-                    result=ResearchRunResult(
-                        "q",
-                        "researched with citation [1]",
-                        "done",
-                        1,
-                        synthesis_id=f"{case.name}-synthesis",
-                        citation_map=[{"claim": "x"}],
+                def research_task(**_kwargs):
+                    question = _research_question_from_task(str(_kwargs.get("task") or ""))
+                    record = _proof_record(question, run_id=str(_kwargs.get("run_id") or ""))
+                    return ResearchIterationRun(
+                        result=ResearchRunResult(
+                            question,
+                            "researched with citation [1]",
+                            "done",
+                            1,
+                            synthesis_id=f"{case.name}-synthesis",
+                            citation_map=[{"claim": "x"}],
+                            research_record=record,
+                        )
                     )
-                )
+
+                runner._run_research_iteration = research_task
             with _patch_provider(state, provider):
                 intent = "chat" if case.kind == "explicit" else "auto"
                 runner.run(TaskRequest("s1", None, case.prompt, 8, False, provider_id, intent=intent))
@@ -171,6 +182,8 @@ def _runner(state: server.State) -> TaskRunner:
         project_facts=state.project_facts,
         work_checkpoints=state.work_checkpoints,
         run_ledgers=state.run_ledgers,
+        run_traces=state.run_traces,
+        evidence_ledgers=state.evidence_ledgers,
         managed_outputs=state.managed_outputs,
         knowledge_store=state.knowledge_store,
         is_git_repository=lambda _project: True,
@@ -186,11 +199,12 @@ def _seed_case(state: server.State, case: AffinityCase, *, arm: str) -> None:
         assert state.ghost_work_queue is not None
         item_a = _work_item("alpha", 0.50)
         item_b = _work_item("beta", 0.52)
-        state.ghost_work_queue._replace_items([item_a, item_b], f"manual_{case.name}")
+        _write_work_snapshot(state.ghost_work_queue, [item_a, item_b])
         if arm == "affinity":
-            state.ghost_affinity.sync_from_sources(
-                research_interest_candidates=(_research_candidate("alpha"),),
-                session_id="s1",
+            _write_affinity_snapshot(
+                state.ghost_affinity,
+                [_research_affinity_node("alpha", weight=1.0)],
+                [],
             )
 
 
@@ -217,7 +231,11 @@ def _seed_directive_case(state: server.State, *, arm: str) -> None:
     )
     if arm == "affinity":
         assert state.ghost_affinity is not None
-        state.ghost_affinity.sync_from_sources(hebbian_store=state.ghost_hebbian, session_id="s1")
+        _write_affinity_snapshot(
+            state.ghost_affinity,
+            [_directive_affinity_node("reply-structure", "reply_structure", "answer_first", weight=1.0)],
+            [],
+        )
 
 
 def _directive_node(
@@ -267,6 +285,140 @@ def _research_candidate(concept: str) -> ResearchInterestCandidate:
     )
 
 
+def _research_question_from_task(task: str) -> str:
+    for line in str(task or "").splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("task:"):
+            return stripped.split(":", 1)[1].strip().rstrip(".") or "Research provider recovery"
+    return "Research provider recovery"
+
+
+def _proof_record(question: str, *, run_id: str):
+    url = "https://example.com/affinity-proof"
+    claim = f"{question} should be researched with opened provider recovery evidence."
+    source_text = f"{claim} 2026 source note."
+    summary = (
+        "## 结论\n"
+        f"- {claim} [1]\n\n"
+        "## 关键证据\n"
+        f"- [1] The opened source says {claim}\n\n"
+        "## 反证与限制\n"
+        "- 未找到强反证；需要持续追踪新的 provider recovery evidence。\n\n"
+        "## 来源质量\n"
+        "- [1] secondary · web · fresh · example.com\n\n"
+        "## 搜索覆盖\n"
+        f"- query: {question}\n"
+        "- opened: Affinity proof article\n"
+        "- skipped: none representative\n\n"
+        "## 来源\n"
+        f"[1] Affinity proof article - {url}"
+    )
+    ledger = ResearchLedger()
+    ledger.record_search(question, [{
+        "title": "Affinity proof article",
+        "url": url,
+        "snippet": claim,
+    }])
+    ledger.record_open(
+        requested_url=url,
+        final_url=url,
+        title="Affinity proof article",
+        text=source_text,
+    )
+    prepared = ledger.prepare_evidence_items(
+        [{
+            "claim": claim,
+            "source_url": url,
+            "excerpt": claim,
+            "stance": "supports",
+        }],
+        fallback_sources=[url],
+        fallback_claim=claim,
+        fallback_body=source_text,
+        note_type="fact",
+    )
+    if prepared.error:
+        raise AssertionError(prepared.error)
+    ledger.add_evidence_items(list(prepared.items), note_id="affinity-proof")
+    quality = review_report_quality(
+        summary,
+        ledger=ledger,
+        opened_sources=ledger.final_url_set(),
+        search_result_urls={url},
+    )
+    if not quality.ok:
+        raise AssertionError(quality.message)
+    return build_research_record(
+        question=question,
+        summary=summary,
+        ledger=ledger,
+        review=quality,
+        run_id=run_id or "affinity-proof-run",
+        session_id="s1",
+        synthesis_id="affinity-proof-synthesis",
+        stop_reason="done",
+    )
+
+
+def _directive_affinity_node(
+    hebbian_node_id: str,
+    conflict_key: str,
+    value_key: str,
+    *,
+    weight: float,
+) -> AffinityNode:
+    key = f"style_preference:style_preference:{conflict_key}:{value_key}"
+    node_id = affinity_module._node_id("user_preference", "user", "", key)
+    return AffinityNode(
+        id=node_id,
+        kind="user_preference",
+        key=key,
+        label=f"style_preference:style_preference:{conflict_key}={value_key}",
+        scope="user",
+        scope_ref="",
+        status="active",
+        weight=weight,
+        confidence=1.0,
+        source_refs=(f"manual_affinity:{hebbian_node_id}",),
+        evidence_refs=(f"manual_affinity_evidence:{hebbian_node_id}",),
+        metadata={
+            "source": "manual_seed",
+            "hebbian_node_id": hebbian_node_id,
+            "hebbian_kind": "style_preference",
+            "conflict_key": f"style_preference:{conflict_key}",
+            "value_key": value_key,
+        },
+        created_at="2999-01-01T00:00:00Z",
+        updated_at="2999-01-01T00:00:00Z",
+        last_reinforced_at="2999-01-01T00:00:00Z",
+        last_decayed_at="2999-01-01T00:00:00Z",
+    )
+
+
+def _research_affinity_node(concept: str, *, weight: float) -> AffinityNode:
+    scope_ref = affinity_module._scope_ref("session", "s1")
+    key = str(concept or "").strip().casefold()
+    node_id = affinity_module._node_id("research_concept", "session", scope_ref, key)
+    return AffinityNode(
+        id=node_id,
+        kind="research_concept",
+        key=key,
+        label=f"concept:{key}",
+        scope="session",
+        scope_ref=scope_ref,
+        status="active",
+        weight=weight,
+        confidence=1.0,
+        source_refs=(f"manual_research_interest:{key}",),
+        evidence_refs=(),
+        metadata={"source": "manual_seed", "not_evidence": True},
+        created_at="2999-01-01T00:00:00Z",
+        updated_at="2999-01-01T00:00:00Z",
+        last_reinforced_at="2999-01-01T00:00:00Z",
+        last_decayed_at="2999-01-01T00:00:00Z",
+    )
+
+
 def _work_item(concept: str, priority: float):
     return work_queue_module._new_item(
         kind="research",
@@ -284,6 +436,41 @@ def _work_item(concept: str, priority: float):
         now="2999-01-01T00:00:00Z",
         metadata={"related_concepts": [concept]},
     )
+
+
+def _write_affinity_snapshot(store, nodes, edges) -> None:
+    store.events_path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+        "type": "ghost_affinity_snapshot",
+        "event_id": "manual_affinity_snapshot",
+        "ts": "2999-01-01T00:00:00Z",
+        "reason": "manual_seed",
+        "nodes": [node.to_payload() for node in nodes],
+        "edges": [edge.to_payload() for edge in edges],
+    }
+    store.events_path.write_text(
+        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert store.rebuild_from_events()
+
+
+def _write_work_snapshot(store, items) -> None:
+    store.events_path.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+        "type": "ghost_work_snapshot",
+        "event_id": "manual_work_snapshot",
+        "ts": "2999-01-01T00:00:00Z",
+        "reason": "manual_seed",
+        "items": [item.to_payload() for item in items],
+    }
+    store.events_path.write_text(
+        json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    assert store.rebuild_from_events()
 
 
 class _patch_provider:
