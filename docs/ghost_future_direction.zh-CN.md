@@ -363,6 +363,50 @@ World Model 的 UserModelState 只记录：
 
 World Model 对用户的建模应该是 calibration，不是 persona。它只能帮助 Codey 更准确地预测协作成本、验证偏好和误解风险，不能把用户偏好升级为事实。
 
+### 10. Outcome / Affinity 不是事实裁决
+
+Ghost 可以学习 provider、protocol、repair 和项目习惯的 outcome，但这些 outcome 只能
+帮助排序、诊断和选择更合适的提示密度，不能升级成事实裁决。
+
+```text
+可以：
+  “这个 provider 最近常在 writer 阶段 no_json。”
+  “这个项目 release 前常跑 pytest。”
+  “短 repair context 在这类 protocol failure 上更有效。”
+
+不可以：
+  “这个 provider 最近稳定，所以它的回答更可信。”
+  “这个项目常跑 pytest，所以本轮不用 fresh verification。”
+  “repair 策略过去有效，所以这次 completion 可以直接通过。”
+```
+
+同样，provenance 的丰富程度不等于学习强度：
+
+```text
+source_refs / proof_refs 多
+  -> 更容易复盘这条经验来自哪里
+  -> 不代表同一个 event 应获得多倍 reward
+```
+
+权重、命中率、失败率和 prediction score 都只能影响：
+
+```text
+hint ranking
+repair detail selection
+diagnostic summary
+next-step suggestion
+```
+
+不能影响：
+
+```text
+EvidenceLedger
+PermissionProfile
+CompletionProof
+fresh verification result
+Research citation / evidence_refs
+```
+
 ## 能力方向
 
 ### A. Personalization：更稳的个人偏好

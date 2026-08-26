@@ -20,6 +20,10 @@ Own the semantics, minimize the syntax.
 
 这不是 0.4.13 的主线功能。0.4.13 仍然以 Verified Completion Enforcement + Repair Context Admission v1 为主。本计划只规定哪些预留可以在 0.4.13 安全完成，哪些必须留到 0.5 之后。
 
+截至 0.4.15，0.4.13 的 trace-only protocol telemetry 已落地，0.4.15 又闭合了
+`run` 命令 argv 文件系统 operand 的项目边界。本文档中 0.5 之后的部分仍是后续
+protocol portability 的有效计划；0.4.13 小节保留为已完成版本的设计边界记录。
+
 ## 核心结论
 
 coding 和 research 都要纳入 tool protocol portability，但不能强行统一模型可见工具名，也不需要为了“看起来统一”新增一套 semantic taxonomy。
@@ -139,6 +143,35 @@ codey/run_trace.py
 - Coding 兼容逻辑散在 `JsonToolCodec._tool_call()`，还没有成为所有 codec 共用的参数修复边界。
 - Research 已经有更严格的 typed contract，但协议摩擦还没有稳定进入 RunTrace。
 - Coding 和 research 的协议摩擦还没有进入同一套 bounded telemetry，无法比较“模型卡在工具语言哪里”。
+
+### Action / Command 语义边界
+
+0.4.15 已经先闭合 `run` 命令中带文件系统语义的 argv operand 边界。后续
+protocol portability 不能倒退这条规则：
+
+```text
+command allowed != command safe
+cwd inside project != argv inside project
+model-visible bash/run dialect != permission to execute arbitrary filesystem operands
+```
+
+因此未来任何 provider dialect、参数修复、structured tool path 或 native function
+calling，都必须先 lower 到 Codey 的 canonical action 语义，再进入 ActionPolicy /
+ToolRuntime：
+
+```text
+provider output
+  -> ProtocolCodec / args repair
+  -> canonical ToolCall / canonical RunCommand
+  -> referenced_paths / cwd / command class analysis
+  -> ActionPolicy
+  -> ToolRuntime execution
+```
+
+Policy 和 executor 必须看到同一份 canonical argv / cwd / referenced_paths。不能只因为
+命令名在 allowlist，或 cwd 已在项目内，就忽略 argv 内的脚本路径、pytest path
+operand、`-c` config、`--rootdir`、`--confcutdir`、`--basetemp`，以及
+`-o addopts=...` / `-oaddopts=...` 这类二层 argv。
 
 ## 0.4.13 可以做什么
 

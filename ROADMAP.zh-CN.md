@@ -2739,6 +2739,21 @@ Trace/Ledger/Proof/Evidence 概念收敛 -> 0.5 横向架构线，先定义不�
 Provider/protocol outcome learning -> 0.5.4，不回流 evidence / permission / completion verdict
 ```
 
+剩余 review finding 的版本归属固定如下，避免后续把架构债混进 A/B 修复：
+
+| finding | 0.5 归属 | 文档原则 |
+| --- | --- | --- |
+| Research source content 进入模型后的 prompt-injection 边界 | 0.5.3 prompt surface；先 A/B，再改默认生产渲染 | source content 是 data，不是 instruction；wrapper 不能降低 evidence quality |
+| TaskRunner 继续作为 subsystem convergence point | 0.5 横向架构线；按 phase 抽 RunOperationState / EffectLog | 拆 state transition，不新增 Manager |
+| RunTrace / Ledger / Evidence / Proof / Review 概念数量偏多 | 0.5 横向架构线；先定义 source-of-truth 不变式 | Action / Observation / Artifact / Verification / Decision 优先，projection 后置 |
+| Provider / protocol outcome 学习 | 0.5.4 | outcome hint 只能影响 repair strategy / diagnosis，不能成为 evidence、permission 或 completion verdict |
+| World Model | 0.5.7 / 0.5.8 | belief / prediction / calibration 都不是 truth confidence |
+| 本地 read-modify-write 状态并发写保护 | 0.5.0 / 0.5.1 继续推广 locked mutation | atomic write 不是 transaction；event append / projection rebuild 要有临界区 |
+| command/action 语义 IR | 0.5.2 起作为 protocol portability 地基 | command allowed 不是 command safe；cwd 在项目内不代表 argv operand 在项目内 |
+
+已在 0.4.15 收口的 provider override、CDP session lifecycle、CI matrix 和 README
+结构文档问题，不再作为 0.5 能力项；后续只在 regression test 或 release evidence 中维护。
+
 Research untrusted source wrapper 的顺序必须是 A/B-first：
 
 ```text
@@ -3129,6 +3144,27 @@ model_tool_contract_hash 覆盖最终模型可见文本
 RunTrace 同时记录 controller_action_contract_hash / runtime_tool_contract_hash
 ```
 
+本版还承接 Research untrusted source wrapper 的验证，但必须按 A/B-first 顺序落地：
+
+```text
+tests/fixtures/research_prompt_injection/
+tests/test_research_source_rendering.py
+tests/manual/research_source_rendering_ab.py
+codey/research/source_rendering.py（只有 A/B 通过后才接入默认 open_url 渲染）
+```
+
+wrapper 只能改变网页来源内容的模型可见边界，不改变 Research planner、tool schema、
+EvidenceLedger、citation contract 或 completion gate。默认生产路径必须先保持旧渲染，
+直到 baseline / treatment 都有 result JSON、journal 和 transcript，且 treatment 证明：
+
+```text
+source injection text 没有变成 tool action
+source body 被明确标记为 data / untrusted source
+evidence quality 不降
+source coverage 不降
+completion honesty 不降
+```
+
 直接收益：
 
 ```text
@@ -3164,8 +3200,9 @@ research open_url / knowledge_write 不被改名成 read / write
 
 ### A/B
 
-默认 parity 不需要 A/B。若本版顺手压缩工具说明或改变模型可见文案，必须走
-`tests/manual/tool_protocol_portability_ab.py`。
+默认 parity 不需要 A/B。若本版顺手压缩工具说明、改变模型可见文案，或启用
+Research untrusted source wrapper 的生产默认渲染，必须先走
+`tests/manual/tool_protocol_portability_ab.py` 或专用 Research source-rendering A/B。
 
 ## 0.5.4 - Provider / Protocol Affinity + Repair Outcome Learning v1
 
@@ -4024,16 +4061,20 @@ Local context 直接写入 accepted state
 connector 任意读写本地文件或联网
 ```
 
-## 0.4.13 未发布收口与 0.5 切入
+## 0.4.13-0.4.15 收口与 0.5 切入
 
-0.4.13 现在已经完成核心：一轮 bounded repair、CompletionProof provenance、
-repair context admission、protocol telemetry。未发布前不建议把 Pi-style durable
-harness 大改塞进 0.4.13；它会污染 release A/B。应该只做两个收口动作：
+0.4.13 已经完成核心：一轮 bounded repair、CompletionProof provenance、
+repair context admission、protocol telemetry。0.4.14 完成目录冷迁移，0.4.15 完成
+run-command boundary、provider override、locked JSON mutation 和 A/B evidence hygiene
+收口。Pi-style durable harness 不再回塞 0.4；它属于 0.5 的运行时耐久性主线。
+
+0.4 收口只保留这些 release boundary：
 
 ```text
-补文档：明确 0.4.13 只做 proof enforcement + repair admission + telemetry
-补架构测试：锁住无 CompletionManager / RepairManager、repair context 不消费 Ghost state、
-  protocol telemetry 不保存 raw prompt/reply/error
+0.4.13：proof enforcement + repair admission + telemetry
+0.4.14：冷迁移后的结构基线
+0.4.15：A/B 前安全与证据卫生基线
+0.4 stabilization：只修 A/B 暴露的真实 bug，不再堆能力
 ```
 
 三件 Pi 借鉴能力的具体修改落点如下，版本归属应放到 0.5.0 / 0.5.1：

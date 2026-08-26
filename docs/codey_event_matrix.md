@@ -10,6 +10,23 @@ model. Those rows must be covered by Prompt Envelope and Run Trace. `ui_visible`
 uses `false`, `sse:<surface>`, or a known UI surface name. `durable_state` uses
 the stable capability durable-state names or `none`.
 
+## Matrix Hygiene
+
+Rows below describe implemented event/projection surfaces, not future intent.
+Roadmap-only concepts such as World Model ContextSource, Research untrusted
+source wrapper, or provider protocol outcome learning should be added here only
+after code emits or consumes a real event/projection. Until then, their
+invariants live in the roadmap and principle documents.
+
+Adding a model-visible row requires the implementation to prove:
+
+```text
+Prompt Envelope source refs exist
+Run Trace records digest/counts/refs, not raw prompt or raw source body
+privacy_boundary says whether the content is data, hint, proof, or UI only
+no row can turn Ghost / World Model / transcript / source body into evidence
+```
+
 | event_id | producer | consumers | capability | durable_state | model_visible | ui_visible | policy_required | trace_required | privacy_boundary |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | run_event.turn | codey.runtime.events.RunEvent.turn_started | task_runner, run_ledger, sse:chat_stream | agent_runner | run_ledger | false | sse:chat_stream | false | false | UI/SSE and ledger projection only; Review model-visible recent log is declared separately |
