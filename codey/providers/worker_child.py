@@ -92,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _target_id(provider) -> str:
+    session = None
     try:
         session = provider.session.page.context.new_cdp_session(provider.session.page)
         info = session.send("Target.getTargetInfo")
@@ -99,6 +100,15 @@ def _target_id(provider) -> str:
         return str(target.get("targetId") or "") if isinstance(target, dict) else ""
     except Exception:
         return ""
+    finally:
+        # The CDP session is a browser-side resource; a one-shot query must
+        # not leak it for the lifetime of the page.
+        detach = getattr(session, "detach", None)
+        if callable(detach):
+            try:
+                detach()
+            except Exception:
+                pass
 
 
 def _event(name: str, **payload) -> None:

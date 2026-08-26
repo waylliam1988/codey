@@ -1214,6 +1214,48 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
             self.assertEqual(reserved.provider_id, "qwen")
 
 
+class TargetIdSessionTests(unittest.TestCase):
+    def _provider(self, session) -> object:
+        page = mock.Mock()
+        page.context.new_cdp_session = mock.Mock(return_value=session)
+        return mock.Mock(session=mock.Mock(page=page))
+
+    def test_target_id_detaches_cdp_session(self) -> None:
+        session = mock.Mock()
+        session.send.return_value = {"targetInfo": {"targetId": "T-1"}}
+
+        result = provider_worker_child._target_id(self._provider(session))
+
+        self.assertEqual(result, "T-1")
+        session.detach.assert_called_once()
+
+    def test_target_id_still_detaches_when_query_fails(self) -> None:
+        session = mock.Mock()
+        session.send.side_effect = RuntimeError("cdp down")
+
+        result = provider_worker_child._target_id(self._provider(session))
+
+        self.assertEqual(result, "")
+        session.detach.assert_called_once()
+
+    def test_detach_failure_does_not_change_result(self) -> None:
+        session = mock.Mock()
+        session.send.return_value = {"targetInfo": {"targetId": "T-2"}}
+        session.detach.side_effect = RuntimeError("already detached")
+
+        result = provider_worker_child._target_id(self._provider(session))
+
+        self.assertEqual(result, "T-2")
+
+    def test_session_without_detach_is_ignored(self) -> None:
+        session = mock.Mock(spec=["send"])
+        session.send.return_value = {"targetInfo": {"targetId": "T-3"}}
+
+        result = provider_worker_child._target_id(self._provider(session))
+
+        self.assertEqual(result, "T-3")
+
+
 class SelfRepairWorkerTests(unittest.TestCase):
     def test_parent_runner_uses_subprocess_and_parses_result(self) -> None:
         completed = mock.Mock(
