@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from pathlib import Path
 
 import codey.policies.action as action_policy
 from codey.policies.action import (
@@ -169,6 +170,79 @@ class ActionPolicyTests(unittest.TestCase):
         self.assertEqual(allowed.decision, DECISION_ALLOW)
         self.assertEqual(denied.decision, DECISION_DENY)
         self.assertEqual(denied.reason_code, "command_not_allowed")
+
+    def test_run_command_guard_denies_python_script_paths_outside_project(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            project = base / "project"
+            project.mkdir()
+            outside = base / "outside.py"
+            outside.write_text("print('outside')\n", encoding="utf-8")
+            (project / "inside.py").write_text("print('inside')\n", encoding="utf-8")
+
+            allowed = evaluate_action(ActionSubject(
+                "run_command",
+                permission_profile="coding_writer",
+                project=str(project),
+                path=".",
+                command="python inside.py",
+            ))
+            denied = [
+                evaluate_action(ActionSubject(
+                    "run_command",
+                    permission_profile="coding_writer",
+                    project=str(project),
+                    path=".",
+                    command=command,
+                ))
+                for command in (
+                    "python ../outside.py",
+                    f"python {outside.as_posix()}",
+                    "python -m py_compile ../outside.py",
+                )
+            ]
+
+        self.assertEqual(allowed.decision, DECISION_ALLOW)
+        self.assertTrue(all(decision.decision == DECISION_DENY for decision in denied))
+        self.assertTrue(all(decision.reason_code == "command_path_escape" for decision in denied))
+
+    def test_run_command_guard_denies_pytest_paths_outside_project(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            project = base / "project"
+            project.mkdir()
+            outside = base / "outside"
+            outside.mkdir()
+            outside_ini = base / "pytest.ini"
+            outside_ini.write_text("[pytest]\n", encoding="utf-8")
+
+            allowed = evaluate_action(ActionSubject(
+                "run_command",
+                permission_profile="coding_writer",
+                project=str(project),
+                path=".",
+                command="python -m pytest -q tests",
+            ))
+            denied = [
+                evaluate_action(ActionSubject(
+                    "run_command",
+                    permission_profile="coding_writer",
+                    project=str(project),
+                    path=".",
+                    command=command,
+                ))
+                for command in (
+                    "pytest ../outside",
+                    f"pytest {outside.as_posix()}",
+                    "pytest -c ../pytest.ini",
+                    "pytest --rootdir=..",
+                    "python -m pytest --rootdir=../outside",
+                )
+            ]
+
+        self.assertEqual(allowed.decision, DECISION_ALLOW)
+        self.assertTrue(all(decision.decision == DECISION_DENY for decision in denied))
+        self.assertTrue(all(decision.reason_code == "command_path_escape" for decision in denied))
 
     def test_shell_requires_approval_channel(self) -> None:
         with tempfile.TemporaryDirectory() as td:

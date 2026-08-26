@@ -17,7 +17,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
-from codey.policies.command_line import split_run_command
+from codey.policies.run_command_semantics import (
+    RunCommandPolicyError,
+    canonical_run_command,
+)
 from codey.policies.permissions import PermissionProfile, profile_for_name
 from codey.utils.refs import is_valid_hostname
 
@@ -397,14 +400,15 @@ def run_command_guard(subject: ActionSubject) -> ActionPolicyDecision | None:
             display="command required",
         )
     try:
-        argv = split_run_command(command)
-    except ValueError as exc:
+        canonical = canonical_run_command(subject.project, subject.path or ".", command)
+    except RunCommandPolicyError as exc:
         return ActionPolicyDecision.deny(
             subject,
             guard_id="run_command_guard",
-            reason_code="invalid_command",
-            display=f"invalid command: {exc}",
+            reason_code=exc.reason_code,
+            display=exc.display,
         )
+    argv = list(canonical.argv)
     if command_has_forbidden_tokens(argv) or not is_allowed_run_command(argv):
         return ActionPolicyDecision.deny(
             subject,

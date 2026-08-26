@@ -24,7 +24,10 @@ from codey.policies.action import (
     is_suite_run_command,
     strip_python_flags,
 )
-from codey.policies.command_line import split_run_command
+from codey.policies.run_command_semantics import (
+    RunCommandPolicyError,
+    canonical_run_command,
+)
 from codey.workspace.bounded_scan import (
     DEFAULT_MAX_DIR_ENTRIES,
     DEFAULT_MAX_SCAN_DIRS,
@@ -985,11 +988,12 @@ def run_command_raw(
     if decision.decision == DECISION_DENY:
         return _policy_error_outcome(decision)
     try:
-        argv = split_run_command(command)
-    except ValueError as exc:
+        canonical = canonical_run_command(root, rel or ".", command)
+    except RunCommandPolicyError as exc:
         # Fail closed: an untokenizable command never executes.
-        return ToolOutcome.error(f"invalid command: {exc}")
-    cwd = safe_join(root, rel or ".")
+        return ToolOutcome.error(exc.display, error_code=exc.reason_code)
+    argv = list(canonical.argv)
+    cwd = canonical.cwd
     if not cwd.is_dir():
         return ToolOutcome.error(f"not a directory: {rel}")
     env = os.environ.copy()

@@ -29,6 +29,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from codey.completion.contract import (
     CHECK_FAIL,
@@ -284,6 +285,8 @@ def coding_verification_state(
     selected_check: object,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
+    *,
+    root: str | Path,
 ) -> str:
     """Classify local verification freshness for the selected candidate.
 
@@ -294,12 +297,24 @@ def coding_verification_state(
     if selected_check is None:
         return VERIFICATION_UNOBSERVED
     if any(
-        check_covers_selected_candidate(selected_check, item.command, item.cwd, files)
+        check_covers_selected_candidate(
+            selected_check,
+            item.command,
+            item.cwd,
+            files,
+            root=root,
+        )
         for item in evidence.failed_checks_after_edit
     ):
         return VERIFICATION_FRESH_FAIL
     if any(
-        check_covers_selected_candidate(selected_check, item.command, item.cwd, files)
+        check_covers_selected_candidate(
+            selected_check,
+            item.command,
+            item.cwd,
+            files,
+            root=root,
+        )
         for item in evidence.successful_checks
     ):
         return VERIFICATION_FRESH_PASS
@@ -333,6 +348,8 @@ def relevant_verification_pairs(
     selected_check: object,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
+    *,
+    root: str | Path,
 ) -> tuple[tuple[str, str], ...]:
     """The check commands that actually decided the verification state.
 
@@ -352,7 +369,13 @@ def relevant_verification_pairs(
         return ()
     pairs: list[tuple[str, str]] = []
     for item in items:
-        if not check_covers_selected_candidate(selected_check, item.command, item.cwd, files):
+        if not check_covers_selected_candidate(
+            selected_check,
+            item.command,
+            item.cwd,
+            files,
+            root=root,
+        ):
             continue
         pair = (item.command, item.cwd)
         if pair not in pairs:
@@ -566,13 +589,21 @@ def decisive_failure_fact(
     selected_check: object,
     evidence: ExecutionEvidence,
     files: tuple[str, ...],
+    *,
+    root: str | Path,
 ) -> CheckEvidence | None:
     """The first failing check that covers the selected candidate, if any."""
 
     if selected_check is None:
         return None
     for item in evidence.failed_checks_after_edit:
-        if check_covers_selected_candidate(selected_check, item.command, item.cwd, files):
+        if check_covers_selected_candidate(
+            selected_check,
+            item.command,
+            item.cwd,
+            files,
+            root=root,
+        ):
             return item
     return None
 

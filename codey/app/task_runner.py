@@ -3173,14 +3173,25 @@ class TaskRunner:
         checkpoint_green = inherited_green or review_cycle.inherited_checks_passed
 
         def build_enforcement_decision() -> tuple[Any, VerificationProvenance, tuple[str, ...], str]:
-            local_state = coding_verification_state(selected_check, work.evidence, files)
+            local_state = coding_verification_state(
+                selected_check,
+                work.evidence,
+                files,
+                root=project,
+            )
             provenance = verification_provenance(
                 local_state=local_state,
                 checkpoint_green=checkpoint_green,
             )
             analysis_refs = matching_analysis_run_refs(
                 work.analysis_run_payloads,
-                relevant_verification_pairs(local_state, selected_check, work.evidence, files),
+                relevant_verification_pairs(
+                    local_state,
+                    selected_check,
+                    work.evidence,
+                    files,
+                    root=project,
+                ),
                 project=project,
             )
             proof = build_coding_completion_proof(
@@ -3194,7 +3205,12 @@ class TaskRunner:
             )
             failure_class = ""
             if proof is not None and not proof.satisfied:
-                decisive = decisive_failure_fact(selected_check, work.evidence, files)
+                decisive = decisive_failure_fact(
+                    selected_check,
+                    work.evidence,
+                    files,
+                    root=project,
+                )
                 failure_class = classify_verification_failure(
                     proof_status=proof.status,
                     selected_check_present=selected_check is not None,
@@ -3233,7 +3249,14 @@ class TaskRunner:
                 projection = project_repair_context(
                     proof=proof.to_payload(),
                     failure_class=failure_class,
-                    decisive_checks=(decisive_failure_fact(selected_check, work.evidence, files),),
+                    decisive_checks=(
+                        decisive_failure_fact(
+                            selected_check,
+                            work.evidence,
+                            files,
+                            root=project,
+                        ),
+                    ),
                     changed_files=files,
                     analysis_run_refs=analysis_refs,
                 )
@@ -3318,6 +3341,7 @@ class TaskRunner:
                         item.command,
                         item.cwd,
                         files,
+                        root=project,
                     )
                     for item in work.evidence.successful_checks
                 )

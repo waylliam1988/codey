@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from codey.completion.contract import (
     COMPLETION_BLOCKED,
@@ -53,6 +55,12 @@ def _check(command: str, cwd: str = ".", **extra):
     return CheckEvidence(command, cwd, **extra)
 
 
+# Commands used in these tests carry no filesystem operands, so any real
+# directory satisfies the shared canonicalizer; coverage matching itself is
+# root-independent for exact-match candidates.
+_ROOT = Path(tempfile.gettempdir())
+
+
 def _selected():
     from codey.completion.verification_policy import VerificationCandidate
 
@@ -80,11 +88,21 @@ class TriStateTests(unittest.TestCase):
         # Reads and searches are tool events too: they never make verification
         # fresh, and they must not turn into a fake failure either.
         self.assertEqual(
-            coding_verification_state(selected, _StubEvidence(observed_tool_events=7), files),
+            coding_verification_state(
+                selected,
+                _StubEvidence(observed_tool_events=7),
+                files,
+                root=_ROOT,
+            ),
             VERIFICATION_UNOBSERVED,
         )
         self.assertEqual(
-            coding_verification_state(None, _StubEvidence(observed_tool_events=7), files),
+            coding_verification_state(
+                None,
+                _StubEvidence(observed_tool_events=7),
+                files,
+                root=_ROOT,
+            ),
             VERIFICATION_UNOBSERVED,
         )
         # A covering check that passed after the latest edit is fresh.
@@ -93,6 +111,7 @@ class TriStateTests(unittest.TestCase):
                 selected,
                 _StubEvidence(successful=[_check("pytest -q")], observed_tool_events=3),
                 files,
+                root=_ROOT,
             ),
             VERIFICATION_FRESH_PASS,
         )
@@ -106,6 +125,7 @@ class TriStateTests(unittest.TestCase):
                     observed_tool_events=4,
                 ),
                 files,
+                root=_ROOT,
             ),
             VERIFICATION_FRESH_FAIL,
         )
@@ -125,7 +145,9 @@ class TriStateTests(unittest.TestCase):
         # Only checks covering the selected candidate are decisive: a passing
         # run of the same command in a sibling package is real history but not
         # this proof's fact.
-        pairs = relevant_verification_pairs(VERIFICATION_FRESH_PASS, selected, evidence, files)
+        pairs = relevant_verification_pairs(
+            VERIFICATION_FRESH_PASS, selected, evidence, files, root=_ROOT
+        )
         self.assertEqual(pairs, (("pytest -q", "."),))
 
         failing = _StubEvidence(
@@ -134,15 +156,21 @@ class TriStateTests(unittest.TestCase):
             observed_tool_events=5,
         )
         self.assertEqual(
-            relevant_verification_pairs(VERIFICATION_FRESH_FAIL, selected, failing, files),
+            relevant_verification_pairs(
+                VERIFICATION_FRESH_FAIL, selected, failing, files, root=_ROOT
+            ),
             (("pytest -q", "."),),
         )
         self.assertEqual(
-            relevant_verification_pairs(VERIFICATION_UNOBSERVED, selected, evidence, files),
+            relevant_verification_pairs(
+                VERIFICATION_UNOBSERVED, selected, evidence, files, root=_ROOT
+            ),
             (),
         )
         self.assertEqual(
-            relevant_verification_pairs(VERIFICATION_FRESH_PASS, None, evidence, files),
+            relevant_verification_pairs(
+                VERIFICATION_FRESH_PASS, None, evidence, files, root=_ROOT
+            ),
             (),
         )
 
@@ -306,11 +334,13 @@ class ProofTests(unittest.TestCase):
             "cwd_ref": path_ref("packages/a", project=project),
             "ok": True,
         }]
-        state = coding_verification_state(_selected(), evidence, ("src/mod.py",))
+        state = coding_verification_state(_selected(), evidence, ("src/mod.py",), root=_ROOT)
         provenance = verification_provenance(local_state=state, checkpoint_green=False)
         refs = matching_analysis_run_refs(
             analysis_runs,
-            relevant_verification_pairs(state, _selected(), evidence, ("src/mod.py",)),
+            relevant_verification_pairs(
+                state, _selected(), evidence, ("src/mod.py",), root=_ROOT
+            ),
             project=project,
         )
         proof = build_coding_completion_proof(
@@ -413,11 +443,11 @@ class ProofTests(unittest.TestCase):
         evidence = _StubEvidence(
             failed=[_check("ruff check ."), _check("pytest -q")],
         )
-        decisive = decisive_failure_fact(_selected(), evidence, ("src/mod.py",))
+        decisive = decisive_failure_fact(_selected(), evidence, ("src/mod.py",), root=_ROOT)
         self.assertIsNotNone(decisive)
         assert decisive is not None
         self.assertEqual(decisive.command, "pytest -q")
-        self.assertIsNone(decisive_failure_fact(None, evidence, ("src/mod.py",)))
+        self.assertIsNone(decisive_failure_fact(None, evidence, ("src/mod.py",), root=_ROOT))
 
 
 class FailureClassTests(unittest.TestCase):

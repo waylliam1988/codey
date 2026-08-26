@@ -11,6 +11,10 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
 from codey.policies.command_line import split_run_command
+from codey.policies.run_command_semantics import (
+    RunCommandPolicyError,
+    canonical_run_command,
+)
 from codey.workspace.config import path_matches_ignored_prefix
 from codey.toolchain.runtime import _is_allowed_run_command
 
@@ -75,11 +79,12 @@ def _safe_cwd(root: Path, value: object) -> str | None:
     return path.as_posix()
 
 
-def _allowed_and_available(command: str) -> bool:
+def _allowed_and_available(root: str | Path, cwd: str, command: str) -> bool:
     try:
-        argv = split_run_command(command)
-    except ValueError:
+        canonical = canonical_run_command(root, cwd, command)
+    except RunCommandPolicyError:
         return False
+    argv = list(canonical.argv)
     return (
         bool(argv)
         and shutil.which(argv[0]) is not None
@@ -100,7 +105,7 @@ def _candidate(
     safe_cwd = _safe_cwd(root, cwd)
     if not text or safe_cwd is None or not (root / safe_cwd).is_dir():
         return None
-    if not _allowed_and_available(text):
+    if not _allowed_and_available(root, safe_cwd, text):
         return None
     priority = max(source_priority, 100 if previously_passed else 0)
     return VerificationCandidate(text, safe_cwd, source, previously_passed, priority)
@@ -687,10 +692,12 @@ def check_covers_changes(
     command: str,
     cwd: str,
     changed_paths: Sequence[str],
+    *,
+    root: str | Path,
 ) -> bool:
     candidate = VerificationCandidate(command, cwd, "successful run")
     return (
-        _allowed_and_available(command)
+        _allowed_and_available(root, cwd, command)
         and select_verification_candidate((candidate,), changed_paths) is not None
     )
 
@@ -700,6 +707,8 @@ def check_covers_selected_candidate(
     command: str,
     cwd: str,
     changed_paths: Sequence[str],
+    *,
+    root: str | Path,
 ) -> bool:
     if check_matches_candidate(candidate, command, cwd):
         return True
@@ -707,7 +716,7 @@ def check_covers_selected_candidate(
         bool(_command_family(candidate.command))
         and _command_family(candidate.command) == _command_family(command)
         and _is_full_family_command(command)
-        and check_covers_changes(command, cwd, changed_paths)
+        and check_covers_changes(command, cwd, changed_paths, root=root)
     )
 
 

@@ -20,6 +20,10 @@ from codey.completion.verification_policy import (
     verification_candidate_lines,
 )
 
+# Commands in coverage tests carry no filesystem operands, so any real
+# directory satisfies the canonicalizer; which() is mocked per test.
+_ROOT = Path(tempfile.gettempdir())
+
 
 class VerificationPolicyTests(unittest.TestCase):
     def test_manifest_helpers_reject_symlinks_without_following_them(self) -> None:
@@ -347,6 +351,7 @@ class VerificationPolicyTests(unittest.TestCase):
                 "bun test",
                 ".",
                 ("src/app.ts",),
+                root=_ROOT,
             )
         )
 
@@ -588,13 +593,13 @@ class VerificationPolicyTests(unittest.TestCase):
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
     def test_successful_check_must_cover_all_code_changes(self, _which) -> None:
         self.assertTrue(
-            check_covers_changes("python -m pytest", "pkg", ("pkg/app.py",))
+            check_covers_changes("python -m pytest", "pkg", ("pkg/app.py",), root=_ROOT)
         )
         self.assertFalse(
-            check_covers_changes("python -m pytest", "pkg", ("other/app.py",))
+            check_covers_changes("python -m pytest", "pkg", ("other/app.py",), root=_ROOT)
         )
         self.assertFalse(
-            check_covers_changes("python -m pytest", ".", ("frontend/app.ts",))
+            check_covers_changes("python -m pytest", ".", ("frontend/app.ts",), root=_ROOT)
         )
 
     @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
@@ -606,6 +611,7 @@ class VerificationPolicyTests(unittest.TestCase):
                 "python -m pytest",
                 ".",
                 ("src/app.py",),
+                root=_ROOT,
             )
         )
 
@@ -618,6 +624,7 @@ class VerificationPolicyTests(unittest.TestCase):
                 "python -m pytest -q -ra",
                 ".",
                 ("src/app.py",),
+                root=_ROOT,
             )
         )
 
@@ -638,6 +645,7 @@ class VerificationPolicyTests(unittest.TestCase):
                         command,
                         ".",
                         ("src/app.py",),
+                        root=_ROOT,
                     )
                 )
 
@@ -650,6 +658,7 @@ class VerificationPolicyTests(unittest.TestCase):
                 "python -m pytest tests/old.py",
                 ".",
                 ("src/app.py",),
+                root=_ROOT,
             )
         )
 
@@ -662,6 +671,7 @@ class VerificationPolicyTests(unittest.TestCase):
                 "python -m py_compile other.py",
                 ".",
                 ("app.py",),
+                root=_ROOT,
             )
         )
 

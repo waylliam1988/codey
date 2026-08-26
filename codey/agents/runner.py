@@ -1146,6 +1146,7 @@ def run(
                 command,
                 cwd,
                 tuple(verification_paths),
+                root=project,
             )
             for command, cwd, epoch in successful_verifications
         )
