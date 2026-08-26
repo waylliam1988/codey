@@ -24,6 +24,8 @@ Version: `0.4.14`
 
 [Version history](CHANGELOG.md)
 
+[0.4 A/B stabilization guide (zh-CN)](docs/0.4_ab_stabilization_plan.zh-CN.md)
+
 ---
 
 ## At a Glance

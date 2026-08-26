@@ -24,6 +24,8 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 [未来版本规划](ROADMAP.zh-CN.md)
 
+[0.4 A/B 稳定化执行手册](docs/0.4_ab_stabilization_plan.zh-CN.md)
+
 ---
 
 ## 一眼看懂

@@ -1,5 +1,11 @@
 # Manual live benchmarks
 
+Post-0.4.13 live testing follows the stabilization protocol in
+`docs/0.4_ab_stabilization_plan.zh-CN.md`: run one provider and one arm at a
+time, persist JSON/journal/transcripts, classify every failure before spending
+more web-model traffic, and keep replayable evidence separate from production
+RunTrace/EvidenceLedger.
+
 `research_to_code_ab.py` is the Research-to-Code handoff smoke/A-B gate for
 Writer-visible research context changes. It uses one synthetic coding fixture
 (`discounted_total`), one synthesis note, and two arms:

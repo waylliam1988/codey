@@ -587,6 +587,11 @@ contract/proof refs，不需要 A/B；改变 queued done 语义或用户可见�
 queue A/B。0.4.10 改 Writer 可见 brief 文案需要 A/B。0.4.12 Ghost continuity
 进入模型可见 prompt 必须 A/B。
 
+0.4.13 之后，0.4 进入 A/B stabilization / release evidence baseline，不再把
+新能力、目录迁移或大型抽象混进同一阶段。具体执行纪律、落盘 schema、失败归因、
+逐 provider / 逐 arm 停跑规则和 0.4 完成门槛固定在
+[`docs/0.4_ab_stabilization_plan.zh-CN.md`](docs/0.4_ab_stabilization_plan.zh-CN.md)。
+
 ## 0.4.0 - Evidence Kernel / Research Object Model v1
 
 状态：已落地。目标是让每次 Research 产出结构化对象，而不是只有 summary、note
