@@ -47,6 +47,8 @@ from codey.repairs.self_repair_worker import _run_worker_job, run_self_repair_wo
 
 def _source_tree(root: Path) -> None:
     (root / "codey" / "providers" / "web_drivers").mkdir(parents=True)
+    (root / "codey" / "automation").mkdir(parents=True)
+    (root / "codey" / "app").mkdir(parents=True)
     (root / "tests").mkdir()
     (root / "codey" / "__init__.py").write_text("", encoding="utf-8")
     (root / "codey" / "providers" / "__init__.py").write_text("", encoding="utf-8")
@@ -57,6 +59,25 @@ def _source_tree(root: Path) -> None:
     (root / "codey" / "providers" / "web_drivers" / "qwen.py").write_text(
         "VALUE = 1\n",
         encoding="utf-8",
+    )
+    for rel in (
+        "codey/providers/web_provider.py",
+        "codey/providers/web_driver.py",
+        "codey/providers/web_drivers/common.py",
+        "codey/providers/profiles.py",
+        "codey/providers/profiles.json",
+        "codey/providers/controls.py",
+        "codey/providers/flow.py",
+        "codey/providers/send_loop.py",
+        "codey/providers/submission.py",
+        "codey/providers/timeouts.py",
+        "codey/automation/web_clipboard.py",
+        "codey/automation/browser.py",
+    ):
+        (root / rel).write_text("# shared surface\n", encoding="utf-8")
+    # Runtime files that must never enter an installed override.
+    (root / "codey" / "app" / "task_runner.py").write_text(
+        "RUNTIME = 'unrelated'\n", encoding="utf-8"
     )
     (root / "tests" / "test_qwen.py").write_text("def test_qwen():\n    pass\n", encoding="utf-8")
 
@@ -113,6 +134,139 @@ class AdapterOverridesTests(unittest.TestCase):
             )
             restored = adapter_overrides.load_enabled_override("qwen", state_home=state, current_root=root)
             self.assertEqual(restored.generation, first.generation)
+
+    def test_candidate_only_copies_adapter_repair_surface(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            state = Path(td) / "state"
+
+            override = adapter_overrides.install_candidate("qwen", root, state_home=state)
+
+            installed = {
+                path.relative_to(override.root).as_posix().replace("\\", "/")
+                for path in override.root.rglob("*")
+                if path.is_file()
+            }
+            surface = set(adapter_repair_surface("qwen"))
+            expected = surface | set(
+                adapter_overrides._package_init_paths_for(tuple(surface))
+            )
+
+            self.assertTrue(override.root.is_dir())
+            self.assertEqual(installed, expected)
+            self.assertEqual(
+                (
+                    override.root / "codey" / "providers" / "web_drivers" / "qwen.py"
+                ).read_text(encoding="utf-8"),
+                "VALUE = 1\n",
+            )
+            shim_text = (override.root / "codey" / "__init__.py").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("__path__.append", shim_text)
+            self.assertFalse(any("task_runner" in rel for rel in installed))
+
+    def test_unrelated_codey_files_are_not_copied(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            state = Path(td) / "state"
+
+            override = adapter_overrides.install_candidate("qwen", root, state_home=state)
+
+            self.assertTrue((override.root / "codey" / "__init__.py").exists())
+            self.assertFalse(
+                (override.root / "codey" / "app" / "task_runner.py").exists()
+            )
+            self.assertFalse((override.root / "codey" / "app").exists())
+            self.assertFalse((override.root / "tests" / "test_qwen.py").exists())
+
+    def test_candidate_missing_surface_file_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            (root / "codey" / "providers" / "web_provider.py").unlink()
+            state = Path(td) / "state"
+
+            with self.assertRaises(ValueError):
+                adapter_overrides.install_candidate("qwen", root, state_home=state)
+
+            self.assertFalse(
+                (Path(td) / "state" / "adapter-overrides" / "qwen" / "1").exists()
+            )
+
+    def test_trim_does_not_delete_path_outside_provider_override_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            state = base / "state"
+            outside_a = base / "precious-a" / "generation"
+            outside_b = base / "precious-b" / "generation"
+            outside_a.mkdir(parents=True)
+            outside_b.mkdir(parents=True)
+            (outside_a / "keep.txt").write_text("", encoding="utf-8")
+            inside_old = (
+                adapter_overrides._provider_dir("qwen", str(state)) / "1"
+            )
+            inside_old.mkdir(parents=True)
+            index = {
+                "schema_version": 1,
+                "provider_id": "qwen",
+                "current_generation": 9,
+                "previous_generation": 8,
+                "generations": {
+                    "1": {"status": "rolled_back", "path": str(inside_old)},
+                    "2": {"status": "rolled_back", "path": str(outside_a)},
+                    "3": {"status": "rolled_back", "path": str(outside_b)},
+                    "4": {"status": "rolled_back", "path": str(outside_a)},
+                    "5": {"status": "rolled_back", "path": str(outside_b)},
+                    "6": {"status": "rolled_back", "path": str(outside_a)},
+                    "8": {"status": "rolled_back", "path": ""},
+                    "9": {"status": "active", "path": str(state / "x" / "9")},
+                },
+            }
+
+            adapter_overrides._trim_generations(index, str(state))
+
+            # Keys 1-2 fall outside MAX_GENERATIONS and are dropped from the
+            # index; only the contained one loses its directory on disk.
+            self.assertFalse(index["generations"].get("1"))
+            self.assertFalse(index["generations"].get("2"))
+            self.assertTrue(index["generations"].get("3"))
+            self.assertTrue(index["generations"].get("9"))
+            self.assertFalse(inside_old.exists())
+            self.assertTrue(outside_a.exists())
+            self.assertTrue((outside_a / "keep.txt").exists())
+            self.assertTrue(outside_b.exists())
+
+    def test_base_hash_changes_for_surface_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            before = adapter_overrides.adapter_base_hash("qwen", root)
+            (root / "codey" / "providers" / "web_drivers" / "qwen.py").write_text(
+                "VALUE = 2\n", encoding="utf-8"
+            )
+            after_driver = adapter_overrides.adapter_base_hash("qwen", root)
+            (root / "codey" / "providers" / "profiles.json").write_text(
+                "{}\n", encoding="utf-8"
+            )
+            after_profile = adapter_overrides.adapter_base_hash("qwen", root)
+
+        self.assertNotEqual(before, after_driver)
+        self.assertNotEqual(after_driver, after_profile)
+
+    def test_base_hash_does_not_change_for_unrelated_runtime_files(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            before = adapter_overrides.adapter_base_hash("qwen", root)
+            (root / "codey" / "app" / "task_runner.py").write_text(
+                "RUNTIME = 'changed'\n", encoding="utf-8"
+            )
+            after = adapter_overrides.adapter_base_hash("qwen", root)
+
+        self.assertEqual(before, after)
 
     def test_non_structural_failure_does_not_rollback(self) -> None:
         with tempfile.TemporaryDirectory() as td:
