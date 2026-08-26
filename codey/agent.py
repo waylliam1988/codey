@@ -1443,6 +1443,15 @@ def run(
                 ))
                 return finish(f"applied {len(results)} action(s) (no control element)", "protocol", turn)
             stagnant_count += 1
+            # The observation lands before the terminal check: a reply that
+            # exhausts the stagnation budget is still a protocol error, so
+            # error counts and real sends stay 1:1.
+            trace.call(
+                "record_protocol_error",
+                PROTOCOL_NO_JSON,
+                phase="writer",
+                turn=turn,
+            )
             if stagnant_count >= stagnant_turns:
                 msg = f"stopped after {stagnant_turns} turns without valid tool progress"
                 emit(RunEvent.status(f"[agent] {msg}."))
@@ -1450,12 +1459,6 @@ def run(
             emit(RunEvent.status(
                 "[agent] reply contained no valid JSON tool call; nudging the model."
             ))
-            trace.call(
-                "record_protocol_error",
-                PROTOCOL_NO_JSON,
-                phase="writer",
-                turn=turn,
-            )
             trace.call(
                 "record_protocol_repair_prompt",
                 PROTOCOL_NO_JSON,

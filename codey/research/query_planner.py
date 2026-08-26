@@ -20,7 +20,7 @@ from codey.refs import (
 )
 from codey.research.domain_profiles import EvidenceProfile
 from codey.research.proof_quality import ResearchProofReview
-from codey.redaction import looks_sensitive_code, looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret, looks_sensitive_code
 from codey.research.shape import (
     connector_id as _connector_id,
     valid_digest_ref,
@@ -478,7 +478,7 @@ def _safe_trace_code(value: object, limit: int) -> str:
 
 def _safe_trace_connector_id(value: object) -> str:
     raw = clip(value, 80)
-    if looks_sensitive_signal(raw):
+    if looks_prompt_visible_secret(raw):
         return ""
     return _connector_id(raw)
 

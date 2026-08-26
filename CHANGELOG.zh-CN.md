@@ -231,10 +231,10 @@
   使用诚实的静态 local-CI 徽标，不再伪装 GitHub Actions badge。
 - 密钥检测回归单一 owner：secret marker、provider key shape 与高熵启发式
   （含 path-like 豁免）统一由 `redaction.py` 拥有。`prompt_safety` 与 Ghost
-  signal schema 复用 `looks_sensitive_signal()` / 共享的高熵扫描，不再各自
-  维护分叉副本——AWS / GitHub-PAT / Stripe shape 现在在 prompt 可见检查里
-  同样拦截；普通源码路径（`src/main/java/util/ArrayList.java`）不再被 Ghost
-  work item / signal 误拒（此前 path-like 豁免在 Ghost 路径从未生效）。
+  signal schema 复用同一套判定，不再各自维护分叉副本——AWS / GitHub-PAT /
+  Stripe shape 现在在 prompt 可见检查里同样拦截；普通源码路径
+  （`src/main/java/util/ArrayList.java`）不再被 Ghost work item / signal
+  误拒（此前 path-like 豁免在 Ghost 路径从未生效）。
 - Adapter repair 不再越出自己的错误边界：sandbox 创建移入受保护区域，
   只读引用文件缺失（例如打包安装环境没有 `tests/`）或 `source_root` 损坏时，
   返回有界的 `AdapterRepairResult`、记录 `adapter_repair_error` journal、
@@ -246,6 +246,19 @@
   源码树或沙箱之外。
 - `.githooks/pre-commit` 以可执行位（`100755`）入库，macOS/Linux 新 clone
   无需手动 chmod 即可运行本地 CI。
+- prompt/模型可见文本的密钥筛只有一个具名入口：
+  `redaction.looks_prompt_visible_secret()`（marker | provider key shape |
+  高熵）。旧的 marker+shape 版 `looks_sensitive_signal` 已删除，调用方不
+  可能再忘掉熵分支：执行证据、repair context、run trace、research 边界全部
+  走同一入口——失败 check 的输出尾部或命令行里出现无 marker 的纯高熵
+  token 时，现在会被丢弃并记 `repair_output_line_screened` /
+  `repair_check_command_screened`，不再进入模型可见上下文。
+- Writer telemetry 补记终止前的 no-JSON 回复：空 JSON 对象（无 calls/
+  control）在 stagnation 返回之前先记 `no_json` 观测——协议错误观测数与真实
+  发送保持 1:1（repair prompt 仍只统计真实发出的 nudge）。
+- Adapter repair sandbox 一律拒绝 symlink：复制的 `codey` 包树、
+  `pyproject.toml` 与引用文件中出现符号链接时直接拒绝，不再在复制时跟随，
+  堵上"树内链接指向仓库外 → 目标内容被复制进沙箱"的残余边界。
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 

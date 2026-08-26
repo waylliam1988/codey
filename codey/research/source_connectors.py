@@ -37,8 +37,8 @@ from codey.research.identity import (
 from codey.redaction import (
     SECRET_MARKER_RE,
     SECRET_SHAPE_RE,
+    looks_prompt_visible_secret,
     looks_sensitive_code,
-    looks_sensitive_signal,
 )
 from codey.research.shape import (
     bounded_limit as _bounded_limit,
@@ -322,7 +322,7 @@ class SourceHit:
             if published_at:
                 payload["published_at"] = published_at
         refs = bounded_refs(
-            (item for item in self.metadata_refs if not looks_sensitive_signal(item)),
+            (item for item in self.metadata_refs if not looks_prompt_visible_secret(item)),
             limit=8,
         )
         if refs:
@@ -591,21 +591,21 @@ def _safe_fetched_content_kind(value: object) -> str:
 
 def _safe_mime_type(value: object) -> str:
     text = str(value or "").strip().lower()
-    if not text or looks_sensitive_signal(text):
+    if not text or looks_prompt_visible_secret(text):
         return ""
     return text if text in _ALLOWED_FETCHED_MIME_TYPES else ""
 
 
 def _safe_hit_source_kind(value: object) -> str:
     text = identifier(value, 80)
-    if not text or looks_sensitive_signal(text):
+    if not text or looks_prompt_visible_secret(text):
         return ""
     return text if text in _ALLOWED_HIT_SOURCE_KINDS else ""
 
 
 def _safe_published_at(value: object) -> str:
     text = str(value or "").strip()
-    if not text or looks_sensitive_signal(text):
+    if not text or looks_prompt_visible_secret(text):
         return ""
     return text if _SAFE_PUBLISHED_AT_RE.fullmatch(text) else ""
 
@@ -618,7 +618,7 @@ def safe_connector_signal_text(value: object, *, limit: int = 180) -> str:
         return ""
     if "/" in text and not _safe_scientific_slash_term(text):
         return ""
-    if looks_sensitive_signal(text):
+    if looks_prompt_visible_secret(text):
         return ""
     if re.fullmatch(r"[A-Za-z0-9_./+=:-]{24,}", text):
         return ""

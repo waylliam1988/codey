@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 
 from codey.events import RunEvent
-from codey.execution_evidence import ExecutionEvidence
+from codey.execution_evidence import ExecutionEvidence, check_failure_summary
 from codey.models import ToolCall
 from codey.tool_runtime import ToolOutcome
 from codey.work_checkpoint import CheckpointCheck
@@ -80,6 +80,22 @@ class ExecutionEvidenceTests(unittest.TestCase):
 
         self.assertFalse(evidence.has_successful_checks)
         self.assertEqual(evidence.failed_checks_after_edit, [])
+
+    def test_failure_summary_screens_markers_shapes_and_entropy(self) -> None:
+        class Outcome:
+            model_text = (
+                "FAILED tests/test_auth.py\n"
+                "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk29\n"
+                "api_key=sk-abcdefghijklmnop1234\n"
+                "1 failed"
+            )
+
+        summary = check_failure_summary(Outcome())
+
+        self.assertNotIn("Aa1Bb2", summary)
+        self.assertNotIn("sk-abcdefghij", summary)
+        self.assertIn("FAILED tests/test_auth.py", summary)
+        self.assertIn("1 failed", summary)
 
     def test_truncated_search_is_not_reported_complete(self) -> None:
         evidence = ExecutionEvidence()

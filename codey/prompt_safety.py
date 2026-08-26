@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from codey.redaction import looks_high_entropy_secret, looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret
 
 
 _INTERNAL_CONTEXT_RE = re.compile(
@@ -92,7 +92,7 @@ def contains_prompt_visible_sensitive_text(value: object) -> bool:
     text = str(value or "")
     if not text:
         return False
-    return looks_sensitive_signal(text) or looks_high_entropy_secret(text)
+    return looks_prompt_visible_secret(text)
 
 
 def contains_prompt_control_text(value: object) -> bool:

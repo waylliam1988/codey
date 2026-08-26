@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from codey.ghost.numbers import coerce_unit_float
-from codey.redaction import looks_high_entropy_secret, looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret
 
 SCHEMA_VERSION = 1
 MAX_SIGNALS_PER_TURN = 5
@@ -223,7 +223,7 @@ def contains_sensitive_signal_text(*values: object) -> bool:
         text = str(value or "")
         if not text:
             continue
-        if looks_sensitive_signal(text) or looks_high_entropy_secret(text):
+        if looks_prompt_visible_secret(text):
             return True
     return False
 

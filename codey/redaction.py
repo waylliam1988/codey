@@ -84,8 +84,15 @@ def looks_secret_shape(value: object) -> bool:
     return bool(SECRET_SHAPE_RE.search(text))
 
 
-def looks_sensitive_signal(value: object) -> bool:
-    return looks_secret_marker(value) or looks_secret_shape(value)
+def looks_prompt_visible_secret(value: object) -> bool:
+    """Single admission gate for prompt/model-visible text.
+
+    Marker words, provider key shapes, and random high-entropy tokens all
+    qualify. Every boundary that feeds a model or durable storage screens
+    through this one entry so callers cannot forget one of the branches.
+    """
+
+    return looks_secret_marker(value) or looks_secret_shape(value) or looks_high_entropy_secret(value)
 
 
 def looks_high_entropy_secret(value: object) -> bool:
@@ -151,8 +158,8 @@ __all__ = [
     "SECRET_MARKER_RE",
     "SECRET_SHAPE_RE",
     "looks_high_entropy_secret",
+    "looks_prompt_visible_secret",
     "looks_sensitive_code",
     "looks_secret_marker",
     "looks_secret_shape",
-    "looks_sensitive_signal",
 ]

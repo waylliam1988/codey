@@ -591,6 +591,45 @@ class RepairSandboxTests(unittest.TestCase):
                 create_repair_sandbox(root, extra_files=("tests/test_qwen.py",))
             self.assertEqual(_repair_temp_roots(), before)
 
+    def test_sandbox_rejects_symlinks_in_the_source_tree(self) -> None:
+        # copytree must never follow a symlink that points out of the tree;
+        # the sandbox refuses the whole source instead of copying content.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            outside = Path(td) / "outside-secret.txt"
+            outside.write_text("secret", encoding="utf-8")
+            link = root / "codey" / "providers" / "web_drivers" / "link.py"
+            try:
+                link.symlink_to(outside)
+            except OSError:
+                self.skipTest("symlink creation requires privileges")
+                return
+
+            before = _repair_temp_roots()
+            with self.assertRaises(ValueError):
+                create_repair_sandbox(root)
+            self.assertEqual(_repair_temp_roots(), before)
+
+    def test_reference_file_symlink_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            outside = Path(td) / "outside-secret.txt"
+            outside.write_text("secret", encoding="utf-8")
+            reference = root / "tests" / "test_qwen.py"
+            reference.unlink()
+            try:
+                reference.symlink_to(outside)
+            except OSError:
+                self.skipTest("symlink creation requires privileges")
+                return
+
+            before = _repair_temp_roots()
+            with self.assertRaises(ValueError):
+                create_repair_sandbox(root, extra_files=("tests/test_qwen.py",))
+            self.assertEqual(_repair_temp_roots(), before)
+
 
 def _repair_temp_roots() -> set[Path]:
     return set(Path(tempfile.gettempdir()).glob("codey-adapter-repair-*"))

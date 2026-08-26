@@ -11,12 +11,14 @@ Reference paths are an explicit parameter boundary and validate fail-closed:
 empty, absolute, drive/rooted, or upward-traversing paths are rejected
 before any filesystem work, every reference must name an existing file
 inside the source tree, and every copy re-checks containment on both the
-source and destination side. A failed materialization always removes its
-temp root.
+source and destination side. Symlinks never enter a sandbox: a source tree
+(or reference) that contains one is rejected instead of silently following
+it. A failed materialization always removes its temp root.
 """
 
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -47,6 +49,10 @@ def create_repair_sandbox(
         # Name the missing input ourselves: raw OS errors do not carry the
         # path on every platform.
         raise FileNotFoundError(f"repair source root has no codey package: {source}")
+    _reject_symlinks(source / "codey")
+    config = source / "pyproject.toml"
+    if config.is_symlink():
+        raise ValueError(f"repair source tree must not contain symlinks: {config}")
     reference_files = tuple(_validated_reference(source, rel) for rel in extra_files)
     temp_root = Path(tempfile.mkdtemp(prefix="codey-adapter-repair-"))
     try:
@@ -65,6 +71,15 @@ def create_repair_sandbox(
     )
 
 
+def _reject_symlinks(package_root: Path) -> None:
+    for dirpath, dirnames, filenames in os.walk(package_root):
+        here = Path(dirpath)
+        for name in (*dirnames, *filenames):
+            candidate = here / name
+            if candidate.is_symlink():
+                raise ValueError(f"repair source tree must not contain symlinks: {candidate}")
+
+
 def _validated_reference(source: Path, rel: str) -> Path:
     text = str(rel or "").strip()
     if not text:
@@ -74,9 +89,12 @@ def _validated_reference(source: Path, rel: str) -> Path:
         raise ValueError(f"repair reference file must be relative: {rel}")
     if ".." in rel_path.parts:
         raise ValueError(f"repair reference file must not traverse upward: {rel}")
-    resolved_source = (source / rel_path).resolve()
+    raw_source = source / rel_path
+    resolved_source = raw_source.resolve()
     if source not in resolved_source.parents:
         raise ValueError(f"repair reference file escapes the source root: {rel}")
+    if raw_source.is_symlink():
+        raise ValueError(f"repair reference file must not be a symlink: {text}")
     if not resolved_source.is_file():
         # Name the missing input ourselves: raw OS errors do not carry the
         # path on every platform.

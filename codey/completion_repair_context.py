@@ -29,7 +29,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from codey.redaction import looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret
 
 
 COMPLETION_REPAIR_SCHEMA_VERSION = 1
@@ -406,7 +406,7 @@ def _check_facts(
         command = _text(_field(value, "command"), 240)
         if not command:
             continue
-        if looks_sensitive_signal(command):
+        if looks_prompt_visible_secret(command):
             warnings.append("repair_check_command_screened")
             continue
         exit_code = _field(value, "exit_code")
@@ -431,7 +431,7 @@ def _bounded_summary(value: Any, warnings: list[str]) -> str:
         text = line.strip()
         if not text:
             continue
-        if looks_sensitive_signal(text):
+        if looks_prompt_visible_secret(text):
             warnings.append("repair_output_line_screened")
             continue
         kept.append(text[:200])

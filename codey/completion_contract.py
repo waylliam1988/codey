@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from codey.refs import bounded_refs, digest_text, identifier, stable_ref
-from codey.redaction import looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret
 
 
 COMPLETION_CONTRACT_PREFIX = "completion_contract"
@@ -79,7 +79,7 @@ def safe_run_ref(value: object) -> str:
     text = identifier(value, 120)
     if not text:
         return ""
-    if looks_sensitive_signal(text):
+    if looks_prompt_visible_secret(text):
         return digest_text(text).removeprefix("sha256:")[:16]
     return text
 

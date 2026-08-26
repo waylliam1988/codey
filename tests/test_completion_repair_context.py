@@ -204,6 +204,7 @@ class RenderTests(unittest.TestCase):
                 "api_key=sk-abcdefghijklmnop123456\n"
                 "FAILED tests/test_auth.py\n"
                 "password=hunter2\n"
+                "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk29\n"
                 "1 failed"
             ),
         )
@@ -215,7 +216,49 @@ class RenderTests(unittest.TestCase):
         self.assertTrue(projection.admitted)
         self.assertNotIn("sk-abcdefghij", projection.prompt_text)
         self.assertNotIn("hunter2", projection.prompt_text)
+        self.assertNotIn("Aa1Bb2", projection.prompt_text)
         self.assertIn("repair_output_line_screened", projection.warnings)
+
+    def test_high_entropy_check_command_never_enters_the_prompt(self) -> None:
+        # Marker-free random blobs in a command line are screened too. With
+        # no safe decisive-check fact left, the whole projection refuses to
+        # admit anything -- fail-closed, nothing reaches the model.
+        blob = "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk29"
+        fact = DecisiveCheckFact(
+            command=f"python -c 'print(\"{blob}\")'",
+            cwd=".",
+            exit_code=1,
+        )
+        projection = project_repair_context(
+            proof=_proof_payload(),
+            failure_class="product_failure",
+            decisive_checks=(fact,),
+        )
+
+        self.assertFalse(projection.admitted)
+        self.assertEqual(projection.prompt_text, "")
+        self.assertIn("repair_check_command_screened", projection.warnings)
+        self.assertIn("refused_no_safe_check_facts", projection.warnings)
+
+    def test_entropy_line_is_screened_while_safe_facts_still_admit(self) -> None:
+        mixed = (
+            DecisiveCheckFact(command="pytest -q", cwd=".", exit_code=1),
+            DecisiveCheckFact(
+                command="ruff check .",
+                cwd=".",
+                exit_code=1,
+                result_summary=f"trace {('Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk29')} end\nerror details",
+            ),
+        )
+        projection = project_repair_context(
+            proof=_proof_payload(),
+            failure_class="product_failure",
+            decisive_checks=mixed,
+        )
+
+        self.assertTrue(projection.admitted)
+        self.assertNotIn("Aa1Bb2", projection.prompt_text)
+        self.assertIn("error details", projection.prompt_text)
 
     def test_output_tail_is_bounded(self) -> None:
         big = DecisiveCheckFact(

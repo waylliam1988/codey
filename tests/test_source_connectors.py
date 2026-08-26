@@ -11,7 +11,7 @@ from codey.refs import digest_text
 from codey.redaction import (
     looks_secret_marker,
     looks_secret_shape,
-    looks_sensitive_signal,
+    looks_prompt_visible_secret,
 )
 from codey.research.source_connectors import (
     FetchedSource,
@@ -206,7 +206,7 @@ def test_safe_connector_query_terms_mask_chinese_secret_marker_value_windows() -
 
 
 def test_redaction_markers_are_boundary_aware_for_scientific_terms() -> None:
-    assert not looks_sensitive_signal("secreted insulin secretion pathway")
+    assert not looks_prompt_visible_secret("secreted insulin secretion pathway")
     assert not looks_secret_marker("secretion")
     assert looks_secret_marker("secret_token")
     assert looks_secret_marker("api key")
@@ -230,8 +230,8 @@ def test_aws_secret_values_bind_to_marker_context_not_bare_shape() -> None:
     value = "jD2f9kQpXw7ZrNs4Tb8Vm1Ly6Hc0AgEu5Oi3SqXz"
     assert len(value) == 40
     assert not looks_secret_shape(value)
-    assert looks_sensitive_signal(f"AWS_SECRET_ACCESS_KEY={value}")
-    assert looks_sensitive_signal(f"aws secret {value}")
+    assert looks_prompt_visible_secret(f"AWS_SECRET_ACCESS_KEY={value}")
+    assert looks_prompt_visible_secret(f"aws secret {value}")
 
 
 def test_connector_query_secret_signal_detects_separator_split_markers() -> None:

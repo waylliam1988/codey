@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from codey.redaction import looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret
 
 
 _SNAKE_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
@@ -15,7 +15,7 @@ def connector_id(value: object) -> str:
 
 def safe_connector_id(value: object) -> str:
     text = str(value or "").strip()
-    if not text or looks_sensitive_signal(text):
+    if not text or looks_prompt_visible_secret(text):
         return ""
     return connector_id(text)
 

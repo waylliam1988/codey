@@ -2789,6 +2789,44 @@ class ProtocolTelemetryTests(unittest.TestCase):
         # Intro plus three repairs; nothing was sent after the terminal error.
         self.assertEqual(len(provider.sent), 4)
 
+    def test_empty_json_stagnation_counts_every_no_json_observation(self) -> None:
+        # A reply that parses as JSON but carries no calls/control takes the
+        # stagnation path: every such send is a no_json observation too,
+        # including the terminal one -- sends and observations stay 1:1
+        # while repair prompts still count only real nudges.
+        empty = '{"args":{}}'
+        provider = FakeProvider(empty, empty, empty, empty)
+        with tempfile.TemporaryDirectory() as td:
+            store = RunTraceStore(Path(td) / "state")
+            trace = store.open(
+                run_id="run-telemetry-empty-json",
+                session_id="session-telemetry-empty-json",
+                project=Path(td),
+                mode_initial="project",
+                provider_initial="fake",
+            )
+            result = agent.run(
+                provider,
+                Path(td),
+                "Read the page then finish",
+                fresh_chat=False,
+                on_event=lambda _event: None,
+                trace_recorder=trace,
+            )
+            trace.finish(status=result.stop_reason)
+
+            payload = json.loads(
+                store.path_for("session-telemetry-empty-json", "run-telemetry-empty-json").read_text(
+                    encoding="utf-8",
+                )
+            )
+
+        self.assertEqual(result.stop_reason, "no_progress")
+        writer = payload["protocol_telemetry"]["phases"]["writer"]
+        self.assertEqual(writer["protocol_error_counts"], {"no_json": 4})
+        self.assertEqual(sum(writer["repair_prompt_counts"].values()), 3)
+        self.assertEqual(len(provider.sent), 4)
+
     def test_unknown_tool_lands_as_safe_label_with_digest(self) -> None:
         unknown = '{"tool":"write_file","args":{"path":"x.py","content":"hi"}}'
         edit = (

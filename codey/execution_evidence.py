@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from codey.events import RunEvent
-from codey.redaction import looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret
 
 MAX_CHANGED_FILES = 32
 MAX_READS = 48
@@ -36,7 +36,7 @@ def check_failure_summary(outcome: object) -> str:
         text = line.strip()
         if not text:
             continue
-        if looks_sensitive_signal(text):
+        if looks_prompt_visible_secret(text):
             continue
         kept.append(text[:200])
         if len(kept) >= MAX_CHECK_SUMMARY_LINES:

@@ -24,7 +24,7 @@ from codey.refs import (
     digest_text,
     stable_ref,
 )
-from codey.redaction import looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret
 from codey.research.identity import path_ref
 
 ANALYSIS_RUN_REF_PREFIX = "analysis_run:"
@@ -166,7 +166,7 @@ def analysis_run_record(data: Mapping[str, object]) -> AnalysisRunRecord | None:
     # The display command is a convenience, never a provenance fact: the
     # digest above is authoritative. Secret-looking commands keep only their
     # digest, matching ProjectFacts' refusal to persist such commands.
-    if looks_sensitive_signal(command):
+    if looks_prompt_visible_secret(command):
         warnings.append("command_display_redacted")
         command_display = ""
     else:

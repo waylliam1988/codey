@@ -285,10 +285,9 @@ This file records Codey's release history. The newest release appears first.
   static local-CI badge instead of a GitHub Actions badge.
 - Secret detection has one owner again: `redaction.py` owns secret markers,
   provider key shapes, and the high-entropy heuristic together with its
-  path-like exemption. `prompt_safety` and the Ghost signal schema reuse
-  `looks_sensitive_signal()` / the shared entropy scan instead of keeping
-  divergent copies, so AWS / GitHub-PAT / Stripe shapes now also block in
-  prompt-visible checks, and ordinary source paths
+  path-like exemption. `prompt_safety` and the Ghost signal schema reuse it
+  instead of keeping divergent copies, so AWS / GitHub-PAT / Stripe shapes
+  now also block in prompt-visible checks, and ordinary source paths
   (`src/main/java/util/ArrayList.java`) no longer reject Ghost work items
   or signals (the exemption previously never applied on Ghost paths).
 - Adapter repair cannot escape its own error envelope anymore: sandbox
@@ -305,6 +304,22 @@ This file records Codey's release history. The newest release appears first.
   the sandbox.
 - `.githooks/pre-commit` is committed executable (`100755`), so fresh
   clones on macOS/Linux run local CI without a manual chmod.
+- Prompt/model-visible secret screening gets one named entry:
+  `redaction.looks_prompt_visible_secret()` (marker | provider key shape |
+  high-entropy). The old marker+shape-only `looks_sensitive_signal` is
+  gone, so no caller can forget the entropy branch: execution evidence,
+  repair contexts, run traces, and research boundaries all screen through
+  it, and a marker-free high-entropy blob in a failed check's output tail
+  or command line is now dropped (`repair_output_line_screened` /
+  `repair_check_command_screened`) instead of reaching the model.
+- Writer telemetry counts the terminal no-JSON reply: an empty JSON object
+  with no calls/control records `no_json` before the stagnation return, so
+  protocol-error observations match real sends 1:1 (repair prompts still
+  count only actual nudges).
+- Adapter repair sandboxes reject symlinks outright -- in the copied
+  package tree, in `pyproject.toml`, and in reference files -- instead of
+  following them at copy time, closing the residual path where a link out
+  of the source tree would leak its target into a sandbox.
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 

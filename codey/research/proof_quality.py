@@ -22,7 +22,7 @@ from codey.refs import (
 )
 from codey.research.object_model import ResearchRecord
 from codey.research.shape import valid_digest_ref
-from codey.redaction import looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret
 
 
 MAX_GAPS = 12
@@ -745,7 +745,7 @@ def _is_safe_signal_text(value: str) -> bool:
         return False
     if "://" in lower or "\\" in text or "/" in text:
         return False
-    if looks_sensitive_signal(text):
+    if looks_prompt_visible_secret(text):
         return False
     if re.fullmatch(r"[A-Za-z0-9_./+=-]{24,}", text):
         return False

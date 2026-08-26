@@ -29,7 +29,7 @@ from codey.context_epoch import admission_from_rendered_source, valid_context_ep
 from codey.prompt_envelope import is_model_boundary_freshness
 from codey.research.artifact_lineage import is_valid_derived_ref
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
-from codey.redaction import looks_sensitive_code, looks_sensitive_signal
+from codey.redaction import looks_prompt_visible_secret, looks_sensitive_code
 from codey.research.review_finding import (
     FINDING_KINDS,
     FINDING_SEVERITIES,
@@ -1999,7 +1999,7 @@ def _analysis_command_display(value: object) -> tuple[str, bool]:
     text = _clip(value, 500)
     if not text:
         return "", False
-    if looks_sensitive_signal(text):
+    if looks_prompt_visible_secret(text):
         return "", True
     return text, False
 
