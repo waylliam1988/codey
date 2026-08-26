@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Mapping
 
 from codey.storage.local_store import read_json, session_key, write_json_atomic
+from codey.storage.transactional_json import with_file_lock
 from codey.utils.refs import (
     bounded_refs,
     clip,
@@ -230,67 +231,72 @@ class EvidenceLedgerStore:
             )
         try:
             path = self.path_for(session_id, project)
-            loaded = self._load_payload(path)
-            if loaded is None:
-                return EvidenceLedgerWriteResult(
-                    skipped=True,
-                    reason_code="ledger_unavailable",
-                    record_id=str(record_payload.get("record_id") or ""),
+            # The lock makes load→mutate→write one serialized transaction:
+            # two concurrent appends each read the same version and both
+            # write their own next version, so without it one record would
+            # silently vanish from the ledger.
+            with with_file_lock(path):
+                loaded = self._load_payload(path)
+                if loaded is None:
+                    return EvidenceLedgerWriteResult(
+                        skipped=True,
+                        reason_code="ledger_unavailable",
+                        record_id=str(record_payload.get("record_id") or ""),
+                    )
+                payload = loaded or self._new_payload(session_id=session_id, project=project)
+                previous_counts = _counts(loaded) if loaded else {}
+                previous_ledger_ref = str(loaded.get("ledger_ref") or "") if loaded else ""
+                previous_warnings = tuple(
+                    str(item) for item in (loaded or {}).get("warnings", ())[:MAX_WARNINGS]
                 )
-            payload = loaded or self._new_payload(session_id=session_id, project=project)
-            previous_counts = _counts(loaded) if loaded else {}
-            previous_ledger_ref = str(loaded.get("ledger_ref") or "") if loaded else ""
-            previous_warnings = tuple(
-                str(item) for item in (loaded or {}).get("warnings", ())[:MAX_WARNINGS]
-            )
-            record_id = str(record_payload.get("record_id") or "")
-            record_digest = str(record_payload.get("record_digest") or "")
-            if _has_record(payload, record_id, record_digest):
-                return EvidenceLedgerWriteResult(
-                    ok=True,
-                    skipped=True,
-                    reason_code="duplicate_record",
-                    ledger_ref=str(payload.get("ledger_ref") or ""),
-                    record_id=record_id,
-                    counts=_counts(payload),
+                record_id = str(record_payload.get("record_id") or "")
+                record_digest = str(record_payload.get("record_digest") or "")
+                if _has_record(payload, record_id, record_digest):
+                    return EvidenceLedgerWriteResult(
+                        ok=True,
+                        skipped=True,
+                        reason_code="duplicate_record",
+                        ledger_ref=str(payload.get("ledger_ref") or ""),
+                        record_id=record_id,
+                        counts=_counts(payload),
+                    )
+                candidate = deepcopy(payload)
+                appended = _append_payload(
+                    candidate,
+                    record_payload,
+                    run_id=run_id,
+                    session_id=session_id,
+                    project=project,
                 )
-            candidate = deepcopy(payload)
-            appended = _append_payload(
-                candidate,
-                record_payload,
-                run_id=run_id,
-                session_id=session_id,
-                project=project,
-            )
-            if not appended:
-                return EvidenceLedgerWriteResult(
-                    skipped=True,
-                    reason_code="ledger_id_collision",
-                    ledger_ref=previous_ledger_ref,
-                    record_id=record_id,
-                    counts=previous_counts,
-                    warnings=previous_warnings,
-                )
-            if not _has_record(candidate, record_id, record_digest):
-                return EvidenceLedgerWriteResult(
-                    skipped=True,
-                    reason_code="record_pruned_for_ledger_closure",
-                    ledger_ref=previous_ledger_ref,
-                    record_id=record_id,
-                    counts=previous_counts,
-                    warnings=previous_warnings,
-                )
-            if not _canonical_ledger_payload(candidate):
-                return EvidenceLedgerWriteResult(
-                    skipped=True,
-                    reason_code="invalid_record",
-                    ledger_ref=previous_ledger_ref,
-                    record_id=record_id,
-                    counts=previous_counts,
-                    warnings=previous_warnings,
-                )
-            payload = candidate
-            write_json_atomic(path, payload, max_bytes=MAX_EVIDENCE_LEDGER_BYTES)
+                if not appended:
+                    return EvidenceLedgerWriteResult(
+                        skipped=True,
+                        reason_code="ledger_id_collision",
+                        ledger_ref=previous_ledger_ref,
+                        record_id=record_id,
+                        counts=previous_counts,
+                        warnings=previous_warnings,
+                    )
+                if not _has_record(candidate, record_id, record_digest):
+                    return EvidenceLedgerWriteResult(
+                        skipped=True,
+                        reason_code="record_pruned_for_ledger_closure",
+                        ledger_ref=previous_ledger_ref,
+                        record_id=record_id,
+                        counts=previous_counts,
+                        warnings=previous_warnings,
+                    )
+                if not _canonical_ledger_payload(candidate):
+                    return EvidenceLedgerWriteResult(
+                        skipped=True,
+                        reason_code="invalid_record",
+                        ledger_ref=previous_ledger_ref,
+                        record_id=record_id,
+                        counts=previous_counts,
+                        warnings=previous_warnings,
+                    )
+                payload = candidate
+                write_json_atomic(path, payload, max_bytes=MAX_EVIDENCE_LEDGER_BYTES)
         except (OSError, RuntimeError, TypeError, ValueError):
             return EvidenceLedgerWriteResult(
                 skipped=True,

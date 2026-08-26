@@ -21,6 +21,7 @@ from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
+from codey.storage.transactional_json import with_file_lock
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
 
 
@@ -757,17 +758,23 @@ class GhostWorkQueueStore:
         if not rows:
             return True
         try:
-            existing = []
-            if self.events_path.exists():
-                existing = self._read_events()
-                if self._events_read_blocked:
-                    return False
-            elif self._load_projection_items():
-                self._rewrite_events_from_items(self._load_projection_items(), control_event=None)
-                existing = self._read_events()
-                if self._events_read_blocked:
-                    return False
-            self._write_events_atomic([*existing, *rows])
+            # Serialize read-modify-write against other processes: without
+            # the lock two concurrent appends each write their own version
+            # of the whole events file and one side's events vanish.
+            with with_file_lock(self.events_path):
+                existing = []
+                if self.events_path.exists():
+                    existing = self._read_events()
+                    if self._events_read_blocked:
+                        return False
+                elif self._load_projection_items():
+                    self._rewrite_events_from_items(
+                        self._load_projection_items(), control_event=None
+                    )
+                    existing = self._read_events()
+                    if self._events_read_blocked:
+                        return False
+                self._write_events_atomic([*existing, *rows])
             return True
         except (OSError, TypeError, ValueError):
             self.last_warnings = ("work_event_write_failed",)
@@ -813,7 +820,10 @@ class GhostWorkQueueStore:
     ) -> None:
         rows = [_item_event(item, "upsert") for item in _bounded_items(items)]
         rows.append(control_event or _control_event("ghost_work_events_compacted", {"items": len(rows)}))
-        self._write_events_atomic(rows)
+        # Same lock as _append_events_atomic (reentrant within this process):
+        # a concurrent append must not be overwritten by the compaction.
+        with with_file_lock(self.events_path):
+            self._write_events_atomic(rows)
 
     def _replace_items(self, items: Iterable[GhostWorkItem], reason: str) -> bool:
         rows = _bounded_items(items)

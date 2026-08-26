@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import tempfile
+import threading
 from pathlib import Path
 from unittest import mock
 
@@ -623,3 +624,32 @@ def test_proof_refs_require_kind_specific_primary_proof() -> None:
     assert "diff:run-1" in project_proof
     assert no_research_proof == ()
     assert "review:run-1" in review_proof
+
+
+def test_concurrent_event_appends_keep_every_event() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        # Two store instances model two Codey processes racing on the same
+        # events file; the sidecar lock must serialize read-modify-write.
+        first = GhostWorkQueueStore(td)
+        second = GhostWorkQueueStore(td)
+
+        def append(store: GhostWorkQueueStore, marker: str) -> None:
+            ok = store._append_events_atomic([{
+                "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+                "kind": "control",
+                "marker": marker,
+            }])
+            assert ok is True
+
+        threads = [
+            threading.Thread(target=append, args=(first, "a")),
+            threading.Thread(target=append, args=(second, "b")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        rows = first._read_events()
+
+    assert sorted(row.get("marker") or "" for row in rows) == ["a", "b"]

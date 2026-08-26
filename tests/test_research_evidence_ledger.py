@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
@@ -381,6 +382,43 @@ def test_missing_record_digest_is_rejected_before_empty_digest_can_persist() -> 
     assert result.skipped is True
     assert result.reason_code == "invalid_record"
     assert not path.exists()
+
+
+def test_concurrent_appends_from_two_store_instances_keep_every_record() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        project = Path(td) / "project"
+        project.mkdir()
+        state = Path(td) / "state"
+        # Two independent store instances model two Codey processes racing
+        # on the same ledger file.
+        first_store = EvidenceLedgerStore(state)
+        second_store = EvidenceLedgerStore(state)
+        record_a = _wide_record(1)
+        record_b = _wide_record(2)
+
+        def append(store: EvidenceLedgerStore, record: ResearchRecord) -> None:
+            result = store.append_record(
+                record,
+                run_id="run-ledger",
+                session_id="session-ledger",
+                project=project,
+            )
+            assert result.ok is True
+
+        threads = [
+            threading.Thread(target=append, args=(first_store, record_a)),
+            threading.Thread(target=append, args=(second_store, record_b)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        snapshot = second_store.load(session_id="session-ledger", project=project)
+
+    assert snapshot.available is True
+    record_ids = {row["record_id"] for row in snapshot.payload["records"]}
+    assert record_ids == {record_a.record_id, record_b.record_id}
 
 
 def test_append_load_and_duplicate_are_bounded_and_deterministic() -> None:
