@@ -1,7 +1,16 @@
+"""Git history and tracked-source hygiene guards.
+
+Commit-identity rules keep release markers canonical; the credential
+scanner's own literals are assembled at runtime from fragments so this file
+never contains a complete secret-like fixture -- a complete one here would
+trip secret-push protection on the test itself.
+"""
+
 from __future__ import annotations
 
 import re
 import subprocess
+import unittest
 from pathlib import Path
 
 import pytest
@@ -80,3 +89,111 @@ def test_unreleased_commits_keep_waylliam_identity() -> None:
         "and committer:\n"
         + "\n".join(violations)
     )
+
+
+# --- tracked-source credential hygiene --------------------------------------
+
+SCANNED_SUFFIXES = frozenset({
+    ".cfg",
+    ".ini",
+    ".js",
+    ".json",
+    ".md",
+    ".py",
+    ".toml",
+    ".ts",
+    ".txt",
+    ".yml",
+    ".yaml",
+})
+FORBIDDEN_TRACKED_SUFFIXES = frozenset({".pem", ".p12", ".pfx", ".key"})
+MIN_SECRET_TAIL_CHARS = 20
+
+
+def _text(*parts: str) -> str:
+    return "".join(parts)
+
+
+# Prefix fragments only; the random-looking tail is matched by regex so no
+# full fixture ever appears in this file.
+_TOKEN_PREFIXES = (
+    _text("gh", "p_"),
+    _text("gh", "o_"),
+    _text("github", "_pat_"),
+    _text("sk", "-"),
+    _text("AKI", "A"),
+    _text("xox", "b-"),
+)
+_PRIVATE_KEY_HEADER = _text("-----BEGIN ", "PRIVATE KEY-----")
+
+
+def _tracked_source_files() -> list[Path]:
+    """Git-tracked files under production source (tests carry deliberate
+    fake fixtures and are out of scope)."""
+
+    result = _git(["ls-files", "--", "codey"])
+    if result.returncode != 0:
+        pytest.skip("git ls-files is unavailable")
+    files: list[Path] = []
+    for line in result.stdout.splitlines():
+        name = line.strip().replace("\\", "/")
+        if not name or ".." in name.split("/"):
+            continue
+        candidate = ROOT / name
+        if candidate.is_file():
+            files.append(candidate)
+    return files
+
+
+class TrackedSourceCredentialHygieneTests(unittest.TestCase):
+    def test_no_credential_shaped_tokens_in_tracked_sources(self) -> None:
+        tail_pattern = re.compile(
+            r"[A-Za-z0-9_\-%]{" + str(MIN_SECRET_TAIL_CHARS) + r",}"
+        )
+        offenders: list[str] = []
+        for path in _tracked_source_files():
+            if path.suffix.lower() not in SCANNED_SUFFIXES:
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for prefix in _TOKEN_PREFIXES:
+                start = 0
+                while True:
+                    index = text.find(prefix, start)
+                    if index < 0:
+                        break
+                    window = text[index + len(prefix): index + len(prefix) + 200]
+                    match = tail_pattern.match(window)
+                    if match:
+                        offenders.append(
+                            f"{path.relative_to(ROOT).as_posix()}: {prefix}..."
+                        )
+                        break
+                    start = index + len(prefix)
+            if _PRIVATE_KEY_HEADER in text:
+                offenders.append(
+                    f"{path.relative_to(ROOT).as_posix()}: private key header"
+                )
+
+        self.assertEqual(offenders, [])
+
+    def test_no_private_key_material_is_tracked(self) -> None:
+        offenders = [
+            path.relative_to(ROOT).as_posix()
+            for path in _tracked_source_files()
+            if path.suffix.lower() in FORBIDDEN_TRACKED_SUFFIXES
+        ]
+
+        self.assertEqual(offenders, [])
+
+    def test_scanner_literals_are_not_themselves_secrets(self) -> None:
+        # Guard the guard: every prefix fragment must be too short to be a
+        # credential on its own.
+        self.assertTrue(all(len(prefix) < 12 for prefix in _TOKEN_PREFIXES))
+        self.assertLess(len(_PRIVATE_KEY_HEADER), 30)
+
+
+if __name__ == "__main__":
+    unittest.main()

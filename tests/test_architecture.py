@@ -497,15 +497,28 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                     self.assertNotIn(token, source)
 
     def test_digest_helpers_are_not_imported_under_neutral_aliases(self) -> None:
+        # AST-based so whitespace/quoting can never smuggle an aliased
+        # import past a string scan again.
         offenders: list[str] = []
-        forbidden = (
-            "content_digest as _digest_ref",
-            "valid_digest_ref as _digest_ref",
-        )
+        watched = {"content_digest", "valid_digest_ref"}
         for path in sorted((ROOT / "codey").rglob("*.py")):
-            source = path.read_text(encoding="utf-8")
-            if any(token in source for token in forbidden):
-                offenders.append(path.relative_to(ROOT).as_posix())
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    offenders.extend(
+                        f"{path.relative_to(ROOT).as_posix()}: import {alias.name}"
+                        for alias in node.names
+                        if alias.asname == "_digest_ref"
+                    )
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module and node.module.split(".")[-1] != "refs":
+                        continue
+                    offenders.extend(
+                        f"{path.relative_to(ROOT).as_posix()}: from {node.module}"
+                        f" import {alias.name} as _digest_ref"
+                        for alias in node.names
+                        if alias.name in watched and alias.asname == "_digest_ref"
+                    )
 
         self.assertEqual(offenders, [])
 
