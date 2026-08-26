@@ -79,7 +79,11 @@ This file records Codey's release history. The newest release appears first.
   `TestCandidate`), unused driver selector leftovers (`SEND_READY`, `INPUT`,
   `RESPONSE`, `ANSWER`, `SEND_BUTTON` constants), `citation_scanner.source_id_bracket_ref_items`,
   `provider_discovery.find_control/find_response`, and
-  `provider_controls.reject_flow`.
+  `provider_controls.reject_flow`. Also removed the two zero-reference
+  helpers on the adapter repair surface (`adapter_surface.shared_web_adapter_files`
+  and `adapter_surface.is_known_provider`): callers read the
+  `SHARED_WEB_ADAPTER_FILES` constant and `adapter_repair_surface()` directly,
+  so a "known provider" predicate nobody called was spare abstraction.
 - Provider adapter dedup: the five byte-identical `providers/*_web.py`
   wrappers collapsed into one spec-driven `web_provider.py` (~270 lines);
   shared control-location / response-count / rate-limit / late-response

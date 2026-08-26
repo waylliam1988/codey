@@ -1060,6 +1060,79 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             with self.subTest(reason=reason):
                 self.assertIn(f'"{reason}"', source)
 
+    def test_completion_and_repair_surfaces_never_become_model_tools(self) -> None:
+        # 0.4.13 boundary lock: proofs, evidence, and the repair context are
+        # runtime-owned projections. Neither protocol contract may grow a
+        # tool for them, and neither surface may rename tools across domains:
+        # coding keeps its read/write vocabulary and research keeps its own.
+        from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_CONTRACTS
+        from codey.tool_definition import TOOL_DEFINITIONS, render_tool_contract
+
+        self.assertEqual(
+            {spec.name for spec in TOOL_DEFINITIONS},
+            {
+                "list_dir",
+                "read_file",
+                "read_files",
+                "grep",
+                "find_references",
+                "parallel",
+                "edit",
+                "run",
+                "shell",
+                "done",
+            },
+        )
+        self.assertEqual(
+            set(RESEARCH_CONTRACTS),
+            {
+                "web_search",
+                "open_url",
+                "source_search",
+                "knowledge_search",
+                "knowledge_read",
+                "knowledge_write",
+                "knowledge_link",
+                "done",
+            },
+        )
+        rendered = render_tool_contract()
+        forbidden_tokens = (
+            "completion_proof",
+            "completion_contract",
+            "completion_repair_context",
+            "repair_context",
+            "evidence_ledger",
+            "web_search",
+            "open_url",
+            "knowledge_write",
+            "source_search",
+        )
+        for token in forbidden_tokens:
+            with self.subTest(token=token):
+                self.assertNotIn(token, rendered)
+
+    def test_repair_context_is_rejected_as_an_unknown_model_tool(self) -> None:
+        # Behavioral side of the same boundary: calling the repair context
+        # through either codec is a typed unknown-tool error, not a tool.
+        from codey.protocols.json_codec import JsonToolCodec
+        from codey.research.protocols import JsonToolCodec as ResearchCodec
+        from codey.research.tool_contract import PROTOCOL_UNKNOWN_TOOL
+
+        payload = json.dumps({
+            "tool": "completion_repair_context",
+            "args": {"failure": "product"},
+        })
+        coding_plan = JsonToolCodec().parse(payload)
+        self.assertEqual(coding_plan.calls, [])
+        self.assertIsNone(coding_plan.control)
+        self.assertIn("unknown tool: completion_repair_context", coding_plan.protocol_error)
+
+        research_plan = ResearchCodec().parse(payload)
+        self.assertEqual(research_plan.calls, [])
+        self.assertIsNone(research_plan.control)
+        self.assertEqual(research_plan.protocol_error_kind, PROTOCOL_UNKNOWN_TOOL)
+
 
 if __name__ == "__main__":
     unittest.main()

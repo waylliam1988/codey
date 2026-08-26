@@ -58,16 +58,27 @@ short label, raw prompts/replies/errors have no field, and nothing
 behavioral reads the section. There are no managers, no critic, no new tools;
 architecture tests lock
 the leaf boundaries, the closed payload vocabulary, and the absence of
-manager layers.
+manager layers. Two boundary locks were added for the release close: a
+rollover test proves a prepared repair-context section is discarded when a
+provider rollover replaces the prompt wholesale (admission binds only to
+bytes that actually left, and the fresh intro re-admits exactly once), and a
+tool-contract lock proves proofs/evidence/repair context never become model
+tools in either protocol and neither surface renames tools across domains.
+Dead surface also came off: `adapter_surface.shared_web_adapter_files()` and
+`adapter_surface.is_known_provider()` had zero references (callers read
+`SHARED_WEB_ADAPTER_FILES` / `adapter_repair_surface()` directly) and are
+gone without compatibility shims.
 
-Release validation on 2026-08-25:
+Release validation on 2026-08-26:
 
 ```powershell
 python -B tests\manual\completion_enforcement_ab.py --self-test
 # self-test passed (20-case decision matrix across 4 arms x 5 scenarios)
+# control_done false_completion_rate=0.8; all enforcement arms 0.0;
+# repair arms task_success_rate 0.4 >= control 0.2; rounds bounded at 1/case
 
 python -B -m pytest -q
-# 2848 passed, 1 skipped, 876 subtests passed in 277.33s (0:04:37)
+# 2870 passed, 1 skipped, 868 subtests passed in 258.53s (0:04:18)
 ```
 
 The self-test matrix pins the treatment definitions: control_done records

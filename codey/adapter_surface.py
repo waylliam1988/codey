@@ -53,14 +53,6 @@ def driver_files(provider_id: str) -> tuple[str, ...]:
     return PROVIDER_DRIVER_FILES.get(normalize_provider_id(provider_id), ())
 
 
-def shared_web_adapter_files() -> tuple[str, ...]:
-    return SHARED_WEB_ADAPTER_FILES
-
-
-def is_known_provider(provider_id: str) -> bool:
-    return bool(driver_files(provider_id))
-
-
 def adapter_repair_surface(provider_id: str) -> tuple[str, ...]:
     """Every file one provider's self-repair may replace.
 

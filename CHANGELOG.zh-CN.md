@@ -63,7 +63,11 @@
   `TestCandidate`）、无引用的 selector 常量（`SEND_READY`/`INPUT`/`RESPONSE`/
   `ANSWER`/`SEND_BUTTON`）、`citation_scanner.source_id_bracket_ref_items`、
   `provider_discovery.find_control/find_response`、
-  `provider_controls.reject_flow`。
+  `provider_controls.reject_flow`。同时删除适配层修复面上两个零引用 helper
+  （`adapter_surface.shared_web_adapter_files` 和
+  `adapter_surface.is_known_provider`）：调用方直接读
+  `SHARED_WEB_ADAPTER_FILES` 常量和 `adapter_repair_surface()`，无人调用的
+  "已知 provider" 谓词只是备用抽象。
 - Provider 适配层去重：五个几乎相同的 `providers/*_web.py` 合并为单一
   spec 驱动的 `web_provider.py`（约 -270 行）；控制定位/响应计数/限流检测/
   迟到响应轮询等公共脚手架提取到 `providers/web_drivers/common.py`；provider id

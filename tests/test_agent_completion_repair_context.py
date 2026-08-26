@@ -276,5 +276,81 @@ class FreshIntroAdmissionTests(unittest.TestCase):
         self.assertEqual(trace.admissions[0]["epoch_id"], epoch)
 
 
+class RolloverDiscardTests(unittest.TestCase):
+    def run_agent(self, trace, provider, root, context, **overrides):
+        kwargs = dict(
+            on_event=lambda _event: None,
+            fresh_chat=False,
+            conversation=context,
+            provider_id="deepseek",
+            permission_profile="coding_writer",
+            trace_recorder=trace,
+        )
+        text, payload = _repair_context()
+        kwargs["completion_repair_context"] = text
+        kwargs["completion_repair_context_payload"] = payload
+        kwargs.update(overrides)
+        return agent.run(provider, root, "Fix the failing test", **kwargs)
+
+    def test_rollover_discards_stale_rows_and_readmits_on_the_real_intro(self) -> None:
+        # A prepared repair-context section binds to nothing until its prompt
+        # actually leaves. When a rollover replaces that prompt wholesale,
+        # the stale prepared rows must be discarded -- never attributed to
+        # bytes that never left -- and the fresh intro re-admits exactly once.
+        trace = _CapturingTrace()
+        provider = FakeProvider(
+            '{"goal": "fix", "current_state": "repair pending"}',
+            _DONE,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            context = ConversationContext(hard_limit=100_000)
+            context.begin_window("deepseek", "project", str(root))
+            # Park used_tokens just under the soft limit so the followup
+            # prompt plus its repair section trips needs_rollover().
+            context.used_tokens = int(context.soft_limit) - 10
+            result = self.run_agent(trace, provider, root, context)
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(len(provider.sent), 2)
+        # Send 1 is the handoff summary probe; it never carries the section.
+        self.assertIn("fresh model chat", provider.sent[0])
+        self.assertNotIn("Completion repair context.", provider.sent[0])
+        # Send 2 is the fresh intro; it carries the section exactly once.
+        self.assertIn("Completion repair context. Facts only.", provider.sent[1])
+
+        intro_epoch = context_epoch_id(provider.sent[1])
+        bound = [
+            row
+            for row in trace.source_rows
+            if any(item["key"] == CONTEXT_SOURCE_KEY for item in row["sources"])
+        ]
+        self.assertEqual(len(bound), 1)
+        self.assertEqual(bound[0]["epoch_id"], intro_epoch)
+        self.assertNotEqual(bound[0]["epoch_id"], context_epoch_id(provider.sent[0]))
+
+        # No stale section binding may survive: whatever the fresh intro
+        # recorded (the intro embeds sources into coding_request_context,
+        # so a standalone section may not exist at all), every recorded
+        # repair section carries the intro's epoch -- never empty or an
+        # earlier send's.
+        self.assertEqual(
+            [
+                row
+                for row in trace.sections
+                if row["name"] == CONTEXT_SOURCE_KEY
+                and row.get("epoch_id") != intro_epoch
+            ],
+            [],
+        )
+
+        # One admission row, bound to the only outbound prompt that carried
+        # the section: assembled-before-rollover never became admitted.
+        self.assertEqual(len(trace.admissions), 1)
+        admission = trace.admissions[0]
+        self.assertEqual(admission["epoch_id"], intro_epoch)
+        self.assertTrue(admission["payload"]["admitted"])
+
+
 if __name__ == "__main__":
     unittest.main()
