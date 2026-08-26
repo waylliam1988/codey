@@ -102,6 +102,11 @@ class RepairContextProjection:
         return bool(self.prompt_text.strip())
 
     def to_payload(self) -> dict[str, object]:
+        prompt_text_digest = (
+            "sha256:" + hashlib.sha256(self.prompt_text.encode("utf-8")).hexdigest()
+            if self.prompt_text
+            else ""
+        )
         digest_source = json.dumps(
             {
                 "kind": _PROJECTION_KIND,
@@ -119,6 +124,7 @@ class RepairContextProjection:
                 "reason_codes": list(self.reason_codes),
                 "warnings": list(self.warnings),
                 "refused_reason": self.refused_reason,
+                "prompt_text_digest": prompt_text_digest,
             },
             ensure_ascii=True,
             sort_keys=True,

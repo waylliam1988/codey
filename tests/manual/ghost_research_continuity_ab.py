@@ -28,6 +28,7 @@ EvidenceLedger / ResearchRecord / release claims.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 from dataclasses import dataclass
 import json
 import sys
@@ -243,7 +244,7 @@ def _run_case(
         Path(project).mkdir()
         if case.drop_ghost_store:
             state.ghost_continuity = None
-        _seed_case(state, case, session_id=session_id, project=project)
+        seeded_interest_candidates = _seed_case(state, case, session_id=session_id, project=project)
         agent_calls: list[str] = []
         research_contexts: list[ResearchContext] = []
         admission_results: list[tuple[str, dict[str, object] | None]] = []
@@ -322,11 +323,18 @@ def _run_case(
                 case=case.name,
                 arm=arm,
             )
-            gate_patch = (
-                None if gate_open
-                else mock.patch("codey.task_runner.allows_context_source", return_value=False)
-            )
-            with mock.patch.object(state, "get_provider", return_value=tracing_provider):
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch.object(state, "get_provider", return_value=tracing_provider))
+                if not live and seeded_interest_candidates:
+                    stack.enter_context(mock.patch(
+                        "codey.task_runner.build_research_interest_candidates",
+                        return_value=seeded_interest_candidates,
+                    ))
+                if not gate_open:
+                    stack.enter_context(mock.patch(
+                        "codey.task_runner.allows_context_source",
+                        return_value=False,
+                    ))
                 request = TaskRequest(
                     session_id=session_id,
                     project=project,
@@ -336,11 +344,7 @@ def _run_case(
                     provider_id=task_provider,
                     intent="auto",
                 )
-                if gate_patch is not None:
-                    with gate_patch:
-                        runner.run(request)
-                else:
-                    runner.run(request)
+                runner.run(request)
             state.wait_for_ghost_sleep(timeout=2)
             error = ""
         except Exception as exc:
@@ -443,7 +447,7 @@ def _seed_case(
     *,
     session_id: str,
     project: str,
-) -> None:
+) -> tuple[Any, ...]:
     assert state.knowledge_store is not None
     if case.seed_note_open_question:
         state.knowledge_store.write_note(KnowledgeNote.create(
@@ -506,6 +510,7 @@ def _seed_case(
             session_id=session_id,
             run_id=f"seed-{case.name}",
         )
+    return tuple(candidates)
 
 
 def _seed_prior_claim(

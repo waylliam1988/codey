@@ -2,10 +2,9 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.12-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.13-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
-[![Local CI](https://img.shields.io/badge/local%20CI-required-brightgreen)](tools/local_ci.py)
 
 [中文说明](README.zh-CN.md)
 
@@ -21,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.12`
+Version: `0.4.13`
 
 [Version history](CHANGELOG.md)
 
@@ -89,6 +88,10 @@ Version: `0.4.12`
 - **Stay oriented while coding**: after each local tool result, Codey reminds
   the model which files were read, which files changed, and which verification
   command best matches the current edits.
+- **Block fake completion gently**: when code changed, a local completion proof
+  now decides whether `done` is real. Fresh passing checks can finish; missing,
+  failed, or environment-broken verification blocks honestly, and one bounded
+  facts-only repair round may be admitted for observed product failures.
 - **Carry research into projects**: after research, choose a folder and Codey injects a bounded Research Brief with citations and limitations instead of the whole vault.
 - **Measure its own evidence loop**: a frozen longitudinal benchmark suite and a
   pure regression-gate read model score multi-round research against expected
@@ -148,6 +151,10 @@ This is not about replacing professional tools. It is about making the first ste
 - Let the model read and modify files in a selected project folder
 - Run allowed tests, builds, linters, and type checks, then feed results back
   to the model
+- Use local completion proof to prevent unverifiable coding runs from being
+  reported as cleanly done; observed product failures can get one bounded
+  repair-context turn, while missing verification and environment failures
+  stop honestly instead of pretending the code passed
 - Show red/green diffs
 - Show a compact task receipt after each run, such as `DONE · 2 files changed · checks passed · restore available`
 - Write a bounded local run trace for each task, recording mode, provider,
@@ -812,30 +819,17 @@ execution, review, task receipts, diff, and snapshot restore:
 python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
 ```
 
-## Local CI
+## Release Validation
 
-Local verification is the release gate. GitHub CI stays available only as a
-manual trigger (`workflow_dispatch`); every commit is checked locally by one
-entry point that runs ruff, the full pytest suite, JavaScript asset syntax
-checks, and the completion-enforcement A/B self-test:
-
-```powershell
-python tools/local_ci.py
-```
-
-Commits run it automatically through the checked-in pre-commit hook (committed
-executable, so macOS/Linux clones keep it runnable) after a one-time
-per-machine activation:
+GitHub CI runs on pushes, pull requests, and manual dispatch. Before a release,
+run the local checks explicitly and record the outcome in
+[TEST_REPORT.md](TEST_REPORT.md):
 
 ```powershell
-git config core.hooksPath .githooks
+python -m ruff check .
+python -B -m pytest -q
+python -B tests\manual\completion_enforcement_ab.py --self-test
 ```
-
-The JavaScript syntax step hard-fails when Node.js is installed and reports a
-visible `SKIPPED` line when it is not; everything else always runs.
-
-Before a release, run the full gate plus the live provider A/B harnesses and
-record the outcome in [TEST_REPORT.md](TEST_REPORT.md).
 
 With the supported web model pages logged in through Edge CDP, run the
 real-provider matrix below. Every result is independently checked with a functional

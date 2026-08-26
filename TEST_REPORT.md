@@ -1,5 +1,68 @@
 # Codey Test Report
 
+## 0.4.13 Release Closeout - Redaction, Sandbox, Repair Digest, A/B Journaling (2026-08-26)
+
+This closeout fixes the final review findings and one release-testability gap
+before tagging 0.4.13. The changes stay narrow: no production prompt expansion
+outside the existing repair-context path, no new manager/runtime layer, and no
+compatibility fallback for the cold-start codebase.
+
+Closed items:
+
+- prompt-visible redaction exempts ordinary CamelCase engineering identifiers
+  with small numeric qualifiers (`OAuth2CallbackHandler`,
+  `HTTPRequest2Handler`, `Windows10CompatibilityMode`,
+  `PyPI2026ReleasePlan`) while still screening marker words, provider key
+  shapes, and genuinely random mixed-case blobs such as `AbcdEfghIjkl1234X`;
+- adapter repair sandbox rejects `source/codey` when the package root itself
+  is a symlink, not only symlinks inside the package tree or reference files;
+- completion repair-context digest now changes with the actual bounded
+  model-visible facts brief, while the trace payload remains raw-text-free;
+- the final CompletionProof after a repair round refreshes verification
+  candidates before choosing the relevant check, so a changed verification
+  scope is judged against the post-repair project view;
+- `completion_enforcement_ab.py` live mode now writes JSON after every
+  case/arm row and can journal prompt/reply traffic through the shared manual
+  A/B transcript boundary (`digest-only` by default, `archive` for prompt-lab
+  diagnosis);
+- fixed-output A/B resumes no longer overwrite prior rows: existing rows are
+  loaded, completed rows are skipped, `--rerun-failed` is the explicit retry
+  knob for error rows, old error rows are replaced only after a new row exists,
+  provider-connect failures keep old diagnostics intact, and the journal run
+  id is stable for the output stem without repeated `run_start` events.
+
+Release validation on 2026-08-26:
+
+```powershell
+python -m ruff check .
+# All checks passed!
+
+python -B tests\manual\completion_enforcement_ab.py --self-test
+# self-test passed
+# control_done false_completion_rate=0.8
+# proof_only_block / repair_context / repair_context_minimal false_completion_rate=0.0
+
+python -B -m pytest tests\test_completion_repair_context.py `
+  tests\test_run_trace_completion_repair_context.py `
+  tests\test_agent_completion_repair_context.py `
+  tests\test_task_runner_completion_enforcement.py `
+  tests\test_completion_enforcement_ab.py `
+  tests\test_redaction.py tests\test_source_connectors.py `
+  tests\test_adapter_self_repair.py -q
+# 216 passed, 10 subtests passed
+
+python -B -m pytest tests\test_architecture.py tests\test_capabilities.py `
+  tests\test_permission_profiles.py -q
+# 97 passed, 267 subtests passed
+
+python -B -m pytest -q
+# 2930 passed, 1 skipped, 886 subtests passed in 268.64s (0:04:28)
+```
+
+No live-provider A/B was run in this closeout. The deterministic suite proves
+the production invariants and self-test matrix; live provider runs remain the
+next 0.4 stabilization gate before claiming provider-level net benefit.
+
 ## 0.4.13 Hardening Batch - Fail-Closed Repairs, Telemetry Binding, Safety Shape Coverage (2026-08-26)
 
 This batch closes seven review findings plus one process change. No new
@@ -57,14 +120,9 @@ and any `npx <pkg>` classify as dependency installs; `irm` /
 `Invoke-RestMethod` as external source; `cmd /k` unwraps like `cmd /c`.
 Display-only risk explanations; approval decisions unchanged.
 
-**Local CI release gate.** New `tools/local_ci.py` runs ruff, the full
-pytest suite, JavaScript asset syntax checks, and the completion-enforcement
-A/B self-test in that order, failing fast. `.githooks/pre-commit` runs it on
-every commit after one-time `git config core.hooksPath .githooks`.
-`.github/workflows/ci.yml` now triggers only via manual `workflow_dispatch`.
-README badges use an honest static local-CI badge. On this machine Node.js
-is not installed, so js-syntax reports a visible `SKIPPED` line; on machines
-with Node.js it is a hard check.
+**Release validation.** GitHub CI now runs on pushes, pull requests, and
+manual dispatch. Local release checks are explicit commands: `ruff`, full
+`pytest`, and the completion-enforcement A/B self-test.
 
 Release-gate validation for this batch:
 
@@ -152,7 +210,7 @@ Dead surface also came off: `adapter_surface.shared_web_adapter_files()` and
 `SHARED_WEB_ADAPTER_FILES` / `adapter_repair_surface()` directly) and are
 gone without compatibility shims.
 
-Release validation on 2026-08-26:
+Earlier validation for this batch on 2026-08-26:
 
 ```powershell
 python -B tests\manual\completion_enforcement_ab.py --self-test
@@ -170,9 +228,9 @@ block them with zero false completions and zero unnecessary repairs;
 repair_context converts exactly the repairable product failures (one round,
 shared turn budget) while environment failures stay blocked without repair;
 the minimal arm admits the same rounds with fewer context characters.
-Live-provider A/B (`--provider deepseek --cases 2-3`) remains the release
-gate: 0.4.13 changes user-visible `done` behavior and adds model-visible
-failure context, so release evidence must show net benefit over control —
+Live-provider A/B (`--provider deepseek --cases 2-3`) remains the next
+0.4 stabilization gate: 0.4.13 changes user-visible `done` behavior and adds
+model-visible failure context, so net-benefit evidence still needs to show
 false completion rate down, honest blocks up, no unnecessary-repair or
 repair-induced regressions — not merely that repair sometimes succeeds.
 

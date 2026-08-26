@@ -4,7 +4,31 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
-## 0.4.13 (Unreleased) - Verified Completion Enforcement + Repair Context Admission v1
+## 0.4.13 - Verified Completion Enforcement + Repair Context Admission v1
+
+### 最终发布收口
+
+- prompt / 模型可见文本的密钥筛不再把带少量数字的普通 CamelCase 工程标识符
+  判成高熵密钥：`OAuth2CallbackHandler`、`HTTPRequest2Handler`、
+  `Windows10CompatibilityMode`、`PyPI2026ReleasePlan` 现在能通过全局 prompt
+  gate；显式 marker、provider key shape 和真正随机的大小写混合 blob（如 `AbcdEfghIjkl1234X`）仍会被筛掉。
+- adapter-repair sandbox 现在会在 walk/copy 之前拒绝 `source/codey` package
+  根本身是 symlink 的情况。前一轮加固已经拒绝 package 树内 symlink 与引用文件
+  symlink；现在根 package symlink 也覆盖到了。
+- completion repair-context 的 digest 现在包含实际送给模型的有界事实包哈希。
+  trace payload 仍然没有 raw text 字段，但模型可见事实变化时 digest 会变化，
+  不再只跟 counts / reason codes 变化。
+- repair round 之后的最终 proof 会先刷新 verification candidates 再选择相关检查。
+  修复轮如果改变了验证作用域，例如从 frontend 命令转到 backend 命令，不会再被
+  repair 前的候选验证视图误判。
+- `tests/manual/completion_enforcement_ab.py` 的 live 模式现在每完成一个
+  case/arm row 就落盘 JSON，并复用 manual A/B 的 journal plumbing 记录
+  prompt/reply 交通。默认 `--transcript-mode digest-only` 只保留哈希；
+  `archive` 才保存有界 manual-layer 聊天记录供 prompt-lab 诊断；生产代码仍然
+  不 import 这些测试层材料。固定 `--output` 路径现在可以干净续跑：
+  既有 row 不会被覆盖，已完成 row 默认跳过，`--rerun-failed` 才显式重跑错误
+  row；旧 error row 只有在新 row 产生后才替换，provider connect 失败会保留旧
+  row，journal run id 稳定绑定 output stem 且不会重复写 `run_start`。
 
 ### 本批加固与清理
 
@@ -223,12 +247,9 @@
   `cargo add`、`deno install` 与任意 `npx <pkg>` 归类为 dependency install；
   `irm` / `Invoke-RestMethod` 归类为 external source；`cmd /k` 与 `cmd /c`
   一样展开。只影响审批说明文案，不影响授权判定。
-- 本地 CI 成为发布门禁：新增 `tools/local_ci.py`，依次跑 ruff、全量 pytest、
-  JavaScript 资产语法检查（装了 Node.js 就硬性失败，未装则输出可见 SKIPPED）
-  和 completion-enforcement A/B self-test；`.githooks/pre-commit` 在一次性
-  `git config core.hooksPath .githooks` 之后接入每次 commit；
-  `.github/workflows/ci.yml` 只保留手动 `workflow_dispatch` 触发；README
-  使用诚实的静态 local-CI 徽标，不再伪装 GitHub Actions badge。
+- 发布验证保持显式：GitHub CI 会在 push、pull request 和手动 dispatch
+  时运行；本地发布检查在 README 中记录为直接运行 `ruff`、`pytest` 和
+  completion-enforcement self-test，不再提供仓库 hook 或自定义 wrapper。
 - 密钥检测回归单一 owner：secret marker、provider key shape 与高熵启发式
   （含 path-like 豁免）统一由 `redaction.py` 拥有。`prompt_safety` 与 Ghost
   signal schema 复用同一套判定，不再各自维护分叉副本——AWS / GitHub-PAT /
@@ -244,8 +265,6 @@
   路径与 `..` 上溯路径在触碰文件系统前一律拒绝；每次复制都在 source 与
   destination 双侧复查 containment，坏的引用路径不可能把文件 materialize 到
   源码树或沙箱之外。
-- `.githooks/pre-commit` 以可执行位（`100755`）入库，macOS/Linux 新 clone
-  无需手动 chmod 即可运行本地 CI。
 - prompt/模型可见文本的密钥筛只有一个具名入口：
   `redaction.looks_prompt_visible_secret()`（marker | provider key shape |
   高熵）。旧的 marker+shape 版 `looks_sensitive_signal` 已删除，调用方不

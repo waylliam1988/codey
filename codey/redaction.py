@@ -72,6 +72,63 @@ _SENSITIVE_CODE_COMPOUNDS = frozenset({
     "sshkey",
 })
 _SENSITIVE_CODE_EXACT = frozenset({"authorization", "token"})
+_ENGINEERING_IDENTIFIER_HINTS = frozenset({
+    "adapter",
+    "api",
+    "builder",
+    "cache",
+    "callback",
+    "client",
+    "command",
+    "compat",
+    "compatibility",
+    "component",
+    "config",
+    "configuration",
+    "context",
+    "controller",
+    "decoder",
+    "encoder",
+    "event",
+    "factory",
+    "fixture",
+    "handler",
+    "http",
+    "loader",
+    "migration",
+    "mode",
+    "model",
+    "module",
+    "oauth",
+    "page",
+    "parser",
+    "plan",
+    "policy",
+    "provider",
+    "pypi",
+    "reader",
+    "registry",
+    "release",
+    "repository",
+    "request",
+    "router",
+    "runner",
+    "runtime",
+    "schema",
+    "screen",
+    "serializer",
+    "server",
+    "service",
+    "store",
+    "strategy",
+    "suite",
+    "test",
+    "validator",
+    "version",
+    "view",
+    "windows",
+    "writer",
+})
 
 
 def looks_secret_marker(value: object) -> bool:
@@ -111,6 +168,8 @@ def looks_high_entropy_secret(value: object) -> bool:
 
 
 def _looks_like_secret_token(token: str) -> bool:
+    if _looks_like_engineering_identifier(token):
+        return False
     has_lower = any(char.islower() for char in token)
     has_upper = any(char.isupper() for char in token)
     if not (has_lower and has_upper):
@@ -122,6 +181,39 @@ def _looks_like_secret_token(token: str) -> bool:
         return False
     unique_ratio = len(set(token)) / max(1, len(token))
     return unique_ratio >= 0.35
+
+
+def _looks_like_engineering_identifier(token: str) -> bool:
+    """Allow ordinary CamelCase identifiers with small numeric qualifiers.
+
+    The entropy branch should catch random blobs, not class/type names such as
+    ``OAuth2CallbackHandler`` or release-plan identifiers. Keep this exemption
+    narrow: only plain alphanumeric identifiers with few digits and recognizable
+    word-length letter runs qualify.
+    """
+
+    if not token or not token.isalnum() or not token[0].isalpha():
+        return False
+    digit_count = sum(char.isdigit() for char in token)
+    if digit_count == 0 or digit_count > 4:
+        return False
+    alpha_runs = [item for item in re.split(r"\d+", token) if item]
+    if not any(len(run) >= 4 for run in alpha_runs):
+        return False
+    transitions = 0
+    for left, right in zip(token, token[1:]):
+        if left.isalpha() and right.isalpha() and left.islower() != right.islower():
+            transitions += 1
+    if transitions > max(6, len(token) // 5):
+        return False
+    compact_letters = "".join(alpha_runs).casefold()
+    hint_count = sum(
+        1 for hint in _ENGINEERING_IDENTIFIER_HINTS if hint in compact_letters
+    )
+    if hint_count >= 2:
+        return True
+    unique_ratio = len(set(token)) / max(1, len(token))
+    return unique_ratio <= 0.72
 
 
 def looks_sensitive_code(value: object) -> bool:

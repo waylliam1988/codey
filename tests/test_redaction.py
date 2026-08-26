@@ -38,10 +38,28 @@ def test_single_entry_blocks_bare_random_blob_without_any_marker() -> None:
         "digest sha256:" + "a" * 64,
         "secreted insulin secretion pathway",
         "read the page then finish",
+        "OAuth2CallbackHandler",
+        "HTTPRequest2Handler",
+        "Windows10CompatibilityMode",
+        "PyPI2026ReleasePlan",
     ],
 )
 def test_single_entry_keeps_ordinary_engineering_text_clean(text: str) -> None:
     assert not looks_prompt_visible_secret(text)
+
+
+def test_entropy_keeps_camelcase_engineering_names_but_blocks_random_blobs() -> None:
+    for text in (
+        "OAuth2CallbackHandler",
+        "HTTPRequest2Handler",
+        "Windows10CompatibilityMode",
+        "PyPI2026ReleasePlan",
+    ):
+        assert not looks_high_entropy_secret(text)
+
+    assert looks_high_entropy_secret("Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk29")
+    assert looks_high_entropy_secret("AbCdEfGhIjKlMnOp1")
+    assert looks_high_entropy_secret("AbcdEfghIjkl1234X")
 
 
 def test_entropy_predicate_agrees_with_the_single_entry() -> None:

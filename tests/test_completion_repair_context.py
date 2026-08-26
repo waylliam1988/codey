@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 
 from codey.completion_repair_context import (
@@ -337,6 +338,34 @@ class PayloadTests(unittest.TestCase):
         ).to_payload()["digest"]
         self.assertNotEqual(first, second)
         self.assertEqual(first, third)
+
+    def test_digest_changes_when_visible_brief_changes_with_same_metadata(self) -> None:
+        first_fact = DecisiveCheckFact(
+            command="pytest -q",
+            cwd=".",
+            exit_code=1,
+            result_summary="FAILED tests/test_a.py - assert alpha",
+        )
+        second_fact = DecisiveCheckFact(
+            command="pytest -q",
+            cwd=".",
+            exit_code=1,
+            result_summary="FAILED tests/test_b.py - assert bravo",
+        )
+        first = project_repair_context(
+            proof=_proof_payload(),
+            failure_class="product_failure",
+            decisive_checks=(first_fact,),
+        ).to_payload()
+        second = project_repair_context(
+            proof=_proof_payload(),
+            failure_class="product_failure",
+            decisive_checks=(second_fact,),
+        ).to_payload()
+
+        self.assertNotEqual(first["digest"], second["digest"])
+        self.assertNotIn("test_a", json.dumps(first))
+        self.assertNotIn("test_b", json.dumps(second))
 
     def test_source_ref_and_round_budget_helpers(self) -> None:
         self.assertEqual(PROMPT_SOURCE_REF, "local_context:completion_repair_context")

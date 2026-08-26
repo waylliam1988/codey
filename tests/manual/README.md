@@ -114,6 +114,40 @@ python -B tests\manual\ghost_research_continuity_ab.py `
   --output tests\manual\results\ghost_research_continuity_ab-deepseek.json
 ```
 
+`completion_enforcement_ab.py` is the 0.4.13 A/B for verified completion
+enforcement and one bounded repair-context round. Arms are `control_done`
+(0.4.12 semantics), `proof_only_block`, `repair_context`, and
+`repair_context_minimal`. Live mode writes the JSON report after every
+case/arm row, and fixed `--output` paths resume without overwriting completed
+rows; use `--rerun-failed` only when you intentionally want to spend provider
+traffic on rows that already ended with an error. Retried error rows are
+replaced only after a new row exists, so provider-connect failures keep the
+old diagnostic row. It can keep a manual-layer journal next to the output file:
+`digest-only` records prompt/reply hashes,
+`archive` additionally stores bounded transcripts under
+`*-journal/transcripts/`, and `off` disables journaling. The journal identity is
+stable for the output stem and writes `run_start` only once, so interrupted
+runs can append to the same journal with low trace noise.
+Run one provider, and preferably one arm, at a time when debugging web-model
+stalls.
+
+```powershell
+python -B tests\manual\completion_enforcement_ab.py --self-test
+python -B tests\manual\completion_enforcement_ab.py `
+  --provider deepseek `
+  --cases 2-3 `
+  --arms control_done `
+  --transcript-mode archive `
+  --output tests\manual\results\completion_enforcement_ab-deepseek-control.json
+
+python -B tests\manual\completion_enforcement_ab.py `
+  --provider deepseek `
+  --cases 2-3 `
+  --arms control_done `
+  --output tests\manual\results\completion_enforcement_ab-deepseek-control.json `
+  --rerun-failed
+```
+
 
 `changeset_review_ab.py` compares the old path-only Review prompt with the
 current ChangeSet-summary prompt. It sends fixed review-only diffs to one live

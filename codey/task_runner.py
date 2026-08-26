@@ -3275,6 +3275,13 @@ class TaskRunner:
                                 task_changes,
                                 task_changed,
                             )
+                            verification_candidates = safe_verification_candidates(
+                                project,
+                                verification_verified_commands,
+                                resumed_verification_commands,
+                                configured_verification_commands,
+                                configured_ignored_paths,
+                            )
                             selected_check = (
                                 select_verification_candidate(verification_candidates, files)
                                 if files

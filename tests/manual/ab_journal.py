@@ -591,6 +591,10 @@ class ABJournalWriter:
         self._write_manifest()
         self._handle = self.events_path.open("a", encoding="utf-8")
 
+    @property
+    def event_count(self) -> int:
+        return self._last_seq
+
     def rewrite_recovered(self, events: list[dict[str, Any]]) -> None:
         self.events_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self.events_path.with_name(f".{self.events_path.name}.recover")

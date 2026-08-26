@@ -1,8 +1,8 @@
 name: CI
 
-# Local CI (tools/local_ci.py, wired through .githooks/pre-commit) is the
-# authoritative gate. GitHub CI exists only for on-demand remote runs.
 on:
+  push:
+  pull_request:
   workflow_dispatch:
 
 jobs:

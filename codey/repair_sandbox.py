@@ -45,11 +45,14 @@ def create_repair_sandbox(
 ) -> RepairSandbox:
     source = Path(source_root) if source_root is not None else Path(__file__).resolve().parents[1]
     source = source.resolve()
-    if not (source / "codey").is_dir():
+    package_root = source / "codey"
+    if package_root.is_symlink():
+        raise ValueError(f"repair source tree must not contain symlinks: {package_root}")
+    if not package_root.is_dir():
         # Name the missing input ourselves: raw OS errors do not carry the
         # path on every platform.
         raise FileNotFoundError(f"repair source root has no codey package: {source}")
-    _reject_symlinks(source / "codey")
+    _reject_symlinks(package_root)
     config = source / "pyproject.toml"
     if config.is_symlink():
         raise ValueError(f"repair source tree must not contain symlinks: {config}")
@@ -72,6 +75,8 @@ def create_repair_sandbox(
 
 
 def _reject_symlinks(package_root: Path) -> None:
+    if package_root.is_symlink():
+        raise ValueError(f"repair source tree must not contain symlinks: {package_root}")
     for dirpath, dirnames, filenames in os.walk(package_root):
         here = Path(dirpath)
         for name in (*dirnames, *filenames):

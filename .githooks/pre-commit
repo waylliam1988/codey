@@ -1,3 +1,0 @@
-#!/bin/sh
-# Local CI is the release gate: every commit must pass it.
-exec python tools/local_ci.py

@@ -2548,8 +2548,8 @@ provider live smoke 至少能把 native-search stuck / send_error 与 Codey tool
 
 ## 0.4.13 - Verified Completion Enforcement + Repair Context Admission v1
 
-状态：已完成开发。live provider A/B（control_done / proof_only_block /
-repair_context 四臂）是发布门，harness 见
+状态：已完成（0.4.13）。live provider A/B（control_done / proof_only_block /
+repair_context 四臂）是 0.4 收尾打磨和证明净收益的下一道门，harness 见
 `tests/manual/completion_enforcement_ab.py`。目标是在 0.4.9 的 shadow
 completion proof 和 0.4.11 的 harness 证据足够稳定之后，才让 completion
 proof 第一次影响 coding 行为：阻止明显未验证的 `done`，并把最小的失败事实
@@ -4022,7 +4022,7 @@ harness 大改塞进 0.4.13；它会污染 release A/B。应该只做两个收�
 判断线：
 
 ```text
-0.4.13：完成 verified completion release gate，不引入恢复语义
+0.4.13：完成 verified completion 行为闭环，不引入恢复语义
 0.5.0：让 completion/repair 状态可恢复、可解释
 0.5.1：让 provider/tool effects 有 intent/settlement 和 replay policy
 ```

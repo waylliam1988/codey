@@ -45,6 +45,19 @@ from codey.events import RunEvent
 from codey.models import ToolCall
 from codey.task_runner import TaskRequest, TaskRunner
 from codey.tool_runtime import ToolOutcome
+from tests.manual.ab_harness_common import (
+    TracingProvider,
+    load_or_new_payload,
+    normalize_payload_metadata,
+    timestamp,
+    write_payload_bounded,
+)
+from tests.manual.ab_journal import (
+    ABJournalWriter,
+    TRANSCRIPT_MODE_ARCHIVE,
+    TRANSCRIPT_MODE_DIGEST_ONLY,
+    TranscriptReplayCache,
+)
 
 dataclass = dataclasses.dataclass
 
@@ -453,27 +466,36 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     for row in rows:
         by_arm.setdefault(row["arm"], []).append(row)
 
+    def int_field(row: dict[str, Any], key: str) -> int:
+        try:
+            return max(0, int(row.get(key) or 0))
+        except (TypeError, ValueError):
+            return 0
+
     def rate(rows_: list[dict[str, Any]], predicate) -> float | None:
         return (sum(1 for r in rows_ if predicate(r)) / len(rows_)) if rows_ else None
 
     summary: dict[str, Any] = {}
     for arm, arm_rows in by_arm.items():
-        repaired = [r for r in arm_rows if r["repair_rounds"] > 0]
+        repaired = [r for r in arm_rows if int_field(r, "repair_rounds") > 0]
         summary[arm] = {
-            "false_completion_rate": rate(arm_rows, lambda r: r["false_completion"]),
+            "false_completion_rate": rate(arm_rows, lambda r: bool(r.get("false_completion"))),
             "task_success_rate": rate(
                 arm_rows,
-                lambda r: r["stop_reason"] == "done" and r["independent_ok"],
+                lambda r: r.get("stop_reason") == "done" and bool(r.get("independent_ok")),
             ),
-            "honest_block_rate": rate(arm_rows, lambda r: r["blocked_honestly"]),
-            "unnecessary_repair_rate": rate(arm_rows, lambda r: r["unnecessary_repair"]),
+            "honest_block_rate": rate(arm_rows, lambda r: bool(r.get("blocked_honestly"))),
+            "unnecessary_repair_rate": rate(
+                arm_rows,
+                lambda r: bool(r.get("unnecessary_repair")),
+            ),
             "regression_after_repair_count": sum(
-                1 for r in arm_rows if r["regression_after_repair"]
+                1 for r in arm_rows if r.get("regression_after_repair")
             ),
-            "total_repair_rounds": sum(r["repair_rounds"] for r in arm_rows),
-            "repair_success_rate": rate(repaired, lambda r: r["repair_success"]),
+            "total_repair_rounds": sum(int_field(r, "repair_rounds") for r in arm_rows),
+            "repair_success_rate": rate(repaired, lambda r: bool(r.get("repair_success"))),
             "repair_context_chars_total": sum(
-                r["repair_context_chars"] for r in arm_rows
+                int_field(r, "repair_context_chars") for r in arm_rows
             ),
         }
     return summary
@@ -559,26 +581,178 @@ def parse_cases(spec: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(picked))
 
 
-def run_live(provider_id: str, port: int, case_names: tuple[str, ...], arms: tuple[str, ...], max_turns: int) -> dict[str, Any]:
+_TRANSCRIPT_MODE_MAP = {
+    "digest-only": TRANSCRIPT_MODE_DIGEST_ONLY,
+    "archive": TRANSCRIPT_MODE_ARCHIVE,
+}
+
+
+def _open_journal(
+    *,
+    output: Path,
+    provider_id: str,
+    transcript_mode: str,
+    max_turns: int,
+    case_names: tuple[str, ...],
+    arms: tuple[str, ...],
+) -> ABJournalWriter | None:
+    mode = _TRANSCRIPT_MODE_MAP.get(str(transcript_mode or "").strip())
+    if mode is None:
+        return None
+    journal_dir = output.parent / f"{output.stem}-journal"
+    journal = ABJournalWriter(
+        directory=journal_dir,
+        experiment_id="completion_enforcement_ab",
+        run_id=f"{provider_id}-{output.stem}",
+        provider=provider_id,
+        transcript_cache=TranscriptReplayCache(journal_dir, mode=mode),
+    )
+    if journal.event_count == 0:
+        journal.record_run_start(cases=case_names, arms=arms, max_turns=max_turns)
+    return journal
+
+
+def _append_or_replace_failed_row(
+    rows: list[dict[str, Any]],
+    row: dict[str, Any],
+    *,
+    rerun_failed: bool,
+) -> None:
+    if rerun_failed:
+        key = (str(row.get("case") or ""), str(row.get("arm") or ""))
+        rows[:] = [
+            existing
+            for existing in rows
+            if (
+                (str(existing.get("case") or ""), str(existing.get("arm") or "")) != key
+                or not existing.get("error")
+            )
+            ]
+    rows.append(row)
+
+
+def _live_error_row(
+    *,
+    case_name: str,
+    arm: str,
+    exc: BaseException,
+    tracing_provider: TracingProvider,
+    elapsed_s: float,
+) -> dict[str, Any]:
+    return {
+        "case": case_name,
+        "arm": arm,
+        "error": f"{type(exc).__name__}: {exc}",
+        "stop_reason": "error",
+        "false_completion": False,
+        "blocked_honestly": False,
+        "unnecessary_repair": False,
+        "repair_rounds": 0,
+        "repair_success": False,
+        "regression_after_repair": False,
+        "independent_ok": False,
+        "writer_phases": 0,
+        "tool_calls": tracing_provider.send_index,
+        "turns": 0,
+        "elapsed_s": round(elapsed_s, 2),
+        "send_count": tracing_provider.send_index,
+        "reply_count": tracing_provider.reply_count,
+        "prompt_chars": tracing_provider.prompt_chars,
+        "reply_chars": tracing_provider.reply_chars,
+    }
+
+
+def run_live(
+    provider_id: str,
+    port: int,
+    case_names: tuple[str, ...],
+    arms: tuple[str, ...],
+    max_turns: int,
+    *,
+    output: Path | None = None,
+    transcript_mode: str = "digest-only",
+    rerun_failed: bool = False,
+) -> dict[str, Any]:
     from codey.providers.registry import connect_provider
 
-    rows: list[dict[str, Any]] = []
-    provider = None
     import time
+    raw_provider = None
+    results_dir = Path(__file__).parent / "results"
+    results_dir.mkdir(exist_ok=True)
+    stamp = time.strftime("%Y%m%dT%H%M%S")
+    out = output or results_dir / f"completion_enforcement_ab_{provider_id}_{stamp}.json"
+    report = load_or_new_payload(
+        out,
+        probe="completion_enforcement_ab",
+        provider_id=provider_id,
+        cases=case_names,
+        arms=arms,
+    )
+    normalize_payload_metadata(report, provider_id=provider_id, cases=case_names, arms=arms)
+    rows = report["rows"] if isinstance(report.get("rows"), list) else []
+    report["rows"] = rows
+    existing = {
+        (str(row.get("case") or ""), str(row.get("arm") or ""))
+        for row in rows
+        if not row.get("error") or not rerun_failed
+    }
+    pending = [
+        (case_name, arm)
+        for case_name in case_names
+        for arm in arms
+        if (case_name, arm) not in existing
+    ]
+    report["summary"] = summarize(rows)
+    report["updated_at"] = timestamp()
+    report["ok"] = not any(row.get("error") for row in rows)
+    if not pending:
+        report["complete"] = True
+        write_payload_bounded(out, report)
+        print(
+            f"[{provider_id}] no pending rows for cases={','.join(case_names)} "
+            f"arms={','.join(arms)}; use --rerun-failed or a new --output to run again.",
+            flush=True,
+        )
+        return report
+    report["complete"] = False
+    journal: ABJournalWriter | None = None
+    run_finished = False
+    rows_recorded_this_run = 0
 
     try:
-        provider = connect_provider(provider_id, port=port)
-        for case_name in case_names:
+        raw_provider = connect_provider(provider_id, port=port)
+        journal = _open_journal(
+            output=out,
+            provider_id=provider_id,
+            transcript_mode=transcript_mode,
+            max_turns=max_turns,
+            case_names=case_names,
+            arms=arms,
+        )
+        write_payload_bounded(out, report)
+        for case_name, arm in pending:
             spec = LIVE_CASES[case_name]
-            for arm in arms:
-                started = time.monotonic()
-                observed: dict[str, Any] = {}
+            started = time.monotonic()
+            observed: dict[str, Any] = {}
+            tracing_provider = TracingProvider(
+                raw_provider,
+                journal=journal,
+                case=case_name,
+                arm=arm,
+            )
+            if journal is not None:
+                journal.record_case_start(
+                    case=case_name,
+                    arm=arm,
+                    question_chars=len(str(spec.get("task") or "")),
+                )
+            try:
                 with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
                     project = _live_project(Path(td), spec)
                     state = server.State(Path(td) / "state")
                     runner = _build_runner(state, observed=observed)
                     patches = _start_arm_patches(arm)
-                    with mock.patch.object(state, "get_provider", return_value=provider):
+                    with mock.patch.object(state, "get_provider", return_value=tracing_provider):
                         for patch in patches:
                             patch.start()
                         try:
@@ -602,27 +776,69 @@ def run_live(provider_id: str, port: int, case_names: tuple[str, ...], arms: tup
                         project=project,
                         observed=observed,
                         writer_phases=None,
-                        tool_calls=None,
-                        turns=None,
+                        tool_calls=tracing_provider.send_index,
+                        turns=(state.last_terminal_event or {}).get("turns"),
                         elapsed_s=time.monotonic() - started,
                     )
-                rows.append(row)
-                print(
-                    f"[{case_name} {arm}] stop={row['stop_reason']} "
-                    f"independent_ok={row['independent_ok']} "
-                    f"repairs={row['repair_rounds']}"
+                    row["send_count"] = tracing_provider.send_index
+                    row["reply_count"] = tracing_provider.reply_count
+                    row["prompt_chars"] = tracing_provider.prompt_chars
+                    row["reply_chars"] = tracing_provider.reply_chars
+            except Exception as exc:
+                row = _live_error_row(
+                    case_name=case_name,
+                    arm=arm,
+                    exc=exc,
+                    tracing_provider=tracing_provider,
+                    elapsed_s=time.monotonic() - started,
                 )
+            _append_or_replace_failed_row(rows, row, rerun_failed=rerun_failed)
+            rows_recorded_this_run += 1
+            if journal is not None:
+                journal.record_case_complete(
+                    case=case_name,
+                    arm=arm,
+                    row={
+                        "ok": bool(
+                            not row.get("error")
+                            and not row.get("false_completion")
+                            and not row.get("unnecessary_repair")
+                            and not row.get("regression_after_repair")
+                        ),
+                        "stop_reason": str(row.get("stop_reason") or row.get("error") or ""),
+                        "turns": row.get("turns"),
+                    },
+                )
+            report["summary"] = summarize(rows)
+            report["ok"] = not any(row.get("error") for row in rows)
+            report["updated_at"] = timestamp()
+            write_payload_bounded(out, report)
+            print(
+                f"[{case_name} {arm}] stop={row['stop_reason']} "
+                f"independent_ok={row['independent_ok']} "
+                f"repairs={row['repair_rounds']}"
+            )
+        report["complete"] = True
+        report["finished_at"] = timestamp()
+        report["summary"] = summarize(rows)
+        report["ok"] = not any(row.get("error") for row in rows)
+        write_payload_bounded(out, report)
+        if journal is not None:
+            journal.record_run_complete(
+                rows=len(rows),
+                status="failed" if any(row.get("error") for row in rows) else "done",
+            )
+        run_finished = True
     finally:
-        if provider is not None:
+        if not run_finished and journal is not None and rows_recorded_this_run:
+            journal.record_run_complete(rows=len(rows), status="failed")
+        if raw_provider is not None:
             try:
-                provider.close()
+                raw_provider.close()
             except Exception:
                 pass
-    report = {"provider": provider_id, "summary": summarize(rows), "results": rows}
-    results_dir = Path(__file__).parent / "results"
-    results_dir.mkdir(exist_ok=True)
-    out = results_dir / f"completion_enforcement_ab_{provider_id}.json"
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+        if journal is not None:
+            journal.close()
     print(json.dumps(report["summary"], ensure_ascii=False, indent=2))
     print(f"report written: {out}")
     return report
@@ -637,6 +853,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases", default="", help="e.g. 2-3 or 1,3")
     parser.add_argument("--arms", action="append", choices=ARMS)
     parser.add_argument("--max-turns", type=int, default=10)
+    parser.add_argument("--output", type=Path, default=None)
+    parser.add_argument(
+        "--transcript-mode",
+        choices=("off", "digest-only", "archive"),
+        default="digest-only",
+        help="digest-only keeps prompt/reply hashes; archive stores bounded "
+             "manual-layer transcripts; off disables the journal",
+    )
+    parser.add_argument(
+        "--rerun-failed",
+        action="store_true",
+        help="with a fixed --output, rerun rows that already contain an error",
+    )
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
 
@@ -645,14 +874,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     selected_arms = tuple(args.arms or ARMS)
-    run_live(
+    report = run_live(
         args.provider,
         args.port,
         parse_cases(args.cases),
         selected_arms,
         args.max_turns,
+        output=args.output,
+        transcript_mode=args.transcript_mode,
+        rerun_failed=bool(args.rerun_failed),
     )
-    return 0
+    return 0 if report.get("ok") else 1
 
 
 if __name__ == "__main__":

@@ -611,6 +611,26 @@ class RepairSandboxTests(unittest.TestCase):
                 create_repair_sandbox(root)
             self.assertEqual(_repair_temp_roots(), before)
 
+    def test_sandbox_rejects_symlinked_codey_package_root(self) -> None:
+        # A symlinked package root is just as unsafe as a symlink below it:
+        # copytree would otherwise follow it and materialize files outside the
+        # declared source tree.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            root.mkdir()
+            outside = Path(td) / "outside-package"
+            _source_tree(outside)
+            try:
+                (root / "codey").symlink_to(outside / "codey", target_is_directory=True)
+            except OSError:
+                self.skipTest("directory symlink creation requires privileges")
+                return
+
+            before = _repair_temp_roots()
+            with self.assertRaises(ValueError):
+                create_repair_sandbox(root)
+            self.assertEqual(_repair_temp_roots(), before)
+
     def test_reference_file_symlink_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "src"

@@ -4,7 +4,38 @@
 
 This file records Codey's release history. The newest release appears first.
 
-## 0.4.13 (Unreleased) - Verified Completion Enforcement + Repair Context Admission v1
+## 0.4.13 - Verified Completion Enforcement + Repair Context Admission v1
+
+### Final release closeout
+
+- Prompt-visible redaction no longer treats ordinary CamelCase engineering
+  identifiers with small numeric qualifiers as high-entropy secrets:
+  `OAuth2CallbackHandler`, `HTTPRequest2Handler`,
+  `Windows10CompatibilityMode`, and `PyPI2026ReleasePlan` now survive the
+  global prompt gate, while marker words, provider key shapes, and genuinely
+  random mixed-case blobs such as `AbcdEfghIjkl1234X` still screen out.
+- The adapter-repair sandbox now rejects a symlinked `source/codey` package
+  root before walking or copying it. Earlier hardening rejected symlinks
+  inside the package tree and reference files; the root itself is now covered
+  too.
+- Completion repair-context digests now include a hash of the actual bounded
+  model-visible facts brief. The trace payload still has no raw text field,
+  but its digest changes when the facts sent to the model change, not only
+  when counts or reason codes change.
+- The final proof after a repair round refreshes verification candidates
+  before selecting the relevant check. A repair that changes verification
+  scope, for example from a frontend command to a backend command, no longer
+  gets judged against the pre-repair candidate view.
+- `tests/manual/completion_enforcement_ab.py` live mode now writes the JSON
+  report after every case/arm row and can journal prompt/reply traffic through
+  the shared manual A/B plumbing. The default `--transcript-mode digest-only`
+  keeps hashes only; `archive` stores bounded manual-layer transcripts for
+  prompt-lab diagnosis, and production still imports none of it. Fixed
+  `--output` paths now resume cleanly: existing rows are not overwritten,
+  completed rows are skipped by default, `--rerun-failed` is the explicit
+  opt-in for error rows, the old error row is replaced only after a new row
+  exists, provider-connect failures keep the old row intact, and the journal
+  run id is stable for the output stem without repeated `run_start` events.
 
 ### Hardening and cleanup (this batch)
 
@@ -276,13 +307,10 @@ This file records Codey's release history. The newest release appears first.
   classify as dependency installs; `irm` / `Invoke-RestMethod` classify as
   external source; `cmd /k` unwraps like `cmd /c`. Display-only: approval
   decisions are unchanged.
-- Local CI becomes the release gate: new `tools/local_ci.py` runs ruff, the
-  full pytest suite, JavaScript asset syntax checks (hard-fails when Node.js
-  is installed, visibly skips when not), and the completion-enforcement A/B
-  self-test; `.githooks/pre-commit` wires it into every commit after a
-  one-time `git config core.hooksPath .githooks`; `.github/workflows/ci.yml`
-  triggers only via manual `workflow_dispatch`; README carries an honest
-  static local-CI badge instead of a GitHub Actions badge.
+- Release validation stays explicit: GitHub CI runs on pushes, pull requests,
+  and manual dispatch, while local release checks are documented as direct
+  `ruff`, `pytest`, and completion-enforcement self-test commands rather than
+  a repository hook or custom wrapper.
 - Secret detection has one owner again: `redaction.py` owns secret markers,
   provider key shapes, and the high-entropy heuristic together with its
   path-like exemption. `prompt_safety` and the Ghost signal schema reuse it
@@ -302,8 +330,6 @@ This file records Codey's release history. The newest release appears first.
   copy re-checks containment on both the source and destination side, so a
   bad reference path can never materialize files outside the source tree or
   the sandbox.
-- `.githooks/pre-commit` is committed executable (`100755`), so fresh
-  clones on macOS/Linux run local CI without a manual chmod.
 - Prompt/model-visible secret screening gets one named entry:
   `redaction.looks_prompt_visible_secret()` (marker | provider key shape |
   high-entropy). The old marker+shape-only `looks_sensitive_signal` is

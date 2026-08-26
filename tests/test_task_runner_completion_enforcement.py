@@ -21,6 +21,7 @@ from codey.task_runner import (
     _blocked_result,
 )
 from codey.tool_runtime import ToolOutcome
+from codey.verification_policy import VerificationCandidate
 
 
 class _Provider:
@@ -100,6 +101,14 @@ def _run_event_output(outcome: ToolOutcome) -> RunEvent:
         2,
         ToolCall("run", {"command": "python -m pytest", "path": "."}),
         outcome,
+    )
+
+
+def _scoped_run_event(command: str, path: str, ok: bool) -> RunEvent:
+    return RunEvent.tool_finished(
+        2,
+        ToolCall("run", {"command": command, "path": path}),
+        ToolOutcome("passed" if ok else "failed", ok, exit_code=0 if ok else 1),
     )
 
 
@@ -208,6 +217,63 @@ def test_fresh_fail_runs_one_repair_round_then_completes() -> None:
         # was handed to the writer attempt exactly once.
         raw = json.dumps(manifest, ensure_ascii=False)
         assert "FAILED tests/test_mod.py" not in raw
+
+
+def test_repair_round_refreshes_verification_candidates_for_final_proof() -> None:
+    writer = ScriptedWriter(
+        (
+            [
+                _edit_event("frontend/src/app.ts"),
+                _scoped_run_event("npm test", "frontend", False),
+            ],
+            RunResult("done?", "done", 3),
+        ),
+        (
+            [
+                _edit_event("backend/app.py"),
+                _scoped_run_event("python -m pytest", "backend", True),
+            ],
+            RunResult("fixed now", "done", 2),
+        ),
+    )
+    changes = [_changes("frontend/src/app.ts"), _changes("backend/app.py")]
+
+    def collect(*_args, **_kwargs):
+        return changes.pop(0) if changes else _changes("backend/app.py")
+
+    def candidates(*_args, **_kwargs):
+        if changes:
+            return (VerificationCandidate("npm test", "frontend"),)
+        return (VerificationCandidate("python -m pytest", "backend"),)
+
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
+        project = Path(td) / "project"
+        (project / "frontend" / "src").mkdir(parents=True)
+        (project / "backend").mkdir(parents=True)
+        state = server.State(Path(td) / "state")
+        runner = TaskRunner(
+            state,
+            agent_run=writer,
+            collect_changes=mock.Mock(side_effect=collect),
+            run_review=mock.Mock(return_value=None),
+            capture_provider_failure=server.capture_provider_failure,
+            project_facts=state.project_facts,
+            work_checkpoints=state.work_checkpoints,
+            run_ledgers=state.run_ledgers,
+            run_traces=state.run_traces,
+            evidence_ledgers=state.evidence_ledgers,
+            managed_outputs=state.managed_outputs,
+            knowledge_store=state.knowledge_store,
+            is_git_repository=lambda _p: True,
+        )
+        with mock.patch.object(task_runner_module, "safe_verification_candidates", candidates):
+            event = _run(runner, state, project)
+
+        assert len(writer.calls) == 2
+        assert event["stop_reason"] == "done"
+        assert event["receipt"]["checks_passed"] is True
+        statuses = [row["status"] for row in _trace_payload(state)["completion_proofs"]]
+        assert statuses == ["failed", "complete"]
 
 
 def test_still_failing_after_repair_round_blocks_honestly() -> None:

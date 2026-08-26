@@ -2,10 +2,9 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.12-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.13-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
-[![本地 CI](https://img.shields.io/badge/local%20CI-required-brightgreen)](tools/local_ci.py)
 
 [English](README.md)
 
@@ -19,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.12`
+版本：`0.4.13`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -74,6 +73,10 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 - **代码留在本机**：模型只能访问你选择的项目目录。
 - **写代码时不容易忘事**：每次本地工具结果后，Codey 会提醒模型已经读过哪些
   文件、改了哪些文件，以及当前最该跑哪条验证命令。
+- **温和阻止假完成**：代码有改动时，现在由本地 completion proof 判断
+  `done` 是否真的成立。新鲜通过的相关检查可以完成；没验证、验证失败或环境
+  坏了会诚实 blocked；只有观察到的产品失败才会给模型一次有界的事实型修复
+  上下文。
 - **把研究带进项目**：研究结束后选择项目文件夹，Codey 只把带引用和限制条件的有边界 Research Brief 注入 Writer，不把整个 vault 塞进去。
 - **度量自己的证据闭环**：冻结的纵向研究基准套件 + 纯 read-model 回归门，
   按期望 observable 评分多轮研究（stale 处理、unsupported claim 排除、
@@ -126,6 +129,9 @@ Codey 想解决的是一个很朴素的问题：
 - 在同一个项目对话里讨论、查看和修改；只有明确要求时才改文件
 - 让模型读取和修改你选择的项目目录
 - 运行允许的测试、构建、lint 和类型检查，并把结果继续反馈给模型
+- 用本地 completion proof 阻止未验证的编程任务被报告成 clean done；观察到的
+  产品失败可以进入一次有界 repair-context 回合，而没验证或环境失败会诚实停下，
+  不冒充代码已通过
 - 显示红绿 diff
 - 每次任务结束后显示一条克制的任务收据，例如 `DONE · 2 files changed · checks passed · restore available`
 - 每次任务写一份有界本地 run trace，记录模式、provider、Router 结果、prompt
@@ -673,28 +679,16 @@ Codey 已经测试过用 DeepSeek、MiMo、StepFun 和 Qwen 修复被故意弄�
 python -B tools/ui_e2e.py --artifacts .e2e-artifacts --json
 ```
 
-## 本地 CI
+## 发布验证
 
-本地验证就是发布门禁。GitHub CI 只保留手动触发（`workflow_dispatch`）；每次
-commit 都会由一个本地入口自动检查：ruff、全量 pytest、JavaScript 资产语法检查，
-以及 completion-enforcement A/B self-test：
-
-```powershell
-python tools/local_ci.py
-```
-
-commit 钩子随仓库提供（以可执行位入库，macOS/Linux clone 无需手动 chmod），
-每台机器激活一次后 `git commit` 会自动跑完整本地 CI：
+GitHub CI 会在 push、pull request 和手动 dispatch 时运行。发布前请显式运行
+本地检查，并把结果记入 [TEST_REPORT.md](TEST_REPORT.md)：
 
 ```powershell
-git config core.hooksPath .githooks
+python -m ruff check .
+python -B -m pytest -q
+python -B tests\manual\completion_enforcement_ab.py --self-test
 ```
-
-JavaScript 语法检查在装有 Node.js 的机器上是硬性失败；未安装 Node.js 时会输出
-可见的 `SKIPPED` 行。其余步骤始终执行。
-
-发布前再跑一次完整门禁和 live provider A/B，并把结果记入
-[TEST_REPORT.md](TEST_REPORT.md)。
 
 当 Edge CDP 已打开并登录支持的网页模型页面时，可以运行真实 Provider 矩阵。每个结果都会在 Agent 结束后再经过独立功能断言和 unittest 验证：
 
