@@ -104,6 +104,14 @@ def validate_candidate(
     baseline_root = Path(baseline_root).resolve()
     candidate_root = Path(candidate_root).resolve()
     allowed = set(adapter_repair_surface(provider_id))
+    if not allowed:
+        # Fail closed: a provider without a driver surface must never fall
+        # back to the shared web files.
+        return RepairPolicyResult(
+            ok=False,
+            changed_files=(),
+            errors=(f"unsupported provider for adapter repair: {provider_id or '<empty>'}",),
+        )
     readonly_tests = set(PROVIDER_TEST_FILES.get(provider_id, ()))
     changed = _changed_files(baseline_root, candidate_root)
     errors: list[str] = []

@@ -14,9 +14,15 @@ a per-provider override root (``PYTHONPATH=override.root``), touching the
 shared files inside one provider's override cannot leak into another
 provider's runtime path; it only widens what that repair's own validation
 must prove.
+
+The surface is fail-closed: a provider without a driver entry has an empty
+surface. The shared files are never granted on their own -- they only ever
+widen a known provider's driver surface.
 """
 
 from __future__ import annotations
+
+from codey.provider_ids import normalize_provider_id
 
 
 PROVIDER_DRIVER_FILES = {
@@ -44,14 +50,25 @@ SHARED_WEB_ADAPTER_FILES = (
 
 
 def driver_files(provider_id: str) -> tuple[str, ...]:
-    return PROVIDER_DRIVER_FILES.get(str(provider_id or "").strip().lower(), ())
+    return PROVIDER_DRIVER_FILES.get(normalize_provider_id(provider_id), ())
 
 
 def shared_web_adapter_files() -> tuple[str, ...]:
     return SHARED_WEB_ADAPTER_FILES
 
 
-def adapter_repair_surface(provider_id: str) -> tuple[str, ...]:
-    """Every file one provider's self-repair may replace."""
+def is_known_provider(provider_id: str) -> bool:
+    return bool(driver_files(provider_id))
 
-    return (*driver_files(provider_id), *SHARED_WEB_ADAPTER_FILES)
+
+def adapter_repair_surface(provider_id: str) -> tuple[str, ...]:
+    """Every file one provider's self-repair may replace.
+
+    Empty for unknown providers: the shared web files are granted only in
+    combination with a real driver surface, never alone.
+    """
+
+    driver = driver_files(provider_id)
+    if not driver:
+        return ()
+    return (*driver, *SHARED_WEB_ADAPTER_FILES)

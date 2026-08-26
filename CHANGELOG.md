@@ -83,7 +83,7 @@ This file records Codey's release history. The newest release appears first.
 - Provider adapter dedup: the five byte-identical `providers/*_web.py`
   wrappers collapsed into one spec-driven `web_provider.py` (~270 lines);
   shared control-location / response-count / rate-limit / late-response
-  scaffolding extracted into `providers/driver_common.py`; provider id
+  scaffolding extracted into `providers/web_drivers/common.py`; provider id
   normalization unified in `codey/provider_ids.py`. Per-site completion
   heuristics deliberately stay in their drivers.
 - Adapter self-repair surface widened deliberately, with impact-escalated
@@ -104,17 +104,20 @@ This file records Codey's release history. The newest release appears first.
   repair runs in a provider-scoped override sandbox ... do not modify tests
   or Codey core runtime"). `adapter_overrides.adapter_base_hash()` includes
   repair-surface JSON so a changed builtin `provider_profiles.json`
-  invalidates overrides generated against the old data.
+  invalidates overrides generated against the old data. The surface is
+  fail-closed: a provider without a driver entry has an empty surface, so
+  the shared files can never be granted on their own --
+  `validate_candidate()` reports "unsupported provider for adapter repair"
+  and `run_adapter_repair()` refuses before any model call or install.
 - Provider id normalization fully unified: the local `_provider_id()` copies
   in `adapter_overrides.py`, `provider_supervisor.py`, `self_repair.py`, and
   `repair_policy.py` all delegate to `provider_ids.normalize_provider_id()`.
-- Site drivers moved into the providers package: `codey/{deepseek,qwen,mimo,
-  stepfun,glm}.py` are now `codey/providers/web_drivers/*.py`, and
-  `providers/driver_common.py` is `providers/web_drivers/common.py`.
-  `web_provider.py` imports drivers from their new home, so drivers import
-  their sibling `common` instead of reaching back into the providers package
-  init -- the fragile cold-start shape is gone. `web_drivers/__init__.py`
-  stays import-free on purpose.
+- Site drivers live in the providers package: the five page drivers are
+  `codey/providers/web_drivers/*.py` next to their shared `common`
+  scaffolding. `web_provider.py` imports drivers from there, so drivers
+  import their sibling `common` instead of reaching back into the providers
+  package init -- the fragile cold-start shape is gone.
+  `web_drivers/__init__.py` stays import-free on purpose.
 - `UiStateStore.save()`'s cache fast path assumes a single Codey server per
   ``state_home``; that single-writer assumption is now documented in code.
 

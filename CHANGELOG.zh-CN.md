@@ -66,7 +66,7 @@
   `provider_controls.reject_flow`。
 - Provider 适配层去重：五个几乎相同的 `providers/*_web.py` 合并为单一
   spec 驱动的 `web_provider.py`（约 -270 行）；控制定位/响应计数/限流检测/
-  迟到响应轮询等公共脚手架提取到 `providers/driver_common.py`；provider id
+  迟到响应轮询等公共脚手架提取到 `providers/web_drivers/common.py`；provider id
   规范化统一进 `codey/provider_ids.py`。各站点自己的完成判定刻意保留在
   各自 driver 内。
 - Adapter 自修复边界按影响面升级。新增 `codey/adapter_surface.py`，把修复面
@@ -82,15 +82,18 @@
   core runtime 仍然拒绝。修复 prompt 改为陈述真实边界（只改网页适配面、
   运行在 provider 级 override 沙箱、不得改测试与 core runtime）。
   `adapter_overrides.adapter_base_hash()` 把修复面上的 JSON 纳入 hash，
-  内置 `provider_profiles.json` 变更会使旧 override 失效。
+  内置 `provider_profiles.json` 变更会使旧 override 失效。修复面 fail
+  closed：driver 缺失即修复面为空，共享文件永远不会被单独授予——
+  `validate_candidate()` 明确报 unsupported provider，`run_adapter_repair()`
+  在调用模型和安装之前直接拒绝。
 - Provider id 规范化彻底统一：`adapter_overrides.py`、`provider_supervisor.py`、
   `self_repair.py`、`repair_policy.py` 中的本地 `_provider_id()` 全部改为委托
   `provider_ids.normalize_provider_id()`。
-- 各站点 driver 移入 providers 包：`codey/{deepseek,qwen,mimo,stepfun,glm}.py`
-  迁移为 `codey/providers/web_drivers/*.py`，`providers/driver_common.py`
-  迁移为 `providers/web_drivers/common.py`。`web_provider.py` 从新位置导入
-  driver，driver 改为引用同包的 `common`，不再回穿 providers 包 init——
-  冷启动脆弱形状消除。`web_drivers/__init__.py` 刻意保持无 import。
+- 各站点 driver 收进 providers 包：五个页面驱动即
+  `codey/providers/web_drivers/*.py`，与共享脚手架 `common` 同包。
+  `web_provider.py` 直接从该包导入 driver，driver 引用同包的 `common`，
+  不再回穿 providers 包 init——冷启动脆弱形状消除。`web_drivers/__init__.py`
+  刻意保持无 import。
 - `UiStateStore.save()` 的缓存快路径假设每个 `state_home` 只有一个 Codey
   server 写入；该单写者假设已在代码中文档化。
 

@@ -317,7 +317,8 @@ class GhostArchitectureTests(unittest.TestCase):
             "print(json.dumps({"
             "'browser': 'codey.browser' in sys.modules, "
             "'registry': 'codey.providers.registry' in sys.modules, "
-            "'deepseek': 'codey.providers.deepseek_web' in sys.modules"
+            "'deepseek': 'codey.providers.web_drivers.deepseek' in sys.modules, "
+            "'qwen': 'codey.providers.web_drivers.qwen' in sys.modules"
             "}))\n"
         )
         completed = subprocess.run(
@@ -332,6 +333,7 @@ class GhostArchitectureTests(unittest.TestCase):
         self.assertFalse(loaded["browser"])
         self.assertFalse(loaded["registry"])
         self.assertFalse(loaded["deepseek"])
+        self.assertFalse(loaded["qwen"])
 
     def test_manual_keep_open_still_closes_non_isolated_automation(self) -> None:
         self.assertTrue(_should_close_provider(keep_open=True, isolated=False))

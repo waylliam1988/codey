@@ -51,6 +51,13 @@ def run_adapter_repair(
     failure_facts: dict[str, object] | None = None,
 ) -> AdapterRepairResult:
     journal = journal or RepairJournal(state_home)
+    if not allowed_adapter_files(provider_id):
+        # Fail closed before any model call: an unknown provider has no
+        # repair surface, so there is nothing to sandbox and nothing to
+        # install.
+        error = f"unsupported provider for adapter repair: {provider_id or '<empty>'}"
+        journal.append("adapter_repair_rejected", provider=provider_id, error=error)
+        return AdapterRepairResult(False, provider_id, error=error)
     sandbox = create_repair_sandbox(source_root)
     try:
         prompt = _render_repair_prompt(

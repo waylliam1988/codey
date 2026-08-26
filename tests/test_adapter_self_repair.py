@@ -21,6 +21,7 @@ from codey.adapter_repair import (
     run_adapter_repair,
     run_worker_canary,
 )
+from codey.adapter_surface import adapter_repair_surface
 from codey.agent import RunResult
 from codey.provider_worker import WorkerChatProvider, _failure_from_response
 from codey import provider_worker_child
@@ -36,6 +37,7 @@ from codey.provider_supervisor import ProviderHealth, STATE_DEGRADED, STATE_OPEN
 from codey.repair_policy import (
     IMPACT_PROFILE_DATA,
     IMPACT_SHARED_WEB_SURFACE,
+    allowed_adapter_files,
     validate_candidate,
 )
 from codey.repair_sandbox import create_repair_sandbox
@@ -409,6 +411,36 @@ class RepairPolicyTests(unittest.TestCase):
             self.assertTrue(result.ok)
             self.assertIn("codey/provider_profiles.json", result.changed_files)
             self.assertEqual(result.impact, ("profile_data",))
+
+    def test_unknown_provider_has_empty_repair_surface(self) -> None:
+        # Fail closed: the shared web files are never granted on their own;
+        # they only widen a known provider's driver surface.
+        self.assertEqual(allowed_adapter_files("unknown_provider"), ())
+        self.assertEqual(adapter_repair_surface("unknown_provider"), ())
+
+        known = allowed_adapter_files("qwen")
+        self.assertIn("codey/providers/web_drivers/qwen.py", known)
+        self.assertIn("codey/providers/web_provider.py", known)
+
+    def test_policy_rejects_shared_edit_for_unknown_provider(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "base"
+            candidate = Path(td) / "candidate"
+            _source_tree(base)
+            _source_tree(candidate)
+            (candidate / "codey" / "providers" / "web_driver.py").write_text(
+                "GRACE = 2\n",
+                encoding="utf-8",
+            )
+
+            result = validate_candidate("unknown_provider", base, candidate)
+
+            self.assertFalse(result.ok)
+            self.assertTrue(
+                any("unsupported provider" in item for item in result.errors),
+                result.errors,
+            )
+            self.assertEqual(result.impact, ())
 
 
 class StaticCheckEscalationTests(unittest.TestCase):
@@ -1248,6 +1280,28 @@ class AdapterRepairRunnerTests(unittest.TestCase):
 
             self.assertIn('"path":"codey/providers/web_drivers/deepseek.py"', prompt)
             self.assertNotIn('"path":"codey/providers/web_drivers/qwen.py"', prompt)
+
+    def test_unknown_provider_fails_closed_without_model_call_or_install(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            state = Path(td) / "state"
+            send_prompt = mock.Mock(return_value='{"files":[]}')
+
+            result = run_adapter_repair(
+                "unknown_provider",
+                send_prompt=send_prompt,
+                state_home=state,
+                source_root=root,
+                run_canary=lambda _override: True,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("unsupported provider", result.error)
+            send_prompt.assert_not_called()
+            self.assertIsNone(
+                adapter_overrides.load_enabled_override("unknown_provider", state_home=state)
+            )
 
     def test_repair_prompt_states_override_sandbox_scope(self) -> None:
         with tempfile.TemporaryDirectory() as td:
