@@ -16,7 +16,7 @@ from codey.research.evidence_runtime import (
     runtime_ref_kinds,
     snapshot_from_research_record,
 )
-from codey.refs import digest_json
+from codey.utils.refs import digest_json
 from codey.research.object_model import (
     EvidenceLocator,
     ResearchAssumption,

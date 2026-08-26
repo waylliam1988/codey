@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from codey.project_task_context import ProjectTaskContext, ProjectTaskContextBuilder
-from codey.verification_policy import verification_candidate_lines
+from codey.workspace.task_context import ProjectTaskContext, ProjectTaskContextBuilder
+from codey.completion.verification_policy import verification_candidate_lines
 
 
 def build_production_task_context(

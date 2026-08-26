@@ -48,7 +48,7 @@ from tests.manual.ab_journal import (
     TRANSCRIPT_MODE_DIGEST_ONLY,
     TranscriptReplayCache,
 )
-from codey.agent import RunResult
+from codey.agents.runner import RunResult
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import build_research_interest_candidates
 from codey.knowledge.store import KnowledgeStore
@@ -59,9 +59,9 @@ from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_fresh_provider_tab, provider_ids
 from codey.research.runner import ResearchRunResult
-from codey.review import ReviewResult
-from codey.task_runner import TaskRequest, TaskRunner
-from codey import server
+from codey.reviews.core import ReviewResult
+from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.app import server
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 ARMS = ("baseline", "continuity")
@@ -327,12 +327,12 @@ def _run_case(
                 stack.enter_context(mock.patch.object(state, "get_provider", return_value=tracing_provider))
                 if not live and seeded_interest_candidates:
                     stack.enter_context(mock.patch(
-                        "codey.task_runner.build_research_interest_candidates",
+                        "codey.app.task_runner.build_research_interest_candidates",
                         return_value=seeded_interest_candidates,
                     ))
                 if not gate_open:
                     stack.enter_context(mock.patch(
-                        "codey.task_runner.allows_context_source",
+                        "codey.app.task_runner.allows_context_source",
                         return_value=False,
                     ))
                 request = TaskRequest(

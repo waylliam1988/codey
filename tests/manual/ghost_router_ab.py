@@ -20,7 +20,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import provider_controls
+from codey.providers import controls as provider_controls
 from codey.ghost.router import (
     GhostRouteDecision as RouterDecision,
     GhostRouteRequest,

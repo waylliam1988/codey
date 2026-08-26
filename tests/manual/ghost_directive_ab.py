@@ -15,7 +15,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import provider_controls
+from codey.providers import controls as provider_controls
 from codey.ghost.directive import render_ghost_directive
 from codey.ghost.hebbian import GhostNode
 from codey.ghost.schema import clip_signal_text

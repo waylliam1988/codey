@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
-from codey.local_store import write_json_atomic
+from codey.storage.local_store import write_json_atomic
 
 JOURNAL_SCHEMA_VERSION = 1
 MANIFEST_KIND = "ab_observation_journal_manifest"

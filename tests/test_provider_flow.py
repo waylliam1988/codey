@@ -5,8 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from codey import cancellation
-from codey import provider_flow as flow
+from codey.runtime import cancellation
+from codey.providers import flow as flow
 
 
 class ProviderFlowTests(unittest.TestCase):

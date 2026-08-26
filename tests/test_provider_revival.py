@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import provider_revival as revival
-from codey.local_store import read_json, write_json_atomic
+from codey.providers import revival as revival
+from codey.storage.local_store import read_json, write_json_atomic
 
 
 class ProviderRevivalTests(unittest.TestCase):

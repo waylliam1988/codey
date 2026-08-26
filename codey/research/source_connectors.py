@@ -23,7 +23,7 @@ from codey.research.connector_domains import (
     LOCAL_CONNECTOR_TERMS,
     MEDICAL_CONNECTOR_TERMS,
 )
-from codey.refs import (
+from codey.utils.refs import (
     bounded_refs,
     clip,
     digest_text,
@@ -34,7 +34,7 @@ from codey.research.identity import (
     path_ref,
     sanitize_research_url_ref,
 )
-from codey.redaction import (
+from codey.policies.redaction import (
     SECRET_MARKER_RE,
     SECRET_SHAPE_RE,
     looks_prompt_visible_secret,

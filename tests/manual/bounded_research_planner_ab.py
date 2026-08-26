@@ -41,7 +41,7 @@ from tests.manual.ab_journal import (
     ABJournalReader,
     ABJournalWriter,
 )
-from codey import provider_controls
+from codey.providers import controls as provider_controls
 from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import connect_provider, provider_ids
 from codey.research.context import ResearchContext, ResearchPipelineConfig

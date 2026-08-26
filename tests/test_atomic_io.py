@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.atomic_io import encode_with_original_eol, write_text_atomic
+from codey.storage.atomic_io import encode_with_original_eol, write_text_atomic
 
 
 class AtomicWriteTests(unittest.TestCase):
@@ -102,7 +102,7 @@ class AtomicWriteTests(unittest.TestCase):
             try:
                 with self.assertRaises(PermissionError):
                     with mock.patch(
-                        "codey.atomic_io.os.replace",
+                        "codey.storage.atomic_io.os.replace",
                         side_effect=PermissionError("read-only target"),
                     ):
                         write_text_atomic(target, "after\n")

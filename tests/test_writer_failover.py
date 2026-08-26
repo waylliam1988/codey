@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import unittest
 
-from codey.agent import RunResult
-from codey.cancellation import TaskCancelled
-from codey.provider_diagnostics import ProviderActionError, ProviderFailure
-from codey.writer_failover import (
+from codey.agents.runner import RunResult
+from codey.runtime.cancellation import TaskCancelled
+from codey.providers.diagnostics import ProviderActionError, ProviderFailure
+from codey.agents.writer_failover import (
     CheckpointView,
     WriterAttempt,
     WriterFailoverRunner,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from codey.completion_contract import (
+from codey.completion.contract import (
     CHECK_FAIL,
     CHECK_PASS,
     COMPLETION_COMPLETE,

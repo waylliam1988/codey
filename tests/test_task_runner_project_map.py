@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import project_task_context
-from codey.project_map import MAX_PROJECT_MAP_CHARS
+from codey.workspace import task_context as project_task_context
+from codey.workspace.map import MAX_PROJECT_MAP_CHARS
 
 
 class TaskRunnerProjectMapTests(unittest.TestCase):

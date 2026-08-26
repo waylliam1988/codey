@@ -4,7 +4,7 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from codey.models import ToolCall, ToolResult
+from codey.runtime.models import ToolCall, ToolResult
 from codey.research.controller import (
     CONTROLLER_DISPLAY_LIMIT,
     OpenTarget,

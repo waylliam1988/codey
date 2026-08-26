@@ -14,9 +14,9 @@ from codey.ghost.work_queue import (
     is_strict_work_continuation,
     proof_refs_from_task_event,
 )
-from codey.local_store import delete_file
-from codey.run_ledger_projection import RunLedgerProjection
-from codey.work_checkpoint import WorkCheckpointStore
+from codey.storage.local_store import delete_file
+from codey.runs.ledger_projection import RunLedgerProjection
+from codey.runs.work_checkpoint import WorkCheckpointStore
 
 
 FRESH_TS = "2999-01-01T00:00:00Z"

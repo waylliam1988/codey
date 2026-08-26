@@ -19,7 +19,7 @@ import uuid
 
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
-from codey.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
+from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
 
 
 AFFINITY_SCHEMA_VERSION = 1

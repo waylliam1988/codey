@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.events import RunEvent
+from codey.runtime.events import RunEvent
 from tests.manual import scan_coverage_ab
 
 

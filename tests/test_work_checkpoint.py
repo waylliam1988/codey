@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.work_checkpoint import (
+from codey.runs.work_checkpoint import (
     MAX_CHECKPOINT_BYTES,
     MAX_CHANGED_FILES,
     MAX_COMMAND_CHARS,

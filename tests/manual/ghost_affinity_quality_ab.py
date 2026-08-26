@@ -21,12 +21,12 @@ from typing import Callable
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import server
-from codey.agent import RunResult
+from codey.app import server
+from codey.agents.runner import RunResult
 from codey.ghost.hebbian import GhostNode
-from codey.local_store import write_json_atomic
+from codey.storage.local_store import write_json_atomic
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
-from codey.task_runner import TaskRequest, TaskRunner
+from codey.app.task_runner import TaskRequest, TaskRunner
 
 
 RESULTS_DIR = Path(__file__).with_name("results")

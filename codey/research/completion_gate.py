@@ -14,14 +14,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
-from codey.completion_contract import CompletionProof, project_completion_proof
+from codey.completion.contract import CompletionProof, project_completion_proof
 from codey.research.contract import (
     build_research_completion_contract,
     research_blocked_reason,
     research_external_refs,
 )
 from codey.research.evidence_ledger import EvidenceLedgerStore
-from codey.refs import identifier
+from codey.utils.refs import identifier
 from codey.research.proof_quality import ResearchProofReview, review_research_proof
 
 

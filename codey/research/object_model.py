@@ -18,7 +18,7 @@ from codey.research.ledger import (
     ResearchLedger,
     normalize_evidence_stance,
 )
-from codey.refs import (
+from codey.utils.refs import (
     bounded_refs as _bounded_refs,
     clip as _clip,
     digest_json as _digest_json,
@@ -34,7 +34,7 @@ from codey.research.identity import (
     project_ref,
     sanitize_research_url_ref,
 )
-from codey.report_sections import parse_sections
+from codey.reviews.report_sections import parse_sections
 from codey.research.report_quality import ReportQualityReview, citation_ref_items
 
 

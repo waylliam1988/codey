@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.completion_contract import (
+from codey.completion.contract import (
     COMPLETION_BLOCKED,
     COMPLETION_COMPLETE,
     COMPLETION_COMPLETE_WITH_LIMITATIONS,
@@ -13,7 +13,7 @@ from codey.completion_contract import (
     CHECK_NOT_RUN,
     CHECK_PASS,
 )
-from codey.completion_verification import (
+from codey.completion.verification import (
     ENVIRONMENT_FAILURE_REASON_CODES,
     ENVIRONMENT_FAILURE_SIGNATURES,
     LIMITATION_DOCS_ONLY_CHANGE,
@@ -48,13 +48,13 @@ from codey.completion_verification import (
 
 
 def _check(command: str, cwd: str = ".", **extra):
-    from codey.execution_evidence import CheckEvidence
+    from codey.runtime.execution_evidence import CheckEvidence
 
     return CheckEvidence(command, cwd, **extra)
 
 
 def _selected():
-    from codey.verification_policy import VerificationCandidate
+    from codey.completion.verification_policy import VerificationCandidate
 
     return VerificationCandidate("pytest -q", ".", "successful run")
 

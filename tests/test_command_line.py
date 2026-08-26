@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from codey.command_line import split_run_command
-from codey.provider_ids import normalize_provider_id, normalize_provider_ids
+from codey.policies.command_line import split_run_command
+from codey.providers.ids import normalize_provider_id, normalize_provider_ids
 
 
 class SplitRunCommandTests(unittest.TestCase):

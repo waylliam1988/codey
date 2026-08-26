@@ -28,9 +28,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codey import provider_controls
-from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
-from codey.project_map import (
+from codey.providers import controls as provider_controls
+from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
+from codey.workspace.map import (
     EXCLUDED_DIRS,
     SOURCE_SUFFIXES,
     _iter_symbol_source_files,
@@ -40,7 +40,7 @@ from codey.project_map import (
     _symbols_for_file,
 )
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
-from codey.tool_runtime import list_directory
+from codey.toolchain.runtime import list_directory
 from tests.manual.project_task_context import render_production_project_map
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-scoped-task-plan-ab.json"
@@ -103,9 +103,9 @@ def cases(stockalarm: Path | None = None) -> dict[str, ProbeCase]:
                 "first?"
             ),
             expected_paths=(
-                "codey/task_runner.py",
-                "codey/change_brief.py",
-                "codey/consensus.py",
+                "codey/app/task_runner.py",
+                "codey/workspace/change_brief.py",
+                "codey/agents/consensus.py",
             ),
             expected_tests=(
                 "tests/test_server.py",
@@ -141,7 +141,7 @@ def cases(stockalarm: Path | None = None) -> dict[str, ProbeCase]:
                 "and never as proof or changed-file paths. Which files should be "
                 "inspected first?"
             ),
-            expected_paths=("codey/review.py", "codey/change_brief.py"),
+            expected_paths=("codey/reviews/core.py", "codey/workspace/change_brief.py"),
             expected_tests=("tests/test_review.py", "tests/test_change_brief.py"),
             expected_terms=("Verification Map", "findings", "Changed files"),
             tags=("codey", "review"),
@@ -156,9 +156,9 @@ def cases(stockalarm: Path | None = None) -> dict[str, ProbeCase]:
                 "should be inspected first?"
             ),
             expected_paths=(
-                "codey/writer_failover.py",
-                "codey/task_runner.py",
-                "codey/work_checkpoint.py",
+                "codey/agents/writer_failover.py",
+                "codey/app/task_runner.py",
+                "codey/runs/work_checkpoint.py",
             ),
             expected_tests=(
                 "tests/test_writer_failover.py",
@@ -722,10 +722,10 @@ def run_provider(
 
 
 def run_self_test() -> None:
-    text = 'prefix {"paths":["./codey/task_runner.py"],"tests":["tests/test_server.py"]}'
-    assert _paths_from_reply(text) == ("codey/task_runner.py",)
+    text = 'prefix {"paths":["./codey/app/task_runner.py"],"tests":["tests/test_server.py"]}'
+    assert _paths_from_reply(text) == ("codey/app/task_runner.py",)
     assert _test_paths_from_reply(text) == ("tests/test_server.py",)
-    score = _score_paths(("task_runner.py",), ("codey/task_runner.py",))
+    score = _score_paths(("task_runner.py",), ("codey/app/task_runner.py",))
     assert score["hit_count"] == 1, score
     term_score = _score_terms("Private ChangeBrief and Project Map", ("ChangeBrief",))
     assert term_score["hit_count"] == 1, term_score

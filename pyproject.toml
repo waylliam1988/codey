@@ -23,7 +23,7 @@ dev = [
 ]
 
 [project.scripts]
-codey = "codey.cli:main"
+codey = "codey.app.cli:main"
 
 [tool.setuptools.dynamic]
 version = { attr = "codey.__version__" }
@@ -34,11 +34,11 @@ exclude = ["tests*", "tools*"]
 
 [tool.setuptools.package-data]
 codey = [
-    "provider_profiles.json",
     "web/index.html",
     "web/assets/*.css",
     "web/assets/*.js",
 ]
+"codey.providers" = ["profiles.json"]
 "codey.research" = ["search_profiles.json"]
 
 [tool.pytest.ini_options]

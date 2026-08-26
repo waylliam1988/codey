@@ -11,11 +11,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey import browser_worker, cancellation
-from codey.consensus import ConsensusAdvice
-from codey.events import RunEvent, run_event_payload
+from codey.automation import browser_worker
+from codey.runtime import cancellation
+from codey.agents.consensus import ConsensusAdvice
+from codey.runtime.events import RunEvent, run_event_payload
 from codey.knowledge import KnowledgeChanges, KnowledgeStore
-from codey.models import ToolCall, ToolResult
+from codey.runtime.models import ToolCall, ToolResult
 from codey.research.advisors import EvidencePack, render_research_advisor_prompt, run_research_advisors
 from codey.research import browser_search
 from codey.research.browser_search import BrowserSearchProvider, RESEARCH_CDP_PORT, RESEARCH_PROFILE
@@ -696,10 +697,10 @@ class ResearchBoundaryTests(unittest.TestCase):
         )
 
     def test_task_runner_research_default_explicitly_reuses_research_browser(self) -> None:
-        from codey import task_runner
+        from codey.app import task_runner
 
         base_provider = mock.Mock()
-        with mock.patch("codey.task_runner.BrowserSearchProvider", return_value=base_provider) as browser_cls:
+        with mock.patch("codey.app.task_runner.BrowserSearchProvider", return_value=base_provider) as browser_cls:
             provider = task_runner._default_research_search_provider()
 
         browser_cls.assert_called_once_with(isolated=False)
@@ -3697,7 +3698,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
         self.assertEqual(JsonToolCodec().name, "research_json")
 
     def test_native_search_leak_counts_error_and_valid_turn_is_recorded(self) -> None:
-        from codey.run_trace import RunTraceStore
+        from codey.runs.trace import RunTraceStore
 
         leak = "I searched the web and the search results show helium is rare."
         done = json.dumps({"tool": "done", "args": {"answer": "ok"}})
@@ -3751,7 +3752,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
     def test_terminal_protocol_failure_sends_and_counts_one_fewer_repair_prompts(self) -> None:
         # Three leaks exceed MAX_PROTOCOL_ERRORS: two repair prompts go out
         # between them, the terminal failure sends none.
-        from codey.run_trace import RunTraceStore
+        from codey.runs.trace import RunTraceStore
 
         leak = "I searched the web and the search results show helium is rare."
         provider = FakeProvider(leak, leak, leak)
@@ -3793,7 +3794,7 @@ class ProtocolTelemetryTests(unittest.TestCase):
         self.assertEqual(len(provider.sent), 3)
 
     def test_unknown_tool_lands_as_safe_label_with_digest(self) -> None:
-        from codey.run_trace import RunTraceStore
+        from codey.runs.trace import RunTraceStore
 
         unknown = json.dumps({"tool": "buy_bitcoin", "args": {"amount": "all"}})
         done = json.dumps({"tool": "done", "args": {"answer": "ok"}})

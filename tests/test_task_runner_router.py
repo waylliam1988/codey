@@ -4,14 +4,15 @@ from pathlib import Path
 import tempfile
 from unittest import mock
 
-from codey import cancellation, provider_controls
-from codey.agent import RunResult
-from codey.changes import collect_changes as collect_project_changes
+from codey.runtime import cancellation
+from codey.providers import controls as provider_controls
+from codey.agents.runner import RunResult
+from codey.workspace.changes import collect_changes as collect_project_changes
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
-from codey.review import ReviewFinding, ReviewResult
-from codey import server
-from codey.task_runner import TaskRequest, TaskRunner
+from codey.reviews.core import ReviewFinding, ReviewResult
+from codey.app import server
+from codey.app.task_runner import TaskRequest, TaskRunner
 
 
 class _Provider:

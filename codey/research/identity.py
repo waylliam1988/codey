@@ -1,6 +1,6 @@
 """Research-flavored identity helpers: URLs, project roots, and paths.
 
-Generic bounded text/ref primitives live in ``codey.refs``; only the helpers
+Generic bounded text/ref primitives live in ``codey.utils.refs``; only the helpers
 whose semantics depend on research inputs (URL sanitization, project-root
 relative path digests) remain here.
 """
@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
-from codey.refs import clip, digest_text, identifier
+from codey.utils.refs import clip, digest_text, identifier
 
 
 def sanitize_research_url_ref(url: object) -> dict[str, object]:

@@ -21,13 +21,13 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codey import provider_controls
-from codey.agent import run
-from codey.agent_tools import AgentToolFns
+from codey.providers import controls as provider_controls
+from codey.agents.runner import run
+from codey.agents.tools import AgentToolFns
 from codey.protocols.json_codec import JsonToolCodec, SYSTEM_PROMPT
-from codey.tool_definition import TOOL_DEFINITION_BY_NAME
+from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
 from codey.providers.registry import connect_provider
-from codey.tool_runtime import ToolOutcome
+from codey.toolchain.runtime import ToolOutcome
 from tests.manual.project_task_context import render_production_project_map
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-large-project-ab.json"
@@ -99,10 +99,10 @@ def cases(stockalarm: Path) -> dict[str, Case]:
             "codey_task_flow",
             ROOT,
             "Read-only architecture question. Explain how an HTTP project-task "
-            "request moves from codey/server.py through TaskRunner, the agent "
+            "request moves from codey/app/server.py through TaskRunner, the agent "
             "loop, Review, and the final receipt. Cite exact relative files and "
             "function/class names. Do not modify files.",
-            ("server.py", "task_runner.py", "agent.py", "review.py", "TaskRunner"),
+            ("app/server.py", "app/task_runner.py", "agents/runner.py", "reviews/core.py", "TaskRunner"),
         ),
         Case(
             "stockalarm_training_flow",

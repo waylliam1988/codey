@@ -5,8 +5,8 @@ import threading
 import unittest
 from unittest import mock
 
-from codey import cancellation
-from codey.provider_submission import SendAttempt
+from codey.runtime import cancellation
+from codey.providers.submission import SendAttempt
 from codey.providers.web_drivers import glm
 from codey.research.protocols import JsonToolCodec
 

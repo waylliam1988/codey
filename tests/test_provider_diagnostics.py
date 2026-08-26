@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest import mock
 
-from codey.provider_diagnostics import (
+from codey.providers.diagnostics import (
     FAILURE_READINESS_STALE,
     ProviderActionError,
     ProviderFailure,
@@ -40,7 +40,7 @@ class ProviderDiagnosticsTests(unittest.TestCase):
         })
 
     def test_capture_provider_failure_uses_explicit_structural_kind(self) -> None:
-        from codey.provider_diagnostics import ControlMissing
+        from codey.providers.diagnostics import ControlMissing
 
         failure = capture_provider_failure(
             model="Qwen",
@@ -53,7 +53,7 @@ class ProviderDiagnosticsTests(unittest.TestCase):
         self.assertEqual(failure.stage, "input")
 
     def test_explicit_failure_stage_is_preserved(self) -> None:
-        from codey.provider_diagnostics import ResponseMissing
+        from codey.providers.diagnostics import ResponseMissing
 
         failure = capture_provider_failure(
             model="Qwen",

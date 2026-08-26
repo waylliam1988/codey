@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import provider_controls
+from codey.providers import controls as provider_controls
 from codey.knowledge.store import KnowledgeStore
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider

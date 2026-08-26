@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.13-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.14-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.13`
+版本：`0.4.14`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -826,7 +826,7 @@ codey/
   project_facts.py          经过成功运行验证的项目事实
   work_checkpoint.py        未完成执行的持久事实检查点
   conversation_store.py     有上限的对话事实持久化
-  provider_profiles.json    支持模型网页的版本化选择器
+  profiles.json    支持模型网页的版本化选择器
   provider_profiles.py      经过验证的 Profile 加载
   provider_discovery.py     有边界的 DOM 候选发现和评分
   provider_controls.py      经过验证的恢复、记忆和人工教学

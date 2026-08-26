@@ -18,10 +18,10 @@ import uuid
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_rendered_body
-from codey.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
+from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
 if TYPE_CHECKING:
-    from codey.run_ledger_projection import RunLedgerProjection
+    from codey.runs.ledger_projection import RunLedgerProjection
 
 
 CONTINUITY_SCHEMA_VERSION = 1

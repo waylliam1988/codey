@@ -23,11 +23,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codey import cancellation
+from codey.runtime import cancellation
 from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
-from codey.models import Control, ToolPlan
+from codey.runtime.models import Control, ToolPlan
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids
 from codey.research.pdf_extract import PDF_DEFAULT_PAGES, parse_pages
 from codey.research.protocols import JsonToolCodec, MAX_CALLS_PER_TURN as _MAX_CALLS_PER_TURN

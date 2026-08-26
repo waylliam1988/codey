@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from codey import tool_definition as tool_defs
-from codey.permission_profiles import allowed_coding_tool_names, profile_for_name
-from codey.models import Control, ToolCall, ToolPlan, ToolResult
-from codey.tool_runtime import (
+from codey.toolchain import definition as tool_defs
+from codey.policies.permissions import allowed_coding_tool_names, profile_for_name
+from codey.runtime.models import Control, ToolCall, ToolPlan, ToolResult
+from codey.toolchain.runtime import (
     MAX_REPLACEMENTS,
     READ_DEFAULT_LINES,
     READ_MAX_LINES,

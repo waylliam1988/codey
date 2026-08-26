@@ -7,11 +7,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.action_policy import (
+from codey.policies.action import (
     MAX_MANAGED_OUTPUT_BYTES,
     MAX_MANAGED_OUTPUTS_PER_RUN,
 )
-from codey.managed_outputs import (
+from codey.storage.managed_outputs import (
     ManagedOutputStore,
     run_command_with_managed_output,
 )
@@ -56,7 +56,7 @@ class ManagedOutputStoreTests(unittest.TestCase):
 
     def test_large_output_is_capped_with_head_and_tail(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.managed_outputs.MAX_MANAGED_OUTPUT_BYTES",
+            "codey.storage.managed_outputs.MAX_MANAGED_OUTPUT_BYTES",
             40,
         ):
             store = ManagedOutputStore(td)
@@ -170,8 +170,8 @@ class ManagedRunCommandTests(unittest.TestCase):
         )
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch("codey.tool_runtime.RUN_OUTPUT_LIMIT", 80),
-            mock.patch("codey.tool_runtime.cancellation.run_process", return_value=completed),
+            mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
+            mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
         ):
             store = ManagedOutputStore(Path(td) / "state")
             outcome = run_command_with_managed_output(
@@ -207,7 +207,7 @@ class ManagedRunCommandTests(unittest.TestCase):
         )
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch("codey.tool_runtime.cancellation.run_process", return_value=completed),
+            mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
         ):
             store = ManagedOutputStore(Path(td) / "state")
             outcome = run_command_with_managed_output(

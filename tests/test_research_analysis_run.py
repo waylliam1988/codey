@@ -9,7 +9,7 @@ from codey.research.analysis_run import (
     analysis_run_record,
     environment_summary_digest,
 )
-from codey.refs import digest_text
+from codey.utils.refs import digest_text
 
 _REF_RE = re.compile(r"^analysis_run:[0-9a-f]{16}$")
 

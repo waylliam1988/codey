@@ -3,9 +3,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.project_facts import VerifiedCommand
-from codey.project_config import ProjectVerificationCommand
-from codey.verification_policy import (
+from codey.workspace.facts import VerifiedCommand
+from codey.workspace.config import ProjectVerificationCommand
+from codey.completion.verification_policy import (
     VerificationCandidate,
     _bounded_directories,
     _is_manifest_file,
@@ -43,7 +43,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_discovers_only_explicit_runnable_manifests(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
@@ -66,7 +66,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_package_scripts_use_priority_instead_of_becoming_ambiguous(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             (root / "package.json").write_text(
@@ -89,7 +89,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_package_test_beats_make_test_in_same_directory(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             (root / "package.json").write_text(
@@ -108,7 +108,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_configured_command_beats_manifest_candidate_but_not_successful_history(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which",
+            "codey.completion.verification_policy.shutil.which",
             return_value="python",
         ):
             root = Path(td)
@@ -132,7 +132,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_configured_command_beats_manifest_when_no_successful_history(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which",
+            "codey.completion.verification_policy.shutil.which",
             return_value="python",
         ):
             root = Path(td)
@@ -155,7 +155,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_configured_command_cannot_bypass_run_allowlist(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which",
+            "codey.completion.verification_policy.shutil.which",
             return_value="git",
         ):
             root = Path(td)
@@ -168,7 +168,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_configured_ignored_paths_skip_verification_discovery(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which",
+            "codey.completion.verification_policy.shutil.which",
             return_value="python",
         ):
             root = Path(td)
@@ -192,7 +192,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_pytest_beats_unittest_discover(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="python"
+            "codey.completion.verification_policy.shutil.which", return_value="python"
         ):
             root = Path(td)
             (root / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
@@ -208,7 +208,7 @@ class VerificationPolicyTests(unittest.TestCase):
             return command if command in {"mypy", "ruff"} else None
 
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", side_effect=which
+            "codey.completion.verification_policy.shutil.which", side_effect=which
         ):
             root = Path(td)
             (root / "mypy.ini").write_text("[mypy]\n", encoding="utf-8")
@@ -221,7 +221,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_build_only_script_can_be_selected(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             (root / "package.json").write_text(
@@ -236,7 +236,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_package_manager_field_beats_lockfiles(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             (root / "pnpm-lock.yaml").write_text("lockfileVersion: '9'\n", encoding="utf-8")
@@ -261,7 +261,7 @@ class VerificationPolicyTests(unittest.TestCase):
             )
 
             with mock.patch(
-                "codey.verification_policy.shutil.which",
+                "codey.completion.verification_policy.shutil.which",
                 side_effect=AssertionError("which should not be called"),
             ):
                 manager = node_package_manager_for_directory(root, frontend)
@@ -282,7 +282,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_nearest_parent_lockfile_selects_package_manager_for_monorepo(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             (root / "pnpm-lock.yaml").write_text("lockfileVersion: '9'\n", encoding="utf-8")
@@ -301,7 +301,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_current_directory_lockfile_beats_parent_lockfile(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             (root / "pnpm-lock.yaml").write_text("lockfileVersion: '9'\n", encoding="utf-8")
@@ -318,7 +318,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_bun_package_scripts_use_bun_run(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             (root / "bun.lockb").write_text("", encoding="utf-8")
@@ -337,7 +337,7 @@ class VerificationPolicyTests(unittest.TestCase):
             candidates,
         )
 
-    @mock.patch("codey.verification_policy.shutil.which", return_value="bun")
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="bun")
     def test_bun_test_covers_bun_run_test_candidate(self, _which) -> None:
         candidate = VerificationCandidate("bun run test", ".")
 
@@ -352,7 +352,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_unavailable_executable_is_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value=None
+            "codey.completion.verification_policy.shutil.which", return_value=None
         ):
             root = Path(td)
             (root / "Cargo.toml").write_text("[package]\nname='x'\n", encoding="utf-8")
@@ -360,7 +360,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_verified_command_still_requires_ecosystem_compatibility(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="python"
+            "codey.completion.verification_policy.shutil.which", return_value="python"
         ):
             root = Path(td)
             candidate = discover_verification_candidates(
@@ -374,7 +374,7 @@ class VerificationPolicyTests(unittest.TestCase):
     def test_historical_npm_command_requires_current_script(self) -> None:
         command = VerifiedCommand("npm test", ".")
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="npm"
+            "codey.completion.verification_policy.shutil.which", return_value="npm"
         ):
             root = Path(td)
             package = root / "package.json"
@@ -395,7 +395,7 @@ class VerificationPolicyTests(unittest.TestCase):
             VerifiedCommand("bun run typecheck", "."),
         )
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             package = root / "package.json"
@@ -417,7 +417,7 @@ class VerificationPolicyTests(unittest.TestCase):
     def test_historical_bun_test_does_not_require_package_script(self) -> None:
         command = VerifiedCommand("bun test", ".")
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="bun"
+            "codey.completion.verification_policy.shutil.which", return_value="bun"
         ):
             root = Path(td)
             (root / "bun.lockb").write_text("", encoding="utf-8")
@@ -430,7 +430,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_pyproject_pytest_ini_options_is_discovered(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="python"
+            "codey.completion.verification_policy.shutil.which", return_value="python"
         ):
             root = Path(td)
             (root / "pyproject.toml").write_text(
@@ -446,7 +446,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_tests_directory_discovers_unittest(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="python"
+            "codey.completion.verification_policy.shutil.which", return_value="python"
         ):
             root = Path(td)
             (root / "tests").mkdir()
@@ -462,7 +462,7 @@ class VerificationPolicyTests(unittest.TestCase):
             return command if command in {"mypy", "ruff"} else None
 
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", side_effect=which
+            "codey.completion.verification_policy.shutil.which", side_effect=which
         ):
             root = Path(td)
             (root / "pyproject.toml").write_text(
@@ -476,7 +476,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_makefile_discovers_only_safe_targets(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="make"
+            "codey.completion.verification_policy.shutil.which", return_value="make"
         ):
             root = Path(td)
             (root / "Makefile").write_text(
@@ -497,7 +497,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_makefile_assignment_is_not_discovered_as_target(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="make"
+            "codey.completion.verification_policy.shutil.which", return_value="make"
         ):
             root = Path(td)
             (root / "Makefile").write_text(
@@ -512,7 +512,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_makefile_targets_use_priority_instead_of_becoming_ambiguous(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="make"
+            "codey.completion.verification_policy.shutil.which", return_value="make"
         ):
             root = Path(td)
             (root / "Makefile").write_text(
@@ -531,7 +531,7 @@ class VerificationPolicyTests(unittest.TestCase):
             VerifiedCommand("go test ./...", "."),
         )
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             root = Path(td)
             self.assertEqual(discover_verification_candidates(root, commands), ())
@@ -543,7 +543,7 @@ class VerificationPolicyTests(unittest.TestCase):
 
     def test_manifest_symlinks_are_not_verification_facts(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which", return_value="executable"
+            "codey.completion.verification_policy.shutil.which", return_value="executable"
         ):
             base = Path(td)
             root = base / "project"
@@ -585,7 +585,7 @@ class VerificationPolicyTests(unittest.TestCase):
         )
         self.assertIsNone(select_verification_candidate((root,), ("README.md",)))
 
-    @mock.patch("codey.verification_policy.shutil.which", return_value="python")
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
     def test_successful_check_must_cover_all_code_changes(self, _which) -> None:
         self.assertTrue(
             check_covers_changes("python -m pytest", "pkg", ("pkg/app.py",))
@@ -597,7 +597,7 @@ class VerificationPolicyTests(unittest.TestCase):
             check_covers_changes("python -m pytest", ".", ("frontend/app.ts",))
         )
 
-    @mock.patch("codey.verification_policy.shutil.which", return_value="python")
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
     def test_full_pytest_can_cover_unittest_fallback(self, _which) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         self.assertTrue(
@@ -609,7 +609,7 @@ class VerificationPolicyTests(unittest.TestCase):
             )
         )
 
-    @mock.patch("codey.verification_policy.shutil.which", return_value="python")
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
     def test_pytest_output_flags_can_cover_unittest_fallback(self, _which) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         self.assertTrue(
@@ -621,7 +621,7 @@ class VerificationPolicyTests(unittest.TestCase):
             )
         )
 
-    @mock.patch("codey.verification_policy.shutil.which", return_value="python")
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
     def test_pytest_filter_flags_do_not_cover_unittest_fallback(self, _which) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         for command in (
@@ -641,7 +641,7 @@ class VerificationPolicyTests(unittest.TestCase):
                     )
                 )
 
-    @mock.patch("codey.verification_policy.shutil.which", return_value="python")
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
     def test_scoped_pytest_does_not_cover_unrelated_changed_file(self, _which) -> None:
         candidate = VerificationCandidate("python -m unittest discover", ".")
         self.assertFalse(
@@ -653,7 +653,7 @@ class VerificationPolicyTests(unittest.TestCase):
             )
         )
 
-    @mock.patch("codey.verification_policy.shutil.which", return_value="python")
+    @mock.patch("codey.completion.verification_policy.shutil.which", return_value="python")
     def test_py_compile_does_not_substitute_for_pytest_candidate(self, _which) -> None:
         candidate = VerificationCandidate("python -m pytest", ".")
         self.assertFalse(
@@ -731,7 +731,7 @@ class VerificationPolicyTests(unittest.TestCase):
             root = Path(td)
             for name in ("one", "two", "three", ".hidden", "NODE_MODULES"):
                 (root / name).mkdir()
-            with mock.patch("codey.verification_policy.MAX_SCAN_ENTRIES", 2):
+            with mock.patch("codey.completion.verification_policy.MAX_SCAN_ENTRIES", 2):
                 directories = tuple(_bounded_directories(root))
 
         self.assertLessEqual(len(directories), 3)

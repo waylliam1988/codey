@@ -4,8 +4,8 @@ import unittest
 from contextlib import nullcontext
 from unittest import mock
 
-from codey.provider_diagnostics import ControlMissing
-from codey.provider_submission import SendAttempt, SubmissionUncertain
+from codey.providers.diagnostics import ControlMissing
+from codey.providers.submission import SendAttempt, SubmissionUncertain
 from codey.providers.web_drivers import stepfun
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol
 
-from codey import cancellation
+from codey.runtime import cancellation
 from codey.research.context import ResearchContext, ResearchPipelineConfig
 from codey.research.evidence_followup import EvidenceFollowupResult
 from codey.research.evidence_ledger import EvidenceLedgerStore, EvidenceLedgerWriteResult

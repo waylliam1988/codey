@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import cancellation
-from codey.review_impact_map import render_review_impact_map, safe_review_impact_map
+from codey.runtime import cancellation
+from codey.reviews.impact_map import render_review_impact_map, safe_review_impact_map
 
 
 def _write(root: Path, rel: str, text: str) -> None:
@@ -133,7 +133,7 @@ class ReviewImpactMapTests(unittest.TestCase):
             _write(root, "src/api.py", "def new_name():\n" + ("old_name()\n" * 200))
             _write(root, "tests/test_api.py", "old_name()\n")
 
-            with mock.patch("codey.review_impact_map.MAX_SCAN_BYTES", 80):
+            with mock.patch("codey.reviews.impact_map.MAX_SCAN_BYTES", 80):
                 impact_map = render_review_impact_map(root, changes)
 
         self.assertIn("tests/test_api.py:", impact_map)
@@ -261,14 +261,14 @@ class ReviewImpactMapTests(unittest.TestCase):
 
     def test_safe_wrapper_swallows_non_cancellation_errors(self) -> None:
         with mock.patch(
-            "codey.review_impact_map.render_review_impact_map",
+            "codey.reviews.impact_map.render_review_impact_map",
             side_effect=OSError("scan failed"),
         ):
             self.assertEqual(safe_review_impact_map("E:/missing", {}), "")
 
     def test_safe_wrapper_preserves_task_cancellation(self) -> None:
         with mock.patch(
-            "codey.review_impact_map.render_review_impact_map",
+            "codey.reviews.impact_map.render_review_impact_map",
             side_effect=cancellation.TaskCancelled("stop"),
         ):
             with self.assertRaises(cancellation.TaskCancelled):

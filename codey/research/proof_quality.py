@@ -12,7 +12,7 @@ from typing import Mapping
 
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 from codey.research.source_trust import source_trust_warnings as _shared_source_trust_warnings
-from codey.refs import (
+from codey.utils.refs import (
     bounded_refs,
     clip,
     digest_json,
@@ -22,7 +22,7 @@ from codey.refs import (
 )
 from codey.research.object_model import ResearchRecord
 from codey.research.shape import valid_digest_ref
-from codey.redaction import looks_prompt_visible_secret
+from codey.policies.redaction import looks_prompt_visible_secret
 
 
 MAX_GAPS = 12

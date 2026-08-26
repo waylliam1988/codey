@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from codey.completion_contract import (
+from codey.completion.contract import (
     CHECK_FAIL,
     CHECK_NOT_APPLICABLE,
     CHECK_NOT_RUN,
@@ -177,7 +177,7 @@ def test_contract_id_covers_every_ref_group() -> None:
 
 
 def test_safe_run_ref_is_domain_neutral_and_redacts_secrets() -> None:
-    from codey.completion_contract import safe_run_ref
+    from codey.completion.contract import safe_run_ref
 
     assert safe_run_ref("") == ""
     assert safe_run_ref("run-123") == "run-123"

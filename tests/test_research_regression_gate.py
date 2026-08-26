@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from codey.completion_contract import (
+from codey.completion.contract import (
     build_completion_contract,
     completion_check,
     project_completion_proof,

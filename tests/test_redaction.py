@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from codey.redaction import (
+from codey.policies.redaction import (
     looks_high_entropy_secret,
     looks_prompt_visible_secret,
 )

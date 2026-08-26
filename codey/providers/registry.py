@@ -5,15 +5,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from codey.adapter_overrides import load_enabled_override
-from codey.browser import (
+from codey.repairs.adapter_overrides import load_enabled_override
+from codey.automation.browser import (
     DEFAULT_PORT,
     DEFAULT_PROFILE,
     PROVIDER_URL_CONTAINS,
     detect_open_provider_tabs,
     warm_provider_tabs as browser_warm_provider_tabs,
 )
-from codey.provider_ids import normalize_provider_id
+from codey.providers.ids import normalize_provider_id
 from codey.providers.base import ChatProvider
 from codey.providers.local_openai import LocalOpenAIProvider, local_endpoint_available
 from codey.providers.web_provider import (
@@ -23,7 +23,7 @@ from codey.providers.web_provider import (
     QwenWebProvider,
     StepFunWebProvider,
 )
-from codey.provider_worker import WorkerChatProvider
+from codey.providers.worker import WorkerChatProvider
 
 DEFAULT_PROVIDER_ID = "deepseek"
 PROVIDER_LABELS = {

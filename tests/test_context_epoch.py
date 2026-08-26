@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from codey.context_epoch import (
+from codey.workspace.context_epoch import (
     EPOCH_REF_PREFIX,
     MAX_SNAPSHOT_SOURCES,
     PROVIDER_TURN_ADMISSION,

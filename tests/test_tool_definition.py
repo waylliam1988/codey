@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import unittest
 
-from codey.models import ToolCall
+from codey.runtime.models import ToolCall
 from codey.protocols import JsonToolCodec
-from codey.tool_definition import (
+from codey.toolchain.definition import (
     INFORMATION_RUNTIME_TOOL_NAMES,
     RESULT_TOOL_NAMES,
     SUPPORTED_RUNTIME_TOOL_NAMES,

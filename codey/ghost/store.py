@@ -17,7 +17,7 @@ from codey.ghost.schema import (
     GhostSignalParseResult,
     clip_signal_text,
 )
-from codey.local_store import DEFAULT_STATE_HOME, delete_file
+from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file
 
 
 MAX_GHOST_EVENTS = 5_000

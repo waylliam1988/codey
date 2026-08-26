@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from codey.action_policy import research_url_denial_reason
+from codey.policies.action import research_url_denial_reason
 
 
 def check_fetch_url(url: str, *, resolve: bool = True) -> str | None:

@@ -4,8 +4,8 @@ import json
 import unittest
 from pathlib import Path
 
-from codey.agent import SUPPORTED_TOOL_NAMES
-from codey.models import ToolCall, ToolResult
+from codey.agents.runner import SUPPORTED_TOOL_NAMES
+from codey.runtime.models import ToolCall, ToolResult
 from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import (
     PROTOCOL_DISALLOWED_TOOL,
@@ -17,7 +17,7 @@ from codey.protocols.json_codec import (
     PROTOCOL_UNKNOWN_TOOL,
     SYSTEM_PROMPT,
 )
-from codey.tool_definition import (
+from codey.toolchain.definition import (
     MAX_ACCIDENTAL_TOOL_CALLS,
     MAX_PARALLEL_CALLS,
     RESULT_TOOL_NAMES,
@@ -25,7 +25,7 @@ from codey.tool_definition import (
     TOOL_DEFINITION_BY_NAME,
     render_tool_contract,
 )
-from codey.tool_runtime import MAX_REPLACEMENTS, READ_MAX_LINES
+from codey.toolchain.runtime import MAX_REPLACEMENTS, READ_MAX_LINES
 
 
 CONTRACT_FIXTURE = Path(__file__).parent / "fixtures" / "json_tool_contract.txt"

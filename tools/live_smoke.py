@@ -11,13 +11,13 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey.agent import run
-from codey import provider_controls
-from codey.changes import ChangeTracker, collect_changes
-from codey.events import render_run_event
-from codey.execution_evidence import ExecutionEvidence
+from codey.agents.runner import run
+from codey.providers import controls as provider_controls
+from codey.workspace.changes import ChangeTracker, collect_changes
+from codey.runtime.events import render_run_event
+from codey.runtime.execution_evidence import ExecutionEvidence
 from codey.providers.registry import connect_provider, provider_ids
-from codey.review import (
+from codey.reviews.core import (
     has_reviewable_changes,
     parse_review_with_repair,
     render_review_prompt,

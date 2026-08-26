@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from codey.review_impact_map import render_review_impact_map
+from codey.reviews.impact_map import render_review_impact_map
 from tests.manual import review_impact_map_ab
 
 

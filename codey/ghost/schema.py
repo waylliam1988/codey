@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from codey.ghost.numbers import coerce_unit_float
-from codey.redaction import looks_prompt_visible_secret
+from codey.policies.redaction import looks_prompt_visible_secret
 
 SCHEMA_VERSION = 1
 MAX_SIGNALS_PER_TURN = 5
@@ -207,7 +207,7 @@ def _clean_metadata(value: object) -> dict[str, object]:
 def contains_sensitive_signal_text(*values: object) -> bool:
     """Reject secret markers, provider key shapes, and high-entropy tokens.
 
-    The semantics are owned by :mod:`codey.redaction`; path-like tokens stay
+    The semantics are owned by :mod:`codey.policies.redaction`; path-like tokens stay
     exempt so ordinary source references never reject a signal.
     """
 

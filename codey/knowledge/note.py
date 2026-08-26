@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import yaml
 
 from codey.knowledge.concept_schema import clean_relations
-from codey.prompt_safety import is_prompt_visible_text_safe
+from codey.policies.prompt_safety import is_prompt_visible_text_safe
 
 NOTE_TYPES = (
     "source",

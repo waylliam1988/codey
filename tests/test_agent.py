@@ -6,13 +6,14 @@ import json
 from pathlib import Path
 from unittest import mock
 
-from codey import agent, cancellation
-from codey.agent_tools import AgentToolFns
-from codey.events import render_run_event
-from codey.handoff import ConversationContext, ConversationSnapshot
-from codey.run_trace import RunTraceStore
-from codey import tool_runtime
-from codey.work_checkpoint import (
+from codey.runtime import cancellation
+from codey.agents import runner as agent
+from codey.agents.tools import AgentToolFns
+from codey.runtime.events import render_run_event
+from codey.agents.handoff import ConversationContext, ConversationSnapshot
+from codey.runs.trace import RunTraceStore
+from codey.toolchain import runtime as tool_runtime
+from codey.runs.work_checkpoint import (
     CheckpointCheck,
     CheckpointFile,
     WorkCheckpoint,
@@ -242,7 +243,7 @@ class ToolTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "huge.py").write_text("x" * 33, encoding="utf-8")
-            with mock.patch("codey.tool_runtime.SEARCH_MAX_FILE_BYTES", 32):
+            with mock.patch("codey.toolchain.runtime.SEARCH_MAX_FILE_BYTES", 32):
                 outcome = tool_runtime.search_files(root, "huge.py", "target")
 
         self.assertTrue(outcome.truncated)
@@ -255,7 +256,7 @@ class ToolTests(unittest.TestCase):
             root = Path(td)
             (root / "a.py").write_bytes(b"\xff" * 8)
             (root / "b.py").write_text("target\n", encoding="utf-8")
-            with mock.patch("codey.tool_runtime.SEARCH_MAX_SCAN_BYTES", 8):
+            with mock.patch("codey.toolchain.runtime.SEARCH_MAX_SCAN_BYTES", 8):
                 outcome = tool_runtime.search_files(root, ".", "target")
 
         self.assertTrue(outcome.truncated)
@@ -325,7 +326,7 @@ class ToolTests(unittest.TestCase):
             (root / "b.py").write_text("pass\n", encoding="utf-8")
             (root / "c.py").write_text("login_handler\n", encoding="utf-8")
 
-            with mock.patch("codey.tool_runtime.SEARCH_MAX_SCAN_FILES", 2):
+            with mock.patch("codey.toolchain.runtime.SEARCH_MAX_SCAN_FILES", 2):
                 outcome = tool_runtime.search_files(root, ".", "login_handler")
 
         self.assertTrue(outcome.truncated)
@@ -588,7 +589,7 @@ class ProjectInstructionTests(unittest.TestCase):
 
 class DefaultsTests(unittest.TestCase):
     def test_default_turn_limit_is_shared_with_server(self) -> None:
-        from codey import server
+        from codey.app import server
 
         self.assertEqual(agent.DEFAULT_MAX_TURNS, 50)
         self.assertIs(server.DEFAULT_MAX_TURNS, agent.DEFAULT_MAX_TURNS)

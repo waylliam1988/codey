@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping, Protocol
 
-from codey.models import Control, ToolCall, ToolPlan, ToolResult
+from codey.runtime.models import Control, ToolCall, ToolPlan, ToolResult
 from codey.research.protocol_diagnostics import classify_no_json_reply
 from codey.research.tool_contract import (
     PROTOCOL_INVALID_ARGS,

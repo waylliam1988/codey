@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.ui_state_store import UiStateStore
+from codey.storage.ui_state_store import UiStateStore
 
 
 class UiStateStoreTests(unittest.TestCase):
@@ -257,7 +257,7 @@ class UiStateStoreTests(unittest.TestCase):
 
             second = dict(first, revision=2, active_id="chat-2")
             with mock.patch(
-                "codey.ui_state_store.write_json_atomic",
+                "codey.storage.ui_state_store.write_json_atomic",
                 side_effect=OSError("disk full"),
             ):
                 with self.assertRaises(OSError):

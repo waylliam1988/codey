@@ -13,19 +13,19 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import adapter_overrides
-from codey.adapter_repair import (
+from codey.repairs import adapter_overrides
+from codey.repairs.adapter_repair import (
     AdapterRepairResult,
     _render_repair_prompt,
     _run_static_checks,
     run_adapter_repair,
     run_worker_canary,
 )
-from codey.adapter_surface import adapter_repair_surface
-from codey.agent import RunResult
-from codey.provider_worker import WorkerChatProvider, _failure_from_response
-from codey import provider_worker_child
-from codey.provider_diagnostics import (
+from codey.repairs.adapter_surface import adapter_repair_surface
+from codey.agents.runner import RunResult
+from codey.providers.worker import WorkerChatProvider, _failure_from_response
+from codey.providers import worker_child as provider_worker_child
+from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     FAILURE_CONTROL_MISSING,
     FAILURE_READINESS_STALE,
@@ -33,16 +33,16 @@ from codey.provider_diagnostics import (
     ProviderActionError,
     ProviderFailure,
 )
-from codey.provider_supervisor import ProviderHealth, STATE_DEGRADED, STATE_OPEN
-from codey.repair_policy import (
+from codey.providers.supervisor import ProviderHealth, STATE_DEGRADED, STATE_OPEN
+from codey.repairs.policy import (
     IMPACT_PROFILE_DATA,
     IMPACT_SHARED_WEB_SURFACE,
     allowed_adapter_files,
     validate_candidate,
 )
-from codey.repair_sandbox import create_repair_sandbox
-from codey.self_repair import SelfRepairJob, SelfRepairSupervisor
-from codey.self_repair_worker import _run_worker_job, run_self_repair_worker
+from codey.repairs.sandbox import create_repair_sandbox
+from codey.repairs.self_repair import SelfRepairJob, SelfRepairSupervisor
+from codey.repairs.self_repair_worker import _run_worker_job, run_self_repair_worker
 
 
 def _source_tree(root: Path) -> None:
@@ -211,14 +211,14 @@ class AdapterOverridesTests(unittest.TestCase):
             )
 
     def test_base_hash_covers_profile_data_surface(self) -> None:
-        # Repairs may rewrite codey/provider_profiles.json, so a changed
+        # Repairs may rewrite codey/providers/profiles.json, so a changed
         # builtin profile must invalidate overrides generated against it.
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "src"
             _source_tree(root)
             before = adapter_overrides.adapter_base_hash("qwen", root)
 
-            (root / "codey" / "provider_profiles.json").write_text(
+            (root / "codey" / "providers" / "profiles.json").write_text(
                 '{"schema_version":1,"profiles":{}}',
                 encoding="utf-8",
             )
@@ -390,7 +390,7 @@ class RepairPolicyTests(unittest.TestCase):
             self.assertEqual(result.impact, ("provider_local",))
 
     def test_policy_allows_profile_data_without_python_snippet_scan(self) -> None:
-        # provider_profiles.json is data: allowed, classified as profile_data,
+        # profiles.json is data: allowed, classified as profile_data,
         # and never tripped by the Python-only forbidden snippets.
         payload = json.dumps({
             "schema_version": 1,
@@ -401,7 +401,7 @@ class RepairPolicyTests(unittest.TestCase):
             candidate = Path(td) / "candidate"
             _source_tree(base)
             _source_tree(candidate)
-            (candidate / "codey" / "provider_profiles.json").write_text(
+            (candidate / "codey" / "providers" / "profiles.json").write_text(
                 payload,
                 encoding="utf-8",
             )
@@ -409,7 +409,7 @@ class RepairPolicyTests(unittest.TestCase):
             result = validate_candidate("qwen", base, candidate)
 
             self.assertTrue(result.ok)
-            self.assertIn("codey/provider_profiles.json", result.changed_files)
+            self.assertIn("codey/providers/profiles.json", result.changed_files)
             self.assertEqual(result.impact, ("profile_data",))
 
     def test_policy_rejects_candidate_without_changes(self) -> None:
@@ -473,14 +473,14 @@ class StaticCheckEscalationTests(unittest.TestCase):
             _source_tree(root)
             seen, fake_run = self._capture_commands()
 
-            with mock.patch("codey.adapter_repair.subprocess.run", side_effect=fake_run):
+            with mock.patch("codey.repairs.adapter_repair.subprocess.run", side_effect=fake_run):
                 results = _run_static_checks("qwen", root)
 
             self.assertTrue(all(item.startswith("passed:") for item in results))
             compile_cmd = next(cmd for cmd in seen if "py_compile" in cmd)
             self.assertIn("codey/providers/web_drivers/qwen.py", compile_cmd)
             self.assertNotIn(
-                "codey/provider_profiles.json",
+                "codey/providers/profiles.json",
                 " ".join(str(part) for part in compile_cmd),
             )
         self.assertEqual(
@@ -494,7 +494,7 @@ class StaticCheckEscalationTests(unittest.TestCase):
             _source_tree(root)
             seen, fake_run = self._capture_commands()
 
-            with mock.patch("codey.adapter_repair.subprocess.run", side_effect=fake_run):
+            with mock.patch("codey.repairs.adapter_repair.subprocess.run", side_effect=fake_run):
                 _base = _run_static_checks("qwen", root)
                 escalated = _run_static_checks(
                     "qwen",
@@ -657,7 +657,7 @@ def _repair_temp_roots() -> set[Path]:
 
 class AdapterRepairBoundedFailureTests(unittest.TestCase):
     def test_missing_readonly_reference_fails_bounded_without_model_call_or_leak(self) -> None:
-        from codey.repair_journal import RepairJournal
+        from codey.repairs.journal import RepairJournal
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "src"
@@ -689,7 +689,7 @@ class AdapterRepairBoundedFailureTests(unittest.TestCase):
             self.assertEqual(_repair_temp_roots(), before)
 
     def test_broken_source_root_fails_bounded_and_cleans_up(self) -> None:
-        from codey.repair_journal import RepairJournal
+        from codey.repairs.journal import RepairJournal
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "bare"
@@ -887,7 +887,7 @@ class ProviderRegistryOverrideTests(unittest.TestCase):
 
 class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
     def test_structural_writer_failure_is_offered_to_self_repair_without_blocking_failover(self) -> None:
-        from codey import server
+        from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(Path(td) / "state")
@@ -950,7 +950,7 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
             self.assertEqual(state.last_terminal_event["provider"], "stepfun")
 
     def test_state_kicks_self_repair_queue_only_when_idle(self) -> None:
-        from codey import server
+        from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
             ran = threading.Event()
@@ -976,7 +976,7 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
             self.assertEqual(state.self_repair.pending(), ())
 
     def test_state_runs_self_repair_without_browser_worker(self) -> None:
-        from codey import server
+        from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
             ran = threading.Event()
@@ -1003,7 +1003,7 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
         submit.assert_not_called()
 
     def test_state_self_repair_job_spawns_process_worker_with_candidates(self) -> None:
-        from codey import server
+        from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(Path(td) / "state")
@@ -1020,7 +1020,7 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
         self.assertEqual(worker.call_args.kwargs["helper_ids"], ("qwen", "stepfun"))
 
     def test_state_does_not_start_self_repair_while_busy(self) -> None:
-        from codey import server
+        from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
             ran = threading.Event()
@@ -1043,7 +1043,7 @@ class TaskRunnerSelfRepairIntegrationTests(unittest.TestCase):
             self.assertEqual(len(state.self_repair.pending()), 1)
 
     def test_state_accepts_new_user_run_while_self_repair_is_running(self) -> None:
-        from codey import server
+        from codey.app import server
 
         with tempfile.TemporaryDirectory() as td:
             state = server.State(Path(td) / "state")
@@ -1067,7 +1067,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
             stdout='noise\n{"ok":true,"provider_id":"qwen","generation":4,"changed_files":["codey/providers/web_drivers/qwen.py"]}\n',
             stderr="",
         )
-        with mock.patch("codey.self_repair_worker.cancellation.run_process", return_value=completed) as run:
+        with mock.patch("codey.repairs.self_repair_worker.cancellation.run_process", return_value=completed) as run:
             result = run_self_repair_worker(
                 SelfRepairJob(
                     "qwen",
@@ -1083,7 +1083,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         self.assertTrue(result.ok)
         self.assertEqual(result.generation, 4)
         command = run.call_args.args[0]
-        self.assertIn("codey.self_repair_worker", command)
+        self.assertIn("codey.repairs.self_repair_worker", command)
         self.assertEqual(command.count("--helper"), 2)
         self.assertIn("--failure-facts-json", command)
         self.assertIn('{"composer_visible":true}', command)
@@ -1091,7 +1091,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
 
     def test_parent_runner_uses_process_tree_cleanup_on_timeout(self) -> None:
         with mock.patch(
-            "codey.self_repair_worker.cancellation.run_process",
+            "codey.repairs.self_repair_worker.cancellation.run_process",
             side_effect=subprocess.TimeoutExpired(["worker"], 900.0),
         ):
             result = run_self_repair_worker(
@@ -1108,10 +1108,10 @@ class SelfRepairWorkerTests(unittest.TestCase):
         helper = mock.Mock()
         helper.send.return_value = '{"files":[]}'
         with (
-            mock.patch("codey.self_repair_worker.connect_repair_helper", return_value=helper) as connect_helper,
-            mock.patch("codey.self_repair_worker.run_adapter_repair", return_value=AdapterRepairResult(True, "qwen")) as repair,
-            mock.patch("codey.self_repair_worker.provider_controls.suppress_assistance", return_value=contextlib.nullcontext()) as controls_suppress,
-            mock.patch("codey.self_repair_worker.provider_flow.suppress_assistance", return_value=contextlib.nullcontext()) as flow_suppress,
+            mock.patch("codey.repairs.self_repair_worker.connect_repair_helper", return_value=helper) as connect_helper,
+            mock.patch("codey.repairs.self_repair_worker.run_adapter_repair", return_value=AdapterRepairResult(True, "qwen")) as repair,
+            mock.patch("codey.repairs.self_repair_worker.provider_controls.suppress_assistance", return_value=contextlib.nullcontext()) as controls_suppress,
+            mock.patch("codey.repairs.self_repair_worker.provider_flow.suppress_assistance", return_value=contextlib.nullcontext()) as flow_suppress,
         ):
             result = _run_worker_job(
                 provider_id="qwen",
@@ -1141,15 +1141,15 @@ class SelfRepairWorkerTests(unittest.TestCase):
         passed = AdapterRepairResult(True, "qwen", generation=4)
         with (
             mock.patch(
-                "codey.self_repair_worker.connect_repair_helper",
+                "codey.repairs.self_repair_worker.connect_repair_helper",
                 side_effect=[first, second],
             ) as connect_helper,
             mock.patch(
-                "codey.self_repair_worker.run_adapter_repair",
+                "codey.repairs.self_repair_worker.run_adapter_repair",
                 side_effect=[failed, passed],
             ) as repair,
-            mock.patch("codey.self_repair_worker.provider_controls.suppress_assistance", return_value=contextlib.nullcontext()),
-            mock.patch("codey.self_repair_worker.provider_flow.suppress_assistance", return_value=contextlib.nullcontext()),
+            mock.patch("codey.repairs.self_repair_worker.provider_controls.suppress_assistance", return_value=contextlib.nullcontext()),
+            mock.patch("codey.repairs.self_repair_worker.provider_flow.suppress_assistance", return_value=contextlib.nullcontext()),
         ):
             result = _run_worker_job(
                 provider_id="qwen",
@@ -1172,7 +1172,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         second.close.assert_called_once()
 
     def test_repair_helper_uses_dedicated_isolated_profile(self) -> None:
-        from codey import self_repair_worker
+        from codey.repairs import self_repair_worker
 
         provider_type = mock.Mock()
         with (
@@ -1188,7 +1188,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         # The repair helper never attaches to the user's default profile
         # from a second CDP port; it gets its own per-provider directory.
         connect_kwargs = provider_type.connect.call_args.kwargs
-        from codey.browser import DEFAULT_PROFILE
+        from codey.automation.browser import DEFAULT_PROFILE
 
         self.assertEqual(connect_kwargs["port"], self_repair_worker.DEFAULT_PORT + 200 + 3)
         self.assertNotEqual(connect_kwargs["profile"], DEFAULT_PROFILE)
@@ -1250,7 +1250,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
         provider_type.connect.assert_not_called()
 
     def test_provider_worker_child_fails_closed_on_default_profile(self) -> None:
-        from codey.browser import DEFAULT_PROFILE
+        from codey.automation.browser import DEFAULT_PROFILE
 
         provider_type = mock.Mock()
         with (
@@ -1298,8 +1298,8 @@ class SelfRepairWorkerTests(unittest.TestCase):
         job = mock.Mock()
 
         with (
-            mock.patch("codey.provider_worker.subprocess.Popen", return_value=process) as popen,
-            mock.patch("codey.provider_worker.cancellation.attach_process_tree", return_value=job),
+            mock.patch("codey.providers.worker.subprocess.Popen", return_value=process) as popen,
+            mock.patch("codey.providers.worker.cancellation.attach_process_tree", return_value=job),
         ):
             WorkerChatProvider("qwen", override, state_home=Path("state"))
 
@@ -1336,9 +1336,9 @@ class SelfRepairWorkerTests(unittest.TestCase):
         job = mock.Mock()
 
         with (
-            mock.patch("codey.provider_worker.subprocess.Popen", return_value=process),
-            mock.patch("codey.provider_worker.cancellation.attach_process_tree", return_value=job) as attach,
-            mock.patch("codey.provider_worker.cancellation.terminate_process_tree") as terminate,
+            mock.patch("codey.providers.worker.subprocess.Popen", return_value=process),
+            mock.patch("codey.providers.worker.cancellation.attach_process_tree", return_value=job) as attach,
+            mock.patch("codey.providers.worker.cancellation.terminate_process_tree") as terminate,
         ):
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
             provider._terminate()
@@ -1357,10 +1357,10 @@ class SelfRepairWorkerTests(unittest.TestCase):
         job = mock.Mock()
 
         with (
-            mock.patch("codey.provider_worker.subprocess.Popen", return_value=process),
-            mock.patch("codey.provider_worker.cancellation.attach_process_tree", return_value=job),
-            mock.patch("codey.provider_worker.cancellation.terminate_process_tree"),
-            mock.patch("codey.provider_worker.urlopen") as urlopen,
+            mock.patch("codey.providers.worker.subprocess.Popen", return_value=process),
+            mock.patch("codey.providers.worker.cancellation.attach_process_tree", return_value=job),
+            mock.patch("codey.providers.worker.cancellation.terminate_process_tree"),
+            mock.patch("codey.providers.worker.urlopen") as urlopen,
         ):
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
             provider._cdp_port = 9444
@@ -1384,12 +1384,12 @@ class SelfRepairWorkerTests(unittest.TestCase):
         job = mock.Mock()
 
         with (
-            mock.patch("codey.provider_worker.subprocess.Popen", return_value=process),
-            mock.patch("codey.provider_worker.cancellation.attach_process_tree", return_value=job),
-            mock.patch("codey.provider_worker.cancellation.terminate_process_tree") as terminate,
-            mock.patch("codey.provider_worker.urlopen") as urlopen,
-            mock.patch("codey.provider_worker.WORKER_TIMEOUT_GRACE", 0.0),
-            mock.patch("codey.provider_worker.time.monotonic", side_effect=[100.0, 100.1]),
+            mock.patch("codey.providers.worker.subprocess.Popen", return_value=process),
+            mock.patch("codey.providers.worker.cancellation.attach_process_tree", return_value=job),
+            mock.patch("codey.providers.worker.cancellation.terminate_process_tree") as terminate,
+            mock.patch("codey.providers.worker.urlopen") as urlopen,
+            mock.patch("codey.providers.worker.WORKER_TIMEOUT_GRACE", 0.0),
+            mock.patch("codey.providers.worker.time.monotonic", side_effect=[100.0, 100.1]),
         ):
             provider = WorkerChatProvider("qwen", override, state_home=Path("state"))
             provider._cdp_port = 9444
@@ -1450,7 +1450,7 @@ class SelfRepairWorkerTests(unittest.TestCase):
                 "_request",
                 side_effect=ProviderActionError(failure),
             ),
-            mock.patch("codey.provider_worker.record_failure") as record,
+            mock.patch("codey.providers.worker.record_failure") as record,
         ):
             with self.assertRaises(ProviderActionError):
                 WorkerChatProvider.new_chat(provider, timeout=1.0)
@@ -1575,7 +1575,7 @@ class AdapterRepairRunnerTests(unittest.TestCase):
             }
 
             with mock.patch(
-                "codey.adapter_repair._run_static_checks",
+                "codey.repairs.adapter_repair._run_static_checks",
                 return_value=("passed:py_compile", "passed:ruff", "passed:provider_unittest"),
             ):
                 result = run_adapter_repair(
@@ -1610,7 +1610,7 @@ class AdapterRepairRunnerTests(unittest.TestCase):
             }
 
             with mock.patch(
-                "codey.adapter_repair._run_static_checks",
+                "codey.repairs.adapter_repair._run_static_checks",
                 return_value=("passed:py_compile", "passed:ruff", "passed:provider_unittest"),
             ):
                 result = run_adapter_repair(
@@ -1654,7 +1654,7 @@ class AdapterRepairRunnerTests(unittest.TestCase):
         override = mock.Mock()
         provider = mock.Mock()
         provider.send.side_effect = lambda prompt, timeout=None: str(prompt).rsplit(" ", 1)[-1]
-        with mock.patch("codey.adapter_repair.WorkerChatProvider", return_value=provider) as worker:
+        with mock.patch("codey.repairs.adapter_repair.WorkerChatProvider", return_value=provider) as worker:
             ok = run_worker_canary("qwen", override, state_home=Path("state"), attempts=2)
 
         self.assertTrue(ok)
@@ -1667,7 +1667,7 @@ class AdapterRepairRunnerTests(unittest.TestCase):
         override = mock.Mock()
         provider = mock.Mock()
         provider.send.return_value = "wrong"
-        with mock.patch("codey.adapter_repair.WorkerChatProvider", return_value=provider):
+        with mock.patch("codey.repairs.adapter_repair.WorkerChatProvider", return_value=provider):
             ok = run_worker_canary("qwen", override, state_home=Path("state"), attempts=1)
 
         self.assertFalse(ok)

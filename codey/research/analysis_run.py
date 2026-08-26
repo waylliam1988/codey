@@ -18,13 +18,13 @@ import sys
 from dataclasses import dataclass
 from typing import Mapping
 
-from codey.refs import (
+from codey.utils.refs import (
     clip,
     digest_json,
     digest_text,
     stable_ref,
 )
-from codey.redaction import looks_prompt_visible_secret
+from codey.policies.redaction import looks_prompt_visible_secret
 from codey.research.identity import path_ref
 
 ANALYSIS_RUN_REF_PREFIX = "analysis_run:"

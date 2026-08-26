@@ -9,7 +9,7 @@ treatment beat control net of cost":
     repair_context_minimal same round, deliberately under-specified facts.
 
 Arms are implemented by overriding the single production constant
-``codey.task_runner.COMPLETION_ENFORCEMENT_MODE`` ("off"/"block") or by
+``codey.app.task_runner.COMPLETION_ENFORCEMENT_MODE`` ("off"/"block") or by
 wrapping ``project_repair_context`` for the minimal-detail arm. Production
 ships "repair"; nothing here is importable from production code.
 
@@ -39,12 +39,12 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import server
-from codey.agent import RunResult
-from codey.events import RunEvent
-from codey.models import ToolCall
-from codey.task_runner import TaskRequest, TaskRunner
-from codey.tool_runtime import ToolOutcome
+from codey.app import server
+from codey.agents.runner import RunResult
+from codey.runtime.events import RunEvent
+from codey.runtime.models import ToolCall
+from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.toolchain.runtime import ToolOutcome
 from tests.manual.ab_harness_common import (
     TracingProvider,
     load_or_new_payload,
@@ -247,7 +247,7 @@ def _minimal_detail_wrapper(original):
 
 
 def _start_arm_patches(arm: str) -> list:
-    from codey import task_runner as tr
+    from codey.app import task_runner as tr
 
     patches = [
         mock.patch.object(tr, "COMPLETION_ENFORCEMENT_MODE", ARM_MODES[arm]),

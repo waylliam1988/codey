@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pytest
 
-from codey.handoff import ConversationContext
-from codey.models import ToolCall
-from codey.tool_runtime import ToolOutcome
-from codey.events import RunEvent
+from codey.agents.handoff import ConversationContext
+from codey.runtime.models import ToolCall
+from codey.toolchain.runtime import ToolOutcome
+from codey.runtime.events import RunEvent
 from tests.manual import context_delta_ab
 
 
@@ -40,7 +40,7 @@ def test_stage_metrics_counts_information_repeated_from_warmup() -> None:
     events = [
         RunEvent.tool_finished(
             1,
-            ToolCall("read", {"path": "codey/agent.py"}),
+            ToolCall("read", {"path": "codey/agents/runner.py"}),
             ToolOutcome("content", True),
         ),
         RunEvent.tool_finished(
@@ -52,7 +52,7 @@ def test_stage_metrics_counts_information_repeated_from_warmup() -> None:
 
     metrics = context_delta_ab._stage_metrics(
         events,
-        {("read", "codey/agent.py", "")},
+        {("read", "codey/agents/runner.py", "")},
     )
 
     assert metrics["information_calls"] == 2

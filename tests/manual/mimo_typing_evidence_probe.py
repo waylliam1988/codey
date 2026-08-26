@@ -16,8 +16,8 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import provider_controls
-from codey.local_store import read_json
+from codey.providers import controls as provider_controls
+from codey.storage.local_store import read_json
 from codey.providers.registry import connect_provider
 from codey.providers.web_drivers import mimo
 

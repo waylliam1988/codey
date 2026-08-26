@@ -16,8 +16,8 @@ from codey.research.done_finalizer import (
     finalize_done_answer,
     render_research_report_sections,
 )
-from codey.report_sections import parse_sections
-from codey.refs import clip, digest_text as _digest_text
+from codey.reviews.report_sections import parse_sections
+from codey.utils.refs import clip, digest_text as _digest_text
 from codey.research.ledger import EvidenceItem, ResearchLedger
 from codey.research.object_model import (
     ResearchRecord,

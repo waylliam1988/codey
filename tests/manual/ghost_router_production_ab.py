@@ -20,13 +20,13 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.agent import RunResult
+from codey.agents.runner import RunResult
 from codey.providers.registry import connect_fresh_provider_tab, provider_ids
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
-from codey.review import ReviewResult
-from codey import server
-from codey.task_runner import TaskRequest, TaskRunner
+from codey.reviews.core import ReviewResult
+from codey.app import server
+from codey.app.task_runner import TaskRequest, TaskRunner
 from tests.manual.ghost_router_ab import (
     DEFAULT_CASES,
     RESULTS_DIR,

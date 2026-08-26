@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from codey.capabilities import (
+from codey.policies.capability_registry import (
     CapabilityRegistry,
     CapabilitySpec,
     KNOWN_CONTEXT_SOURCES,
@@ -12,7 +12,7 @@ from codey.capabilities import (
     KNOWN_UI_SURFACES,
     builtin_capability_registry,
 )
-from codey.permission_profiles import PERMISSION_PROFILES
+from codey.policies.permissions import PERMISSION_PROFILES
 
 
 EXPECTED_BUILTIN_IDS = (
@@ -50,7 +50,7 @@ EXPECTED_BUILTIN_IDS = (
     "tool_runtime",
 )
 EXPECTED_BUILTIN_FINGERPRINT = (
-    "0b1e614c33b864a599ee69b1684a4abefe45cc923763e3f49bf7393501274c22"
+    "6251947ab8d1b26678c82d2ed35b23f33502ae199f876bde999aa182f3cfd0d9"
 )
 
 
@@ -93,7 +93,7 @@ class CapabilityRegistryTests(unittest.TestCase):
             spec.provides,
             ("permission_profile_boundary", "action_policy_boundary"),
         )
-        self.assertEqual(spec.owner_module, "codey.action_policy")
+        self.assertEqual(spec.owner_module, "codey.policies.action")
 
     def test_run_details_is_read_only_chat_projection(self) -> None:
         registry = builtin_capability_registry()
@@ -103,7 +103,7 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(spec.provides, ("run_details_projection",))
         self.assertEqual(spec.consumes, ("run_ledger", "run_trace"))
         self.assertEqual(spec.ui_surface, ("chat_stream",))
-        self.assertEqual(spec.owner_module, "codey.run_details")
+        self.assertEqual(spec.owner_module, "codey.runs.details")
         self.assertFalse(spec.model_visible)
         self.assertFalse(spec.requires_policy)
         self.assertEqual(spec.durable_state, ())
@@ -320,7 +320,7 @@ class CapabilityRegistryTests(unittest.TestCase):
         )
         self.assertEqual(spec.durable_state, ("run_trace",))
         self.assertEqual(spec.trace_sections, ("completion_proofs",))
-        self.assertEqual(spec.owner_module, "codey.completion_contract")
+        self.assertEqual(spec.owner_module, "codey.completion.contract")
         self.assertFalse(spec.model_visible)
         self.assertTrue(spec.evidence_producer)
         self.assertFalse(spec.requires_policy)
@@ -338,7 +338,7 @@ class CapabilityRegistryTests(unittest.TestCase):
         )
         self.assertEqual(spec.consumes, ("prompt_envelope", "run_trace"))
         self.assertEqual(spec.trace_sections, ("prompt_sections",))
-        self.assertEqual(spec.owner_module, "codey.context_epoch")
+        self.assertEqual(spec.owner_module, "codey.workspace.context_epoch")
         self.assertFalse(spec.model_visible)
         self.assertFalse(spec.evidence_producer)
 
@@ -385,7 +385,7 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(spec.consumes, ("prompt_envelope", "run_trace"))
         self.assertTrue(spec.model_visible)
         self.assertFalse(spec.requires_policy)
-        self.assertEqual(spec.owner_module, "codey.task_runner")
+        self.assertEqual(spec.owner_module, "codey.app.task_runner")
         self.assertEqual(spec.trace_sections, ("prompt_sections",))
 
     def test_consensus_advisors_is_model_visible_consultation_boundary(self) -> None:
@@ -412,7 +412,7 @@ class CapabilityRegistryTests(unittest.TestCase):
         self.assertEqual(spec.consumes, ("prompt_envelope", "run_trace"))
         self.assertTrue(spec.model_visible)
         self.assertFalse(spec.requires_policy)
-        self.assertEqual(spec.owner_module, "codey.handoff")
+        self.assertEqual(spec.owner_module, "codey.agents.handoff")
         self.assertEqual(spec.trace_sections, ("prompt_sections",))
 
     def test_local_context_owns_ghost_context_sources(self) -> None:
@@ -492,8 +492,8 @@ class CapabilityRegistryTests(unittest.TestCase):
         )
 
     def test_state_and_task_runner_carry_registry_without_dispatch(self) -> None:
-        from codey import server
-        from codey.task_runner import TaskRunner
+        from codey.app import server
+        from codey.app.task_runner import TaskRunner
 
         state = server.State()
         registry = state.capabilities
@@ -632,7 +632,7 @@ class CapabilityRegistryTests(unittest.TestCase):
 
         self.assertEqual(spec.provides, ("completion_repair_context_projection",))
         self.assertEqual(spec.context_sources, ("completion_repair_context",))
-        self.assertEqual(spec.owner_module, "codey.completion_repair_context")
+        self.assertEqual(spec.owner_module, "codey.completion.repair_context")
         self.assertTrue(spec.model_visible)
         # 0.4.13 changes user-visible done behavior and admits model-visible
         # failure facts: the release gate is a live A/B, not unit tests.

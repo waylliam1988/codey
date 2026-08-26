@@ -6,23 +6,23 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import server
-from codey.agent import RunResult
-from codey.events import RunEvent
-from codey.models import ToolCall
-from codey.run_ledger import (
+from codey.app import server
+from codey.agents.runner import RunResult
+from codey.runtime.events import RunEvent
+from codey.runtime.models import ToolCall
+from codey.runs.ledger import (
     MAX_LEDGER_BYTES,
     RunLedgerStore,
     RunLedgerWriter,
     read_ledger,
 )
-from codey.run_ledger_projection import (
+from codey.runs.ledger_projection import (
     build_task_receipt_from_projection,
     load_run_projection,
     receipt_from_projection_if_compatible,
 )
-from codey.tool_definition import TOOL_DEFINITION_BY_NAME
-from codey.tool_runtime import ToolOutcome
+from codey.toolchain.definition import TOOL_DEFINITION_BY_NAME
+from codey.toolchain.runtime import ToolOutcome
 
 
 VALID_SHA256 = "a" * 64
@@ -310,7 +310,7 @@ class RunLedgerTaskRunnerIntegrationTests(unittest.TestCase):
                 mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(server, "_run_review", return_value=None),
                 mock.patch(
-                    "codey.task_runner.receipt_from_projection_if_compatible",
+                    "codey.app.task_runner.receipt_from_projection_if_compatible",
                     side_effect=spy_projected_receipt,
                 ),
             ):

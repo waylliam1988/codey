@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from codey.web_clipboard import copy_action_text
+from codey.automation.web_clipboard import copy_action_text
 
 
 class WebClipboardTests(unittest.TestCase):
@@ -35,8 +35,8 @@ class WebClipboardTests(unittest.TestCase):
         page.evaluate.side_effect = ["old", None, "__CLIPBOARD_CHECK_test__", None]
 
         with (
-            mock.patch("codey.web_clipboard.uuid.uuid4") as uuid4,
-            mock.patch("codey.web_clipboard.time.time", side_effect=[0.0, 0.0, 3.0]),
+            mock.patch("codey.automation.web_clipboard.uuid.uuid4") as uuid4,
+            mock.patch("codey.automation.web_clipboard.time.time", side_effect=[0.0, 0.0, 3.0]),
         ):
             uuid4.return_value.hex = "test"
             result = copy_action_text(page, action, origin="https://example.test/")

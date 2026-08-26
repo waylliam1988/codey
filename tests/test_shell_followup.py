@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from codey.shell_followup import ShellFollowupInput, render_shell_followup
-from codey.verification_policy import VerificationCandidate
+from codey.policies.shell_followup import ShellFollowupInput, render_shell_followup
+from codey.completion.verification_policy import VerificationCandidate
 
 
 class ShellFollowupTests(unittest.TestCase):

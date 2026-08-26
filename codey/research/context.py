@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Mapping, Protocol
 
-from codey.prompt_envelope import FailOpenPromptTrace
+from codey.runtime.prompt_envelope import FailOpenPromptTrace
 from codey.research.evidence_ledger import EvidenceLedgerWriteResult
 from codey.research.proof_quality import ResearchProofReview, proof_review_trace_payload
 from codey.research.query_planner import ResearchPlan, research_plan_trace_payload

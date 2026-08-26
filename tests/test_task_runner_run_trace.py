@@ -5,18 +5,18 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from codey import server
-from codey.consensus import ConsensusResult
-from codey.handoff import ConversationSnapshot, render_summary_prompt
-from codey.agent import RunResult
-from codey.run_trace import digest_text
+from codey.app import server
+from codey.agents.consensus import ConsensusResult
+from codey.agents.handoff import ConversationSnapshot, render_summary_prompt
+from codey.agents.runner import RunResult
+from codey.runs.trace import digest_text
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import ResearchRecord, build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
-from codey import task_runner as task_runner_module
-from codey.task_runner import TaskRequest, TaskRunner
+from codey.app import task_runner as task_runner_module
+from codey.app.task_runner import TaskRequest, TaskRunner
 
 
 class _Provider:
@@ -505,7 +505,7 @@ def test_secondary_inputs_are_traced_as_prepared_digest_only() -> None:
         with (
             mock.patch.object(state, "get_provider", return_value=_Provider()),
             mock.patch(
-                "codey.task_runner.safe_review_impact_map",
+                "codey.app.task_runner.safe_review_impact_map",
                 return_value="SECRET_REVIEW_IMPACT_SHOULD_NOT_BE_SAVED",
             ) as impact_map,
         ):

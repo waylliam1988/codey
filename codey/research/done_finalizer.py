@@ -6,12 +6,12 @@ import re
 from dataclasses import dataclass
 from typing import Mapping
 
-from codey.citation_scanner import (
+from codey.utils.citation_scanner import (
     citation_ref_items,
     source_id_ref_items,
     source_id_refs,
 )
-from codey.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
+from codey.reviews.report_sections import REQUIRED_SECTIONS, parse_sections, section_title
 from codey.research import report_quality
 from codey.research.ledger import ResearchLedger
 

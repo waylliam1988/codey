@@ -16,7 +16,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import provider_controls
+from codey.providers import controls as provider_controls
 from codey.ghost.continuity import (
     CONTINUITY_SCHEMA_VERSION,
     GhostContinuityItem,
@@ -24,7 +24,7 @@ from codey.ghost.continuity import (
     build_ghost_continuity,
 )
 from codey.ghost.schema import clip_signal_text
-from codey.local_store import write_json_atomic
+from codey.storage.local_store import write_json_atomic
 from codey.protocols import JsonToolCodec
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from codey.prompt_safety import (
+from codey.policies.prompt_safety import (
     contains_prompt_control_text,
     contains_prompt_visible_sensitive_text,
     is_prompt_visible_text_safe,

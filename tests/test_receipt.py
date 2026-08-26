@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.receipt import build_task_receipt
+from codey.runs.receipt import build_task_receipt
 
 
 class TaskReceiptTests(unittest.TestCase):

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from codey.refs import digest_text
-from codey.redaction import (
+from codey.utils.refs import digest_text
+from codey.policies.redaction import (
     looks_secret_marker,
     looks_secret_shape,
     looks_prompt_visible_secret,
@@ -72,12 +72,12 @@ def test_builtin_connector_registry_is_stable_and_marks_minimum_shipped_fixtures
 def test_connector_registry_does_not_import_runtime_browser_or_provider_layers() -> None:
     imports = _imports(ROOT / "codey" / "research" / "source_connectors.py")
     forbidden = {
-        "codey.browser",
+        "codey.automation.browser",
         "codey.providers",
-        "codey.provider_controls",
-        "codey.server",
-        "codey.task_runner",
-        "codey.tool_runtime",
+        "codey.providers.controls",
+        "codey.app.server",
+        "codey.app.task_runner",
+        "codey.toolchain.runtime",
         "codey.ghost",
     }
 

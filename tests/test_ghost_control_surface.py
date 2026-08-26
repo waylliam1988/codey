@@ -12,7 +12,7 @@ from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.store import GhostSignalStore
 from codey.ghost.work_queue import GhostWorkQueueStore
-from codey.work_checkpoint import WorkCheckpointStore
+from codey.runs.work_checkpoint import WorkCheckpointStore
 
 
 def _signal(

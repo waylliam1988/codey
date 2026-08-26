@@ -17,8 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
-from codey.refs import clip as _clip
-from codey.refs import identifier as _identifier
+from codey.utils.refs import clip as _clip
+from codey.utils.refs import identifier as _identifier
 from codey.research import source_domains
 from codey.research.evidence_runtime import normalize_runtime_ref as _normalize_runtime_ref
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from codey import provider_timeouts
+from codey.providers import timeouts as provider_timeouts
 
 
 class ProviderTimeoutTests(unittest.TestCase):

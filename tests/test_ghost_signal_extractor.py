@@ -18,7 +18,7 @@ from codey.ghost.schema import (
 )
 from codey.ghost.signal_codec import GhostSignalCodec
 from codey.ghost.store import GhostSignalStore
-from codey.server import State
+from codey.app.server import State
 from tests.manual import ghost_signal_extractor_ab as ghost_ab
 from tests.manual.ghost_signal_extractor_ab import _should_close_provider
 
@@ -357,7 +357,7 @@ class GhostArchitectureTests(unittest.TestCase):
             "import json, sys\n"
             "import codey.ghost.store\n"
             "print(json.dumps({"
-            "'browser': 'codey.browser' in sys.modules, "
+            "'browser': 'codey.automation.browser' in sys.modules, "
             "'registry': 'codey.providers.registry' in sys.modules, "
             "'deepseek': 'codey.providers.web_drivers.deepseek' in sys.modules, "
             "'qwen': 'codey.providers.web_drivers.qwen' in sys.modules"

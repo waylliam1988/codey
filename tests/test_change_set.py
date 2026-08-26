@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.change_set import ChangeSet
+from codey.workspace.change_set import ChangeSet
 
 
 class ChangeSetTests(unittest.TestCase):

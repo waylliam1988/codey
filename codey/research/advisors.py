@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Mapping, Sequence
 
-from codey import cancellation, provider_controls
-from codey.consensus import ConsensusAdvice, MAX_CONSENSUS_ADVISORS, advisor_ids
+from codey.runtime import cancellation
+from codey.providers import controls as provider_controls
+from codey.agents.consensus import ConsensusAdvice, MAX_CONSENSUS_ADVISORS, advisor_ids
 from codey.research.source_document import compact_pages
 
 RESEARCH_ADVISOR_TIMEOUT = 60.0

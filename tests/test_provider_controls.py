@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import provider_controls as controls
+from codey.providers import controls as controls
 
 
 class ProviderControlsTests(unittest.TestCase):
@@ -547,7 +547,7 @@ class ProviderControlsTests(unittest.TestCase):
             self.assertEqual(controls.load_controls(path), before)
 
     def test_flow_recovery_is_staged_then_promoted_by_next_natural_send(self) -> None:
-        from codey import provider_flow
+        from codey.providers import flow as provider_flow
 
         page = mock.Mock(url="https://chat.qwen.ai/")
         observation = provider_flow.FlowObservation(
@@ -606,7 +606,7 @@ class ProviderControlsTests(unittest.TestCase):
                 provider_flow.end_task_context()
 
     def test_failed_send_discards_staged_flow_without_writing(self) -> None:
-        from codey import provider_flow
+        from codey.providers import flow as provider_flow
 
         page = mock.Mock(url="https://chat.qwen.ai/")
         observation = provider_flow.FlowObservation(
@@ -653,8 +653,8 @@ class ProviderControlsTests(unittest.TestCase):
                 provider_flow.end_task_context()
 
     def test_persisted_flow_unreadable_final_response_triggers_rollback(self) -> None:
-        from codey import provider_flow, provider_revival
-        from codey.provider_diagnostics import ResponseMissing
+        from codey.providers import flow as provider_flow, revival as provider_revival
+        from codey.providers.diagnostics import ResponseMissing
 
         page = mock.Mock(url="https://chat.qwen.ai/")
         generating = provider_flow.FlowObservation(stop_visible=True)
@@ -728,7 +728,7 @@ class ProviderControlsTests(unittest.TestCase):
                         self.assertEqual(meta["failures"], expected)
 
     def test_builtin_completion_read_failure_is_not_attributed_to_flow(self) -> None:
-        from codey import provider_flow, provider_revival
+        from codey.providers import flow as provider_flow, revival as provider_revival
 
         page = mock.Mock(url="https://chat.qwen.ai/")
         generating = provider_flow.FlowObservation(stop_visible=True)
@@ -789,8 +789,8 @@ class ProviderControlsTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), before)
 
     def test_control_and_flow_failure_are_counted_once_per_send(self) -> None:
-        from codey import provider_flow, provider_revival
-        from codey.provider_diagnostics import ResponseMissing
+        from codey.providers import flow as provider_flow, revival as provider_revival
+        from codey.providers.diagnostics import ResponseMissing
 
         page = mock.Mock(url="https://chat.qwen.ai/")
         terminal = provider_flow.FlowObservation(
@@ -872,8 +872,8 @@ class ProviderControlsTests(unittest.TestCase):
         self.assertEqual(provider[controls.CONTROL_RESPONSE]["failures"], 1)
 
     def test_transient_failure_does_not_penalize_persisted_flow(self) -> None:
-        from codey import provider_flow, provider_revival
-        from codey.provider_submission import SubmissionUncertain
+        from codey.providers import flow as provider_flow, revival as provider_revival
+        from codey.providers.submission import SubmissionUncertain
 
         page = mock.Mock(url="https://chat.qwen.ai/")
         generating = provider_flow.FlowObservation(stop_visible=True)
@@ -933,7 +933,7 @@ class ProviderControlsTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), before)
 
     def test_missing_flow_is_read_once_per_task_and_invalidated_on_commit(self) -> None:
-        from codey import provider_flow
+        from codey.providers import flow as provider_flow
 
         page = mock.Mock(url="https://chat.qwen.ai/")
         with tempfile.TemporaryDirectory() as td:

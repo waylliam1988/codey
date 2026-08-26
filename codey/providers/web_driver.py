@@ -10,14 +10,14 @@ from __future__ import annotations
 
 from typing import Any, Callable, TypeVar
 
-from codey import cancellation
-from codey.provider_diagnostics import (
+from codey.runtime import cancellation
+from codey.providers.diagnostics import (
     ProviderActionError,
     ResponseMissing,
     capture_provider_failure,
     run_provider_action,
 )
-from codey.provider_timeouts import start_deadline
+from codey.providers.timeouts import start_deadline
 
 WEB_DEADLINE_MARGIN_SECONDS = 5.0
 

@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from codey import cancellation
+from codey.runtime import cancellation
 from codey.research.context import ResearchPipelineConfig
-from codey.refs import clip
+from codey.utils.refs import clip
 from codey.research.query_planner import ResearchPlan
 from codey.research.tools import ResearchTools, clone_research_tools
 from codey.research.url_policy import check_fetch_url

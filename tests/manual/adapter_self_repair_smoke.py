@@ -19,10 +19,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codey.adapter_overrides import AdapterOverride  # noqa: E402
-from codey.adapter_repair import run_worker_canary  # noqa: E402
+from codey.repairs.adapter_overrides import AdapterOverride  # noqa: E402
+from codey.repairs.adapter_repair import run_worker_canary  # noqa: E402
 from codey.local_store import DEFAULT_STATE_HOME  # noqa: E402
-from codey.self_repair_worker import connect_repair_helper  # noqa: E402
+from codey.repairs.self_repair_worker import connect_repair_helper  # noqa: E402
 
 
 def run_smoke(provider: str, *, timeout: float, state_home: Path) -> dict:

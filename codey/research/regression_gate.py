@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
-from codey.refs import digest_json, identifier, nonnegative_int, stable_ref
+from codey.utils.refs import digest_json, identifier, nonnegative_int, stable_ref
 from codey.research.brief_projection import (
     ANSWER_STATUSES,
     CLAIM_STATUSES,

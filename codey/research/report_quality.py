@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Mapping
 
-from codey.citation_scanner import (
+from codey.utils.citation_scanner import (
     CitationRef,
     citation_ref_items,
     citation_refs,
@@ -15,7 +15,7 @@ from codey.citation_scanner import (
 )
 from codey.research.ledger import ResearchLedger
 from codey.research.provenance import provenance_problem
-from codey.report_sections import (
+from codey.reviews.report_sections import (
     heading_key as _heading_key,
     missing_required_sections as _missing_required_sections,
     parse_sections,

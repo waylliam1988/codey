@@ -8,20 +8,20 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from codey import server
-from codey.agent import RunResult
-from codey.events import RunEvent
-from codey.models import ToolCall
-from codey import task_runner as task_runner_module
-from codey.task_runner import (
+from codey.app import server
+from codey.agents.runner import RunResult
+from codey.runtime.events import RunEvent
+from codey.runtime.models import ToolCall
+from codey.app import task_runner as task_runner_module
+from codey.app.task_runner import (
     COMPLETION_REPAIR_FOLLOWUP,
     _COMPLETION_BLOCKED_NOTE,
     TaskRequest,
     TaskRunner,
     _blocked_result,
 )
-from codey.tool_runtime import ToolOutcome
-from codey.verification_policy import VerificationCandidate
+from codey.toolchain.runtime import ToolOutcome
+from codey.completion.verification_policy import VerificationCandidate
 
 
 class _Provider:
@@ -297,7 +297,7 @@ def test_still_failing_after_repair_round_blocks_honestly() -> None:
         # and the second writer call prove the round actually ran.
         assert all(row["status"] == "failed" for row in manifest["completion_proofs"])
         # The durable ledger was written once, from the final outcome only.
-        from codey.run_ledger import read_ledger
+        from codey.runs.ledger import read_ledger
 
         assert state.run_ledgers is not None
         records = read_ledger(

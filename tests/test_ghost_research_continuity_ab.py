@@ -5,9 +5,9 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from codey.agent import RunResult
+from codey.agents.runner import RunResult
 from codey.providers.registry import DEFAULT_PROVIDER_ID
-from codey.task_runner import TaskRequest, TaskRunner
+from codey.app.task_runner import TaskRequest, TaskRunner
 
 from tests.manual import ghost_research_continuity_ab as ab
 from tests.manual.ab_journal import (
@@ -121,7 +121,7 @@ def test_failure_classification_separates_provider_and_planner_causes() -> None:
 
 def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
     """TracingProvider + ABJournalWriter capture every provider exchange."""
-    from codey import server
+    from codey.app import server
     from codey.knowledge.store import KnowledgeStore
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
@@ -184,7 +184,7 @@ def test_tracing_provider_journals_sends_and_archives_transcripts() -> None:
 
 
 def test_digest_only_journal_keeps_no_transcript_files() -> None:
-    from codey import server
+    from codey.app import server
     from codey.knowledge.store import KnowledgeStore
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:

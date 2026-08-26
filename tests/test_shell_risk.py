@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.shell_risk import classify_shell_risk
+from codey.policies.shell_risk import classify_shell_risk
 
 
 class ShellRiskTests(unittest.TestCase):

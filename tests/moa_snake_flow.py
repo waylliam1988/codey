@@ -16,15 +16,15 @@ from typing import Iterator
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey import provider_controls
-from codey import server as codey_server
-from codey.changes import collect_changes, is_git_repository
-from codey.consensus import run_project_audit_advisor
+from codey.providers import controls as provider_controls
+from codey.app import server as codey_server
+from codey.workspace.changes import collect_changes, is_git_repository
+from codey.agents.consensus import run_project_audit_advisor
 from codey.providers.registry import (
     connect_existing_provider,
     provider_tab_availability,
 )
-from codey.review import parse_review_with_repair, render_review_prompt
+from codey.reviews.core import parse_review_with_repair, render_review_prompt
 
 
 WRITER_ID = "deepseek"

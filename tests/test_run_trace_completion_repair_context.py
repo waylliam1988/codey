@@ -7,11 +7,11 @@ import tempfile
 
 import pytest
 
-from codey.context_epoch import context_epoch_id
+from codey.workspace.context_epoch import context_epoch_id
 
 
 def _payload() -> dict[str, object]:
-    from codey.completion_repair_context import project_repair_context
+    from codey.completion.repair_context import project_repair_context
 
     projection = project_repair_context(
         proof={
@@ -60,7 +60,7 @@ def _manifest(store, run_id: str) -> dict:
 
 
 def test_repair_admission_row_is_digest_only_and_send_bound() -> None:
-    from codey.run_trace import RunTraceStore
+    from codey.runs.trace import RunTraceStore
 
     payload = _payload()
     epoch = context_epoch_id("repair followup outbound bytes")
@@ -86,7 +86,7 @@ def test_repair_admission_row_is_digest_only_and_send_bound() -> None:
 
 
 def test_repair_row_dedupes_and_fails_closed_without_digest_or_admission() -> None:
-    from codey.run_trace import RunTraceStore
+    from codey.runs.trace import RunTraceStore
 
     payload = _payload()
     epoch = context_epoch_id("outbound bytes")
@@ -108,14 +108,14 @@ def test_repair_row_dedupes_and_fails_closed_without_digest_or_admission() -> No
 def test_repair_row_requires_epoch_kwarg_structurally() -> None:
     import inspect
 
-    from codey.run_trace import RunTraceRecorder
+    from codey.runs.trace import RunTraceRecorder
 
     # The binding parameter has no default: an admitted row cannot exist
     # outside a send-boundary binding.
     signature = inspect.signature(RunTraceRecorder.record_completion_repair_context)
     assert signature.parameters["epoch_id"].default is inspect.Parameter.empty
 
-    from codey.run_trace import RunTraceStore
+    from codey.runs.trace import RunTraceStore
 
     payload = {
         "schema_version": 1,
@@ -143,7 +143,7 @@ def test_repair_row_requires_epoch_kwarg_structurally() -> None:
     ),
 )
 def test_repair_row_rejects_malformed_epochs_fail_closed(bad: str) -> None:
-    from codey.run_trace import RunTraceStore
+    from codey.runs.trace import RunTraceStore
 
     payload = _payload()
     with tempfile.TemporaryDirectory() as td:
@@ -156,7 +156,7 @@ def test_repair_row_rejects_malformed_epochs_fail_closed(bad: str) -> None:
 
 
 def test_repair_row_survives_a_rejected_epoch_then_admits_on_valid_send() -> None:
-    from codey.run_trace import RunTraceStore
+    from codey.runs.trace import RunTraceStore
 
     payload = _payload()
     good = context_epoch_id("outbound bytes")

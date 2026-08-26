@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.changed_symbols import changed_symbol_names, changed_symbols_from_changes
+from codey.workspace.changed_symbols import changed_symbol_names, changed_symbols_from_changes
 
 
 class ChangedSymbolsTests(unittest.TestCase):

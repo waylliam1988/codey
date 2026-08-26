@@ -21,13 +21,14 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import agent, provider_controls
-from codey.agent_tools import AgentToolFns
-from codey.events import RunEvent, render_run_event
+from codey.agents import runner as agent
+from codey.providers import controls as provider_controls
+from codey.agents.tools import AgentToolFns
+from codey.runtime.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
 from tests.manual.project_task_context import render_production_project_map
-from codey.tool_runtime import ToolOutcome, _python_syntax_regression_hint
-from codey.tool_runtime import edit_file as runtime_edit_file
+from codey.toolchain.runtime import ToolOutcome, _python_syntax_regression_hint
+from codey.toolchain.runtime import edit_file as runtime_edit_file
 
 
 ARMS = ("baseline", "hint")
@@ -71,7 +72,7 @@ class _EditProbe:
         before = path.read_text(encoding="utf-8") if path.is_file() else ""
         if self.arm == "baseline":
             with mock.patch(
-                "codey.tool_runtime._python_syntax_regression_hint",
+                "codey.toolchain.runtime._python_syntax_regression_hint",
                 return_value="",
             ):
                 outcome = self.original(root, rel, blocks)

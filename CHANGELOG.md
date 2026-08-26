@@ -4,6 +4,20 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## 0.4.14 - Provider Package Cold Migration
+
+- Provider runtime modules now live exclusively under `codey.providers.*`.
+  Root `codey/provider_*.py` modules and the intermediate
+  provider-prefixed names inside that package are gone; imports, tests, mock
+  patch paths, manual A/B fixtures, docs, and tools now target the final
+  provider paths.
+- Built-in provider profile data moved to `codey/providers/profiles.json`
+  and is packaged as `codey.providers` data.
+- `codey.providers` keeps lazy public exports so importing small provider
+  support modules does not also load every web driver.
+- This release is a path-only cold migration baseline for provider A/B work:
+  no compatibility wrappers and no intended behavior changes.
+
 ## 0.4.13 - Verified Completion Enforcement + Repair Context Admission v1
 
 ### Final release closeout
@@ -119,7 +133,7 @@ This file records Codey's release history. The newest release appears first.
   wrappers collapsed into one spec-driven `web_provider.py` (~270 lines);
   shared control-location / response-count / rate-limit / late-response
   scaffolding extracted into `providers/web_drivers/common.py`; provider id
-  normalization unified in `codey/provider_ids.py`. Per-site completion
+  normalization unified in `codey/providers/ids.py`. Per-site completion
   heuristics deliberately stay in their drivers.
 - Adapter self-repair surface widened deliberately, with impact-escalated
   validation. New `codey/adapter_surface.py` defines the repair surface as
@@ -138,7 +152,7 @@ This file records Codey's release history. The newest release appears first.
   states the real scope ("modify only the web adapter surface ... this
   repair runs in a provider-scoped override sandbox ... do not modify tests
   or Codey core runtime"). `adapter_overrides.adapter_base_hash()` includes
-  repair-surface JSON so a changed builtin `provider_profiles.json`
+  repair-surface JSON so a changed builtin `profiles.json`
   invalidates overrides generated against the old data. The surface is
   fail-closed: a provider without a driver entry has an empty surface, so
   the shared files can never be granted on their own --
@@ -1102,7 +1116,7 @@ This file records Codey's release history. The newest release appears first.
     `verified_by` from a fixed allowlist (`deterministic_check`,
     `analysis_run`, `opened_source_evidence`, `reviewer_pass`); model
     self-reports fail closed.
-  - The existing `codey.review.ReviewFinding` parser object is intentionally
+  - The existing `codey.reviews.core.ReviewFinding` parser object is intentionally
     not migrated; integrating code review findings waits for a real consumer.
 - ResearchPipeline now projects findings once, after the final proof review:
   final review -> EvidenceRuntimeSnapshot -> ReviewFindingRecords ->
@@ -1119,7 +1133,7 @@ This file records Codey's release history. The newest release appears first.
   findings the manifest shape is unchanged apart from two empty lists.
 - Architecture tests now lock Evidence Runtime and ReviewFinding as
   projection-only modules: no browser/provider/tool_runtime/task_runner/server/
-  managed_outputs/events/ghost/codey.review/journal imports and no I/O tokens;
+  managed_outputs/events/ghost/codey.reviews.core/journal imports and no I/O tokens;
   the A/B journal boundary tests already cover all research modules including
   the new ones.
 - Scope notes: no model critic, no prompt changes, no tool result changes, no
@@ -1230,7 +1244,7 @@ This file records Codey's release history. The newest release appears first.
   project facts recording, checkpoint edit/run tracking, and AnalysisRun projection now share one
   `_handle_project_tool_event()` seam with unchanged branch conditions, and projection failures
   fail open without touching task completion.
-- Architecture tests now forbid `codey.managed_outputs` imports from research/review/ghost modules
+- Architecture tests now forbid `codey.storage.managed_outputs` imports from research/review/ghost modules
   and keep the new projection modules pure (no events/tool_runtime/task_runner/server dependencies).
 - v1 scope note: Research reports do not yet cite `analysis_run:<id>`; the internal support
   relation is recorded first. Making the citation model-visible would change the report contract
@@ -1739,8 +1753,8 @@ This file records Codey's release history. The newest release appears first.
   Trace, while keeping the UI/SSE `run_event.*` rows scoped to their UI and
   ledger projections.
 - Moved the existing Web/SSE `RunEvent` projection into
-  `codey.events.run_event_ui_payload()` and the research display-name mapping
-  into `codey.events.display_tool()`. `TaskRunner` now calls this shared
+  `codey.runtime.events.run_event_ui_payload()` and the research display-name mapping
+  into `codey.runtime.events.display_tool()`. `TaskRunner` now calls this shared
   projection instead of owning a local duplicate.
 - Kept `run_event_payload()` and RunLedger projection separate because they
   serve different consumers. This release does not add an event bus, runtime
@@ -3355,7 +3369,7 @@ bounded synthesis into a project, and remember verified implementation facts.
 
 - Improvement: Agent runtime now supports explicit `AgentToolFns` injection, so
   tests and manual probes can replace tool functions without monkeypatching
-  `codey.agent` globals.
+  `codey.agents.runner` globals.
 - UX decision: Codey keeps production `read`, `ls`, and `search` execution
   serial by default. A deterministic probe showed local wall-clock speedups from
   concurrent read-only batches, but serial tool events preserve step-by-step
@@ -3363,7 +3377,7 @@ bounded synthesis into a project, and remember verified implementation facts.
 - Safety: bounded file scanning/search paths now check cooperative cancellation
   during long loops.
 - Tests/probes: manual A/B probes now use explicit tool-function injection
-  instead of monkeypatching `codey.agent` globals. The read-only parallel probe
+  instead of monkeypatching `codey.agents.runner` globals. The read-only parallel probe
   remains as a script-local experiment and documents why production Codey does
   not enable read-only concurrency by default.
 

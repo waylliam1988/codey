@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import unittest
 
-from codey.events import RunEvent, run_event_ui_payload
-from codey.models import ToolCall
-from codey.tool_runtime import (
+from codey.runtime.events import RunEvent, run_event_ui_payload
+from codey.runtime.models import ToolCall
+from codey.toolchain.runtime import (
     RunCommandRawResult,
     ToolOutcome,
     project_run_command_result,

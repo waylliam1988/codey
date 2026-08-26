@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.setup_context import (
+from codey.workspace.setup_context import (
     render_setup_context,
     safe_setup_context,
 )
@@ -33,7 +33,7 @@ class SetupContextTests(unittest.TestCase):
                     return f"C:/Tools/{name}.exe"
                 return None
 
-            with mock.patch("codey.setup_context.shutil.which", side_effect=fake_which):
+            with mock.patch("codey.workspace.setup_context.shutil.which", side_effect=fake_which):
                 rendered = render_setup_context(root)
 
         self.assertIn("Setup Context", rendered)
@@ -124,7 +124,7 @@ class SetupContextTests(unittest.TestCase):
             (root / "app").mkdir()
             (root / "app" / "package.json").write_text("{}", encoding="utf-8")
 
-            with mock.patch("codey.setup_context.MAX_SETUP_SCAN_DIRS", 3):
+            with mock.patch("codey.workspace.setup_context.MAX_SETUP_SCAN_DIRS", 3):
                 rendered = render_setup_context(root)
 
         self.assertIn("app/package.json", rendered)

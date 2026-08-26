@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import changes
+from codey.workspace import changes
 from tools import bootstrap_smoke
 
 
@@ -16,8 +16,8 @@ class BootstrapSmokeTests(unittest.TestCase):
     def test_inject_bug_reverses_snapshot_diff_direction(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / "codey").mkdir()
-            (root / "codey" / "changes.py").write_text(
+            (root / "codey" / "workspace").mkdir(parents=True)
+            (root / "codey" / "workspace" / "changes.py").write_text(
                 "import difflib\n\n"
                 "def _diff_for(path: str, before: str | None, after: str | None) -> str:\n"
                 "    old\n"
@@ -28,7 +28,7 @@ class BootstrapSmokeTests(unittest.TestCase):
 
             bootstrap_smoke.inject_bug(root)
 
-            text = (root / "codey" / "changes.py").read_text(encoding="utf-8")
+            text = (root / "codey" / "workspace" / "changes.py").read_text(encoding="utf-8")
             self.assertIn("difflib.unified_diff(after_lines, before_lines", text)
 
     def test_run_bootstrap_smoke_rejects_same_writer_and_reviewer(self) -> None:

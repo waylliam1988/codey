@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from codey.context_epoch import context_epoch_id
+from codey.workspace.context_epoch import context_epoch_id
 from codey.knowledge.store import KnowledgeStore
 from codey.research.context import ResearchContext, RunTraceResearchSink
 from codey.research.pipeline import ResearchIterationRun, ResearchPipeline
@@ -392,7 +392,7 @@ def test_pipeline_skips_trace_row_when_nothing_admitted() -> None:
 def test_run_trace_persists_digest_only_topic_continuity_row() -> None:
     import json
 
-    from codey.run_trace import RunTraceStore
+    from codey.runs.trace import RunTraceStore
     from codey.research.topic_continuity import project_topic_continuity
 
     projection = project_topic_continuity(
@@ -440,7 +440,7 @@ def test_run_trace_persists_digest_only_topic_continuity_row() -> None:
 def test_run_trace_dedupes_and_fails_closed_on_missing_digest() -> None:
     import json
 
-    from codey.run_trace import RunTraceStore
+    from codey.runs.trace import RunTraceStore
     from codey.research.topic_continuity import project_topic_continuity
 
     payload = project_topic_continuity(
@@ -482,7 +482,7 @@ def test_topic_admission_has_no_bypass_outside_the_send_boundary() -> None:
     """
     import pytest
 
-    from codey.run_trace import RunTraceStore
+    from codey.runs.trace import RunTraceStore
 
     # The projection sink has no continuity writer at all.
     assert not hasattr(RunTraceResearchSink(None), "record_topic_continuity")
@@ -515,7 +515,7 @@ def test_topic_admission_rejects_empty_or_malformed_epoch() -> None:
     """
     import json
 
-    from codey.run_trace import RunTraceStore
+    from codey.runs.trace import RunTraceStore
     from codey.research.topic_continuity import project_topic_continuity
 
     payload = project_topic_continuity(

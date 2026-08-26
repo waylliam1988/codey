@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codey import cancellation
+from codey.runtime import cancellation
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.concepts import SupportRef, _missing_suggestions
 from codey.knowledge.note import KnowledgeNote

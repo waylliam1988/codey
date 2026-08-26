@@ -10,12 +10,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import codey.cli as cli
+import codey.app.cli as cli
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore, conflict_key_for_signal, value_key_for_signal
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
 from codey.ghost.store import GhostSignalStore
-from codey.server import State
+from codey.app.server import State
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -928,13 +928,13 @@ class GhostCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             script = (
                 "import json, sys\n"
-                "import codey.cli as cli\n"
+                "import codey.app.cli as cli\n"
                 f"code = cli.main(['ghost','list','--state-home',r'{td}'])\n"
                 "print(json.dumps({"
                 "'code': code, "
-                "'browser': 'codey.browser' in sys.modules, "
+                "'browser': 'codey.automation.browser' in sys.modules, "
                 "'providers': 'codey.providers.registry' in sys.modules, "
-                "'tool_runtime': 'codey.tool_runtime' in sys.modules"
+                "'tool_runtime': 'codey.toolchain.runtime' in sys.modules"
                 "}))\n"
             )
             completed = subprocess.run(
@@ -961,8 +961,8 @@ class GhostCliTests(unittest.TestCase):
 class GhostInboxArchitectureTests(unittest.TestCase):
     def test_ghost_modules_do_not_import_tool_runtime_or_provider_stack(self) -> None:
         forbidden = {
-            "codey.tool_runtime",
-            "codey.browser",
+            "codey.toolchain.runtime",
+            "codey.automation.browser",
             "codey.providers",
             "torch",
             "transformers",
@@ -973,7 +973,7 @@ class GhostInboxArchitectureTests(unittest.TestCase):
                 self.assertFalse(_matches_any_prefix(imports, forbidden))
 
     def test_tool_runtime_and_research_do_not_import_ghost(self) -> None:
-        paths = [ROOT / "codey" / "tool_runtime.py", *(ROOT / "codey" / "research").glob("*.py")]
+        paths = [ROOT / "codey" / "toolchain" / "runtime.py", *(ROOT / "codey" / "research").glob("*.py")]
         for path in paths:
             with self.subTest(path=path.name):
                 imports = _imported_modules(path)

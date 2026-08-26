@@ -13,9 +13,10 @@ import urllib.error
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 import urllib.request
 
-from codey import cancellation, browser_worker
-from codey.browser import DEFAULT_PORT, open_chat_page
-from codey.local_store import DEFAULT_STATE_HOME
+from codey.runtime import cancellation
+from codey.automation import browser_worker
+from codey.automation.browser import DEFAULT_PORT, open_chat_page
+from codey.storage.local_store import DEFAULT_STATE_HOME
 from codey.research.extract import extract_text, extract_title
 from codey.research.pdf_extract import PDF_MAX_BYTES
 from codey.research.url_policy import check_fetch_url

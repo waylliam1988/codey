@@ -7,22 +7,20 @@ import time
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import Locator, Page
 
-from codey import (
-    cancellation,
-    provider_controls as controls,
-    provider_flow,
-    provider_send_loop as send_loop,
-)
-from codey.json_tool_reply import (
+from codey.runtime import cancellation
+from codey.providers import controls as controls
+from codey.providers import flow as provider_flow
+from codey.providers import send_loop as send_loop
+from codey.toolchain.json_reply import (
     is_json_tool_reply as _is_json_tool_reply,
     looks_like_json_tool_reply as _looks_like_json_tool_reply,
     normalize_final_json_tool_reply as _normalize_final_json_tool_reply,
     repair_missing_trailing_braces_json_tool_reply as _repair_missing_trailing_braces_json_tool_reply,
 )
-from codey.provider_diagnostics import ControlMissing, ResponseMissing
-from codey.provider_profiles import get_profile
-from codey.provider_submission import SendAttempt, SubmissionUncertain, confirm_submission
-from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.providers.diagnostics import ControlMissing, ResponseMissing
+from codey.providers.profiles import get_profile
+from codey.providers.submission import SendAttempt, SubmissionUncertain, confirm_submission
+from codey.providers.timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.providers.web_drivers import common as driver_common
 
 PROVIDER_ID = "stepfun"

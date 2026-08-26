@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 from unittest import mock
 
-from codey.agent import RunResult
+from codey.agents.runner import RunResult
 import codey.ghost.work_queue as work_queue_module
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
@@ -15,10 +15,10 @@ from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
-from codey.review import ReviewResult
-from codey import server
-from codey.task_runner import TaskRequest, TaskRunner
-from codey.work_checkpoint import WorkCheckpointStore
+from codey.reviews.core import ReviewResult
+from codey.app import server
+from codey.app.task_runner import TaskRequest, TaskRunner
+from codey.runs.work_checkpoint import WorkCheckpointStore
 
 
 class _Provider:
@@ -452,9 +452,9 @@ def test_project_followup_item_consumes_into_project_mode() -> None:
         # Real observable facts (edit + passing check): under 0.4.13 a
         # claimed green with no local observation would block this run.
         def _fake_agent_run(_provider, _project, _task, **kwargs):
-            from codey.events import RunEvent
-            from codey.models import ToolCall
-            from codey.tool_runtime import ToolOutcome
+            from codey.runtime.events import RunEvent
+            from codey.runtime.models import ToolCall
+            from codey.toolchain.runtime import ToolOutcome
 
             kwargs["on_event"](RunEvent.tool_finished(
                 1,

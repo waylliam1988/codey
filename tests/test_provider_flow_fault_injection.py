@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from unittest import mock
 
-from codey import provider_controls as controls
-from codey import provider_flow as flow
-from codey import provider_revival as revival
-from codey.provider_diagnostics import ResponseMissing
+from codey.providers import controls as controls
+from codey.providers import flow as flow
+from codey.providers import revival as revival
+from codey.providers.diagnostics import ResponseMissing
 
 
 @dataclass(frozen=True)

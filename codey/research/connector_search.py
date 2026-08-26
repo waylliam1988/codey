@@ -14,9 +14,9 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlencode, urlparse
 
-from codey import cancellation
+from codey.runtime import cancellation
 from codey.research.connector_domains import preferred_connector_ids
-from codey.refs import clip
+from codey.utils.refs import clip
 from codey.research.source_connectors import (
     CONNECTOR_AVAILABLE_STATUSES,
     MAX_CONNECTOR_HITS,

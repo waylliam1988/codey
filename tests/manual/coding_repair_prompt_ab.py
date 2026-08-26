@@ -19,9 +19,9 @@ from typing import Any, Callable
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey.agent import _protocol_repair_prompt
-from codey import provider_controls
-from codey.models import ToolPlan
+from codey.agents.runner import _protocol_repair_prompt
+from codey.providers import controls as provider_controls
+from codey.runtime.models import ToolPlan
 from codey.protocols import JsonToolCodec
 from codey.protocols.json_codec import _balanced_json_objects
 from codey.providers.registry import connect_fresh_provider_tab, connect_provider, provider_ids

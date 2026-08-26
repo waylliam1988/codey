@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from codey.agent_tools import DEFAULT_TOOL_FNS, AgentToolFns
-from codey import tool_runtime
+from codey.agents.tools import DEFAULT_TOOL_FNS, AgentToolFns
+from codey.toolchain import runtime as tool_runtime
 
 
 class AgentToolFnsTests(unittest.TestCase):

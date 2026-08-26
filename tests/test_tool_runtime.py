@@ -9,10 +9,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import cancellation, tool_runtime
-from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
-from codey.references import find_reference_hints
-from codey.tool_runtime import (
+from codey.runtime import cancellation
+from codey.toolchain import runtime as tool_runtime
+from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
+from codey.utils.references import find_reference_hints
+from codey.toolchain.runtime import (
     EDIT_FAILURE_MAX_CHARS,
     EDIT_FAILURE_MAX_LINE_CHARS,
     EditBlock,
@@ -240,8 +241,8 @@ class ToolOutcomeTests(unittest.TestCase):
         )
         with (
             tempfile.TemporaryDirectory() as td,
-            mock.patch("codey.tool_runtime.RUN_OUTPUT_LIMIT", 80),
-            mock.patch("codey.tool_runtime.cancellation.run_process", return_value=completed),
+            mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
+            mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
         ):
             outcome = run_command(
                 Path(td),
@@ -282,9 +283,9 @@ class ToolOutcomeTests(unittest.TestCase):
             )
 
             with (
-                mock.patch("codey.tool_runtime.RUN_OUTPUT_LIMIT", 700),
+                mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 700),
                 mock.patch(
-                    "codey.tool_runtime.cancellation.run_process",
+                    "codey.toolchain.runtime.cancellation.run_process",
                     return_value=completed,
                 ),
             ):
@@ -320,7 +321,7 @@ class ToolOutcomeTests(unittest.TestCase):
             )
 
             with mock.patch(
-                "codey.tool_runtime.cancellation.run_process",
+                "codey.toolchain.runtime.cancellation.run_process",
                 return_value=completed,
             ):
                 raw = run_command_raw(
@@ -473,7 +474,7 @@ class ToolOutcomeTests(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as td,
             mock.patch(
-                "codey.tool_runtime.cancellation.run_process",
+                "codey.toolchain.runtime.cancellation.run_process",
                 side_effect=subprocess.TimeoutExpired(cmd="pytest", timeout=300),
             ),
         ):
@@ -508,7 +509,7 @@ class ToolOutcomeTests(unittest.TestCase):
             root = Path(td)
             (root / "app.py").write_text("print('hi')\n", encoding="utf-8")
             with mock.patch(
-                "codey.tool_runtime.cancellation.run_process",
+                "codey.toolchain.runtime.cancellation.run_process",
                 side_effect=subprocess.TimeoutExpired(cmd="python app.py", timeout=90),
             ):
                 outcome = run_command(
@@ -619,13 +620,13 @@ class ToolOutcomeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "huge.py").write_text("x" * 33, encoding="utf-8")
-            with mock.patch("codey.tool_runtime.SEARCH_MAX_FILE_BYTES", 32):
+            with mock.patch("codey.toolchain.runtime.SEARCH_MAX_FILE_BYTES", 32):
                 oversized = tool_runtime.search_files(root, "huge.py", "target")
 
             (root / "a.py").write_text("pass\n", encoding="utf-8")
             (root / "b.py").write_text("pass\n", encoding="utf-8")
             (root / "c.py").write_text("target\n", encoding="utf-8")
-            with mock.patch("codey.tool_runtime.SEARCH_MAX_SCAN_FILES", 2):
+            with mock.patch("codey.toolchain.runtime.SEARCH_MAX_SCAN_FILES", 2):
                 budget = tool_runtime.search_files(root, ".", "target")
 
         self.assertIn("skipped 1 file(s) larger than 32 bytes", oversized.model_text)
@@ -1122,7 +1123,7 @@ class ToolOutcomeTests(unittest.TestCase):
             path.write_text("old", encoding="utf-8")
             blocks = [EditBlock("old", "large")]
 
-            with mock.patch("codey.tool_runtime.WRITE_MAX_FILE_BYTES", 4):
+            with mock.patch("codey.toolchain.runtime.WRITE_MAX_FILE_BYTES", 4):
                 written = write_file(root, "new.txt", "large")
                 edited = edit_file(root, "app.txt", blocks)
 
@@ -1239,7 +1240,7 @@ class ToolOutcomeTests(unittest.TestCase):
     def test_anchor_candidate_scans_are_bounded(self) -> None:
         search = " ".join(f"identifier_{index:04}" for index in range(100))
         with mock.patch(
-            "codey.tool_runtime._unique_anchor_position",
+            "codey.toolchain.runtime._unique_anchor_position",
             return_value=None,
         ) as locate:
             context = tool_runtime._render_edit_failure_context("content", search)
@@ -1454,7 +1455,7 @@ class ToolOutcomeTests(unittest.TestCase):
 
     def test_oversized_python_skips_syntax_parsing(self) -> None:
         content = "x" * (tool_runtime.PYTHON_SYNTAX_HINT_MAX_CHARS + 1)
-        with mock.patch("codey.tool_runtime.ast.parse") as parse:
+        with mock.patch("codey.toolchain.runtime.ast.parse") as parse:
             hint = tool_runtime._python_syntax_regression_hint(
                 "large.py",
                 content,
@@ -1504,7 +1505,7 @@ class ToolOutcomeTests(unittest.TestCase):
     def test_syntax_hint_message_is_bounded(self) -> None:
         long_message = "x" * 500
         with mock.patch(
-            "codey.tool_runtime.ast.parse",
+            "codey.toolchain.runtime.ast.parse",
             side_effect=[None, SyntaxError(long_message)],
         ):
             hint = tool_runtime._python_syntax_regression_hint(
@@ -1531,7 +1532,7 @@ class ToolOutcomeTests(unittest.TestCase):
                 path.write_text("VALUE = 1\n", encoding="utf-8")
 
                 with mock.patch(
-                    "codey.tool_runtime.ast.parse",
+                    "codey.toolchain.runtime.ast.parse",
                     side_effect=side_effect,
                 ):
                     outcome = edit_file(

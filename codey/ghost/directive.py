@@ -18,7 +18,7 @@ from codey.ghost.hebbian import (
 )
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.typed_fields import dangerous_text, render_typed_field
-from codey.local_store import read_json
+from codey.storage.local_store import read_json
 
 
 DEFAULT_DIRECTIVE_BUDGET = 900

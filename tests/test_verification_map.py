@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.verification_map import build_verification_map
-from codey.work_checkpoint import CheckpointCheck
+from codey.completion.verification_map import build_verification_map
+from codey.runs.work_checkpoint import CheckpointCheck
 
 
 def _changes(*paths: str, diff: str = "") -> dict:
@@ -198,7 +198,7 @@ class VerificationMapTests(unittest.TestCase):
             except OSError:
                 pass
 
-            with mock.patch("codey.verification_map.MAX_TEST_FILE_BYTES", 4):
+            with mock.patch("codey.completion.verification_map.MAX_TEST_FILE_BYTES", 4):
                 result = build_verification_map(
                     root,
                     _changes("src/token.py", diff="+def validate_token():\n+    pass"),
@@ -214,10 +214,10 @@ class VerificationMapTests(unittest.TestCase):
             for index in range(2):
                 (tests / f"test_{index}.py").write_text("changed_symbol\n", encoding="utf-8")
             changes = _changes("src/app.py", diff="+def changed_symbol():\n+    pass")
-            with mock.patch("codey.verification_map.MAX_CANDIDATES", 2):
+            with mock.patch("codey.completion.verification_map.MAX_CANDIDATES", 2):
                 exact = build_verification_map(root, changes)
             (tests / "test_2.py").write_text("changed_symbol\n", encoding="utf-8")
-            with mock.patch("codey.verification_map.MAX_CANDIDATES", 2):
+            with mock.patch("codey.completion.verification_map.MAX_CANDIDATES", 2):
                 overflow = build_verification_map(root, changes)
 
         self.assertFalse(exact.truncated)
@@ -238,7 +238,7 @@ class VerificationMapTests(unittest.TestCase):
             root = Path(td)
             (root / "tests").mkdir()
             (root / "tests" / "test_other.py").write_text("changed_symbol", encoding="utf-8")
-            with mock.patch("codey.verification_map.iter_bounded_files") as scan:
+            with mock.patch("codey.completion.verification_map.iter_bounded_files") as scan:
                 result = build_verification_map(
                     root,
                     _changes("tests/test_changed.py", diff="+def changed_symbol():\n+    pass"),
@@ -253,9 +253,9 @@ class VerificationMapTests(unittest.TestCase):
             (root / "tests").mkdir()
             (root / "tests" / "test_app.py").write_text("changed_symbol", encoding="utf-8")
             changes = _changes("app.py", diff="+def changed_symbol():\n+    pass")
-            with mock.patch("codey.verification_map.MAX_SCAN_DIRS", 0):
+            with mock.patch("codey.completion.verification_map.MAX_SCAN_DIRS", 0):
                 limited = build_verification_map(root, changes)
-            with mock.patch("codey.verification_map.MAX_RENDER_CHARS", 80):
+            with mock.patch("codey.completion.verification_map.MAX_RENDER_CHARS", 80):
                 clipped = build_verification_map(root, changes).render()
 
         self.assertTrue(limited.truncated)
@@ -271,10 +271,10 @@ class VerificationMapTests(unittest.TestCase):
                 (tests / f"test_{index}.py").write_text(content, encoding="utf-8")
             size = (tests / "test_0.py").stat().st_size
             changes = _changes("app.py", diff="+def changed_symbol():\n+    pass")
-            with mock.patch("codey.verification_map.MAX_SCAN_TOTAL_BYTES", size * 2):
+            with mock.patch("codey.completion.verification_map.MAX_SCAN_TOTAL_BYTES", size * 2):
                 exact = build_verification_map(root, changes)
             (tests / "test_2.py").write_text(content, encoding="utf-8")
-            with mock.patch("codey.verification_map.MAX_SCAN_TOTAL_BYTES", size * 2):
+            with mock.patch("codey.completion.verification_map.MAX_SCAN_TOTAL_BYTES", size * 2):
                 overflow = build_verification_map(root, changes)
 
         self.assertFalse(exact.truncated)
@@ -294,7 +294,7 @@ class VerificationMapTests(unittest.TestCase):
             (tests / "test_1.py").write_bytes(bad)
             (tests / "test_2.py").write_bytes(bad)
             budget = candidate.stat().st_size + len(bad)
-            with mock.patch("codey.verification_map.MAX_SCAN_TOTAL_BYTES", budget):
+            with mock.patch("codey.completion.verification_map.MAX_SCAN_TOTAL_BYTES", budget):
                 result = build_verification_map(
                     root,
                     _changes("app.py", diff="+def changed_symbol():\n+    pass"),

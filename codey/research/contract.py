@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from codey.completion_contract import (
+from codey.completion.contract import (
     CHECK_FAIL,
     CHECK_PASS,
     CompletionCheck,
@@ -25,7 +25,7 @@ from codey.completion_contract import (
     completion_check,
     safe_run_ref,
 )
-from codey.refs import bounded_refs, identifier
+from codey.utils.refs import bounded_refs, identifier
 from codey.research.proof_quality import ResearchProofReview, proof_ref_for_review
 from codey.research.review_finding import (
     SEVERITY_CRITICAL,

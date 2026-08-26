@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from codey.handoff import (
+from codey.agents.handoff import (
     ConversationContext,
     ConversationSnapshot,
     estimate_tokens,

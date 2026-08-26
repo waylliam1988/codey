@@ -12,14 +12,14 @@ import re
 import time
 from typing import Any, Callable
 
-from codey import cancellation
-from codey.provider_controls import (
+from codey.runtime import cancellation
+from codey.providers.controls import (
     CONTROL_MESSAGE_BOX,
     locate_control,
     locate_response,
     response_count as _controls_response_count,
 )
-from codey.provider_profiles import ProviderProfile
+from codey.providers.profiles import ProviderProfile
 
 
 def message_box(

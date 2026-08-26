@@ -4,8 +4,8 @@ import json
 import tempfile
 import unittest
 
-import codey.action_policy as action_policy
-from codey.action_policy import (
+import codey.policies.action as action_policy
+from codey.policies.action import (
     ActionPolicyDecision,
     ActionPolicyPipeline,
     ActionSubject,

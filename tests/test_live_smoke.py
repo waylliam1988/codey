@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import changes
+from codey.workspace import changes
 from tools import live_smoke
 
 

@@ -4034,7 +4034,7 @@ harness 大改塞进 0.4.13；它会污染 release A/B。应该只做两个收�
 更容易慢、截断或跑偏。不加复杂检索系统；后续按 failure stage 做轻量分层：
 
 ```text
-默认：目标 driver 源码 + provider_profiles.json + 失败事实 + 全部 surface 文件清单（只列路径）
+默认：目标 driver 源码 + codey/providers/profiles.json + 失败事实 + 全部 surface 文件清单（只列路径）
 升级：shared failure 或二轮请求时，才内联 browser.py / provider_controls.py 这类大文件全文
 ```
 

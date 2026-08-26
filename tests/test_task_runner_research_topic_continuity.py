@@ -5,15 +5,15 @@ from pathlib import Path
 import tempfile
 from unittest import mock
 
-from codey import server
-from codey.handoff import ConversationContext, ConversationSnapshot
+from codey.app import server
+from codey.agents.handoff import ConversationContext, ConversationSnapshot
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.research.context import ResearchContext
 from codey.research.ledger import ResearchLedger
 from codey.research.object_model import build_research_record
 from codey.research.report_quality import review_report_quality
-from codey.task_runner import (
+from codey.app.task_runner import (
     TaskRequest,
     TaskRunner,
     _RunFrame,
@@ -342,7 +342,7 @@ def test_closed_profile_gate_returns_empty_baseline() -> None:
         runner = _runner(state)
 
         with mock.patch(
-            "codey.task_runner.allows_context_source",
+            "codey.app.task_runner.allows_context_source",
             return_value=False,
         ):
             text, payload = runner._build_research_topic_continuity(
@@ -357,7 +357,7 @@ def test_closed_profile_gate_returns_empty_baseline() -> None:
 def test_cancellation_is_never_swallowed_by_the_builder() -> None:
     # Stop/cancel semantics must not depend on luck: the fail-open guard
     # covers projection failures only.
-    from codey import cancellation
+    from codey.runtime import cancellation
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as td:
         root = Path(td)

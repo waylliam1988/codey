@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.bounded_scan import (
+from codey.workspace.bounded_scan import (
     BoundedScanBudget,
     iter_bounded_files,
     iter_provided_files,

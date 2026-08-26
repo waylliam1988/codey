@@ -8,16 +8,16 @@ from collections import Counter
 from dataclasses import dataclass, field, replace
 from typing import Callable, Mapping
 
-from codey import cancellation
-from codey.context_epoch import context_epoch_id, context_source_ref
-from codey.context_source import (
+from codey.runtime import cancellation
+from codey.workspace.context_epoch import context_epoch_id, context_source_ref
+from codey.workspace.context_source import (
     ContextSource,
     RenderedContextSource,
     render_context_sources_with_metadata,
 )
-from codey.events import RunEvent
-from codey.permission_profiles import allows_context_source, profile_for_name
-from codey.prompt_envelope import (
+from codey.runtime.events import RunEvent
+from codey.policies.permissions import allows_context_source, profile_for_name
+from codey.runtime.prompt_envelope import (
     FailOpenPromptTrace,
     PromptEnvelope,
     PromptEnvelopeSection,
@@ -28,7 +28,7 @@ from codey.knowledge.changes import KnowledgeChanges
 from codey.knowledge.concept_schema import normalize_concept
 from codey.knowledge.note import KnowledgeNote, clean_open_questions
 from codey.knowledge.store import KnowledgeStore
-from codey.models import ToolResult, normalized_managed_output
+from codey.runtime.models import ToolResult, normalized_managed_output
 from codey.research.advisors import EvidenceNote, EvidencePack
 from codey.research.controller import (
     ResearchController,

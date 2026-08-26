@@ -1,3 +1,3 @@
-from codey.cli import main
+from codey.app.cli import main
 
 raise SystemExit(main())

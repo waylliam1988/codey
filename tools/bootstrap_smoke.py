@@ -11,12 +11,12 @@ from pathlib import Path
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from codey.agent import run
-from codey import provider_controls
-from codey.changes import ChangeTracker, collect_changes
-from codey.events import render_run_event
+from codey.agents.runner import run
+from codey.providers import controls as provider_controls
+from codey.workspace.changes import ChangeTracker, collect_changes
+from codey.runtime.events import render_run_event
 from codey.providers.registry import connect_provider, provider_ids
-from codey.review import (
+from codey.reviews.core import (
     has_reviewable_changes,
     parse_review_with_repair,
     render_review_prompt,
@@ -39,7 +39,7 @@ BUGGY_DIFF = (
 BOOTSTRAP_TASK = (
     "This is a Codey self-repair test. First run "
     "python -B -m unittest tests.test_changes and inspect the failure. "
-    "Fix the bug in codey/changes.py only. Then run "
+    "Fix the bug in codey/workspace/changes.py only. Then run "
     "python -B -m unittest tests.test_changes again. Use JSON tools only. "
     "When tests are green, finish with done and summarize the fix."
 )
@@ -66,7 +66,7 @@ def _copy_repo(src: Path, dst: Path) -> None:
 
 
 def inject_bug(root: Path) -> None:
-    path = root / "codey" / "changes.py"
+    path = root / "codey" / "workspace" / "changes.py"
     text = path.read_text(encoding="utf-8")
     start = text.index("def _diff_for(")
     end = text.index("\n\nclass ChangeTracker:", start)

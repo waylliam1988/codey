@@ -3,9 +3,10 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from codey import provider_flow, provider_send_loop as send_loop
-from codey.provider_diagnostics import ResponseMissing
-from codey.provider_submission import SendAttempt, SubmissionUncertain
+from codey.providers import send_loop as send_loop
+from codey.providers import flow as provider_flow
+from codey.providers.diagnostics import ResponseMissing
+from codey.providers.submission import SendAttempt, SubmissionUncertain
 
 
 class ProviderSendLoopTests(unittest.TestCase):

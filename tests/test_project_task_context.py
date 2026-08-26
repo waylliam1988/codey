@@ -7,11 +7,11 @@ from dataclasses import fields
 from pathlib import Path
 from unittest import mock
 
-from codey import project_task_context
+from codey.workspace import task_context as project_task_context
 from codey.knowledge import KnowledgeNote, KnowledgeStore
-from codey.project_facts import ProjectFactsStore
-from codey.project_task_context import ProjectTaskContext, ProjectTaskContextBuilder
-from codey.work_checkpoint import WorkCheckpointStore
+from codey.workspace.facts import ProjectFactsStore
+from codey.workspace.task_context import ProjectTaskContext, ProjectTaskContextBuilder
+from codey.runs.work_checkpoint import WorkCheckpointStore
 
 
 class BrokenFacts:
@@ -226,7 +226,7 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
 
     def test_project_map_uses_policy_candidate_commands_for_node_manager(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which",
+            "codey.completion.verification_policy.shutil.which",
             return_value="exe",
         ):
             root = Path(td)
@@ -258,7 +258,7 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
 
     def test_project_map_uses_policy_candidate_commands_for_python_tools(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which",
+            "codey.completion.verification_policy.shutil.which",
             return_value="exe",
         ):
             root = Path(td)
@@ -286,7 +286,7 @@ class ProjectTaskContextBuilderTests(unittest.TestCase):
 
     def test_project_config_commands_feed_candidates_and_project_map(self) -> None:
         with tempfile.TemporaryDirectory() as td, mock.patch(
-            "codey.verification_policy.shutil.which",
+            "codey.completion.verification_policy.shutil.which",
             return_value="python",
         ):
             root = Path(td)

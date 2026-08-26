@@ -9,15 +9,15 @@ from unittest import mock
 
 import pytest
 
-from codey import server
-from codey.agent import RunResult
-from codey.provider_diagnostics import (
+from codey.app import server
+from codey.agents.runner import RunResult
+from codey.providers.diagnostics import (
     FAILURE_AUTHENTICATION_REQUIRED,
     ProviderActionError,
     ProviderFailure,
 )
-from codey.project_config import preferred_provider_for
-from codey.task_runner import TaskRequest, TaskRunner
+from codey.workspace.config import preferred_provider_for
+from codey.app.task_runner import TaskRequest, TaskRunner
 
 
 def _failure(kind: str = "response_missing") -> ProviderActionError:
@@ -99,7 +99,7 @@ def _agent_run(_provider, _project, _task, **_kwargs) -> RunResult:
 
 
 def test_preferred_provider_for_matches_mode_and_ignores_planning_alias() -> None:
-    from codey.project_config import ProjectConfig, ProjectProviderPreference
+    from codey.workspace.config import ProjectConfig, ProjectProviderPreference
 
     config = ProjectConfig(preferred_providers=(
         ProjectProviderPreference(mode="project", provider_id="glm"),

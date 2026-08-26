@@ -6,14 +6,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey import changes, server
+from codey.workspace import changes
+from codey.app import server
 
 
 class LocalContinuityTests(unittest.TestCase):
     def test_all_local_state_survives_abrupt_process_exit(self) -> None:
         script = (
-            "import os,sys; from pathlib import Path; from codey import server; "
-            "from codey.handoff import ConversationSnapshot; "
+            "import os,sys; from pathlib import Path; from codey.app import server; "
+            "from codey.agents.handoff import ConversationSnapshot; "
             "root=Path(sys.argv[1]); state=server.State(sys.argv[2]); "
             "state.project_facts.record_success(root,'.','python -m unittest'); "
             "context=state.conversation_for('chat-1'); "

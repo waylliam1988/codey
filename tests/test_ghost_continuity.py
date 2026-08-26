@@ -15,8 +15,8 @@ from codey.ghost.continuity import (
 from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import GhostSignal, GhostSignalParseResult
-from codey.local_store import delete_file, read_json, write_json_atomic
-from codey.run_ledger_projection import RunLedgerProjection
+from codey.storage.local_store import delete_file, read_json, write_json_atomic
+from codey.runs.ledger_projection import RunLedgerProjection
 
 
 FRESH_TS = "2999-01-01T00:00:00Z"

@@ -32,13 +32,13 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codey import provider_controls
-from codey.project_map import (
+from codey.providers import controls as provider_controls
+from codey.workspace.map import (
     build_project_map,
     build_symbol_overview,
 )
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
-from codey.tool_runtime import list_directory
+from codey.toolchain.runtime import list_directory
 from tests.manual.project_task_context import render_production_project_map
 
 DEFAULT_OUTPUT = Path(tempfile.gettempdir()) / "codey-zoom-project-map-ab.json"

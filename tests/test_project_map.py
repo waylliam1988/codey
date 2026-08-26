@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import project_map
+from codey.workspace import map as project_map
 
 
 def _write(path: Path, text: str) -> None:

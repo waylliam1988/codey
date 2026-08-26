@@ -7,13 +7,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey import agent
-from codey.completion_repair_context import (
+from codey.agents import runner as agent
+from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY,
     project_repair_context,
 )
-from codey.context_epoch import context_epoch_id
-from codey.handoff import ConversationContext
+from codey.workspace.context_epoch import context_epoch_id
+from codey.agents.handoff import ConversationContext
 
 
 class FakeProvider:

@@ -19,7 +19,7 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import provider_controls
+from codey.providers import controls as provider_controls
 from codey.ghost.extractor import GhostSignalExtractor
 from codey.ghost.schema import clip_signal_text, quote_is_grounded
 from codey.providers.registry import PROVIDER_TYPES, connect_provider, provider_ids

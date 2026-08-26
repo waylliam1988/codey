@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.run_ledger import SCHEMA_VERSION, RunLedgerRecord, RunLedgerStore
-from codey.run_ledger_projection import (
+from codey.runs.ledger import SCHEMA_VERSION, RunLedgerRecord, RunLedgerStore
+from codey.runs.ledger_projection import (
     ChangesSummary,
     RunLedgerProjection,
     build_task_receipt_from_projection,

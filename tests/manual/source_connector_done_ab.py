@@ -27,11 +27,11 @@ from urllib.parse import urlparse
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import provider_controls
+from codey.providers import controls as provider_controls
 from codey.knowledge.store import KnowledgeStore
 from codey.research.browser_search import BrowserSearchProvider
 from codey.research.connector_search import ConnectorAwareSearchProvider
-from codey.report_sections import (
+from codey.reviews.report_sections import (
     REQUIRED_SECTIONS,
     parse_sections,
     section_title,

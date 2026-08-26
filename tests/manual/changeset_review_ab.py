@@ -22,7 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from codey.providers.registry import connect_provider, provider_ids
-from codey.review import (
+from codey.reviews.core import (
     ReviewResult,
     parse_review_with_repair,
     render_review_prompt,

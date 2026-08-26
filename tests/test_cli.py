@@ -7,10 +7,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.agent import RunResult
-from codey.cli import _safe_print
-from codey.headless_runner import HeadlessResult
-import codey.cli as cli
+from codey.agents.runner import RunResult
+from codey.app.cli import _safe_print
+from codey.app.headless_runner import HeadlessResult
+import codey.app.cli as cli
 
 
 class AsciiStream:
@@ -37,7 +37,7 @@ class UiCliTests(unittest.TestCase):
     def test_cmd_ui_uses_server_serve_without_browser_flag(self) -> None:
         args = mock.Mock(port=6060)
 
-        with mock.patch("codey.server.serve") as serve:
+        with mock.patch("codey.app.server.serve") as serve:
             exit_code = cli.cmd_ui(args)
 
         self.assertEqual(exit_code, 0)
@@ -52,8 +52,8 @@ class ProviderCliTests(unittest.TestCase):
 
         with (
             mock.patch("codey.providers.connect_provider", return_value=provider),
-            mock.patch("codey.provider_controls.begin_task_context") as begin_context,
-            mock.patch("codey.provider_controls.end_task_context") as end_context,
+            mock.patch("codey.providers.controls.begin_task_context") as begin_context,
+            mock.patch("codey.providers.controls.end_task_context") as end_context,
             mock.patch.object(cli, "_safe_print"),
         ):
             exit_code = cli.cmd_chat(args)
@@ -71,8 +71,8 @@ class ProviderCliTests(unittest.TestCase):
 
         with (
             mock.patch("codey.providers.connect_provider", return_value=provider),
-            mock.patch("codey.provider_controls.begin_task_context"),
-            mock.patch("codey.provider_controls.end_task_context") as end_context,
+            mock.patch("codey.providers.controls.begin_task_context"),
+            mock.patch("codey.providers.controls.end_task_context") as end_context,
             mock.patch.object(cli, "_safe_print"),
         ):
             with self.assertRaisesRegex(RuntimeError, "CDP disconnected"):
@@ -87,9 +87,9 @@ class ProviderCliTests(unittest.TestCase):
 
         with (
             mock.patch("codey.providers.connect_provider", return_value=provider),
-            mock.patch("codey.agent.run", return_value=mock.Mock(summary="done")),
-            mock.patch("codey.provider_controls.begin_task_context"),
-            mock.patch("codey.provider_controls.end_task_context") as end_context,
+            mock.patch("codey.agents.runner.run", return_value=mock.Mock(summary="done")),
+            mock.patch("codey.providers.controls.begin_task_context"),
+            mock.patch("codey.providers.controls.end_task_context") as end_context,
             mock.patch.object(cli, "_safe_print"),
         ):
             with self.assertRaisesRegex(RuntimeError, "CDP disconnected"):
@@ -102,8 +102,8 @@ class ProviderCliTests(unittest.TestCase):
 
         with (
             mock.patch("codey.providers.connect_provider", side_effect=RuntimeError("offline")),
-            mock.patch("codey.provider_controls.begin_task_context") as begin_context,
-            mock.patch("codey.provider_controls.end_task_context") as end_context,
+            mock.patch("codey.providers.controls.begin_task_context") as begin_context,
+            mock.patch("codey.providers.controls.end_task_context") as end_context,
             mock.patch.object(cli, "_safe_print"),
         ):
             with self.assertRaisesRegex(RuntimeError, "offline"):
@@ -144,7 +144,7 @@ class ProviderCliTests(unittest.TestCase):
                 return HeadlessResult(0, "run-1", "session-1", "done")
 
             with (
-                mock.patch("codey.headless_runner.run_headless", side_effect=fake_headless) as run_headless,
+                mock.patch("codey.app.headless_runner.run_headless", side_effect=fake_headless) as run_headless,
                 mock.patch("sys.stdout", stdout),
                 mock.patch("sys.stderr", stderr),
             ):
@@ -176,9 +176,9 @@ class ProviderCliTests(unittest.TestCase):
 
         with (
             mock.patch("codey.providers.connect_provider", return_value=provider),
-            mock.patch("codey.agent.run", return_value=RunResult("plain summary")),
-            mock.patch("codey.provider_controls.begin_task_context"),
-            mock.patch("codey.provider_controls.end_task_context"),
+            mock.patch("codey.agents.runner.run", return_value=RunResult("plain summary")),
+            mock.patch("codey.providers.controls.begin_task_context"),
+            mock.patch("codey.providers.controls.end_task_context"),
             mock.patch("sys.stdout", stdout),
         ):
             exit_code = cli.cmd_agent(args)
@@ -202,7 +202,7 @@ class ProviderCliTests(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "codey.headless_runner.run_headless",
+                    "codey.app.headless_runner.run_headless",
                     return_value=HeadlessResult(0, "run-1", "session-1", "done"),
                 ) as run_headless,
                 mock.patch("sys.stdout", stdout),
@@ -229,7 +229,7 @@ class ProviderCliTests(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "codey.headless_runner.run_headless",
+                    "codey.app.headless_runner.run_headless",
                     return_value=HeadlessResult(0, "run-1", "session-1", "done"),
                 ) as run_headless,
                 mock.patch("sys.stdout", stdout),

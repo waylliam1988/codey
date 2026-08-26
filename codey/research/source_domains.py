@@ -15,7 +15,7 @@ do not get free trust.
 
 from __future__ import annotations
 
-from codey.refs import is_valid_hostname as _is_valid_hostname
+from codey.utils.refs import is_valid_hostname as _is_valid_hostname
 
 
 GOV_SUFFIXES = (

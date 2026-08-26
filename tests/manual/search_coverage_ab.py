@@ -21,13 +21,14 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import agent, provider_controls
-from codey.agent_tools import AgentToolFns
-from codey.bounded_scan import BoundedScanBudget, iter_bounded_files
-from codey.events import RunEvent, render_run_event
+from codey.agents import runner as agent
+from codey.providers import controls as provider_controls
+from codey.agents.tools import AgentToolFns
+from codey.workspace.bounded_scan import BoundedScanBudget, iter_bounded_files
+from codey.runtime.events import RunEvent, render_run_event
 from codey.providers.registry import connect_provider, provider_ids
-from codey.scan_report import ScanReport
-from codey.tool_runtime import (
+from codey.reviews.scan_report import ScanReport
+from codey.toolchain.runtime import (
     SEARCH_EXCLUDED_DIRS,
     SEARCH_MAX_DIR_ENTRIES,
     SEARCH_MAX_FILE_BYTES,

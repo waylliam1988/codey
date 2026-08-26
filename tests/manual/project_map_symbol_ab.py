@@ -11,14 +11,14 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import provider_controls
-from codey.project_map import (
+from codey.providers import controls as provider_controls
+from codey.workspace.map import (
     MAX_SYMBOL_FILE_BYTES,
     MAX_SYMBOL_MAP_CHARS,
     build_symbol_overview,
 )
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
-from codey.tool_runtime import list_directory
+from codey.toolchain.runtime import list_directory
 from tests.manual.project_task_context import render_production_project_map
 
 
@@ -36,7 +36,7 @@ CASES = (
             "I want to adjust how Codey proposes verification commands and test candidates. "
             "Where should the implementation and focused tests likely be changed first?"
         ),
-        expected_paths=("codey/verification_map.py", "tests/test_verification_map.py"),
+        expected_paths=("codey/completion/verification_map.py", "tests/test_verification_map.py"),
     ),
     ProbeCase(
         name="json-parallel-protocol",
@@ -52,7 +52,7 @@ CASES = (
             "I need to investigate restore conflicts for non-git projects and snapshot diffs. "
             "Which files are the best starting points?"
         ),
-        expected_paths=("codey/changes.py", "tests/test_changes.py"),
+        expected_paths=("codey/workspace/changes.py", "tests/test_changes.py"),
     ),
     ProbeCase(
         name="provider-control-recovery",
@@ -60,7 +60,10 @@ CASES = (
             "I want to improve recovery when a provider web page changes its message box "
             "or send button selectors. Which files should be read first?"
         ),
-        expected_paths=("codey/provider_controls.py", "codey/provider_discovery.py"),
+        expected_paths=(
+            "codey/providers/controls.py",
+            "codey/providers/discovery.py",
+        ),
     ),
     ProbeCase(
         name="task-run-state",
@@ -68,7 +71,7 @@ CASES = (
             "I need to debug how Codey reserves a run, emits SSE task events, and finishes "
             "a project task. Which files are likely involved?"
         ),
-        expected_paths=("codey/server.py", "codey/task_runner.py", "tests/test_server.py"),
+        expected_paths=("codey/app/server.py", "codey/app/task_runner.py", "tests/test_server.py"),
     ),
 )
 

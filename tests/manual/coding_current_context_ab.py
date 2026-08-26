@@ -21,10 +21,11 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import agent, provider_controls
-from codey.events import RunEvent, render_run_event
+from codey.agents import runner as agent
+from codey.providers import controls as provider_controls
+from codey.runtime.events import RunEvent, render_run_event
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
-from codey.verification_policy import (
+from codey.completion.verification_policy import (
     VerificationCandidate,
     check_covers_selected_candidate,
     discover_verification_candidates,

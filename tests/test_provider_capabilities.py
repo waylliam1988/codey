@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 
-from codey.provider_capabilities import (
+from codey.providers.capabilities import (
     FIT_AVOID,
     FIT_OK,
     PROVIDER_CAPABILITIES,
@@ -12,8 +12,8 @@ from codey.provider_capabilities import (
     capability_for,
     rank_providers,
 )
-from codey.provider_diagnostics import FAILURE_KINDS, ProviderFailure
-from codey.provider_supervisor import ProviderSupervisor
+from codey.providers.diagnostics import FAILURE_KINDS, ProviderFailure
+from codey.providers.supervisor import ProviderSupervisor
 from codey.providers.registry import PROVIDER_LABELS
 
 

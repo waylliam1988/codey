@@ -12,7 +12,7 @@ from codey.ghost.schema import (
     signals_from_payload,
 )
 from codey.ghost.typed_fields import extractor_metadata_guidance
-from codey.text_budget import clip_middle
+from codey.utils.text_budget import clip_middle
 
 
 PROTOCOL_NO_JSON = "no_json"

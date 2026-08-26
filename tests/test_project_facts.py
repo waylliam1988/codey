@@ -5,14 +5,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import agent
-from codey import server
-from codey.agent import RunResult
-from codey.events import RunEvent
-from codey.execution_evidence import CheckEvidence
-from codey.models import ToolCall
-from codey.project_facts import MAX_VERIFIED_COMMANDS, ProjectFactsStore
-from codey.tool_runtime import ToolOutcome
+from codey.agents import runner as agent
+from codey.app import server
+from codey.agents.runner import RunResult
+from codey.runtime.events import RunEvent
+from codey.runtime.execution_evidence import CheckEvidence
+from codey.runtime.models import ToolCall
+from codey.workspace.facts import MAX_VERIFIED_COMMANDS, ProjectFactsStore
+from codey.toolchain.runtime import ToolOutcome
 
 
 class FakeProvider:
@@ -315,7 +315,7 @@ class ProjectFactsTests(unittest.TestCase):
                 mock.patch.object(server, "_run_project_audit", return_value=()),
                 mock.patch.object(server, "_run_review", return_value=None),
                 mock.patch(
-                    "codey.verification_policy.shutil.which",
+                    "codey.completion.verification_policy.shutil.which",
                     return_value="npm",
                 ),
             ):

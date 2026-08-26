@@ -1108,7 +1108,7 @@ Characterization locks added:
   empty lists.
 - Architecture tests lock both new modules as projection-only: no
   browser/provider/tool_runtime/task_runner/server/managed_outputs/events/
-  ghost/codey.review/ab_journal imports and no I/O tokens.
+  ghost/codey.reviews.core/ab_journal imports and no I/O tokens.
 
 Validation during implementation:
 
@@ -1259,7 +1259,7 @@ Production changes:
 - TaskRunner's three duplicated project tool-event branches consolidate into one
   `_handle_project_tool_event()` seam; AnalysisRun projection is the fourth
   consumer and fails open.
-- Architecture tests now also forbid `codey.managed_outputs` imports from
+- Architecture tests now also forbid `codey.storage.managed_outputs` imports from
   research/review/ghost modules and keep the projection modules free of
   events/tool_runtime/task_runner/server dependencies.
 
@@ -2237,7 +2237,7 @@ structure, SSE payload shape, or task receipts.
 ## 0.3.18 Event / Capability Matrix v1
 
 Codey 0.3.18 adds a tested Event / Capability Matrix and moves the existing
-Web/SSE `RunEvent` UI projection into `codey.events`. It keeps the release as
+Web/SSE `RunEvent` UI projection into `codey.runtime.events`. It keeps the release as
 architecture metadata plus a small event-projection refactor, not an event bus
 or runtime dispatcher.
 
@@ -2254,8 +2254,8 @@ Production changes:
 - The matrix now declares `review.recent_log` as the model-visible projection
   rendered from `RunEvent` history for Review prompts. UI/SSE `run_event.*`
   rows remain scoped to UI and ledger projections.
-- `codey.events.display_tool()` now owns the existing Research tool display
-  mapping, and `codey.events.run_event_ui_payload()` owns the existing Web/SSE
+- `codey.runtime.events.display_tool()` now owns the existing Research tool display
+  mapping, and `codey.runtime.events.run_event_ui_payload()` owns the existing Web/SSE
   payload projection for `RunEvent`.
 - `TaskRunner` now calls the shared UI/SSE projection and no longer defines
   local `_ui_event` or `_display_tool` helpers. `run_event_payload()` and
@@ -2312,7 +2312,7 @@ Production changes:
   changing the bounded model result text.
 - Unknown action kinds are denied by the policy pipeline instead of defaulting
   to allow.
-- `codey.action_policy.__all__` exposes only the narrow core API; low-level
+- `codey.policies.action.__all__` exposes only the narrow core API; low-level
   run-command helpers stay outside the star-import public surface.
 - Run Trace manifests now include bounded `policy_decisions` entries with
   kind, decision, guard id, reason code, phase, subject ref, and display digest
@@ -6108,7 +6108,7 @@ live provider smoke: MiMo/Qwen read_files+parallel passed;
 ## 0.1.48 Tool Function Injection and Parallel Probe
 
 Agent runtime now supports explicit `AgentToolFns` injection, so tests and
-manual probes can replace tool functions without monkeypatching `codey.agent`
+manual probes can replace tool functions without monkeypatching `codey.agents.runner`
 globals. Production tool execution remains serial by default, including
 `read`, `ls`, and `search`, to preserve observable step-by-step tool progress
 in the chat stream.

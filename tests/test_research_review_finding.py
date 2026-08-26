@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from codey.research.analysis_run import analysis_run_record
 from codey.research.evidence_runtime import EvidenceRuntimeSnapshot
-from codey.refs import digest_json
+from codey.utils.refs import digest_json
 from codey.research.proof_quality import ProofDiagnostic, ResearchProofReview
 from codey.research.review_finding import (
     CONFIRMATION_SOURCES,

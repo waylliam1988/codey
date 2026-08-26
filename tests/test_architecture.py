@@ -24,10 +24,10 @@ def imported_modules(path: Path) -> set[str]:
 
 class ArchitectureBoundaryTests(unittest.TestCase):
     def test_agent_runtime_has_no_browser_or_deepseek_dependency(self) -> None:
-        imports = imported_modules(ROOT / "codey" / "agent.py")
+        imports = imported_modules(ROOT / "codey" / "agents" / "runner.py")
 
         self.assertNotIn("playwright.sync_api", imports)
-        self.assertNotIn("codey.browser", imports)
+        self.assertNotIn("codey.automation.browser", imports)
         self.assertNotIn("codey.providers.web_drivers.deepseek", imports)
         self.assertNotIn("codey.providers.web_drivers.qwen", imports)
         self.assertNotIn("codey.providers.web_drivers.stepfun", imports)
@@ -36,32 +36,37 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("codey.protocols", imports)
 
     def test_orchestrators_create_providers_instead_of_browser_sessions(self) -> None:
-        for name in ("cli.py", "server.py", "task_runner.py"):
+        paths = (
+            ("cli.py", ROOT / "codey" / "app" / "cli.py"),
+            ("server.py", ROOT / "codey" / "app" / "server.py"),
+            ("task_runner.py", ROOT / "codey" / "app" / "task_runner.py"),
+        )
+        for name, path in paths:
             with self.subTest(name=name):
-                imports = imported_modules(ROOT / "codey" / name)
-                self.assertNotIn("codey.browser", imports)
+                imports = imported_modules(path)
+                self.assertNotIn("codey.automation.browser", imports)
                 self.assertNotIn("codey.providers.web_drivers.deepseek", imports)
                 self.assertNotIn("codey.providers.web_drivers.qwen", imports)
                 self.assertNotIn("codey.providers.web_drivers.stepfun", imports)
                 self.assertNotIn("codey.providers.web_drivers.glm", imports)
 
     def test_http_server_delegates_task_orchestration(self) -> None:
-        imports = imported_modules(ROOT / "codey" / "server.py")
-        source = (ROOT / "codey" / "server.py").read_text(encoding="utf-8")
+        imports = imported_modules(ROOT / "codey" / "app" / "server.py")
+        source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
 
-        self.assertIn("codey.task_runner", imports)
+        self.assertIn("codey.app.task_runner", imports)
         self.assertNotIn("on_shell_request(cwd_rel", source)
         self.assertNotIn("conversation.prepare_model_handoff", source)
 
     def test_task_runner_has_no_http_dependency(self) -> None:
-        imports = imported_modules(ROOT / "codey" / "task_runner.py")
+        imports = imported_modules(ROOT / "codey" / "app" / "task_runner.py")
 
         self.assertNotIn("http.server", imports)
-        self.assertNotIn("codey.server", imports)
+        self.assertNotIn("codey.app.server", imports)
 
     def test_research_pipeline_owns_iteration_boundary_without_legacy_seams(self) -> None:
         pipeline = ROOT / "codey" / "research" / "pipeline.py"
-        task_runner = ROOT / "codey" / "task_runner.py"
+        task_runner = ROOT / "codey" / "app" / "task_runner.py"
         research_runner = ROOT / "codey" / "research" / "runner.py"
         pipeline_source = pipeline.read_text(encoding="utf-8")
         task_runner_source = task_runner.read_text(encoding="utf-8")
@@ -69,8 +74,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
         self.assertIn("ResearchIterationRun", pipeline_source)
         self.assertIn("ResearchIterationRun", task_runner_source)
-        self.assertNotIn("codey.task_runner", imported_modules(pipeline))
-        self.assertNotIn("codey.server", imported_modules(pipeline))
+        self.assertNotIn("codey.app.task_runner", imported_modules(pipeline))
+        self.assertNotIn("codey.app.server", imported_modules(pipeline))
         self.assertNotIn("_run_research_task", task_runner_source)
         self.assertNotIn("close_search", pipeline_source)
         self.assertNotIn("runtime_tools", research_runner_source)
@@ -79,9 +84,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         forbidden = {
             "torch",
             "transformers",
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers",
-            "codey.tool_runtime",
+            "codey.toolchain.runtime",
             "codey.research.runner",
             "codey.research.tools",
         }
@@ -95,10 +100,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         forbidden_affinity = {
             "torch",
             "transformers",
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
             "codey.research.runner",
             "codey.research.tools",
         }
@@ -108,9 +113,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         )
 
         research_imports = imported_modules(ROOT / "codey" / "research" / "runner.py")
-        permission_imports = imported_modules(ROOT / "codey" / "permission_profiles.py")
-        repair_source = (ROOT / "codey" / "adapter_repair.py").read_text(encoding="utf-8")
-        tool_runtime_imports = imported_modules(ROOT / "codey" / "tool_runtime.py")
+        permission_imports = imported_modules(ROOT / "codey" / "policies" / "permissions.py")
+        repair_source = (ROOT / "codey" / "repairs" / "adapter_repair.py").read_text(encoding="utf-8")
+        tool_runtime_imports = imported_modules(ROOT / "codey" / "toolchain" / "runtime.py")
 
         self.assertNotIn("codey.ghost.affinity", research_imports)
         self.assertNotIn("codey.ghost.affinity", permission_imports)
@@ -121,7 +126,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # Context Epoch projects admission metadata over already-rendered
         # sources; it must stay a stdlib-only leaf with no runtime imports
         # and no I/O of its own.
-        path = ROOT / "codey" / "context_epoch.py"
+        path = ROOT / "codey" / "workspace" / "context_epoch.py"
         imports = imported_modules(path)
         source = path.read_text(encoding="utf-8")
 
@@ -144,16 +149,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn(token, source)
 
     def test_prompt_envelope_is_not_a_provider_or_tool_runtime_seam(self) -> None:
-        imports = imported_modules(ROOT / "codey" / "prompt_envelope.py")
+        imports = imported_modules(ROOT / "codey" / "runtime" / "prompt_envelope.py")
         forbidden = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
             "codey.research.runner",
             "codey.ghost",
         }
@@ -161,21 +166,21 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertTrue(forbidden.isdisjoint(imports), sorted(forbidden & imports))
 
     def test_capability_registry_is_metadata_only(self) -> None:
-        path = ROOT / "codey" / "capabilities.py"
+        path = ROOT / "codey" / "policies" / "capability_registry.py"
         imports = imported_modules(path)
         source = path.read_text(encoding="utf-8")
         forbidden_imports = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
             "codey.research.runner",
-            "codey.server",
-            "codey.task_runner",
+            "codey.app.server",
+            "codey.app.task_runner",
             "importlib",
             "pkgutil",
         }
@@ -198,7 +203,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn(token, source)
 
     def test_task_runner_does_not_use_capability_registry_for_decisions(self) -> None:
-        source = (ROOT / "codey" / "task_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "codey" / "app" / "task_runner.py").read_text(encoding="utf-8")
 
         self.assertIn("self.capabilities = capabilities", source)
         self.assertEqual(source.count("self.capabilities"), 1)
@@ -209,26 +214,26 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # The metadata-only catalog never influenced any decision and was
         # removed ahead of 0.4.x instead of shipping dead surface.
         self.assertFalse((ROOT / "codey" / "builtin_profiles.py").exists())
-        source = (ROOT / "codey" / "task_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "codey" / "app" / "task_runner.py").read_text(encoding="utf-8")
         self.assertNotIn("builtin_profiles", source)
-        server_source = (ROOT / "codey" / "server.py").read_text(encoding="utf-8")
+        server_source = (ROOT / "codey" / "app" / "server.py").read_text(encoding="utf-8")
         self.assertNotIn("builtin_profiles", server_source)
 
     def test_action_policy_is_not_runtime_or_plugin_host(self) -> None:
-        path = ROOT / "codey" / "action_policy.py"
+        path = ROOT / "codey" / "policies" / "action.py"
         imports = imported_modules(path)
         source = path.read_text(encoding="utf-8")
         forbidden_imports = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
-            "codey.server",
-            "codey.task_runner",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
+            "codey.app.server",
+            "codey.app.task_runner",
             "importlib",
             "pkgutil",
         }
@@ -251,20 +256,20 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                 self.assertNotIn(token, source)
 
     def test_run_details_is_read_only_projection_not_runtime(self) -> None:
-        path = ROOT / "codey" / "run_details.py"
+        path = ROOT / "codey" / "runs" / "details.py"
         imports = imported_modules(path)
         source = path.read_text(encoding="utf-8")
         forbidden_imports = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
-            "codey.server",
-            "codey.task_runner",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
+            "codey.app.server",
+            "codey.app.task_runner",
             "importlib",
             "pkgutil",
         }
@@ -293,16 +298,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         imports = imported_modules(path)
         source = path.read_text(encoding="utf-8")
         forbidden_imports = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
-            "codey.server",
-            "codey.task_runner",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
+            "codey.app.server",
+            "codey.app.task_runner",
             "codey.ghost",
             "importlib",
             "pkgutil",
@@ -329,16 +334,16 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_research_identity_ledger_and_proof_do_not_import_runtime_layers(self) -> None:
         forbidden_imports = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
-            "codey.server",
-            "codey.task_runner",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
+            "codey.app.server",
+            "codey.app.task_runner",
             "codey.ghost",
             "importlib",
             "pkgutil",
@@ -368,14 +373,14 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # The shared host-domain tables have exactly one owner and no
         # behavior: both the capture-time classifier and the trust
         # projection consume them, so they must stay import-cycle-free.
-        # codey.refs is the one allowed import (the shared stdlib hostname
+        # codey.utils.refs is the one allowed import (the shared stdlib hostname
         # shape predicate); no other codey module, no I/O.
         path = ROOT / "codey" / "research" / "source_domains.py"
         imports = imported_modules(path)
 
         self.assertEqual(
             sorted(name for name in imports if name == "codey" or name.startswith("codey.")),
-            ["codey.refs"],
+            ["codey.utils.refs"],
         )
         source = path.read_text(encoding="utf-8")
         for token in (
@@ -393,29 +398,29 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_research_review_and_local_context_do_not_import_tool_runtime(self) -> None:
         paths = [
             *(ROOT / "codey" / "research").glob("*.py"),
-            ROOT / "codey" / "review.py",
-            ROOT / "codey" / "review_coordinator.py",
+            ROOT / "codey" / "reviews" / "core.py",
+            ROOT / "codey" / "reviews" / "coordinator.py",
             *(ROOT / "codey" / "ghost").glob("*.py"),
         ]
         for path in paths:
             with self.subTest(path=path.relative_to(ROOT).as_posix()):
                 imports = imported_modules(path)
-                self.assertNotIn("codey.tool_runtime", imports)
+                self.assertNotIn("codey.toolchain.runtime", imports)
                 # managed_outputs sits on the runtime side of the boundary
                 # (it imports tool_runtime), so research/review/ghost modules
                 # must consume normalized metadata dicts instead.
-                self.assertNotIn("codey.managed_outputs", imports)
+                self.assertNotIn("codey.storage.managed_outputs", imports)
 
     def test_analysis_run_projection_stays_pure(self) -> None:
         analysis_run_imports = imported_modules(ROOT / "codey" / "research" / "analysis_run.py")
         lineage_imports = imported_modules(ROOT / "codey" / "research" / "artifact_lineage.py")
         capsule_imports = imported_modules(ROOT / "codey" / "research" / "reproducibility.py")
         forbidden = {
-            "codey.events",
-            "codey.tool_runtime",
-            "codey.managed_outputs",
-            "codey.task_runner",
-            "codey.server",
+            "codey.runtime.events",
+            "codey.toolchain.runtime",
+            "codey.storage.managed_outputs",
+            "codey.app.task_runner",
+            "codey.app.server",
         }
         for name, imports in (
             ("analysis_run", analysis_run_imports),
@@ -429,9 +434,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # Projection-of-projection is forbidden: behavior-side research
         # modules consume canonical facts, never the trace/UI read models.
         forbidden = {
-            "codey.run_trace",
-            "codey.run_details",
-            "codey.run_ledger_projection",
+            "codey.runs.trace",
+            "codey.runs.details",
+            "codey.runs.ledger_projection",
         }
         paths = [
             ROOT / "codey" / "research" / "query_planner.py",
@@ -467,8 +472,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # dialect of every refs-only read model (coding, research, future
         # experiment domains). They stay domain-neutral stdlib leaves so no
         # projection has to reach into another domain's namespace to speak.
-        for name in ("refs.py", "redaction.py"):
-            path = ROOT / "codey" / name
+        paths = (
+            ("refs.py", ROOT / "codey" / "utils" / "refs.py"),
+            ("redaction.py", ROOT / "codey" / "policies" / "redaction.py"),
+        )
+        for name, path in paths:
             with self.subTest(module=name):
                 imports = imported_modules(path)
                 self.assertEqual(
@@ -508,24 +516,24 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # queue gate itself stays under the existing research import-boundary
         # test above.
         paths = (
-            ROOT / "codey" / "completion_contract.py",
+            ROOT / "codey" / "completion" / "contract.py",
             ROOT / "codey" / "research" / "contract.py",
         )
         forbidden_imports = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
-            "codey.managed_outputs",
-            "codey.events",
-            "codey.server",
-            "codey.task_runner",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
+            "codey.storage.managed_outputs",
+            "codey.runtime.events",
+            "codey.app.server",
+            "codey.app.task_runner",
             "codey.ghost",
-            "codey.review",
+            "codey.reviews.core",
             "importlib",
             "pkgutil",
             "subprocess",
@@ -559,19 +567,19 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             ROOT / "codey" / "research" / "review_finding.py",
         )
         forbidden = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
-            "codey.managed_outputs",
-            "codey.server",
-            "codey.task_runner",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
+            "codey.storage.managed_outputs",
+            "codey.app.server",
+            "codey.app.task_runner",
             "codey.ghost",
-            "codey.review",
+            "codey.reviews.core",
             "ab_journal",
             "tests.manual.ab_journal",
             "importlib",
@@ -602,23 +610,23 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         source = path.read_text(encoding="utf-8")
 
         forbidden_imports = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
-            "codey.managed_outputs",
-            "codey.events",
-            "codey.server",
-            "codey.task_runner",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
+            "codey.storage.managed_outputs",
+            "codey.runtime.events",
+            "codey.app.server",
+            "codey.app.task_runner",
             "codey.ghost",
-            "codey.review",
+            "codey.reviews.core",
             "codey.knowledge",
-            "codey.run_trace",
-            "codey.run_details",
+            "codey.runs.trace",
+            "codey.runs.details",
             "ab_journal",
             "tests.manual.ab_journal",
             "importlib",
@@ -694,20 +702,20 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # refs. Neither may fetch, delete evidence, reach execution layers, or
         # import the knowledge store (which consumes their outputs instead).
         forbidden_imports = {
-            "codey.browser",
+            "codey.automation.browser",
             "codey.providers.web_drivers.deepseek",
             "codey.providers.web_drivers.qwen",
             "codey.providers.web_drivers.stepfun",
             "codey.providers.web_drivers.glm",
             "codey.providers",
-            "codey.provider_controls",
-            "codey.tool_runtime",
-            "codey.managed_outputs",
-            "codey.events",
-            "codey.server",
-            "codey.task_runner",
+            "codey.providers.controls",
+            "codey.toolchain.runtime",
+            "codey.storage.managed_outputs",
+            "codey.runtime.events",
+            "codey.app.server",
+            "codey.app.task_runner",
             "codey.ghost",
-            "codey.review",
+            "codey.reviews.core",
             "codey.knowledge",
             "codey.research.runner",
             "codey.research.tools",
@@ -738,7 +746,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_knowledge_never_imports_the_research_package(self) -> None:
         # Knowledge is a lower layer than Research: its Writer handoff consumes
-        # the neutral section parser (codey.report_sections) instead of
+        # the neutral section parser (codey.reviews.report_sections) instead of
         # reaching upward into codey.research, whose package __init__ eagerly
         # loads the runner/browser/pipeline stack.
         for path in sorted((ROOT / "codey" / "knowledge").glob("*.py")):
@@ -776,12 +784,12 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_report_sections_is_a_stdlib_leaf(self) -> None:
         # The shared section parser is domain-neutral: no codey imports and
         # no I/O, so both research and knowledge layers can own one parser.
-        self._assert_stdlib_leaf(ROOT / "codey" / "report_sections.py")
+        self._assert_stdlib_leaf(ROOT / "codey" / "reviews" / "report_sections.py")
 
     def test_citation_scanner_is_a_stdlib_leaf(self) -> None:
         # Citation scanning is shared by Research's done gate and Knowledge's
         # Writer handoff, so the scanner lives below both domains.
-        self._assert_stdlib_leaf(ROOT / "codey" / "citation_scanner.py")
+        self._assert_stdlib_leaf(ROOT / "codey" / "utils" / "citation_scanner.py")
 
     def _assert_stdlib_leaf(self, path: Path) -> None:
         imports = imported_modules(path)
@@ -808,17 +816,17 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         journal_path = ROOT / "tests" / "manual" / "ab_journal.py"
         journal_imports = imported_modules(journal_path)
         self.assertTrue(
-            {"codey.run_trace", "codey.research.evidence_ledger", "codey.task_runner", "codey.server"}.isdisjoint(
+            {"codey.runs.trace", "codey.research.evidence_ledger", "codey.app.task_runner", "codey.app.server"}.isdisjoint(
                 journal_imports
             ),
             sorted(journal_imports),
         )
 
         consumers = [
-            ROOT / "codey" / "run_trace.py",
+            ROOT / "codey" / "runs" / "trace.py",
             *(ROOT / "codey" / "research").glob("*.py"),
-            ROOT / "codey" / "task_runner.py",
-            ROOT / "codey" / "server.py",
+            ROOT / "codey" / "app" / "task_runner.py",
+            ROOT / "codey" / "app" / "server.py",
         ]
         for path in consumers:
             with self.subTest(path=path.relative_to(ROOT).as_posix()):
@@ -885,7 +893,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_stamped_capability_ids_are_registered_boundaries(self) -> None:
         # Every capability_id literal stamped onto a prompt section or context
         # source in production code must name a registered capability.
-        from codey.capabilities import builtin_capability_registry
+        from codey.policies.capability_registry import builtin_capability_registry
 
         registered = set(builtin_capability_registry().ids())
         stamped: dict[str, set[str]] = {}
@@ -917,10 +925,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertEqual(offenders, {})
 
     def test_refactor_has_no_test_only_compatibility_residue(self) -> None:
-        agent_source = (ROOT / "codey" / "agent.py").read_text(encoding="utf-8")
+        agent_source = (ROOT / "codey" / "agents" / "runner.py").read_text(encoding="utf-8")
         research_source = (ROOT / "codey" / "research" / "runner.py").read_text(encoding="utf-8")
-        task_runner_source = (ROOT / "codey" / "task_runner.py").read_text(encoding="utf-8")
-        tool_source = (ROOT / "codey" / "tool_runtime.py").read_text(encoding="utf-8")
+        task_runner_source = (ROOT / "codey" / "app" / "task_runner.py").read_text(encoding="utf-8")
+        tool_source = (ROOT / "codey" / "toolchain" / "runtime.py").read_text(encoding="utf-8")
 
         self.assertNotIn("class StepResult", agent_source)
         self.assertNotIn("def trace_call", agent_source)
@@ -933,22 +941,22 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # payload; it must never import the completion contract (one
         # completion semantic owner), the verification module, or any
         # runtime layer. It is a stdlib + redaction leaf, nothing else.
-        path = ROOT / "codey" / "completion_repair_context.py"
+        path = ROOT / "codey" / "completion" / "repair_context.py"
         imports = imported_modules(path)
         source = path.read_text(encoding="utf-8")
 
-        allowed_internal = {"codey.redaction"}
+        allowed_internal = {"codey.policies.redaction"}
         internal = sorted(
             name for name in imports if name == "codey" or name.startswith("codey.")
         )
         self.assertTrue(set(internal) <= allowed_internal, sorted(internal))
         forbidden_imports = {
-            "codey.completion_contract",
-            "codey.completion_verification",
-            "codey.task_runner",
-            "codey.agent",
+            "codey.completion.contract",
+            "codey.completion.verification",
+            "codey.app.task_runner",
+            "codey.agents.runner",
             "codey.providers",
-            "codey.tool_runtime",
+            "codey.toolchain.runtime",
             "codey.ghost",
             "subprocess",
             "urllib",
@@ -972,7 +980,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # The trace payload of a repair projection carries counts, classes,
         # reason codes and a digest only: there is no field that could hold
         # raw failure output, prompt text, or source bodies.
-        from codey.completion_repair_context import project_repair_context
+        from codey.completion.repair_context import project_repair_context
 
         projection = project_repair_context(
             proof={
@@ -1045,7 +1053,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_completion_enforcement_has_explicit_stop_conditions(self) -> None:
         # The repair loop must be bounded by named stop conditions, never a
         # bare `while not complete`. Locks the v1 shape: one round max.
-        source = (ROOT / "codey" / "task_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "codey" / "app" / "task_runner.py").read_text(encoding="utf-8")
         self.assertIn("MAX_COMPLETION_REPAIR_ROUNDS = 1", source)
         self.assertIn("_COMPLETION_BLOCKED_NOTE", source)
         for reason in (
@@ -1066,7 +1074,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         # tool for them, and neither surface may rename tools across domains:
         # coding keeps its read/write vocabulary and research keeps its own.
         from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_CONTRACTS
-        from codey.tool_definition import TOOL_DEFINITIONS, render_tool_contract
+        from codey.toolchain.definition import TOOL_DEFINITIONS, render_tool_contract
 
         self.assertEqual(
             {spec.name for spec in TOOL_DEFINITIONS},

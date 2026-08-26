@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 from unittest import mock
 
-from codey.project_map import render_project_map
+from codey.workspace.map import render_project_map
 from tests.manual.project_task_context import (
     production_candidate_command_lines,
     render_production_project_map,
@@ -13,7 +13,7 @@ from tests.manual.project_task_context import (
 
 def test_manual_production_project_map_uses_project_task_context_policy_candidates() -> None:
     with tempfile.TemporaryDirectory() as td, mock.patch(
-        "codey.verification_policy.shutil.which",
+        "codey.completion.verification_policy.shutil.which",
         return_value="exe",
     ):
         root = Path(td)

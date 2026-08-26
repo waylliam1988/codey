@@ -6,22 +6,20 @@ import time
 
 from playwright.sync_api import Locator, Page
 
-from codey import (
-    cancellation,
-    provider_controls as controls,
-    provider_flow,
-    provider_send_loop as send_loop,
-)
-from codey.provider_profiles import get_profile
-from codey.provider_diagnostics import ControlMissing, ResponseMissing
-from codey.provider_timeouts import navigation_timeout_ms, remaining, start_deadline
+from codey.runtime import cancellation
+from codey.providers import controls as controls
+from codey.providers import flow as provider_flow
+from codey.providers import send_loop as send_loop
+from codey.providers.profiles import get_profile
+from codey.providers.diagnostics import ControlMissing, ResponseMissing
+from codey.providers.timeouts import navigation_timeout_ms, remaining, start_deadline
 from codey.providers.web_drivers import common as driver_common
-from codey.provider_submission import (
+from codey.providers.submission import (
     SendAttempt,
     SubmissionUncertain,
     confirm_submission,
 )
-from codey.web_clipboard import copy_action_text
+from codey.automation.web_clipboard import copy_action_text
 
 PROVIDER_ID = "mimo"
 PROFILE = get_profile(PROVIDER_ID)

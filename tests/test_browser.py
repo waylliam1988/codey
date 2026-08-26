@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import browser
+from codey.automation import browser
 
 
 class BrowserProviderWrapperTests(unittest.TestCase):

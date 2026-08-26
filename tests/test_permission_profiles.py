@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.permission_profiles import (
+from codey.policies.permissions import (
     KNOWN_CONTEXT_SOURCE_KEYS,
     KNOWN_REVIEW_CONTEXT_SOURCE_KEYS,
     PERMISSION_PROFILES,
@@ -12,7 +12,7 @@ from codey.permission_profiles import (
     profile_for_task_kind,
 )
 from codey.research.tool_contract import TOOL_CONTRACTS as RESEARCH_TOOL_CONTRACTS
-from codey.tool_definition import TOOL_DEFINITIONS
+from codey.toolchain.definition import TOOL_DEFINITIONS
 
 
 class PermissionProfileTests(unittest.TestCase):

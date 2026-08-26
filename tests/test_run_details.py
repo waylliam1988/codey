@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.run_details import load_run_details, unavailable_summary
-from codey.run_ledger import RunLedgerStore
-from codey.run_trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
+from codey.runs.details import load_run_details, unavailable_summary
+from codey.runs.ledger import RunLedgerStore
+from codey.runs.trace import MAX_TRACE_BYTES, SCHEMA_VERSION, RunTraceStore
 
 
 class RunDetailsTests(unittest.TestCase):

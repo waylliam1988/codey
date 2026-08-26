@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey import review
+from codey.reviews import core as review
 
 
 class ReviewProtocolTests(unittest.TestCase):

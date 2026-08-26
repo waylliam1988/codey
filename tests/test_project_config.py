@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey.project_config import (
+from codey.workspace.config import (
     MAX_PROJECT_CONFIG_BYTES,
     MAX_WARNINGS,
     MIN_PROJECT_MAP_CHARS,
@@ -97,8 +97,8 @@ class ProjectConfigTests(unittest.TestCase):
 
     def test_project_config_import_does_not_load_browser_provider_stack(self) -> None:
         script = (
-            "import sys; import codey.project_config; "
-            "print('codey.browser' in sys.modules); "
+            "import sys; import codey.workspace.config; "
+            "print('codey.automation.browser' in sys.modules); "
             "print('codey.providers.registry' in sys.modules)"
         )
         proc = subprocess.run(

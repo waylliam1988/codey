@@ -4,6 +4,18 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## 0.4.14 - Provider Package Cold Migration
+
+- provider 运行时模块现在只存在于 `codey.providers.*`。顶层
+  `codey/provider_*.py` 和 package 内部中间态 provider 前缀名字全部消失；
+  生产代码、测试、mock patch 路径、manual A/B fixture、文档和工具都指向最终
+  provider 路径。
+- 内置 provider profile 数据移动到 `codey/providers/profiles.json`，并作为
+  `codey.providers` package data 打包。
+- `codey.providers` 保持 lazy public export，导入轻量 provider 支撑模块时不会
+  顺带加载所有 web driver。
+- 这是给 provider A/B 准备的路径级冷迁移基线：不留兼容壳，不做预期行为改动。
+
 ## 0.4.13 - Verified Completion Enforcement + Repair Context Admission v1
 
 ### 最终发布收口
@@ -95,7 +107,7 @@
 - Provider 适配层去重：五个几乎相同的 `providers/*_web.py` 合并为单一
   spec 驱动的 `web_provider.py`（约 -270 行）；控制定位/响应计数/限流检测/
   迟到响应轮询等公共脚手架提取到 `providers/web_drivers/common.py`；provider id
-  规范化统一进 `codey/provider_ids.py`。各站点自己的完成判定刻意保留在
+  规范化统一进 `codey/providers/ids.py`。各站点自己的完成判定刻意保留在
   各自 driver 内。
 - Adapter 自修复边界按影响面升级。新增 `codey/adapter_surface.py`，把修复面
   定义为"单个 provider 的 driver + 共享网页适配层"（`web_provider.py`、
@@ -110,7 +122,7 @@
   core runtime 仍然拒绝。修复 prompt 改为陈述真实边界（只改网页适配面、
   运行在 provider 级 override 沙箱、不得改测试与 core runtime）。
   `adapter_overrides.adapter_base_hash()` 把修复面上的 JSON 纳入 hash，
-  内置 `provider_profiles.json` 变更会使旧 override 失效。修复面 fail
+  内置 `profiles.json` 变更会使旧 override 失效。修复面 fail
   closed：driver 缺失即修复面为空，共享文件永远不会被单独授予——
   `validate_candidate()` 明确报 unsupported provider，`run_adapter_repair()`
   在调用模型和安装之前直接拒绝。
@@ -886,7 +898,7 @@
     `open -> addressed -> confirmed/rejected`。`confirmed` 要求 `verified_by`
     来自固定 allowlist（`deterministic_check`、`analysis_run`、
     `opened_source_evidence`、`reviewer_pass`）；模型自称“已修复”fail-closed。
-  - 刻意不迁移 `codey.review.ReviewFinding` parser 对象；接入 code review
+  - 刻意不迁移 `codey.reviews.core.ReviewFinding` parser 对象；接入 code review
     finding 要等真实消费者出现。
 - ResearchPipeline 现在只在 final proof review 之后做一次 finding 投影：
   final review -> EvidenceRuntimeSnapshot -> ReviewFindingRecord ->
@@ -900,7 +912,7 @@
   溢出保留最新并追加截断 warning。没有 finding 时 manifest 除两个空列表外形状不变。
 - 架构测试现在把 Evidence Runtime 和 ReviewFinding 锁成 projection-only：
   禁止 browser/provider/tool_runtime/task_runner/server/managed_outputs/
-  events/ghost/codey.review/journal import 和 I/O token；A/B journal 边界测试
+  events/ghost/codey.reviews.core/journal import 和 I/O token；A/B journal 边界测试
   本来就 glob 全部 research 模块（含新模块）。
 - 范围注记：无 model critic、无 prompt 变更、无工具结果变更、无 UI、无报告契约
   变更、无 graph database、无新增模型可见能力。纯 deterministic projection，
@@ -993,7 +1005,7 @@
 - 收束 TaskRunner 中重复的 project tool-event 分支：
   project facts 记录、checkpoint edit/run 追踪和 AnalysisRun 投影现在共用一个
   `_handle_project_tool_event()` 缝隙，分支条件不变；投影失败 fail-open，不影响任务完成。
-- 架构测试现在禁止 research/review/ghost 模块 import `codey.managed_outputs`，
+- 架构测试现在禁止 research/review/ghost 模块 import `codey.storage.managed_outputs`，
   并保持三个新投影模块纯净（不依赖 events/tool_runtime/task_runner/server）。
 - v1 范围说明：Research 报告暂不引用 `analysis_run:<id>`；先记录内部支撑关系。
   让引用对模型可见会改变报告契约，需要留到后续版本做小型实机 A/B。
@@ -1423,8 +1435,8 @@
   policy 边界，并防止 raw payload 边界回流。
 - 矩阵单独声明由 `RunEvent` 历史渲染出来的 Review recent log 是模型可见投影，并接入
   Prompt Envelope / Run Trace；`run_event.*` 行只描述 UI/SSE 和 ledger 投影。
-- Web/SSE 的 `RunEvent` 投影移到 `codey.events.run_event_ui_payload()`，
-  Research 工具展示名映射移到 `codey.events.display_tool()`；`TaskRunner` 只调用共享投影，
+- Web/SSE 的 `RunEvent` 投影移到 `codey.runtime.events.run_event_ui_payload()`，
+  Research 工具展示名映射移到 `codey.runtime.events.display_tool()`；`TaskRunner` 只调用共享投影，
   不再自己维护重复的 `_ui_event` / `_display_tool`。
 - `run_event_payload()` 和 RunLedger 投影继续分开，因为它们服务不同消费者。本版不新增
   事件总线、运行时调度器、插件系统、Run Details UI，也不改变 Router、provider fallback、
@@ -2716,7 +2728,7 @@
 ## 0.1.48 - 工具函数注入和并行 Probe
 
 - 改进：Agent runtime 现在支持显式 `AgentToolFns` 注入，测试和手工 probe 可以替换
-  工具函数，不再 monkeypatch `codey.agent` 全局函数。
+  工具函数，不再 monkeypatch `codey.agents.runner` 全局函数。
 - UX 决策：生产 Codey 默认保持 `read`、`ls`、`search` 串行执行。deterministic
   probe 证明只读并发 batch 可以缩短本地 wall-clock，但串行 tool event 更可观察，
   更符合 Codey 作为安静本地开发工具的气质。

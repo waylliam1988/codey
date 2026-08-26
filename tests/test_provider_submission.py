@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from codey.provider_submission import SendAttempt
+from codey.providers.submission import SendAttempt
 
 
 class SendAttemptTests(unittest.TestCase):

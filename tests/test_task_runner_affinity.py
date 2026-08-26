@@ -3,7 +3,7 @@ from __future__ import annotations
 import tempfile
 from unittest import mock
 
-from codey.agent import RunResult
+from codey.agents.runner import RunResult
 import codey.ghost.work_queue as work_queue_module
 from codey.knowledge.research_interest import ResearchInterestCandidate
 from codey.research.ledger import ResearchLedger
@@ -11,8 +11,8 @@ from codey.research.object_model import build_research_record
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.report_quality import review_report_quality
 from codey.research.runner import ResearchRunResult
-from codey import server
-from codey.task_runner import TaskRequest, TaskRunner
+from codey.app import server
+from codey.app.task_runner import TaskRequest, TaskRunner
 
 
 class _Provider:

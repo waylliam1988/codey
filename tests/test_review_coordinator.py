@@ -3,11 +3,11 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
-from codey.agent import RunResult
-from codey.execution_evidence import CheckEvidence
-from codey.provider_diagnostics import ProviderActionError, ProviderFailure
-from codey.review import ReviewFinding, ReviewResult
-from codey.review_coordinator import ReviewCoordinator, change_state
+from codey.agents.runner import RunResult
+from codey.runtime.execution_evidence import CheckEvidence
+from codey.providers.diagnostics import ProviderActionError, ProviderFailure
+from codey.reviews.core import ReviewFinding, ReviewResult
+from codey.reviews.coordinator import ReviewCoordinator, change_state
 
 
 CHANGES = {

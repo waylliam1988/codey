@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import cancellation
+from codey.runtime import cancellation
 
 
 class CancellationTests(unittest.TestCase):

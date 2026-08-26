@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import unittest
 
-from codey import browser_worker
+from codey.automation import browser_worker
 
 
 class BrowserWorkerTests(unittest.TestCase):

@@ -5,12 +5,12 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import server
-from codey.agent import RunResult
-from codey.events import RunEvent
-from codey.models import ToolCall
-from codey.provider_diagnostics import ProviderActionError, ProviderFailure
-from codey.tool_runtime import ToolOutcome
+from codey.app import server
+from codey.agents.runner import RunResult
+from codey.runtime.events import RunEvent
+from codey.runtime.models import ToolCall
+from codey.providers.diagnostics import ProviderActionError, ProviderFailure
+from codey.toolchain.runtime import ToolOutcome
 
 _POST_TASK_SIDEEFFECT_PATCHES: list[mock.Mock] = []
 
@@ -677,7 +677,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                 mock.patch.object(server, "collect_changes", return_value=changes),
                 mock.patch.object(server, "_run_review", review),
                 mock.patch(
-                    "codey.task_runner.render_verification_map",
+                    "codey.app.task_runner.render_verification_map",
                     side_effect=RuntimeError("scan failed"),
                 ),
             ):
@@ -876,7 +876,7 @@ class WorkCheckpointFlowTests(unittest.TestCase):
                     return_value={"ok": True, "changed_count": 0, "files": []},
                 ),
                 mock.patch(
-                    "codey.verification_policy.shutil.which",
+                    "codey.completion.verification_policy.shutil.which",
                     return_value="npm",
                 ),
             ):

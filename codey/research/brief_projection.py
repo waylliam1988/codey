@@ -21,15 +21,15 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Mapping
 
-from codey.refs import clip as _clip
-from codey.refs import content_digest
-from codey.refs import identifier as _identifier
+from codey.utils.refs import clip as _clip
+from codey.utils.refs import content_digest
+from codey.utils.refs import identifier as _identifier
 from codey.research.evidence_runtime import (
     EvidenceRuntimeSnapshot,
     normalize_runtime_ref as _normalize_runtime_ref,
 )
 from codey.research.shape import generated_ref as _generated_ref
-from codey.text_budget import clip_middle
+from codey.utils.text_budget import clip_middle
 
 
 MAX_HANDOFF_CHARS = 6000

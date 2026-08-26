@@ -34,13 +34,14 @@ from typing import Any
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import agent, provider_controls
-from codey.events import RunEvent, render_run_event
+from codey.agents import runner as agent
+from codey.providers import controls as provider_controls
+from codey.runtime.events import RunEvent, render_run_event
 from codey.knowledge.brief import KnowledgeBriefBuilder
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
-from codey.text_budget import clip_middle
+from codey.utils.text_budget import clip_middle
 from tests.manual import ab_harness_common as common
 from tests.manual.ab_journal import (
     ABJournalWriter,

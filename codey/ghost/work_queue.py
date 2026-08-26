@@ -20,8 +20,8 @@ from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
-from codey.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
-from codey.prompt_safety import is_prompt_visible_text_safe
+from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
+from codey.policies.prompt_safety import is_prompt_visible_text_safe
 
 
 WORK_QUEUE_SCHEMA_VERSION = 1

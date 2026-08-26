@@ -13,31 +13,28 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from codey import (
-    __version__,
-    cancellation,
-    changes,
-    profile_doctor,
-    provider_controls,
-    provider_flow,
-)
-from codey import server
-from codey.agent import RunResult
-from codey.changes import ChangeTracker
-from codey.consensus import ConsensusAdvice, ConsensusResult
-from codey.events import RunEvent, run_event_payload, run_event_ui_payload
-from codey.handoff import ConversationSnapshot
+from codey import __version__
+from codey.app import server
+from codey.agents.runner import RunResult
+from codey.providers import profile_doctor
+from codey.runtime import cancellation
+from codey.workspace.changes import ChangeTracker
+from codey.workspace import changes
+from codey.agents.consensus import ConsensusAdvice, ConsensusResult
+from codey.runtime.events import RunEvent, run_event_payload, run_event_ui_payload
+from codey.agents.handoff import ConversationSnapshot
 from codey.knowledge import KnowledgeNote, KnowledgeStore
-from codey.models import ToolCall
-from codey.provider_diagnostics import ProviderActionError, ProviderFailure
-from codey.provider_discovery import Discovery
+from codey.runtime.models import ToolCall
+from codey.providers import controls as provider_controls, flow as provider_flow
+from codey.providers.diagnostics import ProviderActionError, ProviderFailure
+from codey.providers.discovery import Discovery
 from codey.providers.local_openai import LocalEndpoint
 from codey.research.pipeline import ResearchIterationRun
 from codey.research.runner import ResearchRunResult
-from codey.run_ledger import read_ledger
-from codey.task_runner import TaskRunner, _project_has_user_files
-from codey.tool_runtime import ToolOutcome
-from codey.verification_policy import VerificationCandidate
+from codey.runs.ledger import read_ledger
+from codey.app.task_runner import TaskRunner, _project_has_user_files
+from codey.toolchain.runtime import ToolOutcome
+from codey.completion.verification_policy import VerificationCandidate
 
 
 VALID_SHA256 = "a" * 64
@@ -216,10 +213,10 @@ def seed_ghost_continuity(
 
 class GitChangesTests(unittest.TestCase):
     def test_parse_git_status(self) -> None:
-        files = changes.parse_git_status(" M codey/server.py\n?? new.txt\nR  old.py -> new.py\n")
+        files = changes.parse_git_status(" M codey/app/server.py\n?? new.txt\nR  old.py -> new.py\n")
 
         self.assertEqual(files[0]["status"], "M")
-        self.assertEqual(files[0]["path"], "codey/server.py")
+        self.assertEqual(files[0]["path"], "codey/app/server.py")
         self.assertEqual(files[1]["status"], "??")
         self.assertEqual(files[1]["path"], "new.txt")
         self.assertEqual(files[2]["status"], "R")
@@ -1448,7 +1445,7 @@ class WebAssetTests(unittest.TestCase):
         changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
         changelog_zh = Path("CHANGELOG.zh-CN.md").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "0.4.13")
+        self.assertEqual(__version__, "0.4.14")
         self.assertIn(f"Version: `{__version__}`", readme)
         self.assertIn(f"版本：`{__version__}`", readme_zh)
         self.assertIn(f"## {__version__} -", changelog)
@@ -3240,7 +3237,7 @@ class SessionThreadingTests(unittest.TestCase):
         borrowed.assert_not_called()
 
     def test_flow_recovery_tries_next_healthy_sibling(self) -> None:
-        from codey import provider_flow
+        from codey.providers import flow as provider_flow
 
         state = server.State()
         page = mock.Mock()
@@ -3299,7 +3296,7 @@ class SessionThreadingTests(unittest.TestCase):
         second.close.assert_called_once_with()
 
     def test_flow_recovery_honors_stop_before_borrowing_tab(self) -> None:
-        from codey import provider_flow
+        from codey.providers import flow as provider_flow
 
         state = server.State()
         request = provider_flow.FlowRecoveryRequest(
@@ -3437,8 +3434,8 @@ class SessionThreadingTests(unittest.TestCase):
                 mock.patch.object(server, "agent_run", side_effect=fake_agent_run),
                 mock.patch.object(server, "collect_changes", return_value={"ok": True, "changed_count": 0, "files": []}),
                 mock.patch.object(server, "_run_project_audit", return_value=()),
-                mock.patch("codey.tool_runtime.RUN_OUTPUT_LIMIT", 80),
-                mock.patch("codey.tool_runtime.cancellation.run_process", return_value=completed),
+                mock.patch("codey.toolchain.runtime.RUN_OUTPUT_LIMIT", 80),
+                mock.patch("codey.toolchain.runtime.cancellation.run_process", return_value=completed),
             ):
                 server._run_task(
                     "session-managed-output",
@@ -3638,7 +3635,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(server, "_run_project_audit", return_value=()),
             mock.patch(
-                "codey.task_runner.rank_providers",
+                "codey.app.task_runner.rank_providers",
                 return_value=("glm", "stepfun"),
             ) as rank,
         ):
@@ -3702,7 +3699,7 @@ class SessionThreadingTests(unittest.TestCase):
             ),
             mock.patch.object(server, "_run_project_audit", return_value=()),
             mock.patch(
-                "codey.task_runner.rank_providers",
+                "codey.app.task_runner.rank_providers",
                 return_value=("stepfun", "mimo"),
             ) as rank,
         ):
@@ -3847,7 +3844,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.task_runner.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.app.task_runner.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "_run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
@@ -3968,7 +3965,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.task_runner.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.app.task_runner.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "agent_run") as agent_run,
                 mock.patch.dict(sys.modules, {
                     "pypdf": SimpleNamespace(
@@ -4077,7 +4074,7 @@ class SessionThreadingTests(unittest.TestCase):
             with (
                 mock.patch.object(server, "STATE", state),
                 mock.patch.object(state, "get_provider", return_value=provider),
-                mock.patch("codey.task_runner.BrowserSearchProvider", return_value=Search()),
+                mock.patch("codey.app.task_runner.BrowserSearchProvider", return_value=Search()),
                 mock.patch.object(server, "_run_research_advisors", None),
                 mock.patch.object(server, "agent_run") as agent_run,
             ):
@@ -5730,7 +5727,7 @@ class SessionThreadingTests(unittest.TestCase):
             mock.patch.object(server, "collect_changes", return_value=changes),
             mock.patch.object(server, "connect_existing_provider", return_value=reviewer),
             mock.patch(
-                "codey.verification_policy.shutil.which",
+                "codey.completion.verification_policy.shutil.which",
                 return_value="exe",
             ),
         ):

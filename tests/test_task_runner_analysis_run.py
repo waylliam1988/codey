@@ -4,13 +4,13 @@ import tempfile
 import unittest
 from unittest import mock
 
-from codey import server
-from codey.agent import RunResult
-from codey.events import RunEvent
-from codey.execution_evidence import ExecutionEvidence
-from codey.models import ToolCall
-from codey.tool_runtime import ToolOutcome
-from codey.task_runner import TaskRunner, _RunWork
+from codey.app import server
+from codey.agents.runner import RunResult
+from codey.runtime.events import RunEvent
+from codey.runtime.execution_evidence import ExecutionEvidence
+from codey.runtime.models import ToolCall
+from codey.toolchain.runtime import ToolOutcome
+from codey.app.task_runner import TaskRunner, _RunWork
 
 
 def _outcome(

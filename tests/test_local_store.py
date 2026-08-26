@@ -5,8 +5,10 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import browser, local_store, provider_controls
-from codey.ui_state_store import UiStateStore
+from codey.automation import browser
+from codey.storage import local_store
+from codey.providers import controls as provider_controls
+from codey.storage.ui_state_store import UiStateStore
 
 
 class LocalStoreTests(unittest.TestCase):

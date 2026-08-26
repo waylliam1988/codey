@@ -7,9 +7,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import cancellation
-from codey.provider_diagnostics import FAILURE_READINESS_STALE, ProviderFailure
-from codey.provider_supervisor import (
+from codey.runtime import cancellation
+from codey.providers.diagnostics import FAILURE_READINESS_STALE, ProviderFailure
+from codey.providers.supervisor import (
     STATE_AUTH_REQUIRED,
     STATE_DEGRADED,
     STATE_HEALTHY,
@@ -190,14 +190,14 @@ class ProviderSupervisorTests(unittest.TestCase):
 
             with (
                 mock.patch(
-                    "codey.provider_supervisor.start_deadline",
+                    "codey.providers.supervisor.start_deadline",
                     return_value=123.0,
                 ),
                 mock.patch(
-                    "codey.provider_supervisor.remaining",
+                    "codey.providers.supervisor.remaining",
                     side_effect=[30.0, 5.0],
                 ) as remaining_budget,
-                mock.patch("codey.provider_supervisor.cancellation.deadline_scope") as scope,
+                mock.patch("codey.providers.supervisor.cancellation.deadline_scope") as scope,
             ):
                 scope.return_value.__enter__.return_value = None
                 scope.return_value.__exit__.return_value = False

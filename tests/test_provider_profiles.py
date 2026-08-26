@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey import provider_profiles
+from codey.providers import profiles as provider_profiles
 
 
 class ProviderProfileTests(unittest.TestCase):

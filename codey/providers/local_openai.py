@@ -10,7 +10,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from codey.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
+from codey.storage.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1234/v1"
 LOCAL_BASE_URL_CANDIDATES = (

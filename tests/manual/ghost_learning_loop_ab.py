@@ -27,14 +27,14 @@ from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.learning_loop import GhostLearningLoop, GhostLearningTurn
 from codey.ghost.store import GhostSignalStore
-from codey.browser import PROVIDER_START_URLS
+from codey.automation.browser import PROVIDER_START_URLS
 from codey.providers.registry import (
     PROVIDER_TYPES,
     connect_fresh_provider_tab,
     connect_provider,
     provider_ids,
 )
-from codey import provider_controls
+from codey.providers import controls as provider_controls
 from tests.manual.ghost_directive_ab import _model_visible_context_leaked
 
 

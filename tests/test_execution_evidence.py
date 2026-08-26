@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import unittest
 
-from codey.events import RunEvent
-from codey.execution_evidence import ExecutionEvidence, check_failure_summary
-from codey.models import ToolCall
-from codey.tool_runtime import ToolOutcome
-from codey.work_checkpoint import CheckpointCheck
+from codey.runtime.events import RunEvent
+from codey.runtime.execution_evidence import ExecutionEvidence, check_failure_summary
+from codey.runtime.models import ToolCall
+from codey.toolchain.runtime import ToolOutcome
+from codey.runs.work_checkpoint import CheckpointCheck
 
 
 def event(name: str, args: dict, outcome: ToolOutcome, turn: int = 1) -> RunEvent:

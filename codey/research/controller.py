@@ -12,7 +12,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from codey.models import ToolPlan, ToolResult
+from codey.runtime.models import ToolPlan, ToolResult
 from codey.research.protocols import ProtocolCodec, exact_json_object, exact_tool_object_error
 from codey.research.source_document import compact_pages
 from codey.research.tool_contract import (

@@ -4,8 +4,8 @@ import json
 import unittest
 from unittest import mock
 
-from codey import profile_doctor
-from codey.provider_discovery import Discovery
+from codey.providers import profile_doctor
+from codey.providers.discovery import Discovery
 
 
 class ProfileDoctorTests(unittest.TestCase):

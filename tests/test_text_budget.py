@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from codey.text_budget import (
+from codey.utils.text_budget import (
     OUTPUT_OMISSION_MARKER,
     clip_middle,
     prune_dependency_stack_frames,

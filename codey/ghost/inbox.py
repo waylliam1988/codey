@@ -28,7 +28,7 @@ from codey.ghost.schema import (
     clip_signal_text,
 )
 from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
-from codey.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
+from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
 
 INBOX_SCHEMA_VERSION = 1

@@ -7,17 +7,17 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from codey import agent
-from codey.context_source import (
+from codey.agents import runner as agent
+from codey.workspace.context_source import (
     ContextSource,
     render_context_sources,
     render_context_sources_with_metadata,
 )
 from codey.research.controller import controller_action_contract_hash
 from codey.research.tool_contract import research_tool_contract_hash
-from codey.run_trace import CHECKPOINT_FLUSH_INTERVAL, RunTraceStore
-from codey.action_policy import ActionSubject, evaluate_action
-from codey.tool_definition import (
+from codey.runs.trace import CHECKPOINT_FLUSH_INTERVAL, RunTraceStore
+from codey.policies.action import ActionSubject, evaluate_action
+from codey.toolchain.definition import (
     definitions_for_tool_names,
     model_tool_contract_hash,
 )
@@ -100,7 +100,7 @@ class RunTraceStoreTests(unittest.TestCase):
     def test_write_failure_disables_without_raising(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
-            with mock.patch("codey.run_trace.write_json_atomic", side_effect=OSError("disk")):
+            with mock.patch("codey.runs.trace.write_json_atomic", side_effect=OSError("disk")):
                 recorder = store.open(
                     run_id="run-fail",
                     session_id="session-fail",
@@ -864,7 +864,7 @@ class RunTraceStoreTests(unittest.TestCase):
     def test_prompt_section_records_use_checkpoint_flush(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
-            with mock.patch("codey.run_trace.write_json_atomic") as write:
+            with mock.patch("codey.runs.trace.write_json_atomic") as write:
                 recorder = store.open(
                     run_id="run-batch",
                     session_id="session-batch",
@@ -888,7 +888,7 @@ class RunTraceStoreTests(unittest.TestCase):
     def test_provider_send_prompt_sections_flush_immediately(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
-            with mock.patch("codey.run_trace.write_json_atomic") as write:
+            with mock.patch("codey.runs.trace.write_json_atomic") as write:
                 recorder = store.open(
                     run_id="run-model-boundary",
                     session_id="session-model-boundary",
@@ -928,7 +928,7 @@ class RunTraceStoreTests(unittest.TestCase):
     def test_prompt_section_dedup_keeps_freshness_and_flushes_duplicate_model_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
-            with mock.patch("codey.run_trace.write_json_atomic") as write:
+            with mock.patch("codey.runs.trace.write_json_atomic") as write:
                 recorder = store.open(
                     run_id="run-freshness-key",
                     session_id="session-freshness-key",
@@ -1426,7 +1426,7 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
                 trace_recorder=_CapturingTrace(),
             )
 
-        from codey.context_epoch import context_epoch_id
+        from codey.workspace.context_epoch import context_epoch_id
 
         self.assertEqual(result.stop_reason, "done")
         self.assertEqual(len(sent), 2)
@@ -1578,7 +1578,7 @@ class RunTraceMetadataHelperTests(unittest.TestCase):
                 trace_recorder=_CapturingTrace(),
             )
 
-        from codey.context_epoch import context_epoch_id
+        from codey.workspace.context_epoch import context_epoch_id
 
         expected_epoch = context_epoch_id(sent_prompts[0])
         context_rows = [
@@ -2229,7 +2229,7 @@ class CompletionProofTraceTests(unittest.TestCase):
             self.assertFalse(proofs[0]["satisfied"])
 
     def test_completion_proof_check_cap_matches_contract_cap(self) -> None:
-        from codey.completion_contract import MAX_COMPLETION_CHECKS
+        from codey.completion.contract import MAX_COMPLETION_CHECKS
 
         with tempfile.TemporaryDirectory() as td:
             store = RunTraceStore(td)
@@ -2278,7 +2278,7 @@ class CompletionProofTraceTests(unittest.TestCase):
             self.assertIn("completion_proofs_truncated", payload["warnings"])
 
     def test_recorder_accepts_completion_proof_objects(self) -> None:
-        from codey.completion_contract import (
+        from codey.completion.contract import (
             CompletionCheck,
             CompletionContract,
             CompletionProof,

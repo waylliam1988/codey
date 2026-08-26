@@ -3,9 +3,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from codey.events import RunEvent, display_tool, run_event_ui_payload
-from codey.models import ToolCall
-from codey.tool_runtime import ToolOutcome
+from codey.runtime.events import RunEvent, display_tool, run_event_ui_payload
+from codey.runtime.models import ToolCall
+from codey.toolchain.runtime import ToolOutcome
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,7 +70,7 @@ class RunEventUiPayloadTests(unittest.TestCase):
         })
 
     def test_task_runner_no_longer_owns_ui_event_projection(self) -> None:
-        source = (ROOT / "codey" / "task_runner.py").read_text(encoding="utf-8")
+        source = (ROOT / "codey" / "app" / "task_runner.py").read_text(encoding="utf-8")
 
         self.assertNotIn("def _ui_event", source)
         self.assertNotIn("def _display_tool", source)

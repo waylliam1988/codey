@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from codey.completion_repair_context import (
+from codey.completion.repair_context import (
     CONTEXT_SOURCE_KEY,
     DEFAULT_REPAIR_CONTEXT_BUDGET_CHARS,
     DETAIL_MINIMAL,
@@ -128,7 +128,7 @@ class AdmissionTests(unittest.TestCase):
                 self.assertEqual(projection.refused_reason, REFUSED_NO_SAFE_CHECK_FACTS)
 
     def test_accepts_completion_proof_objects_not_only_mappings(self) -> None:
-        from codey.completion_contract import (
+        from codey.completion.contract import (
             build_completion_contract,
             completion_check,
             project_completion_proof,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from codey.capabilities import KNOWN_DURABLE_STATES, KNOWN_UI_SURFACES, builtin_capability_registry
+from codey.policies.capability_registry import KNOWN_DURABLE_STATES, KNOWN_UI_SURFACES, builtin_capability_registry
 
 
 ROOT = Path(__file__).resolve().parents[1]

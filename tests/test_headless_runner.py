@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from codey.agent import RunResult
-from codey.events import MAX_EVENT_TEXT_CHARS, RunEvent
-from codey.headless_runner import HeadlessRequest, headless_event_payload, run_headless
-from codey.models import ToolCall
-from codey.tool_runtime import ToolOutcome
+from codey.agents.runner import RunResult
+from codey.runtime.events import MAX_EVENT_TEXT_CHARS, RunEvent
+from codey.app.headless_runner import HeadlessRequest, headless_event_payload, run_headless
+from codey.runtime.models import ToolCall
+from codey.toolchain.runtime import ToolOutcome
 
 
 class _FakeProvider:

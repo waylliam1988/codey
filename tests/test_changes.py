@@ -8,9 +8,9 @@ import sys
 from pathlib import Path
 from unittest import mock
 
-from codey import agent
-from codey import changes
-from codey.changes import ChangeTracker, SnapshotStore
+from codey.agents import runner as agent
+from codey.workspace import changes
+from codey.workspace.changes import ChangeTracker, SnapshotStore
 
 
 class FakeProvider:
@@ -257,13 +257,13 @@ class ChangeTrackerTests(unittest.TestCase):
             (root / "b.py").write_text("bbb", encoding="utf-8")
             tracker = ChangeTracker(root, SnapshotStore(state_td))
 
-            with mock.patch("codey.changes.MAX_SNAPSHOT_FILES", 1):
+            with mock.patch("codey.workspace.changes.MAX_SNAPSHOT_FILES", 1):
                 tracker.capture_before("a.py")
                 with self.assertRaisesRegex(ValueError, "file limit"):
                     tracker.capture_before("b.py")
 
             other = ChangeTracker(root, SnapshotStore(Path(state_td) / "other"))
-            with mock.patch("codey.changes.MAX_SNAPSHOT_TOTAL_BYTES", 2):
+            with mock.patch("codey.workspace.changes.MAX_SNAPSHOT_TOTAL_BYTES", 2):
                 with self.assertRaisesRegex(ValueError, "size limit"):
                     other.capture_before("b.py")
 
@@ -290,7 +290,7 @@ class ChangeTrackerTests(unittest.TestCase):
             path.write_text("large", encoding="utf-8")
             tracker.capture_after("new.py")
 
-            with mock.patch("codey.changes.MAX_SNAPSHOT_FILE_BYTES", 2):
+            with mock.patch("codey.workspace.changes.MAX_SNAPSHOT_FILE_BYTES", 2):
                 changes = tracker.collect()
 
             self.assertEqual(changes["changed_count"], 0)
@@ -471,7 +471,7 @@ class ChangeTrackerTests(unittest.TestCase):
     def test_snapshot_survives_abrupt_process_exit(self) -> None:
         script = (
             "import os,sys; from pathlib import Path; "
-            "from codey.changes import ChangeTracker,SnapshotStore; "
+            "from codey.workspace.changes import ChangeTracker,SnapshotStore; "
             "root=Path(sys.argv[1]); store=SnapshotStore(sys.argv[2]); "
             "tracker=ChangeTracker(root,store); tracker.capture_before('app.py'); "
             "(root/'app.py').write_text('new\\n',encoding='utf-8'); "

@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from codey.refs import content_digest, digest_text, stable_ref
+from codey.utils.refs import content_digest, digest_text, stable_ref
 from codey.research.identity import (
     path_ref,
     project_ref,

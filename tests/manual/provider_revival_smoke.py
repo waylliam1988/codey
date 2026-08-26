@@ -21,9 +21,10 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from codey import provider_controls, provider_flow, server
-from codey.local_store import read_json
-from codey.provider_profiles import ProviderProfile
+from codey.app import server
+from codey.providers import controls as provider_controls, flow as provider_flow
+from codey.storage.local_store import read_json
+from codey.providers.profiles import ProviderProfile
 from codey.providers.registry import connect_provider, provider_ids
 from codey.providers.web_drivers import deepseek, glm, mimo, qwen, stepfun
 

@@ -13,9 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
-from codey import browser
-from codey.browser import DEFAULT_PORT, DEFAULT_PROFILE, Session
-from codey.provider_diagnostics import ProviderFailure
+from codey.automation import browser
+from codey.automation.browser import DEFAULT_PORT, DEFAULT_PROFILE, Session
+from codey.providers.diagnostics import ProviderFailure
 from codey.providers.web_driver import run_web_new_chat, run_web_send
 
 
@@ -26,7 +26,7 @@ class WebProviderSpec:
     provider_id: str
     name: str
     driver: Any                      # site-specific driver module
-    opener_name: str                 # attribute on codey.browser
+    opener_name: str                 # attribute on codey.automation.browser
     grace_attr: str = "TIMEOUT_GRACE"
     blank_message: str = ""          # non-empty: reject blank sends
 
