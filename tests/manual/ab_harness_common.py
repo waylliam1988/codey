@@ -16,15 +16,42 @@ Manual-layer rules inherited from 0.4.6:
 from __future__ import annotations
 
 import json
+import subprocess
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
-from tests.manual.ab_journal import ABJournalWriter, journal_directory_for
+from tests.manual.ab_journal import (
+    TRANSCRIPT_MODE_ARCHIVE,
+    TRANSCRIPT_MODE_DIGEST_ONLY,
+    ABJournalWriter,
+    TranscriptReplayCache,
+    journal_directory_for,
+)
 
 MAX_RESULT_BYTES = 1024 * 1024
+
+# Closed failure vocabulary for A/B evidence. Every failed row names ONE of
+# these classes so post-hoc summaries never re-guess what a crash meant.
+AB_FAILURE_NONE = "none"
+AB_FAILURE_PROVIDER = "provider_error"
+AB_FAILURE_CODEY = "codey_failure"
+AB_FAILURE_ENVIRONMENT = "environment_error"
+AB_FAILURE_CLASSES = (
+    AB_FAILURE_NONE,
+    AB_FAILURE_PROVIDER,
+    AB_FAILURE_CODEY,
+    AB_FAILURE_ENVIRONMENT,
+)
+
+# CLI transcript flags -> journal modes; "off" means no journal at all.
+TRANSCRIPT_MODE_FLAGS: dict[str, str | None] = {
+    "off": None,
+    "digest-only": TRANSCRIPT_MODE_DIGEST_ONLY,
+    "archive": TRANSCRIPT_MODE_ARCHIVE,
+}
 
 
 class OutputProviderMismatch(ValueError):
@@ -311,6 +338,155 @@ def journal_directory_for_output(output: Path) -> Path:
     return journal_directory_for(output)
 
 
+def git_state(repo: Path | None = None) -> dict[str, Any]:
+    """Commit + dirty flag for A/B evidence, failing soft to unknowns."""
+
+    state: dict[str, Any] = {"git_commit": "", "git_dirty": None}
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(repo) if repo else None,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=str(repo) if repo else None,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return state
+    state["git_commit"] = commit
+    state["git_dirty"] = bool(status.strip())
+    return state
+
+
+def build_arm_manifest(
+    *,
+    suite: str,
+    provider: str,
+    arms: Sequence[str],
+    cases: Sequence[str],
+    max_turns: int,
+    journal_dir: Path | None,
+    transcript_mode: str,
+    started_at: str,
+    finished_at: str = "",
+    stop_reason: str = "",
+    provider_error_class: str = AB_FAILURE_NONE,
+    codey_failure_class: str = AB_FAILURE_NONE,
+    repo: Path | None = None,
+) -> dict[str, Any]:
+    """The fixed per-arm evidence schema every manual A/B must persist."""
+
+    if provider_error_class not in AB_FAILURE_CLASSES:
+        raise ValueError(f"unknown provider_error_class: {provider_error_class}")
+    if codey_failure_class not in AB_FAILURE_CLASSES:
+        raise ValueError(f"unknown codey_failure_class: {codey_failure_class}")
+    manifest: dict[str, Any] = {
+        "suite": str(suite or "").strip(),
+        "provider": str(provider or "").strip(),
+        "arms": [str(arm) for arm in arms],
+        "cases": [str(case) for case in cases],
+        "max_turns": max(1, int(max_turns)),
+        "journal_dir": str(journal_dir) if journal_dir is not None else "",
+        "transcript_mode": str(transcript_mode or "off"),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "stop_reason": stop_reason,
+        "provider_error_class": provider_error_class,
+        "codey_failure_class": codey_failure_class,
+    }
+    manifest.update(git_state(repo))
+    return manifest
+
+
+def write_arm_manifest(output: Path, manifest: Mapping[str, Any]) -> Path:
+    """Persist the arm manifest next to its result JSON, atomically."""
+
+    path = output.with_name(f"{output.stem}-manifest.json")
+    write_json_atomic(path, dict(manifest))
+    return path
+
+
+def open_journal_for_output(
+    *,
+    output: Path,
+    experiment_id: str,
+    provider_id: str,
+    transcript_mode: str,
+    case_names: Sequence[str],
+    arms: Sequence[str],
+    max_turns: int,
+    run_id: str = "",
+    journal_dir: Path | None = None,
+) -> ABJournalWriter | None:
+    """Shared journal opener: None for "off", otherwise a run-start writer.
+
+    Journal identity is derived from the output path so resume runs append
+    to the same event chain instead of forking a new one.
+    """
+
+    mode = TRANSCRIPT_MODE_FLAGS.get(str(transcript_mode or "").strip())
+    if mode is None and str(transcript_mode or "").strip() != "off":
+        # Unknown flag: fail closed rather than silently archiving nothing.
+        raise ValueError(f"unknown transcript mode: {transcript_mode}")
+    if mode is None:
+        return None
+    resolved_dir = journal_dir or output.parent / f"{output.stem}-journal"
+    writer = ABJournalWriter(
+        directory=resolved_dir,
+        experiment_id=experiment_id,
+        run_id=run_id or f"{provider_id}-{output.stem}",
+        provider=provider_id,
+        transcript_cache=TranscriptReplayCache(resolved_dir, mode=mode),
+    )
+    if writer.event_count == 0:
+        writer.record_run_start(
+            cases=tuple(case_names),
+            arms=tuple(arms),
+            max_turns=max(4, int(max_turns)),
+        )
+    return writer
+
+
+def append_or_replace_failed_row(
+    rows: list[dict[str, Any]],
+    row: dict[str, Any],
+    *,
+    rerun_failed: bool,
+) -> None:
+    """Append a row; with rerun_failed, drop prior error rows for the pair."""
+
+    if rerun_failed:
+        key = (str(row.get("case") or ""), str(row.get("arm") or ""))
+        rows[:] = [
+            existing
+            for existing in rows
+            if (
+                (str(existing.get("case") or ""), str(existing.get("arm") or "")) != key
+                or not existing.get("error")
+            )
+        ]
+    rows.append(row)
+
+
+def classify_ab_failure(exc: BaseException) -> str:
+    """Coarse first-pass classification for crashed (case, arm) cells."""
+
+    text = f"{type(exc).__name__}: {exc}".lower()
+    if any(token in text for token in ("timeout", "connection", "http", "socket")):
+        return AB_FAILURE_PROVIDER
+    if any(token in text for token in ("permissionerror", "nospaceleft", "os error")):
+        return AB_FAILURE_ENVIRONMENT
+    return AB_FAILURE_CODEY
+
+
 @dataclass(frozen=True)
 class FixtureDocument:
     url: str
@@ -433,15 +609,25 @@ def _clip(value: object, limit: int) -> str:
 
 __all__ = [
     "MAX_RESULT_BYTES",
+    "AB_FAILURE_CLASSES",
+    "AB_FAILURE_CODEY",
+    "AB_FAILURE_ENVIRONMENT",
+    "AB_FAILURE_NONE",
+    "AB_FAILURE_PROVIDER",
     "FixtureDocument",
     "FixtureSearchProvider",
     "OutputProviderMismatch",
+    "TRANSCRIPT_MODE_FLAGS",
     "TracingProvider",
+    "append_or_replace_failed_row",
     "bounded_error_row",
+    "build_arm_manifest",
     "case_names",
+    "classify_ab_failure",
     "expected_matrix_keys",
     "fixture_material_phase",
     "fixture_url_policy_bypass",
+    "git_state",
     "interleaved_arm_schedule",
     "journal_directory_for_output",
     "load_or_new_payload",
@@ -449,7 +635,9 @@ __all__ = [
     "merge_unique_names",
     "new_payload",
     "normalize_payload_metadata",
+    "open_journal_for_output",
     "timestamp",
+    "write_arm_manifest",
     "write_json_atomic",
     "write_payload_bounded",
 ]

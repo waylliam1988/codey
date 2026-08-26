@@ -43,11 +43,8 @@ from codey.knowledge.store import KnowledgeStore
 from codey.providers.registry import DEFAULT_PROVIDER_ID, connect_provider, provider_ids
 from codey.utils.text_budget import clip_middle
 from tests.manual import ab_harness_common as common
-from tests.manual.ab_journal import (
-    ABJournalWriter,
-    TranscriptReplayCache,
-    TRANSCRIPT_MODE_ARCHIVE,
-)
+from tests.manual.ab_harness_common import open_journal_for_output, write_arm_manifest, build_arm_manifest
+from tests.manual.ab_journal import ABJournalWriter
 
 
 # Shared manual-layer plumbing (journaling provider, schedules, atomic JSON);
@@ -553,24 +550,20 @@ def run_live(
 
     journal: ABJournalWriter | None = None
     if not no_live_trace:
-        journal_dir = trace_output or output.parent / f"{output.stem}-journal"
         stamp = time.strftime("%Y%m%dT%H%M%S")
         # Archive mode stores the full prompt/reply pairs under
         # transcripts/<digest>.json for offline replay; digest-only would
         # make the gate unreviewable.
-        journal = ABJournalWriter(
-            directory=journal_dir,
+        journal = open_journal_for_output(
+            output=output,
             experiment_id="research_to_code_ab",
+            provider_id=provider_id,
             run_id=f"{provider_id}-{stamp}",
-            provider=provider_id,
-            transcript_cache=TranscriptReplayCache(
-                journal_dir, mode=TRANSCRIPT_MODE_ARCHIVE
-            ),
-        )
-        journal.record_run_start(
-            cases=tuple(case.name for case in CASES),
+            transcript_mode="archive",
+            case_names=[case.name for case in CASES],
             arms=ARMS,
             max_turns=max_turns,
+            journal_dir=trace_output or output.parent / f"{output.stem}-journal",
         )
 
     provider_controls.begin_task_context(f"research-to-code-ab:{provider_id}")
@@ -620,6 +613,23 @@ def run_live(
         payload["summary"] = _summarize(payload["rows"])
         payload["gate"] = verdict
         _atomic_write_json(output, payload)
+        write_arm_manifest(output, build_arm_manifest(
+            suite="research_to_code_ab",
+            provider=provider_id,
+            arms=ARMS,
+            cases=[case.name for case in CASES],
+            max_turns=max_turns,
+            journal_dir=(
+                trace_output or output.parent / f"{output.stem}-journal"
+                if not no_live_trace
+                else None
+            ),
+            transcript_mode="archive" if not no_live_trace else "off",
+            started_at=str(payload.get("started_at") or ""),
+            finished_at=str(payload.get("finished_at") or ""),
+            stop_reason="done" if verdict["ok"] else "gate_failed",
+            codey_failure_class=common.AB_FAILURE_NONE if verdict["ok"] else common.AB_FAILURE_CODEY,
+        ))
         if journal is not None:
             journal.record_run_complete(
                 rows=len(payload["rows"]),

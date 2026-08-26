@@ -41,13 +41,16 @@ from unittest import mock
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from tests.manual.ab_harness_common import TracingProvider
-from tests.manual.ab_journal import (
-    ABJournalWriter,
-    TRANSCRIPT_MODE_ARCHIVE,
-    TRANSCRIPT_MODE_DIGEST_ONLY,
-    TranscriptReplayCache,
+from tests.manual.ab_harness_common import (
+    AB_FAILURE_CODEY,
+    AB_FAILURE_NONE,
+    TracingProvider,
+    build_arm_manifest,
+    open_journal_for_output,
+    timestamp,
+    write_arm_manifest,
 )
+from tests.manual.ab_journal import ABJournalWriter
 from codey.agents.runner import RunResult
 from codey.knowledge.note import KnowledgeNote
 from codey.knowledge.research_interest import build_research_interest_candidates
@@ -730,12 +733,6 @@ def _selected_cases(names: list[str]) -> tuple[ContinuityCase, ...]:
     return selected
 
 
-_TRANSCRIPT_MODE_MAP = {
-    "digest-only": TRANSCRIPT_MODE_DIGEST_ONLY,
-    "archive": TRANSCRIPT_MODE_ARCHIVE,
-}
-
-
 def _open_journal(
     *,
     output: Path,
@@ -746,26 +743,16 @@ def _open_journal(
     case_names: list[str],
 ) -> ABJournalWriter | None:
     """Open the manual journal for a live run (None when mode is off)."""
-    mode = _TRANSCRIPT_MODE_MAP.get(str(transcript_mode or "").strip())
-    if mode is None:
-        # "off": no journal, no transcript material, no journal directory.
-        return None
-    journal_dir = output.parent / f"{output.stem}-journal"
-    journal = ABJournalWriter(
-        directory=journal_dir,
+    return open_journal_for_output(
+        output=output,
         experiment_id="ghost_research_continuity_ab",
+        provider_id=provider_id,
         run_id=f"{provider_id}-{stamp}",
-        provider=provider_id,
-        # digest-only keeps hashes; archive stores full prompt/reply pairs
-        # under transcripts/<digest>.json. Both stay manual-layer material.
-        transcript_cache=TranscriptReplayCache(journal_dir, mode=mode),
-    )
-    journal.record_run_start(
-        cases=tuple(case_names),
+        transcript_mode=transcript_mode,
+        case_names=case_names,
         arms=ARMS,
-        max_turns=max(4, int(max_turns)),
+        max_turns=max_turns,
     )
-    return journal
 
 
 def _self_test() -> None:
@@ -852,6 +839,23 @@ def main(argv: list[str] | None = None) -> int:
             if journal is not None:
                 journal.close()
         _atomic_write_json(output, payload)
+    write_arm_manifest(output, build_arm_manifest(
+        suite="ghost_research_continuity_ab",
+        provider=str(args.provider),
+        arms=ARMS,
+        cases=[case.name for case in cases],
+        max_turns=max(4, int(args.max_turns)),
+        journal_dir=(
+            output.parent / f"{output.stem}-journal"
+            if str(args.transcript_mode) != "off" and args.provider != "fake"
+            else None
+        ),
+        transcript_mode=str(args.transcript_mode),
+        started_at=str(payload.get("started_at") or ""),
+        finished_at=str(payload.get("finished_at") or timestamp()),
+        stop_reason="done" if payload.get("ok") else "failed",
+        codey_failure_class=AB_FAILURE_NONE if payload.get("ok") else AB_FAILURE_CODEY,
+    ))
     print(json.dumps({"ok": bool(payload.get("ok")), "output": str(output)}, ensure_ascii=False))
     return 0 if payload.get("ok") else 1
 

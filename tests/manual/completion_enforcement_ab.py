@@ -46,18 +46,21 @@ from codey.runtime.models import ToolCall
 from codey.app.task_runner import TaskRequest, TaskRunner
 from codey.toolchain.runtime import ToolOutcome
 from tests.manual.ab_harness_common import (
+    AB_FAILURE_CODEY,
+    AB_FAILURE_NONE,
+    AB_FAILURE_PROVIDER,
     TracingProvider,
+    append_or_replace_failed_row as _append_or_replace_failed_row,
+    build_arm_manifest,
+    classify_ab_failure,
     load_or_new_payload,
     normalize_payload_metadata,
+    open_journal_for_output,
     timestamp,
+    write_arm_manifest,
     write_payload_bounded,
 )
-from tests.manual.ab_journal import (
-    ABJournalWriter,
-    TRANSCRIPT_MODE_ARCHIVE,
-    TRANSCRIPT_MODE_DIGEST_ONLY,
-    TranscriptReplayCache,
-)
+from tests.manual.ab_journal import ABJournalWriter
 
 dataclass = dataclasses.dataclass
 
@@ -581,12 +584,6 @@ def parse_cases(spec: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(picked))
 
 
-_TRANSCRIPT_MODE_MAP = {
-    "digest-only": TRANSCRIPT_MODE_DIGEST_ONLY,
-    "archive": TRANSCRIPT_MODE_ARCHIVE,
-}
-
-
 def _open_journal(
     *,
     output: Path,
@@ -596,39 +593,15 @@ def _open_journal(
     case_names: tuple[str, ...],
     arms: tuple[str, ...],
 ) -> ABJournalWriter | None:
-    mode = _TRANSCRIPT_MODE_MAP.get(str(transcript_mode or "").strip())
-    if mode is None:
-        return None
-    journal_dir = output.parent / f"{output.stem}-journal"
-    journal = ABJournalWriter(
-        directory=journal_dir,
+    return open_journal_for_output(
+        output=output,
         experiment_id="completion_enforcement_ab",
-        run_id=f"{provider_id}-{output.stem}",
-        provider=provider_id,
-        transcript_cache=TranscriptReplayCache(journal_dir, mode=mode),
+        provider_id=provider_id,
+        transcript_mode=transcript_mode,
+        max_turns=max_turns,
+        case_names=case_names,
+        arms=arms,
     )
-    if journal.event_count == 0:
-        journal.record_run_start(cases=case_names, arms=arms, max_turns=max_turns)
-    return journal
-
-
-def _append_or_replace_failed_row(
-    rows: list[dict[str, Any]],
-    row: dict[str, Any],
-    *,
-    rerun_failed: bool,
-) -> None:
-    if rerun_failed:
-        key = (str(row.get("case") or ""), str(row.get("arm") or ""))
-        rows[:] = [
-            existing
-            for existing in rows
-            if (
-                (str(existing.get("case") or ""), str(existing.get("arm") or "")) != key
-                or not existing.get("error")
-            )
-            ]
-    rows.append(row)
 
 
 def _live_error_row(
@@ -639,11 +612,18 @@ def _live_error_row(
     tracing_provider: TracingProvider,
     elapsed_s: float,
 ) -> dict[str, Any]:
+    failure_class = classify_ab_failure(exc)
     return {
         "case": case_name,
         "arm": arm,
         "error": f"{type(exc).__name__}: {exc}",
         "stop_reason": "error",
+        "provider_error_class": (
+            failure_class if failure_class == AB_FAILURE_PROVIDER else AB_FAILURE_NONE
+        ),
+        "codey_failure_class": (
+            failure_class if failure_class == AB_FAILURE_CODEY else AB_FAILURE_NONE
+        ),
         "false_completion": False,
         "blocked_honestly": False,
         "unnecessary_repair": False,
@@ -708,6 +688,18 @@ def run_live(
     if not pending:
         report["complete"] = True
         write_payload_bounded(out, report)
+        write_arm_manifest(out, build_arm_manifest(
+            suite="completion_enforcement_ab",
+            provider=provider_id,
+            arms=arms,
+            cases=case_names,
+            max_turns=max_turns,
+            journal_dir=out.parent / f"{out.stem}-journal",
+            transcript_mode=transcript_mode,
+            started_at=str(report.get("started_at") or timestamp()),
+            finished_at=timestamp(),
+            stop_reason="already_complete",
+        ))
         print(
             f"[{provider_id}] no pending rows for cases={','.join(case_names)} "
             f"arms={','.join(arms)}; use --rerun-failed or a new --output to run again.",
@@ -721,8 +713,9 @@ def run_live(
 
     try:
         raw_provider = connect_provider(provider_id, port=port)
-        journal = _open_journal(
+        journal = open_journal_for_output(
             output=out,
+            experiment_id="completion_enforcement_ab",
             provider_id=provider_id,
             transcript_mode=transcript_mode,
             max_turns=max_turns,
@@ -823,6 +816,18 @@ def run_live(
         report["summary"] = summarize(rows)
         report["ok"] = not any(row.get("error") for row in rows)
         write_payload_bounded(out, report)
+        write_arm_manifest(out, build_arm_manifest(
+            suite="completion_enforcement_ab",
+            provider=provider_id,
+            arms=arms,
+            cases=case_names,
+            max_turns=max_turns,
+            journal_dir=out.parent / f"{out.stem}-journal",
+            transcript_mode=transcript_mode,
+            started_at=str(report.get("started_at") or timestamp()),
+            finished_at=str(report.get("finished_at") or timestamp()),
+            stop_reason="complete" if report["ok"] else "rows_failed",
+        ))
         if journal is not None:
             journal.record_run_complete(
                 rows=len(rows),

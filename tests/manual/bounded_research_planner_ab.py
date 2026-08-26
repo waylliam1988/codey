@@ -24,16 +24,20 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from tests.manual.ab_harness_common import (
+    AB_FAILURE_CODEY,
+    AB_FAILURE_NONE,
     FixtureDocument,
     FixtureSearchProvider,
     OutputProviderMismatch,
     TracingProvider,
+    build_arm_manifest,
     fixture_material_phase,
     fixture_url_policy_bypass,
     journal_directory_for_output,
     load_or_new_payload,
     normalize_payload_metadata,
     timestamp,
+    write_arm_manifest,
     write_payload_bounded,
 )
 from tests.manual.ab_journal import (
@@ -1394,6 +1398,37 @@ def main() -> int:
                 trace=trace,
                 run_id=run_id,
             )
+            try:
+                result_payload = (
+                    json.loads(output.read_text(encoding="utf-8"))
+                    if output.exists()
+                    else {}
+                )
+            except (OSError, json.JSONDecodeError):
+                result_payload = {}
+            if not isinstance(result_payload, dict):
+                result_payload = {}
+            ok = bool(result_payload.get("ok"))
+            write_arm_manifest(output, build_arm_manifest(
+                suite="bounded_research_planner_ab",
+                provider=provider_id,
+                arms=selected_arms,
+                cases=[case.name for case in selected_cases],
+                max_turns=max(1, args.max_turns),
+                journal_dir=(
+                    Path(trace_output) if trace is not None else None
+                ),
+                transcript_mode="off" if args.no_live_trace else "digest-only",
+                started_at=str(result_payload.get("started_at") or ""),
+                finished_at=str(result_payload.get("finished_at") or timestamp()),
+                stop_reason=str(
+                    result_payload.get("stop_reason")
+                    or ("done" if ok else "unknown")
+                ),
+                codey_failure_class=(
+                    AB_FAILURE_NONE if ok else AB_FAILURE_CODEY
+                ),
+            ))
         except OutputProviderMismatch as exc:
             print(str(exc), file=sys.stderr)
             return 2
