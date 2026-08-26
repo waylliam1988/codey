@@ -1,5 +1,65 @@
 # Codey Test Report
 
+## Unreleased Run-Command Boundary Hardening (2026-08-26)
+
+This hardening closes the reviewed run-command operand gaps without adding
+compatibility wrappers. The policy stays centralized in
+`codey.policies.run_command_semantics`: pytest ini overrides are parsed as
+explicit semantic carriers, and direct Python script runs check path-shaped
+script arguments before the process allowlist can launch them.
+
+Closed items:
+
+- `pytest -o/--override-ini addopts=...` is recursively parsed as pytest argv,
+  so hidden paths such as `../outside` or `--rootdir=../outside` are rejected;
+- `pytest -o pythonpath=...`, `pytest -o testpaths=...`, `cache_dir`, and
+  `log_file` now feed the same project-root path boundary as ordinary pytest
+  path operands;
+- unsupported pytest ini override keys fail closed, while known non-path keys
+  stay explicit in the table;
+- `python script.py ...` now checks path-shaped script arguments, not only the
+  script filename;
+- manual A/B verification probes now pass `root` to selected-check coverage
+  while the temporary project still exists;
+- the stale `completion_enforcement_ab._open_journal()` wrapper was removed,
+  and the test now uses the shared journal helper directly;
+- the local non-release commit subject that carried a full Codey release
+  version was reworded to keep release versions on release marker commits only.
+
+Pre-full-gate validation:
+
+```powershell
+python -B -m pytest tests\test_run_command_semantics.py `
+  tests\test_action_policy.py tests\test_tool_runtime.py -q
+# 113 passed, 4 skipped, 93 subtests passed
+
+python -B -m pytest tests\test_coding_current_context_ab.py `
+  tests\test_completion_enforcement_ab.py `
+  tests\test_manual_ab_harness_common.py `
+  tests\test_manual_ab_cli_lifecycle.py `
+  tests\test_git_history_hygiene.py tests\test_architecture.py -q
+# 76 passed, 248 subtests passed
+
+python -B tests\manual\default_verification_ab.py --self-test
+# self-test passed
+
+python -B tests\manual\coding_current_context_ab.py --self-test
+# self-test ok
+
+python -B tests\manual\completion_enforcement_ab.py --self-test
+# self-test passed
+
+python -m ruff check .
+# All checks passed!
+```
+
+Final full-suite validation after the code and documentation edits:
+
+```powershell
+python -B -m pytest -q
+# 2965 passed, 14 skipped, 961 subtests passed in 278.38s (0:04:38)
+```
+
 ## 0.4.13 Release Closeout - Redaction, Sandbox, Repair Digest, A/B Journaling (2026-08-26)
 
 This closeout fixes the final review findings and one release-testability gap

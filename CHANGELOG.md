@@ -4,6 +4,22 @@
 
 This file records Codey's release history. The newest release appears first.
 
+## Unreleased
+
+- Run-command policy now treats pytest ini overrides as a guarded second argv
+  surface. `addopts` is recursively parsed with the same tokenizer as pytest
+  argv; `cache_dir`, `log_file`, `pythonpath`, and `testpaths` are explicit
+  path-carrying keys; path-shaped discovery patterns are boundary-checked; and
+  unsupported override keys fail closed instead of silently carrying hidden
+  filesystem operands.
+- Direct `python script.py ...` verification commands now check path-shaped
+  script arguments, not only the script path itself, before the allowlist can
+  launch a process.
+- Manual A/B verification probes pass the project root into selected-check
+  coverage while the temporary project still exists, and the completion
+  enforcement journal test now uses the shared journal helper directly after
+  removing a dead private wrapper.
+
 ## 0.4.14 - Provider Package Cold Migration
 
 - Provider runtime modules now live exclusively under `codey.providers.*`.

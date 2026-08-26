@@ -31,7 +31,70 @@ _PATH_SUFFIXES = frozenset({
 })
 
 _PYTEST_OVERRIDE_OPTIONS = frozenset({"-o", "--override-ini"})
-_PYTEST_OVERRIDE_PATH_KEYS = frozenset({"cache_dir"})
+_PYTEST_OVERRIDE_ARGV_KEYS = frozenset({"addopts"})
+_PYTEST_OVERRIDE_PATH_KEYS = frozenset({"cache_dir", "log_file"})
+_PYTEST_OVERRIDE_PATH_LIST_KEYS = frozenset({"pythonpath", "testpaths"})
+_PYTEST_OVERRIDE_PATH_SHAPED_KEYS = frozenset({
+    "doctest_optionflags",
+    "norecursedirs",
+    "python_files",
+    "python_classes",
+    "python_functions",
+})
+_PYTEST_OVERRIDE_NON_PATH_KEYS = frozenset({
+    "anyio_mode",
+    "asyncio_default_fixture_loop_scope",
+    "asyncio_mode",
+    "collect_imported_tests",
+    "consider_namespace_packages",
+    "console_output_style",
+    "disable_test_id_escaping_and_forfeit_all_rights_to_community_support",
+    "doctest_encoding",
+    "empty_parameter_set_mark",
+    "enable_assertion_pass_hook",
+    "faulthandler_exit_on_timeout",
+    "faulthandler_timeout",
+    "filterwarnings",
+    "junit_suite_name",
+    "junit_duration_report",
+    "junit_family",
+    "junit_logging",
+    "junit_log_passing_tests",
+    "log_auto_indent",
+    "log_cli",
+    "log_cli_date_format",
+    "log_cli_format",
+    "log_cli_level",
+    "log_date_format",
+    "log_file_date_format",
+    "log_file_format",
+    "log_file_level",
+    "log_format",
+    "log_level",
+    "markers",
+    "minversion",
+    "required_plugins",
+    "strict",
+    "strict_config",
+    "strict_markers",
+    "strict_parametrization_ids",
+    "strict_xfail",
+    "truncation_limit_chars",
+    "truncation_limit_lines",
+    "typeguard-collection-check-strategy",
+    "typeguard-debug-instrumentation",
+    "typeguard-forward-ref-policy",
+    "typeguard-packages",
+    "typeguard-typecheck-fail-callback",
+    "tmp_path_retention_count",
+    "tmp_path_retention_policy",
+    "usefixtures",
+    "verbosity_assertions",
+    "verbosity_subtests",
+    "verbosity_test_cases",
+    "xfail_strict",
+})
+_PYTEST_ADDOPTS_MAX_DEPTH = 4
 _PYTEST_PATH_VALUE_OPTIONS = frozenset({
     "-c",
     "--basetemp",
@@ -137,7 +200,11 @@ def canonical_run_command(
             f"invalid command: {exc}",
         ) from exc
     cwd = _resolve_inside_project(root, root, rel or ".", subject="path")
-    refs = tuple(_resolved_path_refs(root, cwd, _referenced_path_args(argv)))
+    refs = tuple(_resolved_path_refs(
+        root,
+        cwd,
+        _referenced_path_args(argv, platform=platform),
+    ))
     return CanonicalRunCommand(argv=argv, cwd=cwd, referenced_paths=refs)
 
 
@@ -201,14 +268,18 @@ def _resolved_path_refs(
         yield RunCommandPathRef(raw=raw, resolved=resolved)
 
 
-def _referenced_path_args(argv: Sequence[str]) -> tuple[str, ...]:
+def _referenced_path_args(
+    argv: Sequence[str],
+    *,
+    platform: str | None,
+) -> tuple[str, ...]:
     if not argv:
         return ()
     exe = _executable_name(argv[0])
     if exe in {"python", "python.exe", "py", "py.exe"}:
-        return _python_path_args(argv[1:])
+        return _python_path_args(argv[1:], platform=platform)
     if exe in {"pytest", "pytest.exe"}:
-        return _pytest_path_args(argv[1:])
+        return _pytest_path_args(argv[1:], platform=platform)
     if exe in {"mypy", "mypy.exe"}:
         return _option_path_args(
             argv[1:],
@@ -267,7 +338,11 @@ def _referenced_path_args(argv: Sequence[str]) -> tuple[str, ...]:
     return ()
 
 
-def _python_path_args(args: Sequence[str]) -> tuple[str, ...]:
+def _python_path_args(
+    args: Sequence[str],
+    *,
+    platform: str | None,
+) -> tuple[str, ...]:
     rest = list(args)
     while rest and rest[0] == "-B":
         rest = rest[1:]
@@ -277,7 +352,7 @@ def _python_path_args(args: Sequence[str]) -> tuple[str, ...]:
         module = rest[1]
         module_args = rest[2:]
         if module == "pytest":
-            return _pytest_path_args(module_args)
+            return _pytest_path_args(module_args, platform=platform)
         if module == "py_compile":
             return _option_path_args(module_args, path_value_options=frozenset())
         if module == "mypy":
@@ -295,10 +370,22 @@ def _python_path_args(args: Sequence[str]) -> tuple[str, ...]:
         if module == "unittest":
             return _unittest_path_args(module_args)
         return ()
-    return (_path_arg(rest[0]),)
+    return (
+        _path_arg(rest[0]),
+        *_option_path_args(
+            rest[1:],
+            path_value_options=frozenset(),
+            positional_requires_path_shape=True,
+        ),
+    )
 
 
-def _pytest_path_args(args: Sequence[str]) -> tuple[str, ...]:
+def _pytest_path_args(
+    args: Sequence[str],
+    *,
+    platform: str | None,
+    addopts_depth: int = 0,
+) -> tuple[str, ...]:
     refs: list[str] = []
     rest: list[str] = []
     values = list(args)
@@ -314,9 +401,11 @@ def _pytest_path_args(args: Sequence[str]) -> tuple[str, ...]:
             if not has_inline and index + 1 < len(values):
                 token = values[index + 1]
                 index += 1
-            value = _pytest_override_path_arg(token)
-            if value is not None:
-                refs.append(_path_arg(value))
+            refs.extend(_pytest_override_path_args(
+                token,
+                platform=platform,
+                addopts_depth=addopts_depth,
+            ))
         else:
             rest.append(arg)
         index += 1
@@ -330,14 +419,69 @@ def _pytest_path_args(args: Sequence[str]) -> tuple[str, ...]:
     )
 
 
-def _pytest_override_path_arg(token: str) -> str | None:
-    """Return the ini value when an -o/--override-ini key carries a path."""
+def _pytest_override_path_args(
+    token: str,
+    *,
+    platform: str | None,
+    addopts_depth: int,
+) -> tuple[str, ...]:
+    """Return filesystem operands carried by one pytest ini override."""
 
     key, sep, raw = token.partition("=")
-    if sep and key.strip().lower() in _PYTEST_OVERRIDE_PATH_KEYS:
-        value = raw.strip()
-        return value or None
-    return None
+    normalized = key.strip().lower()
+    if not sep or not normalized:
+        raise RunCommandPolicyError(
+            "invalid_pytest_override",
+            "pytest ini override must use option=value syntax",
+        )
+    value = raw.strip()
+    if not value:
+        return ()
+    if normalized in _PYTEST_OVERRIDE_ARGV_KEYS:
+        if addopts_depth >= _PYTEST_ADDOPTS_MAX_DEPTH:
+            raise RunCommandPolicyError(
+                "invalid_pytest_override",
+                "pytest addopts nesting is too deep",
+            )
+        return _pytest_path_args(
+            _split_pytest_override_value(value, platform=platform),
+            platform=platform,
+            addopts_depth=addopts_depth + 1,
+        )
+    if normalized in _PYTEST_OVERRIDE_PATH_KEYS:
+        return (_path_arg(value),)
+    if normalized in _PYTEST_OVERRIDE_PATH_LIST_KEYS:
+        return tuple(
+            _path_arg(item)
+            for item in _split_pytest_override_value(value, platform=platform)
+            if item
+        )
+    if normalized in _PYTEST_OVERRIDE_PATH_SHAPED_KEYS:
+        return tuple(
+            _path_arg(item)
+            for item in _split_pytest_override_value(value, platform=platform)
+            if _looks_like_path(item)
+        )
+    if normalized in _PYTEST_OVERRIDE_NON_PATH_KEYS:
+        return ()
+    raise RunCommandPolicyError(
+        "unsupported_pytest_override",
+        "pytest ini override is not allowed by run-command policy",
+    )
+
+
+def _split_pytest_override_value(
+    value: str,
+    *,
+    platform: str | None,
+) -> tuple[str, ...]:
+    try:
+        return tuple(split_run_command(value, platform=platform))
+    except ValueError as exc:
+        raise RunCommandPolicyError(
+            "invalid_pytest_override",
+            "pytest ini override could not be tokenized",
+        ) from exc
 
 
 def _unittest_path_args(args: Sequence[str]) -> tuple[str, ...]:

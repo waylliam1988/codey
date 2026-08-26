@@ -184,6 +184,8 @@ def _selected_check_passed_after_edit(
     events: list[RunEvent],
     selected: VerificationCandidate | None,
     changed_files: tuple[str, ...],
+    *,
+    root: Path,
 ) -> tuple[bool, int]:
     if selected is None:
         return False, 0
@@ -198,6 +200,7 @@ def _selected_check_passed_after_edit(
             str(event.call.args.get("command") or ""),
             str(event.call.args.get("path") or "."),
             changed_files,
+            root=root,
         ):
             selected_runs += 1
             selected_passed = selected_passed or bool(
@@ -301,13 +304,14 @@ def _run_arm(
         elapsed = round(time.time() - started, 3)
         changed = _changed_files(root, case.files)
         independent_check = _run_process(root, case.check_command, case.check_cwd)
+        selected_passed, selected_run_count = _selected_check_passed_after_edit(
+            events,
+            selected,
+            changed or case.expected_changed,
+            root=root,
+        )
 
     prompts = provider.prompts[prompts_before:]
-    selected_passed, selected_run_count = _selected_check_passed_after_edit(
-        events,
-        selected,
-        changed or case.expected_changed,
-    )
     report: dict[str, Any] = {
         "case": case.name,
         "arm": arm,

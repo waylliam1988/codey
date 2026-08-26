@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.manual import completion_enforcement_ab as harness
+from tests.manual.ab_harness_common import open_journal_for_output
 
 
 def test_live_resume_skips_completed_rows_without_opening_provider(
@@ -57,8 +58,9 @@ def test_completion_enforcement_journal_identity_is_stable_for_fixed_output(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "fixed-output.json"
-    first = harness._open_journal(
+    first = open_journal_for_output(
         output=output,
+        experiment_id="completion_enforcement_ab",
         provider_id="deepseek",
         transcript_mode="digest-only",
         max_turns=4,
@@ -71,8 +73,9 @@ def test_completion_enforcement_journal_identity_is_stable_for_fixed_output(
     finally:
         first.close()
 
-    second = harness._open_journal(
+    second = open_journal_for_output(
         output=output,
+        experiment_id="completion_enforcement_ab",
         provider_id="deepseek",
         transcript_mode="digest-only",
         max_turns=4,

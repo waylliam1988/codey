@@ -770,6 +770,9 @@ Codey is not an unrestricted shell.
 - Normal edits are shown as diffs.
 - Snapshot restore works even without Git.
 - Git integration is optional.
+- Allowed run commands still resolve their working directory and known
+  filesystem operands inside the selected project. Pytest override args and
+  path-shaped `python script.py ...` arguments are checked before launch.
 - Shell commands require approval; setup/install approvals show risk notes,
   pass read-only local setup facts back to the writer, and include guarded
   follow-up hints after approval.

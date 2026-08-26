@@ -4,6 +4,19 @@
 
 这里记录 Codey 从最早版本到现在的发布历史，最新版本排在最前面。
 
+## Unreleased
+
+- run-command policy 现在把 pytest ini override 当成第二层 argv 面处理。
+  `addopts` 会用同一套命令分词规则递归解析；`cache_dir`、`log_file`、
+  `pythonpath`、`testpaths` 是显式路径型 key；path-shaped 的 discovery
+  pattern 会进入项目边界校验；不支持的 override key 直接 fail closed，
+  不再静默携带隐藏的文件系统 operand。
+- 直接 `python script.py ...` 形式的验证命令现在会检查脚本后续
+  path-shaped 参数，而不只检查脚本路径本身，然后才允许 allowlist 放行进程。
+- manual A/B 验证探针现在会在临时项目还存在时把 `root` 传给 selected-check
+  覆盖判断；completion enforcement journal 测试改为直接使用共享 journal
+  helper，并移除了已经不用的私有转发函数。
+
 ## 0.4.14 - Provider Package Cold Migration
 
 - provider 运行时模块现在只存在于 `codey.providers.*`。顶层

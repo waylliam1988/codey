@@ -633,6 +633,8 @@ Codey 不是无限制 shell。
 - 正常改动会显示 diff。
 - 没有 Git 也能用 snapshot restore 恢复。
 - Git 是增强功能，不是入门门槛。
+- 已允许的 run 命令仍会先把工作目录和已知文件系统 operand 解析到所选项目内。
+  pytest override 参数和 `python script.py ...` 后续 path-shaped 参数都会在启动前检查。
 - shell 命令需要你确认后才会执行；setup/install 类审批会显示风险说明，
   批准后再把只读的本地环境、manifest 事实和有边界的下一步提示回传给 Writer。
 - 失败时 UI 保持简单：`ERROR · Could not send the message  Retry`。

@@ -181,30 +181,34 @@ def _run_arm(provider, case: Case, arm: str, max_turns: int) -> dict[str, Any]:
         )
         changed = _changed_files(root, case.files)
         correct = case.independent_check(root)
-
-    tool_events = [event for event in events if event.kind == "tool" and event.call is not None]
-    edit_indexes = [index for index, event in enumerate(tool_events) if event.call.name == "edit" and event.outcome and event.outcome.changed]
-    latest_edit = edit_indexes[-1] if edit_indexes else -1
-    runs_after_edit = [
-        event
-        for index, event in enumerate(tool_events)
-        if index > latest_edit and event.call.name == "run"
-    ]
-    selected_runs = [
-        event
-        for event in runs_after_edit
-        if selected is not None
-        and check_covers_selected_candidate(
-            selected,
-            str(event.call.args.get("command") or ""),
-            str(event.call.args.get("path") or "."),
-            changed or case.expected_changes,
+        tool_events = [event for event in events if event.kind == "tool" and event.call is not None]
+        edit_indexes = [
+            index
+            for index, event in enumerate(tool_events)
+            if event.call.name == "edit" and event.outcome and event.outcome.changed
+        ]
+        latest_edit = edit_indexes[-1] if edit_indexes else -1
+        runs_after_edit = [
+            event
+            for index, event in enumerate(tool_events)
+            if index > latest_edit and event.call.name == "run"
+        ]
+        selected_runs = [
+            event
+            for event in runs_after_edit
+            if selected is not None
+            and check_covers_selected_candidate(
+                selected,
+                str(event.call.args.get("command") or ""),
+                str(event.call.args.get("path") or "."),
+                changed or case.expected_changes,
+                root=root,
+            )
+        ]
+        selected_passed = any(
+            event.outcome is not None and event.outcome.ok and event.outcome.exit_code == 0
+            for event in selected_runs
         )
-    ]
-    selected_passed = any(
-        event.outcome is not None and event.outcome.ok and event.outcome.exit_code == 0
-        for event in selected_runs
-    )
     report = {
         "case": case.name,
         "arm": arm,

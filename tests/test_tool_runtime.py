@@ -476,6 +476,30 @@ class ToolOutcomeTests(unittest.TestCase):
         )
         run_process.assert_not_called()
 
+    def test_run_policy_denies_pytest_override_escape_before_process_launch(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            root = base / "project"
+            root.mkdir()
+            (base / "outside").mkdir()
+            with mock.patch("codey.toolchain.runtime.cancellation.run_process") as run_process:
+                outcome = run_command_raw(
+                    root,
+                    ".",
+                    "pytest -o addopts=../outside",
+                    permission_profile="coding_writer",
+                )
+
+        self.assertIsInstance(outcome, tool_runtime.ToolOutcome)
+        assert isinstance(outcome, tool_runtime.ToolOutcome)
+        self.assertFalse(outcome.ok)
+        self.assertEqual(outcome.error_code, "policy_denied")
+        self.assertEqual(
+            outcome.audit["policy_decision"]["reason_code"],
+            "command_path_escape",
+        )
+        run_process.assert_not_called()
+
     def test_run_policy_denies_missing_permission_profile_at_sink(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             outcome = run_command_raw(

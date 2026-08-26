@@ -584,26 +584,6 @@ def parse_cases(spec: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(picked))
 
 
-def _open_journal(
-    *,
-    output: Path,
-    provider_id: str,
-    transcript_mode: str,
-    max_turns: int,
-    case_names: tuple[str, ...],
-    arms: tuple[str, ...],
-) -> ABJournalWriter | None:
-    return open_journal_for_output(
-        output=output,
-        experiment_id="completion_enforcement_ab",
-        provider_id=provider_id,
-        transcript_mode=transcript_mode,
-        max_turns=max_turns,
-        case_names=case_names,
-        arms=arms,
-    )
-
-
 def _live_error_row(
     *,
     case_name: str,

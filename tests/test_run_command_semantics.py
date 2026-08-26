@@ -41,10 +41,13 @@ class CanonicalRunCommandTests(unittest.TestCase):
     def test_accepts_inside_script_and_test_paths(self) -> None:
         for command in (
             "python app.py",
+            "python app.py --fixture tests/data.json",
             "python -B ./app.py",
             "python tests/run.py",
             "pytest -q tests",
             "python -m pytest -q tests",
+            'pytest -o "addopts=-q tests"',
+            "pytest -o pythonpath=src -o testpaths=tests",
             "ruff check .",
             "mypy .",
             "mypy src/app.py",
@@ -87,6 +90,9 @@ class CanonicalRunCommandTests(unittest.TestCase):
             "python ..\\outside.py",
             f"python {self.outside_abs}",
             "python -B ../outside.py",
+            "python app.py ../outside",
+            "python app.py --config=../pytest.ini",
+            "python app.py --data ../outside",
             "python -m py_compile ../outside.py",
             "python -m unittest discover -s ../outside",
             "pytest ../outside",
@@ -137,12 +143,15 @@ class CanonicalRunCommandTests(unittest.TestCase):
     def test_pytest_override_ini_path_keys_are_collected(self) -> None:
         denied = (
             "pytest -o cache_dir=../outside/cache",
-            "pytest -o cache_dir ../outside/cache",
             "pytest -o=cache_dir=../outside/cache",
             "pytest --override-ini cache_dir=../outside/cache",
             "pytest --override-ini=cache_dir=../outside/cache",
             "pytest -o CACHE_DIR=../outside/cache",
             "python -m pytest -o cache_dir=../outside/cache",
+            "pytest -o pythonpath=../outside",
+            "pytest -o testpaths=../outside",
+            "pytest --override-ini=pythonpath=../outside",
+            "python -m pytest --override-ini=testpaths=../outside",
         )
         for command in denied:
             with self.subTest(command=command):
@@ -150,15 +159,43 @@ class CanonicalRunCommandTests(unittest.TestCase):
                     self.canonical(command)
                 self.assertEqual(ctx.exception.reason_code, "command_path_escape")
 
+    def test_pytest_override_ini_addopts_is_parsed_as_pytest_argv(self) -> None:
+        denied = (
+            "pytest -o addopts=../outside",
+            "pytest -o addopts=--rootdir=../outside",
+            'pytest -o "addopts=-q ../outside"',
+            "pytest --override-ini=addopts=../outside",
+            "python -m pytest -o addopts=../outside",
+        )
+        for command in denied:
+            with self.subTest(command=command):
+                with self.assertRaises(RunCommandPolicyError) as ctx:
+                    self.canonical(command)
+                self.assertEqual(ctx.exception.reason_code, "command_path_escape")
+
+        canonical = self.canonical('pytest -o "addopts=-q tests"')
+        self.assertEqual(canonical.referenced_paths[0].raw, "tests")
+
     def test_pytest_override_ini_non_path_keys_pass_through(self) -> None:
         for command in (
             "pytest -o addopts=-q",
             "pytest -o junit_family=xunit2",
+            "pytest -o filterwarnings=ignore::DeprecationWarning",
             "pytest --override-ini asyncio_mode=auto",
         ):
             with self.subTest(command=command):
                 canonical = self.canonical(command)
                 self.assertEqual(canonical.referenced_paths, ())
+
+    def test_pytest_override_ini_unknown_keys_fail_closed(self) -> None:
+        with self.assertRaises(RunCommandPolicyError) as ctx:
+            self.canonical("pytest -o plugin_path=../outside")
+        self.assertEqual(ctx.exception.reason_code, "unsupported_pytest_override")
+
+    def test_pytest_override_ini_malformed_value_fails_closed(self) -> None:
+        with self.assertRaises(RunCommandPolicyError) as ctx:
+            self.canonical("pytest -o cache_dir")
+        self.assertEqual(ctx.exception.reason_code, "invalid_pytest_override")
 
     def test_pytest_override_ini_inside_cache_dir_is_allowed(self) -> None:
         canonical = self.canonical("pytest -o cache_dir=.pytest_cache tests")
@@ -178,6 +215,9 @@ class CanonicalRunCommandTests(unittest.TestCase):
             "pytest -c ../pytest.ini",
             "pytest --rootdir=..",
             "pytest -o cache_dir=../outside/cache",
+            "pytest -o addopts=../outside",
+            "pytest -o pythonpath=../outside",
+            "pytest -o testpaths=../outside",
         ):
             module = direct.replace("pytest", "python -m pytest", 1)
             with self.subTest(direct=direct):

@@ -198,6 +198,8 @@ class ActionPolicyTests(unittest.TestCase):
                 for command in (
                     "python ../outside.py",
                     f"python {outside.as_posix()}",
+                    "python inside.py ../outside",
+                    "python inside.py --config=../outside.py",
                     "python -m py_compile ../outside.py",
                 )
             ]
@@ -236,7 +238,11 @@ class ActionPolicyTests(unittest.TestCase):
                     f"pytest {outside.as_posix()}",
                     "pytest -c ../pytest.ini",
                     "pytest --rootdir=..",
+                    "pytest -o addopts=../outside",
+                    "pytest -o pythonpath=../outside",
+                    "pytest --override-ini=testpaths=../outside",
                     "python -m pytest --rootdir=../outside",
+                    "python -m pytest -o addopts=../outside",
                 )
             ]
 
