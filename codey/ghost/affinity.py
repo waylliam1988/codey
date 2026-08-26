@@ -20,6 +20,7 @@ import uuid
 from codey.ghost.numbers import clamp_unit_float, coerce_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
+from codey.storage.transactional_json import with_file_lock
 
 
 AFFINITY_SCHEMA_VERSION = 1
@@ -987,15 +988,19 @@ class GhostAffinityStore:
         if not rows:
             return True
         try:
-            if not self.events_path.exists() and self.projection_path.exists():
-                self.last_warnings = ("affinity_events_missing",)
-                self._events_read_blocked = True
-                self._events_blocked_reason = "affinity_events_missing"
-                return False
-            existing = self._read_events() if self.events_path.exists() else []
-            if self._events_read_blocked:
-                return False
-            self._write_events_atomic([*existing, *rows])
+            # Serialize read-modify-write against other processes: without
+            # the lock two concurrent appends each write their own version
+            # of the whole events file and one side's events vanish.
+            with with_file_lock(self.events_path):
+                if not self.events_path.exists() and self.projection_path.exists():
+                    self.last_warnings = ("affinity_events_missing",)
+                    self._events_read_blocked = True
+                    self._events_blocked_reason = "affinity_events_missing"
+                    return False
+                existing = self._read_events() if self.events_path.exists() else []
+                if self._events_read_blocked:
+                    return False
+                self._write_events_atomic([*existing, *rows])
             return True
         except (OSError, TypeError, ValueError):
             self.last_warnings = ("affinity_event_write_failed",)
@@ -1033,7 +1038,10 @@ class GhostAffinityStore:
         events = [_node_event(node, action="compacted") for node in node_rows]
         events.extend(_edge_event(edge, action="compacted") for edge in edge_rows)
         events.append(control_event or _control_event("ghost_affinity_events_compacted", {"nodes": len(node_rows), "edges": len(edge_rows)}))
-        self._write_events_atomic(events)
+        # Same lock as _append_events_atomic (reentrant within this process):
+        # a concurrent append must not be overwritten by the compaction.
+        with with_file_lock(self.events_path):
+            self._write_events_atomic(events)
 
     def _write_projection(
         self,
@@ -1505,14 +1513,15 @@ def _reinforce_node(current: AffinityNode | None, spec: _NodeSpec, *, now: str) 
         evidence_ref_hashes = _merge_ref_hashes(current.evidence_ref_hashes or current.evidence_refs, new_evidence_refs)
         confidence = max(current.confidence, _unit_float(spec.confidence))
         metadata = _clean_metadata({**dict(current.metadata), **dict(spec.metadata)})
-        increment_ref_count = max(1, len(new_source_refs) + len(new_evidence_refs))
     else:
         old_weight = 0.0
         created_at = now
         confidence = _unit_float(spec.confidence)
         metadata = _clean_metadata(spec.metadata)
-        increment_ref_count = max(1, len(source_refs) + len(evidence_refs))
-    increment = NODE_LEARNING_RATE * _unit_float(spec.reward) * max(confidence, 0.1) * increment_ref_count
+    # One event is one reinforcement. Refs are provenance (they drive dedup
+    # and record origin); their COUNT must never scale the learning signal,
+    # otherwise metadata-rich events outweigh genuinely repeated behavior.
+    increment = NODE_LEARNING_RATE * _unit_float(spec.reward) * max(confidence, 0.1)
     node = AffinityNode(
         id=node_id,
         kind=kind,
@@ -1567,13 +1576,12 @@ def _reinforce_edge(current: AffinityEdge | None, spec: _EdgeSpec, *, now: str) 
         source_ref_hashes = _merge_ref_hashes(current.source_ref_hashes or current.source_refs, new_source_refs)
         proof_ref_hashes = _merge_ref_hashes(current.proof_ref_hashes or current.proof_refs, new_proof_refs)
         confidence = max(current.confidence, _unit_float(spec.confidence))
-        increment_ref_count = max(1, len(new_source_refs) + len(new_proof_refs))
     else:
         old_weight = 0.0
         created_at = now
         confidence = _unit_float(spec.confidence)
-        increment_ref_count = max(1, len(source_refs) + len(proof_refs))
-    increment = EDGE_LEARNING_RATE * _unit_float(spec.reward) * max(confidence, 0.1) * increment_ref_count
+    # See _reinforce_node: refs are provenance, never a reward multiplier.
+    increment = EDGE_LEARNING_RATE * _unit_float(spec.reward) * max(confidence, 0.1)
     edge = AffinityEdge(
         id=edge_id,
         source=source,

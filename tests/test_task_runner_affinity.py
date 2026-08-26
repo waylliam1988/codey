@@ -54,20 +54,25 @@ def _runner(state: server.State, *, agent_run=None, router_provider_factory=None
     )
 
 
-def _research_candidate(concept: str) -> ResearchInterestCandidate:
+def _research_candidate(concept: str, *, variant: int = 1) -> ResearchInterestCandidate:
+    # Distinct variants carry distinct provenance refs: under
+    # one-event-one-reinforcement semantics each observation adds its own
+    # increment, so repeated interest accumulates instead of one richly
+    # referenced event counting double.
+    suffix = "" if variant == 1 else f"-{variant}"
     return ResearchInterestCandidate(
-        id=f"ric-{concept}",
+        id=f"ric-{concept}{suffix}",
         question=f"Research whether {concept} should be tracked",
         related_concepts=(concept,),
         shared_neighbors=(),
-        source_refs=(f"note:{concept}",),
+        source_refs=(f"note:{concept}{suffix}",),
         scope="session",
         scope_ref="s1",
         priority=0.72,
         confidence=0.85,
         why_now="Bounded local test.",
         source="concept_open_question",
-        source_ref=f"concept:{concept}",
+        source_ref=f"concept:{concept}{suffix}",
         strong_support=True,
     )
 
@@ -165,7 +170,10 @@ def test_task_runner_uses_affinity_to_order_strict_continue_work_items() -> None
         baseline_top = _queued_research_item(title="Research beta provider recovery", concept="beta", priority=0.52)
         assert state.ghost_work_queue._replace_items([favored, baseline_top], "test_seed_affinity_order")
         state.ghost_affinity.sync_from_sources(
-            research_interest_candidates=(_research_candidate("alpha"),),
+            research_interest_candidates=(
+                _research_candidate("alpha"),
+                _research_candidate("alpha", variant=2),
+            ),
             session_id="s1",
         )
         runner = _runner(

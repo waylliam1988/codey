@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 import tempfile
+import threading
 from pathlib import Path
 from unittest import mock
 
@@ -244,6 +245,58 @@ def test_source_ref_replay_is_noop() -> None:
     assert second.skipped_reason == "no_change"
     assert after == before
     assert "<generator object" not in after
+
+
+def test_reference_count_does_not_scale_reinforcement() -> None:
+    def node_spec(refs: tuple[str, ...]) -> affinity_module._NodeSpec:
+        return affinity_module._NodeSpec(
+            kind="task_type",
+            key="research",
+            label="research",
+            scope="project",
+            scope_ref="proj",
+            confidence=0.9,
+            reward=0.9,
+            source_refs=refs,
+        )
+
+    one = affinity_module._reinforce_node(
+        None, node_spec(("ref:1",)), now=FRESH_TS
+    )[0]
+    five = affinity_module._reinforce_node(
+        None,
+        node_spec(tuple(f"ref:{index}" for index in range(5))),
+        now=FRESH_TS,
+    )[0]
+
+    # Provenance count must not scale the learning signal: 5 refs are the
+    # same ONE reinforcement event as 1 ref.
+    assert abs(one.weight - five.weight) < 1e-12
+
+    def edge_spec(refs: tuple[str, ...]) -> affinity_module._EdgeSpec:
+        return affinity_module._EdgeSpec(
+            source="provider-a",
+            target="task_research",
+            relation="works_well_for",
+            scope="project",
+            scope_ref="proj",
+            confidence=0.9,
+            reward=0.9,
+            source_refs=refs,
+        )
+
+    edge_one = affinity_module._reinforce_edge(
+        None, edge_spec(("ref:1",)), now=FRESH_TS
+    )[0]
+    edge_five = affinity_module._reinforce_edge(
+        None,
+        edge_spec(tuple(f"ref:{index}" for index in range(5))),
+        now=FRESH_TS,
+    )[0]
+
+    assert abs(edge_one.weight - edge_five.weight) < 1e-12
+    assert len(five.source_refs) == 5
+    assert len(edge_five.source_refs) == 5
 
 
 def test_work_queue_done_and_blocked_generate_bounded_edges() -> None:
@@ -596,3 +649,32 @@ def test_export_contains_valid_json_and_no_research_body() -> None:
     assert "affinity_events" in payload
     assert "RAW SOURCE" not in raw
     assert "Research body" not in raw
+
+
+def test_concurrent_event_appends_keep_every_event() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        # Two store instances model two Codey processes racing on the same
+        # events file; the sidecar lock must serialize read-modify-write.
+        first = GhostAffinityStore(td)
+        second = GhostAffinityStore(td)
+
+        def append(store: GhostAffinityStore, marker: str) -> None:
+            ok = store._append_events_atomic([{
+                "schema_version": affinity_module.AFFINITY_SCHEMA_VERSION,
+                "kind": "node",
+                "marker": marker,
+            }])
+            assert ok is True
+
+        threads = [
+            threading.Thread(target=append, args=(first, "a")),
+            threading.Thread(target=append, args=(second, "b")),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        rows = first._read_events()
+
+    assert sorted(row.get("marker") or "" for row in rows) == ["a", "b"]
