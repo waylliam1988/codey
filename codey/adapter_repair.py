@@ -23,7 +23,7 @@ from codey.repair_policy import (
     readonly_reference_files,
     validate_candidate,
 )
-from codey.repair_sandbox import create_repair_sandbox
+from codey.repair_sandbox import RepairSandbox, create_repair_sandbox
 
 
 RepairModel = Callable[[str], str]
@@ -58,11 +58,16 @@ def run_adapter_repair(
         error = f"unsupported provider for adapter repair: {provider_id or '<empty>'}"
         journal.append("adapter_repair_rejected", provider=provider_id, error=error)
         return AdapterRepairResult(False, provider_id, error=error)
-    sandbox = create_repair_sandbox(
-        source_root,
-        extra_files=readonly_reference_files(provider_id),
-    )
+    sandbox: RepairSandbox | None = None
     try:
+        # Sandbox creation stays inside the guarded region: a missing
+        # read-only reference file (e.g. a packaged install without tests/)
+        # or a broken source root must yield a bounded result, a journal
+        # record, and no leaked temp directory -- never an escape.
+        sandbox = create_repair_sandbox(
+            source_root,
+            extra_files=readonly_reference_files(provider_id),
+        )
         prompt = _render_repair_prompt(
             provider_id,
             sandbox.baseline_root,
@@ -122,7 +127,8 @@ def run_adapter_repair(
         journal.append("adapter_repair_error", provider=provider_id, error=str(exc))
         return AdapterRepairResult(False, provider_id, error=str(exc))
     finally:
-        sandbox.cleanup()
+        if sandbox is not None:
+            sandbox.cleanup()
 
 
 def _render_repair_prompt(

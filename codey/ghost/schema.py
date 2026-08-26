@@ -8,9 +8,9 @@ action tendency.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import re
 
 from codey.ghost.numbers import coerce_unit_float
+from codey.redaction import looks_high_entropy_secret, looks_sensitive_signal
 
 SCHEMA_VERSION = 1
 MAX_SIGNALS_PER_TURN = 5
@@ -31,23 +31,6 @@ SIGNAL_SCOPES = ("user", "project", "session")
 SIGNAL_SOURCES = ("llm_extractor", "manual", "test")
 TRUNCATED_TEXT_SUFFIX = "..."
 SENSITIVE_SIGNAL_DIAGNOSTIC = "sensitive_signal_rejected"
-
-_SENSITIVE_TERM_RE = re.compile(
-    r"(?i)\b(?:api[_ -]?key|access[_ -]?key|secret|client[_ -]?secret|"
-    r"password|passwd|pwd|token|refresh[_ -]?token|bearer|authorization|"
-    r"cookie|private[_ -]?key|ssh[_ -]?key)\b|"
-    r"(?:密钥|密码|令牌|私钥|访问令牌)"
-)
-_KNOWN_SECRET_RE = re.compile(
-    r"(?i)(?:"
-    r"sk-[A-Za-z0-9_-]{16,}|"
-    r"gh[pousr]_[A-Za-z0-9_]{20,}|"
-    r"xox[baprs]-[A-Za-z0-9-]{16,}|"
-    r"AIza[0-9A-Za-z_-]{20,}|"
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----"
-    r")"
-)
-_HIGH_ENTROPY_TOKEN_RE = re.compile(r"[A-Za-z0-9_./+=-]{32,}")
 
 
 @dataclass(frozen=True)
@@ -222,6 +205,12 @@ def _clean_metadata(value: object) -> dict[str, object]:
 
 
 def contains_sensitive_signal_text(*values: object) -> bool:
+    """Reject secret markers, provider key shapes, and high-entropy tokens.
+
+    The semantics are owned by :mod:`codey.redaction`; path-like tokens stay
+    exempt so ordinary source references never reject a signal.
+    """
+
     for value in values:
         if isinstance(value, dict):
             if contains_sensitive_signal_text(*value.keys(), *value.values()):
@@ -234,32 +223,9 @@ def contains_sensitive_signal_text(*values: object) -> bool:
         text = str(value or "")
         if not text:
             continue
-        if _SENSITIVE_TERM_RE.search(text) or _KNOWN_SECRET_RE.search(text):
-            return True
-        if _contains_high_entropy_token(text):
+        if looks_sensitive_signal(text) or looks_high_entropy_secret(text):
             return True
     return False
-
-
-def _contains_high_entropy_token(text: str) -> bool:
-    for token in _HIGH_ENTROPY_TOKEN_RE.findall(text):
-        if token.startswith(("http://", "https://")):
-            continue
-        if _looks_like_secret_token(token):
-            return True
-    return False
-
-
-def _looks_like_secret_token(token: str) -> bool:
-    classes = 0
-    classes += any(char.islower() for char in token)
-    classes += any(char.isupper() for char in token)
-    classes += any(char.isdigit() for char in token)
-    classes += any(not char.isalnum() for char in token)
-    if classes < 3:
-        return False
-    unique_ratio = len(set(token)) / max(1, len(token))
-    return unique_ratio >= 0.35
 
 
 def _clip_diagnostic(value: object) -> str:

@@ -100,3 +100,17 @@ def test_high_entropy_secret_token_still_blocks() -> None:
     secret = "aB3xK9mP2qR7sT5vW8z0"
     assert contains_prompt_visible_sensitive_text(f"the value is {secret}")
     assert not is_prompt_visible_text_safe(secret)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "the access id is AKIAIOSFODNN7EXAMPLE",
+        "sync with github_pat_AAAA0123456789bbbbbbbbbbbbCCCCCCCC",
+        "settings carry " + "sk" + "_live_" + "abcdefghijklmnop1234567890",
+        "rk" + "_live_" + "abcdefghijklmnop1234567890 lives in env",
+    ],
+)
+def test_provider_secret_shapes_block_everywhere(text: str) -> None:
+    assert contains_prompt_visible_sensitive_text(text)
+    assert not is_prompt_visible_text_safe(text)

@@ -1,21 +1,21 @@
-"""Shared safety checks for text that may be shown to a model."""
+"""Shared safety checks for text that may be shown to a model.
+
+Secret semantics (markers, provider key shapes, the high-entropy heuristic
+and its path-like exemption) have one owner: :mod:`codey.redaction`. This
+module only adds prompt-injection and permission-control detection.
+"""
 
 from __future__ import annotations
 
 import re
+
+from codey.redaction import looks_high_entropy_secret, looks_sensitive_signal
 
 
 _INTERNAL_CONTEXT_RE = re.compile(
     r"\b(?:ghost|work\s*queue|workitem|local\s+context|ghost\s*directive|concept\s+graph)\b",
     re.IGNORECASE,
 )
-_SECRET_TEXT_RE = re.compile(
-    r"\b(?:api[_\s-]?key|password|secrets?|credential|token)\b|"
-    r"\bsk-[a-z0-9_-]{12,}\b|"
-    r"(?:密码|密钥|令牌|凭证)",
-    re.IGNORECASE,
-)
-_HIGH_ENTROPY_TOKEN_RE = re.compile(r"\b[A-Za-z0-9][A-Za-z0-9_\-./+=]{16,}\b")
 _SEP = r"[\s_.-]+"
 _INSTRUCTION_OBJECT = (
     rf"(?:all{_SEP}(?:previous{_SEP}|other{_SEP})?instructions?|"
@@ -92,9 +92,7 @@ def contains_prompt_visible_sensitive_text(value: object) -> bool:
     text = str(value or "")
     if not text:
         return False
-    if _SECRET_TEXT_RE.search(text):
-        return True
-    return _contains_high_entropy_token(text)
+    return looks_sensitive_signal(text) or looks_high_entropy_secret(text)
 
 
 def contains_prompt_control_text(value: object) -> bool:
@@ -119,20 +117,6 @@ def is_prompt_visible_text_safe(
     return not contains_prompt_control_text(text)
 
 
-def _contains_high_entropy_token(text: str) -> bool:
-    for token in _HIGH_ENTROPY_TOKEN_RE.findall(text):
-        if token.startswith(("http://", "https://")):
-            continue
-        if "/" in token:
-            # Path-like token (file system or URL-ish segments): ordinary
-            # source paths are not secrets. Explicit secret markers and
-            # secret shapes are still caught before this branch.
-            continue
-        if _looks_like_secret_token(token):
-            return True
-    return False
-
-
 def _contains_prompt_control_text(text: str) -> bool:
     return bool(
         _PROMPT_CONTROL_RE.search(text)
@@ -148,18 +132,6 @@ def _text_variants(text: str) -> tuple[str, ...]:
     if not normalized or normalized == raw:
         return (raw,)
     return (raw, normalized)
-
-
-def _looks_like_secret_token(token: str) -> bool:
-    classes = 0
-    classes += any(char.islower() for char in token)
-    classes += any(char.isupper() for char in token)
-    classes += any(char.isdigit() for char in token)
-    classes += any(not char.isalnum() for char in token)
-    if classes < 3:
-        return False
-    unique_ratio = len(set(token)) / max(1, len(token))
-    return unique_ratio >= 0.35
 
 
 __all__ = [

@@ -823,8 +823,9 @@ checks, and the completion-enforcement A/B self-test:
 python tools/local_ci.py
 ```
 
-Commits run it automatically through the checked-in pre-commit hook after a
-one-time per-machine activation:
+Commits run it automatically through the checked-in pre-commit hook (committed
+executable, so macOS/Linux clones keep it runnable) after a one-time
+per-machine activation:
 
 ```powershell
 git config core.hooksPath .githooks

@@ -283,6 +283,28 @@ This file records Codey's release history. The newest release appears first.
   one-time `git config core.hooksPath .githooks`; `.github/workflows/ci.yml`
   triggers only via manual `workflow_dispatch`; README carries an honest
   static local-CI badge instead of a GitHub Actions badge.
+- Secret detection has one owner again: `redaction.py` owns secret markers,
+  provider key shapes, and the high-entropy heuristic together with its
+  path-like exemption. `prompt_safety` and the Ghost signal schema reuse
+  `looks_sensitive_signal()` / the shared entropy scan instead of keeping
+  divergent copies, so AWS / GitHub-PAT / Stripe shapes now also block in
+  prompt-visible checks, and ordinary source paths
+  (`src/main/java/util/ArrayList.java`) no longer reject Ghost work items
+  or signals (the exemption previously never applied on Ghost paths).
+- Adapter repair cannot escape its own error envelope anymore: sandbox
+  creation moved inside the guarded region, so a missing read-only
+  reference file (e.g. a packaged install without `tests/`) or a broken
+  `source_root` returns a bounded `AdapterRepairResult`, journals
+  `adapter_repair_error`, and always removes the temp root -- previously it
+  raised bare `FileNotFoundError` before any journaling and leaked the
+  sandbox directory.
+- Repair sandbox reference files validate fail-closed: empty, absolute,
+  drive/rooted, or `..`-traversing paths are rejected up front, and every
+  copy re-checks containment on both the source and destination side, so a
+  bad reference path can never materialize files outside the source tree or
+  the sandbox.
+- `.githooks/pre-commit` is committed executable (`100755`), so fresh
+  clones on macOS/Linux run local CI without a manual chmod.
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 

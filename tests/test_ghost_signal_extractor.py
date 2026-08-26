@@ -150,7 +150,7 @@ class GhostSignalCodecTests(unittest.TestCase):
         self.assertTrue(any(SENSITIVE_SIGNAL_DIAGNOSTIC in item for item in result.diagnostics))
 
     def test_rejects_high_entropy_signal_text(self) -> None:
-        secret = "Aa1+Bb2/Cc3-Dd4_Ee5.Ff6+Gg7/Hh8-Ii9_Jj0"
+        secret = "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk29"
         user_text = f"以后记住这个值 {secret}。"
         result = self.codec.parse(
             _reply({
@@ -166,6 +166,48 @@ class GhostSignalCodecTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertFalse(result.signals)
         self.assertTrue(any(SENSITIVE_SIGNAL_DIAGNOSTIC in item for item in result.diagnostics))
+
+    def test_path_like_signal_text_is_allowed(self) -> None:
+        # Ordinary source paths are not secrets: the shared high-entropy
+        # exemption must hold on the Ghost boundary too.
+        user_text = "以后重构 src/main/java/util/ArrayList.java 这个文件。"
+        result = self.codec.parse(
+            _reply({
+                "kind": "correction",
+                "scope": "session",
+                "summary": "Refactor src/main/java/util/ArrayList.java.",
+                "evidence_quote": "src/main/java/util/ArrayList.java",
+                "confidence": 0.9,
+            }),
+            user_text=user_text,
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(len(result.signals), 1)
+
+    def test_rejects_provider_secret_shapes_in_signal_text(self) -> None:
+        secrets = (
+            "AKIAIOSFODNN7EXAMPLE",
+            "github_pat_AAAA0123456789bbbbbbbbbbbbCCCCCCCC",
+            "sk" + "_live_" + "abcdefghijklmnop1234567890",
+        )
+        for secret in secrets:
+            with self.subTest(secret=secret):
+                user_text = f"以后把 {secret} 放进配置。"
+                result = self.codec.parse(
+                    _reply({
+                        "kind": "correction",
+                        "scope": "session",
+                        "summary": f"Store {secret} in config.",
+                        "evidence_quote": secret,
+                        "confidence": 0.91,
+                    }),
+                    user_text=user_text,
+                )
+
+                self.assertFalse(result.ok)
+                self.assertFalse(result.signals)
+                self.assertTrue(any(SENSITIVE_SIGNAL_DIAGNOSTIC in item for item in result.diagnostics))
 
     def test_rejects_multiple_json_objects(self) -> None:
         result = self.codec.parse('{"signals":[]}\n{"signals":[]}', user_text="继续")

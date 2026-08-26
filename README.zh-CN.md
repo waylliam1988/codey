@@ -683,7 +683,8 @@ commit 都会由一个本地入口自动检查：ruff、全量 pytest、JavaScri
 python tools/local_ci.py
 ```
 
-commit 钩子随仓库提供，每台机器激活一次后 `git commit` 会自动跑完整本地 CI：
+commit 钩子随仓库提供（以可执行位入库，macOS/Linux clone 无需手动 chmod），
+每台机器激活一次后 `git commit` 会自动跑完整本地 CI：
 
 ```powershell
 git config core.hooksPath .githooks

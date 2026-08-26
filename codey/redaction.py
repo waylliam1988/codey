@@ -11,14 +11,14 @@ import re
 
 
 _LATIN_SECRET_MARKER = (
-    r"api[_ -]?key|access[_ -]?key|api[_ -]?token|access[_ -]?token|"
-    r"auth[_ -]?token|bearer[_ -]?token|id[_ -]?token|secret|client[_ -]?secret|"
-    r"password|passphrase|passwd|pwd|token|refresh[_ -]?token|bearer|authorization|"
-    r"cookie|credential|credentials|session[_ -]?id|private[_ -]?key|ssh[_ -]?key|jwt"
+    r"api[\s_-]?key|access[\s_-]?key|api[\s_-]?token|access[\s_-]?token|"
+    r"auth[\s_-]?token|bearer[\s_-]?token|id[\s_-]?token|secrets?|client[\s_-]?secret|"
+    r"password|passphrase|passwd|pwd|token|refresh[\s_-]?token|bearer|authorization|"
+    r"cookie|credential|credentials|session[\s_-]?id|private[\s_-]?key|ssh[\s_-]?key|jwt"
 )
 SECRET_MARKER_RE = re.compile(
     rf"(?i)(?<![A-Za-z0-9])(?:{_LATIN_SECRET_MARKER})(?![A-Za-z0-9])|"
-    r"(?:密钥|密码|令牌|私钥|访问令牌)"
+    r"(?:密钥|密码|令牌|凭证|私钥|访问令牌)"
 )
 SECRET_SHAPE_RE = re.compile(
     r"(?i)(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|"
@@ -29,6 +29,7 @@ SECRET_SHAPE_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:sk|rk)_(?:live|test)_[A-Za-z0-9_-]{16,})"
 )
 _CODE_SEPARATOR_RE = re.compile(r"[^a-z0-9]+")
+_HIGH_ENTROPY_TOKEN_RE = re.compile(r"\b[A-Za-z0-9][A-Za-z0-9_\-./+=]{16,}\b")
 _CJK_SECRET_CODE_RE = re.compile(r"(?:密钥|密码|令牌|私钥|访问令牌)")
 _SENSITIVE_CODE_COMPONENTS = frozenset({
     "bearer",
@@ -87,6 +88,35 @@ def looks_sensitive_signal(value: object) -> bool:
     return looks_secret_marker(value) or looks_secret_shape(value)
 
 
+def looks_high_entropy_secret(value: object) -> bool:
+    """Return whether text carries a random token that looks like a secret.
+
+    Tokens containing ``/`` are path- or URL-like references, and ordinary
+    source paths are not secrets, so only slash-free random tokens qualify.
+    """
+
+    for token in _HIGH_ENTROPY_TOKEN_RE.findall(str(value or "")):
+        if "/" in token:
+            continue
+        if _looks_like_secret_token(token):
+            return True
+    return False
+
+
+def _looks_like_secret_token(token: str) -> bool:
+    has_lower = any(char.islower() for char in token)
+    has_upper = any(char.isupper() for char in token)
+    if not (has_lower and has_upper):
+        # Identifier-shaped values (hex ids, hashes, snake_case words) are
+        # ordinary engineering artifacts, not secrets.
+        return False
+    varied = any(char.isdigit() for char in token) or any(not char.isalnum() for char in token)
+    if not varied:
+        return False
+    unique_ratio = len(set(token)) / max(1, len(token))
+    return unique_ratio >= 0.35
+
+
 def looks_sensitive_code(value: object) -> bool:
     """Return whether an audit code looks like a secret marker or secret shape.
 
@@ -120,6 +150,7 @@ def looks_sensitive_code(value: object) -> bool:
 __all__ = [
     "SECRET_MARKER_RE",
     "SECRET_SHAPE_RE",
+    "looks_high_entropy_secret",
     "looks_sensitive_code",
     "looks_secret_marker",
     "looks_secret_shape",

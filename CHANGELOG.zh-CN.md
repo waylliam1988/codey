@@ -229,6 +229,23 @@
   `git config core.hooksPath .githooks` 之后接入每次 commit；
   `.github/workflows/ci.yml` 只保留手动 `workflow_dispatch` 触发；README
   使用诚实的静态 local-CI 徽标，不再伪装 GitHub Actions badge。
+- 密钥检测回归单一 owner：secret marker、provider key shape 与高熵启发式
+  （含 path-like 豁免）统一由 `redaction.py` 拥有。`prompt_safety` 与 Ghost
+  signal schema 复用 `looks_sensitive_signal()` / 共享的高熵扫描，不再各自
+  维护分叉副本——AWS / GitHub-PAT / Stripe shape 现在在 prompt 可见检查里
+  同样拦截；普通源码路径（`src/main/java/util/ArrayList.java`）不再被 Ghost
+  work item / signal 误拒（此前 path-like 豁免在 Ghost 路径从未生效）。
+- Adapter repair 不再越出自己的错误边界：sandbox 创建移入受保护区域，
+  只读引用文件缺失（例如打包安装环境没有 `tests/`）或 `source_root` 损坏时，
+  返回有界的 `AdapterRepairResult`、记录 `adapter_repair_error` journal、
+  并始终清理临时目录——此前直接抛裸 `FileNotFoundError`，不写 journal 且
+  泄漏沙箱目录。
+- Repair sandbox 引用文件 fail-closed 校验：空路径、绝对路径、盘符/rooted
+  路径与 `..` 上溯路径在触碰文件系统前一律拒绝；每次复制都在 source 与
+  destination 双侧复查 containment，坏的引用路径不可能把文件 materialize 到
+  源码树或沙箱之外。
+- `.githooks/pre-commit` 以可执行位（`100755`）入库，macOS/Linux 新 clone
+  无需手动 chmod 即可运行本地 CI。
 
 ## 0.4.12 - Ghost Research Continuity + Topic Planner v1
 

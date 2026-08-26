@@ -551,8 +551,109 @@ class RepairSandboxTests(unittest.TestCase):
             root = Path(td) / "src"
             root.mkdir()
 
+            before = _repair_temp_roots()
             with self.assertRaises(OSError):
                 create_repair_sandbox(root)
+            self.assertEqual(_repair_temp_roots(), before)
+
+    def test_extra_files_fail_closed_on_escaping_paths(self) -> None:
+        # Reference paths are an explicit boundary: empty, absolute, rooted,
+        # or upward-traversing names are rejected before any filesystem work
+        # and can never copy outside the source tree or the sandbox.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            (Path(td) / "outside.txt").write_text("outside", encoding="utf-8")
+
+            before = _repair_temp_roots()
+            for bad in (
+                "../outside.txt",
+                "tests/../../outside.txt",
+                "/etc/codey-secrets.env",
+                "C:/Windows/codey-secrets.env",
+                "",
+                "   ",
+            ):
+                with self.subTest(reference=bad):
+                    with self.assertRaises(ValueError):
+                        create_repair_sandbox(root, extra_files=(bad,))
+            self.assertFalse((root / "outside.txt").exists())
+            self.assertEqual(_repair_temp_roots(), before)
+
+    def test_missing_reference_file_cleans_temp_root_and_raises(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            (root / "tests" / "test_qwen.py").unlink()
+
+            before = _repair_temp_roots()
+            with self.assertRaises(OSError):
+                create_repair_sandbox(root, extra_files=("tests/test_qwen.py",))
+            self.assertEqual(_repair_temp_roots(), before)
+
+
+def _repair_temp_roots() -> set[Path]:
+    return set(Path(tempfile.gettempdir()).glob("codey-adapter-repair-*"))
+
+
+class AdapterRepairBoundedFailureTests(unittest.TestCase):
+    def test_missing_readonly_reference_fails_bounded_without_model_call_or_leak(self) -> None:
+        from codey.repair_journal import RepairJournal
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "src"
+            _source_tree(root)
+            (root / "tests" / "test_qwen.py").unlink()
+            journal = RepairJournal(Path(td) / "state")
+
+            def send_prompt(_prompt: str) -> str:
+                raise AssertionError("model must not be called when the sandbox cannot be built")
+
+            before = _repair_temp_roots()
+            result = run_adapter_repair(
+                "qwen",
+                send_prompt=send_prompt,
+                state_home=Path(td) / "state",
+                source_root=root,
+                journal=journal,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertEqual(result.generation, 0)
+            self.assertIn("test_qwen.py", result.error)
+            self.assertTrue(journal.path is not None and journal.path.exists())
+            events = [
+                json.loads(line)
+                for line in journal.path.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual([event["event"] for event in events], ["adapter_repair_error"])
+            self.assertEqual(_repair_temp_roots(), before)
+
+    def test_broken_source_root_fails_bounded_and_cleans_up(self) -> None:
+        from codey.repair_journal import RepairJournal
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "bare"
+            root.mkdir()
+            journal = RepairJournal(Path(td) / "state")
+
+            before = _repair_temp_roots()
+            result = run_adapter_repair(
+                "qwen",
+                send_prompt=lambda _prompt: '{"files":[]}',
+                state_home=Path(td) / "state",
+                source_root=root,
+                journal=journal,
+            )
+
+            self.assertFalse(result.ok)
+            self.assertIn("no codey package", result.error)
+            events = [
+                json.loads(line)
+                for line in journal.path.read_text(encoding="utf-8").splitlines()
+            ]
+            self.assertEqual([event["event"] for event in events], ["adapter_repair_error"])
+            self.assertEqual(_repair_temp_roots(), before)
 
 
 class SelfRepairSupervisorTests(unittest.TestCase):
