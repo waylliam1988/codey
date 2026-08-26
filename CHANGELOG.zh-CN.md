@@ -6,16 +6,35 @@
 
 ## Unreleased
 
+## 0.4.15 - Run Command Boundary + Stabilization Hardening
+
 - run-command policy 现在把 pytest ini override 当成第二层 argv 面处理。
   `addopts` 会用同一套命令分词规则递归解析；`cache_dir`、`log_file`、
-  `pythonpath`、`testpaths` 是显式路径型 key；path-shaped 的 discovery
-  pattern 会进入项目边界校验；不支持的 override key 直接 fail closed，
-  不再静默携带隐藏的文件系统 operand。
+  `pythonpath`、`testpaths` 是显式路径型 key；`-oaddopts=...` 这种 pytest
+  紧贴短选项形式也会进入同一层递归解析；path-shaped 的 discovery pattern
+  会进入项目边界校验；不支持的 override key 直接 fail closed，不再静默
+  携带隐藏的文件系统 operand。
 - 直接 `python script.py ...` 形式的验证命令现在会检查脚本后续
   path-shaped 参数，而不只检查脚本路径本身，然后才允许 allowlist 放行进程。
+- Provider adapter override 现在只安装目标 provider 声明过的 adapter repair
+  surface，并对 generation 清理做路径 guard，不再把整棵 `codey/` runtime
+  快照复制到 override 路径。
+- Evidence、Ghost affinity 和 Ghost work queue 的 read-modify-write 状态路径
+  改用带锁 JSON mutation 原语，避免多个本地 Codey 进程协作写入时丢更新。
+- Ghost affinity 不再把更多 `source_refs` 当成更强 reward；ref 只作为
+  provenance，一次观测事件只贡献一次 reinforcement。
+- manual A/B harness 共享 arm manifest、output identity、失败 row 追加/替换、
+  稳定 journal 生命周期 helper 和有界 failure class，让 live evidence 可以续跑
+  和审计。
+- Provider worker 的 CDP target lookup 在 browser binding 支持时会释放临时
+  CDP session。
+- CI 现在覆盖 Python 3.11、3.12 和 3.13。
 - manual A/B 验证探针现在会在临时项目还存在时把 `root` 传给 selected-check
   覆盖判断；completion enforcement journal 测试改为直接使用共享 journal
   helper，并移除了已经不用的私有转发函数。
+- README 项目结构更新为冷迁移后的 package 布局（`app/`、`providers/`、
+  `repairs/`、`runtime/`、`storage/`、`workspace/`），不再列已删除的扁平
+  provider 模块名。
 
 ## 0.4.14 - Provider Package Cold Migration
 

@@ -1,6 +1,6 @@
 # Codey Test Report
 
-## Unreleased Run-Command Boundary Hardening (2026-08-26)
+## 0.4.15 Release - Run-Command Boundary and Stabilization Hardening (2026-08-26)
 
 This hardening closes the reviewed run-command operand gaps without adding
 compatibility wrappers. The policy stays centralized in
@@ -12,6 +12,9 @@ Closed items:
 
 - `pytest -o/--override-ini addopts=...` is recursively parsed as pytest argv,
   so hidden paths such as `../outside` or `--rootdir=../outside` are rejected;
+- compact pytest short-option overrides such as
+  `pytest -oaddopts=--basetemp=../outside/tmp -q` now enter the same recursive
+  addopts parser instead of being treated as a project-local pseudo-path;
 - `pytest -o pythonpath=...`, `pytest -o testpaths=...`, `cache_dir`, and
   `log_file` now feed the same project-root path boundary as ordinary pytest
   path operands;
@@ -31,7 +34,7 @@ Pre-full-gate validation:
 ```powershell
 python -B -m pytest tests\test_run_command_semantics.py `
   tests\test_action_policy.py tests\test_tool_runtime.py -q
-# 113 passed, 4 skipped, 93 subtests passed
+# 113 passed, 4 skipped, 98 subtests passed in 1.39s
 
 python -B -m pytest tests\test_coding_current_context_ab.py `
   tests\test_completion_enforcement_ab.py `
@@ -51,13 +54,24 @@ python -B tests\manual\completion_enforcement_ab.py --self-test
 
 python -m ruff check .
 # All checks passed!
+
+python -B -m pytest tests\test_run_command_semantics.py `
+  tests\test_action_policy.py tests\test_tool_runtime.py `
+  tests\test_adapter_self_repair.py tests\test_transactional_json.py `
+  tests\test_research_evidence_ledger.py tests\test_ghost_affinity.py `
+  tests\test_ghost_work_queue.py tests\test_manual_ab_harness_common.py `
+  tests\test_completion_enforcement_ab.py tests\test_provider_revival.py `
+  tests\test_provider_supervisor.py tests\test_providers.py `
+  tests\test_deepseek.py tests\test_qwen.py `
+  tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q
+# 439 passed, 7 skipped, 109 subtests passed in 37.89s
 ```
 
 Final full-suite validation after the code and documentation edits:
 
 ```powershell
 python -B -m pytest -q
-# 2965 passed, 14 skipped, 961 subtests passed in 278.38s (0:04:38)
+# 2965 passed, 14 skipped, 966 subtests passed in 273.71s (0:04:33)
 ```
 
 ## 0.4.13 Release Closeout - Redaction, Sandbox, Repair Digest, A/B Journaling (2026-08-26)

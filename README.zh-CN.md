@@ -2,7 +2,7 @@
 
 **把网页版 AI 变成本地优先的编程、研究和可控记忆工作台。**
 
-[![版本](https://img.shields.io/badge/version-0.4.14-blue)](CHANGELOG.zh-CN.md)
+[![版本](https://img.shields.io/badge/version-0.4.15-blue)](CHANGELOG.zh-CN.md)
 [![许可证：GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![本地优先](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#安全模型)
 
@@ -18,7 +18,7 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
 
 网页版 provider 不需要 API key，不需要充值 API 额度。你只要能在 Edge 或 Chrome 里登录网页 AI，就可以用 Codey 开始写代码。如果你运行 LM Studio、Ollama、llama.cpp 或其他 OpenAI-compatible 本地 endpoint，可以选择 **Local**，填写一次 base URL 和模型名。
 
-版本：`0.4.14`
+版本：`0.4.15`
 
 [版本更新记录](CHANGELOG.zh-CN.md)
 
@@ -49,8 +49,9 @@ GLM，也可以连接本地 OpenAI-compatible 模型，然后给它们受控的�
   给 UI 用的展示事实、给审计用的小 metadata，以及给程序内部用的结构化事实，
   不再把一段 `output` 字符串到处复用。
 - **本地动作统一过 guard**：文件、run、shell、Research URL、provider fallback
-  和 managed-output artifact 的允许/询问/拒绝现在走同一条单调 action policy
-  管线，并可审计，但不暴露 raw command 或 URL。
+  和 managed-output artifact 的允许/询问/拒绝都走同一条单调 action policy
+  管线。验证命令现在不只检查 project-scoped 工作目录，也会在启动子进程前检查
+  argv 里带文件语义的路径 operand。
 - **事件边界可测试**：Codey 现在有 Event / Capability Matrix，记录 run event、
   ledger、trace、工具投影、Research、Local context、Ghost、provider fallback、
   managed output 和 changes 的生产者、消费者、持久化和隐私边界；它不新增事件总线，
@@ -228,8 +229,9 @@ Codey 只有在当前布尔事实能证明规则成立时，才会晋级学到�
 主进程，而是通过子进程
 Provider worker 运行；worker 使用同一个已登录 Codey 浏览器 profile 的后台新标签页，
 不会复制 cookie，也不会阻塞你当前的编程任务。候选先是 provisional，自然成功后才
-晋级 active，连续结构性失败会自动回滚。`agent.py`、`task_runner.py`、`tool_runtime.py`、
-`server.py` 以及恢复/安全控制面不在 v1 自修改范围内。
+晋级 active，连续结构性失败会自动回滚。`codey/agents/runner.py`、
+`codey/app/task_runner.py`、`codey/toolchain/runtime.py`、`codey/app/server.py`
+以及恢复/安全控制面不在 v1 自修改范围内。
 
 ---
 
@@ -770,7 +772,7 @@ ChatProvider -- DeepSeekWebProvider
 Browser Session + provider DOM driver
 ```
 
-`agent.py` 只认识 `ChatProvider`、`ProtocolCodec` 和工具调用，不知道具体网页 DOM。DeepSeek、MiMo、StepFun、Qwen 和 GLM 的网页选择器分别在自己的驱动里。
+`codey/agents/runner.py` 只认识 `ChatProvider`、`ProtocolCodec` 和工具调用，不知道具体网页 DOM。DeepSeek、MiMo、StepFun、Qwen 和 GLM 的网页选择器分别在自己的驱动里。
 
 ---
 
@@ -778,36 +780,25 @@ Browser Session + provider DOM driver
 
 ```text
 codey/
-  agent.py                  与模型网站无关的 agent runtime
-  models.py                 共享的工具调用和协议数据模型
-  cancellation.py           共享的任务级取消和进程清理
-  events.py                 结构化运行事件和日志渲染
-  text_budget.py            有上限的命令输出头尾截取
-  bounded_scan.py           共享的有边界本地文件遍历
-  scan_report.py            紧凑的扫描遗漏事实和覆盖范围渲染
-  tool_definition.py        内部 coding 工具元数据和渲染提示
-  capabilities.py           只读内置能力边界 registry
-  command_line.py           run/shell 命令决策的统一分词器
-  provider_ids.py           provider id 的规范化规则
-  permission_profiles.py    内部工具/上下文 permission profile
-  action_policy.py          本地动作 allow/ask/deny 单调 guard
-  context_source.py         命名且有边界的 prompt 上下文装配
-  context_epoch.py          provider-turn 上下文 admission refs 和 digest
-  prompt_envelope.py        prompt section envelope 和 fail-open trace sink
-  tool_runtime.py           本地工具和结构化执行结果
-  execution_evidence.py     有边界的内存执行证据账本
-  run_ledger.py             append-only 项目任务运行事实账本
-  run_ledger_projection.py  run ledger 的只读摘要和 receipt 投影
-  run_trace.py              每次 run 的有界审计 manifest sidecar
-  run_details.py            面向用户的有界 run explanation 投影
-  references.py             有边界的文本引用提示
-  change_set.py             结构化 diff 文件、hunk 和 rename/copy 事实
-  changed_symbols.py        从可见 diff 提取变化的 symbol
-  project_map.py            确定性的有边界项目地图
-  project_config.py         严格项目本地配置事实和 warning
-  project_task_context.py   项目事实、地图、checkpoint 和验证上下文
+  __main__.py               `python -m codey` 入口
+  agents/                   与 provider 无关的 agent 循环、consensus、handoff、工具和 Writer failover
+  app/                      本地 HTTP/SSE server、TaskRunner 编排、CLI 和 headless runner
+  automation/               browser/CDP helper、Playwright worker 和有边界的网页剪贴板事务
+  completion/               CompletionProof、verification map/policy 和有边界的 repair context 投影
   ghost/                    Ghost 信号抽取、记忆状态、continuity、路由、本地待办队列、affinity 账本和本地上下文控制面
-  knowledge/                本地 Markdown vault、FTS 索引、restore 和 Research Brief
+  knowledge/                本地 Markdown vault、graph/FTS 索引、restore、concept 和 Research Brief
+  policies/                 action/capability/permission/prompt safety、命令分词、run-command 语义和 shell 风险
+  protocols/                codec 接口和 JSON-only 工具协议
+  providers/                provider registry、profile、control、discovery、revival/supervision、worker 隔离、本地 OpenAI 和网页驱动
+    profiles.json           支持模型网页的版本化选择器
+    web_drivers/            各站点页面驱动与公共脚手架
+      common.py             控件定位/响应计数/限流检测/迟到响应轮询
+      deepseek.py           DeepSeek 页面驱动
+      mimo.py               MiMo 页面驱动
+      stepfun.py            StepFun 页面驱动
+      qwen.py               Qwen 页面驱动
+      glm.py                GLM 页面驱动
+  repairs/                  adapter 自修复 sandbox、repair policy/surface、journal、override 生命周期和 worker
   research/                 Research controller/runner/pipeline、共享 citation scanner、source connector、planner dry-run/executor、done citation compiler、evidence ledger、object model、report/proof quality gate
     context.py              狭窄的 ResearchPipeline context/config 和 trace sink
     pipeline.py             Research 生命周期 owner 和 bounded follow-up 编排
@@ -816,61 +807,13 @@ codey/
     plan_executor.py        有界 fresh-material ResearchPlan 执行器
     evidence_followup.py    单轮 knowledge_write-only evidence 提取
     record_merge.py         确定性 evidence patch merge 和引用重编号
-  verification_map.py       Review 阶段的有边界验证候选
-  review_impact_map.py      只给 Review 使用的 caller/test 影响提示
-  change_brief.py           隐藏任务意图 brief
-  review_coordinator.py     有边界的 diff review 生命周期
-  task_runner.py            任务、会话、review 和收据编排
-  headless_runner.py        复用 TaskRunner 的 JSONL 脚本/CI 入口
-  browser.py                Chromium CDP 连接
-  browser_worker.py         Playwright 线程调度
-  changes.py                Git 与 snapshot diff / restore
-  local_store.py            共享本地数据根目录和原子 JSON 写入
-  managed_outputs.py        被裁剪命令输出的 run 级本地 handle
-  project_facts.py          经过成功运行验证的项目事实
-  work_checkpoint.py        未完成执行的持久事实检查点
-  conversation_store.py     有上限的对话事实持久化
-  profiles.json    支持模型网页的版本化选择器
-  provider_profiles.py      经过验证的 Profile 加载
-  provider_discovery.py     有边界的 DOM 候选发现和评分
-  provider_controls.py      经过验证的恢复、记忆和人工教学
-  provider_flow.py          有边界的网页布尔状态规则
-  provider_revival.py       控件恢复包的原子保存、晋级和回滚
-  provider_submission.py    共享的单次远程提交边界
-  provider_send_loop.py     网页模型发送循环生命周期 helper
-  provider_timeouts.py      共享的 provider deadline 和导航超时 helper
-  provider_capabilities.py  provider 静态适配提示和 fallback 排序
-  provider_supervisor.py    被动健康熔断、Writer 选择和 canary
-   adapter_overrides.py      本地 adapter 候选、晋级和回滚
-   adapter_repair.py         sandbox 中的 Provider adapter 修复执行器
-   adapter_surface.py        修复面：单 provider driver + 共享网页适配文件
-   repair_policy.py          严格的 adapter 修复 allowlist 与影响分级
-  repair_sandbox.py         adapter 修复用临时源码副本
-  repair_journal.py         有边界的本地 adapter 修复日志
-  self_repair.py            去重的后台自修复队列
-  self_repair_worker.py     修复子进程入口和 helper 选择
-  provider_worker.py        父进程侧 adapter worker 包装
-  provider_worker_child.py  子进程 adapter 运行器
-  profile_doctor.py         单次脱敏候选选择
-  json_tool_reply.py        最终 JSON tool reply 的宽容检测和修复
-   web_clipboard.py          有边界的复制按钮剪贴板事务 helper
-   provider_diagnostics.py   小型 provider 失败记录
-  receipt.py                任务完成收据
-  protocols/
-    json_codec.py           JSON-only 工具协议
-  providers/
-    registry.py             模型注册表和同一 CDP 标签页借用
-    local_openai.py         OpenAI-compatible 本地模型 provider
-    web_provider.py         spec 驱动的统一网页模型 wrapper
-    web_driver.py           共享的 send/new-chat deadline 管道
-    web_drivers/            各站点页面驱动与公共脚手架
-      common.py             控件定位/响应计数/限流检测/迟到响应轮询
-      deepseek.py           DeepSeek 页面驱动
-      mimo.py               MiMo 页面驱动
-      stepfun.py            StepFun 页面驱动
-      qwen.py               Qwen 页面驱动
-      glm.py                GLM 页面驱动
-  server.py                 本地 HTTP + SSE 传输和运行状态
+  reviews/                  diff review 生命周期、impact map、报告 section 和 scan report
+  runs/                     run trace、append-only ledger、details 投影、receipt 和 work checkpoint
+  runtime/                  cancellation、events、execution evidence、prompt envelope 和工具调用数据模型
+  storage/                  atomic I/O、本地 store、transactional JSON mutation、managed output、UI state 和 conversation state
+  toolchain/                coding 工具元数据/runtime 和最终 JSON tool reply 的宽容修复
+  utils/                    citation scanner、有界 reference、refs 和 text budget helper
+  workspace/                有界扫描、diff、项目 config/facts/map、setup context、task context 和 context epoch
   web/
     index.html              UI 核心：state、SSE、composer、boot
     assets/                 零构建 CSS tokens/样式和普通脚本 UI 模块

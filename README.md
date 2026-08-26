@@ -2,7 +2,7 @@
 
 **Turn web AI models into a local-first coding, research, and controllable memory workspace.**
 
-[![Version](https://img.shields.io/badge/version-0.4.14-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.15-blue)](CHANGELOG.md)
 [![License: GPL v2](https://img.shields.io/badge/license-GPL--2.0--only-blue)](LICENSE)
 [![Local first](https://img.shields.io/badge/local--first-AI%20workspace-2ea44f)](#safety-model)
 
@@ -20,7 +20,7 @@ every project.
 
 No API key is required for web providers. Log in to the web AI in Edge or Chrome, pick a local project folder, and start building. If you run LM Studio, Ollama, llama.cpp, or another OpenAI-compatible local endpoint, choose **Local** and enter its base URL/model once.
 
-Version: `0.4.14`
+Version: `0.4.15`
 
 [Version history](CHANGELOG.md)
 
@@ -56,9 +56,10 @@ Version: `0.4.14`
   canonical facts through one clean contract instead of one shared output
   string.
 - **Guard local actions consistently**: local file, run, shell, Research URL,
-  provider fallback, and managed-output artifact decisions now pass through one
-  monotonic action policy pipeline and are auditable without exposing raw
-  commands or URLs.
+  provider fallback, and managed-output artifact decisions pass through one
+  monotonic action policy pipeline. Verification commands now check both the
+  project-scoped working directory and path-bearing argv operands before a
+  subprocess can launch.
 - **Keep event boundaries testable**: Codey now keeps an Event / Capability
   Matrix for run events, ledger records, trace entries, tool projections,
   Research, Local context, Ghost, provider fallback, managed outputs, and
@@ -284,9 +285,10 @@ Provider worker. The worker uses a
 fresh background tab in the same logged-in Codey browser profile, so it does
 not need to copy cookies or block your current task. Candidates start as
 provisional, become active only after natural successes, and roll back after
-repeated structural failures. Core files such as `agent.py`, `task_runner.py`,
-`tool_runtime.py`, `server.py`, and the recovery/safety modules are not
-self-modified by this v1.
+repeated structural failures. Core files such as `codey/agents/runner.py`,
+`codey/app/task_runner.py`, `codey/toolchain/runtime.py`,
+`codey/app/server.py`, and the recovery/safety modules are not self-modified
+by this v1.
 
 ---
 
@@ -917,7 +919,7 @@ ChatProvider -- DeepSeekWebProvider
 Browser Session + provider DOM driver
 ```
 
-`agent.py` only knows about `ChatProvider`, `ProtocolCodec`, and tool calls. Browser automation and website selectors live in provider-specific adapters.
+`codey/agents/runner.py` only knows about `ChatProvider`, `ProtocolCodec`, and tool calls. Browser automation and website selectors live in provider-specific adapters.
 
 ---
 
@@ -925,37 +927,25 @@ Browser Session + provider DOM driver
 
 ```text
 codey/
-  agent.py                  provider-independent agent runtime
-  models.py                 shared tool-call and protocol data models
-  cancellation.py           shared task-local cancellation and process cleanup
-  events.py                 structured run events and log rendering
-  text_budget.py            bounded head-and-tail output clipping
-  bounded_scan.py           shared bounded local file traversal
-  scan_report.py            compact scan omission facts and coverage rendering
-  tool_definition.py        internal coding tool metadata and render hints
-  capabilities.py           read-only built-in capability boundary registry
-  command_line.py           one tokenizer for run/shell command decisions
-  provider_ids.py           canonical provider id normalization rules
-  permission_profiles.py    internal tool/context permission profiles
-  action_policy.py          monotonic local action allow/ask/deny guards
-  context_source.py         named bounded prompt context assembly
-  context_epoch.py          provider-turn context admission refs and digests
-  citation_scanner.py       shared numeric citation and source-id scanners
-  prompt_envelope.py        prompt section envelopes and fail-open trace sink
-  tool_runtime.py           local tools and structured outcomes
-  execution_evidence.py     bounded in-memory execution fact ledger
-  run_ledger.py             append-only project-task run fact ledger
-  run_ledger_projection.py  read-only run ledger summaries and receipt projection
-  run_trace.py              bounded per-run audit manifest sidecars
-  run_details.py            bounded user-facing run explanation projection
-  references.py             bounded lexical reference hints
-  change_set.py             structured diff files, hunks, and rename/copy facts
-  changed_symbols.py        lexical changed-symbol extraction from visible diffs
-  project_map.py            deterministic bounded project orientation
-  project_config.py         strict project-local config facts and warnings
-  project_task_context.py   project facts, map, checkpoint, and verification context
+  __main__.py               `python -m codey` entry point
+  agents/                   provider-independent agent loop, consensus, handoff, tools, and writer failover
+  app/                      local HTTP/SSE server, TaskRunner orchestration, CLI, and headless runner
+  automation/               browser/CDP helpers, Playwright worker, and bounded web-clipboard transactions
+  completion/               CompletionProof, verification maps/policy, and bounded repair-context projection
   ghost/                    Ghost signal extraction, memory state, continuity, routing, local work queue, affinity ledger, and local context control surface
-  knowledge/                local Markdown vault, FTS index, restore, and Research Briefs
+  knowledge/                local Markdown vault, graph/FTS index, restore, concepts, and Research Briefs
+  policies/                 action/capability/permission/prompt safety, command tokenizer, run-command semantics, and shell risk
+  protocols/                codec interfaces and JSON-only tool protocol
+  providers/                provider registry, profiles, controls, discovery, revival/supervision, worker isolation, local OpenAI, and web drivers
+    profiles.json           versioned selectors for supported model pages
+    web_drivers/            per-site page drivers plus common scaffolding
+      common.py             control/response/rate-limit/late-response plumbing
+      deepseek.py           DeepSeek page driver
+      mimo.py               MiMo page driver
+      stepfun.py            StepFun page driver
+      qwen.py               Qwen page driver
+      glm.py                GLM page driver
+  repairs/                  adapter self-repair sandbox, repair policy/surface, journal, override lifecycle, and worker
   research/                 Research controller/runner/pipeline, source connectors, planner dry-run/executor, done citation compiler, evidence ledger, object model, report/proof quality gates
     context.py              narrow ResearchPipeline context/config and trace sink
     pipeline.py             Research lifecycle owner and bounded follow-up orchestration
@@ -964,61 +954,13 @@ codey/
     plan_executor.py        bounded fresh-material ResearchPlan execution
     evidence_followup.py    single-turn knowledge_write-only evidence extraction
     record_merge.py         deterministic evidence patch merge and citation re-indexing
-  verification_map.py       bounded review-time verification candidates
-  review_impact_map.py      review-only changed-symbol caller/test hints
-  change_brief.py           hidden task intent brief
-  review_coordinator.py     bounded diff review lifecycle
-  task_runner.py            task, conversation, review, and receipt orchestration
-  headless_runner.py        TaskRunner-backed JSONL entry point for scripts/CI
-  browser.py                Chromium CDP connection helpers
-  browser_worker.py         Playwright thread scheduler
-  changes.py                Git and snapshot diff / restore support
-  local_store.py            shared local data root and atomic JSON writes
-  managed_outputs.py        run-scoped handles for truncated command output
-  project_facts.py          facts verified by successful local runs
-  work_checkpoint.py        durable facts for unfinished execution
-  conversation_store.py     bounded factual conversation persistence
-  profiles.json    versioned selectors for supported model pages
-  provider_profiles.py      validated profile loader
-  provider_discovery.py     bounded DOM candidate discovery and scoring
-  provider_controls.py      verified recovery, learning, and human teaching
-  provider_flow.py          bounded boolean web-chat state rules
-  provider_revival.py       atomic control bundles, promotion, and rollback
-  provider_submission.py    shared one-shot remote submission boundary
-  provider_send_loop.py     shared send-loop lifecycle helpers for web providers
-  provider_timeouts.py      shared provider deadline and navigation timeout helpers
-  provider_capabilities.py  static provider fit hints for fallback ordering
-  provider_supervisor.py    passive health circuit, Writer selection, and canary
-   adapter_overrides.py      local adapter candidates, promotion, and rollback
-   adapter_repair.py         sandboxed provider adapter repair runner
-   adapter_surface.py        repair surface: per-provider drivers + shared web files
-   repair_policy.py          strict adapter repair allowlist with impact classification
-  repair_sandbox.py         temporary source copy for adapter repair
-  repair_journal.py         bounded local adapter repair journal
-  self_repair.py            deduplicated background repair queue
-  self_repair_worker.py     repair subprocess entry point and helper selection
-  provider_worker.py        parent-side isolated adapter worker wrapper
-  provider_worker_child.py  child process adapter runner
-  profile_doctor.py         one-shot sanitized candidate selection
-  json_tool_reply.py        tolerant final JSON tool-reply detection and repair
-   web_clipboard.py          bounded copy-action clipboard transaction helper
-   provider_diagnostics.py   compact provider failure records
-  receipt.py                task completion receipt builder
-  protocols/
-    json_codec.py           JSON-only tool protocol
-  providers/
-    registry.py             provider registry and sibling-tab borrowing
-    local_openai.py         OpenAI-compatible local model provider
-    web_provider.py         unified spec-driven web chat wrapper
-    web_driver.py           shared send/new-chat deadline plumbing
-    web_drivers/            per-site page drivers plus common scaffolding
-      common.py             control/response/rate-limit/late-response plumbing
-      deepseek.py           DeepSeek page driver
-      mimo.py               MiMo page driver
-      stepfun.py            StepFun page driver
-      qwen.py               Qwen page driver
-      glm.py                GLM page driver
-  server.py                 local HTTP + SSE transport and runtime state
+  reviews/                  diff review lifecycle, impact map, report sections, and scan reports
+  runs/                     run trace, append-only ledger, details projection, receipts, and work checkpoints
+  runtime/                  cancellation, events, execution evidence, prompt envelope, and tool-call data models
+  storage/                  atomic I/O, local stores, transactional JSON mutation, managed outputs, UI state, and conversation state
+  toolchain/                coding tool metadata/runtime and tolerant final JSON tool-reply repair
+  utils/                    citation scanner, bounded references, refs, and text budgeting
+  workspace/                bounded scans, diffs, project config/facts/map, setup context, task context, and context epochs
   web/
     index.html              UI core: state, SSE, composer, boot
     assets/                 zero-build CSS tokens/styles and plain-script UI modules

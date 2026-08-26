@@ -395,17 +395,15 @@ def _pytest_path_args(
         if arg == "--":
             rest.extend(values[index:])
             break
-        name, has_inline, inline = arg.partition("=")
-        if arg.startswith("-") and name in _PYTEST_OVERRIDE_OPTIONS:
-            token = inline
-            if not has_inline and index + 1 < len(values):
-                token = values[index + 1]
-                index += 1
+        override_token = _pytest_override_token(values, index)
+        if override_token is not None:
+            token, consumed = override_token
             refs.extend(_pytest_override_path_args(
                 token,
                 platform=platform,
                 addopts_depth=addopts_depth,
             ))
+            index += consumed
         else:
             rest.append(arg)
         index += 1
@@ -417,6 +415,19 @@ def _pytest_path_args(
             non_path_value_options=_PYTEST_NON_PATH_VALUE_OPTIONS,
         ),
     )
+
+
+def _pytest_override_token(values: Sequence[str], index: int) -> tuple[str, int] | None:
+    arg = values[index]
+    if arg in _PYTEST_OVERRIDE_OPTIONS:
+        return (values[index + 1] if index + 1 < len(values) else "", 1)
+    if arg.startswith("--override-ini="):
+        return arg.partition("=")[2], 0
+    if arg.startswith("-o="):
+        return arg[3:], 0
+    if arg.startswith("-o") and not arg.startswith("--") and len(arg) > 2:
+        return arg[2:], 0
+    return None
 
 
 def _pytest_override_path_args(
@@ -574,7 +585,12 @@ def _package_script_args(argv: Sequence[str]) -> tuple[str, ...]:
 def _path_arg(raw: str) -> str:
     text = str(raw or "").strip()
     if text.startswith("@") and len(text) > 1:
-        return text[1:]
+        text = text[1:]
+    while text.startswith("-") and "=" in text:
+        _option, _sep, value = text.partition("=")
+        if not value or value == text:
+            break
+        text = value.strip()
     return text
 
 

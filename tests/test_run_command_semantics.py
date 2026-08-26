@@ -163,9 +163,12 @@ class CanonicalRunCommandTests(unittest.TestCase):
         denied = (
             "pytest -o addopts=../outside",
             "pytest -o addopts=--rootdir=../outside",
+            "pytest -oaddopts=../outside",
+            "pytest -oaddopts=--basetemp=../outside/tmp -q",
             'pytest -o "addopts=-q ../outside"',
             "pytest --override-ini=addopts=../outside",
             "python -m pytest -o addopts=../outside",
+            "python -m pytest -oaddopts=--rootdir=../outside",
         )
         for command in denied:
             with self.subTest(command=command):
@@ -175,6 +178,7 @@ class CanonicalRunCommandTests(unittest.TestCase):
 
         canonical = self.canonical('pytest -o "addopts=-q tests"')
         self.assertEqual(canonical.referenced_paths[0].raw, "tests")
+        self.assertEqual(self.canonical("pytest -oaddopts=-q").referenced_paths, ())
 
     def test_pytest_override_ini_non_path_keys_pass_through(self) -> None:
         for command in (
@@ -215,7 +219,9 @@ class CanonicalRunCommandTests(unittest.TestCase):
             "pytest -c ../pytest.ini",
             "pytest --rootdir=..",
             "pytest -o cache_dir=../outside/cache",
+            "pytest -ocache_dir=../outside/cache",
             "pytest -o addopts=../outside",
+            "pytest -oaddopts=--basetemp=../outside/tmp",
             "pytest -o pythonpath=../outside",
             "pytest -o testpaths=../outside",
         ):

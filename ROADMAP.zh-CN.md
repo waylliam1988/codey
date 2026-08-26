@@ -2719,6 +2719,39 @@ user interruption count
 
 ## 0.5 主线 - Durable Runtime + Local Adaptation + Protocol Portability
 
+0.4.15 是 0.4 进入 A/B stabilization 前的安全与证据卫生收口：
+
+```text
+run command argv 文件系统 operand 边界闭合
+provider override 安装面收窄到 adapter repair surface
+本地 read-modify-write 状态引入 locked JSON mutation
+manual A/B manifest / journal / failed-row 续跑语义统一
+Ghost affinity 不再把 ref 数量当 reward 强度
+```
+
+这些改动不改变模型可见 prompt，不新增 TaskRunner/core facts 抽象，目标是让
+0.4 后续 live A/B 有更干净的安全边界和证据基线。剩余长期问题进入 0.5：
+
+```text
+Research untrusted source wrapper -> 0.5.3 prompt-surface / injection hardening
+TaskRunner convergence point -> 0.5 横向架构线，按真实 phase 抽 RunOperationState / EffectLog
+Trace/Ledger/Proof/Evidence 概念收敛 -> 0.5 横向架构线，先定义不变式再抽象
+Provider/protocol outcome learning -> 0.5.4，不回流 evidence / permission / completion verdict
+```
+
+Research untrusted source wrapper 的顺序必须是 A/B-first：
+
+```text
+1. 写 deterministic malicious-source fixture 和 scorer，先跑旧生产 prompt 作为 baseline。
+2. 增加 manual Research A/B arm，只改变 source-content rendering，不改 planner/tool/runtime。
+3. baseline + treatment 都落 result JSON / journal / transcript，确认 injection 命令没有变成 tool action。
+4. 只有 treatment 不降低 evidence quality / source coverage / completion honesty，才改默认生产渲染。
+5. 改生产后重跑 deterministic tests + 同一 Research live smoke，作为 release 证据。
+```
+
+也就是说，不先把 wrapper 直接塞进生产 prompt；先用 A/B 证明它减少 prompt-injection
+风险且没有明显损害 Research 质量。
+
 0.5 不做插件系统，也不做 UI 扩张。0.5 的目标是把 0.4 已经完成的
 Evidence / Completion / Repair / Ghost / Protocol telemetry，收成一条更耐用的
 内部运行时主线：
@@ -2840,7 +2873,8 @@ repair_settled
 terminal
 ```
 
-落盘方式先复用 `local_store.write_json_atomic()`，路径限定在：
+落盘方式先复用 `storage.transactional_json.mutate_json_atomic()` 这类 locked mutation
+原语；纯一次性快照仍可用 atomic write。路径限定在：
 
 ```text
 state/run_operations/<session_key>/<run_id>.json
@@ -4252,6 +4286,7 @@ Writer prompt、provider fallback 策略或工具权限时，才需要 provider 
 0.4.11 Longitudinal Research Harness + Comparison Benchmark（已完成：deterministic harness + comparison gate；live/comparison smoke 后续增量）
 0.4.12 Ghost Research Continuity（模型可见 continuity 必须 A/B）
 0.4.13 Verified Completion Enforcement（阻止 done / repair context admission 必须 A/B）
+0.4.15 Run Command Boundary / A-B Evidence Hygiene（不改 prompt；deterministic + self-test gate，live A/B 用于后续稳定化）
 0.5.0 RunOperationState（durability-only，不需要 live A/B）
 0.5.1 Effect Intent / Replay Policy（fault-injection，不需要质量 A/B）
 0.5.2 Tool Args Repair（parser 接受范围变宽，需要 A/B）

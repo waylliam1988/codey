@@ -486,7 +486,7 @@ class ToolOutcomeTests(unittest.TestCase):
                 outcome = run_command_raw(
                     root,
                     ".",
-                    "pytest -o addopts=../outside",
+                    "pytest -oaddopts=--basetemp=../outside/tmp -q",
                     permission_profile="coding_writer",
                 )
 

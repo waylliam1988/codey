@@ -239,10 +239,12 @@ class ActionPolicyTests(unittest.TestCase):
                     "pytest -c ../pytest.ini",
                     "pytest --rootdir=..",
                     "pytest -o addopts=../outside",
+                    "pytest -oaddopts=--basetemp=../outside/tmp -q",
                     "pytest -o pythonpath=../outside",
                     "pytest --override-ini=testpaths=../outside",
                     "python -m pytest --rootdir=../outside",
                     "python -m pytest -o addopts=../outside",
+                    "python -m pytest -oaddopts=--rootdir=../outside",
                 )
             ]
 

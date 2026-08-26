@@ -6,19 +6,40 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
+## 0.4.15 - Run Command Boundary + Stabilization Hardening
+
 - Run-command policy now treats pytest ini overrides as a guarded second argv
   surface. `addopts` is recursively parsed with the same tokenizer as pytest
-  argv; `cache_dir`, `log_file`, `pythonpath`, and `testpaths` are explicit
-  path-carrying keys; path-shaped discovery patterns are boundary-checked; and
-  unsupported override keys fail closed instead of silently carrying hidden
-  filesystem operands.
+  argv, including compact short-option forms such as `-oaddopts=...`;
+  `cache_dir`, `log_file`, `pythonpath`, and `testpaths` are explicit
+  path-carrying keys; path-shaped discovery patterns are boundary-checked;
+  and unsupported override keys fail closed instead of silently carrying
+  hidden filesystem operands.
 - Direct `python script.py ...` verification commands now check path-shaped
   script arguments, not only the script path itself, before the allowlist can
   launch a process.
+- Provider adapter overrides now install only the declared adapter repair
+  surface for one provider, with guarded generation cleanup, instead of
+  copying a whole `codey/` runtime snapshot into the override path.
+- Evidence, Ghost affinity, and Ghost work-queue read-modify-write state paths
+  now use a locked JSON mutation primitive to avoid local lost updates between
+  cooperating Codey processes.
+- Ghost affinity no longer treats a larger `source_refs` list as a stronger
+  reward signal; references remain provenance, while one observed event
+  contributes one reinforcement.
+- Manual A/B harnesses share arm manifests, output identity checks,
+  append-or-replace failed-row semantics, stable journal lifecycle helpers, and
+  bounded failure classes so live evidence can be resumed and audited.
+- Provider worker CDP target lookup releases temporary CDP sessions when the
+  browser binding supports it.
+- CI now runs the Python suite across 3.11, 3.12, and 3.13.
 - Manual A/B verification probes pass the project root into selected-check
   coverage while the temporary project still exists, and the completion
   enforcement journal test now uses the shared journal helper directly after
   removing a dead private wrapper.
+- README project-structure docs now describe the post-migration package layout
+  (`app/`, `providers/`, `repairs/`, `runtime/`, `storage/`, `workspace/`)
+  instead of the removed flat provider modules.
 
 ## 0.4.14 - Provider Package Cold Migration
 
