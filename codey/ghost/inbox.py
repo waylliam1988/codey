@@ -186,7 +186,7 @@ class GhostInboxStore:
             return ()
         try:
             with with_file_lock(self.events_path):
-                loaded = self._load_candidates()
+                loaded = self._load_candidates_unlocked()
                 if self._events_read_blocked:
                     return ()
                 candidates = list(loaded)
@@ -242,9 +242,25 @@ class GhostInboxStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[GhostMemoryCandidate, ...]:
+        with with_file_lock(self.events_path):
+            return self._list_candidates_unlocked(
+                status=status,
+                scope=scope,
+                project=project,
+                session_id=session_id,
+            )
+
+    def _list_candidates_unlocked(
+        self,
+        *,
+        status: str | Iterable[str] | None = None,
+        scope: str = "",
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[GhostMemoryCandidate, ...]:
         try:
             rows = self._filter_candidates(
-                self._load_candidates(),
+                self._load_candidates_unlocked(),
                 status=status,
                 scope=scope,
                 project=project,
@@ -262,9 +278,23 @@ class GhostInboxStore:
         session_id: str = "",
         status: str | Iterable[str] | None = None,
     ) -> tuple[GhostMemoryCandidate, ...]:
+        with with_file_lock(self.events_path):
+            return self._applicable_candidates_unlocked(
+                project=project,
+                session_id=session_id,
+                status=status,
+            )
+
+    def _applicable_candidates_unlocked(
+        self,
+        *,
+        project: str = "",
+        session_id: str = "",
+        status: str | Iterable[str] | None = None,
+    ) -> tuple[GhostMemoryCandidate, ...]:
         try:
             rows = self._filter_candidates(
-                self._load_candidates(),
+                self._load_candidates_unlocked(),
                 status=status,
                 scope="",
                 project=project,
@@ -279,15 +309,16 @@ class GhostInboxStore:
         return tuple(rows)
 
     def export_state(self) -> dict[str, object]:
-        candidates = [candidate.to_payload() for candidate in self._load_candidates()]
-        events = [event for event in self._read_events()]
-        return {
-            "schema_version": INBOX_SCHEMA_VERSION,
-            "settings": self._read_settings(),
-            "inbox": self._projection_payload(candidates),
-            "events": events,
-            "warnings": list(self.last_warnings),
-        }
+        with with_file_lock(self.events_path):
+            candidates = [candidate.to_payload() for candidate in self._load_candidates_unlocked()]
+            events = [event for event in self._read_events_unlocked()]
+            return {
+                "schema_version": INBOX_SCHEMA_VERSION,
+                "settings": self._read_settings_unlocked(),
+                "inbox": self._projection_payload(candidates),
+                "events": events,
+                "warnings": list(self.last_warnings),
+            }
 
     def review_candidate(
         self,
@@ -303,7 +334,7 @@ class GhostInboxStore:
         if not normalized_id:
             return None
         with with_file_lock(self.events_path):
-            candidates = list(self._load_candidates())
+            candidates = list(self._load_candidates_unlocked())
             target_index: int | None = None
             for index, candidate in enumerate(candidates):
                 if candidate.id == normalized_id:
@@ -399,7 +430,7 @@ class GhostInboxStore:
         if normalized_scope == "session" and not normalized_session:
             raise ValueError("session_id is required for session scope deletion")
         with with_file_lock(self.events_path):
-            candidates = list(self._load_candidates())
+            candidates = list(self._load_candidates_unlocked())
             remaining: list[GhostMemoryCandidate] = []
             removed = 0
             for candidate in candidates:
@@ -452,55 +483,67 @@ class GhostInboxStore:
         return audit_ok
 
     def learning_enabled(self) -> bool:
-        return bool(self._read_settings().get("learning_enabled", True))
+        with with_file_lock(self.events_path):
+            return bool(self._read_settings_unlocked().get("learning_enabled", True))
 
     def compact_if_needed(self) -> dict[str, object]:
-        before = _event_file_stats(self.events_path, max_bytes=MAX_EVENTS_BYTES)
-        if not before["readable"]:
-            warning = str(before["warning"] or "events_unreadable")
-            self.last_warnings = (warning,)
+        try:
+            with with_file_lock(self.events_path):
+                before = _event_file_stats(self.events_path, max_bytes=MAX_EVENTS_BYTES)
+                if not before["readable"]:
+                    warning = str(before["warning"] or "events_unreadable")
+                    self.last_warnings = (warning,)
+                    return {
+                        "ok": False,
+                        "compacted": False,
+                        "events_before": before["events"],
+                        "events_after": before["events"],
+                        "bytes_before": before["bytes"],
+                        "bytes_after": before["bytes"],
+                        "warnings": [warning],
+                    }
+                if before["events"] <= MAX_GHOST_EVENTS and before["bytes"] <= MAX_EVENTS_BYTES:
+                    return {
+                        "ok": True,
+                        "compacted": False,
+                        "events_before": before["events"],
+                        "events_after": before["events"],
+                        "bytes_before": before["bytes"],
+                        "bytes_after": before["bytes"],
+                        "warnings": list(self.last_warnings),
+                    }
+                candidates = self._load_candidates_unlocked()
+                if self._events_read_blocked:
+                    return {
+                        "ok": False,
+                        "compacted": False,
+                        "events_before": before["events"],
+                        "events_after": before["events"],
+                        "bytes_before": before["bytes"],
+                        "bytes_after": before["bytes"],
+                        "warnings": list(self.last_warnings),
+                    }
+                self._compact_if_needed(candidates)
+                after = _event_file_stats(self.events_path, max_bytes=MAX_EVENTS_BYTES)
+                return {
+                    "ok": True,
+                    "compacted": after != before,
+                    "events_before": before["events"],
+                    "events_after": after["events"],
+                    "bytes_before": before["bytes"],
+                    "bytes_after": after["bytes"],
+                    "warnings": list(self.last_warnings),
+                }
+        except (OSError, TypeError, ValueError):
             return {
                 "ok": False,
                 "compacted": False,
-                "events_before": before["events"],
-                "events_after": before["events"],
-                "bytes_before": before["bytes"],
-                "bytes_after": before["bytes"],
-                "warnings": [warning],
-            }
-        if before["events"] <= MAX_GHOST_EVENTS and before["bytes"] <= MAX_EVENTS_BYTES:
-            return {
-                "ok": True,
-                "compacted": False,
-                "events_before": before["events"],
-                "events_after": before["events"],
-                "bytes_before": before["bytes"],
-                "bytes_after": before["bytes"],
+                "events_before": 0,
+                "events_after": 0,
+                "bytes_before": 0,
+                "bytes_after": 0,
                 "warnings": list(self.last_warnings),
             }
-        with with_file_lock(self.events_path):
-            candidates = self._load_candidates()
-            if self._events_read_blocked:
-                return {
-                    "ok": False,
-                    "compacted": False,
-                    "events_before": before["events"],
-                    "events_after": before["events"],
-                    "bytes_before": before["bytes"],
-                    "bytes_after": before["bytes"],
-                    "warnings": list(self.last_warnings),
-                }
-            self._compact_if_needed(candidates)
-        after = _event_file_stats(self.events_path, max_bytes=MAX_EVENTS_BYTES)
-        return {
-            "ok": True,
-            "compacted": after != before,
-            "events_before": before["events"],
-            "events_after": after["events"],
-            "bytes_before": before["bytes"],
-            "bytes_after": after["bytes"],
-            "warnings": list(self.last_warnings),
-        }
 
     def _candidate_from_signal(
         self,
@@ -613,14 +656,14 @@ class GhostInboxStore:
             rows.append(candidate)
         return sorted(rows, key=lambda item: item.updated_at, reverse=True)
 
-    def _load_candidates(self) -> tuple[GhostMemoryCandidate, ...]:
+    def _load_candidates_unlocked(self) -> tuple[GhostMemoryCandidate, ...]:
         self._events_read_blocked = False
-        payload = self._read_projection_payload()
+        payload = self._read_projection_payload_unlocked()
         if payload is not None:
             rows = self._candidate_rows_from_projection(payload)
             if rows is not None:
                 return tuple(rows)
-        rows = self._rebuild_candidates_from_events()
+        rows = self._rebuild_candidates_from_events_unlocked()
         if rows is None:
             return ()
         try:
@@ -629,7 +672,7 @@ class GhostInboxStore:
             pass
         return tuple(rows)
 
-    def _read_projection_payload(self) -> dict[str, object] | None:
+    def _read_projection_payload_unlocked(self) -> dict[str, object] | None:
         if not self.inbox_path.exists():
             return None
         payload = read_json(self.inbox_path, max_bytes=MAX_INBOX_BYTES)
@@ -658,9 +701,9 @@ class GhostInboxStore:
                 rows.append(candidate)
         return self._bounded_candidates(rows)
 
-    def _rebuild_candidates_from_events(self) -> list[GhostMemoryCandidate] | None:
+    def _rebuild_candidates_from_events_unlocked(self) -> list[GhostMemoryCandidate] | None:
         by_id: dict[str, GhostMemoryCandidate] = {}
-        events = self._read_events()
+        events = self._read_events_unlocked()
         if self._events_read_blocked:
             return None
         for event in events:
@@ -672,7 +715,7 @@ class GhostInboxStore:
                 by_id[candidate.id] = candidate
         return self._bounded_candidates(by_id.values())
 
-    def _read_events(self) -> tuple[dict[str, object], ...]:
+    def _read_events_unlocked(self) -> tuple[dict[str, object], ...]:
         warnings: list[str] = []
         self._events_read_blocked = False
         try:
@@ -708,7 +751,7 @@ class GhostInboxStore:
         self.last_warnings = tuple(warnings[:MAX_EVENT_WARNINGS])
         return tuple(events)
 
-    def _read_settings(self) -> dict[str, object]:
+    def _read_settings_unlocked(self) -> dict[str, object]:
         default = {
             "schema_version": INBOX_SCHEMA_VERSION,
             "learning_enabled": True,

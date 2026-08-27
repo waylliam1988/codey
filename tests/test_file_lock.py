@@ -137,6 +137,72 @@ with with_file_lock({repr(str(target))}, timeout_seconds=5.0):
                 proc.kill()
                 proc.wait()
 
+    def test_process_lock_registry_releases_unused_paths(self) -> None:
+        import codey.storage.file_lock as fl
+
+        paths = [self.root / f"state-{index}.json" for index in range(50)]
+        for path in paths:
+            with with_file_lock(path):
+                pass
+
+        root_text = str(self.root).lower()
+        with fl._PROCESS_LOCKS_MUTEX:
+            leaked = [key for key in fl._PROCESS_LOCKS if root_text in key.lower()]
+
+        self.assertEqual(leaked, [])
+
+    def test_process_lock_registry_releases_after_concurrent_contention(self) -> None:
+        import codey.storage.file_lock as fl
+
+        target = self.root / "contended_state.json"
+        start_gate = threading.Barrier(5)
+
+        def worker() -> None:
+            start_gate.wait()
+            with with_file_lock(target, timeout_seconds=5.0):
+                time.sleep(0.02)
+
+        threads = [threading.Thread(target=worker) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        root_text = str(self.root).lower()
+        with fl._PROCESS_LOCKS_MUTEX:
+            leaked = [key for key in fl._PROCESS_LOCKS if root_text in key.lower()]
+
+        self.assertEqual(leaked, [])
+
+    def test_process_lock_registry_releases_after_timeout(self) -> None:
+        import codey.storage.file_lock as fl
+
+        target = self.root / "timeout_state.json"
+        started = threading.Event()
+        release_holder = threading.Event()
+
+        def holder() -> None:
+            with with_file_lock(target, timeout_seconds=5.0):
+                started.set()
+                release_holder.wait(timeout=2.0)
+
+        t = threading.Thread(target=holder)
+        t.start()
+        started.wait(timeout=2.0)
+        try:
+            with self.assertRaises(LockTimeout):
+                with with_file_lock(target, timeout_seconds=0.1):
+                    pass
+        finally:
+            release_holder.set()
+            t.join()
+
+        root_text = str(self.root).lower()
+        with fl._PROCESS_LOCKS_MUTEX:
+            leaked = [key for key in fl._PROCESS_LOCKS if root_text in key.lower()]
+
+        self.assertEqual(leaked, [])
+
 
 if __name__ == "__main__":
     unittest.main()

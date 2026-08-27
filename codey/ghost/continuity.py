@@ -219,9 +219,9 @@ class GhostContinuityStore:
         try:
             with with_file_lock(self.events_path):
                 now = _now()
-                existing = list(self._load_items())
+                existing = list(self._load_items_unlocked())
                 if self.events_path.exists():
-                    self._read_events()
+                    self._read_events_unlocked()
                     if self._events_read_blocked:
                         self.last_warnings = _bounded_warnings([*warnings, *self.last_warnings])
                         return GhostContinuityResult(
@@ -324,7 +324,17 @@ class GhostContinuityStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[GhostContinuityItem, ...]:
-        items = self._load_items()
+        with with_file_lock(self.events_path):
+            return self._list_items_unlocked(scope=scope, project=project, session_id=session_id)
+
+    def _list_items_unlocked(
+        self,
+        *,
+        scope: str = "",
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[GhostContinuityItem, ...]:
+        items = self._load_items_unlocked()
         project_ref = _normalize_project(project)
         session_ref = clip_signal_text(session_id, 120)
         rows = [
@@ -335,19 +345,20 @@ class GhostContinuityStore:
         return tuple(sorted(rows, key=_item_sort_key))
 
     def export_state(self) -> dict[str, object]:
-        events = self._read_events()
-        event_warnings = self.last_warnings
-        projection = _projection_payload(
-            self._load_items(),
-            generated_at=_now(),
-            warnings=_bounded_warnings((*event_warnings, *self.last_warnings)),
-        )
-        warnings = _bounded_warnings(projection.get("warnings", ()))
-        return {
-            "continuity": projection,
-            "continuity_events": events,
-            "warnings": list(warnings),
-        }
+        with with_file_lock(self.events_path):
+            events = self._read_events_unlocked()
+            event_warnings = self.last_warnings
+            projection = _projection_payload(
+                self._load_items_unlocked(),
+                generated_at=_now(),
+                warnings=_bounded_warnings((*event_warnings, *self.last_warnings)),
+            )
+            warnings = _bounded_warnings(projection.get("warnings", ()))
+            return {
+                "continuity": projection,
+                "continuity_events": events,
+                "warnings": list(warnings),
+            }
 
     def reset_all(self) -> bool:
         try:
@@ -375,7 +386,7 @@ class GhostContinuityStore:
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
         with with_file_lock(self.events_path):
-            items = list(self._load_items())
+            items = list(self._load_items_unlocked())
             kept = [
                 item
                 for item in items
@@ -387,15 +398,27 @@ class GhostContinuityStore:
                 )
             ]
             removed = len(items) - len(kept)
-            if removed:
-                self._rewrite_events_from_items(kept)
-                self._write_projection(kept, now=_now(), warnings=[])
+            if removed <= 0:
+                return 0
+            event = _control_event(
+                "ghost_continuity_scope_deleted",
+                {
+                    "scope": normalized_scope,
+                    "project": project_ref if normalized_scope == "project" else "",
+                    "session_id": session_ref if normalized_scope == "session" else "",
+                    "removed_count": removed,
+                },
+            )
+            if not self._append_events([event]):
+                return 0
+            self._write_projection(kept, now=_now(), warnings=[])
+            self._compact_if_needed(kept)
             return removed
 
     def rebuild_from_events(self) -> bool:
         try:
             with with_file_lock(self.events_path):
-                events = self._read_events()
+                events = self._read_events_unlocked()
                 if self._events_read_blocked:
                     return False
                 items = _items_from_events(events)
@@ -404,11 +427,11 @@ class GhostContinuityStore:
             return False
         return True
 
-    def _load_items(self) -> tuple[GhostContinuityItem, ...]:
+    def _load_items_unlocked(self) -> tuple[GhostContinuityItem, ...]:
         items = _read_projected_items_from_path(self.projection_path)
         if items:
             return items
-        events = self._read_events()
+        events = self._read_events_unlocked()
         if self._events_read_blocked:
             return ()
         rebuilt = tuple(_bounded_items(_items_from_events(events)))
@@ -420,52 +443,63 @@ class GhostContinuityStore:
         return rebuilt
 
     def compact_if_needed(self) -> dict[str, object]:
-        before = _event_file_stats(self.events_path, max_bytes=MAX_CONTINUITY_EVENTS_BYTES)
-        if not before["readable"]:
-            warning = str(before["warning"] or "continuity_events_unreadable")
-            self.last_warnings = (warning,)
+        try:
+            with with_file_lock(self.events_path):
+                before = _event_file_stats(self.events_path, max_bytes=MAX_CONTINUITY_EVENTS_BYTES)
+                if not before["readable"]:
+                    warning = str(before["warning"] or "continuity_events_unreadable")
+                    self.last_warnings = (warning,)
+                    return {
+                        "ok": False,
+                        "compacted": False,
+                        "events_before": before["events"],
+                        "events_after": before["events"],
+                        "bytes_before": before["bytes"],
+                        "bytes_after": before["bytes"],
+                        "warnings": [warning],
+                    }
+                if before["events"] <= MAX_CONTINUITY_EVENTS and before["bytes"] <= MAX_CONTINUITY_EVENTS_BYTES:
+                    return {
+                        "ok": True,
+                        "compacted": False,
+                        "events_before": before["events"],
+                        "events_after": before["events"],
+                        "bytes_before": before["bytes"],
+                        "bytes_after": before["bytes"],
+                        "warnings": list(self.last_warnings),
+                    }
+                items = self._load_items_unlocked()
+                if self._events_read_blocked:
+                    return {
+                        "ok": False,
+                        "compacted": False,
+                        "events_before": before["events"],
+                        "events_after": before["events"],
+                        "bytes_before": before["bytes"],
+                        "bytes_after": before["bytes"],
+                        "warnings": list(self.last_warnings),
+                    }
+                self._compact_if_needed(items)
+                after = _event_file_stats(self.events_path, max_bytes=MAX_CONTINUITY_EVENTS_BYTES)
+                return {
+                    "ok": True,
+                    "compacted": after != before,
+                    "events_before": before["events"],
+                    "events_after": after["events"],
+                    "bytes_before": before["bytes"],
+                    "bytes_after": after["bytes"],
+                    "warnings": list(self.last_warnings),
+                }
+        except (OSError, TypeError, ValueError):
             return {
                 "ok": False,
                 "compacted": False,
-                "events_before": before["events"],
-                "events_after": before["events"],
-                "bytes_before": before["bytes"],
-                "bytes_after": before["bytes"],
-                "warnings": [warning],
-            }
-        if before["events"] <= MAX_CONTINUITY_EVENTS and before["bytes"] <= MAX_CONTINUITY_EVENTS_BYTES:
-            return {
-                "ok": True,
-                "compacted": False,
-                "events_before": before["events"],
-                "events_after": before["events"],
-                "bytes_before": before["bytes"],
-                "bytes_after": before["bytes"],
+                "events_before": 0,
+                "events_after": 0,
+                "bytes_before": 0,
+                "bytes_after": 0,
                 "warnings": list(self.last_warnings),
             }
-        with with_file_lock(self.events_path):
-            items = self._load_items()
-            if self._events_read_blocked:
-                return {
-                    "ok": False,
-                    "compacted": False,
-                    "events_before": before["events"],
-                    "events_after": before["events"],
-                    "bytes_before": before["bytes"],
-                    "bytes_after": before["bytes"],
-                    "warnings": list(self.last_warnings),
-                }
-            self._compact_if_needed(items)
-        after = _event_file_stats(self.events_path, max_bytes=MAX_CONTINUITY_EVENTS_BYTES)
-        return {
-            "ok": True,
-            "compacted": after != before,
-            "events_before": before["events"],
-            "events_after": after["events"],
-            "bytes_before": before["bytes"],
-            "bytes_after": after["bytes"],
-            "warnings": list(self.last_warnings),
-        }
 
     def _write_projection(
         self,
@@ -493,7 +527,7 @@ class GhostContinuityStore:
         except (OSError, TypeError, ValueError):
             return False
 
-    def _read_events(self) -> list[dict[str, object]]:
+    def _read_events_unlocked(self) -> list[dict[str, object]]:
         self._events_read_blocked = False
         try:
             if self.events_path.stat().st_size > MAX_CONTINUITY_EVENTS_BYTES:

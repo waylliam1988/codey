@@ -36,9 +36,15 @@ class _HeldLock:
     depth: int
 
 
+@dataclass
+class _ProcessLockEntry:
+    lock: threading.RLock
+    refs: int = 0
+
+
 _LOCAL = threading.local()
 _PROCESS_LOCKS_MUTEX = threading.Lock()
-_PROCESS_LOCKS: dict[str, threading.RLock] = {}
+_PROCESS_LOCKS: dict[str, _ProcessLockEntry] = {}
 
 
 def _held_locks() -> dict[str, _HeldLock]:
@@ -60,13 +66,24 @@ def _lock_key(lock_path: Path) -> str:
         return os.path.normcase(str(lock_path))
 
 
-def _process_lock_for(key: str) -> threading.RLock:
+def _borrow_process_lock(key: str) -> _ProcessLockEntry:
     with _PROCESS_LOCKS_MUTEX:
-        lock = _PROCESS_LOCKS.get(key)
-        if lock is None:
-            lock = threading.RLock()
-            _PROCESS_LOCKS[key] = lock
-        return lock
+        entry = _PROCESS_LOCKS.get(key)
+        if entry is None:
+            entry = _ProcessLockEntry(threading.RLock())
+            _PROCESS_LOCKS[key] = entry
+        entry.refs += 1
+        return entry
+
+
+def _return_process_lock(key: str, entry: _ProcessLockEntry) -> None:
+    with _PROCESS_LOCKS_MUTEX:
+        current = _PROCESS_LOCKS.get(key)
+        if current is not entry:
+            return
+        entry.refs -= 1
+        if entry.refs <= 0:
+            _PROCESS_LOCKS.pop(key, None)
 
 
 def _acquire_os_lock(lock_path: Path, *, timeout_seconds: float) -> int:
@@ -150,23 +167,30 @@ def with_file_lock(
             held.depth -= 1
         return
 
-    process_lock = _process_lock_for(key)
+    entry = _borrow_process_lock(key)
+    process_lock = entry.lock
     deadline = time.monotonic() + timeout
-    acquired_process = process_lock.acquire(timeout=timeout)
-    if not acquired_process:
-        raise LockTimeout(f"timed out acquiring thread lock: {lock_path.name}")
+    acquired_process = False
 
     try:
-        remaining_timeout = max(0.0, deadline - time.monotonic())
-        fd = _acquire_os_lock(lock_path, timeout_seconds=remaining_timeout)
-        _held_locks()[key] = _HeldLock(fd=fd, depth=1)
+        acquired_process = process_lock.acquire(timeout=timeout)
+        if not acquired_process:
+            raise LockTimeout(f"timed out acquiring thread lock: {lock_path.name}")
+
         try:
-            yield
+            remaining_timeout = max(0.0, deadline - time.monotonic())
+            fd = _acquire_os_lock(lock_path, timeout_seconds=remaining_timeout)
+            _held_locks()[key] = _HeldLock(fd=fd, depth=1)
+            try:
+                yield
+            finally:
+                _held_locks().pop(key, None)
+                _release_os_lock(fd)
         finally:
-            _held_locks().pop(key, None)
-            _release_os_lock(fd)
+            if acquired_process:
+                process_lock.release()
     finally:
-        process_lock.release()
+        _return_process_lock(key, entry)
 
 
 __all__ = [

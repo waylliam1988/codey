@@ -1,25 +1,30 @@
 # Codey Test Report
 
-## 0.4.17 Release - OS-Backed Advisory Lock and Safe Event-Backed State Reset (2026-08-27)
+## 0.4.17 Release - OS-Backed Advisory Lock, Ref-Counted Lock Registry, and Cooperative Read Discipline (2026-08-27)
 
-This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`) and introduces unified safe event-backed state reset (`codey.storage.event_state`).
+This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`), introduces unified safe event-backed state reset (`codey.storage.event_state`), implements automatic ref-counted cleanup for process locks, and establishes full cooperative read / compaction locking across all Ghost stores.
 
 Closed items:
 
 - Created `codey.storage.file_lock` providing cross-process and cross-thread advisory file locking using operating-system native kernel locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) and process-local `threading.RLock` coordination.
 - `LockTimeout` inherits `TimeoutError` (`OSError` subclass), aligning with store public `except OSError` error handling contracts.
+- Implemented ref-counted process lock registry (`_ProcessLockEntry` with `_borrow_process_lock` and `_return_process_lock`): locks are referenced upon acquisition attempt and automatically pruned from memory when reference count drops to 0, eliminating process-level memory accumulation across long-lived, multi-project workflows.
 - Sidecar lock files (`.<filename>.lock`) are permanent advisory lock carriers and are never deleted, eliminating TOCTOU races in `stat -> unlink` stale-lock takeovers.
 - Created dedicated `codey.storage.event_state` module with `reset_event_backed_state(events_path, *state_paths)` to safely delete projections and event logs under the event lock.
 - Cleaned up and removed unused `transactional_json.py` and its test suite.
-- Enforced authoritative `events_path` locking discipline across all Ghost stores (`work_queue`, `affinity`, `continuity`, `hebbian`, `inbox`, `router`, `sleep`) across append, replay, rebuild, delete_scope, reset, and compaction operations.
+- Enforced cooperative locking discipline across all Ghost stores (`work_queue`, `affinity`, `continuity`, `hebbian`, `inbox`, `router`, `sleep`):
+  - Public read APIs (`list_*`, `export_state`, `query_*_hints`, `learning_enabled`) acquire the store's `events_path` lock, preventing torn reads against concurrent `reset_all()` or active mutations.
+  - Internal read/projection helpers are renamed with `_unlocked` suffix (e.g. `_load_items_unlocked`, `_read_events_unlocked`) to explicitly designate that callers must already hold the authoritative event lock.
+  - `compact_if_needed()` wraps event file stat checks, state loading, event compaction/rewriting, and post-compaction stats atomically within a single `with with_file_lock(self.events_path):` block.
 - Added comprehensive unit tests in `tests/test_file_lock.py` and `tests/test_event_state.py` verifying:
   - `LockTimeout` inheritance (`TimeoutError`, `OSError`) and graceful handling in `except OSError`.
+  - Automatic memory cleanup of `_PROCESS_LOCKS` entries across 50 distinct paths after lock release.
+  - Multi-threaded concurrent lock borrow and return with complete dictionary drainage.
+  - Automatic ref-count decrement and entry removal upon lock timeout.
   - Reentrancy within threads.
-  - Mutual exclusion between concurrent threads.
-  - Timeout enforcement (`LockTimeout`).
-  - Lock carrier file persistence on disk after release.
-  - Cross-process mutual exclusion with subprocesses.
+  - Mutual exclusion between concurrent threads and cross-process mutual exclusion with subprocesses.
   - Safe event-backed state reset, reset blocking when events are locked, and store `reset_all()` returning `False` upon lock timeout.
+  - Public read operations blocking until authoritative event lock release and serializing cleanly with concurrent resets.
 
 Validation commands and results:
 
@@ -27,14 +32,11 @@ Validation commands and results:
 python -m ruff check codey tests
 # All checks passed!
 
-python -m ruff format --check codey\storage\file_lock.py codey\storage\event_state.py codey\ghost\affinity.py codey\ghost\work_queue.py codey\ghost\continuity.py codey\ghost\hebbian.py codey\ghost\inbox.py codey\ghost\router.py codey\ghost\sleep.py tests\test_file_lock.py tests\test_event_state.py tests\test_server.py
-# 12 files already formatted
+pytest tests/test_file_lock.py tests/test_event_state.py tests/test_ghost_work_queue.py tests/test_ghost_affinity.py tests/test_ghost_continuity.py tests/test_ghost_hebbian.py tests/test_ghost_inbox.py tests/test_ghost_router.py tests/test_ghost_sleep.py
+# 253 passed in 14.18s
 
-python -B -m pytest tests\test_file_lock.py tests\test_event_state.py tests\test_research_evidence_ledger.py tests\test_ghost_affinity.py tests\test_ghost_work_queue.py tests\test_ghost_continuity.py tests\test_ghost_hebbian.py tests\test_ghost_inbox.py tests\test_ghost_router.py tests\test_ghost_sleep.py tests\test_server.py::WebAssetTests::test_runtime_version_matches_release_docs -q
-# 276 passed, 76 subtests passed in 25.35s
-
-python -B -m pytest -q
-# 3024 passed, 14 skipped, 966 subtests passed in 290.89s (0:04:50)
+pytest
+# 3041 passed, 2 skipped in 282.67s (0:04:42)
 ```
 
 

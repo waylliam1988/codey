@@ -486,13 +486,31 @@ class GhostWorkQueueStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[GhostWorkItem, ...]:
+        with with_file_lock(self.events_path):
+            return self._list_items_unlocked(
+                status=status,
+                kind=kind,
+                scope=scope,
+                project=project,
+                session_id=session_id,
+            )
+
+    def _list_items_unlocked(
+        self,
+        *,
+        status: str = "",
+        kind: str = "",
+        scope: str = "",
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[GhostWorkItem, ...]:
         statuses = _filter_values(status, WORK_ITEM_STATUSES)
         kinds = _filter_values(kind, WORK_ITEM_KINDS)
         project_ref = _project_ref(project)
         session_ref = _session_ref(session_id)
         rows = []
         now = _now()
-        for item in self._load_items():
+        for item in self._load_items_unlocked():
             if _is_expired(item, now):
                 continue
             if statuses and item.status not in statuses:
@@ -871,24 +889,25 @@ class GhostWorkQueueStore:
             return self._sync_failed("work_queue_error")
 
     def export_state(self) -> dict[str, object]:
-        events_missing = not self.events_path.is_file()
-        events = self._read_events()
-        event_warnings = self.last_warnings
-        if self._events_read_blocked:
-            items = self._load_projection_items()
-        elif events_missing:
-            items = self._load_projection_items()
-            if items:
-                event_warnings = ("work_events_missing",)
-        else:
-            items = tuple(_items_from_events(events))
-        projection = _projection_payload(items, generated_at=_now(), warnings=event_warnings)
-        return {
-            "schema_version": WORK_QUEUE_SCHEMA_VERSION,
-            "work_queue": projection,
-            "work_events": events,
-            "warnings": list(event_warnings),
-        }
+        with with_file_lock(self.events_path):
+            events_missing = not self.events_path.is_file()
+            events = self._read_events_unlocked()
+            event_warnings = self.last_warnings
+            if self._events_read_blocked:
+                items = self._load_projection_items_unlocked()
+            elif events_missing:
+                items = self._load_projection_items_unlocked()
+                if items:
+                    event_warnings = ("work_events_missing",)
+            else:
+                items = tuple(_items_from_events(events))
+            projection = _projection_payload(items, generated_at=_now(), warnings=event_warnings)
+            return {
+                "schema_version": WORK_QUEUE_SCHEMA_VERSION,
+                "work_queue": projection,
+                "work_events": events,
+                "warnings": list(event_warnings),
+            }
 
     def reset_all(self) -> bool:
         try:
@@ -963,25 +982,25 @@ class GhostWorkQueueStore:
             return False
 
     def compact_if_needed(self) -> dict[str, object]:
-        before = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
-        if not self.events_path.exists() and self.projection_path.exists():
-            warning = "work_events_missing"
-            self.last_warnings = (warning,)
-            return _compact_payload(False, False, before, before, (warning,))
-        if not before["readable"]:
-            warning = str(before["warning"] or "work_events_unreadable")
-            self.last_warnings = (warning,)
-            return _compact_payload(False, False, before, before, (warning,))
-        if before["events"] <= MAX_WORK_EVENTS and before["bytes"] <= MAX_WORK_EVENTS_BYTES:
-            return _compact_payload(True, False, before, before, self.last_warnings)
         try:
             with with_file_lock(self.events_path):
+                before = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
+                if not self.events_path.exists() and self.projection_path.exists():
+                    warning = "work_events_missing"
+                    self.last_warnings = (warning,)
+                    return _compact_payload(False, False, before, before, (warning,))
+                if not before["readable"]:
+                    warning = str(before["warning"] or "work_events_unreadable")
+                    self.last_warnings = (warning,)
+                    return _compact_payload(False, False, before, before, (warning,))
+                if before["events"] <= MAX_WORK_EVENTS and before["bytes"] <= MAX_WORK_EVENTS_BYTES:
+                    return _compact_payload(True, False, before, before, self.last_warnings)
                 events = self._events_for_mutation_locked()
                 items = _bounded_items(_items_from_events(events))
                 self._write_events_atomic([_snapshot_event(items, ts=_now(), reason="events_compacted")])
                 self._write_projection(items, warnings=[])
-            after = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
-            return _compact_payload(True, after != before, before, after, self.last_warnings)
+                after = _event_file_stats(self.events_path, max_bytes=MAX_WORK_EVENTS_BYTES)
+                return _compact_payload(True, after != before, before, after, self.last_warnings)
         except (OSError, TypeError, ValueError):
             warning = "events_read_blocked" if self._events_read_blocked else "work_compaction_failed"
             self.last_warnings = _bounded_warnings((*self.last_warnings, warning))
@@ -1069,18 +1088,18 @@ class GhostWorkQueueStore:
         self.last_warnings = _bounded_warnings(warnings)
         return GhostWorkSyncResult(False, skipped_reason=reason, warnings=self.last_warnings)
 
-    def _load_items(self) -> tuple[GhostWorkItem, ...]:
+    def _load_items_unlocked(self) -> tuple[GhostWorkItem, ...]:
         if self.events_path.exists():
-            events = self._read_events()
+            events = self._read_events_unlocked()
             if not self._events_read_blocked:
                 return tuple(_bounded_items(_items_from_events(events)))
-            return self._load_projection_items()
-        projection = self._load_projection_items()
+            return self._load_projection_items_unlocked()
+        projection = self._load_projection_items_unlocked()
         if projection:
             self.last_warnings = ("work_events_missing",)
         return projection
 
-    def _load_projection_items(self) -> tuple[GhostWorkItem, ...]:
+    def _load_projection_items_unlocked(self) -> tuple[GhostWorkItem, ...]:
         payload = read_json(self.projection_path, max_bytes=MAX_WORK_STATE_BYTES)
         if not isinstance(payload, dict):
             return ()
@@ -1096,7 +1115,7 @@ class GhostWorkQueueStore:
             )
         )
 
-    def _read_events(self) -> list[dict[str, object]]:
+    def _read_events_unlocked(self) -> list[dict[str, object]]:
         self._events_read_blocked = False
         self._events_blocked_reason = ""
         try:
@@ -1188,7 +1207,7 @@ class GhostWorkQueueStore:
             self._events_blocked_reason = ""
             self.last_warnings = ()
             return []
-        events = self._read_events()
+        events = self._read_events_unlocked()
         if self._events_read_blocked:
             raise OSError("ghost work events are unreadable")
         return events

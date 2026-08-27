@@ -1140,7 +1140,7 @@ def test_work_queue_claim_missing_retry_or_lease_is_invalid_event() -> None:
             encoding="utf-8",
         )
 
-        assert store._read_events() == []
+        assert store._read_events_unlocked() == []
         assert store._events_read_blocked
         assert any("invalid_event" in warning for warning in store.last_warnings)
         with pytest.raises(OSError, match="ghost work events are unreadable"):
@@ -1199,7 +1199,7 @@ def test_work_queue_complete_with_mismatched_proof_fails_closed() -> None:
             encoding="utf-8",
         )
 
-        assert store._read_events() == []
+        assert store._read_events_unlocked() == []
         assert store._events_read_blocked
         assert any("invalid_event" in warning for warning in store.last_warnings)
         with pytest.raises(OSError, match="ghost work events are unreadable"):
@@ -1237,7 +1237,7 @@ def test_work_queue_release_to_queued_retaining_lease_is_invalid() -> None:
             encoding="utf-8",
         )
 
-        assert store._read_events() == []
+        assert store._read_events_unlocked() == []
         assert store._events_read_blocked
         assert any("invalid_event" in warning for warning in store.last_warnings)
         with pytest.raises(OSError, match="ghost work events are unreadable"):
@@ -1253,7 +1253,7 @@ def test_complete_item_requires_run_id_without_corrupting_events() -> None:
         result = store.complete_item(item_id, run_id="", proof_refs=("research_proof:" + "a" * 16,))
         assert result is None
         assert store.events_path.read_text(encoding="utf-8") == before
-        assert store._read_events()
+        assert store._read_events_unlocked()
         assert not store._events_read_blocked
         assert store.list_items()[0].status == "running"
 
@@ -1261,7 +1261,7 @@ def test_complete_item_requires_run_id_without_corrupting_events() -> None:
         mismatched_result = store.complete_item(item_id, run_id="run-2", proof_refs=("research_proof:" + "a" * 16,))
         assert mismatched_result is None
         assert store.events_path.read_text(encoding="utf-8") == before
-        assert store._read_events()
+        assert store._read_events_unlocked()
         assert not store._events_read_blocked
         assert store.list_items()[0].status == "running"
 
@@ -1296,7 +1296,7 @@ def test_work_transition_malformed_queue_missing_retry_count_fails_closed() -> N
             encoding="utf-8",
         )
 
-        assert store._read_events() == []
+        assert store._read_events_unlocked() == []
         assert store._events_read_blocked
         assert any("invalid_event" in warning for warning in store.last_warnings)
         with pytest.raises(OSError, match="ghost work events are unreadable"):
@@ -1354,7 +1354,7 @@ def test_work_transition_complete_mismatched_run_id_fails_closed() -> None:
             encoding="utf-8",
         )
 
-        assert store._read_events() == []
+        assert store._read_events_unlocked() == []
         assert store._events_read_blocked
         assert any("invalid_event" in warning for warning in store.last_warnings)
         with pytest.raises(OSError, match="ghost work events are unreadable"):
@@ -1394,7 +1394,7 @@ def test_work_snapshot_with_invalid_state_invariants_fails_closed() -> None:
             encoding="utf-8",
         )
 
-        assert store._read_events() == []
+        assert store._read_events_unlocked() == []
         assert store._events_read_blocked
         assert any("invalid_event" in warning for warning in store.last_warnings)
         claim_result = store.claim_next(session_id="s1", run_id="run-1", user_request="继续")
@@ -1437,7 +1437,7 @@ def test_work_snapshot_done_item_missing_completed_run_id_fails_closed() -> None
             encoding="utf-8",
         )
 
-        assert store._read_events() == []
+        assert store._read_events_unlocked() == []
         assert store._events_read_blocked
         assert any("invalid_event" in warning for warning in store.last_warnings)
         assert store.list_items() == ()

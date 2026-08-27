@@ -6,15 +6,19 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
-## 0.4.17 - OS-Backed File Locks and Event State Reset
+## 0.4.17 - OS-Backed File Locks, Ref-Counted Lock Registry, and Cooperative Read Discipline
 
 - Replaced sidecar lock creation/deletion and stale takeover heuristics with OS-backed advisory file locks (`codey.storage.file_lock`).
   - Uses operating-system native locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) combined with process-local thread synchronization (`threading.RLock`).
   - `LockTimeout` inherits `TimeoutError` (a subclass of `OSError`), aligning with store error handling contracts (`except OSError`).
+  - Implemented ref-counted process lock registry (`_ProcessLockEntry` with `_borrow_process_lock` and `_return_process_lock`): locks are referenced upon acquisition attempt and automatically pruned from memory when reference count drops to 0, eliminating process-level memory accumulation across long-lived, multi-project workflows.
   - Sidecar `.lock` files remain permanently on disk as lock carriers, eliminating `stat -> unlink` time-of-check-to-time-of-use (TOCTOU) races and stale takeover bugs.
   - Added dedicated `codey.storage.event_state` module with `reset_event_backed_state(events_path, *state_paths)` ensuring all event logs and derived projections are deleted safely under the authoritative event lock.
   - Removed unused `transactional_json.py` abstraction.
-  - Standardized mutation concurrency discipline across all 7 Ghost stores (`work_queue`, `affinity`, `continuity`, `hebbian`, `inbox`, `router`, `sleep`): all mutations (append, replay, rebuild, delete_scope, reset, and compaction) acquire the store's `events_path` lock.
+  - Standardized cooperative locking discipline across all 7 Ghost stores (`work_queue`, `affinity`, `continuity`, `hebbian`, `inbox`, `router`, `sleep`):
+    - All public read APIs (`list_*`, `export_state`, `query_*_hints`, `learning_enabled`) acquire the store's `events_path` lock, preventing torn reads against concurrent `reset_all()` or active mutations.
+    - All internal read/projection helpers are renamed with `_unlocked` suffix (e.g. `_load_items_unlocked`, `_read_events_unlocked`) to explicitly designate that callers must already hold the authoritative event lock.
+    - `compact_if_needed()` wraps event file stat checks, state loading, event compaction/rewriting, and post-compaction stats atomically within a single `with with_file_lock(self.events_path):` block, closing un-synchronized stat/rewrite races.
 
 
 ## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants

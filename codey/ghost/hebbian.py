@@ -208,7 +208,7 @@ class GhostHebbianStore:
             return GhostReinforceResult(False, "missing_evidence_ref")
         try:
             with with_file_lock(self.events_path):
-                nodes, edges = self._load_state()
+                nodes, edges = self._load_state_unlocked()
                 if self._events_read_blocked:
                     return GhostReinforceResult(False, "events_read_blocked")
                 node_by_id = {node.id: node for node in nodes}
@@ -326,7 +326,7 @@ class GhostHebbianStore:
 
     def remove_candidate(self, candidate: GhostMemoryCandidate) -> dict[str, int]:
         with with_file_lock(self.events_path):
-            nodes, edges = self._load_state()
+            nodes, edges = self._load_state_unlocked()
             if self._events_read_blocked:
                 raise OSError("hebbian events are unreadable")
             candidate_node_id = node_id_for_candidate(candidate)
@@ -368,8 +368,24 @@ class GhostHebbianStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[GhostNode, ...]:
+        with with_file_lock(self.events_path):
+            return self._list_nodes_unlocked(
+                status=status,
+                scope=scope,
+                project=project,
+                session_id=session_id,
+            )
+
+    def _list_nodes_unlocked(
+        self,
+        *,
+        status: str | Iterable[str] | None = None,
+        scope: str = "",
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[GhostNode, ...]:
         try:
-            nodes, _edges = self._load_state()
+            nodes, _edges = self._load_state_unlocked()
         except Exception:
             return ()
         statuses = _status_filter(status, allowed=NODE_STATUSES)
@@ -387,8 +403,12 @@ class GhostHebbianStore:
         return tuple(sorted(rows, key=lambda item: (item.weight, item.updated_at), reverse=True))
 
     def list_edges(self, *, relation: str = "") -> tuple[GhostEdge, ...]:
+        with with_file_lock(self.events_path):
+            return self._list_edges_unlocked(relation=relation)
+
+    def _list_edges_unlocked(self, *, relation: str = "") -> tuple[GhostEdge, ...]:
         try:
-            _nodes, edges = self._load_state()
+            _nodes, edges = self._load_state_unlocked()
         except Exception:
             return ()
         normalized_relation = str(relation or "").strip().lower()
@@ -396,13 +416,14 @@ class GhostHebbianStore:
         return tuple(sorted(rows, key=lambda item: (item.weight, item.updated_at), reverse=True))
 
     def export_state(self) -> dict[str, object]:
-        nodes, edges = self._load_state()
-        return {
-            "schema_version": HEBBIAN_SCHEMA_VERSION,
-            "state": self._projection_payload(nodes, edges),
-            "events": list(self._read_events()),
-            "warnings": list(self.last_warnings),
-        }
+        with with_file_lock(self.events_path):
+            nodes, edges = self._load_state_unlocked()
+            return {
+                "schema_version": HEBBIAN_SCHEMA_VERSION,
+                "state": self._projection_payload(nodes, edges),
+                "events": list(self._read_events_unlocked()),
+                "warnings": list(self.last_warnings),
+            }
 
     def reset_all(self) -> bool:
         try:
@@ -427,7 +448,7 @@ class GhostHebbianStore:
         if normalized_scope in {"project", "session"} and not scope_ref:
             raise ValueError(f"{normalized_scope} reference is required")
         with with_file_lock(self.events_path):
-            nodes, edges = self._load_state()
+            nodes, edges = self._load_state_unlocked()
             removed_ids = {
                 node.id
                 for node in nodes
@@ -459,7 +480,7 @@ class GhostHebbianStore:
     def rebuild_from_events(self) -> bool:
         try:
             with with_file_lock(self.events_path):
-                nodes, edges = self._rebuild_state_from_events()
+                nodes, edges = self._rebuild_state_from_events_unlocked()
                 if nodes is None or edges is None:
                     return False
                 self._write_projection(nodes, edges)
@@ -470,7 +491,7 @@ class GhostHebbianStore:
     def decay(self, *, min_interval_seconds: int = 0) -> dict[str, object]:
         with with_file_lock(self.events_path):
             if self.events_path.exists():
-                self._read_events()
+                self._read_events_unlocked()
                 if self._events_read_blocked:
                     return {
                         "removed_nodes": 0,
@@ -480,7 +501,7 @@ class GhostHebbianStore:
                         "skipped_reason": "events_read_blocked",
                         "warnings": list(self.last_warnings),
                     }
-            nodes, edges = self._load_state()
+            nodes, edges = self._load_state_unlocked()
             now = _now()
             interval = max(0, int(min_interval_seconds or 0))
             if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
@@ -536,61 +557,72 @@ class GhostHebbianStore:
             }
 
     def compact_if_needed(self) -> dict[str, object]:
-        before = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
-        if not before["readable"]:
-            warning = str(before["warning"] or "hebbian_events_unreadable")
-            self.last_warnings = (warning,)
+        try:
+            with with_file_lock(self.events_path):
+                before = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
+                if not before["readable"]:
+                    warning = str(before["warning"] or "hebbian_events_unreadable")
+                    self.last_warnings = (warning,)
+                    return {
+                        "ok": False,
+                        "compacted": False,
+                        "events_before": before["events"],
+                        "events_after": before["events"],
+                        "bytes_before": before["bytes"],
+                        "bytes_after": before["bytes"],
+                        "warnings": [warning],
+                    }
+                if before["events"] <= MAX_HEBBIAN_EVENTS and before["bytes"] <= MAX_HEBBIAN_EVENTS_BYTES:
+                    return {
+                        "ok": True,
+                        "compacted": False,
+                        "events_before": before["events"],
+                        "events_after": before["events"],
+                        "bytes_before": before["bytes"],
+                        "bytes_after": before["bytes"],
+                        "warnings": list(self.last_warnings),
+                    }
+                nodes, edges = self._load_state_unlocked()
+                if self._events_read_blocked:
+                    return {
+                        "ok": False,
+                        "compacted": False,
+                        "events_before": before["events"],
+                        "events_after": before["events"],
+                        "bytes_before": before["bytes"],
+                        "bytes_after": before["bytes"],
+                        "warnings": list(self.last_warnings),
+                    }
+                self._compact_if_needed(nodes, edges)
+                after = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
+                return {
+                    "ok": True,
+                    "compacted": after != before,
+                    "events_before": before["events"],
+                    "events_after": after["events"],
+                    "bytes_before": before["bytes"],
+                    "bytes_after": after["bytes"],
+                    "warnings": list(self.last_warnings),
+                }
+        except (OSError, TypeError, ValueError):
             return {
                 "ok": False,
                 "compacted": False,
-                "events_before": before["events"],
-                "events_after": before["events"],
-                "bytes_before": before["bytes"],
-                "bytes_after": before["bytes"],
-                "warnings": [warning],
-            }
-        if before["events"] <= MAX_HEBBIAN_EVENTS and before["bytes"] <= MAX_HEBBIAN_EVENTS_BYTES:
-            return {
-                "ok": True,
-                "compacted": False,
-                "events_before": before["events"],
-                "events_after": before["events"],
-                "bytes_before": before["bytes"],
-                "bytes_after": before["bytes"],
+                "events_before": 0,
+                "events_after": 0,
+                "bytes_before": 0,
+                "bytes_after": 0,
                 "warnings": list(self.last_warnings),
             }
-        with with_file_lock(self.events_path):
-            nodes, edges = self._load_state()
-            if self._events_read_blocked:
-                return {
-                    "ok": False,
-                    "compacted": False,
-                    "events_before": before["events"],
-                    "events_after": before["events"],
-                    "bytes_before": before["bytes"],
-                    "bytes_after": before["bytes"],
-                    "warnings": list(self.last_warnings),
-                }
-            self._compact_if_needed(nodes, edges)
-        after = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
-        return {
-            "ok": True,
-            "compacted": after != before,
-            "events_before": before["events"],
-            "events_after": after["events"],
-            "bytes_before": before["bytes"],
-            "bytes_after": after["bytes"],
-            "warnings": list(self.last_warnings),
-        }
 
-    def _load_state(self) -> tuple[list[GhostNode], list[GhostEdge]]:
+    def _load_state_unlocked(self) -> tuple[list[GhostNode], list[GhostEdge]]:
         self._events_read_blocked = False
-        payload = self._read_projection_payload()
+        payload = self._read_projection_payload_unlocked()
         if payload is not None:
             nodes, edges = self._rows_from_projection(payload)
             if nodes is not None and edges is not None:
                 return nodes, edges
-        rebuilt_nodes, rebuilt_edges = self._rebuild_state_from_events()
+        rebuilt_nodes, rebuilt_edges = self._rebuild_state_from_events_unlocked()
         if rebuilt_nodes is None or rebuilt_edges is None:
             return [], []
         try:
@@ -599,7 +631,7 @@ class GhostHebbianStore:
             pass
         return rebuilt_nodes, rebuilt_edges
 
-    def _read_projection_payload(self) -> dict[str, object] | None:
+    def _read_projection_payload_unlocked(self) -> dict[str, object] | None:
         if not self.state_path.exists():
             return None
         payload = read_json(self.state_path, max_bytes=MAX_HEBBIAN_STATE_BYTES)
@@ -633,8 +665,8 @@ class GhostHebbianStore:
         ]
         return _bounded_nodes(nodes), _bounded_edges(edges, node_ids=node_ids)
 
-    def _rebuild_state_from_events(self) -> tuple[list[GhostNode] | None, list[GhostEdge] | None]:
-        events = self._read_events()
+    def _rebuild_state_from_events_unlocked(self) -> tuple[list[GhostNode] | None, list[GhostEdge] | None]:
+        events = self._read_events_unlocked()
         if self._events_read_blocked:
             return None, None
         nodes: dict[str, GhostNode] = {}
@@ -653,7 +685,7 @@ class GhostHebbianStore:
         bounded_edges = _bounded_edges(edges.values(), node_ids={node.id for node in bounded_nodes})
         return bounded_nodes, bounded_edges
 
-    def _read_events(self) -> tuple[dict[str, object], ...]:
+    def _read_events_unlocked(self) -> tuple[dict[str, object], ...]:
         warnings: list[str] = []
         self._events_read_blocked = False
         try:

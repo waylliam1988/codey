@@ -489,8 +489,26 @@ class GhostAffinityStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[AffinityNode, ...]:
+        with with_file_lock(self.events_path):
+            return self._list_nodes_unlocked(
+                kind=kind,
+                status=status,
+                scope=scope,
+                project=project,
+                session_id=session_id,
+            )
+
+    def _list_nodes_unlocked(
+        self,
+        *,
+        kind: str = "",
+        status: str = "",
+        scope: str = "",
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[AffinityNode, ...]:
         try:
-            nodes, _edges = self._load_state_for_read()
+            nodes, _edges = self._load_state_for_read_unlocked()
         except Exception:
             return ()
         kinds = _filter_values(kind, AFFINITY_NODE_KINDS)
@@ -524,8 +542,26 @@ class GhostAffinityStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[AffinityEdge, ...]:
+        with with_file_lock(self.events_path):
+            return self._list_edges_unlocked(
+                relation=relation,
+                status=status,
+                scope=scope,
+                project=project,
+                session_id=session_id,
+            )
+
+    def _list_edges_unlocked(
+        self,
+        *,
+        relation: str = "",
+        status: str = "",
+        scope: str = "",
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[AffinityEdge, ...]:
         try:
-            _nodes, edges = self._load_state_for_read()
+            _nodes, edges = self._load_state_for_read_unlocked()
         except Exception:
             return ()
         relations = _filter_values(relation, AFFINITY_EDGE_RELATIONS)
@@ -574,6 +610,16 @@ class GhostAffinityStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[AffinityHint, ...]:
+        with with_file_lock(self.events_path):
+            return self._query_directive_order_hints_unlocked(nodes, project=project, session_id=session_id)
+
+    def _query_directive_order_hints_unlocked(
+        self,
+        nodes: Iterable[Any],
+        *,
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[AffinityHint, ...]:
         wanted = {
             clip_signal_text(getattr(node, "id", ""), 120)
             for node in nodes
@@ -581,7 +627,7 @@ class GhostAffinityStore:
         }
         if not wanted:
             return ()
-        affinity_nodes, _edges = self._load_state_for_hint()
+        affinity_nodes, _edges = self._load_state_for_hint_unlocked()
         hints: list[AffinityHint] = []
         for node in affinity_nodes:
             if node.status != "active":
@@ -615,7 +661,17 @@ class GhostAffinityStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[AffinityHint, ...]:
-        nodes, edges = self._load_state_for_hint()
+        with with_file_lock(self.events_path):
+            return self._query_work_priority_hints_unlocked(items, project=project, session_id=session_id)
+
+    def _query_work_priority_hints_unlocked(
+        self,
+        items: Iterable[Any],
+        *,
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[AffinityHint, ...]:
+        nodes, edges = self._load_state_for_hint_unlocked()
         active_nodes = {node.id: node for node in nodes if node.status == "active"}
         active_edges_by_target: dict[str, list[AffinityEdge]] = {}
         for edge in edges:
@@ -680,7 +736,17 @@ class GhostAffinityStore:
         project: str = "",
         session_id: str = "",
     ) -> tuple[AffinityHint, ...]:
-        nodes, _edges = self._load_state_for_hint()
+        with with_file_lock(self.events_path):
+            return self._query_research_priority_hints_unlocked(candidates, project=project, session_id=session_id)
+
+    def _query_research_priority_hints_unlocked(
+        self,
+        candidates: Iterable[Any],
+        *,
+        project: str = "",
+        session_id: str = "",
+    ) -> tuple[AffinityHint, ...]:
+        nodes, _edges = self._load_state_for_hint_unlocked()
         active_nodes = {node.id: node for node in nodes if node.status == "active"}
         hints: list[AffinityHint] = []
         for candidate in list(candidates or []):
@@ -712,30 +778,31 @@ class GhostAffinityStore:
         return _bounded_hints(hints)
 
     def export_state(self) -> dict[str, object]:
-        events = self._read_events()
-        orphan_projection = not self.events_path.exists() and self.projection_path.exists()
-        event_warnings = _bounded_warnings(
-            (
-                *self.last_warnings,
-                *(("affinity_events_missing",) if orphan_projection else ()),
+        with with_file_lock(self.events_path):
+            events = self._read_events_unlocked()
+            orphan_projection = not self.events_path.exists() and self.projection_path.exists()
+            event_warnings = _bounded_warnings(
+                (
+                    *self.last_warnings,
+                    *(("affinity_events_missing",) if orphan_projection else ()),
+                )
             )
-        )
-        if self._events_read_blocked or orphan_projection:
-            nodes, edges = self._load_projection_rows()
-        else:
-            nodes, edges = _rows_from_events(events)
-        projection = _projection_payload(nodes, edges, generated_at=_now(), warnings=event_warnings)
-        if orphan_projection:
-            projection["diagnostic"] = {
-                "projection_only": True,
-                "source_events_missing": True,
+            if self._events_read_blocked or orphan_projection:
+                nodes, edges = self._load_projection_rows_unlocked()
+            else:
+                nodes, edges = _rows_from_events(events)
+            projection = _projection_payload(nodes, edges, generated_at=_now(), warnings=event_warnings)
+            if orphan_projection:
+                projection["diagnostic"] = {
+                    "projection_only": True,
+                    "source_events_missing": True,
+                }
+            return {
+                "schema_version": AFFINITY_SCHEMA_VERSION,
+                "affinity": projection,
+                "affinity_events": events,
+                "warnings": list(event_warnings),
             }
-        return {
-            "schema_version": AFFINITY_SCHEMA_VERSION,
-            "affinity": projection,
-            "affinity_events": events,
-            "warnings": list(event_warnings),
-        }
 
     def reset_all(self) -> bool:
         try:
@@ -918,25 +985,25 @@ class GhostAffinityStore:
             }
 
     def compact_if_needed(self) -> dict[str, object]:
-        before = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
-        if not self.events_path.exists() and self.projection_path.exists():
-            warning = "affinity_events_missing"
-            self.last_warnings = (warning,)
-            return _compact_payload(False, False, before, before, (warning,))
-        if not before["readable"]:
-            warning = str(before["warning"] or "affinity_events_unreadable")
-            self.last_warnings = (warning,)
-            return _compact_payload(False, False, before, before, (warning,))
-        if before["events"] <= MAX_AFFINITY_EVENTS and before["bytes"] <= MAX_AFFINITY_EVENTS_BYTES:
-            return _compact_payload(True, False, before, before, self.last_warnings)
         try:
             with with_file_lock(self.events_path):
+                before = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
+                if not self.events_path.exists() and self.projection_path.exists():
+                    warning = "affinity_events_missing"
+                    self.last_warnings = (warning,)
+                    return _compact_payload(False, False, before, before, (warning,))
+                if not before["readable"]:
+                    warning = str(before["warning"] or "affinity_events_unreadable")
+                    self.last_warnings = (warning,)
+                    return _compact_payload(False, False, before, before, (warning,))
+                if before["events"] <= MAX_AFFINITY_EVENTS and before["bytes"] <= MAX_AFFINITY_EVENTS_BYTES:
+                    return _compact_payload(True, False, before, before, self.last_warnings)
                 events = self._events_for_mutation_locked()
                 nodes, edges = _rows_from_events(events)
                 self._write_events_atomic([_snapshot_event(nodes, edges, ts=_now(), reason="events_compacted")])
                 self._write_projection(nodes, edges, warnings=self.last_warnings)
-            after = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
-            return _compact_payload(True, after != before, before, after, self.last_warnings)
+                after = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
+                return _compact_payload(True, after != before, before, after, self.last_warnings)
         except (OSError, TypeError, ValueError):
             warning = self._events_blocked_reason or "affinity_compaction_failed"
             self.last_warnings = _bounded_warnings((*self.last_warnings, warning))
@@ -980,17 +1047,17 @@ class GhostAffinityStore:
         edge_specs.extend(provider_edges)
         return node_specs, edge_specs
 
-    def _load_state_for_read(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
+    def _load_state_for_read_unlocked(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
         if self.events_path.exists():
-            events = self._read_events()
+            events = self._read_events_unlocked()
             if not self._events_read_blocked:
                 return _rows_from_events(events)
-            return self._load_projection_rows()
-        return self._load_projection_rows()
+            return self._load_projection_rows_unlocked()
+        return self._load_projection_rows_unlocked()
 
-    def _load_state_for_hint(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
+    def _load_state_for_hint_unlocked(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
         if self.events_path.exists():
-            events = self._read_events()
+            events = self._read_events_unlocked()
             if self._events_read_blocked:
                 return [], []
             return _rows_from_events(events)
@@ -998,7 +1065,7 @@ class GhostAffinityStore:
             self.last_warnings = ("affinity_events_missing",)
         return [], []
 
-    def _load_projection_rows(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
+    def _load_projection_rows_unlocked(self) -> tuple[list[AffinityNode], list[AffinityEdge]]:
         payload = read_json(self.projection_path, max_bytes=MAX_AFFINITY_STATE_BYTES)
         if not isinstance(payload, Mapping):
             return [], []
@@ -1017,7 +1084,7 @@ class GhostAffinityStore:
         ]
         return _bounded_nodes(nodes), _bounded_edges(edges, node_ids=node_ids)
 
-    def _read_events(self) -> list[dict[str, object]]:
+    def _read_events_unlocked(self) -> list[dict[str, object]]:
         self._events_read_blocked = False
         self._events_blocked_reason = ""
         try:
@@ -1085,7 +1152,7 @@ class GhostAffinityStore:
             self._events_blocked_reason = ""
             self.last_warnings = ()
             return []
-        events = self._read_events()
+        events = self._read_events_unlocked()
         if self._events_read_blocked:
             raise OSError("ghost affinity events are unreadable")
         return events

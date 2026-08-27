@@ -114,6 +114,80 @@ class ResetEventBackedStateTests(unittest.TestCase):
             stop.set()
             t.join()
 
+    def test_public_read_blocks_on_events_lock(self) -> None:
+        store = GhostWorkQueueStore(state_home=self.root)
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text("", encoding="utf-8")
+
+        started = threading.Event()
+        stop = threading.Event()
+
+        def lock_holder() -> None:
+            with with_file_lock(store.events_path, timeout_seconds=5.0):
+                started.set()
+                stop.wait(timeout=2.0)
+
+        t = threading.Thread(target=lock_holder)
+        t.start()
+        started.wait(timeout=2.0)
+
+        read_done = False
+        items: tuple = ()
+
+        def reader() -> None:
+            nonlocal read_done, items
+            items = store.list_items()
+            read_done = True
+
+        rt = threading.Thread(target=reader)
+        rt.start()
+
+        time.sleep(0.1)
+        self.assertFalse(read_done)
+
+        stop.set()
+        t.join()
+        rt.join()
+
+        self.assertTrue(read_done)
+        self.assertEqual(items, ())
+
+    def test_public_read_serialized_with_reset_all(self) -> None:
+        store = GhostWorkQueueStore(state_home=self.root)
+        store.events_path.parent.mkdir(parents=True, exist_ok=True)
+        store.events_path.write_text("dummy\n", encoding="utf-8")
+
+        started = threading.Event()
+        stop = threading.Event()
+
+        def lock_holder() -> None:
+            with with_file_lock(store.events_path, timeout_seconds=5.0):
+                started.set()
+                stop.wait(timeout=2.0)
+
+        t = threading.Thread(target=lock_holder)
+        t.start()
+        started.wait(timeout=2.0)
+
+        export_done = False
+
+        def exporter() -> None:
+            nonlocal export_done
+            store.export_state()
+            export_done = True
+
+        et = threading.Thread(target=exporter)
+        et.start()
+
+        time.sleep(0.1)
+        self.assertFalse(export_done)
+
+        stop.set()
+        t.join()
+        et.join()
+
+        self.assertTrue(export_done)
+
 
 if __name__ == "__main__":
     unittest.main()

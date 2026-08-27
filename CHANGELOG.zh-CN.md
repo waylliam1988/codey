@@ -6,15 +6,19 @@
 
 ## Unreleased
 
-## 0.4.17 - OS-Backed File Locks and Event State Reset
+## 0.4.17 - OS-Backed File Locks, Ref-Counted Lock Registry, and Cooperative Read Discipline
 
 - 将基于 lock 文件创建/删除与过期接管（stale takeover）的旧文件锁模型重构为基于 OS 内核与线程隔离的建议锁（`codey.storage.file_lock`）。
   - 底层使用操作系统原生锁（Windows 下为 `msvcrt.locking`，POSIX 下为 `fcntl.flock`）并结合进程内线程同步（`threading.RLock`）与线程重入计数。
   - `LockTimeout` 继承自 `TimeoutError`（`OSError` 的子类），与既有 store 的 `except OSError` 错误处理契约完美保持一致。
+  - 实现进程级锁引用计数自动回收机制（`_ProcessLockEntry` 与 `_borrow_process_lock` / `_return_process_lock`）：加锁尝试时借出引用递增，退出或超时时在 `finally` 块中归还引用递减，引用归零即从全局映射中安全移除，彻底杜绝长生命周期多项目运行下的进程级内存泄漏。
   - `.lock` 文件作为常驻磁盘的锁载体，不再通过 `stat -> unlink` 表达所有权，彻底消除 stale takeover 的 TOCTOU 竞态。
   - 新增专用模块 `codey.storage.event_state` 提供 `reset_event_backed_state(events_path, *state_paths)` helper，确保 event log 与 derived projection 在权威事件锁保护下安全删除。
   - 彻底清理移除无生产调用的 `transactional_json.py` 冗余抽象。
-  - 统一全仓全部 7 个 Ghost store（`work_queue`、`affinity`、`continuity`、`hebbian`、`inbox`、`router`、`sleep`）的 mutation 锁纪律：所有 append、replay、rebuild、delete_scope、reset 和 compaction 操作均在各 store 的 `events_path` 锁保护下执行。
+  - 统一全仓全部 7 个 Ghost store（`work_queue`、`affinity`、`continuity`、`hebbian`、`inbox`、`router`、`sleep`）的合作式锁（Cooperative Lock）纪律：
+    - 所有公开读取 API（`list_*`、`export_state`、`query_*_hints`、`learning_enabled`）统一持有 `self.events_path` 锁，避免与并发 `reset_all()` 或 mutation 交错产生中间态；
+    - 内部读与 projection helper 规范重命名为 `_xxx_unlocked`（如 `_load_items_unlocked`、`_read_events_unlocked`），明确表达调用方已持有事件锁；
+    - `compact_if_needed()` 将事件文件状态检查、内存状态加载、事件紧缩与重写、紧缩后状态检查整体封装在单个 `with with_file_lock(self.events_path):` 块中原子执行，消除无锁 stat 带来的竞态。
 
 
 ## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants

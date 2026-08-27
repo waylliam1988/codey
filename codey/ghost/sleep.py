@@ -278,15 +278,16 @@ class GhostSleepStore:
         return final_report
 
     def export_state(self) -> dict[str, object]:
-        events = self._read_events()
-        event_warnings = self.last_warnings
-        state = self._read_state_payload()
-        warnings = _bounded_warnings((*event_warnings, *self.last_warnings))
-        return {
-            "sleep": state or {},
-            "sleep_events": events,
-            "warnings": list(warnings),
-        }
+        with with_file_lock(self.events_path):
+            events = self._read_events_unlocked()
+            event_warnings = self.last_warnings
+            state = self._read_state_payload_unlocked()
+            warnings = _bounded_warnings((*event_warnings, *self.last_warnings))
+            return {
+                "sleep": state or {},
+                "sleep_events": events,
+                "warnings": list(warnings),
+            }
 
     def reset_all(self) -> bool:
         try:
@@ -314,7 +315,7 @@ class GhostSleepStore:
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
         with with_file_lock(self.events_path):
-            events = self._read_events()
+            events = self._read_events_unlocked()
             if self._events_read_blocked:
                 raise OSError("ghost sleep events are unreadable")
             kept: list[dict[str, object]] = []
@@ -330,7 +331,7 @@ class GhostSleepStore:
                     removed += 1
                     continue
                 kept.append(event)
-            current = self._read_report()
+            current = self._read_report_unlocked()
             state_deleted = 0
             if current is not None and _scope_matches_report(
                 current,
@@ -564,25 +565,26 @@ class GhostSleepStore:
         )
 
     def _report_write_allowed_step(self) -> GhostSleepStepResult:
-        if self.events_path.exists():
-            self._read_events()
-            if self._events_read_blocked:
-                return GhostSleepStepResult(
-                    "report",
-                    False,
-                    skipped_reason="events_read_blocked",
-                    counts={"reports_written": 0},
-                    warnings=self.last_warnings,
-                )
-        return GhostSleepStepResult("report", True, counts={"reports_written": 1})
+        with with_file_lock(self.events_path):
+            if self.events_path.exists():
+                self._read_events_unlocked()
+                if self._events_read_blocked:
+                    return GhostSleepStepResult(
+                        "report",
+                        False,
+                        skipped_reason="events_read_blocked",
+                        counts={"reports_written": 0},
+                        warnings=self.last_warnings,
+                    )
+            return GhostSleepStepResult("report", True, counts={"reports_written": 1})
 
-    def _read_report(self) -> GhostSleepReport | None:
-        payload = self._read_state_payload()
+    def _read_report_unlocked(self) -> GhostSleepReport | None:
+        payload = self._read_state_payload_unlocked()
         if payload is None:
             return None
         return GhostSleepReport.from_payload(payload.get("report"))
 
-    def _read_state_payload(self) -> dict[str, object] | None:
+    def _read_state_payload_unlocked(self) -> dict[str, object] | None:
         payload = read_json(self.state_path, max_bytes=MAX_SLEEP_STATE_BYTES)
         if not isinstance(payload, dict):
             return None
@@ -606,7 +608,7 @@ class GhostSleepStore:
             max_bytes=MAX_SLEEP_STATE_BYTES,
         )
 
-    def _read_events(self) -> list[dict[str, object]]:
+    def _read_events_unlocked(self) -> list[dict[str, object]]:
         self._events_read_blocked = False
         try:
             if not self.events_path.is_file():
@@ -680,7 +682,7 @@ class GhostSleepStore:
                 return
             if event_count <= MAX_SLEEP_EVENTS and event_bytes <= MAX_SLEEP_EVENTS_BYTES:
                 return
-            events = self._read_events()
+            events = self._read_events_unlocked()
             if self._events_read_blocked:
                 return
             self._write_events_atomic(events[-MAX_SLEEP_EVENTS:])

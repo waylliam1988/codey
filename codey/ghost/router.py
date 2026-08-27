@@ -213,7 +213,7 @@ class GhostRouteStore:
         event = _route_event(result, request)
         try:
             with with_file_lock(self.events_path):
-                records = self._load_records_for_event_rewrite()
+                records = self._load_records_for_event_rewrite_unlocked()
                 if self._events_read_blocked:
                     return False
                 if records and not self.events_path.exists():
@@ -249,29 +249,30 @@ class GhostRouteStore:
             return False
 
     def export_state(self) -> dict[str, object]:
-        events_missing = not self.events_path.is_file()
-        events = self._read_events()
-        event_warnings = self.last_warnings
-        event_records = _bounded_records(_record_from_event(event) for event in events)
-        if self._events_read_blocked:
-            records = tuple(self._load_projection_records())
-        elif events_missing:
-            records = tuple(self._load_projection_records())
-            if records:
-                event_warnings = ("router_events_missing",)
-        else:
-            records = event_records
-        return {
-            "schema_version": ROUTER_SCHEMA_VERSION,
-            "router": {
+        with with_file_lock(self.events_path):
+            events_missing = not self.events_path.is_file()
+            events = self._read_events_unlocked()
+            event_warnings = self.last_warnings
+            event_records = _bounded_records(_record_from_event(event) for event in events)
+            if self._events_read_blocked:
+                records = tuple(self._load_projection_records_unlocked())
+            elif events_missing:
+                records = tuple(self._load_projection_records_unlocked())
+                if records:
+                    event_warnings = ("router_events_missing",)
+            else:
+                records = event_records
+            return {
                 "schema_version": ROUTER_SCHEMA_VERSION,
-                "kind": _STATE_KIND,
-                "records": list(records),
+                "router": {
+                    "schema_version": ROUTER_SCHEMA_VERSION,
+                    "kind": _STATE_KIND,
+                    "records": list(records),
+                    "warnings": list(event_warnings),
+                },
+                "router_events": events,
                 "warnings": list(event_warnings),
-            },
-            "router_events": events,
-            "warnings": list(event_warnings),
-        }
+            }
 
     def reset_all(self) -> bool:
         try:
@@ -299,7 +300,7 @@ class GhostRouteStore:
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
         with with_file_lock(self.events_path):
-            records = list(self._load_records_for_event_rewrite())
+            records = list(self._load_records_for_event_rewrite_unlocked())
             if self._events_read_blocked:
                 warning = self.last_warnings[0] if self.last_warnings else "router_events_unreadable"
                 raise OSError(warning)
@@ -340,35 +341,38 @@ class GhostRouteStore:
             return removed
 
     def compact_if_needed(self) -> dict[str, object]:
-        before = _event_file_stats(self.events_path, max_bytes=MAX_ROUTER_EVENTS_BYTES)
-        if not before["readable"]:
-            warning = str(before["warning"] or "router_events_unreadable")
-            self.last_warnings = (warning,)
-            return _compact_payload(False, False, before, before, (warning,))
-        if before["events"] <= MAX_ROUTER_EVENTS and before["bytes"] <= MAX_ROUTER_EVENTS_BYTES:
-            return _compact_payload(True, False, before, before, self.last_warnings)
-        with with_file_lock(self.events_path):
-            records = self._load_records_for_event_rewrite()
-            if self._events_read_blocked:
-                return _compact_payload(False, False, before, before, self.last_warnings)
-            self._rewrite_events(records)
-        after = _event_file_stats(self.events_path, max_bytes=MAX_ROUTER_EVENTS_BYTES)
-        return _compact_payload(True, after != before, before, after, self.last_warnings)
+        try:
+            with with_file_lock(self.events_path):
+                before = _event_file_stats(self.events_path, max_bytes=MAX_ROUTER_EVENTS_BYTES)
+                if not before["readable"]:
+                    warning = str(before["warning"] or "router_events_unreadable")
+                    self.last_warnings = (warning,)
+                    return _compact_payload(False, False, before, before, (warning,))
+                if before["events"] <= MAX_ROUTER_EVENTS and before["bytes"] <= MAX_ROUTER_EVENTS_BYTES:
+                    return _compact_payload(True, False, before, before, self.last_warnings)
+                records = self._load_records_for_event_rewrite_unlocked()
+                if self._events_read_blocked:
+                    return _compact_payload(False, False, before, before, self.last_warnings)
+                self._rewrite_events(records)
+                after = _event_file_stats(self.events_path, max_bytes=MAX_ROUTER_EVENTS_BYTES)
+                return _compact_payload(True, after != before, before, after, self.last_warnings)
+        except (OSError, TypeError, ValueError):
+            return _compact_payload(False, False, before, before, self.last_warnings)
 
-    def _load_records(self) -> tuple[dict[str, object], ...]:
-        projection_records = self._load_projection_records()
+    def _load_records_unlocked(self) -> tuple[dict[str, object], ...]:
+        projection_records = self._load_projection_records_unlocked()
         if projection_records:
             return projection_records
-        return self._load_records_from_events()
+        return self._load_records_from_events_unlocked()
 
-    def _load_records_for_event_rewrite(self) -> tuple[dict[str, object], ...]:
+    def _load_records_for_event_rewrite_unlocked(self) -> tuple[dict[str, object], ...]:
         if self.events_path.exists():
-            return self._load_records_from_events()
+            return self._load_records_from_events_unlocked()
         self._events_read_blocked = False
         self.last_warnings = ()
-        return self._load_projection_records()
+        return self._load_projection_records_unlocked()
 
-    def _load_projection_records(self) -> tuple[dict[str, object], ...]:
+    def _load_projection_records_unlocked(self) -> tuple[dict[str, object], ...]:
         payload = _read_json_dict(self.state_path, max_bytes=MAX_ROUTER_STATE_BYTES)
         if payload and payload.get("schema_version") == ROUTER_SCHEMA_VERSION:
             records = tuple(_clean_record(row) for row in _list(payload.get("records")))
@@ -377,13 +381,13 @@ class GhostRouteStore:
                 return rows
         return ()
 
-    def _load_records_from_events(self) -> tuple[dict[str, object], ...]:
-        events = self._read_events()
+    def _load_records_from_events_unlocked(self) -> tuple[dict[str, object], ...]:
+        events = self._read_events_unlocked()
         if self._events_read_blocked:
             return ()
         return _bounded_records(_record_from_event(event) for event in events)
 
-    def _read_events(self) -> list[dict[str, object]]:
+    def _read_events_unlocked(self) -> list[dict[str, object]]:
         self._events_read_blocked = False
         try:
             if not self.events_path.is_file():
