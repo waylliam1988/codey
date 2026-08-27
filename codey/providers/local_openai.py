@@ -236,7 +236,7 @@ def save_local_config(
         "model": (model or "").strip(),
         "api_key": stored_key,
     }
-    write_json_atomic(_config_path(), payload)
+    write_json_atomic(_config_path(), payload, mode=0o600)
 
 
 def local_config_payload() -> dict:

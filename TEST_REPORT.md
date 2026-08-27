@@ -1,8 +1,8 @@
 # Codey Test Report
 
-## 0.4.17 Release - OS-Backed Advisory Lock, Ref-Counted Lock Registry, and Cooperative Read Discipline (2026-08-27)
+## 0.4.17 Release - OS-Backed Advisory Lock, Cooperative Cancellation, and Storage Unification (2026-08-27)
 
-This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`), introduces unified safe event-backed state reset (`codey.storage.event_state`), implements automatic ref-counted cleanup for process locks, and establishes full cooperative read / compaction locking across all Ghost stores.
+This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`), introduces unified safe event-backed state reset (`codey.storage.event_state`), implements automatic ref-counted cleanup for process locks, establishes full cooperative read / compaction locking across all Ghost stores, refactors `BrowserWorker` with cooperative cancellation, unifies research network policy with DNS caching, removes implicit terminal in agent runner, and hardens edit tool exact replacement.
 
 Closed items:
 
@@ -16,15 +16,22 @@ Closed items:
   - Public read APIs (`list_*`, `export_state`, `query_*_hints`, `learning_enabled`) acquire the store's `events_path` lock, preventing torn reads against concurrent `reset_all()` or active mutations.
   - Internal read/projection helpers are renamed with `_unlocked` suffix (e.g. `_load_items_unlocked`, `_read_events_unlocked`) to explicitly designate that callers must already hold the authoritative event lock.
   - `compact_if_needed()` wraps event file stat checks, state loading, event compaction/rewriting, and post-compaction stats atomically within a single `with with_file_lock(self.events_path):` block.
-- Added comprehensive unit tests in `tests/test_file_lock.py` and `tests/test_event_state.py` verifying:
-  - `LockTimeout` inheritance (`TimeoutError`, `OSError`) and graceful handling in `except OSError`.
-  - Automatic memory cleanup of `_PROCESS_LOCKS` entries across 50 distinct paths after lock release.
-  - Multi-threaded concurrent lock borrow and return with complete dictionary drainage.
-  - Automatic ref-count decrement and entry removal upon lock timeout.
-  - Reentrancy within threads.
-  - Mutual exclusion between concurrent threads and cross-process mutual exclusion with subprocesses.
-  - Safe event-backed state reset, reset blocking when events are locked, and store `reset_all()` returning `False` upon lock timeout.
-  - Public read operations blocking until authoritative event lock release and serializing cleanly with concurrent resets.
+  - Fixed `UnboundLocalError` on `before` variable during compaction lock timeout in `work_queue`, `affinity`, and `router`.
+- Hardened `BrowserWorker` with cooperative cancellation and decoupled job lifecycle (`codey.automation.browser_worker`):
+  - Added `_Job` dataclass with `_JobState` (`QUEUED`, `RUNNING`, `COMPLETED`, `CANCELLED`, `CANCELLATION_REQUESTED`).
+  - Caller cancellations and timeouts propagate into job-specific cancellation events and execution deadlines, running inside `cancellation.scope` and `cancellation.deadline_scope`.
+  - Queued jobs cancelled prior to dispatch skip execution cleanly, and running jobs observe cancellation checks.
+- Unified Research Network Policy and DNS caching (`codey.research.network_policy`):
+  - Created `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for centralized SSRF mitigation.
+  - Introduced TTL/LRU caching for subresource requests in browser automation route guards, avoiding redundant DNS resolution for scripts, styles, and fonts.
+- Agent runner protocol improvements (`codey.agents.runner`):
+  - Removed implicit terminal when the model returns valid tool actions without an explicit `<continue>` or `<done>` control element; tool results are now cleanly formatted and returned to the model with a protocol reminder.
+- Edit tool hardening (`codey.toolchain.runtime`):
+  - Removed heuristic write paths in `_replace_unique_indentation_recovery()`; indentation mismatches now fail safely with diagnostic bounded context and line guidance without mutating user files.
+- Storage and permission unification (`codey.storage.atomic_io`, `codey.storage.local_store`):
+  - Unified atomic file writing under `write_bytes_atomic`, `write_text_atomic`, and `write_json_atomic` supporting explicit POSIX permission modes and preserving existing file modes.
+  - Local credential storage (`save_local_config`) enforces `0o600` permissions.
+- Added comprehensive unit tests in `tests/test_file_lock.py`, `tests/test_event_state.py`, `tests/test_browser_worker.py`, `tests/test_agent.py`, and `tests/test_atomic_io.py`.
 
 Validation commands and results:
 
@@ -32,11 +39,11 @@ Validation commands and results:
 python -m ruff check codey tests
 # All checks passed!
 
-pytest tests/test_file_lock.py tests/test_event_state.py tests/test_ghost_work_queue.py tests/test_ghost_affinity.py tests/test_ghost_continuity.py tests/test_ghost_hebbian.py tests/test_ghost_inbox.py tests/test_ghost_router.py tests/test_ghost_sleep.py
-# 253 passed in 14.18s
+pytest tests/test_browser_worker.py tests/test_event_state.py tests/test_agent.py tests/test_tool_runtime.py tests/test_atomic_io.py tests/test_ghost_work_queue.py tests/test_ghost_affinity.py tests/test_ghost_router.py
+# 366 passed, 2 skipped in 12.37s
 
 pytest
-# 3041 passed, 2 skipped in 282.67s (0:04:42)
+# 3049 passed, 3 skipped in 300.49s (0:05:00)
 ```
 
 

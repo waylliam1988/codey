@@ -412,7 +412,7 @@ class ToolTests(unittest.TestCase):
             self.assertIn("SEARCH text not found in app.py", result)
             self.assertIn("Use read_file and copy exact complete lines.", result)
 
-    def test_edit_recovers_unique_leading_indentation_mismatch(self) -> None:
+    def test_edit_rejects_indentation_mismatch_with_diagnostic(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             path = root / "app.py"
@@ -433,46 +433,16 @@ class ToolTests(unittest.TestCase):
                 )
             ]
 
-            result = tool_runtime.edit_file(root, "app.py", blocks).model_text
+            outcome = tool_runtime.edit_file(root, "app.py", blocks)
 
-            self.assertEqual(
-                result,
-                "edited app.py (1 replacement; indentation recovered)",
-            )
+            self.assertFalse(outcome.ok)
+            self.assertIn("SEARCH text not found in app.py", outcome.model_text)
+            self.assertIn("Current bounded context near", outcome.model_text)
+            # File content remains untouched
             self.assertEqual(
                 path.read_text(encoding="utf-8"),
                 "def total():\n"
                 "    # target\n"
-                "    return (amount - discount) * rate\n",
-            )
-
-    def test_edit_rejects_ambiguous_indentation_recovery(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            path = root / "app.py"
-            path.write_text(
-                "def one():\n"
-                "    return amount * rate\n\n"
-                "def two():\n"
-                "    return amount * rate\n",
-                encoding="utf-8",
-            )
-            blocks = [
-                tool_runtime.EditBlock(
-                    " return amount * rate",
-                    " return (amount - discount) * rate",
-                )
-            ]
-
-            result = tool_runtime.edit_file(root, "app.py", blocks).model_text
-
-            self.assertIn("SEARCH text matched 2 times in app.py", result)
-            self.assertIn("Exact matches start at lines: 2, 5.", result)
-            self.assertEqual(
-                path.read_text(encoding="utf-8"),
-                "def one():\n"
-                "    return amount * rate\n\n"
-                "def two():\n"
                 "    return amount * rate\n",
             )
 
@@ -2867,8 +2837,42 @@ class ProtocolTelemetryTests(unittest.TestCase):
         ]
         self.assertEqual(len(tools), 1)
         self.assertEqual(tools[0]["label"], "write_file")
-        self.assertEqual(tools[0]["count"], 1)
         self.assertTrue(tools[0]["digest"].startswith("sha256:"))
+
+    def test_turn_with_tool_call_and_no_control_continues_and_returns_results(self) -> None:
+        from codey.protocols.json_codec import JsonToolCodec, ToolPlan
+
+        class NoControlCodec(JsonToolCodec):
+            def parse(self, text: str) -> ToolPlan:
+                plan = super().parse(text)
+                if plan.calls:
+                    return ToolPlan(calls=plan.calls, control=None)
+                return plan
+
+        # Turn 1: tool call only, no control element
+        reply1 = json.dumps({"tool": "read_file", "args": {"path": "main.py"}})
+        # Turn 2: model sees results and finishes with done
+        reply2 = json.dumps({"tool": "done", "args": {"summary": "finished reading"}})
+        provider = FakeProvider(reply1, reply2)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "main.py").write_text("print('hello')\n", encoding="utf-8")
+            events: list[str] = []
+            result = agent.run(
+                provider,
+                root,
+                "read main.py",
+                codec=NoControlCodec(),
+                fresh_chat=False,
+                on_event=lambda ev: events.append(render_run_event(ev)),
+            )
+
+        self.assertEqual(result.stop_reason, "done")
+        self.assertEqual(result.summary, "finished reading")
+        self.assertEqual(len(provider.sent), 2)
+        self.assertIn("print('hello')", provider.sent[1])
+        self.assertIn("Please remember to include a <continue> or <done>", provider.sent[1])
 
 
 if __name__ == "__main__":

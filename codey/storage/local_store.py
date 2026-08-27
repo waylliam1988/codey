@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import uuid
 from pathlib import Path
 
 
@@ -36,29 +35,19 @@ def write_json_atomic(
     path: Path,
     value: dict,
     *,
+    mode: int | None = None,
+    preserve_mode: bool = True,
     max_bytes: int = MAX_JSON_BYTES,
 ) -> None:
-    data = json.dumps(
+    from codey.storage.atomic_io import write_json_atomic as _atomic_write_json
+
+    _atomic_write_json(
+        path,
         value,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    if len(data) > max_bytes:
-        raise ValueError("local state is too large")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temporary.open("xb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        try:
-            temporary.unlink()
-        except OSError:
-            pass
+        mode=mode,
+        preserve_mode=preserve_mode,
+        max_bytes=max_bytes,
+    )
 
 
 def delete_file(path: Path) -> None:

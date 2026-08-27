@@ -164,7 +164,7 @@ class BrowserSearchProvider:
 
     def _guard_request(self, route) -> None:
         try:
-            blocked = bool(check_fetch_url(route.request.url))
+            blocked = bool(check_fetch_url(route.request.url, use_cache=True))
         except Exception:
             blocked = True
         try:

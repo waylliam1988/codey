@@ -6,7 +6,7 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
-## 0.4.17 - OS-Backed File Locks, Ref-Counted Lock Registry, and Cooperative Read Discipline
+## 0.4.17 - OS-Backed File Locks, Cooperative Cancellation, and Storage Unification
 
 - Replaced sidecar lock creation/deletion and stale takeover heuristics with OS-backed advisory file locks (`codey.storage.file_lock`).
   - Uses operating-system native locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) combined with process-local thread synchronization (`threading.RLock`).
@@ -19,6 +19,21 @@ This file records Codey's release history. The newest release appears first.
     - All public read APIs (`list_*`, `export_state`, `query_*_hints`, `learning_enabled`) acquire the store's `events_path` lock, preventing torn reads against concurrent `reset_all()` or active mutations.
     - All internal read/projection helpers are renamed with `_unlocked` suffix (e.g. `_load_items_unlocked`, `_read_events_unlocked`) to explicitly designate that callers must already hold the authoritative event lock.
     - `compact_if_needed()` wraps event file stat checks, state loading, event compaction/rewriting, and post-compaction stats atomically within a single `with with_file_lock(self.events_path):` block, closing un-synchronized stat/rewrite races.
+    - Fixed `UnboundLocalError` on `before` variable in `compact_if_needed()` during lock acquisition timeout in `work_queue`, `affinity`, and `router`.
+- Hardened `BrowserWorker` with cooperative cancellation and decoupled job lifecycle (`codey.automation.browser_worker`):
+  - Added `_Job` dataclass with `_JobState` (`QUEUED`, `RUNNING`, `COMPLETED`, `CANCELLED`, `CANCELLATION_REQUESTED`).
+  - Caller cancellations and timeouts propagate into job-specific cancellation events and execution deadlines, running inside `cancellation.scope` and `cancellation.deadline_scope`.
+  - Queued jobs cancelled prior to dispatch skip execution cleanly, and running jobs observe cancellation checks.
+- Unified Research Network Policy and DNS caching (`codey.research.network_policy`):
+  - Created `NetworkPolicy` with `NetworkStatus` (`PUBLIC_WEB`, `BLOCKED_PRIVATE`, `BLOCKED_UNRESOLVED`, `INVALID_URL`) for centralized SSRF mitigation.
+  - Introduced TTL/LRU caching for subresource requests in browser automation route guards, avoiding redundant DNS resolution for scripts, styles, and fonts.
+- Agent runner protocol improvements (`codey.agents.runner`):
+  - Removed implicit terminal when the model returns valid tool actions without an explicit `<continue>` or `<done>` control element; tool results are now cleanly formatted and returned to the model with a protocol reminder.
+- Edit tool hardening (`codey.toolchain.runtime`):
+  - Removed heuristic write paths in `_replace_unique_indentation_recovery()`; indentation mismatches now fail safely with diagnostic bounded context and line guidance without mutating user files.
+- Storage and permission unification (`codey.storage.atomic_io`, `codey.storage.local_store`):
+  - Unified atomic file writing under `write_bytes_atomic`, `write_text_atomic`, and `write_json_atomic` supporting explicit POSIX permission modes and preserving existing file modes.
+  - Local credential storage (`save_local_config`) enforces `0o600` permissions.
 
 
 ## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants

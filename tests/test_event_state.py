@@ -188,6 +188,108 @@ class ResetEventBackedStateTests(unittest.TestCase):
 
         self.assertTrue(export_done)
 
+    def test_compaction_returns_ok_false_on_lock_timeout(self) -> None:
+        import codey.storage.file_lock as fl
+        from codey.ghost.affinity import GhostAffinityStore
+        from codey.ghost.router import GhostRouteStore
+
+        for store_cls in (GhostWorkQueueStore, GhostAffinityStore, GhostRouteStore):
+            store = store_cls(state_home=self.root)
+            store.events_path.parent.mkdir(parents=True, exist_ok=True)
+            store.events_path.write_text("event\n", encoding="utf-8")
+
+            started = threading.Event()
+            stop = threading.Event()
+
+            def lock_holder() -> None:
+                with with_file_lock(store.events_path, timeout_seconds=5.0):
+                    started.set()
+                    stop.wait(timeout=3.0)
+
+            t = threading.Thread(target=lock_holder)
+            t.start()
+            started.wait(timeout=2.0)
+            try:
+                orig_timeout = fl.LOCK_TIMEOUT_SECONDS
+                fl.LOCK_TIMEOUT_SECONDS = 0.05
+                try:
+                    result = store.compact_if_needed()
+                    self.assertIsInstance(result, dict)
+                    self.assertFalse(result["ok"])
+                finally:
+                    fl.LOCK_TIMEOUT_SECONDS = orig_timeout
+            finally:
+                stop.set()
+                t.join()
+
+    def test_all_seven_ghost_stores_public_reads_block_on_events_lock(self) -> None:
+        from codey.ghost.affinity import GhostAffinityStore
+        from codey.ghost.continuity import GhostContinuityStore
+        from codey.ghost.hebbian import GhostHebbianStore
+        from codey.ghost.inbox import GhostInboxStore
+        from codey.ghost.router import GhostRouteStore
+        from codey.ghost.sleep import GhostSleepStore
+
+        read_operations = [
+            (GhostWorkQueueStore, lambda s: s.list_items()),
+            (GhostWorkQueueStore, lambda s: s.export_state()),
+            (GhostAffinityStore, lambda s: s.list_nodes()),
+            (GhostAffinityStore, lambda s: s.list_edges()),
+            (GhostAffinityStore, lambda s: s.export_state()),
+            (GhostAffinityStore, lambda s: s.query_directive_order_hints(())),
+            (GhostAffinityStore, lambda s: s.query_work_priority_hints(())),
+            (GhostAffinityStore, lambda s: s.query_research_priority_hints(())),
+            (GhostContinuityStore, lambda s: s.list_items()),
+            (GhostContinuityStore, lambda s: s.export_state()),
+            (GhostHebbianStore, lambda s: s.list_nodes()),
+            (GhostHebbianStore, lambda s: s.list_edges()),
+            (GhostHebbianStore, lambda s: s.export_state()),
+            (GhostInboxStore, lambda s: s.list_candidates()),
+            (GhostInboxStore, lambda s: s.applicable_candidates()),
+            (GhostInboxStore, lambda s: s.export_state()),
+            (GhostInboxStore, lambda s: s.learning_enabled()),
+            (GhostRouteStore, lambda s: s.export_state()),
+            (GhostSleepStore, lambda s: s.export_state()),
+        ]
+
+        for store_cls, read_fn in read_operations:
+            with tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                store = store_cls(state_home=root)
+                store.events_path.parent.mkdir(parents=True, exist_ok=True)
+                store.events_path.write_text("", encoding="utf-8")
+
+                started = threading.Event()
+                stop = threading.Event()
+
+                def lock_holder() -> None:
+                    with with_file_lock(store.events_path, timeout_seconds=5.0):
+                        started.set()
+                        stop.wait(timeout=2.0)
+
+                t = threading.Thread(target=lock_holder)
+                t.start()
+                started.wait(timeout=2.0)
+
+                read_done = False
+
+                def reader() -> None:
+                    nonlocal read_done
+                    read_fn(store)
+                    read_done = True
+
+                rt = threading.Thread(target=reader)
+                rt.start()
+
+                time.sleep(0.08)
+                self.assertFalse(read_done, f"{store_cls.__name__} read operation did not block on events_path lock")
+
+                stop.set()
+                t.join()
+                rt.join()
+
+                self.assertTrue(read_done)
+
 
 if __name__ == "__main__":
     unittest.main()

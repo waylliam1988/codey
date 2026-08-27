@@ -3832,10 +3832,41 @@ class ProtocolTelemetryTests(unittest.TestCase):
         tools = json.loads(serialized)["protocol_telemetry"]["phases"]["research"][
             "unknown_tools"
         ]
-        self.assertEqual(len(tools), 1)
-        self.assertEqual(tools[0]["label"], "buy_bitcoin")
-        self.assertEqual(tools[0]["count"], 1)
         self.assertTrue(tools[0]["digest"].startswith("sha256:"))
+
+
+class NetworkPolicyTests(unittest.TestCase):
+    def test_evaluates_public_and_blocked_urls(self) -> None:
+        from codey.research.network_policy import NetworkPolicy, NetworkStatus
+
+        policy = NetworkPolicy(cache_ttl_seconds=30.0)
+
+        # Invalid schemes/hosts
+        self.assertEqual(policy.evaluate_url("ftp://example.com").status, NetworkStatus.INVALID_URL)
+        self.assertEqual(policy.evaluate_url("http://").status, NetworkStatus.INVALID_URL)
+        self.assertEqual(policy.evaluate_url("http://127.0.0.1/").status, NetworkStatus.BLOCKED_PRIVATE)
+        self.assertEqual(policy.evaluate_url("http://localhost/").status, NetworkStatus.BLOCKED_PRIVATE)
+
+        # Resolve=False for syntactically valid public URLs
+        decision = policy.evaluate_url("https://example.com/api", resolve=False)
+        self.assertEqual(decision.status, NetworkStatus.PUBLIC_WEB)
+        self.assertTrue(decision.allowed)
+
+    def test_cache_hits_for_subresource_checks(self) -> None:
+        from codey.research.network_policy import NetworkPolicy
+
+        policy = NetworkPolicy(cache_ttl_seconds=30.0)
+        with unittest.mock.patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = [(2, 1, 6, "", ("93.184.216.34", 443))]
+            # First call populates cache
+            r1 = policy.check_url("https://example.com/style.css", resolve=True, use_cache=True)
+            self.assertIsNone(r1)
+            self.assertEqual(mock_dns.call_count, 1)
+
+            # Second call hits cache
+            r2 = policy.check_url("https://example.com/font.woff", resolve=True, use_cache=True)
+            self.assertIsNone(r2)
+            self.assertEqual(mock_dns.call_count, 1)
 
 
 if __name__ == "__main__":

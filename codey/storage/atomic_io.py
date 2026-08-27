@@ -9,10 +9,13 @@ by platform text-mode translation.
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import uuid
 from pathlib import Path
+
+MAX_ATOMIC_JSON_BYTES = 8 * 1024 * 1024
 
 
 def encode_with_original_eol(target: Path, text: str, *, encoding: str = "utf-8") -> bytes:
@@ -28,13 +31,18 @@ def encode_with_original_eol(target: Path, text: str, *, encoding: str = "utf-8"
     return str(text or "").replace("\r\n", "\n").encode(encoding)
 
 
-def write_text_atomic(path: str | Path, text: str, *, encoding: str = "utf-8") -> None:
-    """Replace ``path`` with ``text`` atomically, preserving EOL style."""
+def write_bytes_atomic(
+    path: str | Path,
+    data: bytes,
+    *,
+    mode: int | None = None,
+    preserve_mode: bool = True,
+) -> None:
+    """Replace ``path`` with ``data`` atomically."""
 
     target = Path(path)
     directory = target.parent if str(target.parent) else Path(".")
     directory.mkdir(parents=True, exist_ok=True)
-    data = encode_with_original_eol(target, text, encoding=encoding)
     tmp = directory / f".{target.name}.{uuid.uuid4().hex}.tmp"
     existing_mode = _existing_mode(target)
     try:
@@ -42,11 +50,49 @@ def write_text_atomic(path: str | Path, text: str, *, encoding: str = "utf-8") -
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        if existing_mode is not None:
+        if mode is not None:
+            os.chmod(tmp, mode)
+        elif preserve_mode and existing_mode is not None:
             os.chmod(tmp, existing_mode)
         os.replace(tmp, target)
     finally:
         _cleanup_temp_file(tmp)
+
+
+def write_text_atomic(
+    path: str | Path,
+    text: str,
+    *,
+    encoding: str = "utf-8",
+    mode: int | None = None,
+    preserve_mode: bool = True,
+) -> None:
+    """Replace ``path`` with ``text`` atomically, preserving EOL style."""
+
+    target = Path(path)
+    data = encode_with_original_eol(target, text, encoding=encoding)
+    write_bytes_atomic(target, data, mode=mode, preserve_mode=preserve_mode)
+
+
+def write_json_atomic(
+    path: str | Path,
+    value: dict,
+    *,
+    mode: int | None = None,
+    preserve_mode: bool = True,
+    max_bytes: int = MAX_ATOMIC_JSON_BYTES,
+) -> None:
+    """Replace ``path`` with JSON-serialized ``value`` atomically."""
+
+    data = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    if len(data) > max_bytes:
+        raise ValueError("local state is too large")
+    write_bytes_atomic(path, data, mode=mode, preserve_mode=preserve_mode)
 
 
 def _existing_mode(target: Path) -> int | None:
@@ -72,5 +118,7 @@ def _cleanup_temp_file(path: Path) -> None:
 
 __all__ = [
     "encode_with_original_eol",
+    "write_bytes_atomic",
+    "write_json_atomic",
     "write_text_atomic",
 ]

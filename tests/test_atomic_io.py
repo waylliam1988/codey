@@ -120,6 +120,32 @@ class AtomicWriteTests(unittest.TestCase):
                 except OSError:
                     pass
 
+    def test_write_bytes_atomic(self) -> None:
+        from codey.storage.atomic_io import write_bytes_atomic
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td, "data.bin")
+            write_bytes_atomic(path, b"\x00\x01\x02")
+            self.assertEqual(path.read_bytes(), b"\x00\x01\x02")
+
+    def test_write_json_atomic(self) -> None:
+        from codey.storage.atomic_io import write_json_atomic
+        import json
+
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td, "data.json")
+            write_json_atomic(path, {"key": "value"})
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"key": "value"})
+
+    @unittest.skipIf(os.name == "nt", "POSIX permission bits are not supported on Windows")
+    def test_explicit_mode_is_applied_to_file(self) -> None:
+        from codey.storage.atomic_io import write_json_atomic
+
+        with tempfile.TemporaryDirectory() as td:
+            secret = Path(td, "secret.json")
+            write_json_atomic(secret, {"api_key": "sk-test"}, mode=0o600)
+            self.assertEqual(stat.S_IMODE(secret.stat().st_mode), 0o600)
+
 
 if __name__ == "__main__":
     unittest.main()

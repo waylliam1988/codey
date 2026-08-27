@@ -1440,9 +1440,36 @@ def run(
         if control is None:
             if results:
                 emit(RunEvent.status(
-                    "[agent] reply had actions but no control element — assuming done."
+                    "[agent] reply had actions but no control element — returning results to model with protocol reminder."
                 ))
-                return finish(f"applied {len(results)} action(s) (no control element)", "protocol", turn)
+                if made_progress:
+                    stagnant_count = 0
+                else:
+                    stagnant_count += 1
+                    if stagnant_count >= stagnant_turns:
+                        msg = f"stopped after {stagnant_turns} turns without file writes or new tool information"
+                        emit(RunEvent.status(
+                            f"[agent] no progress for {stagnant_turns} turns, stopping."
+                        ))
+                        return finish(msg, "no_progress", turn)
+
+                if turn >= max_turns:
+                    emit(RunEvent.status(f"[agent] hit max_turns={max_turns}, stopping."))
+                    return finish(f"hit max_turns={max_turns}", "max_turns", turn)
+
+                formatted = codec.format_results(results)
+                protocol_reminder = "\n\nNote: Please remember to include a <continue> or <done> control element in your response."
+                next_prompt = append_coding_context(f"{formatted}{protocol_reminder}")
+                reply = send_prompt(
+                    next_prompt,
+                    restart_request=(
+                        "Continue the unfinished task using the latest local tool results below.\n\n"
+                        f"{next_prompt}"
+                    ),
+                )
+                report_reply(turn + 1, reply)
+                continue
+
             stagnant_count += 1
             # The observation lands before the terminal check: a reply that
             # exhausts the stagnation budget is still a protocol error, so

@@ -277,65 +277,6 @@ def _leading_whitespace(line: str) -> str:
     return body[: len(body) - len(body.lstrip(" \t"))]
 
 
-def _has_indented_line(lines: list[str]) -> bool:
-    return any(_line_body_without_eol(line).startswith((" ", "\t")) for line in lines)
-
-
-def _replace_unique_indentation_recovery(
-    content: str,
-    search: str,
-    replace: str,
-) -> tuple[str, int]:
-    search_lines = search.splitlines(keepends=True)
-    replace_lines = replace.splitlines(keepends=True)
-    if (
-        not search_lines
-        or len(search_lines) != len(replace_lines)
-        or not _has_indented_line(search_lines)
-    ):
-        return content, 0
-
-    content_lines = content.splitlines(keepends=True)
-    match_starts: list[int] = []
-    search_bodies = [
-        _line_body_without_eol(line).lstrip(" \t")
-        for line in search_lines
-    ]
-    width = len(search_lines)
-    for index in range(0, len(content_lines) - width + 1):
-        candidate = content_lines[index : index + width]
-        candidate_bodies = [
-            _line_body_without_eol(line).lstrip(" \t")
-            for line in candidate
-        ]
-        if candidate_bodies == search_bodies:
-            match_starts.append(index)
-            if len(match_starts) > 1:
-                return content, len(match_starts)
-
-    if len(match_starts) != 1:
-        return content, len(match_starts)
-
-    start = match_starts[0]
-    candidate = content_lines[start : start + width]
-    aligned: list[str] = []
-    for candidate_line, replacement_line in zip(candidate, replace_lines, strict=True):
-        body = _line_body_without_eol(replacement_line)
-        eol = _line_eol(candidate_line)
-        if body.strip():
-            stripped_body = body.lstrip(" \t")
-            aligned.append(
-                f"{_leading_whitespace(candidate_line)}"
-                f"{stripped_body}{eol}"
-            )
-        else:
-            aligned.append(eol)
-    updated_lines = [
-        *content_lines[:start],
-        *aligned,
-        *content_lines[start + width :],
-    ]
-    return "".join(updated_lines), 1
 
 
 def _bounded_failure_output(lines: list[str]) -> str:
@@ -581,21 +522,12 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
         return ToolOutcome.error(f"not utf-8 text: {rel}")
 
     updated = content
-    indentation_recovered = False
     for index, block in enumerate(blocks, start=1):
         exact_count = updated.count(block.search)
         crlf_count = 0
         if exact_count == 0 and "\r\n" in updated and "\r\n" not in block.search:
             crlf_count = updated.count(block.search.replace("\n", "\r\n"))
-        recovered_updated = updated
-        recovered_count = 0
-        if exact_count == 0 and crlf_count == 0:
-            recovered_updated, recovered_count = _replace_unique_indentation_recovery(
-                updated,
-                block.search,
-                block.replace,
-            )
-        total = exact_count or crlf_count or recovered_count
+        total = exact_count or crlf_count
         if total == 0:
             return _search_not_found(
                 rel,
@@ -613,19 +545,15 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
                 replacement_index=index,
                 replacement_count=len(blocks),
             )
-        if recovered_count == 1:
-            updated = recovered_updated
-            indentation_recovered = True
-        else:
-            updated, replaced = _replace_unique(updated, block.search, block.replace)
-            if not replaced:
-                return _search_not_found(
-                    rel,
-                    original_content=content,
-                    search=block.search,
-                    replacement_index=index,
-                    replacement_count=len(blocks),
-                )
+        updated, replaced = _replace_unique(updated, block.search, block.replace)
+        if not replaced:
+            return _search_not_found(
+                rel,
+                original_content=content,
+                search=block.search,
+                replacement_index=index,
+                replacement_count=len(blocks),
+            )
 
     if updated == content:
         return ToolOutcome(f"edited {rel} (no changes)", True)
@@ -635,9 +563,8 @@ def edit_file(root: Path, rel: str, blocks: list[EditBlock]) -> ToolOutcome:
     write_text_atomic(path, updated)
     count = len(blocks)
     label = "replacement" if count == 1 else "replacements"
-    note = "; indentation recovered" if indentation_recovered else ""
     return ToolOutcome(
-        f"edited {rel} ({count} {label}{note}){syntax_hint}",
+        f"edited {rel} ({count} {label}){syntax_hint}",
         True,
         changed=True,
     )

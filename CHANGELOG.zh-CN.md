@@ -6,7 +6,7 @@
 
 ## Unreleased
 
-## 0.4.17 - OS-Backed File Locks, Ref-Counted Lock Registry, and Cooperative Read Discipline
+## 0.4.17 - OS-Backed File Locks, Cooperative Cancellation, and Storage Unification
 
 - 将基于 lock 文件创建/删除与过期接管（stale takeover）的旧文件锁模型重构为基于 OS 内核与线程隔离的建议锁（`codey.storage.file_lock`）。
   - 底层使用操作系统原生锁（Windows 下为 `msvcrt.locking`，POSIX 下为 `fcntl.flock`）并结合进程内线程同步（`threading.RLock`）与线程重入计数。
@@ -18,7 +18,22 @@
   - 统一全仓全部 7 个 Ghost store（`work_queue`、`affinity`、`continuity`、`hebbian`、`inbox`、`router`、`sleep`）的合作式锁（Cooperative Lock）纪律：
     - 所有公开读取 API（`list_*`、`export_state`、`query_*_hints`、`learning_enabled`）统一持有 `self.events_path` 锁，避免与并发 `reset_all()` 或 mutation 交错产生中间态；
     - 内部读与 projection helper 规范重命名为 `_xxx_unlocked`（如 `_load_items_unlocked`、`_read_events_unlocked`），明确表达调用方已持有事件锁；
-    - `compact_if_needed()` 将事件文件状态检查、内存状态加载、事件紧缩与重写、紧缩后状态检查整体封装在单个 `with with_file_lock(self.events_path):` 块中原子执行，消除无锁 stat 带来的竞态。
+    - `compact_if_needed()` 将事件文件状态检查、内存状态加载、事件紧缩与重写、紧缩后状态检查整体封装在单个 `with with_file_lock(self.events_path):` 块中原子执行，消除无锁 stat 带来的竞态；
+    - 修复了 `work_queue`、`affinity` 与 `router` 在锁获取超时时 `compact_if_needed()` 异常处理中引用未定义 `before` 变量的 `UnboundLocalError`。
+- `BrowserWorker` 增加协作式取消与解耦的任务生命周期管理（`codey.automation.browser_worker`）：
+  - 引入 `_Job` 数据类与 `_JobState` 状态机（`QUEUED`、`RUNNING`、`COMPLETED`、`CANCELLED`、`CANCELLATION_REQUESTED`）；
+  - 调用方超时或取消事件自动桥接至 worker 线程的 `cancellation.scope` 和 `cancellation.deadline_scope`；
+  - 队列中尚未开始的 job 被取消后直接跳过执行，运行中的 job 可通过 `cancellation.check()` 及时感知。
+- 收敛 Research 网络策略与 DNS 缓存机制（`codey.research.network_policy`）：
+  - 建立统一的 `NetworkPolicy` 与精简状态机 `NetworkStatus`（`PUBLIC_WEB`、`BLOCKED_PRIVATE`、`BLOCKED_UNRESOLVED`、`INVALID_URL`），集中化 SSRF 风险防护；
+  - 为浏览器自动化子资源拦截（CSS/JS/字体等）引入 TTL/LRU 缓存，避免重复 DNS 解析引起的性能抖动。
+- Agent Runner 协议交互优化（`codey.agents.runner`）：
+  - 移除当模型返回有效工具调用但遗漏 `<continue>` / `<done>` 控制元素时的隐式终止行为，改为将工具执行结果规范格式化后带协议提醒返回给模型继续下一轮推理。
+- Edit 工具严格化与启发式写入移除（`codey.toolchain.runtime`）：
+  - 移除 `_replace_unique_indentation_recovery()` 的直接文件写入路径，当 exact 和 CRLF 匹配失败时不修改文件，直接返回带有上下文与行号的诊断指引。
+- 存储原语统一与权限收敛（`codey.storage.atomic_io`、`codey.storage.local_store`）：
+  - 统一 `write_bytes_atomic`、`write_text_atomic`、`write_json_atomic` 原子写入原语，支持显式 POSIX 权限模式与已有权限继承；
+  - 本地凭据存储（`save_local_config`）强制使用 `0o600` 权限。
 
 
 ## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants

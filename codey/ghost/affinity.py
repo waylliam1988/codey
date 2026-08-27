@@ -985,6 +985,7 @@ class GhostAffinityStore:
             }
 
     def compact_if_needed(self) -> dict[str, object]:
+        before = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
         try:
             with with_file_lock(self.events_path):
                 before = _event_file_stats(self.events_path, max_bytes=MAX_AFFINITY_EVENTS_BYTES)
