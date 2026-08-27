@@ -20,7 +20,14 @@ from codey.ghost.affinity import apply_affinity_work_boost
 from codey.ghost.continuity import GhostContinuityStore
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
-from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, project_key, read_json, session_key, write_json_atomic
+from codey.storage.local_store import (
+    DEFAULT_STATE_HOME,
+    delete_file,
+    project_key,
+    read_json,
+    session_key,
+    write_json_atomic,
+)
 from codey.storage.transactional_json import with_file_lock
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
 
@@ -38,50 +45,60 @@ MAX_WORK_WARNINGS = 20
 MAX_WORK_RETRIES = 3
 DEFAULT_WORK_CLAIM_LEASE_SECONDS = 24 * 60 * 60
 _PROJECTION_KIND = "ghost_work_items_projection"
-_WORK_EVENT_TYPES = frozenset({
-    "ghost_work_item_observed",
-    "ghost_work_item_transitioned",
-    "ghost_work_items_deleted",
-    "ghost_work_snapshot",
-})
-WORK_ITEM_TRANSITION_ACTIONS = frozenset({
-    "claim",
-    "complete",
-    "block",
-    "release",
-    "release_stale",
-    "reject",
-    "queue",
-})
+_WORK_EVENT_TYPES = frozenset(
+    {
+        "ghost_work_item_observed",
+        "ghost_work_item_transitioned",
+        "ghost_work_items_deleted",
+        "ghost_work_snapshot",
+    }
+)
+WORK_ITEM_TRANSITION_ACTIONS = frozenset(
+    {
+        "claim",
+        "complete",
+        "block",
+        "release",
+        "release_stale",
+        "reject",
+        "queue",
+    }
+)
 
-WORK_ITEM_KINDS = frozenset({
-    "research",
-    "coding",
-    "review",
-    "memory_sleep",
-    "open_question",
-    "project_followup",
-})
-WORK_ITEM_STATUSES = frozenset({
-    "candidate",
-    "queued",
-    "running",
-    "blocked",
-    "done",
-    "rejected",
-    "expired",
-})
-WORK_ITEM_SOURCES = frozenset({
-    "continuity",
-    "concept_open_question",
-    "research_note",
-    "research_interest",
-    "run_ledger",
-    "review",
-    "work_checkpoint",
-    "sleep",
-    "user",
-})
+WORK_ITEM_KINDS = frozenset(
+    {
+        "research",
+        "coding",
+        "review",
+        "memory_sleep",
+        "open_question",
+        "project_followup",
+    }
+)
+WORK_ITEM_STATUSES = frozenset(
+    {
+        "candidate",
+        "queued",
+        "running",
+        "blocked",
+        "done",
+        "rejected",
+        "expired",
+    }
+)
+WORK_ITEM_SOURCES = frozenset(
+    {
+        "continuity",
+        "concept_open_question",
+        "research_note",
+        "research_interest",
+        "run_ledger",
+        "review",
+        "work_checkpoint",
+        "sleep",
+        "user",
+    }
+)
 ACTIVE_STATUSES = frozenset({"candidate", "queued", "running", "blocked"})
 CLAIMABLE_STATUSES = frozenset({"queued"})
 TERMINAL_STATUSES = frozenset({"done", "rejected", "expired"})
@@ -109,29 +126,33 @@ SCOPE_PRIORITY = {
     "user": 2,
 }
 
-_STRICT_CONTINUATION_CN = frozenset({
-    "继续",
-    "继续吧",
-    "继续处理",
-    "继续待办",
-    "继续刚才的待办",
-    "继续上一个待办",
-    "处理待办",
-    "处理下一个待办",
-    "下一个",
-    "接着做",
-})
-_STRICT_CONTINUATION_EN = frozenset({
-    "continue",
-    "continue please",
-    "next",
-    "next item",
-    "handle pending item",
-    "continue pending item",
-    "continue saved task",
-    "resume saved task",
-    "resume queued task",
-})
+_STRICT_CONTINUATION_CN = frozenset(
+    {
+        "继续",
+        "继续吧",
+        "继续处理",
+        "继续待办",
+        "继续刚才的待办",
+        "继续上一个待办",
+        "处理待办",
+        "处理下一个待办",
+        "下一个",
+        "接着做",
+    }
+)
+_STRICT_CONTINUATION_EN = frozenset(
+    {
+        "continue",
+        "continue please",
+        "next",
+        "next item",
+        "handle pending item",
+        "continue pending item",
+        "continue saved task",
+        "resume saved task",
+        "resume queued task",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -286,48 +307,60 @@ class GhostWorkQueueStore:
         try:
             now = _now()
             candidates: list[GhostWorkItem] = []
-            candidates.extend(_items_from_continuity(
-                continuity_store,
-                session_id=session_id,
-                project=project,
-                now=now,
-            ))
-            candidates.extend(_items_from_research_interest_candidates(
-                research_interest_candidates,
-                session_id=session_id,
-                project=project,
-                now=now,
-            ))
-            candidates.extend(_items_from_work_checkpoint(
-                work_checkpoint_store,
-                session_id=session_id,
-                project=project,
-                now=now,
-            ))
-            candidates.extend(_items_from_run_projection(
-                run_projection,
-                session_id=session_id,
-                project=project,
-                now=now,
-            ))
-            candidates.extend(_items_from_terminal_event(
-                terminal_event,
-                session_id=session_id,
-                run_id=run_id,
-                project=project,
-                now=now,
-            ))
+            candidates.extend(
+                _items_from_continuity(
+                    continuity_store,
+                    session_id=session_id,
+                    project=project,
+                    now=now,
+                )
+            )
+            candidates.extend(
+                _items_from_research_interest_candidates(
+                    research_interest_candidates,
+                    session_id=session_id,
+                    project=project,
+                    now=now,
+                )
+            )
+            candidates.extend(
+                _items_from_work_checkpoint(
+                    work_checkpoint_store,
+                    session_id=session_id,
+                    project=project,
+                    now=now,
+                )
+            )
+            candidates.extend(
+                _items_from_run_projection(
+                    run_projection,
+                    session_id=session_id,
+                    project=project,
+                    now=now,
+                )
+            )
+            candidates.extend(
+                _items_from_terminal_event(
+                    terminal_event,
+                    session_id=session_id,
+                    run_id=run_id,
+                    project=project,
+                    now=now,
+                )
+            )
 
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 items = _bounded_items(_items_from_events(events))
                 expired = tuple(item for item in items if _is_expired(item, now))
                 append_events: list[dict[str, object]] = []
                 if expired:
-                    append_events.append(_items_deleted_event(
-                        reason="expired",
-                        expected_items=expired,
-                        ts=now,
-                    ))
+                    append_events.append(
+                        _items_deleted_event(
+                            reason="expired",
+                            expected_items=expired,
+                            ts=now,
+                        )
+                    )
                     expired_ids = {item.id for item in expired}
                     items = _bounded_items(item for item in items if item.id not in expired_ids)
                 if not candidates:
@@ -341,7 +374,9 @@ class GhostWorkQueueStore:
                         )
                     new_items = _bounded_items(_items_from_events((*events, *append_events)))
                     return _WorkMutation(
-                        GhostWorkSyncResult(True, skipped_reason="no_sources", items_changed=len(expired), total_items=len(new_items)),
+                        GhostWorkSyncResult(
+                            True, skipped_reason="no_sources", items_changed=len(expired), total_items=len(new_items)
+                        ),
                         append_events=tuple(append_events),
                         items=tuple(new_items),
                     )
@@ -364,7 +399,9 @@ class GhostWorkQueueStore:
                     )
                 new_items = _bounded_items(_items_from_events((*events, *append_events)))
                 return _WorkMutation(
-                    GhostWorkSyncResult(True, items_changed=observed_count, total_items=len(new_items), warnings=self.last_warnings),
+                    GhostWorkSyncResult(
+                        True, items_changed=observed_count, total_items=len(new_items), warnings=self.last_warnings
+                    ),
                     append_events=tuple(append_events),
                     items=tuple(new_items),
                 )
@@ -422,6 +459,7 @@ class GhostWorkQueueStore:
         if not is_strict_work_continuation(user_request):
             return GhostWorkClaimResult(False, skipped_reason="not_continuation")
         try:
+
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 now = _now()
                 append_events: list[dict[str, object]] = []
@@ -430,18 +468,20 @@ class GhostWorkQueueStore:
                     if not _is_stale_claim(item, now):
                         continue
                     next_status = "blocked" if item.retry_count >= MAX_WORK_RETRIES else "queued"
-                    append_events.append(_transition_event(
-                        item,
-                        action="release_stale",
-                        patch={
-                            "status": next_status,
-                            "started_run_id": "" if next_status == "queued" else item.started_run_id,
-                            "lease_expires_at": "",
-                            "blocked_reason": "stale_claim" if next_status == "blocked" else "",
-                            "updated_at": now,
-                        },
-                        ts=now,
-                    ))
+                    append_events.append(
+                        _transition_event(
+                            item,
+                            action="release_stale",
+                            patch={
+                                "status": next_status,
+                                "started_run_id": "" if next_status == "queued" else item.started_run_id,
+                                "lease_expires_at": "",
+                                "blocked_reason": "stale_claim" if next_status == "blocked" else "",
+                                "updated_at": now,
+                            },
+                            ts=now,
+                        )
+                    )
                 if append_events:
                     items = _bounded_items(_items_from_events((*events, *append_events)))
                 candidate = _next_claimable_item(
@@ -477,19 +517,21 @@ class GhostWorkQueueStore:
                     updated_at=now,
                     blocked_reason="",
                 )
-                append_events.append(_transition_event(
-                    candidate,
-                    action="claim",
-                    patch={
-                        "status": "running",
-                        "started_run_id": claimed.started_run_id,
-                        "retry_count": claimed.retry_count,
-                        "lease_expires_at": claimed.lease_expires_at,
-                        "updated_at": now,
-                        "blocked_reason": "",
-                    },
-                    ts=now,
-                ))
+                append_events.append(
+                    _transition_event(
+                        candidate,
+                        action="claim",
+                        patch={
+                            "status": "running",
+                            "started_run_id": claimed.started_run_id,
+                            "retry_count": claimed.retry_count,
+                            "lease_expires_at": claimed.lease_expires_at,
+                            "updated_at": now,
+                            "blocked_reason": "",
+                        },
+                        ts=now,
+                    )
+                )
                 new_items = _bounded_items(_items_from_events((*events, *append_events)))
                 return _WorkMutation(
                     GhostWorkClaimResult(
@@ -525,15 +567,18 @@ class GhostWorkQueueStore:
         run_id: str,
         proof_refs: Iterable[object],
     ) -> GhostWorkItem | None:
-        refs = _bounded_refs(tuple(proof_refs))
         expected_run_id = clip_signal_text(run_id, 120)
+        if not expected_run_id:
+            return None
+        refs = _bounded_refs(tuple(proof_refs))
         try:
+
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 items = _bounded_items(_items_from_events(events))
                 current = _find_item(items, item_id)
                 if current is None or current.status != "running":
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
-                if expected_run_id and current.started_run_id and current.started_run_id != expected_run_id:
+                if not current.started_run_id or current.started_run_id != expected_run_id:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
                 now = _now()
                 if not refs or not _primary_proof_matches_item_kind(current, refs):
@@ -613,6 +658,7 @@ class GhostWorkQueueStore:
     ) -> GhostWorkItem | None:
         expected_run_id = clip_signal_text(run_id, 120)
         try:
+
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 items = _bounded_items(_items_from_events(events))
                 current = _find_item(items, item_id)
@@ -658,6 +704,7 @@ class GhostWorkQueueStore:
 
     def queue_item(self, item_id: str) -> GhostWorkItem | None:
         try:
+
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 items = _bounded_items(_items_from_events(events))
                 current = _find_item(items, item_id)
@@ -706,6 +753,7 @@ class GhostWorkQueueStore:
 
     def reconcile_stale_claims(self) -> GhostWorkSyncResult:
         try:
+
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 now = _now()
                 items = _bounded_items(_items_from_events(events))
@@ -714,18 +762,20 @@ class GhostWorkQueueStore:
                     if not _is_stale_claim(item, now):
                         continue
                     next_status = "blocked" if item.retry_count >= MAX_WORK_RETRIES else "queued"
-                    append_events.append(_transition_event(
-                        item,
-                        action="release_stale",
-                        patch={
-                            "status": next_status,
-                            "started_run_id": "" if next_status == "queued" else item.started_run_id,
-                            "lease_expires_at": "",
-                            "blocked_reason": "stale_claim" if next_status == "blocked" else "",
-                            "updated_at": now,
-                        },
-                        ts=now,
-                    ))
+                    append_events.append(
+                        _transition_event(
+                            item,
+                            action="release_stale",
+                            patch={
+                                "status": next_status,
+                                "started_run_id": "" if next_status == "queued" else item.started_run_id,
+                                "lease_expires_at": "",
+                                "blocked_reason": "stale_claim" if next_status == "blocked" else "",
+                                "updated_at": now,
+                            },
+                            ts=now,
+                        )
+                    )
                 if not append_events:
                     self.last_warnings = ()
                     return _WorkMutation(
@@ -736,7 +786,9 @@ class GhostWorkQueueStore:
                     )
                 new_items = _bounded_items(_items_from_events((*events, *append_events)))
                 return _WorkMutation(
-                    GhostWorkSyncResult(True, items_changed=len(append_events), total_items=len(new_items), warnings=self.last_warnings),
+                    GhostWorkSyncResult(
+                        True, items_changed=len(append_events), total_items=len(new_items), warnings=self.last_warnings
+                    ),
                     append_events=tuple(append_events),
                     items=tuple(new_items),
                 )
@@ -797,10 +849,12 @@ class GhostWorkQueueStore:
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
         try:
+
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 items = _bounded_items(_items_from_events(events))
                 removed = [
-                    item for item in items
+                    item
+                    for item in items
                     if _scope_filter_matches(
                         item,
                         scope=normalized_scope,
@@ -809,7 +863,9 @@ class GhostWorkQueueStore:
                     )
                 ]
                 if not removed:
-                    return _WorkMutation({"removed": 0, "warnings": []}, items=tuple(items), write_projection=False, compact=False)
+                    return _WorkMutation(
+                        {"removed": 0, "warnings": []}, items=tuple(items), write_projection=False, compact=False
+                    )
                 event = _items_deleted_event(
                     reason="scope_deleted",
                     scope=normalized_scope,
@@ -818,7 +874,9 @@ class GhostWorkQueueStore:
                     ts=_now(),
                 )
                 new_items = _bounded_items(_items_from_events((*events, event)))
-                return _WorkMutation({"removed": len(removed), "warnings": []}, append_events=(event,), items=tuple(new_items))
+                return _WorkMutation(
+                    {"removed": len(removed), "warnings": []}, append_events=(event,), items=tuple(new_items)
+                )
 
             result = self._mutate_event_log(decide)
             return result if isinstance(result, dict) else {"removed": 0, "warnings": ["work_queue_error"]}
@@ -877,6 +935,7 @@ class GhostWorkQueueStore:
         if not target_status:
             return None
         try:
+
             def decide(events: list[dict[str, object]]) -> _WorkMutation:
                 items = _bounded_items(_items_from_events(events))
                 current = _find_item(items, item_id)
@@ -887,28 +946,44 @@ class GhostWorkQueueStore:
                 if expected and current.started_run_id and current.started_run_id != expected:
                     return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
                 now = _now()
-                updated = replace(
-                    current,
-                    status=target_status,
-                    started_run_id="" if target_status in {"queued", "candidate"} else current.started_run_id,
-                    completed_run_id=completed_run_id or current.completed_run_id,
-                    proof_refs=proof_refs or current.proof_refs,
-                    blocked_reason=blocked_reason,
-                    lease_expires_at=current.lease_expires_at if target_status == "running" else "",
-                    updated_at=now,
-                )
+                patch: dict[str, object] = {
+                    "status": target_status,
+                    "updated_at": now,
+                }
+                if target_status == "blocked":
+                    reason = clip_signal_text(blocked_reason or "blocked", 120)
+                    patch["blocked_reason"] = reason
+                    patch["lease_expires_at"] = ""
+                    updated = replace(
+                        current,
+                        status="blocked",
+                        blocked_reason=reason,
+                        lease_expires_at="",
+                        updated_at=now,
+                    )
+                elif target_status == "rejected":
+                    patch["lease_expires_at"] = ""
+                    patch["blocked_reason"] = ""
+                    patch["started_run_id"] = ""
+                    patch["completed_run_id"] = ""
+                    patch["proof_refs"] = ()
+                    updated = replace(
+                        current,
+                        status="rejected",
+                        started_run_id="",
+                        completed_run_id="",
+                        proof_refs=(),
+                        blocked_reason="",
+                        lease_expires_at="",
+                        updated_at=now,
+                    )
+                else:
+                    return _WorkMutation(None, items=tuple(items), write_projection=False, compact=False)
+
                 event = _transition_event(
                     current,
                     action=action,
-                    patch={
-                        "status": target_status,
-                        "started_run_id": updated.started_run_id,
-                        "completed_run_id": updated.completed_run_id,
-                        "proof_refs": updated.proof_refs,
-                        "blocked_reason": blocked_reason,
-                        "lease_expires_at": updated.lease_expires_at,
-                        "updated_at": now,
-                    },
+                    patch=patch,
                     ts=now,
                 )
                 new_items = _bounded_items(_items_from_events((*events, event)))
@@ -945,10 +1020,13 @@ class GhostWorkQueueStore:
             return ()
         if payload.get("kind") != _PROJECTION_KIND:
             return ()
-        return tuple(_bounded_items(
-            item for item in (GhostWorkItem.from_payload(row) for row in _list(payload.get("items")))
-            if item is not None
-        ))
+        return tuple(
+            _bounded_items(
+                item
+                for item in (GhostWorkItem.from_payload(row) for row in _list(payload.get("items")))
+                if item is not None
+            )
+        )
 
     def _read_events(self) -> list[dict[str, object]]:
         self._events_read_blocked = False
@@ -1222,22 +1300,24 @@ def _items_from_continuity(
             scope_ref = _normalize_project(scope_ref or project)
         else:
             scope_ref = ""
-        out.append(_new_item(
-            kind=kind,
-            status=status,
-            scope=item.scope,
-            scope_ref=scope_ref,
-            title=title,
-            why_now="Open question from bounded local continuity.",
-            priority=0.62 if status == "queued" else 0.45,
-            confidence=item.confidence,
-            source="research_note" if item.source == "research_note" else "continuity",
-            source_ref=item.source_ref or item.id,
-            evidence_refs=(f"continuity:{item.id}",),
-            run_refs=(),
-            now=now,
-            metadata={"continuity_kind": item.kind, "continuity_source": item.source},
-        ))
+        out.append(
+            _new_item(
+                kind=kind,
+                status=status,
+                scope=item.scope,
+                scope_ref=scope_ref,
+                title=title,
+                why_now="Open question from bounded local continuity.",
+                priority=0.62 if status == "queued" else 0.45,
+                confidence=item.confidence,
+                source="research_note" if item.source == "research_note" else "continuity",
+                source_ref=item.source_ref or item.id,
+                evidence_refs=(f"continuity:{item.id}",),
+                run_refs=(),
+                now=now,
+                metadata={"continuity_kind": item.kind, "continuity_source": item.source},
+            )
+        )
     return out
 
 
@@ -1257,7 +1337,9 @@ def _items_from_research_interest_candidates(
         source_ref = clip_signal_text(_field(candidate, "source_ref") or _field(candidate, "id"), MAX_WORK_REF_CHARS)
         if not source_ref:
             continue
-        scope = _clean_scope(_field(candidate, "scope")) or ("session" if session_id else "project" if project else "user")
+        scope = _clean_scope(_field(candidate, "scope")) or (
+            "session" if session_id else "project" if project else "user"
+        )
         raw_scope_ref = clip_signal_text(_field(candidate, "scope_ref"), 240)
         if scope == "session":
             scope_ref = _session_ref(raw_scope_ref or session_id)
@@ -1279,30 +1361,34 @@ def _items_from_research_interest_candidates(
             kind = "open_question"
             status = "candidate"
             priority = max(0.42, _unit_float(_field(candidate, "priority")))
-        evidence_refs = _bounded_refs((
-            f"research_interest:{clip_signal_text(_field(candidate, 'id'), MAX_WORK_REF_CHARS)}",
-            *_list(_field(candidate, "source_refs")),
-        ))
-        out.append(_new_item(
-            kind=kind,
-            status=status,
-            scope=scope,
-            scope_ref=scope_ref,
-            title=title,
-            why_now=_field(candidate, "why_now") or "Bounded local research interest.",
-            priority=priority,
-            confidence=confidence,
-            source=source,
-            source_ref=source_ref,
-            evidence_refs=evidence_refs,
-            run_refs=(),
-            now=now,
-            metadata={
-                "related_concepts": list(_field(candidate, "related_concepts") or ())[:6],
-                "shared_neighbors": list(_field(candidate, "shared_neighbors") or ())[:6],
-                "strong_support": strong,
-            },
-        ))
+        evidence_refs = _bounded_refs(
+            (
+                f"research_interest:{clip_signal_text(_field(candidate, 'id'), MAX_WORK_REF_CHARS)}",
+                *_list(_field(candidate, "source_refs")),
+            )
+        )
+        out.append(
+            _new_item(
+                kind=kind,
+                status=status,
+                scope=scope,
+                scope_ref=scope_ref,
+                title=title,
+                why_now=_field(candidate, "why_now") or "Bounded local research interest.",
+                priority=priority,
+                confidence=confidence,
+                source=source,
+                source_ref=source_ref,
+                evidence_refs=evidence_refs,
+                run_refs=(),
+                now=now,
+                metadata={
+                    "related_concepts": list(_field(candidate, "related_concepts") or ())[:6],
+                    "shared_neighbors": list(_field(candidate, "shared_neighbors") or ())[:6],
+                    "strong_support": strong,
+                },
+            )
+        )
     return out
 
 
@@ -1331,22 +1417,24 @@ def _items_from_work_checkpoint(
     status = str(getattr(checkpoint, "status", "") or "")
     if status not in {"interrupted", "ready_for_review", "fixing_review", "working"}:
         return []
-    return [_new_item(
-        kind="project_followup",
-        status="queued" if status in {"interrupted", "ready_for_review", "fixing_review"} else "candidate",
-        scope="session",
-        scope_ref=_session_ref(session_id),
-        title=title,
-        why_now=f"Local checkpoint is {clip_signal_text(status, 40)}.",
-        priority=0.86,
-        confidence=0.9,
-        source="work_checkpoint",
-        source_ref=clip_signal_text(getattr(checkpoint, "run_id", ""), MAX_WORK_REF_CHARS),
-        evidence_refs=(f"checkpoint:{_session_ref(session_id)}",),
-        run_refs=(clip_signal_text(getattr(checkpoint, "run_id", ""), MAX_WORK_REF_CHARS),),
-        now=now,
-        metadata={"checkpoint_status": status, "project_ref": _project_ref(checkpoint_project)},
-    )]
+    return [
+        _new_item(
+            kind="project_followup",
+            status="queued" if status in {"interrupted", "ready_for_review", "fixing_review"} else "candidate",
+            scope="session",
+            scope_ref=_session_ref(session_id),
+            title=title,
+            why_now=f"Local checkpoint is {clip_signal_text(status, 40)}.",
+            priority=0.86,
+            confidence=0.9,
+            source="work_checkpoint",
+            source_ref=clip_signal_text(getattr(checkpoint, "run_id", ""), MAX_WORK_REF_CHARS),
+            evidence_refs=(f"checkpoint:{_session_ref(session_id)}",),
+            run_refs=(clip_signal_text(getattr(checkpoint, "run_id", ""), MAX_WORK_REF_CHARS),),
+            now=now,
+            metadata={"checkpoint_status": status, "project_ref": _project_ref(checkpoint_project)},
+        )
+    ]
 
 
 def _items_from_run_projection(
@@ -1367,22 +1455,24 @@ def _items_from_run_projection(
     if not project_ref:
         return []
     title = f"Resume {mode or 'project'} run after {stop_reason or 'tool errors'}"
-    return [_new_item(
-        kind="project_followup",
-        status="queued" if stop_reason in {"error", "no_progress", "stopped"} else "candidate",
-        scope="project",
-        scope_ref=_normalize_project(project or getattr(projection, "project", "")),
-        title=title,
-        why_now="A bounded run ledger projection recorded unfinished local work.",
-        priority=0.72,
-        confidence=0.75,
-        source="run_ledger",
-        source_ref=clip_signal_text(getattr(projection, "run_id", ""), MAX_WORK_REF_CHARS),
-        evidence_refs=(f"ledger:{clip_signal_text(getattr(projection, 'run_id', ''), MAX_WORK_REF_CHARS)}",),
-        run_refs=(clip_signal_text(getattr(projection, "run_id", ""), MAX_WORK_REF_CHARS),),
-        now=now,
-        metadata={"stop_reason": stop_reason, "tool_errors": tool_errors, "session_ref": _session_ref(session_id)},
-    )]
+    return [
+        _new_item(
+            kind="project_followup",
+            status="queued" if stop_reason in {"error", "no_progress", "stopped"} else "candidate",
+            scope="project",
+            scope_ref=_normalize_project(project or getattr(projection, "project", "")),
+            title=title,
+            why_now="A bounded run ledger projection recorded unfinished local work.",
+            priority=0.72,
+            confidence=0.75,
+            source="run_ledger",
+            source_ref=clip_signal_text(getattr(projection, "run_id", ""), MAX_WORK_REF_CHARS),
+            evidence_refs=(f"ledger:{clip_signal_text(getattr(projection, 'run_id', ''), MAX_WORK_REF_CHARS)}",),
+            run_refs=(clip_signal_text(getattr(projection, "run_id", ""), MAX_WORK_REF_CHARS),),
+            now=now,
+            metadata={"stop_reason": stop_reason, "tool_errors": tool_errors, "session_ref": _session_ref(session_id)},
+        )
+    ]
 
 
 def _items_from_terminal_event(
@@ -1403,22 +1493,24 @@ def _items_from_terminal_event(
     project_ref = _project_ref(project)
     if not project_ref:
         return []
-    return [_new_item(
-        kind="coding",
-        status="queued",
-        scope="project",
-        scope_ref=_normalize_project(project),
-        title="Address local review findings",
-        why_now="Review-only mode found issues in the current diff.",
-        priority=0.78,
-        confidence=0.82,
-        source="review",
-        source_ref=clip_signal_text(run_id or event.get("run_id"), MAX_WORK_REF_CHARS),
-        evidence_refs=(f"review:{clip_signal_text(run_id or event.get('run_id'), MAX_WORK_REF_CHARS)}",),
-        run_refs=(clip_signal_text(run_id or event.get("run_id"), MAX_WORK_REF_CHARS),),
-        now=now,
-        metadata={"session_ref": _session_ref(session_id)},
-    )]
+    return [
+        _new_item(
+            kind="coding",
+            status="queued",
+            scope="project",
+            scope_ref=_normalize_project(project),
+            title="Address local review findings",
+            why_now="Review-only mode found issues in the current diff.",
+            priority=0.78,
+            confidence=0.82,
+            source="review",
+            source_ref=clip_signal_text(run_id or event.get("run_id"), MAX_WORK_REF_CHARS),
+            evidence_refs=(f"review:{clip_signal_text(run_id or event.get('run_id'), MAX_WORK_REF_CHARS)}",),
+            run_refs=(clip_signal_text(run_id or event.get("run_id"), MAX_WORK_REF_CHARS),),
+            now=now,
+            metadata={"session_ref": _session_ref(session_id)},
+        )
+    ]
 
 
 def _new_item(
@@ -1524,7 +1616,8 @@ def _next_claimable_item(
     project_ref = _project_ref(project)
     session_ref = _session_ref(session_id)
     candidates = [
-        item for item in items
+        item
+        for item in items
         if item.status in CLAIMABLE_STATUSES
         and item.kind in TASKRUNNER_KINDS
         and item.retry_count < MAX_WORK_RETRIES
@@ -1559,7 +1652,9 @@ def _item_sort_key(item: GhostWorkItem) -> tuple[int, int, float, tuple[int, ...
     )
 
 
-def _claim_sort_key(item: GhostWorkItem, affinity_hints: Iterable[Any] = ()) -> tuple[int, float, int, tuple[int, ...], str]:
+def _claim_sort_key(
+    item: GhostWorkItem, affinity_hints: Iterable[Any] = ()
+) -> tuple[int, float, int, tuple[int, ...], str]:
     priority = apply_affinity_work_boost(item.priority, affinity_hints, item.id)
     return (
         SCOPE_PRIORITY.get(item.scope, 99),
@@ -1587,7 +1682,11 @@ def _scope_filter_matches(
 ) -> bool:
     normalized_scope = str(scope or "").strip().lower()
     if not normalized_scope:
-        return _scope_matches(item, project_ref=project_ref, session_ref=session_ref) if (project_ref or session_ref) else True
+        return (
+            _scope_matches(item, project_ref=project_ref, session_ref=session_ref)
+            if (project_ref or session_ref)
+            else True
+        )
     if item.scope != normalized_scope:
         return False
     if normalized_scope == "project":
@@ -1620,8 +1719,7 @@ def _items_from_events(events: Iterable[dict[str, object]]) -> list[GhostWorkIte
 
 def _snapshot_items(event: Mapping[str, object]) -> list[GhostWorkItem]:
     return _bounded_items(
-        item for item in (GhostWorkItem.from_payload(row) for row in _list(event.get("items")))
-        if item is not None
+        item for item in (GhostWorkItem.from_payload(row) for row in _list(event.get("items"))) if item is not None
     )
 
 
@@ -1701,10 +1799,7 @@ def _items_deleted_event(
         "ts": clip_signal_text(ts, 80),
         "payload": {
             "reason": clip_signal_text(reason, 80),
-            "item_ids": [
-                item_id for item_id in (clip_signal_text(value, 120) for value in item_ids)
-                if item_id
-            ],
+            "item_ids": [item_id for item_id in (clip_signal_text(value, 120) for value in item_ids) if item_id],
             "expected_items": expected,
             "scope": _clean_scope(scope),
             "project_ref": clip_signal_text(project_ref, 120),
@@ -1750,8 +1845,7 @@ def _valid_work_event(event: Mapping[str, object]) -> bool:
         if reason == "expired":
             expected_items = _list(payload.get("expected_items"))
             return bool(expected_items) and all(
-                _valid_work_precondition(row, require_id=True)
-                for row in expected_items
+                _valid_work_precondition(row, require_id=True) for row in expected_items
             )
         if reason == "scope_deleted":
             scope = _clean_scope(payload.get("scope"))
@@ -1779,6 +1873,7 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
         return False
 
     expected_status = _clean_status(precondition.get("expected_status"))
+    expected_started_run_id = clip_signal_text(precondition.get("expected_started_run_id"), 120)
     try:
         expected_retry_count = int(precondition.get("expected_retry_count", 0))
     except (TypeError, ValueError):
@@ -1786,6 +1881,8 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
 
     if action == "claim":
         if target_status != "running" or expected_status != "queued":
+            return False
+        if expected_started_run_id:
             return False
         started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
         lease_expires_at = clip_signal_text(patch.get("lease_expires_at"), 80)
@@ -1801,14 +1898,20 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if clip_signal_text(patch.get("blocked_reason"), 120):
             return False
+        if clip_signal_text(patch.get("completed_run_id"), 120):
+            return False
+        if _bounded_refs(patch.get("proof_refs")):
+            return False
         return True
 
     if action == "complete":
         if target_status != "done" or expected_status != "running":
             return False
         completed_run_id = clip_signal_text(patch.get("completed_run_id"), 120)
+        if not expected_started_run_id or not completed_run_id or completed_run_id != expected_started_run_id:
+            return False
         proof_refs = _bounded_refs(patch.get("proof_refs"))
-        if not completed_run_id or not proof_refs:
+        if not proof_refs:
             return False
         if clip_signal_text(patch.get("lease_expires_at"), 80):
             return False
@@ -1819,7 +1922,13 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
     if action in {"release", "release_stale"}:
         if target_status not in {"queued", "blocked"} or expected_status != "running":
             return False
+        if not expected_started_run_id:
+            return False
         if clip_signal_text(patch.get("lease_expires_at"), 80):
+            return False
+        if clip_signal_text(patch.get("completed_run_id"), 120):
+            return False
+        if _bounded_refs(patch.get("proof_refs")):
             return False
         if target_status == "queued":
             if clip_signal_text(patch.get("started_run_id"), 120):
@@ -1838,6 +1947,10 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if clip_signal_text(patch.get("lease_expires_at"), 80):
             return False
+        if clip_signal_text(patch.get("completed_run_id"), 120):
+            return False
+        if _bounded_refs(patch.get("proof_refs")):
+            return False
         return True
 
     if action == "reject":
@@ -1845,17 +1958,26 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
             return False
         if clip_signal_text(patch.get("lease_expires_at"), 80):
             return False
+        if clip_signal_text(patch.get("blocked_reason"), 120):
+            return False
+        if clip_signal_text(patch.get("started_run_id"), 120):
+            return False
+        if clip_signal_text(patch.get("completed_run_id"), 120):
+            return False
+        if _bounded_refs(patch.get("proof_refs")):
+            return False
         return True
 
     if action == "queue":
         if target_status != "queued" or expected_status not in {"candidate", "blocked", "rejected"}:
             return False
-        if "retry_count" in patch:
-            try:
-                if int(patch["retry_count"]) != 0:
-                    return False
-            except (TypeError, ValueError):
+        if "retry_count" not in patch:
+            return False
+        try:
+            if int(patch["retry_count"]) != 0:
                 return False
+        except (TypeError, ValueError):
+            return False
         if clip_signal_text(patch.get("started_run_id"), 120):
             return False
         if clip_signal_text(patch.get("completed_run_id"), 120):
@@ -1947,48 +2069,62 @@ def _apply_transition_event(
     if not target_status or not _transition_allowed(current, target_status, action=action):
         return "invalid"
 
-    if action == "complete":
-        proof_refs = _bounded_refs(patch.get("proof_refs"))
-        if not proof_refs or not _primary_proof_matches_item_kind(current, proof_refs):
-            return "invalid"
-        completed_run_id = clip_signal_text(patch.get("completed_run_id"), 120)
-        if not completed_run_id:
-            return "invalid"
-
     if action == "claim":
+        started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
+        lease_expires_at = clip_signal_text(patch.get("lease_expires_at"), 80)
+        if not started_run_id or not lease_expires_at or "retry_count" not in patch:
+            return "invalid"
+        try:
+            retry_count = int(patch["retry_count"])
+            if retry_count < 1 or retry_count != current.retry_count + 1:
+                return "invalid"
+        except (TypeError, ValueError):
+            return "invalid"
         updated = replace(
             current,
             status="running",
-            started_run_id=clip_signal_text(patch.get("started_run_id"), 120),
-            retry_count=max(0, _int(patch.get("retry_count"))),
-            lease_expires_at=clip_signal_text(patch.get("lease_expires_at"), 80),
+            started_run_id=started_run_id,
+            retry_count=retry_count,
+            lease_expires_at=lease_expires_at,
             blocked_reason="",
             updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
         )
     elif action == "complete":
+        completed_run_id = clip_signal_text(patch.get("completed_run_id"), 120)
+        if not completed_run_id or not current.started_run_id or completed_run_id != current.started_run_id:
+            return "invalid"
+        proof_refs = _bounded_refs(patch.get("proof_refs"))
+        if not proof_refs or not _primary_proof_matches_item_kind(current, proof_refs):
+            return "invalid"
         updated = replace(
             current,
             status="done",
-            completed_run_id=clip_signal_text(patch.get("completed_run_id"), 120),
-            proof_refs=_bounded_refs(patch.get("proof_refs")),
+            completed_run_id=completed_run_id,
+            proof_refs=proof_refs,
             blocked_reason="",
             lease_expires_at="",
             updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
         )
     elif action in {"release", "release_stale"}:
+        blocked_reason = clip_signal_text(patch.get("blocked_reason"), 120) if target_status == "blocked" else ""
+        if target_status == "blocked" and not blocked_reason:
+            return "invalid"
         updated = replace(
             current,
             status=target_status,
-            started_run_id="" if target_status == "queued" else clip_signal_text(patch.get("started_run_id"), 120),
+            started_run_id="" if target_status == "queued" else current.started_run_id,
             lease_expires_at="",
-            blocked_reason=clip_signal_text(patch.get("blocked_reason"), 120) if target_status == "blocked" else "",
+            blocked_reason=blocked_reason,
             updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
         )
     elif action == "block":
+        blocked_reason = clip_signal_text(patch.get("blocked_reason"), 120)
+        if not blocked_reason:
+            return "invalid"
         updated = replace(
             current,
             status="blocked",
-            blocked_reason=clip_signal_text(patch.get("blocked_reason"), 120),
+            blocked_reason=blocked_reason,
             lease_expires_at="",
             updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
         )
@@ -1996,11 +2132,21 @@ def _apply_transition_event(
         updated = replace(
             current,
             status="rejected",
+            started_run_id="",
+            completed_run_id="",
+            proof_refs=(),
             lease_expires_at="",
             blocked_reason="",
             updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
         )
     elif action == "queue":
+        if "retry_count" not in patch:
+            return "invalid"
+        try:
+            if int(patch["retry_count"]) != 0:
+                return "invalid"
+        except (TypeError, ValueError):
+            return "invalid"
         updated = replace(
             current,
             status="queued",
@@ -2026,13 +2172,9 @@ def _apply_items_deleted_event(by_id: dict[str, GhostWorkItem], event: Mapping[s
     if not isinstance(payload, Mapping):
         return
     item_ids = {
-        item_id for item_id in (clip_signal_text(value, 120) for value in _list(payload.get("item_ids")))
-        if item_id
+        item_id for item_id in (clip_signal_text(value, 120) for value in _list(payload.get("item_ids"))) if item_id
     }
-    expected_items = [
-        row for row in _list(payload.get("expected_items"))
-        if isinstance(row, Mapping)
-    ]
+    expected_items = [row for row in _list(payload.get("expected_items")) if isinstance(row, Mapping)]
     if expected_items:
         for row in expected_items:
             item_id = clip_signal_text(row.get("id"), 120)
@@ -2062,24 +2204,30 @@ def _precondition_matches(item: GhostWorkItem, precondition: Mapping[str, object
         expected_run_id = clip_signal_text(precondition.get("expected_started_run_id"), 120)
         if item.started_run_id != expected_run_id:
             return False
-    if "expected_retry_count" in precondition and item.retry_count != max(0, _int(precondition.get("expected_retry_count"))):
+    if "expected_retry_count" in precondition and item.retry_count != max(
+        0, _int(precondition.get("expected_retry_count"))
+    ):
         return False
     return True
 
 
 def _transition_allowed(item: GhostWorkItem, target_status: str, *, action: str) -> bool:
     if target_status == "running":
-        return item.status == "queued"
+        return action == "claim" and item.status == "queued"
     if target_status == "done":
-        return item.status == "running"
+        return action == "complete" and item.status == "running"
     if target_status == "blocked":
-        return item.status in {"running", "queued", "candidate"}
+        if action == "block":
+            return item.status in {"running", "queued", "candidate"}
+        if action in {"release", "release_stale"}:
+            return item.status == "running"
+        return False
     if target_status == "queued":
         if action in {"release", "release_stale"}:
             return item.status == "running"
         return action == "queue" and item.status in {"candidate", "blocked", "rejected"}
     if target_status == "rejected":
-        return item.status in {"candidate", "queued", "blocked"}
+        return action == "reject" and item.status in {"candidate", "queued", "blocked"}
     return False
 
 
@@ -2092,14 +2240,16 @@ def _stable_item_id(
     source_ref: str,
     title: str,
 ) -> str:
-    key = "|".join((
-        kind,
-        scope,
-        scope_ref,
-        source,
-        source_ref,
-        " ".join(str(title or "").split()).casefold(),
-    ))
+    key = "|".join(
+        (
+            kind,
+            scope,
+            scope_ref,
+            source,
+            source_ref,
+            " ".join(str(title or "").split()).casefold(),
+        )
+    )
     return "gwi_" + hashlib.sha256(key.encode("utf-8", errors="replace")).hexdigest()[:24]
 
 
@@ -2326,10 +2476,14 @@ def _future_ts(now: str, seconds: int) -> str:
         delta_seconds = int(seconds)
     except (TypeError, ValueError):
         delta_seconds = DEFAULT_WORK_CLAIM_LEASE_SECONDS
-    return datetime.fromtimestamp(
-        base.timestamp() + delta_seconds,
-        tz=timezone.utc,
-    ).isoformat(timespec="seconds").replace("+00:00", "Z")
+    return (
+        datetime.fromtimestamp(
+            base.timestamp() + delta_seconds,
+            tz=timezone.utc,
+        )
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
 
 
 def _json_line(value: dict[str, object]) -> str:

@@ -14,10 +14,12 @@
   兼容，mutation 会 fail closed。
 - Ghost Work Queue 的 `ghost_work_item_transitioned` 事件校验提升至严格的
   action-specific 字段与状态语义约束（如 `claim` 必须有非空 `started_run_id`、
-  `lease_expires_at` 和严格递增的 `retry_count`；`complete` 必须有 `completed_run_id`、
-  非空 `proof_refs` 并清空 lease；`release` 到 `queued` 必须显式清空 lease 和
-  `started_run_id`）。Replay 增加 kind-specific primary proof 验证与全序序列
-  回放校验，任何非法 transition 均判定为 `invalid_event` 并触发 fail-closed 阻断。
+  `lease_expires_at` 和严格递增的 `retry_count`；`complete` 必须有非空且与
+  `expected_started_run_id` 严格相等的 `completed_run_id`、非空 `proof_refs` 并清空 lease；
+  `queue` 必须显式包含 `retry_count == 0` 并清空运行态字段；`release` 到 `queued` 必须显式清空 lease 和
+  `started_run_id`）。`complete_item()` 在进入 mutation 前严格校验非空 `run_id` 与 running 状态匹配，
+  阻止空 `run_id` 写出 invalid event 或误 block 其他 run 的 item。
+  Replay 增加 kind-specific primary proof 验证与全序序列回放校验，任何非法 transition 均判定为 `invalid_event` 并触发 fail-closed 阻断。
 - Ghost Affinity 和 Work Queue 的 mutation API 现在把 read -> reduce ->
   decide -> append/rewrite -> project 流程放进 store 文件锁内，关闭并发
   reinforcement 和双重 claim 这类语义 lost-update 竞态；所有 mutation 操作

@@ -27,16 +27,18 @@ FRESH_TS = "2999-01-01T00:00:00Z"
 
 class _FakeIndex:
     def recent(self, *args, **kwargs):
-        return [{
-            "id": "note-1",
-            "type": "synthesis",
-            "title": "Provider recovery synthesis",
-            "body": "Research synthesis.",
-            "open_questions": '["Should we keep tracking provider recovery?"]',
-            "updated": FRESH_TS,
-            "session_id": "s1",
-            "project": "",
-        }]
+        return [
+            {
+                "id": "note-1",
+                "type": "synthesis",
+                "title": "Provider recovery synthesis",
+                "body": "Research synthesis.",
+                "open_questions": '["Should we keep tracking provider recovery?"]',
+                "updated": FRESH_TS,
+                "session_id": "s1",
+                "project": "",
+            }
+        ]
 
 
 class _FakeKnowledge:
@@ -90,7 +92,9 @@ def _work_transition_event(current, *, action: str, patch: dict[str, object], ev
 def _write_work_events(store: GhostWorkQueueStore, events: list[dict[str, object]]) -> None:
     store.events_path.parent.mkdir(parents=True, exist_ok=True)
     store.events_path.write_text(
-        "".join(json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n" for event in events),
+        "".join(
+            json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n" for event in events
+        ),
         encoding="utf-8",
     )
     assert store.rebuild_from_events()
@@ -760,24 +764,27 @@ def test_stale_transition_does_not_overwrite_newer_terminal_state() -> None:
             "lease_expires_at": "",
             "updated_at": FRESH_TS,
         }
-        _write_work_events(store, [
-            _work_observed_event(queued, event_id="observed"),
-            _work_transition_event(
-                queued,
-                action="claim",
-                patch={
-                    "status": "running",
-                    "started_run_id": "run-1",
-                    "retry_count": 1,
-                    "lease_expires_at": FRESH_TS,
-                    "blocked_reason": "",
-                    "updated_at": FRESH_TS,
-                },
-                event_id="claim",
-            ),
-            _work_transition_event(running, action="complete", patch=complete_patch, event_id="complete"),
-            _work_transition_event(running, action="release", patch=stale_release_patch, event_id="stale-release"),
-        ])
+        _write_work_events(
+            store,
+            [
+                _work_observed_event(queued, event_id="observed"),
+                _work_transition_event(
+                    queued,
+                    action="claim",
+                    patch={
+                        "status": "running",
+                        "started_run_id": "run-1",
+                        "retry_count": 1,
+                        "lease_expires_at": FRESH_TS,
+                        "blocked_reason": "",
+                        "updated_at": FRESH_TS,
+                    },
+                    event_id="claim",
+                ),
+                _work_transition_event(running, action="complete", patch=complete_patch, event_id="complete"),
+                _work_transition_event(running, action="release", patch=stale_release_patch, event_id="stale-release"),
+            ],
+        )
         item = store.list_items()[0]
 
     assert item.id == item_id
@@ -792,16 +799,20 @@ def test_concurrent_source_sync_merges_refs_and_priority() -> None:
 
         def sync(candidate_id: str, note_ref: str, priority: float) -> None:
             store = GhostWorkQueueStore(td)
-            results.append(store.sync_from_sources(
-                research_interest_candidates=(_interest_candidate(
-                    candidate_id=candidate_id,
-                    question="Research provider recovery follow-up",
-                    source_ref="shared-source",
-                    source_refs=(note_ref,),
-                    priority=priority,
-                ),),
-                session_id="s1",
-            ))
+            results.append(
+                store.sync_from_sources(
+                    research_interest_candidates=(
+                        _interest_candidate(
+                            candidate_id=candidate_id,
+                            question="Research provider recovery follow-up",
+                            source_ref="shared-source",
+                            source_refs=(note_ref,),
+                            priority=priority,
+                        ),
+                    ),
+                    session_id="s1",
+                )
+            )
 
         threads = [
             threading.Thread(target=sync, args=("candidate-a", "note:a", 0.42)),
@@ -827,24 +838,29 @@ def test_old_work_upsert_event_is_unsupported_for_mutation() -> None:
         store = GhostWorkQueueStore(td)
         store.events_path.parent.mkdir(parents=True, exist_ok=True)
         store.events_path.write_text(
-            json.dumps({
-                "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
-                "type": "ghost_work_item_upsert",
-                "event_id": "old",
-                "ts": FRESH_TS,
-                "item": {},
-            }) + "\n",
+            json.dumps(
+                {
+                    "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+                    "type": "ghost_work_item_upsert",
+                    "event_id": "old",
+                    "ts": FRESH_TS,
+                    "item": {},
+                }
+            )
+            + "\n",
             encoding="utf-8",
         )
 
         result = store.sync_from_sources(
-            research_interest_candidates=(_interest_candidate(
-                candidate_id="candidate",
-                question="Research provider recovery follow-up",
-                source_ref="source",
-                source_refs=("note:source",),
-                priority=0.8,
-            ),),
+            research_interest_candidates=(
+                _interest_candidate(
+                    candidate_id="candidate",
+                    question="Research provider recovery follow-up",
+                    source_ref="source",
+                    source_refs=("note:source",),
+                    priority=0.8,
+                ),
+            ),
             session_id="s1",
         )
 
@@ -858,25 +874,30 @@ def test_work_snapshot_with_invalid_item_is_unsupported_for_mutation() -> None:
         store = GhostWorkQueueStore(td)
         store.events_path.parent.mkdir(parents=True, exist_ok=True)
         store.events_path.write_text(
-            json.dumps({
-                "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
-                "type": "ghost_work_snapshot",
-                "event_id": "bad-snapshot",
-                "ts": FRESH_TS,
-                "reason": "test",
-                "items": [{"id": "missing-required-fields"}],
-            }) + "\n",
+            json.dumps(
+                {
+                    "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+                    "type": "ghost_work_snapshot",
+                    "event_id": "bad-snapshot",
+                    "ts": FRESH_TS,
+                    "reason": "test",
+                    "items": [{"id": "missing-required-fields"}],
+                }
+            )
+            + "\n",
             encoding="utf-8",
         )
 
         result = store.sync_from_sources(
-            research_interest_candidates=(_interest_candidate(
-                candidate_id="candidate",
-                question="Research provider recovery follow-up",
-                source_ref="source",
-                source_refs=("note:source",),
-                priority=0.8,
-            ),),
+            research_interest_candidates=(
+                _interest_candidate(
+                    candidate_id="candidate",
+                    question="Research provider recovery follow-up",
+                    source_ref="source",
+                    source_refs=("note:source",),
+                    priority=0.8,
+                ),
+            ),
             session_id="s1",
         )
 
@@ -997,6 +1018,7 @@ def test_work_transition_malformed_done_missing_proof_refs_is_fail_closed() -> N
             run_refs=(),
             now=FRESH_TS,
         )
+        item = replace(item, started_run_id="run-1", retry_count=1)
         bad_complete_transition = {
             "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
             "type": "ghost_work_item_transitioned",
@@ -1006,12 +1028,14 @@ def test_work_transition_malformed_done_missing_proof_refs_is_fail_closed() -> N
             "item_id": item.id,
             "precondition": {
                 "expected_status": "running",
-                "expected_started_run_id": "",
-                "expected_retry_count": 0,
+                "expected_started_run_id": "run-1",
+                "expected_retry_count": 1,
             },
             "patch": {
                 "status": "done",
+                "completed_run_id": "run-1",
                 "proof_refs": [],  # empty proof_refs is invalid for done
+                "updated_at": FRESH_TS,
             },
         }
         store.events_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1054,13 +1078,15 @@ def test_work_queue_mutation_result_propagates_projection_write_failure_warning(
         store = GhostWorkQueueStore(td)
         with mock.patch.object(store, "_write_projection", side_effect=OSError("disk full")):
             result = store.sync_from_sources(
-                research_interest_candidates=(_interest_candidate(
-                    candidate_id="c1",
-                    question="Research provider recovery follow-up",
-                    source_ref="source",
-                    source_refs=("note:source",),
-                    priority=0.8,
-                ),),
+                research_interest_candidates=(
+                    _interest_candidate(
+                        candidate_id="c1",
+                        question="Research provider recovery follow-up",
+                        source_ref="source",
+                        source_refs=("note:source",),
+                        priority=0.8,
+                    ),
+                ),
                 session_id="s1",
             )
 
@@ -1214,6 +1240,123 @@ def test_work_queue_release_to_queued_retaining_lease_is_invalid() -> None:
         assert any("invalid_event" in warning for warning in store.last_warnings)
         with pytest.raises(OSError, match="ghost work events are unreadable"):
             store.queue_item(item.id)
+
+
+def test_complete_item_requires_run_id_without_corrupting_events() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store, item_id = _seed_research_work_item(td)
+        claimed = store.claim_next(session_id="s1", run_id="run-1", user_request="继续")
+        assert claimed.ok
+        before = store.events_path.read_text(encoding="utf-8")
+        result = store.complete_item(item_id, run_id="", proof_refs=("research_proof:" + "a" * 16,))
+        assert result is None
+        assert store.events_path.read_text(encoding="utf-8") == before
+        assert store._read_events()
+        assert not store._events_read_blocked
+        assert store.list_items()[0].status == "running"
+
+        # Also verify that a mismatched run_id is rejected without corrupting or modifying running item
+        mismatched_result = store.complete_item(item_id, run_id="run-2", proof_refs=("research_proof:" + "a" * 16,))
+        assert mismatched_result is None
+        assert store.events_path.read_text(encoding="utf-8") == before
+        assert store._read_events()
+        assert not store._events_read_blocked
+        assert store.list_items()[0].status == "running"
+
+
+def test_work_transition_malformed_queue_missing_retry_count_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store, item_id = _seed_research_work_item(td)
+        item = store.list_items()[0]
+        bad_queue = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_item_transitioned",
+            "event_id": "bad-queue",
+            "ts": FRESH_TS,
+            "action": "queue",
+            "item_id": item.id,
+            "precondition": {
+                "expected_status": "candidate",
+                "expected_started_run_id": "",
+                "expected_retry_count": 0,
+            },
+            "patch": {
+                "status": "queued",
+                # missing retry_count: 0
+                "updated_at": FRESH_TS,
+            },
+        }
+        store.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                for event in (_work_observed_event(item), bad_queue)
+            ),
+            encoding="utf-8",
+        )
+
+        assert store._read_events() == []
+        assert store._events_read_blocked
+        assert any("invalid_event" in warning for warning in store.last_warnings)
+        with pytest.raises(OSError, match="ghost work events are unreadable"):
+            store.queue_item(item.id)
+
+
+def test_work_transition_complete_mismatched_run_id_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store, item_id = _seed_research_work_item(td)
+        item = store.list_items()[0]
+        valid_claim = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_item_transitioned",
+            "event_id": "valid-claim",
+            "ts": FRESH_TS,
+            "action": "claim",
+            "item_id": item.id,
+            "precondition": {
+                "expected_status": "queued",
+                "expected_started_run_id": "",
+                "expected_retry_count": 0,
+            },
+            "patch": {
+                "status": "running",
+                "started_run_id": "run-1",
+                "retry_count": 1,
+                "lease_expires_at": "2026-08-27T09:00:00Z",
+                "updated_at": FRESH_TS,
+            },
+        }
+        mismatched_complete = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_item_transitioned",
+            "event_id": "mismatched-complete",
+            "ts": FRESH_TS,
+            "action": "complete",
+            "item_id": item.id,
+            "precondition": {
+                "expected_status": "running",
+                "expected_started_run_id": "run-1",
+                "expected_retry_count": 1,
+            },
+            "patch": {
+                "status": "done",
+                "completed_run_id": "run-2",  # mismatched with expected_started_run_id
+                "proof_refs": ["research_proof:" + "a" * 16],
+                "updated_at": FRESH_TS,
+            },
+        }
+        store.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                for event in (_work_observed_event(item), valid_claim, mismatched_complete)
+            ),
+            encoding="utf-8",
+        )
+
+        assert store._read_events() == []
+        assert store._events_read_blocked
+        assert any("invalid_event" in warning for warning in store.last_warnings)
+        with pytest.raises(OSError, match="ghost work events are unreadable"):
+            store.complete_item(item.id, run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
 
 
 def test_work_queue_schema_version_stays_cold_start_v1() -> None:

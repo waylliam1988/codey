@@ -16,8 +16,11 @@ This file records Codey's release history. The newest release appears first.
 - Ghost Work Queue now enforces strict action-specific semantic validation and
   required fields for `ghost_work_item_transitioned` events (e.g. `claim`
   requires valid `started_run_id`, `lease_expires_at`, and `retry_count`;
-  `complete` requires `completed_run_id`, non-empty `proof_refs`, and empty
-  lease; `release` to `queued` strictly clears lease and started run ID).
+  `complete` strictly requires matching non-empty `completed_run_id == expected_started_run_id`,
+  non-empty `proof_refs`, and empty lease; `queue` strictly requires `retry_count == 0`
+  and clears running fields; `release` to `queued` strictly clears lease and started run ID).
+  `complete_item()` API verifies non-empty matching `run_id` before mutation, preventing
+  malformed event generation or improper blocking of concurrent items.
   Replay applies kind-specific primary proof enforcement (`_primary_proof_matches_item_kind`)
   and full sequence validation. Any malformed transition is flagged as
   `invalid_event` and fails closed on read.

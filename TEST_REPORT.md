@@ -2,16 +2,27 @@
 
 ## Ghost WorkQueue Action-Specific Fail-Closed Hardening, Diagnostic Unification & Full Suite Verification (2026-08-27)
 
-This hardening completes the strict action-specific validation and fail-closed replay semantics in Ghost Work Queue and unifies mutation diagnostic warnings across Ghost Work Queue and Affinity.
+This hardening completes the strict action-specific validation and fail-closed replay semantics in Ghost Work Queue, resolves review findings across producer, validator, and reducer layers, and unifies mutation diagnostic warnings across Ghost Work Queue and Affinity.
 
 Closed items:
 
-- `GhostWorkQueueStore` transition validation (`_valid_work_transition`) enforces strict action-specific required fields: `claim` requires non-empty `started_run_id`, non-empty `lease_expires_at`, and `retry_count == expected_retry_count + 1`; `complete` requires `completed_run_id`, non-empty `proof_refs`, and empty lease; `release`/`release_stale` to `queued` strictly clears `started_run_id` and `lease_expires_at`, while release to `blocked` requires `blocked_reason`; `queue` requires `retry_count == 0` and completely clears run IDs, proofs, blocked reason, and lease.
-- `_apply_transition_event()` distinguishes `applied`, `stale`, and `invalid`, re-validating kind-specific primary proof matches (`_primary_proof_matches_item_kind`) on `complete` replay to prevent mismatched proof replay (e.g. research items replayed with raw ledger proofs).
+- `complete_item()` requires a non-empty `run_id` matching `current.started_run_id` before entering mutation or evaluating proof refs. This prevents producing invalid events (with empty `completed_run_id`) that fail closed on subsequent read, and prevents improperly blocking concurrent items owned by other runs.
+- `GhostWorkQueueStore` transition validation (`_valid_work_transition`) enforces strict action-specific required fields and invariants:
+  - `claim`: requires non-empty `started_run_id`, non-empty `lease_expires_at`, `retry_count == expected_retry_count + 1`, empty `expected_started_run_id`, and strictly empty `completed_run_id`, `proof_refs`, `blocked_reason`.
+  - `complete`: strictly requires `completed_run_id == expected_started_run_id`, non-empty `expected_started_run_id`, non-empty `proof_refs`, and empty `lease_expires_at` and `blocked_reason`.
+  - `release`/`release_stale`: to `queued` strictly clears `started_run_id`, `lease_expires_at`, `blocked_reason`, `completed_run_id`, and `proof_refs`; release to `blocked` requires non-empty `blocked_reason`.
+  - `queue`: strictly requires `retry_count == 0` (missing `retry_count` fails closed), and completely clears `started_run_id`, `completed_run_id`, `proof_refs`, `blocked_reason`, and `lease_expires_at`.
+  - `block`: requires non-empty `blocked_reason`, empty `lease_expires_at`, and empty `completed_run_id`/`proof_refs`.
+  - `reject`: requires empty `lease_expires_at`, `blocked_reason`, `started_run_id`, `completed_run_id`, and `proof_refs`.
+- `_apply_transition_event()` distinguishes `applied`, `stale`, and `invalid`, re-validating `completed_run_id == current.started_run_id` and kind-specific primary proof matches (`_primary_proof_matches_item_kind`) on `complete` replay to prevent mismatched proof replay.
 - `_read_events()` in `GhostWorkQueueStore` performs full sequence replay validation during event ingestion; any invalid transition or observed item parsing failure triggers `invalid_event` warning and sets `events_read_blocked = True`.
 - `GhostWorkQueueStore.delete_scope()` return signature is unified to `{"removed": n, "warnings": [...]}` with diagnostic warnings from projection write failures propagated directly to callers and CLI JSON output.
 - `GhostAffinityStore.decay()` and `_mutate_event_log()` in both stores ensure all dictionary mutation results merge `self.last_warnings` (e.g. `affinity_projection_write_failed` / `work_projection_write_failed`).
-- Added unit tests covering action-specific malformed claim/release/complete/queue transitions, kind-specific proof mismatch replay failure, and warning propagation on delete_scope and decay.
+- Added unit tests covering:
+  - `test_complete_item_requires_run_id_without_corrupting_events`
+  - `test_work_transition_malformed_queue_missing_retry_count_fails_closed`
+  - `test_work_transition_complete_mismatched_run_id_fails_closed`
+  - Action-specific malformed claim/release/complete/queue transitions, kind-specific proof mismatch replay failure, and warning propagation on delete_scope and decay.
 
 Validation commands and results:
 
@@ -19,23 +30,14 @@ Validation commands and results:
 python -m ruff check codey/ghost/affinity.py codey/ghost/work_queue.py codey/app/cli.py tests/test_ghost_affinity.py tests/test_ghost_work_queue.py tests/test_cli.py
 # All checks passed!
 
-pytest tests/test_ghost_work_queue.py tests/test_ghost_affinity.py tests/test_cli.py tests/test_ghost_control_surface.py -v
-# 99 passed in 7.07s
+ruff format --check codey/ghost/work_queue.py tests/test_ghost_work_queue.py
+# 2 files already formatted
 
-pytest tests/test_ghost_affinity.py tests/test_ghost_continuity.py tests/test_ghost_control_surface.py tests/test_ghost_directive.py tests/test_ghost_hebbian.py tests/test_ghost_inbox.py tests/test_ghost_router.py tests/test_ghost_sleep.py tests/test_ghost_work_queue.py -v
-# 237 passed, 110 subtests passed in 12.79s
+pytest tests/test_ghost_work_queue.py tests/test_ghost_work_queue_ab.py tests/test_task_runner_work_queue.py -v
+# 60 passed in 10.35s
 
-pytest tests/test_task_runner_affinity.py tests/test_task_runner_work_queue.py tests/test_task_runner_router.py tests/test_server.py -v
-# 202 passed in 33.62s
-
-python -B tests/manual/ghost_work_queue_production_ab.py --self-test
-# self-test ok
-
-python -B tests/manual/ghost_affinity_ab.py --self-test
-# complete: true, ok: true, 10/10 cases ok
-
-pytest tests/test_architecture.py tests/test_git_history_hygiene.py -v
-# 51 passed, 248 subtests passed in 6.70s
+pytest -k ghost -v
+# 323 passed, 2680 deselected in 36.68s
 
 git diff --check
 # Clean
@@ -44,8 +46,8 @@ git diff --check
 Final full-suite validation after the code, test, and documentation edits:
 
 ```powershell
-pytest -v
-# 2998 passed, 2 skipped, 966 subtests passed in 294.70s (0:04:54)
+pytest
+# 3001 passed, 2 skipped in 291.47s (0:04:51)
 ```
 
 ## 0.4.15 Release - Run-Command Boundary and Stabilization Hardening (2026-08-26)
