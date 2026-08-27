@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
 
+from codey.storage.file_lock import with_file_lock
 from codey.storage.local_store import read_json, session_key, write_json_atomic
-from codey.storage.transactional_json import with_file_lock
 from codey.utils.refs import (
     bounded_refs,
     clip,

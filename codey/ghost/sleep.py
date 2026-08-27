@@ -21,6 +21,7 @@ from codey.ghost.hebbian import GhostHebbianStore
 from codey.ghost.inbox import GhostInboxStore
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.work_queue import GhostWorkQueueStore
+from codey.storage.file_lock import reset_event_backed_state, with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
 
@@ -243,35 +244,36 @@ class GhostSleepStore:
             warnings=final_warnings,
         )
         if report_step.ok:
-            if self._append_events([_report_event(final_report)]):
-                try:
-                    self._write_projection(final_report)
-                except (OSError, TypeError, ValueError):
-                    pass
-                self._compact_if_needed()
-            else:
-                failed_step = GhostSleepStepResult(
-                    "report",
-                    False,
-                    skipped_reason="event_write_failed",
-                    counts={"reports_written": 0},
-                    warnings=("sleep_event_write_failed",),
-                    duration_ms=report_step.duration_ms,
-                )
-                final_report = GhostSleepReport(
-                    schema_version=SLEEP_SCHEMA_VERSION,
-                    cycle_id=cycle_id,
-                    trigger=cursor.trigger,
-                    run_id=cursor.run_id,
-                    session_id=cursor.session_id,
-                    project=cursor.project,
-                    started_at=started_at,
-                    finished_at=_now(),
-                    cancelled=cancelled,
-                    steps=(*tuple(steps), failed_step),
-                    pending_steps=pending_steps,
-                    warnings=_bounded_warnings((*warnings, *failed_step.warnings)),
-                )
+            with with_file_lock(self.events_path):
+                if self._append_events([_report_event(final_report)]):
+                    try:
+                        self._write_projection(final_report)
+                    except (OSError, TypeError, ValueError):
+                        pass
+                    self._compact_if_needed()
+                else:
+                    failed_step = GhostSleepStepResult(
+                        "report",
+                        False,
+                        skipped_reason="event_write_failed",
+                        counts={"reports_written": 0},
+                        warnings=("sleep_event_write_failed",),
+                        duration_ms=report_step.duration_ms,
+                    )
+                    final_report = GhostSleepReport(
+                        schema_version=SLEEP_SCHEMA_VERSION,
+                        cycle_id=cycle_id,
+                        trigger=cursor.trigger,
+                        run_id=cursor.run_id,
+                        session_id=cursor.session_id,
+                        project=cursor.project,
+                        started_at=started_at,
+                        finished_at=_now(),
+                        cancelled=cancelled,
+                        steps=(*tuple(steps), failed_step),
+                        pending_steps=pending_steps,
+                        warnings=_bounded_warnings((*warnings, *failed_step.warnings)),
+                    )
         self.last_warnings = final_report.warnings
         return final_report
 
@@ -288,11 +290,12 @@ class GhostSleepStore:
 
     def reset_all(self) -> bool:
         try:
-            delete_file(self.state_path)
-            delete_file(self.events_path)
+            reset_event_backed_state(self.events_path, self.state_path)
+            self.last_warnings = ()
+            self._events_read_blocked = False
+            return True
         except OSError:
             return False
-        return True
 
     def delete_scope(
         self,
@@ -310,49 +313,50 @@ class GhostSleepStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
-        events = self._read_events()
-        if self._events_read_blocked:
-            raise OSError("ghost sleep events are unreadable")
-        kept: list[dict[str, object]] = []
-        removed = 0
-        for event in events:
-            report = GhostSleepReport.from_payload(event.get("report"))
-            if report is not None and _scope_matches_report(
-                report,
+        with with_file_lock(self.events_path):
+            events = self._read_events()
+            if self._events_read_blocked:
+                raise OSError("ghost sleep events are unreadable")
+            kept: list[dict[str, object]] = []
+            removed = 0
+            for event in events:
+                report = GhostSleepReport.from_payload(event.get("report"))
+                if report is not None and _scope_matches_report(
+                    report,
+                    normalized_scope,
+                    project=project_ref,
+                    session_id=session_ref,
+                ):
+                    removed += 1
+                    continue
+                kept.append(event)
+            current = self._read_report()
+            state_deleted = 0
+            if current is not None and _scope_matches_report(
+                current,
                 normalized_scope,
                 project=project_ref,
                 session_id=session_ref,
             ):
-                removed += 1
-                continue
-            kept.append(event)
-        current = self._read_report()
-        state_deleted = 0
-        if current is not None and _scope_matches_report(
-            current,
-            normalized_scope,
-            project=project_ref,
-            session_id=session_ref,
-        ):
-            state_deleted = 1
-        if removed:
-            control = _control_event(
-                "ghost_sleep_scope_deleted",
-                {
-                    "scope": normalized_scope,
-                    "project": project_ref if normalized_scope == "project" else "",
-                    "session_id": session_ref if normalized_scope == "session" else "",
-                    "removed_reports": removed,
-                },
-            )
-            self._write_events_atomic([*kept, control])
-        if state_deleted:
-            latest = _latest_report_from_events(kept)
-            if latest is None:
-                delete_file(self.state_path)
-            else:
-                self._write_projection(latest)
-        return {"reports": removed, "state_deleted": state_deleted}
+                state_deleted = 1
+            if removed:
+                control = _control_event(
+                    "ghost_sleep_scope_deleted",
+                    {
+                        "scope": normalized_scope,
+                        "project": project_ref if normalized_scope == "project" else "",
+                        "session_id": session_ref if normalized_scope == "session" else "",
+                        "removed_reports": removed,
+                    },
+                )
+                self._write_events_atomic([*kept, control])
+            if state_deleted:
+                latest = _latest_report_from_events(kept)
+                if latest is None:
+                    delete_file(self.state_path)
+                else:
+                    self._write_projection(latest)
+            return {"reports": removed, "state_deleted": state_deleted}
 
     def _projection_health_step(
         self,
@@ -668,20 +672,21 @@ class GhostSleepStore:
                 pass
 
     def _compact_if_needed(self) -> None:
-        try:
-            event_bytes = self.events_path.stat().st_size
-            if event_bytes > MAX_SLEEP_EVENTS_BYTES:
-                event_count = MAX_SLEEP_EVENTS + 1
-            else:
-                event_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
-        except (OSError, UnicodeDecodeError):
-            return
-        if event_count <= MAX_SLEEP_EVENTS and event_bytes <= MAX_SLEEP_EVENTS_BYTES:
-            return
-        events = self._read_events()
-        if self._events_read_blocked:
-            return
-        self._write_events_atomic(events[-MAX_SLEEP_EVENTS:])
+        with with_file_lock(self.events_path):
+            try:
+                event_bytes = self.events_path.stat().st_size
+                if event_bytes > MAX_SLEEP_EVENTS_BYTES:
+                    event_count = MAX_SLEEP_EVENTS + 1
+                else:
+                    event_count = len(self.events_path.read_text(encoding="utf-8").splitlines())
+            except (OSError, UnicodeDecodeError):
+                return
+            if event_count <= MAX_SLEEP_EVENTS and event_bytes <= MAX_SLEEP_EVENTS_BYTES:
+                return
+            events = self._read_events()
+            if self._events_read_blocked:
+                return
+            self._write_events_atomic(events[-MAX_SLEEP_EVENTS:])
 
 
 def _timed_step(name: str, fn: Callable[[], GhostSleepStepResult]) -> GhostSleepStepResult:

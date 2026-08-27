@@ -6,6 +6,13 @@
 
 ## Unreleased
 
+- 将基于 lock 文件创建/删除与过期接管（stale takeover）的旧文件锁模型重构为基于 OS 内核与线程隔离的建议锁（`codey.storage.file_lock`）。
+  - 底层使用操作系统原生锁（Windows 下为 `msvcrt.locking`，POSIX 下为 `fcntl.flock`）并结合进程内线程同步（`threading.RLock`）与线程重入计数。
+  - `.lock` 文件作为常驻磁盘的锁载体，不再通过 `stat -> unlink` 表达所有权，彻底消除 stale takeover 的 TOCTOU 竞态。
+  - 增加统一的 `reset_event_backed_state(events_path, *state_paths)` helper，确保 event log 与 derived projection 在权威事件锁保护下安全删除。
+  - 统一全仓全部 7 个 Ghost store（`work_queue`、`affinity`、`continuity`、`hebbian`、`inbox`、`router`、`sleep`）的 mutation 锁纪律：所有 append、replay、rebuild、delete_scope、reset 和 compaction 操作均在各 store 的 `events_path` 锁保护下执行。
+
+
 ## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants
 
 - Ghost Affinity 和 Work Queue 事件日志现在记录语义意图事件，不再记录已计算

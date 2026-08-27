@@ -21,7 +21,8 @@ import uuid
 from codey.runtime import cancellation
 from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text
-from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, project_key, session_key, write_json_atomic
+from codey.storage.file_lock import reset_event_backed_state, with_file_lock
+from codey.storage.local_store import DEFAULT_STATE_HOME, project_key, session_key, write_json_atomic
 
 
 ROUTER_SCHEMA_VERSION = 1
@@ -210,40 +211,41 @@ class GhostRouteStore:
     ) -> bool:
         event = _route_event(result, request)
         try:
-            records = self._load_records_for_event_rewrite()
-            if self._events_read_blocked:
-                return False
-            if records and not self.events_path.exists():
-                self._rewrite_events(records)
-            records = _bounded_records((*records, _record_from_event(event)))
-            self.directory.mkdir(parents=True, exist_ok=True)
-            with self.events_path.open("a", encoding="utf-8", newline="\n") as handle:
-                handle.write(_json_line(event))
+            with with_file_lock(self.events_path):
+                records = self._load_records_for_event_rewrite()
+                if self._events_read_blocked:
+                    return False
+                if records and not self.events_path.exists():
+                    self._rewrite_events(records)
+                records = _bounded_records((*records, _record_from_event(event)))
+                self.directory.mkdir(parents=True, exist_ok=True)
+                with self.events_path.open("a", encoding="utf-8", newline="\n") as handle:
+                    handle.write(_json_line(event))
+                warnings: list[str] = []
+                try:
+                    write_json_atomic(
+                        self.state_path,
+                        {
+                            "schema_version": ROUTER_SCHEMA_VERSION,
+                            "kind": _STATE_KIND,
+                            "updated_at": _now(),
+                            "records": [record for record in records],
+                            "warnings": [],
+                        },
+                        max_bytes=MAX_ROUTER_STATE_BYTES,
+                    )
+                except (OSError, TypeError, ValueError):
+                    warnings.append("router_state_write_failed")
+                try:
+                    self._compact_if_needed(records)
+                    warnings.extend(self.last_warnings)
+                except (OSError, TypeError, ValueError):
+                    warnings.append("router_compaction_failed")
+                self.last_warnings = tuple(dict.fromkeys(warnings))
+                return True
         except (OSError, TypeError, ValueError):
             self.last_warnings = ("router_audit_write_failed",)
             return False
-        warnings: list[str] = []
-        try:
-            write_json_atomic(
-                self.state_path,
-                {
-                    "schema_version": ROUTER_SCHEMA_VERSION,
-                    "kind": _STATE_KIND,
-                    "updated_at": _now(),
-                    "records": [record for record in records],
-                    "warnings": [],
-                },
-                max_bytes=MAX_ROUTER_STATE_BYTES,
-            )
-        except (OSError, TypeError, ValueError):
-            warnings.append("router_state_write_failed")
-        try:
-            self._compact_if_needed(records)
-            warnings.extend(self.last_warnings)
-        except (OSError, TypeError, ValueError):
-            warnings.append("router_compaction_failed")
-        self.last_warnings = tuple(dict.fromkeys(warnings))
-        return True
 
     def export_state(self) -> dict[str, object]:
         events_missing = not self.events_path.is_file()
@@ -272,8 +274,9 @@ class GhostRouteStore:
 
     def reset_all(self) -> bool:
         try:
-            delete_file(self.state_path)
-            delete_file(self.events_path)
+            reset_event_backed_state(self.events_path, self.state_path)
+            self.last_warnings = ()
+            self._events_read_blocked = False
             return True
         except OSError:
             return False
@@ -294,44 +297,45 @@ class GhostRouteStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
-        records = list(self._load_records_for_event_rewrite())
-        if self._events_read_blocked:
-            warning = self.last_warnings[0] if self.last_warnings else "router_events_unreadable"
-            raise OSError(warning)
-        kept = [
-            record for record in records
-            if not _record_scope_matches(
-                record,
-                normalized_scope,
-                project_ref=project_ref,
-                session_ref=session_ref,
+        with with_file_lock(self.events_path):
+            records = list(self._load_records_for_event_rewrite())
+            if self._events_read_blocked:
+                warning = self.last_warnings[0] if self.last_warnings else "router_events_unreadable"
+                raise OSError(warning)
+            kept = [
+                record for record in records
+                if not _record_scope_matches(
+                    record,
+                    normalized_scope,
+                    project_ref=project_ref,
+                    session_ref=session_ref,
+                )
+            ]
+            removed = len(records) - len(kept)
+            if not removed:
+                return 0
+            control = _control_event(
+                "ghost_router_scope_deleted",
+                {
+                    "scope": normalized_scope,
+                    "project_ref": project_ref if normalized_scope == "project" else "",
+                    "session_ref": session_ref if normalized_scope == "session" else "",
+                    "removed_count": removed,
+                },
             )
-        ]
-        removed = len(records) - len(kept)
-        if not removed:
-            return 0
-        control = _control_event(
-            "ghost_router_scope_deleted",
-            {
-                "scope": normalized_scope,
-                "project_ref": project_ref if normalized_scope == "project" else "",
-                "session_ref": session_ref if normalized_scope == "session" else "",
-                "removed_count": removed,
-            },
-        )
-        self._rewrite_events(kept, control_event=control)
-        write_json_atomic(
-            self.state_path,
-            {
-                "schema_version": ROUTER_SCHEMA_VERSION,
-                "kind": _STATE_KIND,
-                "updated_at": _now(),
-                "records": kept,
-                "warnings": [],
-            },
-            max_bytes=MAX_ROUTER_STATE_BYTES,
-        )
-        return removed
+            self._rewrite_events(kept, control_event=control)
+            write_json_atomic(
+                self.state_path,
+                {
+                    "schema_version": ROUTER_SCHEMA_VERSION,
+                    "kind": _STATE_KIND,
+                    "updated_at": _now(),
+                    "records": kept,
+                    "warnings": [],
+                },
+                max_bytes=MAX_ROUTER_STATE_BYTES,
+            )
+            return removed
 
     def compact_if_needed(self) -> dict[str, object]:
         before = _event_file_stats(self.events_path, max_bytes=MAX_ROUTER_EVENTS_BYTES)
@@ -341,10 +345,11 @@ class GhostRouteStore:
             return _compact_payload(False, False, before, before, (warning,))
         if before["events"] <= MAX_ROUTER_EVENTS and before["bytes"] <= MAX_ROUTER_EVENTS_BYTES:
             return _compact_payload(True, False, before, before, self.last_warnings)
-        records = self._load_records_for_event_rewrite()
-        if self._events_read_blocked:
-            return _compact_payload(False, False, before, before, self.last_warnings)
-        self._rewrite_events(records)
+        with with_file_lock(self.events_path):
+            records = self._load_records_for_event_rewrite()
+            if self._events_read_blocked:
+                return _compact_payload(False, False, before, before, self.last_warnings)
+            self._rewrite_events(records)
         after = _event_file_stats(self.events_path, max_bytes=MAX_ROUTER_EVENTS_BYTES)
         return _compact_payload(True, after != before, before, after, self.last_warnings)
 

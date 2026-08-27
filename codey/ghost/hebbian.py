@@ -15,6 +15,7 @@ from typing import Iterable
 from codey.ghost.inbox import GhostInboxStore, GhostMemoryCandidate
 from codey.ghost.numbers import coerce_unit_float
 from codey.ghost.schema import SIGNAL_KINDS, SIGNAL_SCOPES, clip_signal_text
+from codey.storage.file_lock import reset_event_backed_state, with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
 
@@ -205,36 +206,80 @@ class GhostHebbianStore:
         if not candidate.evidence_refs:
             return GhostReinforceResult(False, "missing_evidence_ref")
         try:
-            nodes, edges = self._load_state()
-            if self._events_read_blocked:
-                return GhostReinforceResult(False, "events_read_blocked")
-            node_by_id = {node.id: node for node in nodes}
-            edge_by_key = {_edge_key(edge): edge for edge in edges}
-            now = _now()
-            node_id = node_id_for_candidate(candidate)
-            current = node_by_id.get(node_id)
-            known_evidence = set(current.evidence_refs if current else ())
-            new_evidence_refs = tuple(ref for ref in candidate.evidence_refs if ref not in known_evidence)
-            if not new_evidence_refs:
-                changed_nodes: list[GhostNode] = []
-                if _candidate_is_manual_accept(candidate) and current is not None:
-                    changed_nodes.extend(_supersede_conflicting_nodes(node_by_id, current, now=now))
+            with with_file_lock(self.events_path):
+                nodes, edges = self._load_state()
+                if self._events_read_blocked:
+                    return GhostReinforceResult(False, "events_read_blocked")
+                node_by_id = {node.id: node for node in nodes}
+                edge_by_key = {_edge_key(edge): edge for edge in edges}
+                now = _now()
+                node_id = node_id_for_candidate(candidate)
+                current = node_by_id.get(node_id)
+                known_evidence = set(current.evidence_refs if current else ())
+                new_evidence_refs = tuple(ref for ref in candidate.evidence_refs if ref not in known_evidence)
+                if not new_evidence_refs:
+                    changed_nodes: list[GhostNode] = []
+                    if _candidate_is_manual_accept(candidate) and current is not None:
+                        changed_nodes.extend(_supersede_conflicting_nodes(node_by_id, current, now=now))
+                    changed_edges = _reinforce_coactivation_edges(
+                        edge_by_key,
+                        node_by_id,
+                        current,
+                        candidate,
+                        related_candidates,
+                        reward=reward,
+                        now=now,
+                    ) if current is not None else []
+                    if not changed_nodes and not changed_edges:
+                        return GhostReinforceResult(False, "duplicate_evidence")
+                    nodes = _bounded_nodes(node_by_id.values())
+                    edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
+                    events = [
+                        _node_event(node, action="superseded")
+                        for node in changed_nodes
+                    ]
+                    events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
+                    if not self._append_events(events):
+                        return GhostReinforceResult(False, "event_write_failed")
+                    try:
+                        self._write_projection(nodes, edges)
+                    except (OSError, TypeError, ValueError):
+                        delete_file(self.state_path)
+                    self._compact_if_needed(nodes, edges)
+                    reason = "backfilled_edges" if changed_edges else "superseded_conflicts"
+                    return GhostReinforceResult(
+                        True,
+                        reason,
+                        node=current,
+                        edges=tuple(changed_edges),
+                    )
+                node = _reinforced_node(
+                    current,
+                    candidate,
+                    node_id=node_id,
+                    new_evidence_refs=new_evidence_refs,
+                    reward=reward,
+                    now=now,
+                )
+                node_by_id[node.id] = node
+                changed_nodes = [node]
+                if _candidate_is_manual_accept(candidate):
+                    superseded = _supersede_conflicting_nodes(node_by_id, node, now=now)
+                    changed_nodes.extend(superseded)
                 changed_edges = _reinforce_coactivation_edges(
                     edge_by_key,
                     node_by_id,
-                    current,
+                    node,
                     candidate,
                     related_candidates,
                     reward=reward,
                     now=now,
-                ) if current is not None else []
-                if not changed_nodes and not changed_edges:
-                    return GhostReinforceResult(False, "duplicate_evidence")
+                )
                 nodes = _bounded_nodes(node_by_id.values())
                 edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
                 events = [
-                    _node_event(node, action="superseded")
-                    for node in changed_nodes
+                    _node_event(changed_node, action="superseded" if changed_node.status == "superseded" else "reinforced")
+                    for changed_node in changed_nodes
                 ]
                 events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
                 if not self._append_events(events):
@@ -244,50 +289,7 @@ class GhostHebbianStore:
                 except (OSError, TypeError, ValueError):
                     delete_file(self.state_path)
                 self._compact_if_needed(nodes, edges)
-                reason = "backfilled_edges" if changed_edges else "superseded_conflicts"
-                return GhostReinforceResult(
-                    True,
-                    reason,
-                    node=current,
-                    edges=tuple(changed_edges),
-                )
-            node = _reinforced_node(
-                current,
-                candidate,
-                node_id=node_id,
-                new_evidence_refs=new_evidence_refs,
-                reward=reward,
-                now=now,
-            )
-            node_by_id[node.id] = node
-            changed_nodes = [node]
-            if _candidate_is_manual_accept(candidate):
-                superseded = _supersede_conflicting_nodes(node_by_id, node, now=now)
-                changed_nodes.extend(superseded)
-            changed_edges = _reinforce_coactivation_edges(
-                edge_by_key,
-                node_by_id,
-                node,
-                candidate,
-                related_candidates,
-                reward=reward,
-                now=now,
-            )
-            nodes = _bounded_nodes(node_by_id.values())
-            edges = _bounded_edges(edge_by_key.values(), node_ids={node.id for node in nodes})
-            events = [
-                _node_event(changed_node, action="superseded" if changed_node.status == "superseded" else "reinforced")
-                for changed_node in changed_nodes
-            ]
-            events.extend(_edge_event(edge, action="reinforced") for edge in changed_edges)
-            if not self._append_events(events):
-                return GhostReinforceResult(False, "event_write_failed")
-            try:
-                self._write_projection(nodes, edges)
-            except (OSError, TypeError, ValueError):
-                delete_file(self.state_path)
-            self._compact_if_needed(nodes, edges)
-            return GhostReinforceResult(True, "reinforced", node=node, edges=tuple(changed_edges))
+                return GhostReinforceResult(True, "reinforced", node=node, edges=tuple(changed_edges))
         except Exception:
             return GhostReinforceResult(False, "store_error")
 
@@ -317,44 +319,45 @@ class GhostHebbianStore:
         return tuple(results)
 
     def remove_candidate(self, candidate: GhostMemoryCandidate) -> dict[str, int]:
-        nodes, edges = self._load_state()
-        if self._events_read_blocked:
-            raise OSError("hebbian events are unreadable")
-        candidate_node_id = node_id_for_candidate(candidate)
-        removed_ids = {
-            node.id for node in nodes
-            if node.id == candidate_node_id or candidate.id in node.candidate_ids
-        }
-        if not removed_ids:
-            return {"nodes": 0, "edges": 0}
-        remaining_nodes = [node for node in nodes if node.id not in removed_ids]
-        removed_edges = [
-            edge for edge in edges
-            if edge.source in removed_ids or edge.target in removed_ids
-        ]
-        remaining_edges = [
-            edge for edge in edges
-            if edge.source not in removed_ids and edge.target not in removed_ids
-        ]
-        self._rewrite_events_from_state(
-            remaining_nodes,
-            remaining_edges,
-            control_event=_control_event(
-                "ghost_hebbian_candidate_removed",
-                {
-                    "candidate_id": candidate.id,
-                    "removed_nodes": len(removed_ids),
-                    "removed_edges": len(removed_edges),
-                },
-            ),
-        )
-        # Symmetric with the reinforce path: a projection write failure
-        # invalidates the derived projection, not the authoritative events.
-        try:
-            self._write_projection(remaining_nodes, remaining_edges)
-        except (OSError, TypeError, ValueError):
-            delete_file(self.state_path)
-        return {"nodes": len(removed_ids), "edges": len(removed_edges)}
+        with with_file_lock(self.events_path):
+            nodes, edges = self._load_state()
+            if self._events_read_blocked:
+                raise OSError("hebbian events are unreadable")
+            candidate_node_id = node_id_for_candidate(candidate)
+            removed_ids = {
+                node.id for node in nodes
+                if node.id == candidate_node_id or candidate.id in node.candidate_ids
+            }
+            if not removed_ids:
+                return {"nodes": 0, "edges": 0}
+            remaining_nodes = [node for node in nodes if node.id not in removed_ids]
+            removed_edges = [
+                edge for edge in edges
+                if edge.source in removed_ids or edge.target in removed_ids
+            ]
+            remaining_edges = [
+                edge for edge in edges
+                if edge.source not in removed_ids and edge.target not in removed_ids
+            ]
+            self._rewrite_events_from_state(
+                remaining_nodes,
+                remaining_edges,
+                control_event=_control_event(
+                    "ghost_hebbian_candidate_removed",
+                    {
+                        "candidate_id": candidate.id,
+                        "removed_nodes": len(removed_ids),
+                        "removed_edges": len(removed_edges),
+                    },
+                ),
+            )
+            # Symmetric with the reinforce path: a projection write failure
+            # invalidates the derived projection, not the authoritative events.
+            try:
+                self._write_projection(remaining_nodes, remaining_edges)
+            except (OSError, TypeError, ValueError):
+                delete_file(self.state_path)
+            return {"nodes": len(removed_ids), "edges": len(removed_edges)}
 
     def list_nodes(
         self,
@@ -405,8 +408,9 @@ class GhostHebbianStore:
 
     def reset_all(self) -> bool:
         try:
-            delete_file(self.state_path)
-            delete_file(self.events_path)
+            reset_event_backed_state(self.events_path, self.state_path)
+            self.last_warnings = ()
+            self._events_read_blocked = False
             return True
         except OSError:
             return False
@@ -424,114 +428,117 @@ class GhostHebbianStore:
         scope_ref = _scope_ref_for_filter(normalized_scope, project=project, session_id=session_id)
         if normalized_scope in {"project", "session"} and not scope_ref:
             raise ValueError(f"{normalized_scope} reference is required")
-        nodes, edges = self._load_state()
-        removed_ids = {
-            node.id for node in nodes
-            if node.scope == normalized_scope and (normalized_scope == "user" or node.scope_ref == scope_ref)
-        }
-        if not removed_ids:
-            return {"nodes": 0, "edges": 0}
-        remaining_nodes = [node for node in nodes if node.id not in removed_ids]
-        removed_edges = [
-            edge for edge in edges
-            if edge.source in removed_ids or edge.target in removed_ids
-        ]
-        remaining_edges = [
-            edge for edge in edges
-            if edge.source not in removed_ids and edge.target not in removed_ids
-        ]
-        self._rewrite_events_from_state(
-            remaining_nodes,
-            remaining_edges,
-            control_event=_control_event(
-                "ghost_hebbian_scope_deleted",
-                {
-                    "scope": normalized_scope,
-                    "scope_ref": scope_ref,
-                    "removed_nodes": len(removed_ids),
-                    "removed_edges": len(removed_edges),
-                },
-            ),
-        )
-        self._write_projection(remaining_nodes, remaining_edges)
-        return {"nodes": len(removed_ids), "edges": len(removed_edges)}
+        with with_file_lock(self.events_path):
+            nodes, edges = self._load_state()
+            removed_ids = {
+                node.id for node in nodes
+                if node.scope == normalized_scope and (normalized_scope == "user" or node.scope_ref == scope_ref)
+            }
+            if not removed_ids:
+                return {"nodes": 0, "edges": 0}
+            remaining_nodes = [node for node in nodes if node.id not in removed_ids]
+            removed_edges = [
+                edge for edge in edges
+                if edge.source in removed_ids or edge.target in removed_ids
+            ]
+            remaining_edges = [
+                edge for edge in edges
+                if edge.source not in removed_ids and edge.target not in removed_ids
+            ]
+            self._rewrite_events_from_state(
+                remaining_nodes,
+                remaining_edges,
+                control_event=_control_event(
+                    "ghost_hebbian_scope_deleted",
+                    {
+                        "scope": normalized_scope,
+                        "scope_ref": scope_ref,
+                        "removed_nodes": len(removed_ids),
+                        "removed_edges": len(removed_edges),
+                    },
+                ),
+            )
+            self._write_projection(remaining_nodes, remaining_edges)
+            return {"nodes": len(removed_ids), "edges": len(removed_edges)}
 
     def rebuild_from_events(self) -> bool:
         try:
-            nodes, edges = self._rebuild_state_from_events()
-            if nodes is None or edges is None:
-                return False
-            self._write_projection(nodes, edges)
-            return True
+            with with_file_lock(self.events_path):
+                nodes, edges = self._rebuild_state_from_events()
+                if nodes is None or edges is None:
+                    return False
+                self._write_projection(nodes, edges)
+                return True
         except Exception:
             return False
 
     def decay(self, *, min_interval_seconds: int = 0) -> dict[str, object]:
-        if self.events_path.exists():
-            self._read_events()
-            if self._events_read_blocked:
+        with with_file_lock(self.events_path):
+            if self.events_path.exists():
+                self._read_events()
+                if self._events_read_blocked:
+                    return {
+                        "removed_nodes": 0,
+                        "removed_edges": 0,
+                        "decayed_nodes": 0,
+                        "decayed_edges": 0,
+                        "skipped_reason": "events_read_blocked",
+                        "warnings": list(self.last_warnings),
+                    }
+            nodes, edges = self._load_state()
+            now = _now()
+            interval = max(0, int(min_interval_seconds or 0))
+            if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
                 return {
                     "removed_nodes": 0,
                     "removed_edges": 0,
                     "decayed_nodes": 0,
                     "decayed_edges": 0,
-                    "skipped_reason": "events_read_blocked",
-                    "warnings": list(self.last_warnings),
+                    "skipped_reason": "min_interval",
                 }
-        nodes, edges = self._load_state()
-        now = _now()
-        interval = max(0, int(min_interval_seconds or 0))
-        if interval and not _any_decay_due((*nodes, *edges), now=now, min_interval_seconds=interval):
+            decayed_nodes = [_decay_node(node, now=now) for node in nodes]
+            decayed_edges = [_decay_edge(edge, now=now) for edge in edges]
+            bounded_nodes = _bounded_nodes(decayed_nodes)
+            bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
+            removed_nodes = len(nodes) - len(bounded_nodes)
+            removed_edges = len(edges) - len(bounded_edges)
+            decayed_node_count = sum(
+                1 for before, after in zip(nodes, decayed_nodes, strict=False)
+                if before.weight != after.weight or before.status != after.status
+            )
+            decayed_edge_count = sum(
+                1 for before, after in zip(edges, decayed_edges, strict=False)
+                if before.weight != after.weight
+            )
+            if not removed_nodes and not removed_edges and not decayed_node_count and not decayed_edge_count:
+                return {
+                    "removed_nodes": 0,
+                    "removed_edges": 0,
+                    "decayed_nodes": 0,
+                    "decayed_edges": 0,
+                    "skipped_reason": "no_change",
+                }
+            self._rewrite_events_from_state(
+                bounded_nodes,
+                bounded_edges,
+                control_event=_control_event(
+                    "ghost_hebbian_state_decayed",
+                    {
+                        "removed_nodes": removed_nodes,
+                        "removed_edges": removed_edges,
+                        "decayed_nodes": decayed_node_count,
+                        "decayed_edges": decayed_edge_count,
+                    },
+                ),
+            )
+            self._write_projection(bounded_nodes, bounded_edges)
             return {
-                "removed_nodes": 0,
-                "removed_edges": 0,
-                "decayed_nodes": 0,
-                "decayed_edges": 0,
-                "skipped_reason": "min_interval",
+                "removed_nodes": removed_nodes,
+                "removed_edges": removed_edges,
+                "decayed_nodes": decayed_node_count,
+                "decayed_edges": decayed_edge_count,
+                "skipped_reason": "",
             }
-        decayed_nodes = [_decay_node(node, now=now) for node in nodes]
-        decayed_edges = [_decay_edge(edge, now=now) for edge in edges]
-        bounded_nodes = _bounded_nodes(decayed_nodes)
-        bounded_edges = _bounded_edges(decayed_edges, node_ids={node.id for node in bounded_nodes})
-        removed_nodes = len(nodes) - len(bounded_nodes)
-        removed_edges = len(edges) - len(bounded_edges)
-        decayed_node_count = sum(
-            1 for before, after in zip(nodes, decayed_nodes, strict=False)
-            if before.weight != after.weight or before.status != after.status
-        )
-        decayed_edge_count = sum(
-            1 for before, after in zip(edges, decayed_edges, strict=False)
-            if before.weight != after.weight
-        )
-        if not removed_nodes and not removed_edges and not decayed_node_count and not decayed_edge_count:
-            return {
-                "removed_nodes": 0,
-                "removed_edges": 0,
-                "decayed_nodes": 0,
-                "decayed_edges": 0,
-                "skipped_reason": "no_change",
-            }
-        self._rewrite_events_from_state(
-            bounded_nodes,
-            bounded_edges,
-            control_event=_control_event(
-                "ghost_hebbian_state_decayed",
-                {
-                    "removed_nodes": removed_nodes,
-                    "removed_edges": removed_edges,
-                    "decayed_nodes": decayed_node_count,
-                    "decayed_edges": decayed_edge_count,
-                },
-            ),
-        )
-        self._write_projection(bounded_nodes, bounded_edges)
-        return {
-            "removed_nodes": removed_nodes,
-            "removed_edges": removed_edges,
-            "decayed_nodes": decayed_node_count,
-            "decayed_edges": decayed_edge_count,
-            "skipped_reason": "",
-        }
 
     def compact_if_needed(self) -> dict[str, object]:
         before = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
@@ -557,18 +564,19 @@ class GhostHebbianStore:
                 "bytes_after": before["bytes"],
                 "warnings": list(self.last_warnings),
             }
-        nodes, edges = self._load_state()
-        if self._events_read_blocked:
-            return {
-                "ok": False,
-                "compacted": False,
-                "events_before": before["events"],
-                "events_after": before["events"],
-                "bytes_before": before["bytes"],
-                "bytes_after": before["bytes"],
-                "warnings": list(self.last_warnings),
-            }
-        self._compact_if_needed(nodes, edges)
+        with with_file_lock(self.events_path):
+            nodes, edges = self._load_state()
+            if self._events_read_blocked:
+                return {
+                    "ok": False,
+                    "compacted": False,
+                    "events_before": before["events"],
+                    "events_after": before["events"],
+                    "bytes_before": before["bytes"],
+                    "bytes_after": before["bytes"],
+                    "warnings": list(self.last_warnings),
+                }
+            self._compact_if_needed(nodes, edges)
         after = _event_file_stats(self.events_path, max_bytes=MAX_HEBBIAN_EVENTS_BYTES)
         return {
             "ok": True,

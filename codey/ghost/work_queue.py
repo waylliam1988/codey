@@ -22,13 +22,12 @@ from codey.ghost.numbers import clamp_unit_float
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.storage.local_store import (
     DEFAULT_STATE_HOME,
-    delete_file,
     project_key,
     read_json,
     session_key,
     write_json_atomic,
 )
-from codey.storage.transactional_json import with_file_lock
+from codey.storage.file_lock import reset_event_backed_state, with_file_lock
 from codey.policies.prompt_safety import is_prompt_visible_text_safe
 
 
@@ -892,8 +891,10 @@ class GhostWorkQueueStore:
 
     def reset_all(self) -> bool:
         try:
-            delete_file(self.projection_path)
-            delete_file(self.events_path)
+            reset_event_backed_state(self.events_path, self.projection_path)
+            self.last_warnings = ()
+            self._events_read_blocked = False
+            self._events_blocked_reason = ""
             return True
         except OSError:
             return False

@@ -28,6 +28,7 @@ from codey.ghost.schema import (
     clip_signal_text,
 )
 from codey.ghost.typed_fields import metadata_conflict_key, metadata_value_key
+from codey.storage.file_lock import reset_event_backed_state, with_file_lock
 from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
 
 
@@ -183,51 +184,52 @@ class GhostInboxStore:
         if not signals:
             return ()
         try:
-            loaded = self._load_candidates()
-            if self._events_read_blocked:
-                return ()
-            candidates = list(loaded)
-            changed: list[GhostMemoryCandidate] = []
-            events: list[dict[str, object]] = []
-            for signal in signals:
-                decision = self.gate.evaluate(
-                    signal,
-                    session_id=session_id,
-                    run_id=run_id,
-                    project=project,
-                    user_text=user_text,
-                )
-                if not _should_store_decision(decision):
-                    events.append(self._sanitized_rejection_event(signal, decision))
-                    continue
-                candidate = self._candidate_from_signal(
-                    signal,
-                    decision=decision,
-                    session_id=session_id,
-                    run_id=run_id,
-                    project=project,
-                )
-                existing_index = self._find_conflict_index(candidates, candidate)
-                action = "created"
-                if existing_index is None:
-                    candidates.append(candidate)
-                else:
-                    action = "updated"
-                    candidate = self._merge_candidate(candidates[existing_index], candidate)
-                    candidates[existing_index] = candidate
-                changed.append(candidate)
-                events.append(self._candidate_event(candidate, action=action))
-            if not events:
-                return ()
-            if not self._append_events(events):
-                return ()
-            candidates = self._bounded_candidates(candidates)
-            try:
-                self._write_projection(candidates)
-            except (OSError, TypeError, ValueError):
-                delete_file(self.inbox_path)
-            self._compact_if_needed(candidates)
-            return tuple(changed)
+            with with_file_lock(self.events_path):
+                loaded = self._load_candidates()
+                if self._events_read_blocked:
+                    return ()
+                candidates = list(loaded)
+                changed: list[GhostMemoryCandidate] = []
+                events: list[dict[str, object]] = []
+                for signal in signals:
+                    decision = self.gate.evaluate(
+                        signal,
+                        session_id=session_id,
+                        run_id=run_id,
+                        project=project,
+                        user_text=user_text,
+                    )
+                    if not _should_store_decision(decision):
+                        events.append(self._sanitized_rejection_event(signal, decision))
+                        continue
+                    candidate = self._candidate_from_signal(
+                        signal,
+                        decision=decision,
+                        session_id=session_id,
+                        run_id=run_id,
+                        project=project,
+                    )
+                    existing_index = self._find_conflict_index(candidates, candidate)
+                    action = "created"
+                    if existing_index is None:
+                        candidates.append(candidate)
+                    else:
+                        action = "updated"
+                        candidate = self._merge_candidate(candidates[existing_index], candidate)
+                        candidates[existing_index] = candidate
+                    changed.append(candidate)
+                    events.append(self._candidate_event(candidate, action=action))
+                if not events:
+                    return ()
+                if not self._append_events(events):
+                    return ()
+                candidates = self._bounded_candidates(candidates)
+                try:
+                    self._write_projection(candidates)
+                except (OSError, TypeError, ValueError):
+                    delete_file(self.inbox_path)
+                self._compact_if_needed(candidates)
+                return tuple(changed)
         except Exception:
             return ()
 
@@ -299,82 +301,83 @@ class GhostInboxStore:
             raise ValueError("action must be accept or reject")
         if not normalized_id:
             return None
-        candidates = list(self._load_candidates())
-        target_index: int | None = None
-        for index, candidate in enumerate(candidates):
-            if candidate.id == normalized_id:
-                target_index = index
-                break
-        if target_index is None:
-            return None
-        now = _now()
-        reviewer = clip_signal_text(reviewed_by or "cli", 80)
-        target = candidates[target_index]
-        new_status = "accepted" if normalized_action == "accept" else "rejected"
-        target = replace(
-            target,
-            status=new_status,
-            updated_at=now,
-            reviewed_at=now,
-            reviewed_by=reviewer,
-            gate_reason=f"manual_{normalized_action}",
-            superseded_by="" if new_status == "accepted" else target.superseded_by,
-        )
-        candidates[target_index] = target
-        changed: list[tuple[GhostMemoryCandidate, str]] = [(target, f"review_{normalized_action}")]
-        superseded_ids: list[str] = []
-        if new_status == "accepted":
-            target_ref = _scope_ref(target)
+        with with_file_lock(self.events_path):
+            candidates = list(self._load_candidates())
+            target_index: int | None = None
             for index, candidate in enumerate(candidates):
-                if candidate.id == target.id:
-                    continue
-                if candidate.status != "accepted":
-                    continue
-                if candidate.scope != target.scope or _scope_ref(candidate) != target_ref:
-                    continue
-                if candidate.conflict_key != target.conflict_key:
-                    continue
-                if candidate.value_key == target.value_key:
-                    continue
-                superseded = replace(
-                    candidate,
-                    status="superseded",
-                    updated_at=now,
-                    reviewed_at=now,
-                    reviewed_by=reviewer,
-                    superseded_by=target.id,
-                )
-                candidates[index] = superseded
-                changed.append((superseded, "superseded"))
-                superseded_ids.append(superseded.id)
-        events = [
-            self._candidate_event(candidate, action=event_action)
-            for candidate, event_action in changed
-        ]
-        events.append(self._control_event(
-            "ghost_memory_candidate_reviewed",
-            {
-                "candidate_id": target.id,
-                "action": normalized_action,
-                "reviewed_by": reviewer,
-                "superseded_ids": superseded_ids,
-            },
-        ))
-        if not self._append_events(events):
-            return None
-        try:
-            self._write_projection(candidates)
-        except (OSError, TypeError, ValueError):
-            delete_file(self.inbox_path)
-        self._compact_if_needed(candidates)
-        return target
+                if candidate.id == normalized_id:
+                    target_index = index
+                    break
+            if target_index is None:
+                return None
+            now = _now()
+            reviewer = clip_signal_text(reviewed_by or "cli", 80)
+            target = candidates[target_index]
+            new_status = "accepted" if normalized_action == "accept" else "rejected"
+            target = replace(
+                target,
+                status=new_status,
+                updated_at=now,
+                reviewed_at=now,
+                reviewed_by=reviewer,
+                gate_reason=f"manual_{normalized_action}",
+                superseded_by="" if new_status == "accepted" else target.superseded_by,
+            )
+            candidates[target_index] = target
+            changed: list[tuple[GhostMemoryCandidate, str]] = [(target, f"review_{normalized_action}")]
+            superseded_ids: list[str] = []
+            if new_status == "accepted":
+                target_ref = _scope_ref(target)
+                for index, candidate in enumerate(candidates):
+                    if candidate.id == target.id:
+                        continue
+                    if candidate.status != "accepted":
+                        continue
+                    if candidate.scope != target.scope or _scope_ref(candidate) != target_ref:
+                        continue
+                    if candidate.conflict_key != target.conflict_key:
+                        continue
+                    if candidate.value_key == target.value_key:
+                        continue
+                    superseded = replace(
+                        candidate,
+                        status="superseded",
+                        updated_at=now,
+                        reviewed_at=now,
+                        reviewed_by=reviewer,
+                        superseded_by=target.id,
+                    )
+                    candidates[index] = superseded
+                    changed.append((superseded, "superseded"))
+                    superseded_ids.append(superseded.id)
+            events = [
+                self._candidate_event(candidate, action=event_action)
+                for candidate, event_action in changed
+            ]
+            events.append(self._control_event(
+                "ghost_memory_candidate_reviewed",
+                {
+                    "candidate_id": target.id,
+                    "action": normalized_action,
+                    "reviewed_by": reviewer,
+                    "superseded_ids": superseded_ids,
+                },
+            ))
+            if not self._append_events(events):
+                return None
+            try:
+                self._write_projection(candidates)
+            except (OSError, TypeError, ValueError):
+                delete_file(self.inbox_path)
+            self._compact_if_needed(candidates)
+            return target
 
     def reset_all(self, *, preserve_settings: bool = True) -> bool:
         try:
-            delete_file(self.inbox_path)
-            delete_file(self.events_path)
-            if not preserve_settings:
-                delete_file(self.settings_path)
+            state_paths = (self.inbox_path,) if preserve_settings else (self.inbox_path, self.settings_path)
+            reset_event_backed_state(self.events_path, *state_paths)
+            self.last_warnings = ()
+            self._events_read_blocked = False
             return True
         except OSError:
             return False
@@ -395,36 +398,37 @@ class GhostInboxStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not normalized_session:
             raise ValueError("session_id is required for session scope deletion")
-        candidates = list(self._load_candidates())
-        remaining: list[GhostMemoryCandidate] = []
-        removed = 0
-        for candidate in candidates:
-            if _scope_delete_match(
-                candidate,
-                normalized_scope,
-                project=normalized_project,
-                session_id=normalized_session,
-            ):
-                removed += 1
-            else:
-                remaining.append(candidate)
-        if not removed:
-            return 0
-        control = self._control_event(
-            "ghost_memory_scope_deleted",
-            {
-                "scope": normalized_scope,
-                "project": normalized_project if normalized_scope == "project" else "",
-                "session_id": normalized_session if normalized_scope == "session" else "",
-                "removed_count": removed,
-            },
-        )
-        self._rewrite_events_from_candidates(remaining, control_event=control)
-        try:
-            self._write_projection(remaining)
-        except (OSError, TypeError, ValueError):
-            delete_file(self.inbox_path)
-        return removed
+        with with_file_lock(self.events_path):
+            candidates = list(self._load_candidates())
+            remaining: list[GhostMemoryCandidate] = []
+            removed = 0
+            for candidate in candidates:
+                if _scope_delete_match(
+                    candidate,
+                    normalized_scope,
+                    project=normalized_project,
+                    session_id=normalized_session,
+                ):
+                    removed += 1
+                else:
+                    remaining.append(candidate)
+            if not removed:
+                return 0
+            control = self._control_event(
+                "ghost_memory_scope_deleted",
+                {
+                    "scope": normalized_scope,
+                    "project": normalized_project if normalized_scope == "project" else "",
+                    "session_id": normalized_session if normalized_scope == "session" else "",
+                    "removed_count": removed,
+                },
+            )
+            self._rewrite_events_from_candidates(remaining, control_event=control)
+            try:
+                self._write_projection(remaining)
+            except (OSError, TypeError, ValueError):
+                delete_file(self.inbox_path)
+            return removed
 
     def set_learning_enabled(self, enabled: bool) -> bool:
         payload = {
@@ -433,13 +437,14 @@ class GhostInboxStore:
             "updated_at": _now(),
         }
         try:
-            write_json_atomic(self.settings_path, payload, max_bytes=MAX_INBOX_BYTES)
-            audit_ok = self._append_events([
-                self._control_event(
-                    "ghost_learning_settings_updated",
-                    {"learning_enabled": bool(enabled)},
-                )
-            ])
+            with with_file_lock(self.events_path):
+                write_json_atomic(self.settings_path, payload, max_bytes=MAX_INBOX_BYTES)
+                audit_ok = self._append_events([
+                    self._control_event(
+                        "ghost_learning_settings_updated",
+                        {"learning_enabled": bool(enabled)},
+                    )
+                ])
         except (OSError, TypeError, ValueError):
             return False
         return audit_ok
@@ -471,18 +476,19 @@ class GhostInboxStore:
                 "bytes_after": before["bytes"],
                 "warnings": list(self.last_warnings),
             }
-        candidates = self._load_candidates()
-        if self._events_read_blocked:
-            return {
-                "ok": False,
-                "compacted": False,
-                "events_before": before["events"],
-                "events_after": before["events"],
-                "bytes_before": before["bytes"],
-                "bytes_after": before["bytes"],
-                "warnings": list(self.last_warnings),
-            }
-        self._compact_if_needed(candidates)
+        with with_file_lock(self.events_path):
+            candidates = self._load_candidates()
+            if self._events_read_blocked:
+                return {
+                    "ok": False,
+                    "compacted": False,
+                    "events_before": before["events"],
+                    "events_after": before["events"],
+                    "bytes_before": before["bytes"],
+                    "bytes_after": before["bytes"],
+                    "warnings": list(self.last_warnings),
+                }
+            self._compact_if_needed(candidates)
         after = _event_file_stats(self.events_path, max_bytes=MAX_EVENTS_BYTES)
         return {
             "ok": True,

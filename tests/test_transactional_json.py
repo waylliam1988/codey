@@ -10,11 +10,8 @@ import unittest
 from pathlib import Path
 
 from codey.storage.transactional_json import (
-    LockTimeout,
-    LOCK_STALE_SECONDS,
     append_json_array_locked,
     mutate_json_atomic,
-    with_file_lock,
 )
 
 
@@ -25,58 +22,6 @@ def _write_payload(path: Path, payload: dict) -> None:
 
 def _read_payload(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-class WithFileLockTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self._tmp.cleanup)
-        self.root = Path(self._tmp.name)
-
-    def test_lock_is_reentrant_within_process(self) -> None:
-        target = self.root / "state.json"
-        with with_file_lock(target, timeout_seconds=2.0, stale_seconds=60.0):
-            # Nested acquisition must not deadlock or time out.
-            with with_file_lock(target, timeout_seconds=2.0, stale_seconds=60.0):
-                pass
-
-    def test_timeout_raises_locktimeout_when_holder_persists(self) -> None:
-        target = self.root / "state.json"
-
-        def holder() -> None:
-            with with_file_lock(target, timeout_seconds=5.0, stale_seconds=60.0):
-                time.sleep(1.5)
-
-        thread = threading.Thread(target=holder)
-        thread.start()
-        time.sleep(0.2)
-        try:
-            with self.assertRaises(LockTimeout):
-                with with_file_lock(target, timeout_seconds=0.3, stale_seconds=60.0):
-                    pass
-        finally:
-            thread.join()
-
-    def test_stale_lock_is_taken_over(self) -> None:
-        target = self.root / "state.json"
-        lock = target.with_name(f".{target.name}.lock")
-        lock.write_text("deadbeef", encoding="utf-8")
-        old = time.time() - (LOCK_STALE_SECONDS + 30.0)
-        import os
-
-        os.utime(lock, (old, old))
-
-        with with_file_lock(target, timeout_seconds=2.0, stale_seconds=LOCK_STALE_SECONDS):
-            self.assertTrue(lock.exists())
-
-        self.assertFalse(lock.exists())
-
-    def test_release_removes_only_own_lock_file(self) -> None:
-        target = self.root / "state.json"
-        lock_path = target.with_name(f".{target.name}.lock")
-        with with_file_lock(target):
-            pass
-        self.assertFalse(lock_path.exists())
 
 
 class MutateJsonAtomicTests(unittest.TestCase):

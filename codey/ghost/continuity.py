@@ -18,7 +18,8 @@ import uuid
 from codey.ghost.hebbian import GhostHebbianStore, GhostNode
 from codey.ghost.schema import clip_signal_text, contains_sensitive_signal_text
 from codey.ghost.typed_fields import dangerous_text, render_typed_field, safe_rendered_body
-from codey.storage.local_store import DEFAULT_STATE_HOME, delete_file, read_json, write_json_atomic
+from codey.storage.file_lock import reset_event_backed_state, with_file_lock
+from codey.storage.local_store import DEFAULT_STATE_HOME, read_json, write_json_atomic
 
 if TYPE_CHECKING:
     from codey.runs.ledger_projection import RunLedgerProjection
@@ -211,108 +212,94 @@ class GhostContinuityStore:
     ) -> GhostContinuityResult:
         warnings: list[str] = []
         try:
-            now = _now()
-            existing = list(self._load_items())
-            if self.events_path.exists():
-                self._read_events()
-                if self._events_read_blocked:
+            with with_file_lock(self.events_path):
+                now = _now()
+                existing = list(self._load_items())
+                if self.events_path.exists():
+                    self._read_events()
+                    if self._events_read_blocked:
+                        self.last_warnings = _bounded_warnings([*warnings, *self.last_warnings])
+                        return GhostContinuityResult(
+                            False,
+                            skipped_reason="events_read_blocked",
+                            warnings=self.last_warnings,
+                        )
+                if self._events_read_blocked and not existing:
                     self.last_warnings = _bounded_warnings([*warnings, *self.last_warnings])
                     return GhostContinuityResult(
                         False,
                         skipped_reason="events_read_blocked",
                         warnings=self.last_warnings,
                     )
-            if self._events_read_blocked and not existing:
-                self.last_warnings = _bounded_warnings([*warnings, *self.last_warnings])
-                return GhostContinuityResult(
-                    False,
-                    skipped_reason="events_read_blocked",
-                    warnings=self.last_warnings,
-                )
-            candidates: list[GhostContinuityItem] = []
-            candidates.extend(_items_from_hebbian(hebbian_store, now=now, warnings=warnings))
-            candidates.extend(_items_from_task(
-                user_focus_excerpt,
-                now=now,
-                session_id=session_id,
-                run_id=run_id,
-                project=project,
-                mode=mode,
-                warnings=warnings,
-            ))
-            candidates.extend(_items_from_run_projection(
-                run_projection,
-                now=now,
-                project=project,
-                warnings=warnings,
-            ))
-            candidates.extend(_items_from_knowledge(
-                knowledge_store,
-                now=now,
-                session_id=session_id,
-                project=project,
-                warnings=warnings,
-            ))
+                candidates: list[GhostContinuityItem] = []
+                candidates.extend(_items_from_hebbian(hebbian_store, now=now, warnings=warnings))
+                candidates.extend(_items_from_task(
+                    user_focus_excerpt,
+                    now=now,
+                    session_id=session_id,
+                    run_id=run_id,
+                    project=project,
+                    mode=mode,
+                    warnings=warnings,
+                ))
+                candidates.extend(_items_from_run_projection(
+                    run_projection,
+                    now=now,
+                    project=project,
+                    warnings=warnings,
+                ))
+                candidates.extend(_items_from_knowledge(
+                    knowledge_store,
+                    now=now,
+                    session_id=session_id,
+                    project=project,
+                    warnings=warnings,
+                ))
 
-            if not candidates:
-                active_existing = _bounded_items(
-                    item for item in existing if not _is_expired(item, now)
-                )
-                if len(active_existing) != len(existing):
-                    self._rewrite_events_from_items(active_existing)
-                    self._write_projection(active_existing, now=now, warnings=warnings)
+                active_existing = _bounded_items(item for item in existing if not _is_expired(item, now))
+                merged, changed_items = _merge_items(active_existing, candidates, now=now)
+                merged = _bounded_items(item for item in merged if not _is_expired(item, now))
+                projection_changed = _item_payloads(active_existing) != _item_payloads(merged)
+                if not changed_items and not projection_changed:
+                    self.last_warnings = _bounded_warnings(warnings)
+                    return GhostContinuityResult(
+                        True,
+                        items_changed=0,
+                        total_items=len(merged),
+                        warnings=self.last_warnings,
+                    )
+                if changed_items:
+                    events = [_item_event(item, action="upsert") for item in changed_items]
+                    events.append(_control_event(
+                        "ghost_continuity_synced",
+                        {
+                            "run_id": clip_signal_text(run_id, 120),
+                            "session_id": clip_signal_text(session_id, 120),
+                            "project": _normalize_project(project),
+                            "mode": clip_signal_text(mode, 40),
+                            "items_seen": len(candidates),
+                            "items_changed": len(changed_items),
+                            "items_total": len(merged),
+                        },
+                    ))
+                    if not self._append_events(events):
+                        self.last_warnings = _bounded_warnings([*warnings, "event_write_failed"])
+                        return GhostContinuityResult(
+                            False,
+                            skipped_reason="event_write_failed",
+                            warnings=self.last_warnings,
+                        )
+                elif projection_changed:
+                    self._rewrite_events_from_items(merged)
+                self._write_projection(merged, now=now, warnings=warnings)
+                self._compact_if_needed(merged)
                 self.last_warnings = _bounded_warnings(warnings)
                 return GhostContinuityResult(
                     True,
-                    skipped_reason="no_sources",
-                    total_items=len(active_existing),
-                    warnings=self.last_warnings,
-                )
-
-            active_existing = _bounded_items(item for item in existing if not _is_expired(item, now))
-            merged, changed_items = _merge_items(active_existing, candidates, now=now)
-            merged = _bounded_items(item for item in merged if not _is_expired(item, now))
-            projection_changed = _item_payloads(active_existing) != _item_payloads(merged)
-            if not changed_items and not projection_changed:
-                self.last_warnings = _bounded_warnings(warnings)
-                return GhostContinuityResult(
-                    True,
-                    items_changed=0,
+                    items_changed=len(changed_items),
                     total_items=len(merged),
                     warnings=self.last_warnings,
                 )
-            if changed_items:
-                events = [_item_event(item, action="upsert") for item in changed_items]
-                events.append(_control_event(
-                    "ghost_continuity_synced",
-                    {
-                        "run_id": clip_signal_text(run_id, 120),
-                        "session_id": clip_signal_text(session_id, 120),
-                        "project": _normalize_project(project),
-                        "mode": clip_signal_text(mode, 40),
-                        "items_seen": len(candidates),
-                        "items_changed": len(changed_items),
-                        "items_total": len(merged),
-                    },
-                ))
-                if not self._append_events(events):
-                    self.last_warnings = _bounded_warnings([*warnings, "event_write_failed"])
-                    return GhostContinuityResult(
-                        False,
-                        skipped_reason="event_write_failed",
-                        warnings=self.last_warnings,
-                    )
-            elif projection_changed:
-                self._rewrite_events_from_items(merged)
-            self._write_projection(merged, now=now, warnings=warnings)
-            self._compact_if_needed(merged)
-            self.last_warnings = _bounded_warnings(warnings)
-            return GhostContinuityResult(
-                True,
-                items_changed=len(changed_items),
-                total_items=len(merged),
-                warnings=self.last_warnings,
-            )
         except Exception as exc:
             self.last_warnings = (f"{type(exc).__name__}: {clip_signal_text(exc, 160)}",)
             return GhostContinuityResult(False, skipped_reason="continuity_error", warnings=self.last_warnings)
@@ -350,11 +337,12 @@ class GhostContinuityStore:
 
     def reset_all(self) -> bool:
         try:
-            delete_file(self.projection_path)
-            delete_file(self.events_path)
+            reset_event_backed_state(self.events_path, self.projection_path)
+            self.last_warnings = ()
+            self._events_read_blocked = False
+            return True
         except OSError:
             return False
-        return True
 
     def delete_scope(
         self,
@@ -372,29 +360,31 @@ class GhostContinuityStore:
             raise ValueError("project is required for project scope deletion")
         if normalized_scope == "session" and not session_ref:
             raise ValueError("session_id is required for session scope deletion")
-        items = list(self._load_items())
-        kept = [
-            item for item in items
-            if not _scope_filter_matches(
-                item,
-                scope=normalized_scope,
-                project_ref=project_ref,
-                session_ref=session_ref,
-            )
-        ]
-        removed = len(items) - len(kept)
-        if removed:
-            self._rewrite_events_from_items(kept)
-            self._write_projection(kept, now=_now(), warnings=[])
-        return removed
+        with with_file_lock(self.events_path):
+            items = list(self._load_items())
+            kept = [
+                item for item in items
+                if not _scope_filter_matches(
+                    item,
+                    scope=normalized_scope,
+                    project_ref=project_ref,
+                    session_ref=session_ref,
+                )
+            ]
+            removed = len(items) - len(kept)
+            if removed:
+                self._rewrite_events_from_items(kept)
+                self._write_projection(kept, now=_now(), warnings=[])
+            return removed
 
     def rebuild_from_events(self) -> bool:
         try:
-            events = self._read_events()
-            if self._events_read_blocked:
-                return False
-            items = _items_from_events(events)
-            self._write_projection(_bounded_items(items), now=_now(), warnings=[])
+            with with_file_lock(self.events_path):
+                events = self._read_events()
+                if self._events_read_blocked:
+                    return False
+                items = _items_from_events(events)
+                self._write_projection(_bounded_items(items), now=_now(), warnings=[])
         except (OSError, TypeError, ValueError):
             return False
         return True
@@ -438,18 +428,19 @@ class GhostContinuityStore:
                 "bytes_after": before["bytes"],
                 "warnings": list(self.last_warnings),
             }
-        items = self._load_items()
-        if self._events_read_blocked:
-            return {
-                "ok": False,
-                "compacted": False,
-                "events_before": before["events"],
-                "events_after": before["events"],
-                "bytes_before": before["bytes"],
-                "bytes_after": before["bytes"],
-                "warnings": list(self.last_warnings),
-            }
-        self._compact_if_needed(items)
+        with with_file_lock(self.events_path):
+            items = self._load_items()
+            if self._events_read_blocked:
+                return {
+                    "ok": False,
+                    "compacted": False,
+                    "events_before": before["events"],
+                    "events_after": before["events"],
+                    "bytes_before": before["bytes"],
+                    "bytes_after": before["bytes"],
+                    "warnings": list(self.last_warnings),
+                }
+            self._compact_if_needed(items)
         after = _event_file_stats(self.events_path, max_bytes=MAX_CONTINUITY_EVENTS_BYTES)
         return {
             "ok": True,

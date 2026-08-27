@@ -27,7 +27,7 @@ from codey.storage.local_store import (
     session_key,
     write_json_atomic,
 )
-from codey.storage.transactional_json import with_file_lock
+from codey.storage.file_lock import reset_event_backed_state, with_file_lock
 
 
 AFFINITY_SCHEMA_VERSION = 1
@@ -738,8 +738,10 @@ class GhostAffinityStore:
 
     def reset_all(self) -> bool:
         try:
-            delete_file(self.projection_path)
-            delete_file(self.events_path)
+            reset_event_backed_state(self.events_path, self.projection_path)
+            self.last_warnings = ()
+            self._events_read_blocked = False
+            self._events_blocked_reason = ""
             return True
         except OSError:
             return False

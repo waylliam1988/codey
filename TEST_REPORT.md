@@ -1,5 +1,37 @@
 # Codey Test Report
 
+## Unreleased - OS-Backed Advisory Lock and Safe Event-Backed State Reset (2026-08-27)
+
+This refactoring replaces the file-creation/deletion lock model and stale takeover heuristics with OS-backed advisory locking (`codey.storage.file_lock`) and introduces unified safe event-backed state reset.
+
+Closed items:
+
+- Created `codey.storage.file_lock` providing cross-process and cross-thread advisory file locking using operating-system native kernel locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) and process-local `threading.RLock` coordination.
+- Sidecar lock files (`.<filename>.lock`) are permanent advisory lock carriers and are never deleted, eliminating TOCTOU races in `stat -> unlink` stale-lock takeovers.
+- Removed `LOCK_STALE_SECONDS` / `stale_seconds` from `transactional_json.py` and redirected storage locking to `codey.storage.file_lock`.
+- Added unified helper `reset_event_backed_state(events_path, *state_paths)` to safely delete projections and event logs under the event lock.
+- Enforced authoritative `events_path` locking discipline across all Ghost stores (`work_queue`, `affinity`, `continuity`, `hebbian`, `inbox`, `router`, `sleep`) across append, replay, rebuild, delete_scope, reset, and compaction operations.
+- Added comprehensive unit tests in `tests/test_file_lock.py` verifying:
+  - Reentrancy within threads.
+  - Mutual exclusion between concurrent threads.
+  - Timeout enforcement (`LockTimeout`).
+  - Lock carrier file persistence on disk after release.
+  - Cross-process mutual exclusion with subprocesses.
+  - Safe event-backed state reset and reset blocking when events are locked.
+- Updated `tests/test_transactional_json.py` to remove obsolete stale-takeover assertions.
+
+Validation commands and results:
+
+```powershell
+python -m ruff check codey tests
+# All checks passed!
+
+pytest
+# 3040 passed, 2 skipped in 281.40s
+```
+
+
+
 ## 0.4.16 Release - Ghost Event Canonicalization and Work Queue Invariants (2026-08-27)
 
 This hardening completes strict action-specific validation and fail-closed replay semantics in Ghost Work Queue, canonicalizes Ghost Affinity event-log payloads, resolves review findings across producer, validator, reducer, and snapshot/item state invariant layers, and unifies mutation diagnostic warnings across Ghost Work Queue and Affinity.

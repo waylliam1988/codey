@@ -6,6 +6,13 @@ This file records Codey's release history. The newest release appears first.
 
 ## Unreleased
 
+- Replaced sidecar lock creation/deletion and stale takeover heuristics with OS-backed advisory file locks (`codey.storage.file_lock`).
+  - Uses operating-system native locks (`msvcrt.locking` on Windows, `fcntl.flock` on POSIX) combined with process-local thread synchronization (`threading.RLock`).
+  - Sidecar `.lock` files remain permanently on disk as lock carriers, eliminating `stat -> unlink` time-of-check-to-time-of-use (TOCTOU) races and stale takeover bugs.
+  - Added unified helper `reset_event_backed_state(events_path, *state_paths)` ensuring all event logs and derived projections are deleted safely under the authoritative event lock.
+  - Standardized mutation concurrency discipline across all 7 Ghost stores (`work_queue`, `affinity`, `continuity`, `hebbian`, `inbox`, `router`, `sleep`): all mutations (append, replay, rebuild, delete_scope, reset, and compaction) acquire the store's `events_path` lock.
+
+
 ## 0.4.16 - Ghost Event Canonicalization and Work Queue Invariants
 
 - Ghost Affinity and Work Queue event logs now store semantic intent events
