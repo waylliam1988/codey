@@ -786,7 +786,7 @@ class GhostWorkQueueStore:
         *,
         project: str = "",
         session_id: str = "",
-    ) -> int:
+    ) -> dict[str, object]:
         normalized_scope = _clean_scope(scope)
         if not normalized_scope:
             raise ValueError("scope must be user, project, or session")
@@ -809,7 +809,7 @@ class GhostWorkQueueStore:
                     )
                 ]
                 if not removed:
-                    return _WorkMutation(0, items=tuple(items), write_projection=False, compact=False)
+                    return _WorkMutation({"removed": 0, "warnings": []}, items=tuple(items), write_projection=False, compact=False)
                 event = _items_deleted_event(
                     reason="scope_deleted",
                     scope=normalized_scope,
@@ -818,10 +818,10 @@ class GhostWorkQueueStore:
                     ts=_now(),
                 )
                 new_items = _bounded_items(_items_from_events((*events, event)))
-                return _WorkMutation(len(removed), append_events=(event,), items=tuple(new_items))
+                return _WorkMutation({"removed": len(removed), "warnings": []}, append_events=(event,), items=tuple(new_items))
 
             result = self._mutate_event_log(decide)
-            return int(result or 0)
+            return result if isinstance(result, dict) else {"removed": 0, "warnings": ["work_queue_error"]}
         except (OSError, TypeError, ValueError):
             if self._events_read_blocked:
                 raise OSError("ghost work events are unreadable")
@@ -996,6 +996,35 @@ class GhostWorkQueueStore:
                 self._events_read_blocked = True
                 continue
             rows.append(payload)
+        if self._events_read_blocked:
+            self.last_warnings = _bounded_warnings(warnings)
+            self._events_blocked_reason = "events_read_blocked"
+            return []
+
+        by_id: dict[str, GhostWorkItem] = {}
+        for index, event in enumerate(rows, start=1):
+            event_type = str(event.get("type") or "")
+            now = _event_ts(event)
+            if event_type == "ghost_work_snapshot":
+                by_id = {item.id: item for item in _snapshot_items(event)}
+            elif event_type == "ghost_work_item_observed":
+                item = GhostWorkItem.from_payload(event.get("item"))
+                if item is None:
+                    warnings.append(f"work_events.jsonl:{index}:invalid_event")
+                    self._events_read_blocked = True
+                    break
+                item = replace(item, created_at=item.created_at or now, updated_at=item.updated_at or now)
+                merged, _changed = _merge_items(by_id.values(), (item,), now=now)
+                by_id = {row.id: row for row in _bounded_items(merged)}
+            elif event_type == "ghost_work_item_transitioned":
+                res = _apply_transition_event(by_id, event, now=now)
+                if res == "invalid":
+                    warnings.append(f"work_events.jsonl:{index}:invalid_event")
+                    self._events_read_blocked = True
+                    break
+            elif event_type == "ghost_work_items_deleted":
+                _apply_items_deleted_event(by_id, event)
+
         self.last_warnings = _bounded_warnings(warnings)
         if self._events_read_blocked:
             self._events_blocked_reason = "events_read_blocked"
@@ -1039,7 +1068,7 @@ class GhostWorkQueueStore:
             result = mutation.result
             if is_dataclass(result) and not isinstance(result, type) and hasattr(result, "warnings"):
                 return replace(result, warnings=self.last_warnings)
-            if isinstance(result, dict) and "warnings" in result:
+            if isinstance(result, dict):
                 return dict(result, warnings=list(self.last_warnings))
             return result
 
@@ -1745,29 +1774,101 @@ def _valid_work_transition(event: Mapping[str, object]) -> bool:
     target_status = _clean_status(patch.get("status"))
     if not target_status:
         return False
-    if action == "claim" and target_status != "running":
+    updated_at = clip_signal_text(patch.get("updated_at"), 80)
+    if not updated_at:
         return False
-    if action == "complete" and target_status != "done":
+
+    expected_status = _clean_status(precondition.get("expected_status"))
+    try:
+        expected_retry_count = int(precondition.get("expected_retry_count", 0))
+    except (TypeError, ValueError):
         return False
-    if action == "block" and target_status != "blocked":
-        return False
-    if action in {"release", "release_stale"} and target_status not in {"queued", "blocked"}:
-        return False
-    if action == "reject" and target_status != "rejected":
-        return False
-    if action == "queue" and target_status != "queued":
-        return False
-    if target_status == "running" and not clip_signal_text(patch.get("started_run_id"), 120):
-        return False
-    if target_status == "done" and not _bounded_refs(patch.get("proof_refs")):
-        return False
-    if "retry_count" in patch:
+
+    if action == "claim":
+        if target_status != "running" or expected_status != "queued":
+            return False
+        started_run_id = clip_signal_text(patch.get("started_run_id"), 120)
+        lease_expires_at = clip_signal_text(patch.get("lease_expires_at"), 80)
+        if not started_run_id or not lease_expires_at:
+            return False
+        if "retry_count" not in patch:
+            return False
         try:
-            if int(patch.get("retry_count")) < 0:
+            retry_count = int(patch["retry_count"])
+            if retry_count < 1 or retry_count != expected_retry_count + 1:
                 return False
         except (TypeError, ValueError):
             return False
-    return True
+        if clip_signal_text(patch.get("blocked_reason"), 120):
+            return False
+        return True
+
+    if action == "complete":
+        if target_status != "done" or expected_status != "running":
+            return False
+        completed_run_id = clip_signal_text(patch.get("completed_run_id"), 120)
+        proof_refs = _bounded_refs(patch.get("proof_refs"))
+        if not completed_run_id or not proof_refs:
+            return False
+        if clip_signal_text(patch.get("lease_expires_at"), 80):
+            return False
+        if clip_signal_text(patch.get("blocked_reason"), 120):
+            return False
+        return True
+
+    if action in {"release", "release_stale"}:
+        if target_status not in {"queued", "blocked"} or expected_status != "running":
+            return False
+        if clip_signal_text(patch.get("lease_expires_at"), 80):
+            return False
+        if target_status == "queued":
+            if clip_signal_text(patch.get("started_run_id"), 120):
+                return False
+            if clip_signal_text(patch.get("blocked_reason"), 120):
+                return False
+        elif target_status == "blocked":
+            if not clip_signal_text(patch.get("blocked_reason"), 120):
+                return False
+        return True
+
+    if action == "block":
+        if target_status != "blocked" or expected_status not in {"running", "queued", "candidate"}:
+            return False
+        if not clip_signal_text(patch.get("blocked_reason"), 120):
+            return False
+        if clip_signal_text(patch.get("lease_expires_at"), 80):
+            return False
+        return True
+
+    if action == "reject":
+        if target_status != "rejected" or expected_status not in {"candidate", "queued", "blocked"}:
+            return False
+        if clip_signal_text(patch.get("lease_expires_at"), 80):
+            return False
+        return True
+
+    if action == "queue":
+        if target_status != "queued" or expected_status not in {"candidate", "blocked", "rejected"}:
+            return False
+        if "retry_count" in patch:
+            try:
+                if int(patch["retry_count"]) != 0:
+                    return False
+            except (TypeError, ValueError):
+                return False
+        if clip_signal_text(patch.get("started_run_id"), 120):
+            return False
+        if clip_signal_text(patch.get("completed_run_id"), 120):
+            return False
+        if _bounded_refs(patch.get("proof_refs")):
+            return False
+        if clip_signal_text(patch.get("blocked_reason"), 120):
+            return False
+        if clip_signal_text(patch.get("lease_expires_at"), 80):
+            return False
+        return True
+
+    return False
 
 
 def _valid_work_snapshot(event: Mapping[str, object]) -> bool:
@@ -1830,35 +1931,94 @@ def _apply_transition_event(
     event: Mapping[str, object],
     *,
     now: str,
-) -> None:
+) -> str:
     item_id = clip_signal_text(event.get("item_id"), 120)
     current = by_id.get(item_id)
     if current is None:
-        return
+        return "stale"
     precondition = event.get("precondition")
     patch = event.get("patch")
     if not isinstance(precondition, Mapping) or not isinstance(patch, Mapping):
-        return
+        return "invalid"
     if not _precondition_matches(current, precondition):
-        return
+        return "stale"
     target_status = _clean_status(patch.get("status"))
     action = clip_signal_text(event.get("action"), 40)
     if not target_status or not _transition_allowed(current, target_status, action=action):
-        return
-    updated = replace(
-        current,
-        status=target_status,
-        started_run_id=clip_signal_text(patch.get("started_run_id"), 120) if "started_run_id" in patch else current.started_run_id,
-        completed_run_id=clip_signal_text(patch.get("completed_run_id"), 120) if "completed_run_id" in patch else current.completed_run_id,
-        proof_refs=_bounded_refs(patch.get("proof_refs")) if "proof_refs" in patch else current.proof_refs,
-        blocked_reason=clip_signal_text(patch.get("blocked_reason"), 120) if "blocked_reason" in patch else current.blocked_reason,
-        retry_count=max(0, _int(patch.get("retry_count"))) if "retry_count" in patch else current.retry_count,
-        lease_expires_at=clip_signal_text(patch.get("lease_expires_at"), 80) if "lease_expires_at" in patch else current.lease_expires_at,
-        updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
-    )
+        return "invalid"
+
+    if action == "complete":
+        proof_refs = _bounded_refs(patch.get("proof_refs"))
+        if not proof_refs or not _primary_proof_matches_item_kind(current, proof_refs):
+            return "invalid"
+        completed_run_id = clip_signal_text(patch.get("completed_run_id"), 120)
+        if not completed_run_id:
+            return "invalid"
+
+    if action == "claim":
+        updated = replace(
+            current,
+            status="running",
+            started_run_id=clip_signal_text(patch.get("started_run_id"), 120),
+            retry_count=max(0, _int(patch.get("retry_count"))),
+            lease_expires_at=clip_signal_text(patch.get("lease_expires_at"), 80),
+            blocked_reason="",
+            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+        )
+    elif action == "complete":
+        updated = replace(
+            current,
+            status="done",
+            completed_run_id=clip_signal_text(patch.get("completed_run_id"), 120),
+            proof_refs=_bounded_refs(patch.get("proof_refs")),
+            blocked_reason="",
+            lease_expires_at="",
+            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+        )
+    elif action in {"release", "release_stale"}:
+        updated = replace(
+            current,
+            status=target_status,
+            started_run_id="" if target_status == "queued" else clip_signal_text(patch.get("started_run_id"), 120),
+            lease_expires_at="",
+            blocked_reason=clip_signal_text(patch.get("blocked_reason"), 120) if target_status == "blocked" else "",
+            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+        )
+    elif action == "block":
+        updated = replace(
+            current,
+            status="blocked",
+            blocked_reason=clip_signal_text(patch.get("blocked_reason"), 120),
+            lease_expires_at="",
+            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+        )
+    elif action == "reject":
+        updated = replace(
+            current,
+            status="rejected",
+            lease_expires_at="",
+            blocked_reason="",
+            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+        )
+    elif action == "queue":
+        updated = replace(
+            current,
+            status="queued",
+            retry_count=0,
+            started_run_id="",
+            completed_run_id="",
+            proof_refs=(),
+            blocked_reason="",
+            lease_expires_at="",
+            updated_at=clip_signal_text(patch.get("updated_at"), 80) or now,
+        )
+    else:
+        return "invalid"
+
     if GhostWorkItem.from_payload(updated.to_payload()) is None:
-        return
+        return "invalid"
     by_id[updated.id] = updated
+    return "applied"
 
 
 def _apply_items_deleted_event(by_id: dict[str, GhostWorkItem], event: Mapping[str, object]) -> None:

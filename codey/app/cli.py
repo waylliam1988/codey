@@ -391,7 +391,7 @@ def cmd_ghost(args: argparse.Namespace) -> int:
             "continuity_removed_count": continuity_removed,
             "router_removed_count": router_removed,
             "sleep_removed": sleep_removed,
-            "work_queue_removed_count": work_queue_removed,
+            "work_queue_removed": work_queue_removed,
             "affinity_removed": affinity_removed,
         })
         return 0

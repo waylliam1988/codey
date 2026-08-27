@@ -1,49 +1,51 @@
 # Codey Test Report
 
-## Ghost Event Reducer Hardening - Fail-Closed Transition Validation, Warning Propagation, Missing Events Check (2026-08-27)
+## Ghost WorkQueue Action-Specific Fail-Closed Hardening, Diagnostic Unification & Full Suite Verification (2026-08-27)
 
-This hardening addresses the reviewed Ghost Work Queue and Affinity event log gaps without adding compatibility wrappers. Ghost transitions are strictly validated at the action and target-status semantic level, mutation results propagate post-projection/compaction warnings, and Work Queue compact isomorphic checks report missing events files.
+This hardening completes the strict action-specific validation and fail-closed replay semantics in Ghost Work Queue and unifies mutation diagnostic warnings across Ghost Work Queue and Affinity.
 
 Closed items:
 
-- `ghost_work_item_transitioned` validation in `codey.ghost.work_queue` is elevated to fail closed: `action` must belong to the allowed action set, `target_status` must match action semantics, `running` requires non-empty `started_run_id`, `done` requires non-empty `proof_refs`, and malformed patch items fail closed on read instead of silently skipping;
-- `_mutate_event_log()` in both `GhostWorkQueueStore` and `GhostAffinityStore` rebuilds the returned dataclass or dict result with `self.last_warnings` after projection write and compaction steps, eliminating diagnostic warning drops such as `work_projection_write_failed` and `affinity_projection_write_failed`;
-- `GhostWorkQueueStore.compact_if_needed()` adds an isomorphic check for missing events files when the projection file exists, returning `ok=False` and recording `work_events_missing`;
-- added unit tests covering malformed running transitions missing `started_run_id`, malformed done transitions missing `proof_refs`, missing events file detection during compaction, and projection warning propagation on mutations.
+- `GhostWorkQueueStore` transition validation (`_valid_work_transition`) enforces strict action-specific required fields: `claim` requires non-empty `started_run_id`, non-empty `lease_expires_at`, and `retry_count == expected_retry_count + 1`; `complete` requires `completed_run_id`, non-empty `proof_refs`, and empty lease; `release`/`release_stale` to `queued` strictly clears `started_run_id` and `lease_expires_at`, while release to `blocked` requires `blocked_reason`; `queue` requires `retry_count == 0` and completely clears run IDs, proofs, blocked reason, and lease.
+- `_apply_transition_event()` distinguishes `applied`, `stale`, and `invalid`, re-validating kind-specific primary proof matches (`_primary_proof_matches_item_kind`) on `complete` replay to prevent mismatched proof replay (e.g. research items replayed with raw ledger proofs).
+- `_read_events()` in `GhostWorkQueueStore` performs full sequence replay validation during event ingestion; any invalid transition or observed item parsing failure triggers `invalid_event` warning and sets `events_read_blocked = True`.
+- `GhostWorkQueueStore.delete_scope()` return signature is unified to `{"removed": n, "warnings": [...]}` with diagnostic warnings from projection write failures propagated directly to callers and CLI JSON output.
+- `GhostAffinityStore.decay()` and `_mutate_event_log()` in both stores ensure all dictionary mutation results merge `self.last_warnings` (e.g. `affinity_projection_write_failed` / `work_projection_write_failed`).
+- Added unit tests covering action-specific malformed claim/release/complete/queue transitions, kind-specific proof mismatch replay failure, and warning propagation on delete_scope and decay.
 
 Validation commands and results:
 
 ```powershell
-python -m ruff check .
+python -m ruff check codey/ghost/affinity.py codey/ghost/work_queue.py codey/app/cli.py tests/test_ghost_affinity.py tests/test_ghost_work_queue.py tests/test_cli.py
 # All checks passed!
 
-python -B -m pytest tests\test_ghost_work_queue.py tests\test_ghost_affinity.py -q
-# 68 passed in 4.42s
+pytest tests/test_ghost_work_queue.py tests/test_ghost_affinity.py tests/test_cli.py tests/test_ghost_control_surface.py -v
+# 99 passed in 7.07s
 
-python -B -m pytest tests\test_task_runner_work_queue.py tests\test_task_runner_affinity.py -q
-# 14 passed in 4.82s
+pytest tests/test_ghost_affinity.py tests/test_ghost_continuity.py tests/test_ghost_control_surface.py tests/test_ghost_directive.py tests/test_ghost_hebbian.py tests/test_ghost_inbox.py tests/test_ghost_router.py tests/test_ghost_sleep.py tests/test_ghost_work_queue.py -v
+# 237 passed, 110 subtests passed in 12.79s
 
-python -B -m pytest tests\test_ghost_work_queue_ab.py -q
-# 2 passed in 2.86s
+pytest tests/test_task_runner_affinity.py tests/test_task_runner_work_queue.py tests/test_task_runner_router.py tests/test_server.py -v
+# 202 passed in 33.62s
 
-python -B -m pytest tests\test_ghost_work_queue.py tests\test_ghost_affinity.py -k "concurrent or rebuild or snapshot" -q
-# 6 passed, 62 deselected in 0.76s
-
-python -B tests\manual\ghost_work_queue_production_ab.py --self-test
+python -B tests/manual/ghost_work_queue_production_ab.py --self-test
 # self-test ok
 
-python -B tests\manual\ghost_affinity_ab.py --self-test
+python -B tests/manual/ghost_affinity_ab.py --self-test
 # complete: true, ok: true, 10/10 cases ok
 
-python -B -m pytest tests\test_architecture.py tests\test_git_history_hygiene.py -q
-# 51 passed in 6.60s
+pytest tests/test_architecture.py tests/test_git_history_hygiene.py -v
+# 51 passed, 248 subtests passed in 6.70s
+
+git diff --check
+# Clean
 ```
 
 Final full-suite validation after the code, test, and documentation edits:
 
 ```powershell
-python -B -m pytest
-# 2993 passed, 2 skipped in 288.83s (0:04:48)
+pytest -v
+# 2998 passed, 2 skipped, 966 subtests passed in 294.70s (0:04:54)
 ```
 
 ## 0.4.15 Release - Run-Command Boundary and Stabilization Hardening (2026-08-26)

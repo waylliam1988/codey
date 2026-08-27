@@ -526,6 +526,7 @@ class ProviderCliTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["router_removed_count"], 1)
         self.assertEqual(payload["sleep_removed"]["reports"], 1)
+        self.assertEqual(payload["work_queue_removed"]["removed"], 0)
         self.assertGreater(payload["affinity_removed"]["nodes"], 0)
         self.assertEqual(exported["sleep"], {})
         self.assertEqual(router_exported["router"]["records"], [])

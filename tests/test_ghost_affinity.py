@@ -823,5 +823,22 @@ def test_affinity_delete_scope_propagates_projection_write_failure_warning() -> 
     assert "affinity_projection_write_failed" in affinity.last_warnings
 
 
+def test_affinity_decay_propagates_projection_write_failure_warning() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        affinity = GhostAffinityStore(td)
+        with mock.patch("codey.ghost.affinity._now", return_value="2026-01-01T00:00:00Z"):
+            affinity.sync_from_sources(
+                research_interest_candidates=(_candidate(candidate_id="alpha", concepts=("alpha", "beta"), neighbors=()),),
+                session_id="s1",
+            )
+        with mock.patch.object(affinity, "_write_projection", side_effect=OSError("disk full")):
+            with mock.patch("codey.ghost.affinity._now", return_value="2026-05-01T00:00:00Z"):
+                result = affinity.decay()
+
+    assert result["decayed_nodes"] > 0
+    assert "affinity_projection_write_failed" in result["warnings"]
+    assert "affinity_projection_write_failed" in affinity.last_warnings
+
+
 def test_affinity_schema_version_stays_cold_start_v1() -> None:
     assert affinity_module.AFFINITY_SCHEMA_VERSION == 1

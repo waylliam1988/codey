@@ -504,7 +504,7 @@ def test_delete_scope_and_reset_cover_work_queue() -> None:
         after_delete = store.list_items()
         reset_ok = store.reset_all()
 
-    assert removed == 1
+    assert removed == {"removed": 1, "warnings": []}
     assert after_delete == ()
     assert reset_ok
     assert not store.projection_path.exists()
@@ -1067,6 +1067,153 @@ def test_work_queue_mutation_result_propagates_projection_write_failure_warning(
     assert result.ok
     assert "work_projection_write_failed" in result.warnings
     assert "work_projection_write_failed" in store.last_warnings
+
+
+def test_work_queue_delete_scope_propagates_projection_write_failure_warning() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store, _item_id = _seed_research_work_item(td)
+        with mock.patch.object(store, "_write_projection", side_effect=OSError("disk full")):
+            result = store.delete_scope("session", session_id="s1")
+
+    assert result["removed"] == 1
+    assert "work_projection_write_failed" in result["warnings"]
+    assert "work_projection_write_failed" in store.last_warnings
+
+
+def test_work_queue_claim_missing_retry_or_lease_is_invalid_event() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store, item_id = _seed_research_work_item(td)
+        item = store.list_items()[0]
+
+        bad_claim = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_item_transitioned",
+            "event_id": "bad-claim",
+            "ts": FRESH_TS,
+            "action": "claim",
+            "item_id": item.id,
+            "precondition": {
+                "expected_status": "queued",
+                "expected_started_run_id": "",
+                "expected_retry_count": 0,
+            },
+            "patch": {
+                "status": "running",
+                "started_run_id": "run-1",
+                # missing retry_count and lease_expires_at
+                "updated_at": FRESH_TS,
+            },
+        }
+        store.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                for event in (_work_observed_event(item), bad_claim)
+            ),
+            encoding="utf-8",
+        )
+
+        assert store._read_events() == []
+        assert store._events_read_blocked
+        assert any("invalid_event" in warning for warning in store.last_warnings)
+        with pytest.raises(OSError, match="ghost work events are unreadable"):
+            store.complete_item(item.id, run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
+
+
+def test_work_queue_complete_with_mismatched_proof_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store, item_id = _seed_research_work_item(td)
+        item = store.list_items()[0]
+        # research item requires research_proof:... ref
+        bad_complete = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_item_transitioned",
+            "event_id": "bad-complete",
+            "ts": FRESH_TS,
+            "action": "complete",
+            "item_id": item.id,
+            "precondition": {
+                "expected_status": "running",
+                "expected_started_run_id": "run-1",
+                "expected_retry_count": 1,
+            },
+            "patch": {
+                "status": "done",
+                "completed_run_id": "run-1",
+                "proof_refs": ["ledger:run-1"],  # mismatched proof for research kind
+                "updated_at": FRESH_TS,
+            },
+        }
+        valid_claim = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_item_transitioned",
+            "event_id": "valid-claim",
+            "ts": FRESH_TS,
+            "action": "claim",
+            "item_id": item.id,
+            "precondition": {
+                "expected_status": "queued",
+                "expected_started_run_id": "",
+                "expected_retry_count": 0,
+            },
+            "patch": {
+                "status": "running",
+                "started_run_id": "run-1",
+                "retry_count": 1,
+                "lease_expires_at": "2026-08-27T09:00:00Z",
+                "updated_at": FRESH_TS,
+            },
+        }
+        store.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                for event in (_work_observed_event(item), valid_claim, bad_complete)
+            ),
+            encoding="utf-8",
+        )
+
+        assert store._read_events() == []
+        assert store._events_read_blocked
+        assert any("invalid_event" in warning for warning in store.last_warnings)
+        with pytest.raises(OSError, match="ghost work events are unreadable"):
+            store.complete_item(item.id, run_id="run-1", proof_refs=("research_proof:" + "a" * 16,))
+
+
+def test_work_queue_release_to_queued_retaining_lease_is_invalid() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        store, item_id = _seed_research_work_item(td)
+        item = store.list_items()[0]
+
+        bad_release = {
+            "schema_version": work_queue_module.WORK_QUEUE_SCHEMA_VERSION,
+            "type": "ghost_work_item_transitioned",
+            "event_id": "bad-release",
+            "ts": FRESH_TS,
+            "action": "release",
+            "item_id": item.id,
+            "precondition": {
+                "expected_status": "running",
+                "expected_started_run_id": "run-1",
+                "expected_retry_count": 1,
+            },
+            "patch": {
+                "status": "queued",
+                "started_run_id": "run-1",  # retaining started_run_id on release to queued is invalid
+                "updated_at": FRESH_TS,
+            },
+        }
+        store.events_path.write_text(
+            "".join(
+                json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n"
+                for event in (_work_observed_event(item), bad_release)
+            ),
+            encoding="utf-8",
+        )
+
+        assert store._read_events() == []
+        assert store._events_read_blocked
+        assert any("invalid_event" in warning for warning in store.last_warnings)
+        with pytest.raises(OSError, match="ghost work events are unreadable"):
+            store.queue_item(item.id)
 
 
 def test_work_queue_schema_version_stays_cold_start_v1() -> None:

@@ -13,14 +13,16 @@
   和 snapshot anchor。冷启动 schema 常量仍为 `1`；旧 upsert event type 不再
   兼容，mutation 会 fail closed。
 - Ghost Work Queue 的 `ghost_work_item_transitioned` 事件校验提升至严格的
-  action 与 target-status 语义约束（如 `running` 必须有非空 `started_run_id`、
-  `done` 必须有非空 `proof_refs` 等），任何格式残缺或非法 action 均判定为
-  `invalid_event` 并触发 fail-closed 阻断，杜绝坏 claim 事件被静默跳过。
+  action-specific 字段与状态语义约束（如 `claim` 必须有非空 `started_run_id`、
+  `lease_expires_at` 和严格递增的 `retry_count`；`complete` 必须有 `completed_run_id`、
+  非空 `proof_refs` 并清空 lease；`release` 到 `queued` 必须显式清空 lease 和
+  `started_run_id`）。Replay 增加 kind-specific primary proof 验证与全序序列
+  回放校验，任何非法 transition 均判定为 `invalid_event` 并触发 fail-closed 阻断。
 - Ghost Affinity 和 Work Queue 的 mutation API 现在把 read -> reduce ->
   decide -> append/rewrite -> project 流程放进 store 文件锁内，关闭并发
-  reinforcement 和双重 claim 这类语义 lost-update 竞态；在 projection 写入
-  和 compaction 步骤完成后，使用最新 `last_warnings` 重建返回结果，确保
-  调用方诊断不漏报。
+  reinforcement 和双重 claim 这类语义 lost-update 竞态；所有 mutation 操作
+  （包括 `GhostWorkQueueStore.delete_scope()` 和 `GhostAffinityStore.decay()`）
+  统一返回结构化诊断字典并合并 `self.last_warnings`，确保调用方诊断不漏报。
 - Ghost Work Queue 的 `compact_if_needed()` 增加“projection 存在但 events 缺失”
   的同构检查并上报 `work_events_missing`。
 

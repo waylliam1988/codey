@@ -802,6 +802,7 @@ class GhostAffinityStore:
                             "decayed_nodes": 0,
                             "decayed_edges": 0,
                             "skipped_reason": "no_change",
+                            "warnings": [],
                         },
                         nodes=tuple(nodes),
                         edges=tuple(edges),
@@ -824,6 +825,7 @@ class GhostAffinityStore:
                         "decayed_nodes": decayed_node_count,
                         "decayed_edges": decayed_edge_count,
                         "skipped_reason": "",
+                        "warnings": [],
                     },
                     append_events=(event,),
                     nodes=tuple(new_nodes),
@@ -1047,7 +1049,7 @@ class GhostAffinityStore:
             result = mutation.result
             if is_dataclass(result) and not isinstance(result, type) and hasattr(result, "warnings"):
                 return replace(result, warnings=self.last_warnings)
-            if isinstance(result, dict) and "warnings" in result:
+            if isinstance(result, dict):
                 return dict(result, warnings=list(self.last_warnings))
             return result
 
